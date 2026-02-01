@@ -723,14 +723,194 @@
         .empty-state p { font-size: 12px; max-width: 350px; margin: 0 auto; }
 
         /* ══════════════════════════════════════════════════════════
-           SCREENPLAY
+           SCREENPLAY EDITOR
            ══════════════════════════════════════════════════════════ */
+        @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
         .script-area {
             width: 100%; min-height: 300px;
             font-family: 'Courier New', monospace;
             font-size: 12px; line-height: 1.6;
         }
         .script-version-selector { margin-bottom: 16px; }
+
+        /* Editor Layout */
+        .screenplay-editor-container {
+            display: flex;
+            gap: 16px;
+            height: calc(100vh - 200px);
+            min-height: 600px;
+        }
+        .screenplay-toolbar-panel {
+            width: 200px;
+            flex-shrink: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .screenplay-main-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .screenplay-sidebar-panel {
+            width: 280px;
+            flex-shrink: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+        }
+
+        /* Editor Toolbar */
+        .screenplay-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .screenplay-toolbar select {
+            width: auto;
+            padding: 4px 8px;
+            font-size: 11px;
+        }
+        .screenplay-toolbar .toolbar-btn {
+            padding: 4px 8px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            cursor: pointer;
+            font-size: 12px;
+            transition: var(--transition);
+        }
+        .screenplay-toolbar .toolbar-btn:hover {
+            background: var(--surface-3);
+            border-color: var(--primary);
+        }
+        .screenplay-toolbar .toolbar-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+        .screenplay-toolbar .toolbar-divider {
+            width: 1px;
+            height: 20px;
+            background: var(--border);
+            margin: 0 4px;
+        }
+        .screenplay-toolbar .toolbar-stats {
+            margin-left: auto;
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            gap: 12px;
+        }
+
+        /* Editor Scroll Container */
+        .screenplay-scroll-container {
+            flex: 1;
+            overflow: auto;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 20px;
+        }
+
+        /* Screenplay Page */
+        .screenplay-page {
+            width: 8.5in;
+            max-width: 100%;
+            min-height: 11in;
+            margin: 0 auto;
+            padding: 1in 1in 1in 1.5in;
+            font-family: 'Courier Prime', 'Courier New', Courier, monospace;
+            font-size: 12pt;
+            line-height: 1;
+            background: #fff;
+            color: #111;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .screenplay-page:focus {
+            outline: none;
+        }
+        .screenplay-page:empty::before {
+            content: 'Start writing your screenplay...';
+            color: #999;
+        }
+
+        /* Screenplay Element Styles (inline in editor) */
+        .screenplay-page .sp-scene-heading {
+            font-weight: bold;
+            text-transform: uppercase;
+            margin: 1em 0;
+        }
+        .screenplay-page .sp-action {
+            margin: 1em 0;
+        }
+        .screenplay-page .sp-character {
+            text-transform: uppercase;
+            margin-top: 1em;
+            margin-left: 2.2in;
+        }
+        .screenplay-page .sp-dialogue {
+            margin-left: 1in;
+            margin-right: 1.5in;
+        }
+        .screenplay-page .sp-parenthetical {
+            margin-left: 1.6in;
+            margin-right: 2in;
+        }
+        .screenplay-page .sp-transition {
+            text-align: right;
+            text-transform: uppercase;
+            margin: 1em 0;
+        }
+        .screenplay-page .sp-centered {
+            text-align: center;
+            margin: 1em 0;
+        }
+
+        /* Import Section */
+        .screenplay-import-section {
+            margin-top: 16px;
+        }
+        .screenplay-import-toggle {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .screenplay-import-toggle:hover {
+            background: var(--surface-2);
+        }
+        .screenplay-import-content {
+            display: none;
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+        }
+        .screenplay-import-content.open {
+            display: block;
+        }
 
         /* ══════════════════════════════════════════════════════════
            STATUS BAR
@@ -887,19 +1067,88 @@
 
         <!-- ── 3. SCREENPLAY ────────────────────────────────────── -->
         <div class="page" id="page-screenplay">
-            <div class="page-header"><h2>Screenplay</h2></div>
-            <div class="card">
-                <div class="flex-between mb-8">
-                    <h3>Upload Screenplay</h3>
-                    <div id="scriptVersionSelector"></div>
+            <div class="page-header">
+                <h2>Screenplay</h2>
+                <div id="scriptVersionSelector" style="margin-left: auto;"></div>
+            </div>
+
+            <div class="screenplay-editor-container">
+                <!-- Left Toolbar Panel -->
+                <div class="screenplay-toolbar-panel">
+                    <div class="section-label">Element Type</div>
+                    <select id="elementTypeSelector" onchange="setElementType(this.value)">
+                        <option value="action">Action</option>
+                        <option value="scene_heading">Scene Heading</option>
+                        <option value="character">Character</option>
+                        <option value="dialogue">Dialogue</option>
+                        <option value="parenthetical">Parenthetical</option>
+                        <option value="transition">Transition</option>
+                    </select>
+
+                    <div class="section-label mt-16">Navigation</div>
+                    <button class="btn btn-outline" onclick="toggleSceneNavigator()" style="width:100%;font-size:11px;">
+                        Scene Navigator
+                    </button>
+                    <div id="sceneNavigator" style="display:none; margin-top:8px; max-height:300px; overflow-y:auto;">
+                        <div id="sceneNavList"></div>
+                    </div>
+
+                    <div class="section-label mt-16">Actions</div>
+                    <button class="btn btn-primary" onclick="saveScreenplay()" style="width:100%;font-size:11px;">
+                        Save Script
+                    </button>
                 </div>
-                <p class="text-sm text-muted mb-8">Paste your screenplay (INT./EXT. scene headings). Scenes are auto-extracted.</p>
-                <textarea class="script-area" id="scriptInput" placeholder="INT. COFFEE SHOP - DAY&#10;&#10;SARAH sits alone at a corner table...&#10;&#10;EXT. CITY STREET - NIGHT&#10;&#10;Sarah walks through the rain."></textarea>
-                <div class="btn-row mt-16">
-                    <button class="btn btn-primary" onclick="uploadScreenplay()">Upload & Extract Scenes</button>
+
+                <!-- Main Editor Panel -->
+                <div class="screenplay-main-panel">
+                    <!-- Toolbar -->
+                    <div class="screenplay-toolbar">
+                        <button class="toolbar-btn" onclick="formatBold()" title="Bold"><b>B</b></button>
+                        <button class="toolbar-btn" onclick="formatItalic()" title="Italic"><i>I</i></button>
+                        <button class="toolbar-btn" onclick="formatUnderline()" title="Underline"><u>U</u></button>
+                        <div class="toolbar-divider"></div>
+                        <span id="currentSceneNum" style="font-size:11px;color:var(--text-muted);">Scene: —</span>
+                        <div class="toolbar-stats">
+                            <span id="editorPageCount">Pages: 0</span>
+                            <span id="editorWordCount">Words: 0</span>
+                        </div>
+                    </div>
+
+                    <!-- Editor Container -->
+                    <div class="screenplay-scroll-container">
+                        <div class="screenplay-page"
+                             id="screenplayEditor"
+                             contenteditable="true"
+                             spellcheck="true"
+                             oninput="onEditorInput()"
+                             onkeydown="onEditorKeydown(event)">
+                        </div>
+                    </div>
+
+                    <!-- Import Section (Collapsible) -->
+                    <div class="screenplay-import-section">
+                        <div class="screenplay-import-toggle" onclick="toggleImportSection()">
+                            <span id="importToggleIcon">▶</span>
+                            <span>Import Text / Upload</span>
+                        </div>
+                        <div class="screenplay-import-content" id="importContent">
+                            <p class="text-sm text-muted mb-8">Paste your screenplay (INT./EXT. scene headings). Scenes are auto-extracted.</p>
+                            <textarea class="script-area" id="scriptInput" placeholder="INT. COFFEE SHOP - DAY&#10;&#10;SARAH sits alone at a corner table...&#10;&#10;EXT. CITY STREET - NIGHT&#10;&#10;Sarah walks through the rain."></textarea>
+                            <div class="btn-row mt-16">
+                                <button class="btn btn-primary" onclick="uploadScreenplay()">Upload & Extract Scenes</button>
+                                <button class="btn btn-outline" onclick="importToEditor()">Load into Editor</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Sidebar Panel -->
+                <div class="screenplay-sidebar-panel">
+                    <div class="section-label">AI Assistant</div>
+                    <p class="text-sm text-muted">Chat panel coming soon. Get suggestions for dialogue, scene descriptions, and more.</p>
+                    <div id="scriptVersions" style="margin-top:16px;"></div>
                 </div>
             </div>
-            <div id="scriptVersions"></div>
         </div>
 
         <!-- ── 4. SCENES ────────────────────────────────────────── -->
@@ -1526,7 +1775,7 @@
         const loaders = {
             projects: loadProjects,
             dashboard: loadDashboard,
-            screenplay: loadScriptVersions,
+            screenplay: loadScreenplayPage,
             scenes: loadScenes,
             shotboard: loadShotBoard,
             characters: loadCharacters,
@@ -1674,19 +1923,26 @@
     }
 
     // ══════════════════════════════════════════════════════════════
-    // SCREENPLAY
+    // SCREENPLAY EDITOR
     // ══════════════════════════════════════════════════════════════
+
+    // Store current Fountain content
+    let currentFountainContent = '';
+    let editorDirty = false;
+
     async function uploadScreenplay() {
         if (!state.currentProject) return;
         const content = document.getElementById('scriptInput').value.trim();
         if (!content) { setStatus('Paste a screenplay first'); return; }
         setStatus('Uploading...');
         try {
+            // Try to upload as Fountain
             const data = await api('/projects/' + state.currentProject.id + '/script', {
-                method: 'POST', body: JSON.stringify({ content })
+                method: 'POST', body: JSON.stringify({ fountain_content: content })
             });
             setStatus(`Script v${data.script.version} uploaded — ${data.scenes_extracted} scene(s)`);
             loadScriptVersions();
+            loadLatestFountain(); // Load into editor
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -1697,14 +1953,14 @@
             const scripts = data.scripts || [];
             document.getElementById('scriptVersionSelector').innerHTML = scripts.length > 0 ?
                 `<select style="width:auto;display:inline-block;font-size:11px;padding:4px 8px;" onchange="loadScriptVersion(this.value)">
-                    ${scripts.map(s => `<option value="${s.version}">v${s.version} — ${s.word_count} words</option>`).join('')}
+                    ${scripts.map(s => `<option value="${s.version}">v${s.version} — ${s.word_count} words${s.format === 'fountain' ? ' (Fountain)' : ''}</option>`).join('')}
                 </select>` : '';
-            document.getElementById('scriptVersions').innerHTML = scripts.length === 0 ? '<p class="text-sm text-muted" style="margin-top:16px;">No scripts uploaded.</p>' :
-                '<div class="section-label mt-16">Versions</div>' + scripts.map(s => `
-                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12px;">
+            document.getElementById('scriptVersions').innerHTML = scripts.length === 0 ? '<p class="text-sm text-muted">No scripts uploaded.</p>' :
+                '<div class="section-label">Versions</div>' + scripts.map(s => `
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:11px;">
                         <span class="badge">v${s.version}</span>
                         <span>${s.word_count.toLocaleString()} words</span>
-                        <span class="text-muted" style="margin-left:auto;">${new Date(s.created_at).toLocaleString()}</span>
+                        <span class="text-muted" style="margin-left:auto;">${new Date(s.created_at).toLocaleDateString()}</span>
                     </div>`).join('');
         } catch (err) { setStatus('Error: ' + err.message); }
     }
@@ -1713,8 +1969,297 @@
         if (!state.currentProject) return;
         try {
             const data = await api('/projects/' + state.currentProject.id + '/scripts/' + ver);
-            if (data.content) document.getElementById('scriptInput').value = data.content;
+            if (data.fountain_content) {
+                currentFountainContent = data.fountain_content;
+                renderFountainToEditor(data.fountain_content);
+                updateEditorStats();
+            } else if (data.content) {
+                document.getElementById('scriptInput').value = data.content;
+                document.getElementById('screenplayEditor').innerHTML = '<div class="sp-action">' + escapeHtml(data.content) + '</div>';
+            }
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function loadLatestFountain() {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/script/latest/fountain');
+            if (data.fountain_content) {
+                currentFountainContent = data.fountain_content;
+                renderFountainToEditor(data.fountain_content);
+                updateEditorStats(data.page_count, data.scene_count);
+                setStatus(`Loaded v${data.version} — ${data.scene_count} scenes`);
+            }
+        } catch (err) {
+            // No Fountain content yet - that's OK
+            document.getElementById('screenplayEditor').innerHTML = '';
+        }
+    }
+
+    function renderFountainToEditor(fountainText) {
+        const editor = document.getElementById('screenplayEditor');
+        // Parse and render Fountain to HTML
+        // Using inline Fountain rendering (simplified)
+        const html = parseFountainToHTML(fountainText);
+        editor.innerHTML = html;
+        editorDirty = false;
+        updateSceneNavigator(fountainText);
+    }
+
+    function parseFountainToHTML(text) {
+        if (!text) return '';
+        const lines = text.split('\n');
+        const htmlParts = [];
+        let prevLineBlank = true;
+        let inDialogue = false;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const trimmed = line.trim();
+            const nextLine = lines[i + 1] || '';
+            const nextBlank = !nextLine.trim();
+
+            if (!trimmed) {
+                prevLineBlank = true;
+                inDialogue = false;
+                continue;
+            }
+
+            // Scene heading
+            if (/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || trimmed.startsWith('.')) {
+                const text = trimmed.startsWith('.') ? trimmed.slice(1) : trimmed;
+                htmlParts.push(`<div class="sp-scene-heading">${escapeHtml(text)}</div>`);
+                prevLineBlank = true;
+                inDialogue = false;
+                continue;
+            }
+
+            // Transition
+            if (prevLineBlank && (/^[A-Z\s]+TO:$/.test(trimmed) || trimmed.startsWith('>'))) {
+                const text = trimmed.startsWith('>') ? trimmed.slice(1).trim() : trimmed;
+                htmlParts.push(`<div class="sp-transition">${escapeHtml(text)}</div>`);
+                prevLineBlank = true;
+                inDialogue = false;
+                continue;
+            }
+
+            // Centered
+            if (trimmed.startsWith('>') && trimmed.endsWith('<')) {
+                const text = trimmed.slice(1, -1).trim();
+                htmlParts.push(`<div class="sp-centered">${escapeHtml(text)}</div>`);
+                prevLineBlank = true;
+                continue;
+            }
+
+            // Character (all caps, followed by dialogue)
+            if (prevLineBlank && !nextBlank && /^[A-Z][A-Z\s\-'\.]+$/.test(trimmed.replace(/\s*\([^)]*\)\s*\^?$/, ''))) {
+                htmlParts.push(`<div class="sp-character">${escapeHtml(trimmed)}</div>`);
+                inDialogue = true;
+                prevLineBlank = false;
+                continue;
+            }
+
+            // Parenthetical
+            if (inDialogue && /^\s*\([^)]+\)\s*$/.test(trimmed)) {
+                htmlParts.push(`<div class="sp-parenthetical">${escapeHtml(trimmed)}</div>`);
+                prevLineBlank = false;
+                continue;
+            }
+
+            // Dialogue
+            if (inDialogue) {
+                htmlParts.push(`<div class="sp-dialogue">${escapeHtml(trimmed)}</div>`);
+                prevLineBlank = false;
+                continue;
+            }
+
+            // Default: Action
+            htmlParts.push(`<div class="sp-action">${escapeHtml(trimmed)}</div>`);
+            prevLineBlank = false;
+            inDialogue = false;
+        }
+
+        return htmlParts.join('\n');
+    }
+
+    function escapeHtml(text) {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function onEditorInput() {
+        editorDirty = true;
+        updateEditorStats();
+    }
+
+    function onEditorKeydown(event) {
+        // Handle tab for indentation
+        if (event.key === 'Tab') {
+            event.preventDefault();
+            document.execCommand('insertText', false, '    ');
+        }
+        // Ctrl+S to save
+        if (event.key === 's' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            saveScreenplay();
+        }
+    }
+
+    function updateEditorStats(pageCount, sceneCount) {
+        const editor = document.getElementById('screenplayEditor');
+        const text = editor.innerText || '';
+        const words = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+        const lines = text.split('\n').length;
+        const pages = pageCount || Math.ceil(lines / 55);
+
+        document.getElementById('editorWordCount').textContent = `Words: ${words.toLocaleString()}`;
+        document.getElementById('editorPageCount').textContent = `Pages: ${pages}`;
+    }
+
+    function updateSceneNavigator(fountainText) {
+        const navList = document.getElementById('sceneNavList');
+        if (!navList) return;
+
+        const scenes = [];
+        const lines = (fountainText || '').split('\n');
+        let sceneNum = 0;
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || (trimmed.startsWith('.') && trimmed.length > 1)) {
+                sceneNum++;
+                scenes.push({ num: sceneNum, text: trimmed.slice(0, 40) });
+            }
+        }
+
+        navList.innerHTML = scenes.length === 0 ? '<p class="text-sm text-muted">No scenes</p>' :
+            scenes.map(s => `<div style="padding:4px 8px;font-size:10px;cursor:pointer;border-radius:4px;"
+                onmouseover="this.style.background='var(--surface-2)'"
+                onmouseout="this.style.background='transparent'"
+                onclick="scrollToScene(${s.num})">
+                <span class="badge" style="font-size:9px;">${s.num}</span> ${escapeHtml(s.text)}...
+            </div>`).join('');
+    }
+
+    function toggleSceneNavigator() {
+        const nav = document.getElementById('sceneNavigator');
+        nav.style.display = nav.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function scrollToScene(num) {
+        const editor = document.getElementById('screenplayEditor');
+        const headings = editor.querySelectorAll('.sp-scene-heading');
+        if (headings[num - 1]) {
+            headings[num - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+
+    async function saveScreenplay() {
+        if (!state.currentProject) return;
+        const editor = document.getElementById('screenplayEditor');
+
+        // Convert editor content back to Fountain
+        const fountainText = editorToFountain(editor);
+        if (!fountainText.trim()) {
+            setStatus('Nothing to save');
+            return;
+        }
+
+        setStatus('Saving...');
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/script', {
+                method: 'POST', body: JSON.stringify({ fountain_content: fountainText })
+            });
+            setStatus(`Saved as v${data.script.version}`);
+            editorDirty = false;
+            currentFountainContent = fountainText;
+            loadScriptVersions();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function editorToFountain(editor) {
+        // Convert editor HTML back to Fountain text
+        const elements = editor.querySelectorAll('[class^="sp-"]');
+        const lines = [];
+
+        elements.forEach(el => {
+            const text = el.innerText.trim();
+            if (!text) return;
+
+            if (el.classList.contains('sp-scene-heading')) {
+                lines.push('', text);
+            } else if (el.classList.contains('sp-character')) {
+                lines.push('', text);
+            } else if (el.classList.contains('sp-dialogue')) {
+                lines.push(text);
+            } else if (el.classList.contains('sp-parenthetical')) {
+                lines.push(text);
+            } else if (el.classList.contains('sp-transition')) {
+                lines.push('', text);
+            } else if (el.classList.contains('sp-centered')) {
+                lines.push('', '> ' + text + ' <');
+            } else {
+                lines.push('', text);
+            }
+        });
+
+        return lines.join('\n').trim();
+    }
+
+    function formatBold() {
+        document.execCommand('bold');
+    }
+
+    function formatItalic() {
+        document.execCommand('italic');
+    }
+
+    function formatUnderline() {
+        document.execCommand('underline');
+    }
+
+    function setElementType(type) {
+        // Apply element type to current selection
+        const selection = window.getSelection();
+        if (!selection.rangeCount) return;
+
+        const range = selection.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+        const element = container.nodeType === 1 ? container : container.parentElement;
+
+        // Find the closest sp-* element
+        const spElement = element.closest('[class^="sp-"]') || element;
+        if (spElement && spElement.classList) {
+            // Remove existing sp-* classes
+            const classes = [...spElement.classList].filter(c => c.startsWith('sp-'));
+            classes.forEach(c => spElement.classList.remove(c));
+            // Add new class
+            spElement.classList.add('sp-' + type.replace('_', '-'));
+        }
+    }
+
+    function toggleImportSection() {
+        const content = document.getElementById('importContent');
+        const icon = document.getElementById('importToggleIcon');
+        content.classList.toggle('open');
+        icon.textContent = content.classList.contains('open') ? '▼' : '▶';
+    }
+
+    function importToEditor() {
+        const text = document.getElementById('scriptInput').value.trim();
+        if (!text) return;
+        currentFountainContent = text;
+        renderFountainToEditor(text);
+        toggleImportSection();
+        setStatus('Loaded into editor');
+    }
+
+    function loadScreenplayPage() {
+        loadScriptVersions();
+        loadLatestFountain();
     }
 
     // ══════════════════════════════════════════════════════════════
