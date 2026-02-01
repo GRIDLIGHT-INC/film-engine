@@ -1,18 +1,25 @@
 /**
- * FILM-004: Script upload/versioning endpoint
+ * FILM-004 + FILM-097: Script upload/versioning endpoint (Fountain-aware)
  * POST /film/projects/:id/script — upload screenplay, auto-extract scenes
+ * PUT  /film/projects/:id/script/:version — update existing script in-place
  * GET  /film/projects/:id/scripts — list script versions
  * GET  /film/projects/:id/scripts/:version — get specific version
+ * GET  /film/projects/:id/script/latest/fountain — get raw Fountain of latest version
  */
 const { db, generateId } = require('../db/database');
 const { parseScreenplay } = require('../lib/screenplay-parser');
+const { parseFountain, analyzeScreenplay } = require('../lib/fountain-parser');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Estimate page count: ~55 lines per page in Fountain format
+const LINES_PER_PAGE = 55;
 
 function handleScripts(req, res, urlParts, query) {
     const projectId = urlParts[2];
     const sub = urlParts[3]; // 'script' or 'scripts'
-    const version = urlParts[4] ? parseInt(urlParts[4]) : null;
+    const versionOrKeyword = urlParts[4];
+    const subPath = urlParts[5]; // 'fountain' for /script/latest/fountain
 
     if (!UUID_RE.test(projectId)) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -28,24 +35,195 @@ function handleScripts(req, res, urlParts, query) {
         return;
     }
 
-    if (req.method === 'POST' && sub === 'script') return uploadScript(req, res, projectId);
-    if (req.method === 'GET' && sub === 'scripts' && !version) return listScripts(req, res, projectId);
-    if (req.method === 'GET' && sub === 'scripts' && version) return getScript(req, res, projectId, version);
+    // GET /film/projects/:id/script/latest/fountain
+    if (req.method === 'GET' && sub === 'script' && versionOrKeyword === 'latest' && subPath === 'fountain') {
+        return getLatestFountain(req, res, projectId);
+    }
+
+    // POST /film/projects/:id/script — upload new version
+    if (req.method === 'POST' && sub === 'script') {
+        return uploadScript(req, res, projectId);
+    }
+
+    // PUT /film/projects/:id/script/:version — update existing version
+    if (req.method === 'PUT' && sub === 'script' && versionOrKeyword) {
+        const version = parseInt(versionOrKeyword);
+        if (isNaN(version)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid version number' }));
+            return;
+        }
+        return updateScript(req, res, projectId, version);
+    }
+
+    // GET /film/projects/:id/scripts — list versions
+    if (req.method === 'GET' && sub === 'scripts' && !versionOrKeyword) {
+        return listScripts(req, res, projectId);
+    }
+
+    // GET /film/projects/:id/scripts/:version — get specific version
+    if (req.method === 'GET' && sub === 'scripts' && versionOrKeyword) {
+        const version = parseInt(versionOrKeyword);
+        if (isNaN(version)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid version number' }));
+            return;
+        }
+        return getScript(req, res, projectId, version);
+    }
 
     res.writeHead(405, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Method not allowed' }));
 }
 
+/**
+ * Process Fountain content and compute metadata
+ */
+function processFountainContent(fountainContent) {
+    const parsed = parseFountain(fountainContent);
+    const stats = analyzeScreenplay(parsed);
+
+    // Estimate page count from line count
+    const lineCount = fountainContent.split('\n').length;
+    const pageCount = Math.ceil(lineCount / LINES_PER_PAGE);
+
+    // Generate plaintext for backward compat
+    const plaintextParts = [];
+    for (const el of parsed.elements) {
+        if (el.type === 'boneyard' || el.type === 'note') continue;
+        if (el.text) plaintextParts.push(el.text);
+    }
+    const plaintext = plaintextParts.join('\n\n');
+
+    return {
+        parsed,
+        stats,
+        plaintext,
+        pageCount,
+        sceneCount: stats.scene_count,
+        dialoguePercentage: stats.dialogue_percentage,
+        titlePageJson: JSON.stringify(parsed.title_page || {})
+    };
+}
+
+/**
+ * Insert script elements into film_script_elements table
+ */
+function insertScriptElements(scriptId, elements) {
+    // Delete existing elements for this script
+    db.prepare('DELETE FROM film_script_elements WHERE script_id = ?').run(scriptId);
+
+    const insert = db.prepare(`
+        INSERT INTO film_script_elements
+        (id, script_id, element_index, element_type, text, scene_number, depth, dual, meta, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+
+    const insertMany = db.transaction((elements) => {
+        elements.forEach((el, index) => {
+            insert.run(
+                generateId(),
+                scriptId,
+                index,
+                el.type,
+                el.text || '',
+                el.scene_number || null,
+                el.depth || null,
+                el.dual || null,
+                JSON.stringify(el.meta || {})
+            );
+        });
+    });
+
+    insertMany(elements);
+}
+
+/**
+ * Extract scenes from Fountain AST (more accurate than regex parser)
+ */
+function extractScenesFromFountain(parsed, projectId) {
+    const scenes = [];
+    let currentScene = null;
+    const charactersSeen = new Set();
+
+    for (const el of parsed.elements) {
+        if (el.type === 'scene_heading') {
+            // Save previous scene
+            if (currentScene) {
+                currentScene.characters_present = [...charactersSeen];
+                scenes.push(currentScene);
+            }
+
+            // Start new scene
+            currentScene = {
+                scene_number: scenes.length + 1,
+                int_ext: el.meta?.int_ext || '',
+                location: el.meta?.location || el.text,
+                time_of_day: el.meta?.time_of_day || '',
+                description: '',
+                characters_present: []
+            };
+            charactersSeen.clear();
+        } else if (currentScene) {
+            if (el.type === 'character') {
+                charactersSeen.add(el.text);
+            } else if (el.type === 'action') {
+                if (currentScene.description) {
+                    currentScene.description += '\n' + el.text;
+                } else {
+                    currentScene.description = el.text;
+                }
+            }
+        }
+    }
+
+    // Save final scene
+    if (currentScene) {
+        currentScene.characters_present = [...charactersSeen];
+        scenes.push(currentScene);
+    }
+
+    return scenes;
+}
+
 function uploadScript(req, res, projectId) {
     const body = req.body;
 
-    if (!body.content || typeof body.content !== 'string' || body.content.trim().length === 0) {
+    // Check for fountain_content or regular content
+    const hasFountain = body.fountain_content && typeof body.fountain_content === 'string' && body.fountain_content.trim().length > 0;
+    const hasContent = body.content && typeof body.content === 'string' && body.content.trim().length > 0;
+
+    if (!hasFountain && !hasContent) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Script content is required' }));
+        res.end(JSON.stringify({ error: 'Script content is required (content or fountain_content)' }));
         return;
     }
 
-    const content = body.content;
+    let content, fountainContent, format, pageCount, sceneCount, dialoguePercentage, titlePageJson, parsedFountain;
+
+    if (hasFountain) {
+        // Process Fountain content
+        fountainContent = body.fountain_content;
+        const processed = processFountainContent(fountainContent);
+        content = processed.plaintext;
+        format = 'fountain';
+        pageCount = processed.pageCount;
+        sceneCount = processed.sceneCount;
+        dialoguePercentage = processed.dialoguePercentage;
+        titlePageJson = processed.titlePageJson;
+        parsedFountain = processed.parsed;
+    } else {
+        // Plain text upload
+        content = body.content;
+        fountainContent = '';
+        format = 'plaintext';
+        pageCount = Math.ceil(content.split('\n').length / LINES_PER_PAGE);
+        sceneCount = 0;
+        dialoguePercentage = 0;
+        titlePageJson = '{}';
+        parsedFountain = null;
+    }
+
     const wordCount = content.split(/\s+/).filter(w => w.length > 0).length;
 
     // Get next version number
@@ -57,16 +235,29 @@ function uploadScript(req, res, projectId) {
     const scriptId = generateId();
     const now = new Date().toISOString();
 
-    // Insert script
+    // Insert script with Fountain-specific columns
     db.prepare(`
-        INSERT INTO film_scripts (id, project_id, version, content, word_count, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    `).run(scriptId, projectId, nextVersion, content, wordCount, now);
+        INSERT INTO film_scripts
+        (id, project_id, version, content, word_count, format, fountain_content, title_page_json, page_count, scene_count, dialogue_percentage, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(scriptId, projectId, nextVersion, content, wordCount, format, fountainContent, titlePageJson, pageCount, sceneCount, dialoguePercentage, now);
 
     const scriptRow = db.prepare('SELECT * FROM film_scripts WHERE id = ?').get(scriptId);
 
+    // Insert script elements if Fountain
+    if (parsedFountain && parsedFountain.elements) {
+        insertScriptElements(scriptId, parsedFountain.elements);
+    }
+
     // Parse screenplay into scenes
-    const parsedScenes = parseScreenplay(content);
+    let parsedScenes;
+    if (parsedFountain) {
+        // Use Fountain AST for more accurate scene extraction
+        parsedScenes = extractScenesFromFountain(parsedFountain, projectId);
+    } else {
+        // Fall back to old regex parser
+        parsedScenes = parseScreenplay(content);
+    }
 
     // If this is version 1 or explicit replace, clear old scenes for this project
     if (body.replace_scenes !== false) {
@@ -90,7 +281,7 @@ function uploadScript(req, res, projectId) {
             scene.int_ext,
             scene.location,
             scene.time_of_day,
-            scene.description.slice(0, 10000),
+            (scene.description || '').slice(0, 10000),
             JSON.stringify(scene.characters_present),
             sceneNow
         );
@@ -112,10 +303,144 @@ function uploadScript(req, res, projectId) {
     }));
 }
 
+/**
+ * Update an existing script version in-place (for auto-save)
+ */
+function updateScript(req, res, projectId, version) {
+    const body = req.body;
+
+    // Find existing script
+    const existing = db.prepare(
+        'SELECT * FROM film_scripts WHERE project_id = ? AND version = ?'
+    ).get(projectId, version);
+
+    if (!existing) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Script version not found' }));
+        return;
+    }
+
+    const hasFountain = body.fountain_content && typeof body.fountain_content === 'string';
+    const hasContent = body.content && typeof body.content === 'string';
+
+    if (!hasFountain && !hasContent) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Script content is required (content or fountain_content)' }));
+        return;
+    }
+
+    let content, fountainContent, format, pageCount, sceneCount, dialoguePercentage, titlePageJson, parsedFountain;
+
+    if (hasFountain) {
+        fountainContent = body.fountain_content;
+        const processed = processFountainContent(fountainContent);
+        content = processed.plaintext;
+        format = 'fountain';
+        pageCount = processed.pageCount;
+        sceneCount = processed.sceneCount;
+        dialoguePercentage = processed.dialoguePercentage;
+        titlePageJson = processed.titlePageJson;
+        parsedFountain = processed.parsed;
+    } else {
+        content = body.content;
+        fountainContent = existing.fountain_content || '';
+        format = existing.format || 'plaintext';
+        pageCount = Math.ceil(content.split('\n').length / LINES_PER_PAGE);
+        sceneCount = existing.scene_count || 0;
+        dialoguePercentage = existing.dialogue_percentage || 0;
+        titlePageJson = existing.title_page_json || '{}';
+        parsedFountain = null;
+    }
+
+    const wordCount = content.split(/\s+/).filter(w => w.length > 0).length;
+
+    // Update script
+    db.prepare(`
+        UPDATE film_scripts
+        SET content = ?, word_count = ?, format = ?, fountain_content = ?,
+            title_page_json = ?, page_count = ?, scene_count = ?, dialogue_percentage = ?
+        WHERE id = ?
+    `).run(content, wordCount, format, fountainContent, titlePageJson, pageCount, sceneCount, dialoguePercentage, existing.id);
+
+    // Update script elements if Fountain
+    if (parsedFountain && parsedFountain.elements) {
+        insertScriptElements(existing.id, parsedFountain.elements);
+    }
+
+    const updated = db.prepare('SELECT * FROM film_scripts WHERE id = ?').get(existing.id);
+
+    // Optionally update scenes if requested
+    if (body.update_scenes && parsedFountain) {
+        db.prepare('DELETE FROM film_scenes WHERE project_id = ?').run(projectId);
+        const parsedScenes = extractScenesFromFountain(parsedFountain, projectId);
+
+        const insertScene = db.prepare(`
+            INSERT INTO film_scenes (id, project_id, scene_number, int_ext, location, time_of_day, description, characters_present, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const scene of parsedScenes) {
+            insertScene.run(
+                generateId(),
+                projectId,
+                scene.scene_number,
+                scene.int_ext,
+                scene.location,
+                scene.time_of_day,
+                (scene.description || '').slice(0, 10000),
+                JSON.stringify(scene.characters_present),
+                new Date().toISOString()
+            );
+        }
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ script: updated }));
+}
+
+/**
+ * Get raw Fountain content of latest version
+ */
+function getLatestFountain(req, res, projectId) {
+    const row = db.prepare(`
+        SELECT id, version, fountain_content, format, title_page_json, page_count, scene_count, dialogue_percentage
+        FROM film_scripts
+        WHERE project_id = ?
+        ORDER BY version DESC
+        LIMIT 1
+    `).get(projectId);
+
+    if (!row) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No scripts found for this project' }));
+        return;
+    }
+
+    if (row.format !== 'fountain' || !row.fountain_content) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Latest script is not in Fountain format' }));
+        return;
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        script_id: row.id,
+        version: row.version,
+        fountain_content: row.fountain_content,
+        title_page: JSON.parse(row.title_page_json || '{}'),
+        page_count: row.page_count,
+        scene_count: row.scene_count,
+        dialogue_percentage: row.dialogue_percentage
+    }));
+}
+
 function listScripts(req, res, projectId) {
-    const rows = db.prepare(
-        'SELECT id, project_id, version, word_count, created_at FROM film_scripts WHERE project_id = ? ORDER BY version DESC'
-    ).all(projectId);
+    const rows = db.prepare(`
+        SELECT id, project_id, version, word_count, format, page_count, scene_count, dialogue_percentage, created_at
+        FROM film_scripts
+        WHERE project_id = ?
+        ORDER BY version DESC
+    `).all(projectId);
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ scripts: rows }));
@@ -130,6 +455,15 @@ function getScript(req, res, projectId, version) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Script version not found' }));
         return;
+    }
+
+    // Parse title_page_json for convenience
+    if (row.title_page_json) {
+        try {
+            row.title_page = JSON.parse(row.title_page_json);
+        } catch (e) {
+            row.title_page = {};
+        }
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
