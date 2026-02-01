@@ -1,0 +1,14 @@
+{
+  "name": "film-engine-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Film Engine backend API server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "migrate": "node db/migrate.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0"
+  }
+}

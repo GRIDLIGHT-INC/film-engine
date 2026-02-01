@@ -1,0 +1,29 @@
+{
+  "name": "Film Engine",
+  "version": "0.1.0",
+  "short_description": "AI film production pipeline for Gridlight",
+  "detailed_description": "Full production management: screenplay parsing, scene extraction, shot management, storyboard generation, and NLE export. Transform stories into editor-ready output.",
+  "usage_instructions": "Create a project, upload a screenplay, and Film Engine will break it down into scenes and shots for production.",
+  "author": "Gridlight",
+  "icon": "src/assets/icon.svg",
+  "entry": "src/index.html",
+  "runtime": "1.0",
+  "type": "hybrid",
+  "backend": {
+    "entry": "backend/server.js",
+    "port": 3100
+  },
+  "dependencies": {
+    "components": [],
+    "themes": ["gridlight"]
+  },
+  "build": {
+    "target": "single-html",
+    "minify": true
+  },
+  "permissions": ["storage", "network", "filesystem"],
+  "gridlight_version_required": "0.6.2",
+  "window": {
+    "maximized": true
+  }
+}

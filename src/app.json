@@ -1,0 +1,11 @@
+{
+  "name": "Film Engine",
+  "version": "0.1.0",
+  "layout": "sidebar",
+  "theme": "gridlight",
+  "settings": {
+    "gateway": "",
+    "apiToken": "",
+    "backendUrl": "http://localhost:3100"
+  }
+}

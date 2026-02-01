@@ -1,0 +1,2506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Film Engine</title>
+    <style>
+        /* ══════════════════════════════════════════════════════════
+           DESIGN TOKENS — retro 80s gridlight-chat aesthetic
+           ══════════════════════════════════════════════════════════ */
+        :root {
+            --bg: #0f0f23;
+            --surface: #1a1a2e;
+            --surface-2: #16213e;
+            --surface-3: #1e2a4a;
+            --text: #e0e0e0;
+            --text-muted: #7a7a9e;
+            --primary: #e91e63;
+            --secondary: #2196f3;
+            --accent: #e91e63;
+            --gradient: linear-gradient(135deg, #e91e63, #2196f3);
+            --border: rgba(255,255,255,0.06);
+            --border-bright: rgba(233,30,99,0.3);
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --info: #38bdf8;
+            --glow-primary: 0 0 10px rgba(233,30,99,0.4), 0 0 20px rgba(233,30,99,0.2);
+            --glow-text: 0 0 8px currentColor;
+            --radius: 25px;
+            --radius-sm: 12px;
+            --radius-xs: 8px;
+            --transition: all 0.3s ease;
+            --sidebar-w: 260px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* ── CRT Scanline Overlay ──────────────────────────────── */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0,0,0,0.1) 0px,
+                rgba(0,0,0,0.1) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* ── CRT Cyan Grid ─────────────────────────────────────── */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background:
+                linear-gradient(90deg, rgba(0,245,255,0.03) 1px, transparent 1px),
+                linear-gradient(rgba(0,245,255,0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* ── Scrollbar ─────────────────────────────────────────── */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(233,30,99,0.3); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(233,30,99,0.5); }
+
+        /* ── Typography ────────────────────────────────────────── */
+        .section-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        h2 { font-size: 20px; font-weight: 700; }
+        h3 { font-size: 15px; font-weight: 600; }
+
+        /* ══════════════════════════════════════════════════════════
+           SIDEBAR
+           ══════════════════════════════════════════════════════════ */
+        .sidebar {
+            width: var(--sidebar-w);
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            position: fixed;
+            left: 0; top: 0;
+            z-index: 100;
+            flex-shrink: 0;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        .sidebar-header h1 {
+            font-size: 16px; font-weight: 700;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: none;
+        }
+        .sidebar-header p { font-size: 10px; color: var(--text-muted); margin-top: 2px; letter-spacing: 0.5px; }
+
+        .sidebar-content { flex: 1; overflow-y: auto; padding: 8px 0; }
+
+        .sidebar-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 8px 16px;
+        }
+
+        .nav-section {
+            padding: 12px 20px 4px;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .nav-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 9px 20px;
+            cursor: pointer; color: var(--text-muted);
+            font-size: 12px; font-weight: 500;
+            transition: var(--transition);
+            border: none; background: none;
+            width: 100%; text-align: left;
+            font-family: inherit;
+            position: relative;
+        }
+        .nav-item:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+        .nav-item.active {
+            color: var(--primary);
+            background: rgba(233,30,99,0.08);
+        }
+        .nav-item.active::before {
+            content: '';
+            position: absolute; left: 0; top: 4px; bottom: 4px;
+            width: 3px; background: var(--primary);
+            border-radius: 0 3px 3px 0;
+        }
+        .nav-item .nav-icon { width: 18px; text-align: center; font-size: 13px; }
+
+        .badge-soon {
+            font-size: 8px;
+            padding: 1px 5px;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.06);
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-left: auto;
+        }
+
+        .sidebar-back-btn {
+            display: flex; align-items: center; gap: 8px;
+            padding: 10px 20px;
+            color: var(--text-muted); font-size: 12px;
+            cursor: pointer; border: none; background: none;
+            width: 100%; text-align: left; font-family: inherit;
+            transition: var(--transition);
+            border-bottom: 1px solid var(--border);
+        }
+        .sidebar-back-btn:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+
+        .sidebar-project-name {
+            padding: 12px 20px;
+            font-size: 14px; font-weight: 600;
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .sidebar-project-name .status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .new-project-btn {
+            margin: 10px 12px;
+            padding: 9px 16px;
+            background: var(--gradient);
+            color: white;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 12px; font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            font-family: inherit;
+        }
+        .new-project-btn:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: var(--glow-primary); }
+
+        /* ══════════════════════════════════════════════════════════
+           MAIN CONTENT
+           ══════════════════════════════════════════════════════════ */
+        .main {
+            margin-left: var(--sidebar-w);
+            flex: 1;
+            padding: 28px 32px 60px;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .page { display: none; }
+        .page.active { display: block; animation: fadeIn 0.2s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .page-header {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 24px;
+        }
+        .page-header h2 { font-size: 20px; }
+
+        /* ══════════════════════════════════════════════════════════
+           CARDS & GLASS
+           ══════════════════════════════════════════════════════════ */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 20px;
+            margin-bottom: 12px;
+            transition: var(--transition);
+        }
+        .card:hover { border-color: rgba(255,255,255,0.1); }
+
+        .glass-card {
+            background: rgba(26,26,46,0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 20px;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           BUTTONS
+           ══════════════════════════════════════════════════════════ */
+        .btn {
+            padding: 7px 16px;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 12px; font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition);
+            font-family: inherit;
+            display: inline-flex; align-items: center; gap: 6px;
+        }
+        .btn:hover { transform: translateY(-1px); }
+        .btn-primary { background: var(--gradient); color: white; }
+        .btn-primary:hover { box-shadow: var(--glow-primary); }
+        .btn-secondary { background: rgba(255,255,255,0.06); color: var(--text); }
+        .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+        .btn-danger { background: rgba(239,68,68,0.12); color: var(--error); }
+        .btn-danger:hover { background: rgba(239,68,68,0.2); }
+        .btn-success { background: rgba(34,197,94,0.12); color: var(--success); }
+        .btn-sm { padding: 4px 10px; font-size: 11px; }
+        .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        /* ══════════════════════════════════════════════════════════
+           FORMS
+           ══════════════════════════════════════════════════════════ */
+        .form-group { margin-bottom: 14px; }
+        .form-group label {
+            display: block; font-size: 10px; font-weight: 600;
+            margin-bottom: 5px; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+
+        input[type="text"], input[type="number"], input[type="date"], textarea, select {
+            width: 100%;
+            padding: 9px 12px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xs);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 12px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus, textarea:focus, select:focus { border-color: var(--primary); }
+        textarea { resize: vertical; min-height: 70px; }
+        select { cursor: pointer; }
+        input[type="range"] { width: 100%; accent-color: var(--primary); }
+
+        /* ══════════════════════════════════════════════════════════
+           BADGES
+           ══════════════════════════════════════════════════════════ */
+        .badge {
+            font-size: 10px; padding: 2px 8px; border-radius: 4px;
+            background: rgba(255,255,255,0.06); color: var(--text-muted);
+            font-weight: 500; white-space: nowrap;
+        }
+        .badge.concept { background: rgba(139,92,246,0.15); color: #a78bfa; }
+        .badge.script { background: rgba(59,130,246,0.15); color: #60a5fa; }
+        .badge.pre-production { background: rgba(245,158,11,0.15); color: #fbbf24; }
+        .badge.storyboard { background: rgba(168,85,247,0.15); color: #c084fc; }
+        .badge.production { background: rgba(34,197,94,0.15); color: #4ade80; }
+        .badge.post-production { background: rgba(14,165,233,0.15); color: #38bdf8; }
+        .badge.review { background: rgba(244,114,182,0.15); color: #f472b6; }
+        .badge.export { background: rgba(251,146,60,0.15); color: #fb923c; }
+        .badge.complete { background: rgba(34,197,94,0.2); color: #22c55e; }
+        .badge.pending { background: rgba(255,255,255,0.06); color: var(--text-muted); }
+        .badge.generating { background: rgba(59,130,246,0.15); color: #60a5fa; }
+        .badge.approved { background: rgba(34,197,94,0.2); color: #22c55e; }
+        .badge.failed { background: rgba(239,68,68,0.15); color: #f87171; }
+        .badge.in_progress { background: rgba(245,158,11,0.15); color: #fbbf24; }
+        .badge.completed { background: rgba(34,197,94,0.2); color: #22c55e; }
+        .badge.skipped { background: rgba(255,255,255,0.06); color: var(--text-muted); }
+
+        /* ══════════════════════════════════════════════════════════
+           MODAL
+           ══════════════════════════════════════════════════════════ */
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(4px);
+            display: none; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.open { display: flex; }
+
+        .modal {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 90%; max-width: 520px;
+            max-height: 85vh; overflow-y: auto;
+            position: relative;
+        }
+        /* Modal scanline */
+        .modal::before {
+            content: '';
+            position: absolute; inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0,0,0,0.04) 0px,
+                rgba(0,0,0,0.04) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            border-radius: 16px;
+            z-index: 1;
+        }
+        .modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            position: relative; z-index: 2;
+        }
+        .modal-header h3 { font-size: 14px; font-weight: 600; }
+        .modal-close {
+            background: none; border: none; color: var(--text-muted);
+            font-size: 18px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+        }
+        .modal-close:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+        .modal-body { padding: 20px; position: relative; z-index: 2; }
+
+        /* ══════════════════════════════════════════════════════════
+           PROJECT LIST
+           ══════════════════════════════════════════════════════════ */
+        .project-card {
+            display: flex; align-items: center; gap: 14px;
+            padding: 14px 18px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: var(--transition);
+            margin-bottom: 8px;
+        }
+        .project-card:hover {
+            border-color: var(--border-bright);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(233,30,99,0.1);
+        }
+        .project-icon {
+            width: 42px; height: 42px;
+            background: var(--gradient);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; flex-shrink: 0;
+        }
+        .project-info { flex: 1; min-width: 0; }
+        .project-info h3 { font-size: 14px; font-weight: 600; }
+        .project-info p { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .project-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+        /* ══════════════════════════════════════════════════════════
+           DASHBOARD
+           ══════════════════════════════════════════════════════════ */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            text-align: center;
+            transition: var(--transition);
+        }
+        .stat-card:hover { border-color: rgba(233,30,99,0.2); }
+        .stat-card .value {
+            font-size: 28px; font-weight: 700;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .stat-card .label {
+            font-size: 9px; color: var(--text-muted); margin-top: 4px;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+
+        .status-bar-chart {
+            height: 8px; border-radius: 4px;
+            background: rgba(255,255,255,0.05);
+            overflow: hidden; display: flex;
+            margin: 8px 0;
+        }
+        .status-bar-chart .segment { height: 100%; transition: width 0.5s ease; }
+
+        /* ══════════════════════════════════════════════════════════
+           SCENES
+           ══════════════════════════════════════════════════════════ */
+        .scene-row {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            margin-bottom: 8px;
+            overflow: hidden;
+        }
+        .scene-row-header {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 16px; cursor: pointer;
+            transition: var(--transition);
+        }
+        .scene-row-header:hover { background: rgba(255,255,255,0.02); }
+        .scene-number {
+            width: 34px; height: 34px;
+            background: rgba(233,30,99,0.1);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 13px; color: var(--primary);
+            flex-shrink: 0;
+        }
+        .scene-info { flex: 1; min-width: 0; }
+        .scene-info h4 { font-size: 13px; font-weight: 600; }
+        .scene-info p { font-size: 11px; color: var(--text-muted); }
+        .scene-shots {
+            display: none;
+            padding: 0 16px 12px;
+            border-top: 1px solid var(--border);
+        }
+        .scene-row.expanded .scene-shots { display: block; }
+        .scene-row.expanded .scene-expand { transform: rotate(90deg); }
+        .scene-expand { transition: transform 0.2s; color: var(--text-muted); font-size: 11px; }
+
+        /* ══════════════════════════════════════════════════════════
+           KANBAN (Shot Board)
+           ══════════════════════════════════════════════════════════ */
+        .kanban-board {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            min-height: 300px;
+        }
+        .kanban-column {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            min-height: 200px;
+        }
+        .kanban-column-header {
+            font-size: 11px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .kanban-column-header .count {
+            background: rgba(255,255,255,0.06);
+            padding: 1px 6px; border-radius: 4px; font-size: 10px;
+        }
+        .kanban-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xs);
+            padding: 10px;
+            margin-bottom: 8px;
+            transition: var(--transition);
+            cursor: default;
+        }
+        .kanban-card:hover { border-color: rgba(233,30,99,0.2); }
+        .kanban-card .shot-code {
+            font-size: 11px; font-weight: 700; color: var(--primary);
+            margin-bottom: 4px;
+        }
+        .kanban-card .shot-meta { font-size: 10px; color: var(--text-muted); }
+
+        /* ══════════════════════════════════════════════════════════
+           CHARACTER / LOCATION / PROP CARDS
+           ══════════════════════════════════════════════════════════ */
+        .entity-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 12px;
+        }
+        .entity-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            transition: var(--transition);
+        }
+        .entity-card:hover { border-color: rgba(233,30,99,0.2); transform: translateY(-2px); }
+        .entity-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .entity-avatar {
+            width: 38px; height: 38px;
+            border-radius: 50%;
+            background: var(--gradient);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; flex-shrink: 0; color: white; font-weight: 700;
+        }
+        .entity-card h3 { font-size: 14px; }
+        .entity-card p { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+        .entity-card .tag-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+        .tag {
+            font-size: 9px; padding: 2px 6px; border-radius: 4px;
+            background: rgba(255,255,255,0.05); color: var(--text-muted);
+        }
+        .entity-card .card-actions { display: flex; gap: 6px; margin-top: 12px; }
+
+        /* ══════════════════════════════════════════════════════════
+           ASSET TABLE
+           ══════════════════════════════════════════════════════════ */
+        .asset-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .asset-table th {
+            font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
+            color: var(--text-muted); text-align: left;
+            padding: 8px 12px; border-bottom: 1px solid var(--border);
+            font-weight: 600;
+        }
+        .asset-table td {
+            padding: 10px 12px; font-size: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        .asset-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+        /* ══════════════════════════════════════════════════════════
+           FILTER PILLS
+           ══════════════════════════════════════════════════════════ */
+        .filter-pills {
+            display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px;
+        }
+        .filter-pill {
+            padding: 4px 12px;
+            border-radius: var(--radius);
+            font-size: 11px; font-weight: 500;
+            background: rgba(255,255,255,0.04);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .filter-pill:hover { border-color: rgba(233,30,99,0.3); color: var(--text); }
+        .filter-pill.active { background: rgba(233,30,99,0.12); color: var(--primary); border-color: rgba(233,30,99,0.3); }
+
+        /* ══════════════════════════════════════════════════════════
+           MUSIC CUE CARDS
+           ══════════════════════════════════════════════════════════ */
+        .cue-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 14px;
+            margin-bottom: 8px;
+            display: flex; align-items: center; gap: 12px;
+        }
+        .cue-icon {
+            width: 36px; height: 36px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; flex-shrink: 0;
+        }
+        .cue-icon.score { background: rgba(168,85,247,0.15); }
+        .cue-icon.sfx { background: rgba(245,158,11,0.15); }
+        .cue-icon.ambient { background: rgba(34,197,94,0.15); }
+        .cue-icon.source { background: rgba(59,130,246,0.15); }
+        .cue-icon.transition { background: rgba(244,114,182,0.15); }
+
+        /* ══════════════════════════════════════════════════════════
+           COLOR PRESET
+           ══════════════════════════════════════════════════════════ */
+        .color-preset-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            transition: var(--transition);
+        }
+        .color-preset-card:hover { border-color: rgba(233,30,99,0.2); }
+        .color-preview {
+            height: 40px; border-radius: 6px;
+            margin-bottom: 10px; overflow: hidden;
+            display: flex;
+        }
+        .color-preview div { flex: 1; }
+
+        /* ══════════════════════════════════════════════════════════
+           MILESTONE TIMELINE
+           ══════════════════════════════════════════════════════════ */
+        .milestone-timeline { padding-left: 24px; position: relative; }
+        .milestone-timeline::before {
+            content: '';
+            position: absolute; left: 11px; top: 0; bottom: 0;
+            width: 2px; background: var(--border);
+        }
+        .milestone-node {
+            position: relative; padding: 0 0 20px 24px;
+        }
+        .milestone-node::before {
+            content: '';
+            position: absolute; left: -17px; top: 4px;
+            width: 10px; height: 10px; border-radius: 50%;
+            background: var(--border); border: 2px solid var(--bg);
+        }
+        .milestone-node.completed::before { background: var(--success); }
+        .milestone-node.in_progress::before { background: var(--warning); }
+        .milestone-node.pending::before { background: var(--text-muted); }
+        .milestone-progress {
+            height: 4px; border-radius: 2px; background: rgba(255,255,255,0.06);
+            margin-top: 6px; overflow: hidden;
+        }
+        .milestone-progress-fill {
+            height: 100%; border-radius: 2px;
+            background: var(--gradient);
+            transition: width 0.5s ease;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           NOTES
+           ══════════════════════════════════════════════════════════ */
+        .note-item {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xs);
+            padding: 12px;
+            margin-bottom: 8px;
+        }
+        .note-item.resolved { opacity: 0.5; }
+        .note-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .note-content { font-size: 12px; line-height: 1.5; color: var(--text); }
+
+        /* ══════════════════════════════════════════════════════════
+           RENDER TABLE
+           ══════════════════════════════════════════════════════════ */
+        .render-table { width: 100%; border-collapse: collapse; }
+        .render-table th {
+            font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
+            color: var(--text-muted); text-align: left;
+            padding: 8px 10px; border-bottom: 1px solid var(--border);
+        }
+        .render-table td {
+            padding: 8px 10px; font-size: 11px;
+            border-bottom: 1px solid var(--border);
+            font-family: 'SF Mono', 'Menlo', monospace;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           COMING SOON OVERLAY
+           ══════════════════════════════════════════════════════════ */
+        .coming-soon-wrapper { position: relative; }
+        .coming-soon-overlay {
+            position: absolute; inset: 0;
+            background: rgba(15,15,35,0.85);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 10;
+            border-radius: var(--radius-sm);
+        }
+        .coming-soon-overlay .cs-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.6; }
+        .coming-soon-overlay h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .coming-soon-overlay p { font-size: 12px; color: var(--text-muted); text-align: center; max-width: 280px; }
+
+        /* ══════════════════════════════════════════════════════════
+           EMPTY STATE
+           ══════════════════════════════════════════════════════════ */
+        .empty-state {
+            text-align: center; padding: 50px 20px; color: var(--text-muted);
+        }
+        .empty-state .icon { font-size: 40px; margin-bottom: 12px; opacity: 0.4; }
+        .empty-state h3 { font-size: 15px; margin-bottom: 6px; color: var(--text); }
+        .empty-state p { font-size: 12px; max-width: 350px; margin: 0 auto; }
+
+        /* ══════════════════════════════════════════════════════════
+           SCREENPLAY
+           ══════════════════════════════════════════════════════════ */
+        .script-area {
+            width: 100%; min-height: 300px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px; line-height: 1.6;
+        }
+        .script-version-selector { margin-bottom: 16px; }
+
+        /* ══════════════════════════════════════════════════════════
+           STATUS BAR
+           ══════════════════════════════════════════════════════════ */
+        .status-bar {
+            position: fixed; bottom: 0; left: var(--sidebar-w); right: 0;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 5px 20px;
+            font-size: 10px; color: var(--text-muted);
+            display: flex; justify-content: space-between; align-items: center;
+            z-index: 100;
+        }
+        .status-dot-online { color: var(--success); }
+        .status-dot-offline { color: var(--error); }
+
+        /* ══════════════════════════════════════════════════════════
+           UTILITIES
+           ══════════════════════════════════════════════════════════ */
+        .loading-spinner {
+            display: inline-block; width: 14px; height: 14px;
+            border: 2px solid var(--border); border-top-color: var(--primary);
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .mt-16 { margin-top: 16px; }
+        .mb-16 { margin-bottom: 16px; }
+        .mb-8 { margin-bottom: 8px; }
+        .text-muted { color: var(--text-muted); }
+        .text-sm { font-size: 11px; }
+        .gap-8 { gap: 8px; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <!-- ════════════════════════════════════════════════════════════
+         SIDEBAR
+         ════════════════════════════════════════════════════════════ -->
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h1>Film Engine</h1>
+            <p>AI Production Pipeline</p>
+        </div>
+
+        <!-- State 1: Project List Mode -->
+        <div id="sidebarProjectList">
+            <button class="new-project-btn" onclick="showModal('newProjectModal')">+ New Project</button>
+            <div class="sidebar-content">
+                <div class="nav-section">Projects</div>
+                <div id="sidebarProjects"></div>
+            </div>
+        </div>
+
+        <!-- State 2: Project Navigation Mode -->
+        <div id="sidebarProjectNav" class="hidden">
+            <button class="sidebar-back-btn" onclick="backToProjectList()">&#8592; All Projects</button>
+            <div class="sidebar-project-name">
+                <span class="status-dot" id="navStatusDot"></span>
+                <span id="navProjectName">Project</span>
+            </div>
+            <div class="sidebar-content">
+                <div class="nav-section">Production</div>
+                <button class="nav-item" data-page="dashboard" onclick="navigateTo('dashboard')">
+                    <span class="nav-icon">&#128202;</span> Dashboard
+                </button>
+                <button class="nav-item" data-page="screenplay" onclick="navigateTo('screenplay')">
+                    <span class="nav-icon">&#128221;</span> Screenplay
+                </button>
+                <button class="nav-item" data-page="scenes" onclick="navigateTo('scenes')">
+                    <span class="nav-icon">&#127916;</span> Scenes
+                </button>
+                <button class="nav-item" data-page="shotboard" onclick="navigateTo('shotboard')">
+                    <span class="nav-icon">&#127919;</span> Shot Board
+                </button>
+                <button class="nav-item" data-page="storyboard" onclick="navigateTo('storyboard')">
+                    <span class="nav-icon">&#128444;</span> Storyboard
+                    <span class="badge-soon">Soon</span>
+                </button>
+                <div class="sidebar-divider"></div>
+                <div class="nav-section">Elements</div>
+                <button class="nav-item" data-page="characters" onclick="navigateTo('characters')">
+                    <span class="nav-icon">&#128100;</span> Characters
+                </button>
+                <button class="nav-item" data-page="locations" onclick="navigateTo('locations')">
+                    <span class="nav-icon">&#128205;</span> Locations
+                </button>
+                <button class="nav-item" data-page="props" onclick="navigateTo('props')">
+                    <span class="nav-icon">&#127917;</span> Props
+                </button>
+                <div class="sidebar-divider"></div>
+                <div class="nav-section">Media</div>
+                <button class="nav-item" data-page="assets" onclick="navigateTo('assets')">
+                    <span class="nav-icon">&#128230;</span> Assets
+                </button>
+                <button class="nav-item" data-page="musiccues" onclick="navigateTo('musiccues')">
+                    <span class="nav-icon">&#127925;</span> Music Cues
+                </button>
+                <button class="nav-item" data-page="colorgrading" onclick="navigateTo('colorgrading')">
+                    <span class="nav-icon">&#127912;</span> Color Grading
+                </button>
+                <div class="sidebar-divider"></div>
+                <div class="nav-section">Workflow</div>
+                <button class="nav-item" data-page="milestones" onclick="navigateTo('milestones')">
+                    <span class="nav-icon">&#128203;</span> Milestones
+                </button>
+                <button class="nav-item" data-page="notes" onclick="navigateTo('notes')">
+                    <span class="nav-icon">&#128221;</span> Notes & Reviews
+                </button>
+                <button class="nav-item" data-page="renderhistory" onclick="navigateTo('renderhistory')">
+                    <span class="nav-icon">&#128260;</span> Render History
+                </button>
+                <div class="sidebar-divider"></div>
+                <button class="nav-item" data-page="exportpage" onclick="navigateTo('exportpage')">
+                    <span class="nav-icon">&#128228;</span> Export
+                    <span class="badge-soon">Soon</span>
+                </button>
+                <button class="nav-item" data-page="settings" onclick="navigateTo('settings')">
+                    <span class="nav-icon">&#9881;</span> Settings
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ════════════════════════════════════════════════════════════
+         MAIN CONTENT — 17 Pages
+         ════════════════════════════════════════════════════════════ -->
+    <div class="main">
+
+        <!-- ── 1. PROJECTS ──────────────────────────────────────── -->
+        <div class="page active" id="page-projects">
+            <div class="flex-between mb-16">
+                <h2>Projects</h2>
+                <button class="btn btn-primary" onclick="showModal('newProjectModal')">+ New Project</button>
+            </div>
+            <div id="projectList"></div>
+        </div>
+
+        <!-- ── 2. DASHBOARD ─────────────────────────────────────── -->
+        <div class="page" id="page-dashboard">
+            <div class="page-header"><h2>Dashboard</h2></div>
+            <div class="dashboard-grid" id="dashStats"></div>
+            <div class="flex-between mb-8">
+                <span class="section-label">Shot Status</span>
+            </div>
+            <div class="status-bar-chart" id="dashShotBar"></div>
+            <div id="dashShotLegend" style="display:flex;gap:16px;margin-bottom:24px;font-size:10px;color:var(--text-muted);"></div>
+            <div class="flex-between mb-8">
+                <span class="section-label">Upcoming Milestones</span>
+            </div>
+            <div id="dashMilestones"></div>
+        </div>
+
+        <!-- ── 3. SCREENPLAY ────────────────────────────────────── -->
+        <div class="page" id="page-screenplay">
+            <div class="page-header"><h2>Screenplay</h2></div>
+            <div class="card">
+                <div class="flex-between mb-8">
+                    <h3>Upload Screenplay</h3>
+                    <div id="scriptVersionSelector"></div>
+                </div>
+                <p class="text-sm text-muted mb-8">Paste your screenplay (INT./EXT. scene headings). Scenes are auto-extracted.</p>
+                <textarea class="script-area" id="scriptInput" placeholder="INT. COFFEE SHOP - DAY&#10;&#10;SARAH sits alone at a corner table...&#10;&#10;EXT. CITY STREET - NIGHT&#10;&#10;Sarah walks through the rain."></textarea>
+                <div class="btn-row mt-16">
+                    <button class="btn btn-primary" onclick="uploadScreenplay()">Upload & Extract Scenes</button>
+                </div>
+            </div>
+            <div id="scriptVersions"></div>
+        </div>
+
+        <!-- ── 4. SCENES ────────────────────────────────────────── -->
+        <div class="page" id="page-scenes">
+            <div class="page-header"><h2>Scenes</h2></div>
+            <div id="scenesList"></div>
+        </div>
+
+        <!-- ── 5. SHOT BOARD ────────────────────────────────────── -->
+        <div class="page" id="page-shotboard">
+            <div class="page-header"><h2>Shot Board</h2></div>
+            <div class="kanban-board" id="kanbanBoard"></div>
+        </div>
+
+        <!-- ── 6. STORYBOARD (Coming Soon) ──────────────────────── -->
+        <div class="page" id="page-storyboard">
+            <div class="page-header"><h2>Storyboard</h2></div>
+            <div class="coming-soon-wrapper" style="min-height:400px;">
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+                    <div class="card" style="height:180px;"></div>
+                    <div class="card" style="height:180px;"></div>
+                    <div class="card" style="height:180px;"></div>
+                    <div class="card" style="height:180px;"></div>
+                    <div class="card" style="height:180px;"></div>
+                    <div class="card" style="height:180px;"></div>
+                    <div class="card" style="height:180px;"></div>
+                    <div class="card" style="height:180px;"></div>
+                </div>
+                <div class="coming-soon-overlay">
+                    <div class="cs-icon">&#128444;</div>
+                    <h3>Storyboard</h3>
+                    <p>Requires ImageGen pipeline. Visual storyboard frames will be generated from scene cards.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── 7. CHARACTERS ────────────────────────────────────── -->
+        <div class="page" id="page-characters">
+            <div class="flex-between mb-16">
+                <h2>Characters</h2>
+                <button class="btn btn-primary" onclick="showModal('characterModal')">+ Character</button>
+            </div>
+            <div class="entity-grid" id="characterGrid"></div>
+        </div>
+
+        <!-- ── 8. LOCATIONS ─────────────────────────────────────── -->
+        <div class="page" id="page-locations">
+            <div class="flex-between mb-16">
+                <h2>Locations</h2>
+                <button class="btn btn-primary" onclick="showModal('locationModal')">+ Location</button>
+            </div>
+            <div class="entity-grid" id="locationGrid"></div>
+        </div>
+
+        <!-- ── 9. PROPS ─────────────────────────────────────────── -->
+        <div class="page" id="page-props">
+            <div class="flex-between mb-16">
+                <h2>Props</h2>
+                <button class="btn btn-primary" onclick="showModal('propModal')">+ Prop</button>
+            </div>
+            <div class="filter-pills" id="propFilters"></div>
+            <div class="entity-grid" id="propGrid"></div>
+        </div>
+
+        <!-- ── 10. ASSETS ───────────────────────────────────────── -->
+        <div class="page" id="page-assets">
+            <div class="flex-between mb-16">
+                <h2>Assets</h2>
+                <button class="btn btn-primary" onclick="showModal('assetModal')">+ Register Asset</button>
+            </div>
+            <div class="filter-pills" id="assetFilters"></div>
+            <div id="assetTableWrap"></div>
+        </div>
+
+        <!-- ── 11. MUSIC CUES ───────────────────────────────────── -->
+        <div class="page" id="page-musiccues">
+            <div class="flex-between mb-16">
+                <h2>Music Cues</h2>
+                <button class="btn btn-primary" onclick="showModal('musicCueModal')">+ Music Cue</button>
+            </div>
+            <div id="musicCueList"></div>
+        </div>
+
+        <!-- ── 12. COLOR GRADING ────────────────────────────────── -->
+        <div class="page" id="page-colorgrading">
+            <div class="flex-between mb-16">
+                <h2>Color Grading</h2>
+                <button class="btn btn-primary" onclick="showModal('colorPresetModal')">+ Preset</button>
+            </div>
+            <div class="entity-grid" id="colorPresetGrid"></div>
+        </div>
+
+        <!-- ── 13. MILESTONES ───────────────────────────────────── -->
+        <div class="page" id="page-milestones">
+            <div class="flex-between mb-16">
+                <h2>Milestones</h2>
+                <button class="btn btn-primary" onclick="showModal('milestoneModal')">+ Milestone</button>
+            </div>
+            <div class="milestone-timeline" id="milestoneTimeline"></div>
+        </div>
+
+        <!-- ── 14. NOTES & REVIEWS ──────────────────────────────── -->
+        <div class="page" id="page-notes">
+            <div class="page-header"><h2>Notes & Reviews</h2></div>
+            <div class="flex-between mb-16">
+                <div>
+                    <label class="text-sm text-muted" style="margin-right:8px;">Scene:</label>
+                    <select id="noteSceneSelect" style="width:auto;display:inline-block;min-width:180px;" onchange="onNoteSceneChange()">
+                        <option value="">Select scene...</option>
+                    </select>
+                    <label class="text-sm text-muted" style="margin:0 8px;">Shot:</label>
+                    <select id="noteShotSelect" style="width:auto;display:inline-block;min-width:160px;" onchange="loadShotNotes()">
+                        <option value="">Select shot...</option>
+                    </select>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary btn-sm" onclick="showAddNoteModal()">+ Note</button>
+                    <button class="btn btn-success btn-sm" onclick="showReviewModal()">Review Shot</button>
+                </div>
+            </div>
+            <div id="notesList"></div>
+        </div>
+
+        <!-- ── 15. RENDER HISTORY ───────────────────────────────── -->
+        <div class="page" id="page-renderhistory">
+            <div class="page-header"><h2>Render History</h2></div>
+            <div class="mb-16">
+                <label class="text-sm text-muted" style="margin-right:8px;">Shot:</label>
+                <select id="renderShotSelect" style="width:auto;display:inline-block;min-width:200px;" onchange="loadRenderHistory()">
+                    <option value="">Select shot...</option>
+                </select>
+            </div>
+            <div id="renderTableWrap"></div>
+        </div>
+
+        <!-- ── 16. EXPORT (Coming Soon) ─────────────────────────── -->
+        <div class="page" id="page-exportpage">
+            <div class="page-header"><h2>Export</h2></div>
+            <div class="coming-soon-wrapper" style="min-height:300px;">
+                <div class="entity-grid">
+                    <div class="card" style="text-align:center;padding:30px;">
+                        <div style="font-size:32px;margin-bottom:8px;">&#128196;</div>
+                        <h3>FCPXML</h3>
+                        <p class="text-sm text-muted">Final Cut Pro timeline</p>
+                    </div>
+                    <div class="card" style="text-align:center;padding:30px;">
+                        <div style="font-size:32px;margin-bottom:8px;">&#128221;</div>
+                        <h3>EDL</h3>
+                        <p class="text-sm text-muted">Edit Decision List</p>
+                    </div>
+                    <div class="card" style="text-align:center;padding:30px;">
+                        <div style="font-size:32px;margin-bottom:8px;">&#127909;</div>
+                        <h3>ProRes</h3>
+                        <p class="text-sm text-muted">Apple ProRes 422 LT</p>
+                    </div>
+                    <div class="card" style="text-align:center;padding:30px;">
+                        <div style="font-size:32px;margin-bottom:8px;">&#127916;</div>
+                        <h3>Premiere XML</h3>
+                        <p class="text-sm text-muted">Adobe Premiere Pro</p>
+                    </div>
+                </div>
+                <div class="coming-soon-overlay">
+                    <div class="cs-icon">&#128228;</div>
+                    <h3>Export</h3>
+                    <p>Requires full render pipeline. Export to FCPXML, EDL, ProRes, and Premiere formats.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── 17. SETTINGS ─────────────────────────────────────── -->
+        <div class="page" id="page-settings">
+            <div class="page-header"><h2>Settings</h2></div>
+            <div class="card" style="max-width:500px;">
+                <h3 class="mb-8">Backend Connection</h3>
+                <div class="form-group">
+                    <label>API URL</label>
+                    <input type="text" id="settingsApiUrl" placeholder="http://localhost:3100">
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+                    <button class="btn btn-secondary" onclick="resetSettings()">Reset to Default</button>
+                </div>
+            </div>
+            <div class="card mt-16" style="max-width:500px;" id="settingsProjectCard">
+                <h3 class="mb-8">Project Settings</h3>
+                <div class="form-group">
+                    <label>Title</label>
+                    <input type="text" id="settingsTitle" data-field="title">
+                </div>
+                <div class="form-group">
+                    <label>Logline</label>
+                    <textarea id="settingsLogline" data-field="logline" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Genre</label>
+                    <input type="text" id="settingsGenre" data-field="genre">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="settingsStatus" data-field="status">
+                        <option value="concept">Concept</option>
+                        <option value="script">Script</option>
+                        <option value="pre-production">Pre-Production</option>
+                        <option value="storyboard">Storyboard</option>
+                        <option value="production">Production</option>
+                        <option value="post-production">Post-Production</option>
+                        <option value="review">Review</option>
+                        <option value="export">Export</option>
+                        <option value="complete">Complete</option>
+                    </select>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveProjectSettings()">Save Project</button>
+                    <button class="btn btn-danger" onclick="deleteCurrentProject()">Delete Project</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         STATUS BAR
+         ════════════════════════════════════════════════════════════ -->
+    <div class="status-bar">
+        <span id="statusText">Ready</span>
+        <span id="statusConnection">Connecting...</span>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         MODALS (14)
+         ════════════════════════════════════════════════════════════ -->
+
+    <!-- New Project -->
+    <div class="modal-overlay" id="newProjectModal">
+        <div class="modal">
+            <div class="modal-header"><h3>New Project</h3><button class="modal-close" onclick="closeModal('newProjectModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Title</label><input type="text" data-field="title" placeholder="My Film"></div>
+                <div class="form-group"><label>Logline</label><textarea data-field="logline" rows="2" placeholder="A brief summary..."></textarea></div>
+                <div class="form-group"><label>Genre</label><input type="text" data-field="genre" placeholder="Drama, Sci-Fi, Thriller"></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="createProject()">Create Project</button>
+                    <button class="btn btn-secondary" onclick="closeModal('newProjectModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Character -->
+    <div class="modal-overlay" id="characterModal">
+        <div class="modal">
+            <div class="modal-header"><h3 id="characterModalTitle">New Character</h3><button class="modal-close" onclick="closeModal('characterModal')">&times;</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="characterEditId">
+                <div class="form-group"><label>Name</label><input type="text" data-field="name" placeholder="Character name"></div>
+                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="Brief description..."></textarea></div>
+                <div class="form-group"><label>Appearance Prompt</label><textarea data-field="appearance_prompt" rows="2" placeholder="Visual appearance for AI generation..."></textarea></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>Age Range</label><input type="text" data-field="age_range" placeholder="20s, 30-40"></div>
+                    <div class="form-group"><label>Gender</label><input type="text" data-field="gender" placeholder="Male, Female, etc."></div>
+                </div>
+                <div class="form-group"><label>Personality Notes</label><textarea data-field="personality_notes" rows="2" placeholder="Personality traits..."></textarea></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>LoRA ID</label><input type="text" data-field="lora_id" placeholder="Optional LoRA model"></div>
+                    <div class="form-group"><label>TI Token</label><input type="text" data-field="ti_token" placeholder="Textual inversion token"></div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveCharacter()">Save</button>
+                    <button class="btn btn-secondary" onclick="closeModal('characterModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Location -->
+    <div class="modal-overlay" id="locationModal">
+        <div class="modal">
+            <div class="modal-header"><h3 id="locationModalTitle">New Location</h3><button class="modal-close" onclick="closeModal('locationModal')">&times;</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="locationEditId">
+                <div class="form-group"><label>Name</label><input type="text" data-field="name" placeholder="Location name"></div>
+                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="Describe this location..."></textarea></div>
+                <div class="form-group"><label>Reference Prompt</label><textarea data-field="reference_prompt" rows="2" placeholder="Visual description for AI..."></textarea></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>Lighting Default</label><input type="text" data-field="lighting_default" placeholder="natural, dramatic..."></div>
+                    <div class="form-group"><label>Time of Day</label><input type="text" data-field="time_of_day_default" placeholder="day, night, dusk..."></div>
+                </div>
+                <div class="form-group"><label>Atmosphere Notes</label><textarea data-field="atmosphere_notes" rows="2" placeholder="Mood, atmosphere..."></textarea></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveLocation()">Save</button>
+                    <button class="btn btn-secondary" onclick="closeModal('locationModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Prop -->
+    <div class="modal-overlay" id="propModal">
+        <div class="modal">
+            <div class="modal-header"><h3 id="propModalTitle">New Prop</h3><button class="modal-close" onclick="closeModal('propModal')">&times;</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="propEditId">
+                <div class="form-group"><label>Name</label><input type="text" data-field="name" placeholder="Prop name"></div>
+                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="Describe this prop..."></textarea></div>
+                <div class="form-group"><label>Visual Prompt</label><textarea data-field="visual_prompt" rows="2" placeholder="Visual description for AI..."></textarea></div>
+                <div class="form-group"><label>Category</label>
+                    <select data-field="category">
+                        <option value="generic">Generic</option>
+                        <option value="weapon">Weapon</option>
+                        <option value="vehicle">Vehicle</option>
+                        <option value="furniture">Furniture</option>
+                        <option value="technology">Technology</option>
+                        <option value="food">Food/Drink</option>
+                        <option value="document">Document</option>
+                        <option value="clothing">Clothing</option>
+                        <option value="personal">Personal Item</option>
+                    </select>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveProp()">Save</button>
+                    <button class="btn btn-secondary" onclick="closeModal('propModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Register Asset -->
+    <div class="modal-overlay" id="assetModal">
+        <div class="modal">
+            <div class="modal-header"><h3>Register Asset</h3><button class="modal-close" onclick="closeModal('assetModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Asset Type</label>
+                    <select data-field="asset_type">
+                        <option value="keyframe">Keyframe</option>
+                        <option value="storyboard">Storyboard</option>
+                        <option value="video_raw">Video Raw</option>
+                        <option value="video_synced">Video Synced</option>
+                        <option value="video_final">Video Final</option>
+                        <option value="audio_dialogue">Audio Dialogue</option>
+                        <option value="audio_music">Audio Music</option>
+                        <option value="audio_sfx">Audio SFX</option>
+                        <option value="audio_ambient">Audio Ambient</option>
+                        <option value="thumbnail">Thumbnail</option>
+                        <option value="reference_image">Reference Image</option>
+                        <option value="character_sheet">Character Sheet</option>
+                        <option value="lora_weights">LoRA Weights</option>
+                        <option value="voice_sample">Voice Sample</option>
+                        <option value="subtitle">Subtitle</option>
+                        <option value="lut">LUT</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>File Path</label><input type="text" data-field="file_path" placeholder="/data/film/..."></div>
+                <div class="form-group"><label>File Name</label><input type="text" data-field="file_name" placeholder="filename.ext"></div>
+                <div class="form-group"><label>Format</label><input type="text" data-field="format" placeholder="png, wav, mp4..."></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="registerAsset()">Register</button>
+                    <button class="btn btn-secondary" onclick="closeModal('assetModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Music Cue -->
+    <div class="modal-overlay" id="musicCueModal">
+        <div class="modal">
+            <div class="modal-header"><h3>New Music Cue</h3><button class="modal-close" onclick="closeModal('musicCueModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Title</label><input type="text" data-field="title" placeholder="Cue title"></div>
+                <div class="form-group"><label>Cue Type</label>
+                    <select data-field="cue_type">
+                        <option value="score">Score</option>
+                        <option value="source">Source</option>
+                        <option value="sfx">SFX</option>
+                        <option value="ambient">Ambient</option>
+                        <option value="transition">Transition</option>
+                    </select>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>Mood</label><input type="text" data-field="mood" placeholder="Tense, Upbeat..."></div>
+                    <div class="form-group"><label>Genre</label><input type="text" data-field="genre" placeholder="Orchestral, Electronic..."></div>
+                </div>
+                <div class="form-group"><label>Tempo (BPM)</label><input type="number" data-field="tempo_bpm" placeholder="120"></div>
+                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="Describe the cue..."></textarea></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="createMusicCue()">Create</button>
+                    <button class="btn btn-secondary" onclick="closeModal('musicCueModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Color Preset -->
+    <div class="modal-overlay" id="colorPresetModal">
+        <div class="modal">
+            <div class="modal-header"><h3>New Color Preset</h3><button class="modal-close" onclick="closeModal('colorPresetModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Name</label><input type="text" data-field="name" placeholder="Preset name"></div>
+                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="Describe the look..."></textarea></div>
+                <div class="form-group"><label>Type</label>
+                    <select data-field="preset_type">
+                        <option value="color_grade">Color Grade</option>
+                        <option value="lut">LUT</option>
+                        <option value="film_grain">Film Grain</option>
+                        <option value="look">Look</option>
+                        <option value="composite">Composite</option>
+                    </select>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>Temperature <span id="tempVal">0</span></label><input type="range" data-field="temperature" min="-100" max="100" value="0" oninput="document.getElementById('tempVal').textContent=this.value"></div>
+                    <div class="form-group"><label>Tint <span id="tintVal">0</span></label><input type="range" data-field="tint" min="-100" max="100" value="0" oninput="document.getElementById('tintVal').textContent=this.value"></div>
+                    <div class="form-group"><label>Contrast <span id="contrastVal">0</span></label><input type="range" data-field="contrast" min="-100" max="100" value="0" oninput="document.getElementById('contrastVal').textContent=this.value"></div>
+                    <div class="form-group"><label>Saturation <span id="satVal">0</span></label><input type="range" data-field="saturation" min="-100" max="100" value="0" oninput="document.getElementById('satVal').textContent=this.value"></div>
+                    <div class="form-group"><label>Grain Intensity <span id="grainVal">0</span></label><input type="range" data-field="grain_intensity" min="0" max="100" value="0" oninput="document.getElementById('grainVal').textContent=this.value"></div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="createColorPreset()">Create</button>
+                    <button class="btn btn-secondary" onclick="closeModal('colorPresetModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Milestone -->
+    <div class="modal-overlay" id="milestoneModal">
+        <div class="modal">
+            <div class="modal-header"><h3>New Milestone</h3><button class="modal-close" onclick="closeModal('milestoneModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Title</label><input type="text" data-field="title" placeholder="Milestone title"></div>
+                <div class="form-group"><label>Phase</label>
+                    <select data-field="phase">
+                        <option value="concept">Concept</option>
+                        <option value="script">Script</option>
+                        <option value="pre-production">Pre-Production</option>
+                        <option value="storyboard">Storyboard</option>
+                        <option value="production">Production</option>
+                        <option value="post-production">Post-Production</option>
+                        <option value="review">Review</option>
+                        <option value="export">Export</option>
+                        <option value="complete">Complete</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Target Date</label><input type="date" data-field="target_date"></div>
+                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2"></textarea></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="createMilestone()">Create</button>
+                    <button class="btn btn-secondary" onclick="closeModal('milestoneModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Milestone -->
+    <div class="modal-overlay" id="editMilestoneModal">
+        <div class="modal">
+            <div class="modal-header"><h3>Edit Milestone</h3><button class="modal-close" onclick="closeModal('editMilestoneModal')">&times;</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="editMilestoneId">
+                <div class="form-group"><label>Status</label>
+                    <select data-field="status">
+                        <option value="pending">Pending</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="skipped">Skipped</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Completion %</label><input type="number" data-field="completion_pct" min="0" max="100" value="0"></div>
+                <div class="form-group"><label>Target Date</label><input type="date" data-field="target_date"></div>
+                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2"></textarea></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="updateMilestone()">Save</button>
+                    <button class="btn btn-secondary" onclick="closeModal('editMilestoneModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Note -->
+    <div class="modal-overlay" id="addNoteModal">
+        <div class="modal">
+            <div class="modal-header"><h3>Add Note</h3><button class="modal-close" onclick="closeModal('addNoteModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Note Type</label>
+                    <select data-field="note_type">
+                        <option value="general">General</option>
+                        <option value="direction">Direction</option>
+                        <option value="revision">Revision</option>
+                        <option value="camera">Camera</option>
+                        <option value="lighting">Lighting</option>
+                        <option value="performance">Performance</option>
+                        <option value="continuity">Continuity</option>
+                        <option value="vfx">VFX</option>
+                        <option value="audio">Audio</option>
+                        <option value="color">Color</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Priority</label>
+                    <select data-field="priority">
+                        <option value="normal">Normal</option>
+                        <option value="low">Low</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Content</label><textarea data-field="content" rows="3" placeholder="Note content..."></textarea></div>
+                <div class="form-group"><label>Author</label><input type="text" data-field="author" placeholder="Director"></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="addNote()">Add Note</button>
+                    <button class="btn btn-secondary" onclick="closeModal('addNoteModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Review Shot -->
+    <div class="modal-overlay" id="reviewShotModal">
+        <div class="modal">
+            <div class="modal-header"><h3>Review Shot</h3><button class="modal-close" onclick="closeModal('reviewShotModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Decision</label>
+                    <select id="reviewDecision">
+                        <option value="approve">Approve</option>
+                        <option value="reject">Reject</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Notes</label><textarea id="reviewNotes" rows="3" placeholder="Review notes..."></textarea></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="submitReview()">Submit Review</button>
+                    <button class="btn btn-secondary" onclick="closeModal('reviewShotModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         JAVASCRIPT
+         ════════════════════════════════════════════════════════════ -->
+    <script>
+    // ══════════════════════════════════════════════════════════════
+    // CONFIG & STATE
+    // ══════════════════════════════════════════════════════════════
+    const DEFAULT_API_BASE = 'http://localhost:3100';
+    let API_BASE = localStorage.getItem('film_api_url') || DEFAULT_API_BASE;
+    const API = () => API_BASE + '/film';
+
+    const state = {
+        currentProject: null,
+        projects: [],
+        scenes: [],
+        shots: [],
+        characters: [],
+        locations: [],
+        props: [],
+        assets: [],
+        musicCues: [],
+        colorPresets: [],
+        milestones: [],
+        dashboard: null,
+        statusBoard: null,
+        currentPage: 'projects',
+        assetFilter: '',
+        propFilter: '',
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    // API HELPERS
+    // ══════════════════════════════════════════════════════════════
+    async function api(path, opts = {}) {
+        const url = API() + path;
+        try {
+            const res = await fetch(url, {
+                headers: { 'Content-Type': 'application/json', ...opts.headers },
+                ...opts
+            });
+            if (res.status === 204) return {};
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+            return data;
+        } catch (err) {
+            if (err.message.includes('fetch')) throw new Error('Backend offline');
+            throw err;
+        }
+    }
+
+    function getModalData(modalId) {
+        const modal = document.getElementById(modalId);
+        const data = {};
+        modal.querySelectorAll('[data-field]').forEach(el => {
+            const val = el.type === 'range' || el.type === 'number' ? Number(el.value) : el.value.trim();
+            if (val !== '' && val !== 0) data[el.dataset.field] = val;
+        });
+        return data;
+    }
+
+    function setModalData(modalId, data) {
+        const modal = document.getElementById(modalId);
+        modal.querySelectorAll('[data-field]').forEach(el => {
+            const v = data[el.dataset.field];
+            el.value = v != null ? v : (el.type === 'range' || el.type === 'number' ? 0 : '');
+        });
+    }
+
+    function clearModal(modalId) {
+        const modal = document.getElementById(modalId);
+        modal.querySelectorAll('[data-field]').forEach(el => {
+            el.value = el.type === 'range' || el.type === 'number' ? (el.min || 0) : '';
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // NAVIGATION
+    // ══════════════════════════════════════════════════════════════
+    function navigateTo(page) {
+        state.currentPage = page;
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+        const pageEl = document.getElementById('page-' + page);
+        if (pageEl) pageEl.classList.add('active');
+
+        const navEl = document.querySelector(`#sidebarProjectNav .nav-item[data-page="${page}"]`);
+        if (navEl) navEl.classList.add('active');
+
+        // Load page data
+        const loaders = {
+            projects: loadProjects,
+            dashboard: loadDashboard,
+            screenplay: loadScriptVersions,
+            scenes: loadScenes,
+            shotboard: loadShotBoard,
+            characters: loadCharacters,
+            locations: loadLocations,
+            props: loadProps,
+            assets: loadAssets,
+            musiccues: loadMusicCues,
+            colorgrading: loadColorPresets,
+            milestones: loadMilestones,
+            notes: loadNotesPage,
+            renderhistory: loadRenderPage,
+            settings: loadSettings,
+        };
+        if (loaders[page]) loaders[page]();
+    }
+
+    function openProject(id) {
+        api('/projects/' + id).then(p => {
+            state.currentProject = p;
+            document.getElementById('sidebarProjectList').classList.add('hidden');
+            document.getElementById('sidebarProjectNav').classList.remove('hidden');
+            document.getElementById('navProjectName').textContent = p.title;
+            setStatusDot(p.status);
+            navigateTo('dashboard');
+        }).catch(err => setStatus('Error: ' + err.message));
+    }
+
+    function backToProjectList() {
+        state.currentProject = null;
+        document.getElementById('sidebarProjectNav').classList.add('hidden');
+        document.getElementById('sidebarProjectList').classList.remove('hidden');
+        navigateTo('projects');
+    }
+
+    function setStatusDot(status) {
+        const dot = document.getElementById('navStatusDot');
+        const colors = { concept: '#a78bfa', script: '#60a5fa', 'pre-production': '#fbbf24', storyboard: '#c084fc', production: '#4ade80', 'post-production': '#38bdf8', review: '#f472b6', export: '#fb923c', complete: '#22c55e' };
+        dot.style.background = colors[status] || '#888';
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // PROJECTS
+    // ══════════════════════════════════════════════════════════════
+    async function loadProjects() {
+        setStatus('Loading...');
+        try {
+            const data = await api('/projects');
+            state.projects = data.projects || [];
+
+            // Sidebar project list
+            document.getElementById('sidebarProjects').innerHTML = state.projects.length === 0 ? '' :
+                state.projects.map(p => `<button class="nav-item" onclick="openProject('${p.id}')"><span class="nav-icon">&#127916;</span>${esc(p.title)}</button>`).join('');
+
+            // Main project list
+            const el = document.getElementById('projectList');
+            if (state.projects.length === 0) {
+                el.innerHTML = `<div class="empty-state"><div class="icon">&#127916;</div><h3>No projects yet</h3><p>Create your first film project to start.</p></div>`;
+            } else {
+                el.innerHTML = state.projects.map(p => `
+                    <div class="project-card" onclick="openProject('${p.id}')">
+                        <div class="project-icon">&#127916;</div>
+                        <div class="project-info">
+                            <h3>${esc(p.title)}</h3>
+                            <p>${esc(p.logline || 'No logline')}</p>
+                            <div class="project-meta">${p.genre ? esc(p.genre) + ' &middot; ' : ''}${new Date(p.created_at).toLocaleDateString()}</div>
+                        </div>
+                        <span class="badge ${p.status}">${p.status.replace(/-/g, ' ')}</span>
+                    </div>
+                `).join('');
+            }
+            setStatus(state.projects.length + ' project(s)');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function createProject() {
+        const data = getModalData('newProjectModal');
+        if (!data.title) return;
+        try {
+            const p = await api('/projects', { method: 'POST', body: JSON.stringify(data) });
+            closeModal('newProjectModal');
+            clearModal('newProjectModal');
+            state.currentProject = p;
+            openProject(p.id);
+            setStatus('Project created');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteCurrentProject() {
+        if (!state.currentProject) return;
+        if (!confirm('Delete "' + state.currentProject.title + '"? This cannot be undone.')) return;
+        try {
+            await api('/projects/' + state.currentProject.id, { method: 'DELETE' });
+            backToProjectList();
+            setStatus('Project deleted');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // DASHBOARD
+    // ══════════════════════════════════════════════════════════════
+    async function loadDashboard() {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/dashboard');
+            state.dashboard = data;
+            const s = data.stats;
+
+            document.getElementById('dashStats').innerHTML = [
+                { v: s.scenes.total, l: 'Scenes' },
+                { v: s.shots.total, l: 'Shots' },
+                { v: s.characters, l: 'Characters' },
+                { v: s.locations, l: 'Locations' },
+                { v: s.assets.total, l: 'Assets' },
+                { v: s.estimated_duration_formatted || '0:00', l: 'Duration' },
+            ].map(x => `<div class="stat-card"><div class="value">${x.v}</div><div class="label">${x.l}</div></div>`).join('');
+
+            // Shot status bar
+            const total = s.shots.total || 1;
+            const statusColors = { pending: '#555', generating: '#60a5fa', complete: '#4ade80', approved: '#22c55e', failed: '#f87171' };
+            const bar = document.getElementById('dashShotBar');
+            const legend = document.getElementById('dashShotLegend');
+            const byStatus = {};
+            (s.shots.by_status || []).forEach(x => byStatus[x.status] = x.count);
+
+            bar.innerHTML = Object.entries(statusColors).map(([st, col]) => {
+                const cnt = byStatus[st] || 0;
+                return cnt ? `<div class="segment" style="width:${(cnt/total*100)}%;background:${col};"></div>` : '';
+            }).join('');
+            legend.innerHTML = Object.entries(statusColors).map(([st, col]) => {
+                const cnt = byStatus[st] || 0;
+                return `<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${col};margin-right:4px;"></span>${st} (${cnt})</span>`;
+            }).join('');
+
+            // Milestones preview
+            const upcoming = (data.milestones || []).filter(m => m.status !== 'completed').slice(0, 3);
+            document.getElementById('dashMilestones').innerHTML = upcoming.length === 0 ? '<p class="text-sm text-muted">No upcoming milestones.</p>' :
+                upcoming.map(m => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                    <span class="badge ${m.status}">${m.status}</span>
+                    <span style="font-size:12px;">${esc(m.title)}</span>
+                    <span style="font-size:10px;color:var(--text-muted);margin-left:auto;">${m.completion_pct || 0}%</span>
+                </div>`).join('');
+
+            setStatus('Dashboard loaded');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // SCREENPLAY
+    // ══════════════════════════════════════════════════════════════
+    async function uploadScreenplay() {
+        if (!state.currentProject) return;
+        const content = document.getElementById('scriptInput').value.trim();
+        if (!content) { setStatus('Paste a screenplay first'); return; }
+        setStatus('Uploading...');
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/script', {
+                method: 'POST', body: JSON.stringify({ content })
+            });
+            setStatus(`Script v${data.script.version} uploaded — ${data.scenes_extracted} scene(s)`);
+            loadScriptVersions();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function loadScriptVersions() {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/scripts');
+            const scripts = data.scripts || [];
+            document.getElementById('scriptVersionSelector').innerHTML = scripts.length > 0 ?
+                `<select style="width:auto;display:inline-block;font-size:11px;padding:4px 8px;" onchange="loadScriptVersion(this.value)">
+                    ${scripts.map(s => `<option value="${s.version}">v${s.version} — ${s.word_count} words</option>`).join('')}
+                </select>` : '';
+            document.getElementById('scriptVersions').innerHTML = scripts.length === 0 ? '<p class="text-sm text-muted" style="margin-top:16px;">No scripts uploaded.</p>' :
+                '<div class="section-label mt-16">Versions</div>' + scripts.map(s => `
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12px;">
+                        <span class="badge">v${s.version}</span>
+                        <span>${s.word_count.toLocaleString()} words</span>
+                        <span class="text-muted" style="margin-left:auto;">${new Date(s.created_at).toLocaleString()}</span>
+                    </div>`).join('');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function loadScriptVersion(ver) {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/scripts/' + ver);
+            if (data.content) document.getElementById('scriptInput').value = data.content;
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // SCENES
+    // ══════════════════════════════════════════════════════════════
+    async function loadScenes() {
+        if (!state.currentProject) return;
+        setStatus('Loading scenes...');
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/scenes');
+            state.scenes = data.scenes || [];
+            const el = document.getElementById('scenesList');
+            if (state.scenes.length === 0) {
+                el.innerHTML = `<div class="empty-state"><div class="icon">&#127916;</div><h3>No scenes yet</h3><p>Upload a screenplay to auto-extract scenes.</p></div>`;
+            } else {
+                el.innerHTML = state.scenes.map(s => `
+                    <div class="scene-row" id="scene-${s.id}">
+                        <div class="scene-row-header" onclick="toggleScene('${s.id}')">
+                            <div class="scene-number">${s.scene_number}</div>
+                            <div class="scene-info">
+                                <h4>${esc(s.int_ext || '')} ${esc(s.location || '')} ${s.time_of_day ? '- ' + esc(s.time_of_day) : ''}</h4>
+                                <p>${esc((s.characters_present || []).join(', ') || 'No characters')} &middot; ${s.shot_count || 0} shot(s)</p>
+                            </div>
+                            <span class="badge ${s.status}">${(s.status || '').replace(/_/g, ' ')}</span>
+                            <span class="scene-expand">&#9654;</span>
+                        </div>
+                        <div class="scene-shots" id="scene-shots-${s.id}"></div>
+                    </div>`).join('');
+            }
+            setStatus(state.scenes.length + ' scene(s)');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function toggleScene(sceneId) {
+        const row = document.getElementById('scene-' + sceneId);
+        if (row.classList.contains('expanded')) {
+            row.classList.remove('expanded');
+            return;
+        }
+        row.classList.add('expanded');
+        const shotsEl = document.getElementById('scene-shots-' + sceneId);
+        shotsEl.innerHTML = '<div class="loading-spinner"></div>';
+        try {
+            const data = await api('/scenes/' + sceneId);
+            const shots = data.shots || [];
+            shotsEl.innerHTML = shots.length === 0 ? '<p class="text-sm text-muted" style="padding:8px;">No shots in this scene.</p>' :
+                shots.map(sh => `
+                    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12px;">
+                        <span style="background:rgba(233,30,99,0.12);color:var(--primary);padding:2px 6px;border-radius:4px;font-weight:600;font-size:11px;">${esc(sh.shot_code)}</span>
+                        <span class="badge ${sh.status}">${sh.status}</span>
+                        <span class="text-muted">${sh.duration_ms ? (sh.duration_ms/1000).toFixed(1) + 's' : ''}</span>
+                    </div>`).join('');
+        } catch (err) { shotsEl.innerHTML = '<p class="text-sm" style="color:var(--error);">Failed to load shots.</p>'; }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // SHOT BOARD (Kanban)
+    // ══════════════════════════════════════════════════════════════
+    async function loadShotBoard() {
+        if (!state.currentProject) return;
+        setStatus('Loading shots...');
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/shotlist');
+            state.shots = data.shots || [];
+            const columns = { pending: [], generating: [], complete: [], approved: [] };
+            state.shots.forEach(s => {
+                const col = columns[s.status] || columns.pending;
+                col.push(s);
+            });
+
+            const labels = { pending: 'Pending', generating: 'Generating', complete: 'Complete', approved: 'Approved' };
+            document.getElementById('kanbanBoard').innerHTML = Object.entries(columns).map(([status, shots]) => `
+                <div class="kanban-column">
+                    <div class="kanban-column-header">
+                        <span>${labels[status]}</span>
+                        <span class="count">${shots.length}</span>
+                    </div>
+                    ${shots.length === 0 ? '<p class="text-sm text-muted" style="text-align:center;padding:20px 0;">Empty</p>' :
+                    shots.map(s => `
+                        <div class="kanban-card">
+                            <div class="shot-code">Sc${s.scene_number} / ${esc(s.shot_code)}</div>
+                            <div class="shot-meta">${esc(s.location || '')} ${s.duration_ms ? '&middot; ' + (s.duration_ms/1000).toFixed(1) + 's' : ''}</div>
+                        </div>`).join('')}
+                </div>`).join('');
+            setStatus(state.shots.length + ' shot(s)');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // CHARACTERS
+    // ══════════════════════════════════════════════════════════════
+    async function loadCharacters() {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/characters');
+            state.characters = data.characters || [];
+            const el = document.getElementById('characterGrid');
+            if (state.characters.length === 0) {
+                el.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#128100;</div><h3>No characters</h3><p>Add characters for your film production.</p></div>`;
+            } else {
+                el.innerHTML = state.characters.map(c => `
+                    <div class="entity-card">
+                        <div class="entity-card-header">
+                            <div class="entity-avatar">${esc(c.name.charAt(0))}</div>
+                            <div>
+                                <h3>${esc(c.name)}</h3>
+                                <p class="text-sm text-muted">${c.age_range ? esc(c.age_range) : ''}${c.gender ? ' &middot; ' + esc(c.gender) : ''}</p>
+                            </div>
+                        </div>
+                        <p>${esc(c.description || 'No description')}</p>
+                        <div class="tag-row">
+                            ${c.has_voice_profile ? '<span class="tag" style="background:rgba(34,197,94,0.15);color:#4ade80;">Voice</span>' : ''}
+                            ${c.costume_count > 0 ? '<span class="tag">' + c.costume_count + ' costume(s)</span>' : ''}
+                            ${c.lora_id ? '<span class="tag">LoRA</span>' : ''}
+                        </div>
+                        <div class="card-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="editCharacter('${c.id}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteCharacter('${c.id}')">Delete</button>
+                        </div>
+                    </div>`).join('');
+            }
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function editCharacter(id) {
+        const c = state.characters.find(x => x.id === id);
+        if (!c) return;
+        document.getElementById('characterModalTitle').textContent = 'Edit Character';
+        document.getElementById('characterEditId').value = id;
+        setModalData('characterModal', c);
+        showModal('characterModal');
+    }
+
+    async function saveCharacter() {
+        if (!state.currentProject) return;
+        const editId = document.getElementById('characterEditId').value;
+        const data = getModalData('characterModal');
+        if (!data.name) return;
+        try {
+            if (editId) {
+                await api('/characters/' + editId, { method: 'PUT', body: JSON.stringify(data) });
+            } else {
+                await api('/projects/' + state.currentProject.id + '/characters', { method: 'POST', body: JSON.stringify(data) });
+            }
+            closeModal('characterModal');
+            clearModal('characterModal');
+            document.getElementById('characterEditId').value = '';
+            document.getElementById('characterModalTitle').textContent = 'New Character';
+            loadCharacters();
+            setStatus('Character saved');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteCharacter(id) {
+        if (!confirm('Delete this character?')) return;
+        try {
+            await api('/characters/' + id, { method: 'DELETE' });
+            loadCharacters();
+            setStatus('Character deleted');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // LOCATIONS
+    // ══════════════════════════════════════════════════════════════
+    async function loadLocations() {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/locations');
+            state.locations = data.locations || [];
+            const el = document.getElementById('locationGrid');
+            if (state.locations.length === 0) {
+                el.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#128205;</div><h3>No locations</h3><p>Add filming locations.</p></div>`;
+            } else {
+                el.innerHTML = state.locations.map(l => `
+                    <div class="entity-card">
+                        <div class="entity-card-header">
+                            <div class="entity-avatar" style="border-radius:8px;">&#128205;</div>
+                            <div>
+                                <h3>${esc(l.name)}</h3>
+                                <p class="text-sm text-muted">${l.scene_count || 0} scene(s)</p>
+                            </div>
+                        </div>
+                        <p>${esc(l.description || 'No description')}</p>
+                        <div class="tag-row">
+                            ${l.lighting_default ? '<span class="tag">' + esc(l.lighting_default) + '</span>' : ''}
+                            ${l.time_of_day_default ? '<span class="tag">' + esc(l.time_of_day_default) + '</span>' : ''}
+                        </div>
+                        <div class="card-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="editLocation('${l.id}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteLocation('${l.id}')">Delete</button>
+                        </div>
+                    </div>`).join('');
+            }
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function editLocation(id) {
+        const l = state.locations.find(x => x.id === id);
+        if (!l) return;
+        document.getElementById('locationModalTitle').textContent = 'Edit Location';
+        document.getElementById('locationEditId').value = id;
+        setModalData('locationModal', l);
+        showModal('locationModal');
+    }
+
+    async function saveLocation() {
+        if (!state.currentProject) return;
+        const editId = document.getElementById('locationEditId').value;
+        const data = getModalData('locationModal');
+        if (!data.name) return;
+        try {
+            if (editId) {
+                await api('/locations/' + editId, { method: 'PUT', body: JSON.stringify(data) });
+            } else {
+                await api('/projects/' + state.currentProject.id + '/locations', { method: 'POST', body: JSON.stringify(data) });
+            }
+            closeModal('locationModal');
+            clearModal('locationModal');
+            document.getElementById('locationEditId').value = '';
+            document.getElementById('locationModalTitle').textContent = 'New Location';
+            loadLocations();
+            setStatus('Location saved');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteLocation(id) {
+        if (!confirm('Delete this location?')) return;
+        try {
+            await api('/locations/' + id, { method: 'DELETE' });
+            loadLocations();
+            setStatus('Location deleted');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // PROPS
+    // ══════════════════════════════════════════════════════════════
+    async function loadProps() {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/props');
+            state.props = data.props || [];
+            const categories = ['all', ...new Set(state.props.map(p => p.category || 'generic'))];
+            document.getElementById('propFilters').innerHTML = categories.map(c =>
+                `<button class="filter-pill ${c === (state.propFilter || 'all') ? 'active' : ''}" onclick="filterProps('${c}')">${c}</button>`
+            ).join('');
+
+            const filtered = state.propFilter && state.propFilter !== 'all' ?
+                state.props.filter(p => (p.category || 'generic') === state.propFilter) : state.props;
+
+            const el = document.getElementById('propGrid');
+            if (filtered.length === 0) {
+                el.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#127917;</div><h3>No props</h3><p>Add props used in your production.</p></div>`;
+            } else {
+                el.innerHTML = filtered.map(p => `
+                    <div class="entity-card">
+                        <div class="entity-card-header">
+                            <div class="entity-avatar" style="border-radius:8px;font-size:14px;">&#127917;</div>
+                            <div>
+                                <h3>${esc(p.name)}</h3>
+                                <span class="badge">${esc(p.category || 'generic')}</span>
+                            </div>
+                        </div>
+                        <p>${esc(p.description || 'No description')}</p>
+                        <div class="card-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="editProp('${p.id}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteProp('${p.id}')">Delete</button>
+                        </div>
+                    </div>`).join('');
+            }
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function filterProps(cat) { state.propFilter = cat; loadProps(); }
+
+    function editProp(id) {
+        const p = state.props.find(x => x.id === id);
+        if (!p) return;
+        document.getElementById('propModalTitle').textContent = 'Edit Prop';
+        document.getElementById('propEditId').value = id;
+        setModalData('propModal', p);
+        showModal('propModal');
+    }
+
+    async function saveProp() {
+        if (!state.currentProject) return;
+        const editId = document.getElementById('propEditId').value;
+        const data = getModalData('propModal');
+        if (!data.name) return;
+        try {
+            if (editId) {
+                await api('/props/' + editId, { method: 'PUT', body: JSON.stringify(data) });
+            } else {
+                await api('/projects/' + state.currentProject.id + '/props', { method: 'POST', body: JSON.stringify(data) });
+            }
+            closeModal('propModal');
+            clearModal('propModal');
+            document.getElementById('propEditId').value = '';
+            document.getElementById('propModalTitle').textContent = 'New Prop';
+            loadProps();
+            setStatus('Prop saved');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteProp(id) {
+        if (!confirm('Delete this prop?')) return;
+        try {
+            await api('/props/' + id, { method: 'DELETE' });
+            loadProps();
+            setStatus('Prop deleted');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // ASSETS
+    // ══════════════════════════════════════════════════════════════
+    async function loadAssets() {
+        if (!state.currentProject) return;
+        try {
+            const typeFilter = state.assetFilter ? '?type=' + state.assetFilter : '';
+            const data = await api('/projects/' + state.currentProject.id + '/assets' + typeFilter);
+            state.assets = data.assets || [];
+
+            const groups = { images: ['keyframe', 'storyboard', 'thumbnail', 'reference_image', 'character_sheet'], video: ['video_raw', 'video_synced', 'video_final'], audio: ['audio_dialogue', 'audio_music', 'audio_sfx', 'audio_ambient', 'audio_mix', 'voice_sample'], other: ['lora_weights', 'subtitle', 'lut', 'other', 'export_package', 'fcpxml', 'edl', 'premiere_xml'] };
+            const filterCats = [{ label: 'All', value: '' }, ...Object.entries(groups).map(([g]) => ({ label: g.charAt(0).toUpperCase() + g.slice(1), value: g }))];
+
+            document.getElementById('assetFilters').innerHTML = filterCats.map(f =>
+                `<button class="filter-pill ${f.value === state.assetFilter ? 'active' : ''}" onclick="filterAssets('${f.value}')">${f.label} (${f.value ? state.assets.filter(a => (groups[f.value] || []).includes(a.asset_type)).length : state.assets.length})</button>`
+            ).join('');
+
+            let filtered = state.assets;
+            if (state.assetFilter && groups[state.assetFilter]) {
+                filtered = state.assets.filter(a => groups[state.assetFilter].includes(a.asset_type));
+            }
+
+            document.getElementById('assetTableWrap').innerHTML = filtered.length === 0 ?
+                `<div class="empty-state"><div class="icon">&#128230;</div><h3>No assets</h3><p>Register assets as they are generated.</p></div>` :
+                `<table class="asset-table">
+                    <tr><th>Type</th><th>Name</th><th>Format</th><th>Size</th><th>Date</th><th></th></tr>
+                    ${filtered.map(a => `<tr>
+                        <td><span class="badge">${esc(a.asset_type)}</span></td>
+                        <td>${esc(a.file_name || a.file_path)}</td>
+                        <td>${esc(a.format || '-')}</td>
+                        <td>${a.size_bytes ? formatBytes(a.size_bytes) : '-'}</td>
+                        <td class="text-muted">${new Date(a.created_at).toLocaleDateString()}</td>
+                        <td><button class="btn btn-danger btn-sm" onclick="deleteAsset('${a.id}')">Del</button></td>
+                    </tr>`).join('')}
+                </table>`;
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function filterAssets(group) { state.assetFilter = group; loadAssets(); }
+
+    async function registerAsset() {
+        if (!state.currentProject) return;
+        const data = getModalData('assetModal');
+        if (!data.file_path || !data.asset_type) return;
+        try {
+            await api('/projects/' + state.currentProject.id + '/assets', { method: 'POST', body: JSON.stringify(data) });
+            closeModal('assetModal');
+            clearModal('assetModal');
+            loadAssets();
+            setStatus('Asset registered');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteAsset(id) {
+        if (!confirm('Delete this asset?')) return;
+        try {
+            await api('/assets/' + id, { method: 'DELETE' });
+            loadAssets();
+            setStatus('Asset deleted');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // MUSIC CUES
+    // ══════════════════════════════════════════════════════════════
+    async function loadMusicCues() {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/music-cues');
+            state.musicCues = data.music_cues || [];
+            const el = document.getElementById('musicCueList');
+            if (state.musicCues.length === 0) {
+                el.innerHTML = `<div class="empty-state"><div class="icon">&#127925;</div><h3>No music cues</h3><p>Add music cues for your scenes.</p></div>`;
+            } else {
+                const icons = { score: '&#127932;', source: '&#127911;', sfx: '&#128165;', ambient: '&#127811;', transition: '&#127796;' };
+                el.innerHTML = state.musicCues.map(c => `
+                    <div class="cue-card">
+                        <div class="cue-icon ${c.cue_type}">${icons[c.cue_type] || '&#127925;'}</div>
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:13px;font-weight:600;">${esc(c.title || 'Untitled')}</div>
+                            <div class="text-sm text-muted">${esc(c.description || '')}</div>
+                            <div class="tag-row" style="margin-top:4px;">
+                                <span class="badge">${c.cue_type}</span>
+                                ${c.mood ? '<span class="tag">' + esc(c.mood) + '</span>' : ''}
+                                ${c.genre ? '<span class="tag">' + esc(c.genre) + '</span>' : ''}
+                                ${c.tempo_bpm ? '<span class="tag">' + c.tempo_bpm + ' BPM</span>' : ''}
+                            </div>
+                        </div>
+                    </div>`).join('');
+            }
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function createMusicCue() {
+        if (!state.currentProject) return;
+        const data = getModalData('musicCueModal');
+        try {
+            await api('/projects/' + state.currentProject.id + '/music-cues', { method: 'POST', body: JSON.stringify(data) });
+            closeModal('musicCueModal');
+            clearModal('musicCueModal');
+            loadMusicCues();
+            setStatus('Music cue created');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // COLOR GRADING
+    // ══════════════════════════════════════════════════════════════
+    async function loadColorPresets() {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/color-presets');
+            state.colorPresets = data.color_presets || [];
+            const el = document.getElementById('colorPresetGrid');
+            if (state.colorPresets.length === 0) {
+                el.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#127912;</div><h3>No color presets</h3><p>Create color grading presets.</p></div>`;
+            } else {
+                el.innerHTML = state.colorPresets.map(p => {
+                    const temp = Number(p.temperature) || 0;
+                    const sat = Number(p.saturation) || 0;
+                    const con = Number(p.contrast) || 0;
+                    const warmHue = `hsl(${30 + temp * 0.3}, ${50 + sat * 0.3}%, ${40 + con * 0.1}%)`;
+                    const midHue = `hsl(${200 + temp * 0.2}, ${40 + sat * 0.2}%, ${45 + con * 0.1}%)`;
+                    const coolHue = `hsl(${240 - temp * 0.3}, ${30 + sat * 0.2}%, ${35 + con * 0.15}%)`;
+                    return `<div class="color-preset-card">
+                        <div class="color-preview">
+                            <div style="background:${warmHue};"></div>
+                            <div style="background:${midHue};"></div>
+                            <div style="background:${coolHue};"></div>
+                        </div>
+                        <h3 style="font-size:13px;">${esc(p.name)}</h3>
+                        <p class="text-sm text-muted">${esc(p.description || p.preset_type)}</p>
+                        <div class="tag-row" style="margin-top:6px;">
+                            <span class="tag">T:${temp}</span>
+                            <span class="tag">S:${sat}</span>
+                            <span class="tag">C:${con}</span>
+                            ${Number(p.grain_intensity) > 0 ? '<span class="tag">Grain:' + p.grain_intensity + '</span>' : ''}
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function createColorPreset() {
+        if (!state.currentProject) return;
+        const data = getModalData('colorPresetModal');
+        if (!data.name) return;
+        try {
+            await api('/projects/' + state.currentProject.id + '/color-presets', { method: 'POST', body: JSON.stringify(data) });
+            closeModal('colorPresetModal');
+            clearModal('colorPresetModal');
+            loadColorPresets();
+            setStatus('Preset created');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // MILESTONES
+    // ══════════════════════════════════════════════════════════════
+    async function loadMilestones() {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/milestones');
+            state.milestones = data.milestones || [];
+            const el = document.getElementById('milestoneTimeline');
+            if (state.milestones.length === 0) {
+                el.innerHTML = '<p class="text-sm text-muted">No milestones.</p>';
+            } else {
+                el.innerHTML = state.milestones.map(m => `
+                    <div class="milestone-node ${m.status}">
+                        <div class="flex-between">
+                            <div>
+                                <span style="font-size:13px;font-weight:600;">${esc(m.title)}</span>
+                                <span class="badge ${m.phase}" style="margin-left:8px;">${esc(m.phase)}</span>
+                                <span class="badge ${m.status}" style="margin-left:4px;">${m.status}</span>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" onclick="showEditMilestone('${m.id}')">Edit</button>
+                        </div>
+                        ${m.description ? '<p class="text-sm text-muted" style="margin-top:4px;">' + esc(m.description) + '</p>' : ''}
+                        <div class="milestone-progress"><div class="milestone-progress-fill" style="width:${m.completion_pct || 0}%;"></div></div>
+                        <div style="display:flex;gap:12px;font-size:10px;color:var(--text-muted);margin-top:4px;">
+                            <span>${m.completion_pct || 0}% complete</span>
+                            ${m.target_date ? '<span>Target: ' + m.target_date + '</span>' : ''}
+                            ${m.actual_date ? '<span>Actual: ' + m.actual_date + '</span>' : ''}
+                        </div>
+                    </div>`).join('');
+            }
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function createMilestone() {
+        if (!state.currentProject) return;
+        const data = getModalData('milestoneModal');
+        if (!data.title) return;
+        try {
+            await api('/projects/' + state.currentProject.id + '/milestones', { method: 'POST', body: JSON.stringify(data) });
+            closeModal('milestoneModal');
+            clearModal('milestoneModal');
+            loadMilestones();
+            setStatus('Milestone created');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function showEditMilestone(id) {
+        const m = state.milestones.find(x => x.id === id);
+        if (!m) return;
+        document.getElementById('editMilestoneId').value = id;
+        setModalData('editMilestoneModal', m);
+        showModal('editMilestoneModal');
+    }
+
+    async function updateMilestone() {
+        const id = document.getElementById('editMilestoneId').value;
+        if (!id || !state.currentProject) return;
+        const data = getModalData('editMilestoneModal');
+        try {
+            await api('/projects/' + state.currentProject.id + '/milestones/' + id, { method: 'PUT', body: JSON.stringify(data) });
+            closeModal('editMilestoneModal');
+            loadMilestones();
+            setStatus('Milestone updated');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // NOTES & REVIEWS
+    // ══════════════════════════════════════════════════════════════
+    async function loadNotesPage() {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/status-board');
+            state.statusBoard = data;
+            const sceneSelect = document.getElementById('noteSceneSelect');
+            sceneSelect.innerHTML = '<option value="">Select scene...</option>' +
+                (data.scenes || []).map(s => `<option value="${s.id}">Sc ${s.scene_number} — ${esc(s.location || '')}</option>`).join('');
+            document.getElementById('noteShotSelect').innerHTML = '<option value="">Select shot...</option>';
+            document.getElementById('notesList').innerHTML = '<p class="text-sm text-muted">Select a scene and shot to view notes.</p>';
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function onNoteSceneChange() {
+        const sceneId = document.getElementById('noteSceneSelect').value;
+        const scene = (state.statusBoard?.scenes || []).find(s => s.id === sceneId);
+        const shotSelect = document.getElementById('noteShotSelect');
+        shotSelect.innerHTML = '<option value="">Select shot...</option>' +
+            (scene?.shots || []).map(s => `<option value="${s.id}">${esc(s.shot_code)} (${s.status})</option>`).join('');
+        document.getElementById('notesList').innerHTML = '';
+    }
+
+    async function loadShotNotes() {
+        const shotId = document.getElementById('noteShotSelect').value;
+        if (!shotId) return;
+        try {
+            const data = await api('/shots/' + shotId + '/notes');
+            const notes = data.notes || [];
+            document.getElementById('notesList').innerHTML = notes.length === 0 ?
+                '<p class="text-sm text-muted">No notes for this shot.</p>' :
+                notes.map(n => `
+                    <div class="note-item ${n.resolved ? 'resolved' : ''}">
+                        <div class="note-header">
+                            <span class="badge ${n.note_type}">${n.note_type}</span>
+                            <span class="badge ${n.priority}">${n.priority}</span>
+                            <span class="text-sm text-muted">${esc(n.author || 'unknown')}</span>
+                            <span class="text-sm text-muted" style="margin-left:auto;">${new Date(n.created_at).toLocaleString()}</span>
+                            ${n.resolved ? '<span class="badge completed">Resolved</span>' : `<button class="btn btn-sm btn-secondary" onclick="resolveNote('${n.id}')">Resolve</button>`}
+                        </div>
+                        <div class="note-content">${esc(n.content)}</div>
+                    </div>`).join('');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function showAddNoteModal() {
+        if (!document.getElementById('noteShotSelect').value) { setStatus('Select a shot first'); return; }
+        showModal('addNoteModal');
+    }
+
+    async function addNote() {
+        const shotId = document.getElementById('noteShotSelect').value;
+        if (!shotId) return;
+        const data = getModalData('addNoteModal');
+        if (!data.content) return;
+        try {
+            await api('/shots/' + shotId + '/notes', { method: 'POST', body: JSON.stringify(data) });
+            closeModal('addNoteModal');
+            clearModal('addNoteModal');
+            loadShotNotes();
+            setStatus('Note added');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function resolveNote(noteId) {
+        try {
+            await api('/notes/' + noteId, { method: 'PUT', body: JSON.stringify({ resolved: true }) });
+            loadShotNotes();
+            setStatus('Note resolved');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function showReviewModal() {
+        if (!document.getElementById('noteShotSelect').value) { setStatus('Select a shot first'); return; }
+        showModal('reviewShotModal');
+    }
+
+    async function submitReview() {
+        const shotId = document.getElementById('noteShotSelect').value;
+        if (!shotId) return;
+        const approved = document.getElementById('reviewDecision').value === 'approve';
+        const notes = document.getElementById('reviewNotes').value.trim();
+        try {
+            await api('/shots/' + shotId + '/review', { method: 'POST', body: JSON.stringify({ approved, notes }) });
+            closeModal('reviewShotModal');
+            document.getElementById('reviewNotes').value = '';
+            loadShotNotes();
+            setStatus('Review submitted — shot ' + (approved ? 'approved' : 'rejected'));
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // RENDER HISTORY
+    // ══════════════════════════════════════════════════════════════
+    async function loadRenderPage() {
+        if (!state.currentProject) return;
+        // Load shots from status board for selector
+        try {
+            if (!state.statusBoard) {
+                const data = await api('/projects/' + state.currentProject.id + '/status-board');
+                state.statusBoard = data;
+            }
+            const allShots = [];
+            (state.statusBoard?.scenes || []).forEach(s => (s.shots || []).forEach(sh => allShots.push({ ...sh, scene_number: s.scene_number })));
+            document.getElementById('renderShotSelect').innerHTML = '<option value="">Select shot...</option>' +
+                allShots.map(s => `<option value="${s.id}">Sc${s.scene_number}/${esc(s.shot_code)}</option>`).join('');
+            document.getElementById('renderTableWrap').innerHTML = '<p class="text-sm text-muted">Select a shot to view render history.</p>';
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function loadRenderHistory() {
+        const shotId = document.getElementById('renderShotSelect').value;
+        if (!shotId) return;
+        try {
+            const data = await api('/shots/' + shotId + '/renders');
+            const renders = data.renders || [];
+            document.getElementById('renderTableWrap').innerHTML = renders.length === 0 ?
+                '<p class="text-sm text-muted">No renders for this shot.</p>' :
+                `<table class="render-table">
+                    <tr><th>Ver</th><th>Step</th><th>Model</th><th>Seed</th><th>Steps</th><th>Guidance</th><th>Mode</th><th>Duration</th><th>Date</th></tr>
+                    ${renders.map(r => `<tr>
+                        <td>${r.version}</td>
+                        <td><span class="badge">${r.step}</span></td>
+                        <td>${esc(r.model_id || '-')}</td>
+                        <td>${r.seed ?? '-'}</td>
+                        <td>${r.steps || '-'}</td>
+                        <td>${r.guidance || '-'}</td>
+                        <td><span class="badge ${r.mode === 'locked' ? 'approved' : ''}">${r.mode}</span></td>
+                        <td>${r.inference_ms ? (r.inference_ms/1000).toFixed(1) + 's' : '-'}</td>
+                        <td class="text-muted">${new Date(r.created_at).toLocaleDateString()}</td>
+                    </tr>`).join('')}
+                </table>`;
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // SETTINGS
+    // ══════════════════════════════════════════════════════════════
+    function loadSettings() {
+        document.getElementById('settingsApiUrl').value = API_BASE;
+        const pc = document.getElementById('settingsProjectCard');
+        if (state.currentProject) {
+            pc.classList.remove('hidden');
+            document.getElementById('settingsTitle').value = state.currentProject.title || '';
+            document.getElementById('settingsLogline').value = state.currentProject.logline || '';
+            document.getElementById('settingsGenre').value = state.currentProject.genre || '';
+            document.getElementById('settingsStatus').value = state.currentProject.status || 'concept';
+        } else {
+            pc.classList.add('hidden');
+        }
+    }
+
+    function saveSettings() {
+        const url = document.getElementById('settingsApiUrl').value.trim().replace(/\/+$/, '');
+        if (url) {
+            API_BASE = url;
+            localStorage.setItem('film_api_url', url);
+            setStatus('API URL saved: ' + url);
+            checkHealth();
+        }
+    }
+
+    function resetSettings() {
+        API_BASE = DEFAULT_API_BASE;
+        localStorage.removeItem('film_api_url');
+        document.getElementById('settingsApiUrl').value = DEFAULT_API_BASE;
+        setStatus('Settings reset');
+        checkHealth();
+    }
+
+    async function saveProjectSettings() {
+        if (!state.currentProject) return;
+        const data = {
+            title: document.getElementById('settingsTitle').value.trim(),
+            logline: document.getElementById('settingsLogline').value.trim(),
+            genre: document.getElementById('settingsGenre').value.trim(),
+            status: document.getElementById('settingsStatus').value,
+        };
+        try {
+            const p = await api('/projects/' + state.currentProject.id, { method: 'PUT', body: JSON.stringify(data) });
+            state.currentProject = { ...state.currentProject, ...p };
+            document.getElementById('navProjectName').textContent = state.currentProject.title;
+            setStatusDot(state.currentProject.status);
+            setStatus('Project updated');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // MODAL HELPERS
+    // ══════════════════════════════════════════════════════════════
+    function showModal(id) {
+        document.getElementById(id).classList.add('open');
+        const firstInput = document.querySelector('#' + id + ' input[type="text"], #' + id + ' textarea');
+        if (firstInput) setTimeout(() => firstInput.focus(), 50);
+    }
+
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    // Close on Escape
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+        }
+    });
+
+    // Close on backdrop click
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+        overlay.addEventListener('click', e => {
+            if (e.target === overlay) overlay.classList.remove('open');
+        });
+    });
+
+    // ══════════════════════════════════════════════════════════════
+    // UTILITIES
+    // ══════════════════════════════════════════════════════════════
+    function esc(str) {
+        if (str == null) return '';
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function setStatus(text) { document.getElementById('statusText').textContent = text; }
+
+    function formatBytes(bytes) {
+        if (!bytes) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    async function checkHealth() {
+        try {
+            const res = await fetch(API_BASE + '/api/health');
+            if (res.ok) {
+                document.getElementById('statusConnection').innerHTML = '<span class="status-dot-online">&#9679;</span> Connected';
+            } else throw new Error();
+        } catch (e) {
+            document.getElementById('statusConnection').innerHTML = '<span class="status-dot-offline">&#9679;</span> Offline';
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // INIT
+    // ══════════════════════════════════════════════════════════════
+    checkHealth();
+    loadProjects();
+    </script>
+</body>
+</html>

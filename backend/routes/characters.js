@@ -1,0 +1,281 @@
+/**
+ * Character CRUD + voice profiles + costumes
+ * POST/GET/PUT/DELETE /film/projects/:id/characters
+ * GET /film/characters/:id
+ * POST/GET /film/characters/:id/voice
+ * POST/GET /film/characters/:id/costumes
+ */
+const { db, generateId } = require('../db/database');
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function handleCharacters(req, res, urlParts, query) {
+    // /film/projects/:id/characters — parts: ['film', 'projects', id, 'characters']
+    if (urlParts[1] === 'projects' && urlParts[3] === 'characters') {
+        const projectId = urlParts[2];
+        if (!UUID_RE.test(projectId)) return badRequest(res, 'Invalid project ID');
+
+        if (req.method === 'GET') return listCharacters(req, res, projectId);
+        if (req.method === 'POST') return createCharacter(req, res, projectId);
+    }
+
+    // /film/characters/:id — parts: ['film', 'characters', id]
+    // /film/characters/:id/voice
+    // /film/characters/:id/costumes
+    if (urlParts[1] === 'characters' && urlParts[2]) {
+        const charId = urlParts[2];
+        if (!UUID_RE.test(charId)) return badRequest(res, 'Invalid character ID');
+        const sub = urlParts[3];
+
+        if (sub === 'voice') {
+            if (req.method === 'GET') return getVoiceProfile(req, res, charId);
+            if (req.method === 'POST') return createVoiceProfile(req, res, charId);
+        }
+        if (sub === 'costumes') {
+            if (req.method === 'GET') return listCostumes(req, res, charId);
+            if (req.method === 'POST') return createCostume(req, res, charId);
+        }
+
+        if (!sub) {
+            if (req.method === 'GET') return getCharacter(req, res, charId);
+            if (req.method === 'PUT') return updateCharacter(req, res, charId);
+            if (req.method === 'DELETE') return deleteCharacter(req, res, charId);
+        }
+    }
+
+    res.writeHead(405, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
+}
+
+function badRequest(res, msg) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: msg }));
+}
+
+// --- Characters ---
+
+function listCharacters(req, res, projectId) {
+    const rows = db.prepare(
+        'SELECT * FROM film_characters WHERE project_id = ? ORDER BY name'
+    ).all(projectId);
+
+    // Attach costume count and voice profile status
+    const costumeCount = db.prepare('SELECT COUNT(*) AS count FROM film_costumes WHERE character_id = ?');
+    const voiceCheck = db.prepare('SELECT id FROM film_voice_profiles WHERE character_id = ? LIMIT 1');
+
+    for (const ch of rows) {
+        ch.costume_count = costumeCount.get(ch.id).count;
+        ch.has_voice_profile = !!voiceCheck.get(ch.id);
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ characters: rows }));
+}
+
+function getCharacter(req, res, charId) {
+    const ch = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(charId);
+    if (!ch) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Character not found' }));
+        return;
+    }
+
+    // Include costumes
+    ch.costumes = db.prepare('SELECT * FROM film_costumes WHERE character_id = ? ORDER BY name').all(charId);
+
+    // Include voice profile
+    ch.voice_profile = db.prepare('SELECT * FROM film_voice_profiles WHERE character_id = ?').get(charId) || null;
+
+    // Include scene appearances
+    ch.scene_appearances = db.prepare(`
+        SELECT sc.scene_id, s.scene_number, s.location, s.time_of_day,
+               sc.costume_id, sc.dialogue_lines, sc.screen_time_ms
+        FROM film_scene_characters sc
+        JOIN film_scenes s ON sc.scene_id = s.id
+        WHERE sc.character_id = ?
+        ORDER BY s.scene_number
+    `).all(charId);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(ch));
+}
+
+function createCharacter(req, res, projectId) {
+    const body = req.body;
+    if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
+        return badRequest(res, 'Character name is required');
+    }
+
+    const id = generateId();
+    const now = new Date().toISOString();
+
+    db.prepare(`
+        INSERT INTO film_characters (id, project_id, name, description, appearance_prompt,
+            personality_notes, age_range, gender, ethnicity, build, hair, distinguishing,
+            reference_images, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+        id, projectId,
+        body.name.trim().slice(0, 200),
+        (body.description || '').slice(0, 5000),
+        (body.appearance_prompt || '').slice(0, 2000),
+        (body.personality_notes || '').slice(0, 2000),
+        (body.age_range || '').slice(0, 50),
+        (body.gender || '').slice(0, 50),
+        (body.ethnicity || '').slice(0, 100),
+        (body.build || '').slice(0, 100),
+        (body.hair || '').slice(0, 200),
+        (body.distinguishing || '').slice(0, 500),
+        JSON.stringify(body.reference_images || []),
+        now, now
+    );
+
+    const row = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(id);
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(row));
+}
+
+function updateCharacter(req, res, charId) {
+    const body = req.body;
+    const fields = [];
+    const values = [];
+
+    const textFields = {
+        name: 200, description: 5000, appearance_prompt: 2000,
+        personality_notes: 2000, age_range: 50, gender: 50,
+        ethnicity: 100, build: 100, hair: 200, distinguishing: 500,
+        lora_id: 200, ti_token: 200
+    };
+
+    for (const [field, maxLen] of Object.entries(textFields)) {
+        if (body[field] !== undefined) {
+            fields.push(`${field} = ?`);
+            values.push(String(body[field]).slice(0, maxLen));
+        }
+    }
+
+    if (body.reference_images !== undefined) {
+        fields.push('reference_images = ?');
+        values.push(JSON.stringify(body.reference_images));
+    }
+
+    if (fields.length === 0) return badRequest(res, 'No valid fields to update');
+
+    fields.push("updated_at = datetime('now')");
+    values.push(charId);
+
+    const result = db.prepare(`UPDATE film_characters SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    if (result.changes === 0) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Character not found' }));
+        return;
+    }
+
+    const row = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(charId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(row));
+}
+
+function deleteCharacter(req, res, charId) {
+    const result = db.prepare('DELETE FROM film_characters WHERE id = ?').run(charId);
+    if (result.changes === 0) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Character not found' }));
+        return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ deleted: true }));
+}
+
+// --- Voice Profiles ---
+
+function getVoiceProfile(req, res, charId) {
+    const profile = db.prepare('SELECT * FROM film_voice_profiles WHERE character_id = ?').get(charId);
+    if (!profile) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No voice profile for this character' }));
+        return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(profile));
+}
+
+function createVoiceProfile(req, res, charId) {
+    const ch = db.prepare('SELECT id, project_id FROM film_characters WHERE id = ?').get(charId);
+    if (!ch) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Character not found' }));
+        return;
+    }
+
+    const body = req.body;
+    const id = generateId();
+    const now = new Date().toISOString();
+
+    db.prepare(`
+        INSERT INTO film_voice_profiles (id, project_id, character_id, name, description,
+            sample_path, sample_duration_ms, tts_model, voice_params, language, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+        id, ch.project_id, charId,
+        (body.name || ch.id).slice(0, 200),
+        (body.description || '').slice(0, 1000),
+        (body.sample_path || ''),
+        body.sample_duration_ms || 0,
+        (body.tts_model || 'qwen3-tts').slice(0, 100),
+        JSON.stringify(body.voice_params || {}),
+        (body.language || 'en').slice(0, 10),
+        now
+    );
+
+    // Link back to character
+    db.prepare('UPDATE film_characters SET voice_profile_id = ? WHERE id = ?').run(id, charId);
+
+    const row = db.prepare('SELECT * FROM film_voice_profiles WHERE id = ?').get(id);
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(row));
+}
+
+// --- Costumes ---
+
+function listCostumes(req, res, charId) {
+    const rows = db.prepare('SELECT * FROM film_costumes WHERE character_id = ? ORDER BY name').all(charId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ costumes: rows }));
+}
+
+function createCostume(req, res, charId) {
+    const ch = db.prepare('SELECT id, project_id FROM film_characters WHERE id = ?').get(charId);
+    if (!ch) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Character not found' }));
+        return;
+    }
+
+    const body = req.body;
+    if (!body.name || !body.name.trim()) return badRequest(res, 'Costume name is required');
+
+    const id = generateId();
+    const now = new Date().toISOString();
+
+    db.prepare(`
+        INSERT INTO film_costumes (id, project_id, character_id, name, description,
+            visual_prompt, color_palette, reference_images, notes, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+        id, ch.project_id, charId,
+        body.name.trim().slice(0, 200),
+        (body.description || '').slice(0, 2000),
+        (body.visual_prompt || '').slice(0, 2000),
+        (body.color_palette || '').slice(0, 500),
+        JSON.stringify(body.reference_images || []),
+        (body.notes || '').slice(0, 2000),
+        now
+    );
+
+    const row = db.prepare('SELECT * FROM film_costumes WHERE id = ?').get(id);
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(row));
+}
+
+module.exports = { handleCharacters };
