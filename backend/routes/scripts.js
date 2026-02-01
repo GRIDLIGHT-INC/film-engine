@@ -1,6 +1,7 @@
 /**
- * FILM-004 + FILM-097: Script upload/versioning endpoint (Fountain-aware)
+ * FILM-004 + FILM-097 + FILM-098: Script upload/versioning endpoint (Fountain-aware)
  * POST /film/projects/:id/script — upload screenplay, auto-extract scenes
+ * POST /film/projects/:id/script/import-fdx — import Final Draft XML
  * PUT  /film/projects/:id/script/:version — update existing script in-place
  * GET  /film/projects/:id/scripts — list script versions
  * GET  /film/projects/:id/scripts/:version — get specific version
@@ -9,6 +10,7 @@
 const { db, generateId } = require('../db/database');
 const { parseScreenplay } = require('../lib/screenplay-parser');
 const { parseFountain, analyzeScreenplay } = require('../lib/fountain-parser');
+const { parseFDX } = require('../lib/fdx-parser');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -38,6 +40,11 @@ function handleScripts(req, res, urlParts, query) {
     // GET /film/projects/:id/script/latest/fountain
     if (req.method === 'GET' && sub === 'script' && versionOrKeyword === 'latest' && subPath === 'fountain') {
         return getLatestFountain(req, res, projectId);
+    }
+
+    // POST /film/projects/:id/script/import-fdx — import Final Draft file
+    if (req.method === 'POST' && sub === 'script' && versionOrKeyword === 'import-fdx') {
+        return importFDX(req, res, projectId);
     }
 
     // POST /film/projects/:id/script — upload new version
@@ -300,6 +307,113 @@ function uploadScript(req, res, projectId) {
         script: scriptRow,
         scenes_extracted: insertedScenes.length,
         scenes: insertedScenes
+    }));
+}
+
+/**
+ * Import Final Draft (.fdx) file and convert to Fountain
+ */
+function importFDX(req, res, projectId) {
+    const body = req.body;
+
+    if (!body.fdx_content || typeof body.fdx_content !== 'string') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'fdx_content is required' }));
+        return;
+    }
+
+    // Parse FDX to Fountain
+    const parsed = parseFDX(body.fdx_content);
+
+    if (parsed.metadata.error) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: parsed.metadata.error }));
+        return;
+    }
+
+    if (!parsed.fountain_text || parsed.fountain_text.trim().length === 0) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No content extracted from FDX file' }));
+        return;
+    }
+
+    // Process the Fountain content
+    const fountainContent = parsed.fountain_text;
+    const processed = processFountainContent(fountainContent);
+
+    const wordCount = processed.plaintext.split(/\s+/).filter(w => w.length > 0).length;
+
+    // Get next version number
+    const verRow = db.prepare(
+        'SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM film_scripts WHERE project_id = ?'
+    ).get(projectId);
+    const nextVersion = verRow.next_version;
+
+    const scriptId = generateId();
+    const now = new Date().toISOString();
+
+    // Insert script with Fountain-specific columns
+    db.prepare(`
+        INSERT INTO film_scripts
+        (id, project_id, version, content, word_count, format, fountain_content, title_page_json, page_count, scene_count, dialogue_percentage, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+        scriptId, projectId, nextVersion, processed.plaintext, wordCount,
+        'fountain', fountainContent, processed.titlePageJson,
+        processed.pageCount, processed.sceneCount, processed.dialoguePercentage, now
+    );
+
+    const scriptRow = db.prepare('SELECT * FROM film_scripts WHERE id = ?').get(scriptId);
+
+    // Insert script elements
+    if (processed.parsed && processed.parsed.elements) {
+        insertScriptElements(scriptId, processed.parsed.elements);
+    }
+
+    // Extract scenes from Fountain AST
+    const parsedScenes = extractScenesFromFountain(processed.parsed, projectId);
+
+    // Replace scenes for this project
+    if (body.replace_scenes !== false) {
+        db.prepare('DELETE FROM film_scenes WHERE project_id = ?').run(projectId);
+    }
+
+    // Insert extracted scenes
+    const insertedScenes = [];
+    const insertScene = db.prepare(`
+        INSERT INTO film_scenes (id, project_id, scene_number, int_ext, location, time_of_day, description, characters_present, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const scene of parsedScenes) {
+        const sceneId = generateId();
+        insertScene.run(
+            sceneId,
+            projectId,
+            scene.scene_number,
+            scene.int_ext,
+            scene.location,
+            scene.time_of_day,
+            (scene.description || '').slice(0, 10000),
+            JSON.stringify(scene.characters_present),
+            new Date().toISOString()
+        );
+        const row = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
+        insertedScenes.push(row);
+    }
+
+    // Advance project status to 'script' if still in concept
+    db.prepare(`
+        UPDATE film_projects SET status = 'script', updated_at = datetime('now')
+        WHERE id = ? AND status = 'concept'
+    `).run(projectId);
+
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        script: scriptRow,
+        scenes_extracted: insertedScenes.length,
+        scenes: insertedScenes,
+        import_metadata: parsed.metadata
     }));
 }
 
