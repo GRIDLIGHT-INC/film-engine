@@ -955,6 +955,114 @@
             padding: 12px;
         }
 
+        /* FILM-127: Index Cards View */
+        .index-cards-view {
+            display: none;
+            padding: 12px;
+        }
+        .index-cards-view.active {
+            display: block;
+        }
+        .index-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .index-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            cursor: grab;
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+            position: relative;
+        }
+        .index-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .index-card.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+        .index-card.drop-target {
+            border-color: var(--primary);
+            background: rgba(233, 30, 99, 0.05);
+        }
+        .index-card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .index-card-number {
+            font-size: 12px;
+            font-weight: 600;
+            background: var(--surface-2);
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .index-card-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-left: auto;
+        }
+        .index-card-status.written { background: #ff9800; }
+        .index-card-status.broken_down { background: #4caf50; }
+        .index-card-status.pending { background: #9e9e9e; }
+        .index-card-heading {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+        .index-card-preview {
+            font-size: 10px;
+            color: var(--text-muted);
+            line-height: 1.4;
+            max-height: 40px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+        .index-card-meta {
+            display: flex;
+            gap: 8px;
+            font-size: 9px;
+            color: var(--text-muted);
+            flex-wrap: wrap;
+        }
+        .index-card-meta-item {
+            background: var(--surface-2);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .view-mode-toggle {
+            display: flex;
+            background: var(--surface-2);
+            border-radius: var(--radius-sm);
+            padding: 2px;
+        }
+        .view-mode-btn {
+            padding: 4px 12px;
+            font-size: 11px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: var(--radius-sm);
+            transition: background 0.2s, color 0.2s;
+        }
+        .view-mode-btn:hover {
+            background: var(--surface);
+        }
+        .view-mode-btn.active {
+            background: var(--surface);
+            color: var(--text);
+            font-weight: 600;
+        }
+
         /* Editor Toolbar */
         .screenplay-toolbar {
             display: flex;
@@ -2365,10 +2473,15 @@
                             <span id="suggestionsBadge" class="suggestions-badge">0</span>
                         </button>
                         <button class="toolbar-btn" onclick="toggleShortcutHelp()" title="Keyboard Shortcuts (Ctrl+/)">?</button>
+                        <!-- FILM-127: View Mode Toggle -->
+                        <div class="view-mode-toggle" style="margin-left:auto;">
+                            <button class="view-mode-btn active" onclick="setViewMode('editor')" id="viewModeEditor">Editor</button>
+                            <button class="view-mode-btn" onclick="setViewMode('cards')" id="viewModeCards">Index Cards</button>
+                        </div>
                     </div>
 
                     <!-- Editor Container -->
-                    <div class="screenplay-scroll-container">
+                    <div class="screenplay-scroll-container" id="editorViewContainer">
                         <div class="screenplay-page"
                              id="screenplayEditor"
                              contenteditable="true"
@@ -2378,6 +2491,11 @@
                              onclick="onEditorSelectionChange()"
                              onkeyup="onEditorSelectionChange()">
                         </div>
+                    </div>
+
+                    <!-- FILM-127: Index Cards View -->
+                    <div class="index-cards-view" id="indexCardsView">
+                        <div class="index-cards-grid" id="indexCardsGrid"></div>
                     </div>
 
                     <!-- Import Section (Collapsible) -->
@@ -5658,6 +5776,256 @@
                 updateScriptStatsSummary();
             }
         }, SCENE_NAV_UPDATE_DELAY);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FILM-127: INDEX CARDS VIEW
+    // ══════════════════════════════════════════════════════════════
+
+    let currentViewMode = 'editor';
+    let indexCardsData = [];
+    let draggedCardIndex = null;
+
+    function setViewMode(mode) {
+        currentViewMode = mode;
+
+        // Update button states
+        document.getElementById('viewModeEditor').classList.toggle('active', mode === 'editor');
+        document.getElementById('viewModeCards').classList.toggle('active', mode === 'cards');
+
+        // Toggle visibility
+        const editorContainer = document.getElementById('editorViewContainer');
+        const cardsView = document.getElementById('indexCardsView');
+
+        if (mode === 'editor') {
+            editorContainer.style.display = 'block';
+            cardsView.classList.remove('active');
+        } else {
+            editorContainer.style.display = 'none';
+            cardsView.classList.add('active');
+            renderIndexCards();
+        }
+    }
+
+    function renderIndexCards() {
+        const editor = document.getElementById('screenplayEditor');
+        const grid = document.getElementById('indexCardsGrid');
+        if (!editor || !grid) return;
+
+        // Parse scenes from editor
+        const scenes = parseSceneBlocks();
+        indexCardsData = scenes;
+
+        if (scenes.length === 0) {
+            grid.innerHTML = '<div class="empty-state"><h3>No scenes found</h3><p>Add scene headings (INT./EXT.) to your screenplay.</p></div>';
+            return;
+        }
+
+        grid.innerHTML = scenes.map((scene, i) => {
+            // Match scene status from state.scenes if available
+            let status = 'pending';
+            if (state.scenes) {
+                const match = state.scenes.find(s =>
+                    s.location && scene.location &&
+                    s.location.toUpperCase() === scene.location.toUpperCase()
+                );
+                if (match) status = match.status || 'pending';
+            }
+
+            const charNames = scene.characters.slice(0, 3).join(', ');
+            const charMore = scene.characters.length > 3 ? ` +${scene.characters.length - 3}` : '';
+
+            return `
+                <div class="index-card"
+                     data-index="${i}"
+                     draggable="true"
+                     ondragstart="onCardDragStart(event, ${i})"
+                     ondragover="onCardDragOver(event)"
+                     ondragleave="onCardDragLeave(event)"
+                     ondrop="onCardDrop(event, ${i})"
+                     ondblclick="jumpToSceneFromCard(${i})">
+                    <div class="index-card-header">
+                        <span class="index-card-number">Sc ${scene.num}</span>
+                        <span class="index-card-status ${status}" title="${status}"></span>
+                    </div>
+                    <div class="index-card-heading">${esc(scene.heading)}</div>
+                    <div class="index-card-preview">${esc(scene.preview)}</div>
+                    <div class="index-card-meta">
+                        ${charNames ? `<span class="index-card-meta-item">👤 ${esc(charNames)}${charMore}</span>` : ''}
+                        <span class="index-card-meta-item">📄 ~${scene.pageLength.toFixed(1)} pg</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function parseSceneBlocks() {
+        const editor = document.getElementById('screenplayEditor');
+        const blocks = editor.querySelectorAll('[data-element-type]');
+        const scenes = [];
+        let currentScene = null;
+        let autoSceneNum = 0;
+
+        for (const block of blocks) {
+            const type = block.dataset.elementType;
+            const text = block.innerText.trim();
+
+            if (type === 'scene-heading') {
+                if (currentScene) {
+                    scenes.push(currentScene);
+                }
+
+                autoSceneNum++;
+                const sceneNum = block.dataset.sceneNumber || String(autoSceneNum);
+
+                // Parse location from heading
+                const locMatch = text.match(/(?:INT|EXT|INT\.?\/EXT|I\/E)[\.\s]+([^-]+)/i);
+                const location = locMatch ? locMatch[1].trim() : '';
+
+                currentScene = {
+                    num: sceneNum,
+                    heading: text.length > 50 ? text.slice(0, 50) + '...' : text,
+                    fullHeading: text,
+                    location: location,
+                    preview: '',
+                    characters: [],
+                    lineCount: 1,
+                    startElement: block
+                };
+            } else if (currentScene) {
+                currentScene.lineCount++;
+
+                if (type === 'action' && !currentScene.preview) {
+                    currentScene.preview = text.slice(0, 100) + (text.length > 100 ? '...' : '');
+                }
+
+                if (type === 'character') {
+                    const charName = text.replace(/\s*\([^)]+\)\s*$/, '').trim();
+                    if (charName && !currentScene.characters.includes(charName)) {
+                        currentScene.characters.push(charName);
+                    }
+                }
+            }
+        }
+
+        // Push final scene
+        if (currentScene) {
+            scenes.push(currentScene);
+        }
+
+        // Calculate page lengths (~55 lines per page)
+        scenes.forEach(s => {
+            s.pageLength = s.lineCount / 55;
+        });
+
+        return scenes;
+    }
+
+    // Drag and drop handlers
+    function onCardDragStart(event, index) {
+        draggedCardIndex = index;
+        event.target.classList.add('dragging');
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', index);
+    }
+
+    function onCardDragOver(event) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        event.currentTarget.classList.add('drop-target');
+    }
+
+    function onCardDragLeave(event) {
+        event.currentTarget.classList.remove('drop-target');
+    }
+
+    function onCardDrop(event, targetIndex) {
+        event.preventDefault();
+        event.currentTarget.classList.remove('drop-target');
+
+        const sourceIndex = draggedCardIndex;
+        if (sourceIndex === null || sourceIndex === targetIndex) {
+            draggedCardIndex = null;
+            return;
+        }
+
+        // Show confirmation
+        const sourceScene = indexCardsData[sourceIndex];
+        const targetScene = indexCardsData[targetIndex];
+        const direction = sourceIndex < targetIndex ? 'after' : 'before';
+
+        const confirmMsg = `Move Scene ${sourceScene.num} (${sourceScene.heading.slice(0,25)}...)\n${direction} Scene ${targetScene.num}?`;
+
+        if (confirm(confirmMsg)) {
+            reorderScenes(sourceIndex, targetIndex);
+        }
+
+        draggedCardIndex = null;
+        document.querySelectorAll('.index-card.dragging').forEach(el => el.classList.remove('dragging'));
+    }
+
+    function reorderScenes(fromIndex, toIndex) {
+        // Get all scene blocks and their content
+        const editor = document.getElementById('screenplayEditor');
+        const sceneBlocks = [];
+        let currentSceneContent = [];
+
+        for (const child of editor.children) {
+            const type = child.dataset?.elementType;
+            if (type === 'scene-heading') {
+                if (currentSceneContent.length > 0) {
+                    sceneBlocks.push([...currentSceneContent]);
+                }
+                currentSceneContent = [child.cloneNode(true)];
+            } else if (currentSceneContent.length > 0) {
+                currentSceneContent.push(child.cloneNode(true));
+            }
+        }
+
+        // Push final scene
+        if (currentSceneContent.length > 0) {
+            sceneBlocks.push(currentSceneContent);
+        }
+
+        if (sceneBlocks.length < 2) return;
+
+        // Reorder
+        const [removed] = sceneBlocks.splice(fromIndex, 1);
+        sceneBlocks.splice(toIndex, 0, removed);
+
+        // Rebuild editor content
+        editor.innerHTML = '';
+        sceneBlocks.forEach((blocks, idx) => {
+            blocks.forEach((block, bIdx) => {
+                // Update scene number if it's the heading
+                if (bIdx === 0 && block.dataset?.elementType === 'scene-heading') {
+                    block.dataset.sceneNumber = String(idx + 1);
+                    // Update scene number gutter if present
+                    const gutter = block.querySelector('.scene-number-gutter');
+                    if (gutter) gutter.textContent = String(idx + 1);
+                }
+                editor.appendChild(block);
+            });
+        });
+
+        // Trigger save and updates
+        editorDirty = true;
+        triggerAutoSave();
+        triggerSceneNavUpdate();
+        renderIndexCards();
+        setStatus('Scenes reordered');
+    }
+
+    function jumpToSceneFromCard(index) {
+        setViewMode('editor');
+
+        const editor = document.getElementById('screenplayEditor');
+        const headings = editor.querySelectorAll('[data-element-type="scene-heading"]');
+
+        if (headings[index]) {
+            headings[index].scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setCursorToBlock(headings[index]);
+        }
     }
 
     // FILM-116: Quick stats summary update without full recalculation
