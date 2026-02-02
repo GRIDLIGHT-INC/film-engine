@@ -1013,6 +1013,59 @@
             text-align: center;
         }
 
+        /* FILM-103: Autocomplete Dropdown */
+        .autocomplete-dropdown {
+            display: none;
+            position: fixed;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            max-height: 240px;
+            overflow-y: auto;
+            z-index: 10001;
+            min-width: 200px;
+            max-width: 350px;
+        }
+        .autocomplete-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+        .autocomplete-item:hover,
+        .autocomplete-item.selected {
+            background: var(--surface-2);
+        }
+        .autocomplete-item.unrecognized .autocomplete-text {
+            color: var(--warning, #ff9800);
+        }
+        .autocomplete-text {
+            font-weight: 500;
+            flex: 1;
+        }
+        .autocomplete-desc {
+            color: var(--text-muted);
+            font-size: 10px;
+        }
+        .autocomplete-action {
+            color: var(--primary);
+            font-size: 10px;
+            padding: 2px 6px;
+            background: rgba(233, 30, 99, 0.1);
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .autocomplete-action:hover {
+            background: rgba(233, 30, 99, 0.2);
+        }
+
         /* Import Section */
         .screenplay-import-section {
             margin-top: 16px;
@@ -2127,6 +2180,12 @@
     let autoDetectTimer = null;
     const AUTO_DETECT_DELAY = 400; // ms
 
+    // FILM-103: Autocomplete state
+    let autocompleteVisible = false;
+    let autocompleteItems = [];
+    let autocompleteSelectedIndex = 0;
+    let autocompleteType = null; // 'character' or 'location'
+
     // FILM-102: Keyboard shortcuts
     const KEYBOARD_SHORTCUTS = {
         // Element type shortcuts (Ctrl/Cmd + number)
@@ -2358,6 +2417,9 @@
         autoDetectTimer = setTimeout(() => {
             autoDetectElementType();
         }, AUTO_DETECT_DELAY);
+
+        // FILM-103: Trigger autocomplete for character/location
+        triggerAutocomplete();
     }
 
     // FILM-101: Smart element type detection based on content
@@ -2468,6 +2530,308 @@
         if (hint) hint.remove();
     }
 
+    // FILM-103: Autocomplete for character names and locations
+    function triggerAutocomplete() {
+        const block = getCurrentBlock();
+        if (!block) {
+            hideAutocomplete();
+            return;
+        }
+
+        const elementType = block.dataset.elementType || 'action';
+        const text = block.innerText.trim();
+
+        // Character autocomplete
+        if (elementType === 'character' && text.length >= 1) {
+            const matches = filterCharacters(text);
+            if (matches.length > 0) {
+                showAutocomplete(matches, 'character');
+                return;
+            }
+        }
+
+        // Location autocomplete for scene headings
+        if (elementType === 'scene-heading' && text.length >= 4) {
+            const locationPart = extractLocationFromSceneHeading(text);
+            if (locationPart && locationPart.length >= 1) {
+                const matches = filterLocations(locationPart);
+                if (matches.length > 0) {
+                    showAutocomplete(matches, 'location');
+                    return;
+                }
+            }
+        }
+
+        hideAutocomplete();
+    }
+
+    // Filter characters by partial match
+    function filterCharacters(partial) {
+        const upperPartial = partial.toUpperCase();
+        const results = [];
+        const knownNames = new Set();
+
+        // Add known characters from state
+        if (state.characters && state.characters.length > 0) {
+            for (const char of state.characters) {
+                const name = (char.name || '').toUpperCase();
+                if (name.startsWith(upperPartial) || name.includes(upperPartial)) {
+                    results.push({
+                        text: name,
+                        type: 'known',
+                        id: char.id,
+                        description: char.role || ''
+                    });
+                    knownNames.add(name);
+                }
+            }
+        }
+
+        // Collect unrecognized characters from the screenplay
+        const editor = document.getElementById('screenplayEditor');
+        const charBlocks = editor.querySelectorAll('[data-element-type="character"]');
+        for (const block of charBlocks) {
+            const name = block.innerText.trim().toUpperCase().replace(/\s*\([^)]*\)\s*$/, '');
+            if (name && !knownNames.has(name) && (name.startsWith(upperPartial) || name.includes(upperPartial))) {
+                if (!results.find(r => r.text === name)) {
+                    results.push({
+                        text: name,
+                        type: 'unrecognized',
+                        description: 'Not in character list'
+                    });
+                }
+            }
+        }
+
+        // Sort: known first, then by match position
+        results.sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'known' ? -1 : 1;
+            const aStarts = a.text.startsWith(upperPartial);
+            const bStarts = b.text.startsWith(upperPartial);
+            if (aStarts !== bStarts) return aStarts ? -1 : 1;
+            return a.text.localeCompare(b.text);
+        });
+
+        return results.slice(0, 8); // Limit results
+    }
+
+    // Extract location part from scene heading (after INT./EXT.)
+    function extractLocationFromSceneHeading(text) {
+        const match = text.match(/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]+(.*)$/i);
+        if (match) {
+            // Get location before any time of day indicator
+            let location = match[2];
+            const dashIndex = location.lastIndexOf(' - ');
+            if (dashIndex > 0) {
+                location = location.substring(0, dashIndex);
+            }
+            return location.trim();
+        }
+        return null;
+    }
+
+    // Filter locations by partial match
+    function filterLocations(partial) {
+        const upperPartial = partial.toUpperCase();
+        const results = [];
+        const knownLocs = new Set();
+
+        // Add known locations from state
+        if (state.locations && state.locations.length > 0) {
+            for (const loc of state.locations) {
+                const name = (loc.name || '').toUpperCase();
+                if (name.startsWith(upperPartial) || name.includes(upperPartial)) {
+                    results.push({
+                        text: name,
+                        type: 'known',
+                        id: loc.id,
+                        description: loc.type || ''
+                    });
+                    knownLocs.add(name);
+                }
+            }
+        }
+
+        // Collect unrecognized locations from screenplay
+        const editor = document.getElementById('screenplayEditor');
+        const sceneBlocks = editor.querySelectorAll('[data-element-type="scene-heading"]');
+        for (const block of sceneBlocks) {
+            const loc = extractLocationFromSceneHeading(block.innerText.trim());
+            if (loc) {
+                const name = loc.toUpperCase();
+                if (!knownLocs.has(name) && (name.startsWith(upperPartial) || name.includes(upperPartial))) {
+                    if (!results.find(r => r.text === name)) {
+                        results.push({
+                            text: name,
+                            type: 'unrecognized',
+                            description: 'Not in location list'
+                        });
+                    }
+                }
+            }
+        }
+
+        results.sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'known' ? -1 : 1;
+            const aStarts = a.text.startsWith(upperPartial);
+            const bStarts = b.text.startsWith(upperPartial);
+            if (aStarts !== bStarts) return aStarts ? -1 : 1;
+            return a.text.localeCompare(b.text);
+        });
+
+        return results.slice(0, 8);
+    }
+
+    // Show autocomplete dropdown
+    function showAutocomplete(items, type) {
+        autocompleteItems = items;
+        autocompleteType = type;
+        autocompleteSelectedIndex = 0;
+        autocompleteVisible = true;
+
+        let dropdown = document.getElementById('autocompleteDropdown');
+        if (!dropdown) {
+            dropdown = document.createElement('div');
+            dropdown.id = 'autocompleteDropdown';
+            dropdown.className = 'autocomplete-dropdown';
+            document.body.appendChild(dropdown);
+        }
+
+        // Render items
+        dropdown.innerHTML = items.map((item, i) => `
+            <div class="autocomplete-item ${i === autocompleteSelectedIndex ? 'selected' : ''} ${item.type}"
+                 data-index="${i}"
+                 onmousedown="selectAutocompleteItem(${i})">
+                <span class="autocomplete-text">${escapeHtml(item.text)}</span>
+                ${item.description ? `<span class="autocomplete-desc">${escapeHtml(item.description)}</span>` : ''}
+                ${item.type === 'unrecognized' ? `<span class="autocomplete-action" onmousedown="event.stopPropagation(); createFromAutocomplete(${i})">+ Create</span>` : ''}
+            </div>
+        `).join('');
+
+        // Position below cursor
+        positionAutocomplete(dropdown);
+        dropdown.style.display = 'block';
+    }
+
+    // Position autocomplete dropdown below cursor
+    function positionAutocomplete(dropdown) {
+        const selection = window.getSelection();
+        if (!selection.rangeCount) return;
+
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+
+        dropdown.style.position = 'fixed';
+        dropdown.style.left = rect.left + 'px';
+        dropdown.style.top = (rect.bottom + 4) + 'px';
+
+        // Ensure it doesn't go off screen
+        const dropdownRect = dropdown.getBoundingClientRect();
+        if (dropdownRect.right > window.innerWidth) {
+            dropdown.style.left = (window.innerWidth - dropdownRect.width - 10) + 'px';
+        }
+        if (dropdownRect.bottom > window.innerHeight) {
+            dropdown.style.top = (rect.top - dropdownRect.height - 4) + 'px';
+        }
+    }
+
+    // Hide autocomplete dropdown
+    function hideAutocomplete() {
+        autocompleteVisible = false;
+        autocompleteItems = [];
+        const dropdown = document.getElementById('autocompleteDropdown');
+        if (dropdown) {
+            dropdown.style.display = 'none';
+        }
+    }
+
+    // Select autocomplete item
+    function selectAutocompleteItem(index) {
+        if (index < 0 || index >= autocompleteItems.length) return;
+
+        const item = autocompleteItems[index];
+        const block = getCurrentBlock();
+        if (!block) return;
+
+        if (autocompleteType === 'character') {
+            // Replace entire block text with character name
+            block.innerText = item.text;
+            setCursorToEnd(block);
+        } else if (autocompleteType === 'location') {
+            // Replace location part in scene heading
+            const text = block.innerText.trim();
+            const match = text.match(/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]+/i);
+            if (match) {
+                // Check if there was a time of day
+                const timeMatch = text.match(/\s+-\s+(DAY|NIGHT|MORNING|EVENING|LATER|CONTINUOUS|SAME)$/i);
+                const newText = match[0] + item.text + (timeMatch ? timeMatch[0] : '');
+                block.innerText = newText;
+                setCursorToEnd(block);
+            }
+        }
+
+        hideAutocomplete();
+        editorDirty = true;
+    }
+
+    // Create new character/location from autocomplete
+    function createFromAutocomplete(index) {
+        const item = autocompleteItems[index];
+        if (!item || item.type !== 'unrecognized') return;
+
+        if (autocompleteType === 'character') {
+            // Open create character modal with prefilled name
+            showModal('newCharacterModal');
+            setTimeout(() => {
+                const nameInput = document.getElementById('newCharacterName');
+                if (nameInput) nameInput.value = item.text;
+            }, 100);
+        } else if (autocompleteType === 'location') {
+            // Open create location modal with prefilled name
+            showModal('newLocationModal');
+            setTimeout(() => {
+                const nameInput = document.getElementById('newLocationName');
+                if (nameInput) nameInput.value = item.text;
+            }, 100);
+        }
+
+        hideAutocomplete();
+    }
+
+    // Move cursor to end of element
+    function setCursorToEnd(element) {
+        const range = document.createRange();
+        const selection = window.getSelection();
+        range.selectNodeContents(element);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+    }
+
+    // Navigate autocomplete with arrow keys
+    function navigateAutocomplete(direction) {
+        if (!autocompleteVisible || autocompleteItems.length === 0) return false;
+
+        if (direction === 'up') {
+            autocompleteSelectedIndex = Math.max(0, autocompleteSelectedIndex - 1);
+        } else if (direction === 'down') {
+            autocompleteSelectedIndex = Math.min(autocompleteItems.length - 1, autocompleteSelectedIndex + 1);
+        }
+
+        // Update UI
+        const dropdown = document.getElementById('autocompleteDropdown');
+        if (dropdown) {
+            const items = dropdown.querySelectorAll('.autocomplete-item');
+            items.forEach((item, i) => {
+                item.classList.toggle('selected', i === autocompleteSelectedIndex);
+            });
+            // Scroll into view
+            items[autocompleteSelectedIndex]?.scrollIntoView({ block: 'nearest' });
+        }
+
+        return true;
+    }
+
     // Update element type dropdown when selection changes
     function onEditorSelectionChange() {
         const block = getCurrentBlock();
@@ -2552,8 +2916,19 @@
             }
         }
 
-        // Escape key: close help or clear auto-detect suggestion
+        // FILM-103: Arrow keys for autocomplete navigation
+        if (autocompleteVisible && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+            event.preventDefault();
+            navigateAutocomplete(event.key === 'ArrowUp' ? 'up' : 'down');
+            return;
+        }
+
+        // Escape key: close autocomplete, help, or clear suggestion
         if (event.key === 'Escape') {
+            if (autocompleteVisible) {
+                hideAutocomplete();
+                return;
+            }
             if (shortcutHelpVisible) {
                 toggleShortcutHelp();
                 return;
@@ -2565,9 +2940,16 @@
             }
         }
 
-        // Tab key: accept suggestion or cycle element type
+        // Tab key: select autocomplete, accept suggestion, or cycle element type
         if (event.key === 'Tab') {
             event.preventDefault();
+
+            // FILM-103: Select autocomplete item if visible
+            if (autocompleteVisible && autocompleteItems.length > 0) {
+                selectAutocompleteItem(autocompleteSelectedIndex);
+                return;
+            }
+
             const block = getCurrentBlock();
             if (block) {
                 // If there's a suggestion, accept it
@@ -2590,9 +2972,16 @@
             return;
         }
 
-        // Enter key: handle block creation with smart formatting
+        // Enter key: select autocomplete or handle block creation
         if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
+
+            // FILM-103: Select autocomplete item if visible
+            if (autocompleteVisible && autocompleteItems.length > 0) {
+                selectAutocompleteItem(autocompleteSelectedIndex);
+                return;
+            }
+
             const block = getCurrentBlock();
 
             // Clear any pending auto-detect
