@@ -137,6 +137,16 @@ function createCharacter(req, res, projectId) {
 
 function updateCharacter(req, res, charId) {
     const body = req.body;
+    const propagateToScreenplay = body.propagate_to_screenplay !== false;
+
+    // Get current character to check for name changes
+    const currentChar = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(charId);
+    if (!currentChar) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Character not found' }));
+        return;
+    }
+
     const fields = [];
     const values = [];
 
@@ -165,15 +175,97 @@ function updateCharacter(req, res, charId) {
     values.push(charId);
 
     const result = db.prepare(`UPDATE film_characters SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-    if (result.changes === 0) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Character not found' }));
-        return;
-    }
 
     const row = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(charId);
+
+    // FILM-122: Propagate name change to screenplay if name was changed
+    let screenplayUpdate = null;
+    if (propagateToScreenplay && body.name && body.name !== currentChar.name) {
+        screenplayUpdate = propagateCharacterRename(
+            currentChar.project_id,
+            currentChar.name,
+            body.name
+        );
+    }
+
+    const response = { ...row };
+    if (screenplayUpdate) {
+        response.screenplay_update = screenplayUpdate;
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(row));
+    res.end(JSON.stringify(response));
+}
+
+/**
+ * FILM-122: Propagate character rename to screenplay
+ * Finds all occurrences of old name in character cues and replaces with new name
+ */
+function propagateCharacterRename(projectId, oldName, newName) {
+    // Get latest Fountain script
+    const script = db.prepare(`
+        SELECT id, version, fountain_content, format
+        FROM film_scripts
+        WHERE project_id = ?
+        ORDER BY version DESC
+        LIMIT 1
+    `).get(projectId);
+
+    if (!script || script.format !== 'fountain' || !script.fountain_content) {
+        return { updated: false, reason: 'No Fountain script found' };
+    }
+
+    const oldNameUpper = oldName.toUpperCase();
+    const newNameUpper = newName.toUpperCase();
+    const lines = script.fountain_content.split('\n');
+    let replacementCount = 0;
+    let prevLineBlank = true;
+
+    // Replace character cues (all caps name on its own line after blank)
+    const newLines = lines.map((line, i) => {
+        const trimmed = line.trim();
+        const nextLine = lines[i + 1];
+        const nextLineBlank = !nextLine || nextLine.trim() === '';
+
+        // Check if this is a character cue
+        if (prevLineBlank && !nextLineBlank && trimmed.toUpperCase() === trimmed) {
+            // Match exact character name (with optional extension)
+            const charMatch = trimmed.match(/^([A-Z][A-Z0-9\s\-'\.]+?)(\s*\([^)]+\))?(\s*\^)?$/);
+            if (charMatch && charMatch[1].trim() === oldNameUpper) {
+                replacementCount++;
+                const extension = charMatch[2] || '';
+                const dual = charMatch[3] || '';
+                return newNameUpper + extension + dual;
+            }
+        }
+
+        prevLineBlank = trimmed === '';
+        return line;
+    });
+
+    if (replacementCount === 0) {
+        return { updated: false, reason: 'No occurrences found in screenplay', occurrences: 0 };
+    }
+
+    // Save as new script version
+    const newFountain = newLines.join('\n');
+    const nextVersion = script.version + 1;
+    const wordCount = newFountain.split(/\s+/).filter(w => w.length > 0).length;
+
+    const scriptId = generateId();
+    db.prepare(`
+        INSERT INTO film_scripts
+        (id, project_id, version, content, word_count, format, fountain_content, created_at)
+        VALUES (?, ?, ?, ?, ?, 'fountain', ?, datetime('now'))
+    `).run(scriptId, projectId, nextVersion, newFountain, wordCount, newFountain);
+
+    return {
+        updated: true,
+        occurrences: replacementCount,
+        new_version: nextVersion,
+        old_name: oldName,
+        new_name: newName
+    };
 }
 
 function deleteCharacter(req, res, charId) {

@@ -117,6 +117,16 @@ function createLocation(req, res, projectId) {
 
 function updateLocation(req, res, locId) {
     const body = req.body;
+    const propagateToScreenplay = body.propagate_to_screenplay !== false;
+
+    // Get current location to check for name changes
+    const currentLoc = db.prepare('SELECT * FROM film_locations WHERE id = ?').get(locId);
+    if (!currentLoc) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Location not found' }));
+        return;
+    }
+
     const fields = [];
     const values = [];
 
@@ -143,15 +153,104 @@ function updateLocation(req, res, locId) {
     values.push(locId);
 
     const result = db.prepare(`UPDATE film_locations SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-    if (result.changes === 0) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Location not found' }));
-        return;
-    }
 
     const row = db.prepare('SELECT * FROM film_locations WHERE id = ?').get(locId);
+
+    // FILM-122: Propagate name change to screenplay if name was changed
+    let screenplayUpdate = null;
+    if (propagateToScreenplay && body.name && body.name !== currentLoc.name) {
+        screenplayUpdate = propagateLocationRename(
+            currentLoc.project_id,
+            currentLoc.name,
+            body.name
+        );
+    }
+
+    const response = { ...row };
+    if (screenplayUpdate) {
+        response.screenplay_update = screenplayUpdate;
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(row));
+    res.end(JSON.stringify(response));
+}
+
+/**
+ * FILM-122: Propagate location rename to screenplay
+ * Finds all occurrences of old location in scene headings and replaces with new name
+ */
+function propagateLocationRename(projectId, oldName, newName) {
+    // Get latest Fountain script
+    const script = db.prepare(`
+        SELECT id, version, fountain_content, format
+        FROM film_scripts
+        WHERE project_id = ?
+        ORDER BY version DESC
+        LIMIT 1
+    `).get(projectId);
+
+    if (!script || script.format !== 'fountain' || !script.fountain_content) {
+        return { updated: false, reason: 'No Fountain script found' };
+    }
+
+    const oldNameUpper = oldName.toUpperCase();
+    const newNameUpper = newName.toUpperCase();
+    const lines = script.fountain_content.split('\n');
+    let replacementCount = 0;
+
+    // Replace location in scene headings
+    const sceneHeadingPattern = /^(\.)?(?:\s)*(INT|EXT|EST|INT\.?\/?EXT|EXT\.?\/?INT|I\/E)[\.\s]+/i;
+
+    const newLines = lines.map(line => {
+        const trimmed = line.trim();
+
+        // Check if this is a scene heading
+        if (sceneHeadingPattern.test(trimmed)) {
+            // Scene heading format: INT./EXT. LOCATION - TIME
+            const match = trimmed.match(/^(\.)?(?:\s)*(INT|EXT|EST|INT\.?\/?EXT|EXT\.?\/?INT|I\/E)([\.\s]+)(.+)$/i);
+            if (match) {
+                const prefix = match[2];
+                const separator = match[3];
+                const rest = match[4];
+
+                // Check if location matches (before the dash)
+                const dashIndex = rest.indexOf(' - ');
+                const locationPart = dashIndex >= 0 ? rest.slice(0, dashIndex) : rest;
+                const timePart = dashIndex >= 0 ? rest.slice(dashIndex) : '';
+
+                if (locationPart.toUpperCase() === oldNameUpper) {
+                    replacementCount++;
+                    return prefix + separator + newNameUpper + timePart;
+                }
+            }
+        }
+
+        return line;
+    });
+
+    if (replacementCount === 0) {
+        return { updated: false, reason: 'No occurrences found in screenplay', occurrences: 0 };
+    }
+
+    // Save as new script version
+    const newFountain = newLines.join('\n');
+    const nextVersion = script.version + 1;
+    const wordCount = newFountain.split(/\s+/).filter(w => w.length > 0).length;
+
+    const scriptId = generateId();
+    db.prepare(`
+        INSERT INTO film_scripts
+        (id, project_id, version, content, word_count, format, fountain_content, created_at)
+        VALUES (?, ?, ?, ?, ?, 'fountain', ?, datetime('now'))
+    `).run(scriptId, projectId, nextVersion, newFountain, wordCount, newFountain);
+
+    return {
+        updated: true,
+        occurrences: replacementCount,
+        new_version: nextVersion,
+        old_name: oldName,
+        new_name: newName
+    };
 }
 
 function deleteLocation(req, res, locId) {

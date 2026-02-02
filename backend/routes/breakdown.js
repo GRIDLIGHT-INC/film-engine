@@ -9,6 +9,7 @@
  */
 const { db, generateId } = require('../db/database');
 const { validateSceneCards } = require('../lib/scene-card-schema');
+const { parseFountain, ELEMENT_TYPES } = require('../lib/fountain-parser');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -301,16 +302,193 @@ async function breakdownStream(req, res, projectId) {
 
 // --- Helpers ---
 
+/**
+ * FILM-123: Get Fountain AST for a project's screenplay
+ * Returns parsed elements grouped by scene, or null if no Fountain script exists
+ */
+function getFountainSceneElements(projectId) {
+    const script = db.prepare(`
+        SELECT fountain_content, format
+        FROM film_scripts
+        WHERE project_id = ?
+        ORDER BY version DESC
+        LIMIT 1
+    `).get(projectId);
+
+    if (!script || script.format !== 'fountain' || !script.fountain_content) {
+        return null;
+    }
+
+    const parsed = parseFountain(script.fountain_content);
+    if (!parsed || !parsed.elements || parsed.elements.length === 0) {
+        return null;
+    }
+
+    // Group elements by scene
+    const scenes = [];
+    let currentScene = null;
+    let currentElements = [];
+
+    for (const el of parsed.elements) {
+        if (el.type === ELEMENT_TYPES.SCENE_HEADING) {
+            if (currentScene) {
+                scenes.push({ heading: currentScene, elements: currentElements });
+            }
+            currentScene = el;
+            currentElements = [];
+        } else if (currentScene) {
+            currentElements.push(el);
+        }
+    }
+
+    // Push final scene
+    if (currentScene) {
+        scenes.push({ heading: currentScene, elements: currentElements });
+    }
+
+    return scenes;
+}
+
+/**
+ * FILM-123: Get character and location context for enhanced prompts
+ */
+function getEntityContext(projectId) {
+    const characters = db.prepare(`
+        SELECT name, appearance_prompt, personality_notes, age_range, build, distinguishing
+        FROM film_characters
+        WHERE project_id = ?
+    `).all(projectId);
+
+    const locations = db.prepare(`
+        SELECT name, description, reference_prompt, lighting_default, atmosphere_notes
+        FROM film_locations
+        WHERE project_id = ?
+    `).all(projectId);
+
+    return { characters, locations };
+}
+
+/**
+ * FILM-123: Format scene using Fountain elements with explicit labels
+ */
+function formatFountainScene(sceneData, entityContext) {
+    const { heading, elements } = sceneData;
+    const lines = [];
+
+    // Scene heading with explicit label
+    lines.push(`SCENE HEADING: ${heading.text}`);
+
+    // Add location context if available
+    if (heading.meta && heading.meta.location && entityContext.locations) {
+        const locMatch = entityContext.locations.find(
+            l => l.name.toUpperCase() === heading.meta.location.toUpperCase()
+        );
+        if (locMatch) {
+            lines.push('');
+            lines.push('LOCATION CONTEXT:');
+            if (locMatch.description) lines.push(`  Description: ${locMatch.description.slice(0, 300)}`);
+            if (locMatch.reference_prompt) lines.push(`  Visual: ${locMatch.reference_prompt.slice(0, 200)}`);
+            if (locMatch.lighting_default) lines.push(`  Default Lighting: ${locMatch.lighting_default}`);
+            if (locMatch.atmosphere_notes) lines.push(`  Atmosphere: ${locMatch.atmosphere_notes.slice(0, 200)}`);
+        }
+    }
+
+    lines.push('');
+
+    // Track characters mentioned for context
+    const charactersInScene = new Set();
+
+    // Process elements with labels
+    for (const el of elements) {
+        switch (el.type) {
+            case ELEMENT_TYPES.ACTION:
+                lines.push(`ACTION: ${el.text}`);
+                break;
+
+            case ELEMENT_TYPES.CHARACTER:
+                charactersInScene.add(el.text.toUpperCase());
+                let charLine = `CHARACTER: ${el.text}`;
+                if (el.meta && el.meta.extension) {
+                    charLine += ` (${el.meta.extension})`;
+                }
+                lines.push(charLine);
+                break;
+
+            case ELEMENT_TYPES.DIALOGUE:
+                lines.push(`DIALOGUE: ${el.text}`);
+                break;
+
+            case ELEMENT_TYPES.PARENTHETICAL:
+                lines.push(`PARENTHETICAL: (${el.text})`);
+                break;
+
+            case ELEMENT_TYPES.TRANSITION:
+                lines.push(`TRANSITION: ${el.text}`);
+                break;
+
+            // Skip non-visual elements
+            case ELEMENT_TYPES.NOTE:
+            case ELEMENT_TYPES.BONEYARD:
+            case ELEMENT_TYPES.SECTION:
+            case ELEMENT_TYPES.SYNOPSIS:
+                break;
+
+            default:
+                if (el.text) lines.push(el.text);
+        }
+    }
+
+    // Add character context for characters in this scene
+    if (charactersInScene.size > 0 && entityContext.characters) {
+        const relevantChars = entityContext.characters.filter(
+            c => charactersInScene.has(c.name.toUpperCase())
+        );
+
+        if (relevantChars.length > 0) {
+            lines.push('');
+            lines.push('CHARACTER APPEARANCES:');
+            for (const c of relevantChars) {
+                let desc = `  ${c.name}:`;
+                if (c.appearance_prompt) desc += ` ${c.appearance_prompt.slice(0, 150)}`;
+                if (c.age_range) desc += ` Age: ${c.age_range}.`;
+                if (c.build) desc += ` Build: ${c.build}.`;
+                if (c.distinguishing) desc += ` Notable: ${c.distinguishing.slice(0, 100)}.`;
+                lines.push(desc);
+            }
+        }
+    }
+
+    return lines.join('\n');
+}
+
 function gatherSceneText(projectId, body) {
     const sceneTexts = [];
     const sceneIds = [];
+
+    // FILM-123: Get Fountain elements and entity context for enhanced prompts
+    const fountainScenes = getFountainSceneElements(projectId);
+    const entityContext = getEntityContext(projectId);
 
     if (body.scene_id && UUID_RE.test(body.scene_id)) {
         // Single scene breakdown
         const row = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(body.scene_id);
         if (!row) return { error: { status: 404, message: 'Scene not found' } };
         sceneIds.push(row.id);
-        sceneTexts.push(formatSceneText(row));
+
+        // Try to find matching Fountain scene
+        if (fountainScenes) {
+            const fountainScene = fountainScenes.find(fs => {
+                const loc = fs.heading.meta?.location?.toUpperCase();
+                return loc && loc === (row.location || '').toUpperCase();
+            });
+            if (fountainScene) {
+                sceneTexts.push(formatFountainScene(fountainScene, entityContext));
+            } else {
+                sceneTexts.push(formatSceneText(row, entityContext));
+            }
+        } else {
+            sceneTexts.push(formatSceneText(row, entityContext));
+        }
 
     } else if (body.scene_ids && Array.isArray(body.scene_ids)) {
         // Multi-scene breakdown
@@ -319,7 +497,21 @@ function gatherSceneText(projectId, body) {
             const row = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sid);
             if (row) {
                 sceneIds.push(row.id);
-                sceneTexts.push(formatSceneText(row));
+
+                // Try to find matching Fountain scene
+                if (fountainScenes) {
+                    const fountainScene = fountainScenes.find(fs => {
+                        const loc = fs.heading.meta?.location?.toUpperCase();
+                        return loc && loc === (row.location || '').toUpperCase();
+                    });
+                    if (fountainScene) {
+                        sceneTexts.push(formatFountainScene(fountainScene, entityContext));
+                    } else {
+                        sceneTexts.push(formatSceneText(row, entityContext));
+                    }
+                } else {
+                    sceneTexts.push(formatSceneText(row, entityContext));
+                }
             }
         }
         if (sceneTexts.length === 0) return { error: { status: 404, message: 'No valid scenes found' } };
@@ -330,44 +522,88 @@ function gatherSceneText(projectId, body) {
             "SELECT * FROM film_scenes WHERE project_id = ? AND status = 'written' ORDER BY scene_number"
         ).all(projectId);
         if (rows.length === 0) return { error: { status: 400, message: 'No scenes in "written" status to break down.' } };
+
         for (const row of rows) {
             sceneIds.push(row.id);
-            sceneTexts.push(formatSceneText(row));
+
+            // Try to find matching Fountain scene by scene number
+            if (fountainScenes && row.scene_number) {
+                const fountainScene = fountainScenes.find(fs =>
+                    fs.heading.scene_number === String(row.scene_number)
+                );
+                if (fountainScene) {
+                    sceneTexts.push(formatFountainScene(fountainScene, entityContext));
+                } else {
+                    sceneTexts.push(formatSceneText(row, entityContext));
+                }
+            } else {
+                sceneTexts.push(formatSceneText(row, entityContext));
+            }
         }
 
     } else {
-        // Fallback: use latest script text
-        const row = db.prepare(
-            'SELECT content FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1'
-        ).get(projectId);
-        if (!row) return { error: { status: 400, message: 'No script uploaded. Upload a script first or provide scene_id.' } };
-        sceneTexts.push(row.content.slice(0, 12000));
-        sceneIds.push(null); // No specific scene
+        // Fallback: use latest script - try Fountain first
+        if (fountainScenes && fountainScenes.length > 0) {
+            // Format all Fountain scenes
+            for (const fs of fountainScenes.slice(0, 10)) { // Limit to 10 scenes
+                sceneTexts.push(formatFountainScene(fs, entityContext));
+            }
+            sceneIds.push(null);
+        } else {
+            const row = db.prepare(
+                'SELECT content FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1'
+            ).get(projectId);
+            if (!row) return { error: { status: 400, message: 'No script uploaded. Upload a script first or provide scene_id.' } };
+            sceneTexts.push(row.content.slice(0, 12000));
+            sceneIds.push(null); // No specific scene
+        }
     }
 
     return { sceneTexts, sceneIds };
 }
 
-function formatSceneText(scene) {
-    let text = `Scene ${scene.scene_number}: ${scene.int_ext || ''} ${scene.location || ''} - ${scene.time_of_day || ''}`.trim();
+function formatSceneText(scene, entityContext = {}) {
+    let text = `SCENE HEADING: ${scene.int_ext || 'INT'}.  ${scene.location || 'UNKNOWN'} - ${scene.time_of_day || 'DAY'}`.trim();
+
+    // FILM-123: Add location context from entity context
+    if (scene.location && entityContext.locations) {
+        const locMatch = entityContext.locations.find(
+            l => l.name.toUpperCase() === scene.location.toUpperCase()
+        );
+        if (locMatch) {
+            text += '\n\nLOCATION CONTEXT:';
+            if (locMatch.description) text += `\n  Description: ${locMatch.description.slice(0, 300)}`;
+            if (locMatch.reference_prompt) text += `\n  Visual: ${locMatch.reference_prompt.slice(0, 200)}`;
+            if (locMatch.lighting_default) text += `\n  Default Lighting: ${locMatch.lighting_default}`;
+            if (locMatch.atmosphere_notes) text += `\n  Atmosphere: ${locMatch.atmosphere_notes.slice(0, 200)}`;
+        }
+    }
 
     // Add character context from scene_characters
     const chars = db.prepare(`
-        SELECT c.name, c.appearance_prompt, c.personality_notes
+        SELECT c.name, c.appearance_prompt, c.personality_notes, c.age_range, c.build, c.distinguishing
         FROM film_scene_characters sc
         JOIN film_characters c ON sc.character_id = c.id
         WHERE sc.scene_id = ?
     `).all(scene.id);
 
     if (chars.length > 0) {
-        text += '\n\nCHARACTERS IN SCENE:';
+        text += '\n\nCHARACTER APPEARANCES:';
         for (const c of chars) {
-            text += `\n- ${c.name}`;
-            if (c.appearance_prompt) text += ` (${c.appearance_prompt.slice(0, 100)})`;
+            let charDesc = `\n  ${c.name}:`;
+            if (c.appearance_prompt) charDesc += ` ${c.appearance_prompt.slice(0, 150)}`;
+            if (c.age_range) charDesc += ` Age: ${c.age_range}.`;
+            if (c.build) charDesc += ` Build: ${c.build}.`;
+            if (c.distinguishing) charDesc += ` Notable: ${c.distinguishing.slice(0, 100)}.`;
+            text += charDesc;
         }
     }
 
-    text += `\n\n${scene.description || ''}`;
+    // Add scene description as ACTION
+    if (scene.description) {
+        text += `\n\nACTION: ${scene.description}`;
+    }
+
     return text;
 }
 
