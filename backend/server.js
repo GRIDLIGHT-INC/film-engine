@@ -46,6 +46,7 @@ const { handleScripts } = require('./routes/scripts');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
 const { handleBreakdown } = require('./routes/breakdown');
+const { handleScreenplayAI } = require('./routes/screenplay-ai');
 const { handleCharacters } = require('./routes/characters');
 const { handleLocations } = require('./routes/locations');
 const { handleNotes } = require('./routes/notes');
@@ -136,6 +137,11 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/projects/:id/breakdown[/stream]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'breakdown') {
             return await handleBreakdown(req, res, parts);
+        }
+
+        // Route: /film/projects/:id/screenplay-ai (FILM-112)
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'screenplay-ai') {
+            return await handleScreenplayAI(req, res, parts);
         }
 
         // Route: /film/projects/:id/advance-status

@@ -4617,38 +4617,24 @@
         renderAIChatMessages();
 
         try {
-            // Get context from editor
-            const editor = document.getElementById('screenplayEditor');
-            const currentContent = editor ? editor.innerText.slice(0, 2000) : '';
-            const block = getCurrentBlock();
-            const currentElement = block ? block.innerText : '';
-
-            // Build prompt based on mode
-            let systemPrompt = '';
-            switch (mode) {
-                case 'brainstorm':
-                    systemPrompt = 'You are a creative writing assistant helping brainstorm screenplay ideas. Be concise and creative.';
-                    break;
-                case 'write-scene':
-                    systemPrompt = 'You are a screenplay writer. Write scenes in proper Fountain format. Include scene headings, action, character names, and dialogue.';
-                    break;
-                case 'rewrite':
-                    systemPrompt = 'You are a screenplay editor. Rewrite the provided content to improve dialogue, pacing, or clarity while maintaining the original intent.';
-                    break;
-                case 'convert':
-                    systemPrompt = 'You are a screenplay formatter. Convert the provided text into proper Fountain screenplay format.';
-                    break;
+            // FILM-112: Call the screenplay-ai endpoint with project context
+            if (!state.currentProject) {
+                throw new Error('No project selected');
             }
 
-            // Call AI API
-            const response = await api('/ai/chat', {
+            // Build conversation history for context
+            const conversationHistory = (state.aiChat || [])
+                .slice(-10) // Last 10 messages
+                .filter(m => m.role === 'user' || m.role === 'assistant')
+                .map(m => ({ role: m.role, content: m.content }));
+
+            // Call AI API via backend
+            const response = await api(`/projects/${state.currentProject.id}/screenplay-ai`, {
                 method: 'POST',
                 body: JSON.stringify({
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: `Current screenplay context:\n${currentContent}\n\nCurrent element:\n${currentElement}\n\nUser request: ${message}` }
-                    ],
-                    mode: mode
+                    mode: mode,
+                    message: message,
+                    conversation_history: conversationHistory.slice(0, -1) // Exclude current message
                 })
             });
 
