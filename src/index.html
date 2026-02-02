@@ -930,6 +930,89 @@
             opacity: 1;
         }
 
+        /* FILM-102: Keyboard Shortcut Help Overlay */
+        .shortcut-help-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+        .shortcut-help-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .shortcut-help-content {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+        }
+        .shortcut-help-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        .shortcut-help-header h3 {
+            margin: 0;
+            font-size: 16px;
+        }
+        .shortcut-help-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+        .shortcut-help-close:hover {
+            color: var(--text);
+        }
+        .shortcut-help-sections {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            padding: 20px;
+        }
+        .shortcut-section h4 {
+            margin: 0 0 12px 0;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+        }
+        .shortcut-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+        .shortcut-item kbd {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-family: monospace;
+            font-size: 11px;
+            min-width: 20px;
+            text-align: center;
+        }
+
         /* Import Section */
         .screenplay-import-section {
             margin-top: 16px;
@@ -1156,15 +1239,17 @@
                 <div class="screenplay-main-panel">
                     <!-- Toolbar -->
                     <div class="screenplay-toolbar">
-                        <button class="toolbar-btn" onclick="formatBold()" title="Bold"><b>B</b></button>
-                        <button class="toolbar-btn" onclick="formatItalic()" title="Italic"><i>I</i></button>
-                        <button class="toolbar-btn" onclick="formatUnderline()" title="Underline"><u>U</u></button>
+                        <button class="toolbar-btn" onclick="formatBold()" title="Bold (Ctrl+B)"><b>B</b></button>
+                        <button class="toolbar-btn" onclick="formatItalic()" title="Italic (Ctrl+I)"><i>I</i></button>
+                        <button class="toolbar-btn" onclick="formatUnderline()" title="Underline (Ctrl+U)"><u>U</u></button>
                         <div class="toolbar-divider"></div>
                         <span id="currentSceneNum" style="font-size:11px;color:var(--text-muted);">Scene: —</span>
                         <div class="toolbar-stats">
                             <span id="editorPageCount">Pages: 0</span>
                             <span id="editorWordCount">Words: 0</span>
                         </div>
+                        <div class="toolbar-divider"></div>
+                        <button class="toolbar-btn" onclick="toggleShortcutHelp()" title="Keyboard Shortcuts (Ctrl+/)">?</button>
                     </div>
 
                     <!-- Editor Container -->
@@ -2042,6 +2127,22 @@
     let autoDetectTimer = null;
     const AUTO_DETECT_DELAY = 400; // ms
 
+    // FILM-102: Keyboard shortcuts
+    const KEYBOARD_SHORTCUTS = {
+        // Element type shortcuts (Ctrl/Cmd + number)
+        '1': { type: 'scene-heading', label: 'Scene Heading' },
+        '2': { type: 'action', label: 'Action' },
+        '3': { type: 'character', label: 'Character' },
+        '4': { type: 'dialogue', label: 'Dialogue' },
+        '5': { type: 'parenthetical', label: 'Parenthetical' },
+        '6': { type: 'transition', label: 'Transition' },
+        '7': { type: 'dual-dialogue', label: 'Dual Dialogue' },
+        '8': { type: 'centered', label: 'Centered' },
+        '9': { type: 'note', label: 'Note' }
+    };
+
+    let shortcutHelpVisible = false;
+
     async function uploadScreenplay() {
         if (!state.currentProject) return;
         const content = document.getElementById('scriptInput').value.trim();
@@ -2400,15 +2501,63 @@
     }
 
     function onEditorKeydown(event) {
-        // Ctrl+S to save
-        if (event.key === 's' && (event.ctrlKey || event.metaKey)) {
-            event.preventDefault();
-            saveScreenplay();
-            return;
+        const isMod = event.ctrlKey || event.metaKey;
+
+        // FILM-102: Keyboard shortcuts with Ctrl/Cmd modifier
+        if (isMod) {
+            // Ctrl/Cmd + S to save
+            if (event.key === 's') {
+                event.preventDefault();
+                saveScreenplay();
+                return;
+            }
+
+            // Ctrl/Cmd + / or ? to toggle shortcut help
+            if (event.key === '/' || event.key === '?') {
+                event.preventDefault();
+                toggleShortcutHelp();
+                return;
+            }
+
+            // Ctrl/Cmd + B/I/U for formatting
+            if (event.key === 'b') {
+                event.preventDefault();
+                document.execCommand('bold');
+                return;
+            }
+            if (event.key === 'i') {
+                event.preventDefault();
+                document.execCommand('italic');
+                return;
+            }
+            if (event.key === 'u') {
+                event.preventDefault();
+                document.execCommand('underline');
+                return;
+            }
+
+            // Ctrl/Cmd + 1-9 for element types
+            if (KEYBOARD_SHORTCUTS[event.key]) {
+                event.preventDefault();
+                const shortcut = KEYBOARD_SHORTCUTS[event.key];
+                const block = getCurrentBlock();
+                if (block) {
+                    setBlockElementType(block, shortcut.type);
+                    clearAutoDetectSuggestion(block);
+                    const selector = document.getElementById('elementTypeSelector');
+                    if (selector) selector.value = shortcut.type;
+                    setStatus(`Element: ${shortcut.label}`);
+                }
+                return;
+            }
         }
 
-        // Escape key: clear auto-detect suggestion
+        // Escape key: close help or clear auto-detect suggestion
         if (event.key === 'Escape') {
+            if (shortcutHelpVisible) {
+                toggleShortcutHelp();
+                return;
+            }
             const block = getCurrentBlock();
             if (block && block.dataset.suggestedType) {
                 clearAutoDetectSuggestion(block);
@@ -2764,6 +2913,71 @@
         });
 
         return lines.join('\n').trim();
+    }
+
+    // FILM-102: Keyboard shortcut help overlay
+    function toggleShortcutHelp() {
+        let overlay = document.getElementById('shortcutHelpOverlay');
+
+        if (!overlay) {
+            // Create overlay
+            overlay = document.createElement('div');
+            overlay.id = 'shortcutHelpOverlay';
+            overlay.className = 'shortcut-help-overlay';
+            overlay.innerHTML = `
+                <div class="shortcut-help-content">
+                    <div class="shortcut-help-header">
+                        <h3>Keyboard Shortcuts</h3>
+                        <button class="shortcut-help-close" onclick="toggleShortcutHelp()">&times;</button>
+                    </div>
+                    <div class="shortcut-help-sections">
+                        <div class="shortcut-section">
+                            <h4>Element Types</h4>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>1</kbd> Scene Heading</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>2</kbd> Action</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>3</kbd> Character</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>4</kbd> Dialogue</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>5</kbd> Parenthetical</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>6</kbd> Transition</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>7</kbd> Dual Dialogue</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>8</kbd> Centered</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>9</kbd> Note</div>
+                        </div>
+                        <div class="shortcut-section">
+                            <h4>Formatting</h4>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>B</kbd> Bold</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>I</kbd> Italic</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>U</kbd> Underline</div>
+                        </div>
+                        <div class="shortcut-section">
+                            <h4>Navigation</h4>
+                            <div class="shortcut-item"><kbd>Tab</kbd> Cycle element type</div>
+                            <div class="shortcut-item"><kbd>Enter</kbd> New line/element</div>
+                            <div class="shortcut-item"><kbd>Shift</kbd> + <kbd>Enter</kbd> Soft break</div>
+                        </div>
+                        <div class="shortcut-section">
+                            <h4>Actions</h4>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd> Save</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>Z</kbd> Undo</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> Redo</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>/</kbd> This help</div>
+                            <div class="shortcut-item"><kbd>Esc</kbd> Close/Cancel</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
+
+        shortcutHelpVisible = !shortcutHelpVisible;
+        overlay.classList.toggle('visible', shortcutHelpVisible);
+
+        if (shortcutHelpVisible) {
+            // Close on overlay background click
+            overlay.onclick = (e) => {
+                if (e.target === overlay) toggleShortcutHelp();
+            };
+        }
     }
 
     function formatBold() {
