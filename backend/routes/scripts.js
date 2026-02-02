@@ -193,6 +193,152 @@ function extractScenesFromFountain(parsed, projectId) {
     return scenes;
 }
 
+/**
+ * FILM-120: Sync scenes with screenplay content
+ * Matches scenes by number first, then by location+time similarity.
+ * Creates new scenes, updates existing ones, marks deleted as 'removed'.
+ */
+function syncScenesWithScreenplay(projectId, parsedFountain) {
+    const newScenes = extractScenesFromFountain(parsedFountain, projectId);
+
+    // Get existing scenes for this project
+    const existingScenes = db.prepare(`
+        SELECT * FROM film_scenes
+        WHERE project_id = ? AND status != 'removed'
+        ORDER BY scene_number
+    `).all(projectId);
+
+    const report = {
+        scenes_added: 0,
+        scenes_updated: 0,
+        scenes_removed: 0,
+        characters_found: new Set()
+    };
+
+    // Track which existing scenes were matched
+    const matchedExistingIds = new Set();
+    const matchedNewIndices = new Set();
+
+    // First pass: match by scene number
+    for (let i = 0; i < newScenes.length; i++) {
+        const newScene = newScenes[i];
+
+        // Collect characters
+        (newScene.characters_present || []).forEach(c => report.characters_found.add(c));
+
+        // Find matching existing scene by scene_number
+        const match = existingScenes.find(es =>
+            es.scene_number === newScene.scene_number && !matchedExistingIds.has(es.id)
+        );
+
+        if (match) {
+            matchedExistingIds.add(match.id);
+            matchedNewIndices.add(i);
+
+            // Update existing scene
+            db.prepare(`
+                UPDATE film_scenes SET
+                    int_ext = ?,
+                    location = ?,
+                    time_of_day = ?,
+                    description = ?,
+                    characters_present = ?
+                WHERE id = ?
+            `).run(
+                newScene.int_ext,
+                newScene.location,
+                newScene.time_of_day,
+                (newScene.description || '').slice(0, 10000),
+                JSON.stringify(newScene.characters_present || []),
+                match.id
+            );
+            report.scenes_updated++;
+        }
+    }
+
+    // Second pass: match remaining scenes by location + time_of_day similarity
+    for (let i = 0; i < newScenes.length; i++) {
+        if (matchedNewIndices.has(i)) continue;
+        const newScene = newScenes[i];
+
+        // Try to find similar scene by location and time
+        const match = existingScenes.find(es => {
+            if (matchedExistingIds.has(es.id)) return false;
+
+            const locMatch = es.location && newScene.location &&
+                es.location.toLowerCase() === newScene.location.toLowerCase();
+            const timeMatch = es.time_of_day && newScene.time_of_day &&
+                es.time_of_day.toLowerCase() === newScene.time_of_day.toLowerCase();
+
+            return locMatch && timeMatch;
+        });
+
+        if (match) {
+            matchedExistingIds.add(match.id);
+            matchedNewIndices.add(i);
+
+            // Update with new scene number
+            db.prepare(`
+                UPDATE film_scenes SET
+                    scene_number = ?,
+                    int_ext = ?,
+                    location = ?,
+                    time_of_day = ?,
+                    description = ?,
+                    characters_present = ?
+                WHERE id = ?
+            `).run(
+                newScene.scene_number,
+                newScene.int_ext,
+                newScene.location,
+                newScene.time_of_day,
+                (newScene.description || '').slice(0, 10000),
+                JSON.stringify(newScene.characters_present || []),
+                match.id
+            );
+            report.scenes_updated++;
+        }
+    }
+
+    // Create new scenes for unmatched new scenes
+    const insertScene = db.prepare(`
+        INSERT INTO film_scenes
+        (id, project_id, scene_number, int_ext, location, time_of_day, description, characters_present, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+
+    for (let i = 0; i < newScenes.length; i++) {
+        if (matchedNewIndices.has(i)) continue;
+        const newScene = newScenes[i];
+
+        insertScene.run(
+            generateId(),
+            projectId,
+            newScene.scene_number,
+            newScene.int_ext,
+            newScene.location,
+            newScene.time_of_day,
+            (newScene.description || '').slice(0, 10000),
+            JSON.stringify(newScene.characters_present || [])
+        );
+        report.scenes_added++;
+    }
+
+    // Mark unmatched existing scenes as 'removed'
+    for (const existing of existingScenes) {
+        if (!matchedExistingIds.has(existing.id)) {
+            db.prepare(`
+                UPDATE film_scenes SET status = 'removed'
+                WHERE id = ?
+            `).run(existing.id);
+            report.scenes_removed++;
+        }
+    }
+
+    report.characters_found = [...report.characters_found];
+    return report;
+}
+
 function uploadScript(req, res, projectId) {
     const body = req.body;
 
@@ -483,8 +629,14 @@ function updateScript(req, res, projectId, version) {
 
     const updated = db.prepare('SELECT * FROM film_scripts WHERE id = ?').get(existing.id);
 
-    // Optionally update scenes if requested
-    if (body.update_scenes && parsedFountain) {
+    let syncReport = null;
+
+    // FILM-120: Sync scenes with screenplay (incremental update)
+    if (body.sync_scenes && parsedFountain) {
+        syncReport = syncScenesWithScreenplay(projectId, parsedFountain);
+    }
+    // Legacy: Replace all scenes if requested
+    else if (body.update_scenes && parsedFountain) {
         db.prepare('DELETE FROM film_scenes WHERE project_id = ?').run(projectId);
         const parsedScenes = extractScenesFromFountain(parsedFountain, projectId);
 
@@ -508,8 +660,13 @@ function updateScript(req, res, projectId, version) {
         }
     }
 
+    const response = { script: updated };
+    if (syncReport) {
+        response.sync_report = syncReport;
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ script: updated }));
+    res.end(JSON.stringify(response));
 }
 
 /**
