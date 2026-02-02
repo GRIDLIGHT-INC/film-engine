@@ -816,6 +816,26 @@
             gap: 12px;
         }
 
+        /* FILM-104: Save Status Indicator */
+        .save-status {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+        .save-status.saved {
+            color: var(--success, #4caf50);
+            background: rgba(76, 175, 80, 0.1);
+        }
+        .save-status.saving {
+            color: var(--text-muted);
+            background: var(--surface-2);
+        }
+        .save-status.unsaved {
+            color: var(--warning, #ff9800);
+            background: rgba(255, 152, 0, 0.1);
+        }
+
         /* Editor Scroll Container */
         .screenplay-scroll-container {
             flex: 1;
@@ -1301,6 +1321,8 @@
                             <span id="editorPageCount">Pages: 0</span>
                             <span id="editorWordCount">Words: 0</span>
                         </div>
+                        <div class="toolbar-divider"></div>
+                        <span id="saveStatusIndicator" class="save-status saved">Saved</span>
                         <div class="toolbar-divider"></div>
                         <button class="toolbar-btn" onclick="toggleShortcutHelp()" title="Keyboard Shortcuts (Ctrl+/)">?</button>
                     </div>
@@ -2186,6 +2208,12 @@
     let autocompleteSelectedIndex = 0;
     let autocompleteType = null; // 'character' or 'location'
 
+    // FILM-104: Auto-save state
+    let autoSaveTimer = null;
+    const AUTO_SAVE_DELAY = 3000; // 3 seconds
+    let currentScriptVersion = null;
+    let saveStatus = 'saved'; // 'saved', 'saving', 'unsaved'
+
     // FILM-102: Keyboard shortcuts
     const KEYBOARD_SHORTCUTS = {
         // Element type shortcuts (Ctrl/Cmd + number)
@@ -2243,11 +2271,15 @@
             const data = await api('/projects/' + state.currentProject.id + '/scripts/' + ver);
             if (data.fountain_content) {
                 currentFountainContent = data.fountain_content;
+                currentScriptVersion = parseInt(ver); // FILM-104: Track version for auto-save
                 renderFountainToEditor(data.fountain_content);
                 updateEditorStats();
+                updateSaveStatus('saved');
             } else if (data.content) {
                 document.getElementById('scriptInput').value = data.content;
-                document.getElementById('screenplayEditor').innerHTML = '<div class="sp-action">' + escapeHtml(data.content) + '</div>';
+                document.getElementById('screenplayEditor').innerHTML = '<div class="sp-action" data-element-type="action">' + escapeHtml(data.content) + '</div>';
+                currentScriptVersion = parseInt(ver);
+                updateSaveStatus('saved');
             }
         } catch (err) { setStatus('Error: ' + err.message); }
     }
@@ -2258,13 +2290,17 @@
             const data = await api('/projects/' + state.currentProject.id + '/script/latest/fountain');
             if (data.fountain_content) {
                 currentFountainContent = data.fountain_content;
+                currentScriptVersion = data.version; // FILM-104: Track version for auto-save
                 renderFountainToEditor(data.fountain_content);
                 updateEditorStats(data.page_count, data.scene_count);
+                updateSaveStatus('saved');
                 setStatus(`Loaded v${data.version} — ${data.scene_count} scenes`);
             }
         } catch (err) {
             // No Fountain content yet - that's OK
             document.getElementById('screenplayEditor').innerHTML = '';
+            currentScriptVersion = null;
+            updateSaveStatus('saved');
         }
     }
 
@@ -2420,6 +2456,82 @@
 
         // FILM-103: Trigger autocomplete for character/location
         triggerAutocomplete();
+
+        // FILM-104: Trigger debounced auto-save
+        triggerAutoSave();
+    }
+
+    // FILM-104: Debounced auto-save
+    function triggerAutoSave() {
+        // Mark as unsaved
+        updateSaveStatus('unsaved');
+
+        // Clear existing timer
+        if (autoSaveTimer) clearTimeout(autoSaveTimer);
+
+        // Set new timer
+        autoSaveTimer = setTimeout(() => {
+            performAutoSave();
+        }, AUTO_SAVE_DELAY);
+    }
+
+    // Perform the actual auto-save
+    async function performAutoSave() {
+        if (!state.currentProject || !editorDirty) return;
+
+        // Need a version to update
+        if (!currentScriptVersion) {
+            // No existing version - need to create a new one via POST
+            await saveScreenplay();
+            return;
+        }
+
+        updateSaveStatus('saving');
+
+        try {
+            const editor = document.getElementById('screenplayEditor');
+            const fountainText = serializeEditorToFountain(editor);
+
+            if (!fountainText.trim()) {
+                updateSaveStatus('saved');
+                return;
+            }
+
+            await api('/projects/' + state.currentProject.id + '/script/' + currentScriptVersion, {
+                method: 'PUT',
+                body: JSON.stringify({ fountain_content: fountainText })
+            });
+
+            editorDirty = false;
+            currentFountainContent = fountainText;
+            updateSaveStatus('saved');
+        } catch (err) {
+            console.error('Auto-save failed:', err);
+            updateSaveStatus('unsaved');
+            // Fall back to creating new version on next save
+        }
+    }
+
+    // Update save status indicator
+    function updateSaveStatus(status) {
+        saveStatus = status;
+        const indicator = document.getElementById('saveStatusIndicator');
+        if (!indicator) return;
+
+        switch (status) {
+            case 'saving':
+                indicator.textContent = 'Saving...';
+                indicator.className = 'save-status saving';
+                break;
+            case 'saved':
+                indicator.textContent = 'Saved';
+                indicator.className = 'save-status saved';
+                break;
+            case 'unsaved':
+                indicator.textContent = 'Unsaved';
+                indicator.className = 'save-status unsaved';
+                break;
+        }
     }
 
     // FILM-101: Smart element type detection based on content
@@ -3210,12 +3322,13 @@
         const editor = document.getElementById('screenplayEditor');
 
         // Convert editor content back to Fountain
-        const fountainText = editorToFountain(editor);
+        const fountainText = serializeEditorToFountain(editor);
         if (!fountainText.trim()) {
             setStatus('Nothing to save');
             return;
         }
 
+        updateSaveStatus('saving');
         setStatus('Saving...');
         try {
             const data = await api('/projects/' + state.currentProject.id + '/script', {
@@ -3224,14 +3337,23 @@
             setStatus(`Saved as v${data.script.version}`);
             editorDirty = false;
             currentFountainContent = fountainText;
+            currentScriptVersion = data.script.version; // FILM-104: Track version for auto-save
+            updateSaveStatus('saved');
             loadScriptVersions();
-        } catch (err) { setStatus('Error: ' + err.message); }
+        } catch (err) {
+            setStatus('Error: ' + err.message);
+            updateSaveStatus('unsaved');
+        }
     }
 
+    // FILM-104: Serialize editor content to Fountain format with inline formatting
     function editorToFountain(editor) {
+        return serializeEditorToFountain(editor);
+    }
+
+    function serializeEditorToFountain(editor) {
         // Convert editor HTML back to Fountain text
-        // Uses data-element-type attribute for element identification
-        // Falls back to class names for backwards compatibility
+        // Handles data-element-type and inline formatting (bold, italic, underline)
         let elements = editor.querySelectorAll('[data-element-type]');
 
         // Fallback: if no data-element-type elements, try sp-* classes
@@ -3243,22 +3365,25 @@
         let prevType = null;
 
         elements.forEach(el => {
-            const text = el.innerText.trim();
-            // Try data-element-type first, then infer from class
+            // Get text with Fountain formatting markers
+            const text = extractFormattedText(el).trim();
+
+            // Get element type
             let elementType = el.dataset && el.dataset.elementType;
             if (!elementType) {
-                // Infer from class
                 const classes = [...el.classList];
                 const spClass = classes.find(c => c.startsWith('sp-'));
                 elementType = spClass ? spClass.replace('sp-', '') : 'action';
             }
 
-            // Skip empty elements (but scene-headings might be important)
+            // Skip empty elements
             if (!text) return;
 
             switch (elementType) {
                 case 'scene-heading':
-                    lines.push('', text.toUpperCase());
+                    // Preserve original if already has prefix, otherwise force with .
+                    const hasPrefix = /^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(text);
+                    lines.push('', hasPrefix ? text.toUpperCase() : '.' + text.toUpperCase());
                     break;
                 case 'character':
                     lines.push('', text.toUpperCase());
@@ -3267,7 +3392,6 @@
                     lines.push(text);
                     break;
                 case 'parenthetical':
-                    // Ensure parentheses
                     if (!text.startsWith('(')) {
                         lines.push('(' + text + ')');
                     } else {
@@ -3275,7 +3399,12 @@
                     }
                     break;
                 case 'transition':
-                    lines.push('', text.toUpperCase());
+                    // Use > prefix if not ending with :
+                    if (text.endsWith(':')) {
+                        lines.push('', text.toUpperCase());
+                    } else {
+                        lines.push('', '> ' + text.toUpperCase());
+                    }
                     break;
                 case 'centered':
                     lines.push('', '> ' + text + ' <');
@@ -3287,7 +3416,6 @@
                     lines.push('[[' + text + ']]');
                     break;
                 case 'dual-dialogue':
-                    // Mark as dual dialogue (caret suffix)
                     lines.push('', text.toUpperCase() + ' ^');
                     break;
                 case 'action':
@@ -3302,6 +3430,52 @@
         });
 
         return lines.join('\n').trim();
+    }
+
+    // Extract text from element, converting HTML formatting to Fountain markers
+    function extractFormattedText(element) {
+        let result = '';
+
+        function processNode(node) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                result += node.textContent;
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                const tag = node.tagName.toLowerCase();
+                const isBold = tag === 'b' || tag === 'strong' || node.style.fontWeight === 'bold';
+                const isItalic = tag === 'i' || tag === 'em' || node.style.fontStyle === 'italic';
+                const isUnderline = tag === 'u' || node.style.textDecoration?.includes('underline');
+
+                // Determine markers
+                let openMarker = '';
+                let closeMarker = '';
+
+                if (isBold && isItalic) {
+                    openMarker = '***';
+                    closeMarker = '***';
+                } else if (isBold) {
+                    openMarker = '**';
+                    closeMarker = '**';
+                } else if (isItalic) {
+                    openMarker = '*';
+                    closeMarker = '*';
+                } else if (isUnderline) {
+                    openMarker = '_';
+                    closeMarker = '_';
+                }
+
+                result += openMarker;
+                for (const child of node.childNodes) {
+                    processNode(child);
+                }
+                result += closeMarker;
+            }
+        }
+
+        for (const child of element.childNodes) {
+            processNode(child);
+        }
+
+        return result;
     }
 
     // FILM-102: Keyboard shortcut help overlay
