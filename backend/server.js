@@ -160,6 +160,11 @@ const server = http.createServer(async (req, res) => {
             return handleCallSheets(req, res, parts, query);
         }
 
+        // Route: /film/projects/:id/screenplay/suggestions (FILM-121)
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'screenplay' && parts[4] === 'suggestions') {
+            return await handleScripts(req, res, parts, query);
+        }
+
         // Route: /film/projects/:id/script or /film/projects/:id/scripts[/:version]
         if (parts[1] === 'projects' && parts[2] && (parts[3] === 'script' || parts[3] === 'scripts')) {
             return await handleScripts(req, res, parts, query);

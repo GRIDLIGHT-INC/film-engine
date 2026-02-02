@@ -19,7 +19,7 @@ const LINES_PER_PAGE = 55;
 
 function handleScripts(req, res, urlParts, query) {
     const projectId = urlParts[2];
-    const sub = urlParts[3]; // 'script' or 'scripts'
+    const sub = urlParts[3]; // 'script' or 'scripts' or 'screenplay'
     const versionOrKeyword = urlParts[4];
     const subPath = urlParts[5]; // 'fountain' for /script/latest/fountain
 
@@ -35,6 +35,11 @@ function handleScripts(req, res, urlParts, query) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Project not found' }));
         return;
+    }
+
+    // FILM-121: GET /film/projects/:id/screenplay/suggestions
+    if (req.method === 'GET' && sub === 'screenplay' && versionOrKeyword === 'suggestions') {
+        return getScreenplaySuggestions(req, res, projectId);
     }
 
     // GET /film/projects/:id/script/latest/fountain
@@ -739,6 +744,107 @@ function getScript(req, res, projectId, version) {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(row));
+}
+
+/**
+ * FILM-121: Get screenplay entity suggestions
+ * Analyzes the latest script and returns unmatched characters/locations
+ */
+function getScreenplaySuggestions(req, res, projectId) {
+    // Get latest Fountain script
+    const script = db.prepare(`
+        SELECT id, fountain_content, format
+        FROM film_scripts
+        WHERE project_id = ?
+        ORDER BY version DESC
+        LIMIT 1
+    `).get(projectId);
+
+    if (!script || script.format !== 'fountain' || !script.fountain_content) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            unmatched_characters: [],
+            unmatched_locations: [],
+            message: 'No Fountain script found'
+        }));
+        return;
+    }
+
+    // Parse the Fountain content
+    const parsed = parseFountain(script.fountain_content);
+
+    // Collect all character names from character cues
+    const characterMentions = {};
+    let currentSceneNum = 0;
+    for (const el of parsed.elements) {
+        if (el.type === 'scene_heading') {
+            currentSceneNum++;
+        } else if (el.type === 'character') {
+            const name = el.text.trim().toUpperCase();
+            if (!characterMentions[name]) {
+                characterMentions[name] = {
+                    name: name,
+                    mention_count: 0,
+                    first_scene: currentSceneNum
+                };
+            }
+            characterMentions[name].mention_count++;
+        }
+    }
+
+    // Collect all locations from scene headings
+    const locationMentions = {};
+    for (const el of parsed.elements) {
+        if (el.type === 'scene_heading' && el.meta && el.meta.location) {
+            const loc = el.meta.location.trim().toUpperCase();
+            if (!locationMentions[loc]) {
+                locationMentions[loc] = {
+                    name: el.meta.location.trim(),
+                    mention_count: 0,
+                    int_ext: el.meta.int_ext || '',
+                    time_of_day: el.meta.time_of_day || ''
+                };
+            }
+            locationMentions[loc].mention_count++;
+        }
+    }
+
+    // Get existing characters
+    const existingCharacters = db.prepare(`
+        SELECT name FROM film_characters WHERE project_id = ?
+    `).all(projectId);
+    const existingCharNames = new Set(existingCharacters.map(c => c.name.toUpperCase()));
+
+    // Get existing locations
+    const existingLocations = db.prepare(`
+        SELECT name FROM film_locations WHERE project_id = ?
+    `).all(projectId);
+    const existingLocNames = new Set(existingLocations.map(l => l.name.toUpperCase()));
+
+    // Filter for unmatched
+    const unmatchedCharacters = Object.values(characterMentions)
+        .filter(c => !existingCharNames.has(c.name))
+        .map(c => ({
+            ...c,
+            suggested_action: 'create'
+        }))
+        .sort((a, b) => b.mention_count - a.mention_count);
+
+    const unmatchedLocations = Object.values(locationMentions)
+        .filter(l => !existingLocNames.has(l.name.toUpperCase()))
+        .map(l => ({
+            ...l,
+            suggested_action: 'create'
+        }))
+        .sort((a, b) => b.mention_count - a.mention_count);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        unmatched_characters: unmatchedCharacters,
+        unmatched_locations: unmatchedLocations,
+        total_characters_in_script: Object.keys(characterMentions).length,
+        total_locations_in_script: Object.keys(locationMentions).length
+    }));
 }
 
 module.exports = { handleScripts };

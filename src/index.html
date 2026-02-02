@@ -382,6 +382,64 @@
             max-width: 900px;
             width: 95%;
         }
+        .modal.modal-md {
+            max-width: 600px;
+        }
+        /* FILM-121: Suggestions Panel Styles */
+        .suggestions-section {
+            margin-bottom: 16px;
+        }
+        .suggestions-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .suggestions-section-header h4 {
+            font-size: 13px;
+            font-weight: 600;
+            margin: 0;
+        }
+        .suggestion-count {
+            font-weight: normal;
+            color: var(--text-muted);
+        }
+        .suggestions-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--surface);
+        }
+        .suggestion-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+        }
+        .suggestion-item:last-child {
+            border-bottom: none;
+        }
+        .suggestion-item-info {
+            flex: 1;
+        }
+        .suggestion-item-name {
+            font-weight: 600;
+        }
+        .suggestion-item-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .suggestion-item button {
+            padding: 4px 10px;
+            font-size: 11px;
+        }
+        .suggestion-item.created {
+            opacity: 0.5;
+            text-decoration: line-through;
+        }
         .text-convert-input-row {
             display: flex;
             flex-direction: column;
@@ -930,6 +988,22 @@
         .screenplay-toolbar .toolbar-btn.active {
             background: var(--primary);
             border-color: var(--primary);
+        }
+        .suggestions-btn {
+            position: relative;
+        }
+        .suggestions-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 16px;
+            height: 16px;
+            padding: 0 4px;
+            background: var(--accent);
+            color: white;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 600;
         }
         .screenplay-toolbar .toolbar-divider {
             width: 1px;
@@ -1966,6 +2040,9 @@
                         <div class="toolbar-divider"></div>
                         <button class="toolbar-btn" id="aiChatToggle" onclick="toggleAIChat()" title="AI Assistant (Ctrl+Shift+A)">AI</button>
                         <button class="toolbar-btn" onclick="openTextConvertModal()" title="Convert Text to Screenplay">Convert</button>
+                        <button class="toolbar-btn suggestions-btn" id="suggestionsBtn" onclick="openSuggestionsPanel()" title="Entity Suggestions" style="display:none;">
+                            <span id="suggestionsBadge" class="suggestions-badge">0</span>
+                        </button>
                         <button class="toolbar-btn" onclick="toggleShortcutHelp()" title="Keyboard Shortcuts (Ctrl+/)">?</button>
                     </div>
 
@@ -2693,6 +2770,39 @@
                         <button class="btn btn-outline" onclick="backToConvertStep1()">Back</button>
                         <button class="btn btn-secondary" onclick="closeTextConvertModal()">Cancel</button>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FILM-121: Suggestions Panel Modal -->
+    <div class="modal-overlay" id="suggestionsModal">
+        <div class="modal modal-md">
+            <div class="modal-header">
+                <h3>Entity Suggestions</h3>
+                <button class="modal-close" onclick="closeSuggestionsPanel()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-sm text-muted mb-16">These characters and locations were detected in your screenplay but don't exist in your project yet.</p>
+
+                <div class="suggestions-section" id="characterSuggestionsSection">
+                    <div class="suggestions-section-header">
+                        <h4>Characters <span class="suggestion-count" id="charSuggestionCount">(0)</span></h4>
+                        <button class="btn btn-sm btn-outline" onclick="createAllCharacters()">Create All</button>
+                    </div>
+                    <div class="suggestions-list" id="characterSuggestionsList"></div>
+                </div>
+
+                <div class="suggestions-section" id="locationSuggestionsSection">
+                    <div class="suggestions-section-header">
+                        <h4>Locations <span class="suggestion-count" id="locSuggestionCount">(0)</span></h4>
+                        <button class="btn btn-sm btn-outline" onclick="createAllLocations()">Create All</button>
+                    </div>
+                    <div class="suggestions-list" id="locationSuggestionsList"></div>
+                </div>
+
+                <div class="btn-row mt-16">
+                    <button class="btn btn-secondary" onclick="closeSuggestionsPanel()">Close</button>
                 </div>
             </div>
         </div>
@@ -5559,6 +5669,8 @@
             currentScriptVersion = data.script.version; // FILM-104: Track version for auto-save
             updateSaveStatus('saved');
             loadScriptVersions();
+            // FILM-121: Check for new entity suggestions
+            checkScreenplaySuggestions();
         } catch (err) {
             setStatus('Error: ' + err.message);
             updateSaveStatus('unsaved');
@@ -6102,6 +6214,8 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
     function loadScreenplayPage() {
         loadScriptVersions();
         loadLatestFountain();
+        // FILM-121: Check for entity suggestions
+        checkScreenplaySuggestions();
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -6864,6 +6978,155 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
 
     function closeTextConvertModal() {
         document.getElementById('textConvertModal').classList.remove('open');
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FILM-121: SCREENPLAY SUGGESTIONS
+    // ══════════════════════════════════════════════════════════════
+    let screenplaySuggestions = { unmatched_characters: [], unmatched_locations: [] };
+
+    async function checkScreenplaySuggestions() {
+        if (!state.currentProject) return;
+
+        try {
+            const data = await api(`/projects/${state.currentProject.id}/screenplay/suggestions`);
+            screenplaySuggestions = data;
+
+            const totalCount = (data.unmatched_characters?.length || 0) + (data.unmatched_locations?.length || 0);
+            const btn = document.getElementById('suggestionsBtn');
+            const badge = document.getElementById('suggestionsBadge');
+
+            if (totalCount > 0) {
+                btn.style.display = '';
+                badge.textContent = totalCount;
+            } else {
+                btn.style.display = 'none';
+            }
+        } catch (e) {
+            // Silently ignore if endpoint doesn't exist yet
+        }
+    }
+
+    function openSuggestionsPanel() {
+        const modal = document.getElementById('suggestionsModal');
+        modal.classList.add('open');
+        renderSuggestions();
+    }
+
+    function closeSuggestionsPanel() {
+        document.getElementById('suggestionsModal').classList.remove('open');
+    }
+
+    function renderSuggestions() {
+        const chars = screenplaySuggestions.unmatched_characters || [];
+        const locs = screenplaySuggestions.unmatched_locations || [];
+
+        // Characters
+        document.getElementById('charSuggestionCount').textContent = `(${chars.length})`;
+        const charList = document.getElementById('characterSuggestionsList');
+        if (chars.length === 0) {
+            charList.innerHTML = '<div class="suggestion-item"><span class="text-muted">No new characters detected</span></div>';
+        } else {
+            charList.innerHTML = chars.map((c, i) => `
+                <div class="suggestion-item" id="charSugg_${i}">
+                    <div class="suggestion-item-info">
+                        <div class="suggestion-item-name">${escapeHtml(c.name)}</div>
+                        <div class="suggestion-item-meta">${c.mention_count} mention${c.mention_count !== 1 ? 's' : ''} · First in scene ${c.first_scene}</div>
+                    </div>
+                    <button class="btn btn-sm btn-outline" onclick="createSuggestedCharacter(${i})">Create</button>
+                </div>
+            `).join('');
+        }
+
+        // Locations
+        document.getElementById('locSuggestionCount').textContent = `(${locs.length})`;
+        const locList = document.getElementById('locationSuggestionsList');
+        if (locs.length === 0) {
+            locList.innerHTML = '<div class="suggestion-item"><span class="text-muted">No new locations detected</span></div>';
+        } else {
+            locList.innerHTML = locs.map((l, i) => `
+                <div class="suggestion-item" id="locSugg_${i}">
+                    <div class="suggestion-item-info">
+                        <div class="suggestion-item-name">${escapeHtml(l.name)}</div>
+                        <div class="suggestion-item-meta">${l.int_ext || ''} ${l.mention_count} mention${l.mention_count !== 1 ? 's' : ''}</div>
+                    </div>
+                    <button class="btn btn-sm btn-outline" onclick="createSuggestedLocation(${i})">Create</button>
+                </div>
+            `).join('');
+        }
+    }
+
+    async function createSuggestedCharacter(index) {
+        const char = screenplaySuggestions.unmatched_characters[index];
+        if (!char || !state.currentProject) return;
+
+        try {
+            await api(`/projects/${state.currentProject.id}/characters`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: char.name,
+                    role: '',
+                    personality_notes: `Detected from screenplay (${char.mention_count} mentions)`
+                })
+            });
+
+            // Mark as created
+            const el = document.getElementById(`charSugg_${index}`);
+            if (el) {
+                el.classList.add('created');
+                el.querySelector('button').disabled = true;
+                el.querySelector('button').textContent = 'Created';
+            }
+
+            // Refresh characters list
+            await loadCharacters();
+            checkScreenplaySuggestions();
+        } catch (e) {
+            alert('Failed to create character: ' + e.message);
+        }
+    }
+
+    async function createSuggestedLocation(index) {
+        const loc = screenplaySuggestions.unmatched_locations[index];
+        if (!loc || !state.currentProject) return;
+
+        try {
+            await api(`/projects/${state.currentProject.id}/locations`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: loc.name,
+                    description: `${loc.int_ext || ''} location (${loc.mention_count} mentions in screenplay)`
+                })
+            });
+
+            // Mark as created
+            const el = document.getElementById(`locSugg_${index}`);
+            if (el) {
+                el.classList.add('created');
+                el.querySelector('button').disabled = true;
+                el.querySelector('button').textContent = 'Created';
+            }
+
+            // Refresh locations list
+            await loadLocations();
+            checkScreenplaySuggestions();
+        } catch (e) {
+            alert('Failed to create location: ' + e.message);
+        }
+    }
+
+    async function createAllCharacters() {
+        const chars = screenplaySuggestions.unmatched_characters || [];
+        for (let i = 0; i < chars.length; i++) {
+            await createSuggestedCharacter(i);
+        }
+    }
+
+    async function createAllLocations() {
+        const locs = screenplaySuggestions.unmatched_locations || [];
+        for (let i = 0; i < locs.length; i++) {
+            await createSuggestedLocation(i);
+        }
     }
 
     function resetConvertModal() {
