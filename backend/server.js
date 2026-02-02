@@ -38,6 +38,10 @@
  *   GET    /film/scenes/:id/call-sheet                   — Scene call sheet
  *   GET    /film/projects/:id/call-sheet                 — Full project call sheet
  *   GET    /film/projects/:id/export[/fcpxml|edl|premiere] — NLE export
+ *   POST   /film/projects/:id/storyboard/generate[/stream] — Storyboard generation
+ *   GET    /film/projects/:id/storyboard                  — View storyboard frames
+ *   POST   /film/shots/:id/storyboard/regenerate          — Regenerate single shot
+ *   GET    /film/storyboards/:projectId/:filename          — Serve storyboard image
  */
 
 const http = require('http');
@@ -58,6 +62,7 @@ const { handleProductionStatus } = require('./routes/production-status');
 const { handleCallSheets } = require('./routes/call-sheets');
 const { handleTextConvert } = require('./routes/text-convert');
 const { handleNLEExport } = require('./routes/nle-export');
+const { handleStoryboard } = require('./routes/storyboard');
 
 const PORT = process.env.PORT || 3100;
 
@@ -137,6 +142,11 @@ const server = http.createServer(async (req, res) => {
 
     // parts[0]='film', parts[1]='projects'|'scenes'|'shots'|..., parts[2]=:id, parts[3]=sub-route, parts[4]=param
     try {
+        // Route: /film/storyboards/:projectId/:filename — serve storyboard images
+        if (parts[1] === 'storyboards' && parts[2] && parts[3]) {
+            return handleStoryboard(req, res, parts, query);
+        }
+
         // Route: /film/projects/:id/breakdown[/stream]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'breakdown') {
             return await handleBreakdown(req, res, parts);
@@ -232,6 +242,11 @@ const server = http.createServer(async (req, res) => {
             return handleNLEExport(req, res, parts, query);
         }
 
+        // Route: /film/projects/:id/storyboard[/generate[/stream]]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'storyboard') {
+            return await handleStoryboard(req, res, parts, query);
+        }
+
         // Route: /film/projects[/:id]
         if (parts[1] === 'projects') {
             return await handleProjects(req, res, parts, query);
@@ -270,6 +285,11 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/notes/:id (update/delete)
         if (parts[1] === 'notes') {
             return handleNotes(req, res, parts, query);
+        }
+
+        // Route: /film/shots/:id/storyboard/regenerate
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'storyboard') {
+            return await handleStoryboard(req, res, parts, query);
         }
 
         // Route: /film/shots/:id/notes, /film/shots/:id/review,
@@ -318,7 +338,7 @@ function start() {
         console.log('          /film/locations, /film/props, /film/notes, /film/assets,');
         console.log('          /film/*/dashboard, /film/*/milestones, /film/*/render,');
         console.log('          /film/*/advance-status, /film/*/call-sheet, /film/*/breakdown,');
-        console.log('          /film/*/export');
+        console.log('          /film/*/export, /film/*/storyboard');
     });
 }
 

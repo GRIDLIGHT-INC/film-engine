@@ -38,16 +38,19 @@ film-engine/
 │   │   ├── render-ledger.js    # Render logging + reproducibility
 │   │   ├── production-status.js # Project status state machine
 │   │   ├── call-sheets.js      # Scene/project call sheets
-│   │   └── nle-export.js       # FCPXML, EDL, Premiere XML export
+│   │   ├── nle-export.js       # FCPXML, EDL, Premiere XML export
+│   │   └── storyboard.js       # Storyboard generation, viewer, regeneration
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
 │   │   ├── fountain-renderer.js   # Fountain → HTML renderer
 │   │   ├── fdx-parser.js         # Final Draft XML parser
 │   │   ├── nle-export.js         # NLE format generators (pure functions)
 │   │   ├── screenplay-parser.js   # INT./EXT. scene heading parser
-│   │   └── scene-card-schema.js   # Scene card YAML validator
+│   │   ├── scene-card-schema.js   # Scene card YAML validator
+│   │   └── storyboard-prompt.js   # Storyboard prompt engineering + style lock
 │   └── tests/
-│       └── nle-export.test.js     # NLE export unit tests
+│       ├── nle-export.test.js     # NLE export unit tests
+│       └── storyboard-prompt.test.js  # Storyboard prompt unit tests
 ├── docs/
 │   └── api-film.md         # Full API reference
 ├── src/
@@ -82,6 +85,8 @@ All routes prefixed with `/film`:
 | Screenplay AI | `POST /projects/:id/screenplay-ai[/stream]` |
 | Text Convert | `POST /projects/:id/text-to-screenplay[/preview]` |
 | Export | `GET /projects/:id/export[/fcpxml\|edl\|premiere]` |
+| Storyboard | `POST /projects/:id/storyboard/generate[/stream]`, `GET /projects/:id/storyboard` |
+| Storyboard | `POST /shots/:id/storyboard/regenerate`, `GET /storyboards/:pid/:file` |
 
 Full API documentation: [`docs/api-film.md`](docs/api-film.md)
 
@@ -103,6 +108,11 @@ Export project timelines for professional video editors:
 - **Premiere Pro XML** — FCP 7 xmeml v5 format (works with Premiere, Resolve, etc.)
 
 Exports are registered in the asset registry (`film_assets` table) for tracking.
+
+### Storyboard Generation
+Transforms scene cards into SDXL-optimized image prompts via the prompt engineering module (`lib/storyboard-prompt.js`). Maps shot types, camera movements, and lighting from scene cards to descriptive prompt tokens. Supports character LoRA/TI injection, style presets (cinematic, noir, anime, documentary, horror, fantasy), and style locking (deterministic seed variation per scene for visual consistency). Images generated via ImageGen API (`POST http://localhost:8080/image`) and stored at `data/storyboards/{project_id}/{shot_code}.png`.
+
+**Env vars:** `IMAGEGEN_URL` (default `http://localhost:8080`), `IMAGEGEN_API_KEY` (Bearer token)
 
 ## Database
 
@@ -136,7 +146,7 @@ Tasks are in `.claude/tasks/TASK-FILM-*.md`. Current epic phases:
 | 1A | FILM-001–010 | Project & Story Foundation | Backend built |
 | 1B | FILM-082–089 | Production Management | Backend built |
 | 2 | FILM-011–016 | Character & Asset Registry | Backend built |
-| 3 | FILM-017–021 | Storyboard Generation | Blocked (needs ImageGen) |
+| 3 | FILM-017–021 | Storyboard Generation | Backend built |
 | 4 | FILM-022–028 | Voice & Dialogue Pipeline | Blocked (needs Voice-TTS) |
 | 5 | FILM-029–035 | Video Generation | Blocked (needs VideoGen) |
 | 6 | FILM-036–040 | Lip-Sync & Performance | Blocked (needs Phase 4+5) |
@@ -164,6 +174,7 @@ Create numbered SQL file in `backend/db/migrations/` (e.g., `020_add_new_table.s
 ```bash
 # Run unit tests
 node --test backend/tests/nle-export.test.js
+node --test backend/tests/storyboard-prompt.test.js
 
 # Health check
 curl http://localhost:3100/api/health

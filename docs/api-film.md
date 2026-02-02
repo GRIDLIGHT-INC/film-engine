@@ -706,6 +706,143 @@ curl -o timeline.xml http://localhost:3100/film/projects/{id}/export/premiere
 
 ---
 
+## Storyboard Generation
+
+### Generate Storyboard
+
+```
+POST /film/projects/:id/storyboard/generate
+```
+
+**Body** (optional)
+```json
+{
+  "seed": 42,
+  "consistency_weight": 0.7,
+  "ip_adapter_image": null
+}
+```
+
+Generates storyboard keyframes for all shots in the project. Calls ImageGen API sequentially per shot (avoids VRAM contention). Updates shot statuses to `complete` and scene statuses to `storyboarded`.
+
+**Response** `200`
+```json
+{
+  "project_id": "uuid",
+  "shots_completed": 12,
+  "shots_failed": 0,
+  "frames": [
+    {
+      "shot_id": "uuid",
+      "shot_code": "1A",
+      "scene_number": 1,
+      "status": "complete",
+      "image_url": "/film/storyboards/{project_id}/1A.png"
+    }
+  ]
+}
+```
+
+### Stream Storyboard Generation
+
+```
+POST /film/projects/:id/storyboard/generate/stream
+```
+
+Same as above but returns Server-Sent Events (SSE) for real-time progress.
+
+**SSE format:**
+```
+data: {"type":"status","phase":"starting","total_shots":12}
+
+data: {"type":"scene","scene_number":1,"scene_id":"uuid"}
+
+data: {"type":"progress","shot_index":0,"total_shots":12,"shot_code":"1A","phase":"generating"}
+
+data: {"type":"progress","shot_index":0,"total_shots":12,"shot_code":"1A","phase":"complete","image_url":"/film/storyboards/..."}
+
+data: {"type":"scene_complete","scene_number":1,"scene_id":"uuid"}
+
+data: {"type":"result","project_id":"uuid","shots_completed":12,"shots_failed":0}
+
+data: {"type":"done"}
+```
+
+### View Storyboard
+
+```
+GET /film/projects/:id/storyboard
+```
+
+**Response** `200`
+```json
+{
+  "project_id": "uuid",
+  "project_title": "My Film",
+  "frame_count": 12,
+  "total_duration_ms": 48000,
+  "frames": [
+    {
+      "shot_id": "uuid",
+      "shot_code": "1A",
+      "scene_number": 1,
+      "scene_id": "uuid",
+      "description": "John enters the office",
+      "duration_ms": 4000,
+      "image_url": "/film/storyboards/{project_id}/1A.png",
+      "dialogue": [{"character": "JOHN", "line": "Hello"}],
+      "camera": {"shot_type": "medium", "movement": "dolly-in"},
+      "lighting": {"type": "low-key"},
+      "status": "complete",
+      "asset_version": 1
+    }
+  ]
+}
+```
+
+### Regenerate Single Shot
+
+```
+POST /film/shots/:id/storyboard/regenerate
+```
+
+**Body**
+```json
+{
+  "prompt_override": "A tall man in a trench coat, wide shot, dramatic lighting",
+  "seed": 42,
+  "style_override": "noir"
+}
+```
+
+All fields optional. If `prompt_override` is provided, it replaces the auto-generated prompt.
+
+**Response** `200`
+```json
+{
+  "shot_id": "uuid",
+  "shot_code": "1A",
+  "status": "complete",
+  "image_url": "/film/storyboards/{project_id}/1A.png",
+  "seed": 42,
+  "prompt": "the prompt used for generation"
+}
+```
+
+### Serve Storyboard Image
+
+```
+GET /film/storyboards/:projectId/:filename
+```
+
+Returns the storyboard PNG image with `Content-Type: image/png`.
+
+```bash
+curl http://localhost:3100/film/storyboards/{project_id}/1A.png -o storyboard.png
+```
+
+---
+
 ## Error Codes
 
 | Code | Meaning |
