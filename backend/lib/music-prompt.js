@@ -1,0 +1,225 @@
+/**
+ * FILM-090-093: Music Prompt Builder
+ *
+ * Pure functions for building music, SFX, and ambient generation payloads
+ * from scene cards, music cues, and location data. No DB dependency.
+ */
+
+// ── Mood → Music Mapping ────────────────────────────────────────────
+
+const MOOD_TO_MUSIC = {
+    'tense': { tempo_range: [80, 110], instruments: ['strings', 'piano', 'low brass'], energy: 0.4, genre_hint: 'thriller' },
+    'suspenseful': { tempo_range: [70, 100], instruments: ['strings', 'timpani', 'synth pad'], energy: 0.3, genre_hint: 'suspense' },
+    'joyful': { tempo_range: [120, 140], instruments: ['acoustic guitar', 'ukulele', 'piano', 'flute'], energy: 0.8, genre_hint: 'pop' },
+    'melancholic': { tempo_range: [60, 90], instruments: ['piano', 'cello', 'violin'], energy: 0.3, genre_hint: 'classical' },
+    'romantic': { tempo_range: [70, 100], instruments: ['piano', 'strings', 'acoustic guitar'], energy: 0.4, genre_hint: 'romance' },
+    'epic': { tempo_range: [100, 140], instruments: ['full orchestra', 'choir', 'timpani', 'brass'], energy: 0.9, genre_hint: 'orchestral' },
+    'calm': { tempo_range: [60, 80], instruments: ['piano', 'acoustic guitar', 'ambient pad'], energy: 0.2, genre_hint: 'ambient' },
+    'dark': { tempo_range: [60, 90], instruments: ['low strings', 'synth bass', 'distorted drone'], energy: 0.4, genre_hint: 'dark ambient' },
+    'action': { tempo_range: [130, 160], instruments: ['drums', 'electric guitar', 'brass', 'synth'], energy: 0.9, genre_hint: 'action' },
+    'mysterious': { tempo_range: [70, 100], instruments: ['harp', 'celeste', 'strings pizzicato', 'wind chimes'], energy: 0.3, genre_hint: 'mystery' },
+    'comedic': { tempo_range: [110, 140], instruments: ['pizzicato strings', 'xylophone', 'tuba', 'clarinet'], energy: 0.6, genre_hint: 'comedy' },
+    'horror': { tempo_range: [50, 80], instruments: ['dissonant strings', 'prepared piano', 'reverse cymbal'], energy: 0.3, genre_hint: 'horror' },
+    'uplifting': { tempo_range: [100, 130], instruments: ['piano', 'strings', 'acoustic guitar', 'light drums'], energy: 0.7, genre_hint: 'inspirational' },
+    'nostalgic': { tempo_range: [70, 100], instruments: ['piano', 'music box', 'strings'], energy: 0.3, genre_hint: 'nostalgia' },
+};
+
+// ── Location → Ambient Sound Mapping ────────────────────────────────
+
+const LOCATION_TO_AMBIENT = {
+    'office': 'quiet office ambiance, distant keyboard typing, air conditioning hum, muffled phone ringing',
+    'street': 'city street sounds, passing cars, distant sirens, pedestrian footsteps, pigeons',
+    'forest': 'forest ambiance, birdsong, rustling leaves, gentle wind, distant stream',
+    'beach': 'ocean waves crashing, seagulls, gentle wind, distant conversation',
+    'restaurant': 'restaurant ambiance, clinking glasses, muffled conversation, light background music',
+    'bar': 'bar ambiance, glasses clinking, jukebox music, pool balls, muffled chatter',
+    'hospital': 'hospital ambiance, beeping monitors, distant PA announcements, footsteps on linoleum',
+    'car': 'car interior, engine hum, road noise, occasional turn signal',
+    'subway': 'subway ambiance, train rumble, announcements, crowd noise, doors closing',
+    'park': 'park ambiance, children playing, birdsong, dog barking, wind in trees',
+    'library': 'library silence, page turning, distant whisper, clock ticking',
+    'warehouse': 'warehouse ambiance, echo, distant machinery, dripping water',
+    'church': 'church ambiance, reverberant space, distant organ, creaking pews',
+    'apartment': 'apartment ambiance, muffled TV from neighbor, traffic outside, heating system',
+    'courtroom': 'courtroom ambiance, murmuring gallery, gavel, paper shuffling',
+    'school': 'school hallway, distant bell, children talking, lockers closing',
+    'airport': 'airport ambiance, flight announcements, rolling luggage, distant jet engines',
+    'rain': 'heavy rain on windows, thunder rumbling, rain on pavement',
+};
+
+// ── Time of Day → Ambient Modifier ──────────────────────────────────
+
+const TIME_AMBIENT_MODIFIER = {
+    'day': '', // No modifier
+    'night': ', nighttime atmosphere, quieter, occasional distant sound',
+    'dawn': ', early morning, birds waking up, quiet',
+    'dusk': ', evening atmosphere, cicadas, settling quiet',
+    'morning': ', morning activity, birds chirping',
+    'evening': ', evening wind down, distant sounds',
+};
+
+/**
+ * Build a music generation payload from a music cue and scene context.
+ *
+ * @param {object} musicCue - film_music_cues row
+ * @param {object} scene - film_scenes row
+ * @param {object} project - film_projects row
+ * @returns {object} Payload for POST /music (type: 'score')
+ */
+function buildMusicPrompt(musicCue, scene, project) {
+    const cue = musicCue || {};
+    const mood = cue.mood || 'calm';
+    const moodConfig = MOOD_TO_MUSIC[mood] || MOOD_TO_MUSIC['calm'];
+
+    const promptParts = [];
+
+    // Cue description or auto-generated
+    if (cue.description) {
+        promptParts.push(cue.description);
+    } else {
+        promptParts.push(`${mood} ${moodConfig.genre_hint} instrumental soundtrack`);
+    }
+
+    // Genre
+    if (cue.genre) {
+        promptParts.push(cue.genre);
+    }
+
+    // Instruments
+    const instruments = cue.instruments
+        ? (typeof cue.instruments === 'string' ? JSON.parse(cue.instruments) : cue.instruments)
+        : moodConfig.instruments;
+    if (instruments && instruments.length > 0) {
+        promptParts.push(instruments.join(', '));
+    }
+
+    // Project style hint
+    if (project && project.genre) {
+        promptParts.push(`${project.genre} film score`);
+    }
+
+    // Duration from cue or scene
+    const durationMs = cue.duration_ms || (scene && scene.estimated_duration) || 30000;
+    const durationS = durationMs / 1000;
+
+    // Tempo
+    const tempoBpm = cue.tempo_bpm || Math.round(
+        (moodConfig.tempo_range[0] + moodConfig.tempo_range[1]) / 2
+    );
+
+    return {
+        type: 'score',
+        prompt: promptParts.join(', '),
+        duration_s: durationS,
+        model: 'musicgen-large',
+        tempo_bpm: tempoBpm,
+        key: cue.key_signature || '',
+        genre: cue.genre || moodConfig.genre_hint,
+        mood,
+        energy: moodConfig.energy,
+        instruments: instruments || [],
+        output_format: 'wav',
+        sample_rate: 44100,
+        seed: cue.seed || null,
+        loopable: false,
+        stream: true,
+    };
+}
+
+/**
+ * Build an SFX generation payload from a scene card.
+ * Extracts action-based sound effects.
+ *
+ * @param {object} sceneCard - Parsed scene_card_yaml
+ * @param {object} scene - film_scenes row
+ * @returns {Array<object>} Array of payloads for POST /music (type: 'sfx')
+ */
+function buildSFXPrompts(sceneCard, scene) {
+    const sfxCues = [];
+
+    // Extract from explicit sfx_cues if present
+    if (sceneCard.sfx_cues && Array.isArray(sceneCard.sfx_cues)) {
+        for (const cue of sceneCard.sfx_cues) {
+            sfxCues.push({
+                type: 'sfx',
+                prompt: cue.description || cue.sound,
+                duration_s: cue.duration_s || 3.0,
+                model: 'audiogen',
+                category: cue.category || 'foley',
+                output_format: 'wav',
+                sample_rate: 48000,
+                seed: null,
+                stream: true,
+            });
+        }
+    }
+
+    return sfxCues;
+}
+
+/**
+ * Build an ambient audio generation payload from scene context.
+ *
+ * @param {object} scene - film_scenes row
+ * @param {object|null} location - film_locations row
+ * @returns {object} Payload for POST /music (type: 'ambient')
+ */
+function buildAmbientPrompt(scene, location) {
+    let promptParts = [];
+
+    // Try to match location to known ambient
+    const locationName = (scene.location || '').toLowerCase();
+    let matchedAmbient = null;
+    for (const [key, ambient] of Object.entries(LOCATION_TO_AMBIENT)) {
+        if (locationName.includes(key)) {
+            matchedAmbient = ambient;
+            break;
+        }
+    }
+
+    if (matchedAmbient) {
+        promptParts.push(matchedAmbient);
+    } else if (location && location.description) {
+        promptParts.push(`ambient sounds of ${location.description}`);
+    } else if (scene.location) {
+        promptParts.push(`ambient sounds of ${scene.location}`);
+    } else {
+        promptParts.push('quiet room ambiance');
+    }
+
+    // INT/EXT modifier
+    if (scene.int_ext === 'EXT') {
+        promptParts.push('outdoor');
+    }
+
+    // Time of day modifier
+    const timeKey = (scene.time_of_day || 'day').toLowerCase();
+    const timeMod = TIME_AMBIENT_MODIFIER[timeKey] || '';
+    if (timeMod) {
+        promptParts.push(timeMod.trim().replace(/^,\s*/, ''));
+    }
+
+    const durationMs = scene.estimated_duration || 60000;
+
+    return {
+        type: 'ambient',
+        prompt: promptParts.join(', '),
+        duration_s: durationMs / 1000,
+        model: 'musicgen-ambient',
+        loopable: true,
+        crossfade_s: 5.0,
+        output_format: 'wav',
+        sample_rate: 44100,
+        seed: null,
+        stream: true,
+    };
+}
+
+module.exports = {
+    buildMusicPrompt,
+    buildSFXPrompts,
+    buildAmbientPrompt,
+    MOOD_TO_MUSIC,
+    LOCATION_TO_AMBIENT,
+    TIME_AMBIENT_MODIFIER,
+};

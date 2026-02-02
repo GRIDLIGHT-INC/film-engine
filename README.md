@@ -1,26 +1,8 @@
 # Film Engine
 
-AI film production pipeline for Gridlight. Manages the full lifecycle from screenplay to editor-ready output.
+AI film production pipeline for Gridlight. Transforms screenplays into editor-ready output through automated scene breakdown, storyboarding, and asset generation.
 
-## Phases Implemented
-
-### Phase 1A — Project & Story Foundation
-- **FILM-001–010**: Project CRUD, script upload with auto scene extraction, scene/shot tables, scene card schema, batch shot creation, AI breakdown, aggregate shot list
-
-### Phase 1B — Hollywood Production Backend
-- **FILM-011**: Characters with appearance prompts, LoRA/TI tokens, voice profiles, costumes
-- **FILM-012**: Locations with lighting/atmosphere defaults, reference images
-- **FILM-013**: Props with categories and scene assignments
-- **FILM-014**: Costumes per character with visual prompts and color palettes
-- **FILM-015**: Voice profiles with speaker embeddings and TTS params
-- **FILM-016**: Scene-character and scene-prop join tables
-- **FILM-048–051**: Render ledger for full reproducibility (seed, sampler, steps, guidance, LoRAs, controlnets)
-- **FILM-052**: Shot version history with approval states
-- **FILM-084**: Production dashboard, status board, milestones timeline
-- **FILM-085**: Shot notes, reviews, approval/rejection workflow
-- **FILM-086**: Asset registry (22 asset types), music cues, color presets
-
-## Setup
+## Getting Started
 
 ### Prerequisites
 - Node.js 18+
@@ -30,142 +12,120 @@ No external database required — Film Engine uses SQLite (via `better-sqlite3`)
 ### Install & Run
 
 ```bash
-cd apps/film-engine/backend
+cd backend
 npm install
 node server.js
 ```
 
-The backend auto-runs migrations on startup. Frontend is served by the dev server at `/apps/film-engine`.
+Server runs on `http://localhost:3100`. The database auto-initializes on first run with 28 migrations.
 
-### API Endpoints
+### Create Your First Project
 
-#### Projects & Scripts
+1. Open `http://localhost:3100` in your browser (or open `src/index.html` directly)
+2. Click **+ New Project** — enter a title, logline, genre, style preset, and target FPS
+3. Navigate to **Screenplay** — paste or write your screenplay in Fountain format
+4. The editor auto-detects scene headings (`INT.`/`EXT.`), characters, and dialogue
+5. Go to **Scenes** and click **Break Down All New Scenes** to extract scene cards
+6. Review shots in the **Shot Board** (Kanban view) or **Storyboard** (grid view)
+7. Use **Export** to download FCPXML, EDL, Premiere XML, FDX, or SRT files
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /film/projects | List all projects |
-| POST | /film/projects | Create project |
-| GET | /film/projects/:id | Get project detail |
-| PUT | /film/projects/:id | Update project |
-| DELETE | /film/projects/:id | Delete project |
-| POST | /film/projects/:id/script | Upload screenplay |
-| GET | /film/projects/:id/scripts | List script versions |
-| GET | /film/projects/:id/scripts/:ver | Get specific version |
+### Configuration
 
-#### Scenes & Shots
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `PORT` | `3100` | Server port |
+| `FILM_DATA_DIR` | `./data` | Database and asset storage directory |
+| `IMAGEGEN_URL` | `http://localhost:8080` | ImageGen API for storyboard generation |
+| `IMAGEGEN_API_KEY` | — | Bearer token for ImageGen |
+| `VOICETTS_URL` | `http://localhost:8081` | Voice TTS API |
+| `VIDEOGEN_URL` | `http://localhost:8082` | Video generation API |
+| `MUSICGEN_URL` | `http://localhost:8083` | Music generation API |
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /film/projects/:id/scenes | List scenes |
-| GET | /film/scenes/:id | Get scene with shots |
-| POST | /film/shots | Create shots from scene cards |
-| GET | /film/projects/:id/shotlist | Aggregate shot list |
-| POST | /film/projects/:id/breakdown | AI screenplay breakdown |
+## Screenplay Editor
 
-#### Characters
+The built-in screenplay editor supports the [Fountain](https://fountain.io/) markup format:
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /film/projects/:id/characters | List project characters |
-| POST | /film/projects/:id/characters | Create character |
-| GET | /film/characters/:id | Get character (with costumes, voice, scenes) |
-| PUT | /film/characters/:id | Update character |
-| DELETE | /film/characters/:id | Delete character |
-| POST | /film/characters/:id/voice | Create/replace voice profile |
-| GET | /film/characters/:id/voice | Get voice profile |
-| GET | /film/characters/:id/costumes | List costumes |
-| POST | /film/characters/:id/costumes | Create costume |
+- **Auto-formatting**: Type scene headings (`INT.`/`EXT.`), character names (ALL CAPS), and dialogue with automatic element detection
+- **Keyboard shortcuts**: Tab to cycle element types, Enter for smart continuation
+- **Scene navigator**: Sidebar with drag-drop scene reordering
+- **Title page editor**: Title, author, credit, date, contact, and draft date fields
+- **Character autocomplete**: Suggests character names as you type in character cues
+- **Statistics**: Real-time word count, page estimate, scene/dialogue breakdown
+- **AI assistant**: Brainstorm, write scenes, rewrite dialogue, or convert prose to screenplay format
+- **Inline comments**: Add comments to specific lines with toggle visibility
+- **Revision tracking**: Color-coded revisions (white → blue → pink → yellow → green → goldenrod → buff → salmon → cherry)
+- **Import/Export**: Import FDX (Final Draft), export to Fountain, plain text, PDF, and FDX
 
-#### Locations & Props
+## Export Formats
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /film/projects/:id/locations | List locations |
-| POST | /film/projects/:id/locations | Create location |
-| GET | /film/locations/:id | Get location (with scenes) |
-| PUT | /film/locations/:id | Update location |
-| DELETE | /film/locations/:id | Delete location |
-| GET | /film/projects/:id/props | List props |
-| POST | /film/projects/:id/props | Create prop |
-| GET | /film/props/:id | Get prop (with scene appearances) |
-| PUT | /film/props/:id | Update prop |
-| DELETE | /film/props/:id | Delete prop |
+| Format | Extension | Description |
+|--------|-----------|-------------|
+| FCPXML 1.11 | `.fcpxml` | Final Cut Pro native timeline with clips, markers, audio lanes |
+| CMX 3600 EDL | `.edl` | Universal edit decision list (24fps non-drop frame) |
+| Premiere XML | `.xml` | FCP 7 xmeml v5 format (works with Premiere, Resolve, etc.) |
+| FDX | `.fdx` | Final Draft Version 5 XML screenplay |
+| SRT | `.srt` | Subtitle file generated from dialogue |
 
-#### Notes & Reviews
+## Production Pipeline
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /film/shots/:id/notes | List shot notes (?type=, ?unresolved=true) |
-| POST | /film/shots/:id/notes | Add note to shot |
-| PUT | /film/notes/:id | Update/resolve note |
-| DELETE | /film/notes/:id | Delete note |
-| POST | /film/shots/:id/review | Approve or reject shot |
+Film Engine orchestrates a 9-step per-shot pipeline:
 
-#### Assets, Music & Color
+1. **Keyframe** — Generate storyboard frame from scene card (SDXL)
+2. **Video** — Animate keyframe to video clip (AnimateDiff)
+3. **Voice** — Text-to-speech for dialogue lines (Qwen3-TTS)
+4. **Lip-sync** — Sync character mouth movements to audio (Wav2Lip)
+5. **Music** — Generate score and sound effects (MusicGen)
+6. **SFX** — Generate sound effects from scene descriptions
+7. **Ambient** — Generate ambient audio for locations
+8. **Post** — Apply color grading, upscaling, encoding (RealESRGAN)
+9. **Assembly** — Stitch clips, mix audio, generate final output
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /film/projects/:id/assets | List assets (?type=, ?shot_id=) |
-| POST | /film/projects/:id/assets | Register asset |
-| GET | /film/assets/:id | Get asset |
-| DELETE | /film/assets/:id | Delete asset |
-| GET | /film/projects/:id/music-cues | List music cues (?scene_id=, ?cue_type=) |
-| POST | /film/projects/:id/music-cues | Create music cue |
-| GET | /film/projects/:id/color-presets | List color presets |
-| POST | /film/projects/:id/color-presets | Create color preset |
+Steps are scheduled by the GPU memory-aware scheduling engine, which batches by model to minimize VRAM swaps.
 
-#### Dashboard & Milestones
+## Testing
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /film/projects/:id/dashboard | Production stats (scenes, shots, assets, duration) |
-| GET | /film/projects/:id/status-board | Per-scene/shot status breakdown |
-| GET | /film/projects/:id/milestones | List milestones (auto-creates defaults) |
-| POST | /film/projects/:id/milestones | Create milestone |
-| PUT | /film/projects/:id/milestones/:mid | Update milestone |
+```bash
+cd backend
 
-#### Render Ledger & Reproducibility
+# Run all unit tests (251 tests)
+node --test tests/*.test.js
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /film/shots/:id/render | Log render params |
-| GET | /film/shots/:id/renders | Render history (?step=) |
-| GET | /film/shots/:id/versions | Shot version history |
-| POST | /film/shots/:id/re-render | Re-render from ledger entry |
+# Run specific test suites
+node --test tests/fdx-generator.test.js
+node --test tests/storyboard-prompt.test.js
+node --test tests/nle-export.test.js
+node --test tests/audio-mixer.test.js
+
+# Run integration tests (starts server on random port)
+node --test tests/integration.test.js
+
+# Health check
+curl http://localhost:3100/api/health
+```
+
+## Troubleshooting
+
+### Server won't start
+- Ensure `better-sqlite3` is installed: `cd backend && npm install`
+- Check port availability: `lsof -i :3100`
+- Verify Node.js version: `node --version` (requires 18+)
+
+### ECONNREFUSED for ImageGen / Voice / Video
+- These errors mean external AI services are not running. Film Engine works without them — storyboard generation, voice synthesis, and video generation will fail gracefully.
+- Set the service URLs via environment variables (see Configuration above).
+
+### Database issues
+- Delete `data/film-engine.db` to reset the database. It will be recreated on next startup.
+- The database auto-migrates on startup. If a migration fails, check the error message — it usually indicates a conflicting schema change.
+
+### Frontend not loading
+- Open `src/index.html` directly in a browser, or serve it via a static file server.
+- Ensure the API URL in Settings matches your server address (`http://localhost:3100` by default).
 
 ## Architecture
 
-```
-apps/film-engine/
-├── gridlight.json              # App manifest
-├── data/
-│   └── film-engine.db          # SQLite database (auto-created)
-├── src/
-│   ├── index.html              # Frontend SPA
-│   ├── app.json                # App config
-│   └── assets/icon.svg
-├── backend/
-│   ├── server.js               # HTTP server + routing
-│   ├── package.json
-│   ├── db/
-│   │   ├── database.js         # SQLite connection (better-sqlite3)
-│   │   ├── schema.js           # Auto-migration on startup
-│   │   ├── migrate.js          # CLI migration runner
-│   │   └── migrations/         # 16 SQL migration files
-│   ├── routes/
-│   │   ├── projects.js         # Project CRUD
-│   │   ├── scripts.js          # Script upload + versioning
-│   │   ├── scenes.js           # Scene listing
-│   │   ├── shots.js            # Shot creation + shot list
-│   │   ├── breakdown.js        # AI breakdown assistant
-│   │   ├── characters.js       # Characters, voice profiles, costumes
-│   │   ├── locations.js        # Locations + props
-│   │   ├── notes.js            # Shot notes + review workflow
-│   │   ├── assets.js           # Asset registry, music cues, color presets
-│   │   ├── dashboard.js        # Dashboard, status board, milestones
-│   │   └── render-ledger.js    # Render logging + reproducibility
-│   └── lib/
-│       ├── screenplay-parser.js    # INT./EXT. scene heading parser
-│       └── scene-card-schema.js    # Scene card validator
-└── README.md
-```
+See [CLAUDE.md](CLAUDE.md) for full architecture documentation, and [docs/adr/](docs/adr/) for architecture decision records.
+
+## API Documentation
+
+Full API reference: [docs/api-film.md](docs/api-film.md)

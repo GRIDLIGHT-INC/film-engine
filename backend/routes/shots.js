@@ -1,19 +1,38 @@
 /**
  * FILM-008: Shot creation from scene cards
  * FILM-010: Shotlist endpoint
+ * FILM-141: Shot reorder + transition API
  *
  * POST /film/shots — create shots from scene cards (batch)
  * GET  /film/projects/:id/shotlist — aggregate shot list
+ * PUT  /film/shots/:id/order — set sort_order for a shot
+ * POST /film/projects/:id/shots/reorder — batch reorder shots
+ * PUT  /film/shots/:id/transition — set transition metadata
  */
 const { db, generateId } = require('../db/database');
 const { validateSceneCards } = require('../lib/scene-card-schema');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const VALID_TRANSITIONS = [
+    'cut', 'dissolve', 'cross-dissolve', 'fade-from-black', 'fade-from-white',
+    'wipe-left', 'wipe-right', 'dip-to-black', 'dip-to-white',
+];
+
 function handleShots(req, res, urlParts, query) {
     // POST /film/shots — parts: ['film', 'shots']
     if (urlParts[1] === 'shots' && !urlParts[2] && req.method === 'POST') {
         return createShots(req, res);
+    }
+
+    // PUT /film/shots/:id/order
+    if (urlParts[1] === 'shots' && urlParts[2] && urlParts[3] === 'order' && req.method === 'PUT') {
+        return setShotOrder(req, res, urlParts[2]);
+    }
+
+    // PUT /film/shots/:id/transition
+    if (urlParts[1] === 'shots' && urlParts[2] && urlParts[3] === 'transition' && req.method === 'PUT') {
+        return setShotTransition(req, res, urlParts[2]);
     }
 
     // GET /film/projects/:id/shotlist — parts: ['film', 'projects', id, 'shotlist']
@@ -25,6 +44,17 @@ function handleShots(req, res, urlParts, query) {
             return;
         }
         return getShotlist(req, res, projectId, query);
+    }
+
+    // POST /film/projects/:id/shots/reorder
+    if (urlParts[1] === 'projects' && urlParts[3] === 'shots' && urlParts[4] === 'reorder' && req.method === 'POST') {
+        const projectId = urlParts[2];
+        if (!UUID_RE.test(projectId)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid project ID' }));
+            return;
+        }
+        return reorderShots(req, res, projectId);
     }
 
     res.writeHead(405, { 'Content-Type': 'application/json' });
@@ -97,12 +127,15 @@ function getShotlist(req, res, projectId, query) {
 
     const rows = db.prepare(`
         SELECT
-            s.id, s.shot_code, s.status, s.duration_ms, s.created_at,
+            s.id, s.shot_code, s.status, s.duration_ms, s.sort_order,
+            s.transition_in_type, s.transition_in_duration_ms,
+            s.transition_out_type, s.transition_out_duration_ms,
+            s.created_at,
             sc.scene_number, sc.location, sc.time_of_day, sc.id AS scene_id
         FROM film_shots s
         JOIN film_scenes sc ON s.scene_id = sc.id
         WHERE sc.project_id = ?
-        ORDER BY sc.scene_number, s.shot_code
+        ORDER BY s.sort_order, sc.scene_number, s.shot_code
         LIMIT ? OFFSET ?
     `).all(projectId, limit, offset);
 
@@ -118,4 +151,150 @@ function getShotlist(req, res, projectId, query) {
     res.end(JSON.stringify({ shots: rows, total, page, limit }));
 }
 
-module.exports = { handleShots };
+/**
+ * PUT /film/shots/:id/order — set sort_order for a single shot
+ */
+function setShotOrder(req, res, shotId) {
+    if (!UUID_RE.test(shotId)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid shot ID' }));
+        return;
+    }
+
+    const body = req.body;
+    if (body.sort_order === undefined || typeof body.sort_order !== 'number') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'sort_order (number) is required' }));
+        return;
+    }
+
+    const result = db.prepare(
+        'UPDATE film_shots SET sort_order = ? WHERE id = ?'
+    ).run(Math.floor(body.sort_order), shotId);
+
+    if (result.changes === 0) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Shot not found' }));
+        return;
+    }
+
+    const row = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(row));
+}
+
+/**
+ * POST /film/projects/:id/shots/reorder — batch reorder shots
+ * Body: { shot_ids: [id1, id2, id3, ...] }
+ * Sets sort_order = index position (0, 1, 2, ...)
+ */
+function reorderShots(req, res, projectId) {
+    const body = req.body;
+    if (!body.shot_ids || !Array.isArray(body.shot_ids)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'shot_ids array is required' }));
+        return;
+    }
+
+    // Verify all IDs are valid UUIDs
+    for (const id of body.shot_ids) {
+        if (!UUID_RE.test(id)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: `Invalid shot ID: ${id}` }));
+            return;
+        }
+    }
+
+    const updateStmt = db.prepare('UPDATE film_shots SET sort_order = ? WHERE id = ?');
+    const reorder = db.transaction(() => {
+        for (let i = 0; i < body.shot_ids.length; i++) {
+            updateStmt.run(i, body.shot_ids[i]);
+        }
+    });
+
+    reorder();
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ reordered: body.shot_ids.length }));
+}
+
+/**
+ * PUT /film/shots/:id/transition — set transition metadata
+ * Body: { transition_in_type?, transition_in_duration_ms?, transition_out_type?, transition_out_duration_ms? }
+ */
+function setShotTransition(req, res, shotId) {
+    if (!UUID_RE.test(shotId)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid shot ID' }));
+        return;
+    }
+
+    const body = req.body;
+    const fields = [];
+    const values = [];
+
+    if (body.transition_in_type !== undefined) {
+        if (!VALID_TRANSITIONS.includes(body.transition_in_type)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: `Invalid transition_in_type. Valid: ${VALID_TRANSITIONS.join(', ')}` }));
+            return;
+        }
+        fields.push('transition_in_type = ?');
+        values.push(body.transition_in_type);
+    }
+
+    if (body.transition_in_duration_ms !== undefined) {
+        const dur = parseInt(body.transition_in_duration_ms);
+        if (isNaN(dur) || dur < 0 || dur > 10000) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'transition_in_duration_ms must be 0-10000' }));
+            return;
+        }
+        fields.push('transition_in_duration_ms = ?');
+        values.push(dur);
+    }
+
+    if (body.transition_out_type !== undefined) {
+        if (!VALID_TRANSITIONS.includes(body.transition_out_type)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: `Invalid transition_out_type. Valid: ${VALID_TRANSITIONS.join(', ')}` }));
+            return;
+        }
+        fields.push('transition_out_type = ?');
+        values.push(body.transition_out_type);
+    }
+
+    if (body.transition_out_duration_ms !== undefined) {
+        const dur = parseInt(body.transition_out_duration_ms);
+        if (isNaN(dur) || dur < 0 || dur > 10000) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'transition_out_duration_ms must be 0-10000' }));
+            return;
+        }
+        fields.push('transition_out_duration_ms = ?');
+        values.push(dur);
+    }
+
+    if (fields.length === 0) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No valid transition fields to update' }));
+        return;
+    }
+
+    values.push(shotId);
+    const result = db.prepare(
+        `UPDATE film_shots SET ${fields.join(', ')} WHERE id = ?`
+    ).run(...values);
+
+    if (result.changes === 0) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Shot not found' }));
+        return;
+    }
+
+    const row = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(row));
+}
+
+module.exports = { handleShots, VALID_TRANSITIONS };

@@ -1,13 +1,18 @@
 /**
- * Character CRUD + voice profiles + costumes
+ * Character CRUD + voice profiles + costumes + reference sheets
  * POST/GET/PUT/DELETE /film/projects/:id/characters
  * GET /film/characters/:id
  * POST/GET /film/characters/:id/voice
  * POST/GET /film/characters/:id/costumes
+ * POST /film/characters/:id/refsheet/generate     — FILM-014: Generate reference sheet
+ * GET  /film/characters/:id/refsheet              — FILM-014: Get reference sheet status
  */
 const { db, generateId } = require('../db/database');
+const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
+const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const IMAGE_ENDPOINT = '/image';
 
 function handleCharacters(req, res, urlParts, query) {
     // /film/projects/:id/characters — parts: ['film', 'projects', id, 'characters']
@@ -34,6 +39,10 @@ function handleCharacters(req, res, urlParts, query) {
         if (sub === 'costumes') {
             if (req.method === 'GET') return listCostumes(req, res, charId);
             if (req.method === 'POST') return createCostume(req, res, charId);
+        }
+        if (sub === 'refsheet') {
+            if (urlParts[4] === 'generate' && req.method === 'POST') return generateRefSheet(req, res, charId);
+            if (req.method === 'GET') return getRefSheetStatus(req, res, charId);
         }
 
         if (!sub) {
@@ -368,6 +377,134 @@ function createCostume(req, res, charId) {
     const row = db.prepare('SELECT * FROM film_costumes WHERE id = ?').get(id);
     res.writeHead(201, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(row));
+}
+
+// --- FILM-014: Character Reference Sheet Generation ---
+
+const REFSHEET_VIEWS = ['front', 'side', 'back'];
+
+function buildRefSheetPrompt(character, view) {
+    const parts = [];
+    parts.push('character reference sheet');
+    parts.push(`${view} view`);
+    parts.push('full body, T-pose, white background, clean lines');
+
+    if (character.appearance_prompt) parts.push(character.appearance_prompt);
+    if (character.gender) parts.push(character.gender);
+    if (character.age_range) parts.push(`${character.age_range} years old`);
+    if (character.build) parts.push(character.build);
+    if (character.hair) parts.push(character.hair);
+    if (character.distinguishing) parts.push(character.distinguishing);
+    if (character.ethnicity) parts.push(character.ethnicity);
+
+    // Add LoRA/TI tokens if available
+    if (character.lora_id) parts.push(`<lora:${character.lora_id}:0.8>`);
+    if (character.ti_token) parts.push(character.ti_token);
+
+    return parts.join(', ');
+}
+
+async function generateRefSheet(req, res, charId) {
+    const ch = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(charId);
+    if (!ch) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Character not found' }));
+    }
+
+    const views = (req.body && req.body.views) || REFSHEET_VIEWS;
+    const seed = (req.body && req.body.seed) || null;
+    const model = (req.body && req.body.model) || 'sdxl';
+
+    const jobId = generateId();
+    db.prepare(
+        `INSERT INTO film_refsheet_jobs (id, project_id, character_id, status, views, model, seed)
+         VALUES (?, ?, ?, 'processing', ?, ?, ?)`
+    ).run(jobId, ch.project_id, charId, JSON.stringify(views), model, seed);
+
+    const results = [];
+    ensureDir(ch.project_id, 'refsheets');
+
+    for (const view of views) {
+        const prompt = buildRefSheetPrompt(ch, view);
+        const negativePrompt = 'blurry, low quality, distorted, multiple characters, background clutter';
+
+        const payload = {
+            prompt,
+            negative_prompt: negativePrompt,
+            model,
+            width: 1024,
+            height: 1024,
+            steps: 30,
+            guidance_scale: 7.5,
+            seed,
+        };
+
+        try {
+            const result = await callGridlight(IMAGE_ENDPOINT, payload);
+            if (!result.ok) {
+                results.push({ view, status: 'failed', error: result.error });
+                continue;
+            }
+
+            const safeName = ch.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+            const filename = `${safeName}_${view}.png`;
+            let filePath = '';
+
+            if (Buffer.isBuffer(result.data)) {
+                filePath = saveFile(ch.project_id, 'refsheets', filename, result.data);
+            } else if (result.data && result.data.image_url) {
+                filePath = result.data.image_url;
+            }
+
+            const assetId = generateId();
+            db.prepare(
+                `INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, version, metadata)
+                 VALUES (?, ?, 'reference_sheet', ?, ?, 'png', 'image/png', 1, ?)`
+            ).run(assetId, ch.project_id, filePath, filename, JSON.stringify({ character_id: charId, view }));
+
+            results.push({ view, status: 'complete', image_url: getFileUrl('refsheets', ch.project_id, filename) });
+        } catch (err) {
+            if (err.message.includes('ECONNREFUSED')) {
+                db.prepare('UPDATE film_refsheet_jobs SET status = ?, error_message = ? WHERE id = ?')
+                    .run('failed', 'Image generation service unavailable', jobId);
+                res.writeHead(503, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify(serviceUnavailableError(IMAGE_ENDPOINT, 'image generation')));
+            }
+            results.push({ view, status: 'failed', error: err.message });
+        }
+    }
+
+    const allOk = results.every(r => r.status === 'complete');
+    const status = allOk ? 'complete' : 'completed_with_errors';
+    db.prepare('UPDATE film_refsheet_jobs SET status = ?, output_paths = ? WHERE id = ?')
+        .run(status, JSON.stringify(results), jobId);
+
+    db.prepare(
+        `INSERT INTO render_ledger (id, shot_id, version, step, model_id, prompt, mode)
+         VALUES (?, ?, 1, 'refsheet', ?, ?, 'creative')`
+    ).run(generateId(), charId, model, `Reference sheet for ${ch.name}`);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        character_id: charId, character_name: ch.name, job_id: jobId,
+        status, views: results,
+    }));
+}
+
+function getRefSheetStatus(req, res, charId) {
+    const jobs = db.prepare('SELECT * FROM film_refsheet_jobs WHERE character_id = ? ORDER BY created_at DESC').all(charId);
+    const assets = db.prepare(
+        "SELECT * FROM film_assets WHERE asset_type = 'reference_sheet' AND metadata LIKE ? ORDER BY created_at DESC"
+    ).all(`%"character_id":"${charId}"%`);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        character_id: charId, jobs, sheets: assets.map(a => ({
+            asset_id: a.id, file_name: a.file_name,
+            image_url: a.file_name ? getFileUrl('refsheets', a.project_id, a.file_name) : null,
+            metadata: a.metadata ? JSON.parse(a.metadata) : null,
+        })),
+    }));
 }
 
 module.exports = { handleCharacters };

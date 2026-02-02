@@ -1,0 +1,196 @@
+/**
+ * FILM-161: Auto-backup system
+ *
+ * POST /film/projects/:id/backups — create backup
+ * GET  /film/projects/:id/backups — list backups
+ * GET  /film/backups/:id — get backup metadata
+ * GET  /film/backups/:id/download — download backup JSON
+ * POST /film/backups/:id/restore — restore from backup
+ * DELETE /film/backups/:id — delete backup
+ */
+const fs = require('fs');
+const path = require('path');
+const { db, generateId } = require('../db/database');
+const { exportProjectData, importProjectData } = require('../lib/backup');
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function handleBackups(req, res, urlParts, query) {
+    // /film/projects/:id/backups
+    if (urlParts[1] === 'projects' && urlParts[3] === 'backups') {
+        const projectId = urlParts[2];
+        if (!UUID_RE.test(projectId)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid project ID' }));
+            return;
+        }
+        if (req.method === 'GET') return listBackups(req, res, projectId);
+        if (req.method === 'POST') return createBackup(req, res, projectId);
+    }
+
+    // /film/backups/:id[/download|/restore]
+    if (urlParts[1] === 'backups' && urlParts[2]) {
+        const backupId = urlParts[2];
+        if (!UUID_RE.test(backupId)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid backup ID' }));
+            return;
+        }
+
+        if (urlParts[3] === 'download' && req.method === 'GET') return downloadBackup(req, res, backupId);
+        if (urlParts[3] === 'restore' && req.method === 'POST') return restoreBackup(req, res, backupId);
+        if (!urlParts[3] && req.method === 'GET') return getBackup(req, res, backupId);
+        if (!urlParts[3] && req.method === 'DELETE') return deleteBackup(req, res, backupId);
+    }
+
+    res.writeHead(405, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
+}
+
+function listBackups(req, res, projectId) {
+    const rows = db.prepare(
+        'SELECT * FROM film_backups WHERE project_id = ? ORDER BY created_at DESC'
+    ).all(projectId);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ backups: rows, count: rows.length }));
+}
+
+function createBackup(req, res, projectId) {
+    const project = db.prepare('SELECT id, title FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Project not found' }));
+        return;
+    }
+
+    const body = req.body || {};
+    const result = exportProjectData(projectId);
+    if (!result) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to export project data' }));
+        return;
+    }
+
+    const backupId = generateId();
+    const now = new Date().toISOString();
+    const safeName = (project.title || 'project').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
+    const fileName = `backup_${safeName}_${now.replace(/[:.]/g, '-')}.json`;
+    const backupDir = path.join(__dirname, '..', 'data', 'backups');
+
+    // Ensure backup directory exists
+    if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    const filePath = path.join(backupDir, fileName);
+    const jsonStr = JSON.stringify(result.data, null, 2);
+    fs.writeFileSync(filePath, jsonStr, 'utf8');
+
+    db.prepare(`
+        INSERT INTO film_backups (id, project_id, backup_type, file_path, file_size, tables_included, row_counts, notes, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+        backupId, projectId,
+        body.backup_type || 'manual',
+        filePath,
+        Buffer.byteLength(jsonStr, 'utf8'),
+        JSON.stringify(result.tablesIncluded),
+        JSON.stringify(result.rowCounts),
+        (body.notes || '').slice(0, 2000),
+        now,
+    );
+
+    const row = db.prepare('SELECT * FROM film_backups WHERE id = ?').get(backupId);
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(row));
+}
+
+function getBackup(req, res, backupId) {
+    const row = db.prepare('SELECT * FROM film_backups WHERE id = ?').get(backupId);
+    if (!row) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Backup not found' }));
+        return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(row));
+}
+
+function downloadBackup(req, res, backupId) {
+    const row = db.prepare('SELECT * FROM film_backups WHERE id = ?').get(backupId);
+    if (!row) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Backup not found' }));
+        return;
+    }
+
+    if (!fs.existsSync(row.file_path)) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Backup file not found on disk' }));
+        return;
+    }
+
+    const content = fs.readFileSync(row.file_path, 'utf8');
+    const fileName = path.basename(row.file_path);
+    res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+    });
+    res.end(content);
+}
+
+function restoreBackup(req, res, backupId) {
+    const row = db.prepare('SELECT * FROM film_backups WHERE id = ?').get(backupId);
+    if (!row) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Backup not found' }));
+        return;
+    }
+
+    if (!fs.existsSync(row.file_path)) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Backup file not found on disk' }));
+        return;
+    }
+
+    let backupData;
+    try {
+        const content = fs.readFileSync(row.file_path, 'utf8');
+        backupData = JSON.parse(content);
+    } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to parse backup file' }));
+        return;
+    }
+
+    const result = importProjectData(backupData);
+    if (!result.success) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: result.error }));
+        return;
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ restored: true, imported: result.imported }));
+}
+
+function deleteBackup(req, res, backupId) {
+    const row = db.prepare('SELECT * FROM film_backups WHERE id = ?').get(backupId);
+    if (!row) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Backup not found' }));
+        return;
+    }
+
+    // Delete file from disk if it exists
+    if (fs.existsSync(row.file_path)) {
+        fs.unlinkSync(row.file_path);
+    }
+
+    db.prepare('DELETE FROM film_backups WHERE id = ?').run(backupId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ deleted: true }));
+}
+
+module.exports = { handleBackups };

@@ -11,12 +11,17 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
     msToTimecode,
+    msToTimecodeDF,
     msToFrames,
+    timecodeToFrames,
     escapeXml,
     generateEDL,
     generateFCPXML,
     generatePremiereXML,
+    fpsToRational,
+    isNtscFps,
     FPS,
+    DEFAULT_SETTINGS,
 } = require('../lib/nle-export');
 
 // ── Test Data ────────────────────────────────────────────────────────
@@ -71,6 +76,64 @@ describe('msToTimecode', () => {
     it('converts mid-frame value correctly', () => {
         // 500ms at 24fps = 12 frames
         assert.equal(msToTimecode(500, 24), '00:00:00:12');
+    });
+
+    it('auto-detects drop-frame for 29.97fps', () => {
+        const tc = msToTimecode(0, 29.97);
+        // Drop-frame uses semicolon separator
+        assert.ok(tc.includes(';'), 'Expected semicolon separator for DF timecode');
+    });
+
+    it('uses colon separator for 24fps (non-drop)', () => {
+        const tc = msToTimecode(1000, 24);
+        assert.ok(!tc.includes(';'), 'Should not have semicolon for NDF');
+    });
+});
+
+// ── msToTimecodeDF ──────────────────────────────────────────────────
+
+describe('msToTimecodeDF', () => {
+    it('converts 0ms to 00:00:00;00', () => {
+        assert.equal(msToTimecodeDF(0, 29.97), '00:00:00;00');
+    });
+
+    it('converts 1 second to 00:00:01;00', () => {
+        assert.equal(msToTimecodeDF(1000, 29.97), '00:00:01;00');
+    });
+
+    it('uses semicolon as frame separator', () => {
+        const tc = msToTimecodeDF(5000, 29.97);
+        assert.ok(tc.includes(';'));
+    });
+
+    it('converts ~1 minute correctly', () => {
+        // At 29.97fps, 60000ms = 1798 frames (rounds from 1798.2)
+        // 1798 frames = 59 seconds + 28 frames in DF display
+        // The DF display 00:01:00;02 doesn't occur until frame 1800 (~60060ms)
+        const tc = msToTimecodeDF(60000, 29.97);
+        assert.equal(tc, '00:00:59;28');
+    });
+
+    it('reaches 00:01:00;02 at frame 1800', () => {
+        // Frame 1800 at 29.97fps = 1800/29.97*1000 ≈ 60060ms
+        const tc = msToTimecodeDF(60060, 29.97);
+        assert.equal(tc, '00:01:00;02');
+    });
+
+    it('does not skip frames at 10-minute marks', () => {
+        // 10 minutes = 600000ms
+        const tc = msToTimecodeDF(600000, 29.97);
+        // At 10 minutes, no frame skip: should be 00:10:00;00
+        assert.equal(tc, '00:10:00;00');
+    });
+
+    it('handles negative input as 0', () => {
+        assert.equal(msToTimecodeDF(-500, 29.97), '00:00:00;00');
+    });
+
+    it('converts 1 hour correctly', () => {
+        const tc = msToTimecodeDF(3600000, 29.97);
+        assert.equal(tc, '01:00:00;00');
     });
 });
 
@@ -293,5 +356,252 @@ describe('generatePremiereXML', () => {
         const xml = generatePremiereXML(testProject, [], []);
         assert.ok(xml.includes('<xmeml'));
         assert.ok(xml.includes('<duration>0</duration>'));
+    });
+});
+
+// ── timecodeToFrames ────────────────────────────────────────────────
+
+describe('timecodeToFrames', () => {
+    it('converts 01:00:00:00 at 24fps', () => {
+        assert.equal(timecodeToFrames('01:00:00:00', 24), 86400);
+    });
+
+    it('converts 00:00:01:00 at 24fps', () => {
+        assert.equal(timecodeToFrames('00:00:01:00', 24), 24);
+    });
+
+    it('converts 00:00:00:12 at 24fps', () => {
+        assert.equal(timecodeToFrames('00:00:00:12', 24), 12);
+    });
+
+    it('returns 0 for invalid timecode', () => {
+        assert.equal(timecodeToFrames('bad', 24), 0);
+        assert.equal(timecodeToFrames(null, 24), 0);
+    });
+});
+
+// ── fpsToRational ───────────────────────────────────────────────────
+
+describe('fpsToRational', () => {
+    it('returns 100/2400 for 24fps', () => {
+        const r = fpsToRational(24);
+        assert.equal(r.num, 100);
+        assert.equal(r.den, 2400);
+    });
+
+    it('returns 1001/24000 for 23.976fps', () => {
+        const r = fpsToRational(23.976);
+        assert.equal(r.num, 1001);
+        assert.equal(r.den, 24000);
+    });
+
+    it('returns 1001/30000 for 29.97fps', () => {
+        const r = fpsToRational(29.97);
+        assert.equal(r.num, 1001);
+        assert.equal(r.den, 30000);
+    });
+
+    it('handles non-standard fps with fallback', () => {
+        const r = fpsToRational(50);
+        assert.equal(r.num, 100);
+        assert.equal(r.den, 5000);
+    });
+});
+
+// ── isNtscFps ───────────────────────────────────────────────────────
+
+describe('isNtscFps', () => {
+    it('identifies 29.97 as NTSC', () => {
+        assert.equal(isNtscFps(29.97), true);
+    });
+
+    it('identifies 23.976 as NTSC', () => {
+        assert.equal(isNtscFps(23.976), true);
+    });
+
+    it('identifies 59.94 as NTSC', () => {
+        assert.equal(isNtscFps(59.94), true);
+    });
+
+    it('identifies 24 as non-NTSC', () => {
+        assert.equal(isNtscFps(24), false);
+    });
+});
+
+// ── Dynamic Settings Tests ──────────────────────────────────────────
+
+describe('generateEDL with custom settings', () => {
+    it('uses DROP FRAME for 29.97fps', () => {
+        const edl = generateEDL(testProject, testShots, { target_fps: 29.97 });
+        assert.ok(edl.includes('FCM: DROP FRAME'));
+    });
+
+    it('uses NON-DROP FRAME for 25fps', () => {
+        const edl = generateEDL(testProject, testShots, { target_fps: 25 });
+        assert.ok(edl.includes('FCM: NON-DROP FRAME'));
+    });
+
+    it('calculates timecodes at 30fps', () => {
+        const shots = [{ id: 's1', shot_code: 'SH01', duration_ms: 1000, scene_number: 1 }];
+        const edl = generateEDL(testProject, shots, { target_fps: 30 });
+        const eventLine = edl.split('\n').find(l => /^\d{3}/.test(l));
+        // 1000ms at 30fps = 30 frames = 00:00:01:00
+        assert.ok(eventLine.includes('00:00:01:00'));
+    });
+});
+
+describe('generateFCPXML with custom settings', () => {
+    it('uses 4K DCI resolution', () => {
+        const xml = generateFCPXML(testProject, testShots, testAssets, {
+            target_resolution: '4096x2160',
+            target_fps: 24,
+        });
+        assert.ok(xml.includes('width="4096"'));
+        assert.ok(xml.includes('height="2160"'));
+    });
+
+    it('uses 23.976fps rational frame duration', () => {
+        const xml = generateFCPXML(testProject, [], [], { target_fps: 23.976 });
+        assert.ok(xml.includes('frameDuration="1001/24000s"'));
+    });
+
+    it('sets tcFormat to DF for NTSC fps', () => {
+        const xml = generateFCPXML(testProject, [], [], { target_fps: 29.97 });
+        assert.ok(xml.includes('tcFormat="DF"'));
+    });
+
+    it('sets tcFormat to NDF for non-NTSC fps', () => {
+        const xml = generateFCPXML(testProject, [], [], { target_fps: 24 });
+        assert.ok(xml.includes('tcFormat="NDF"'));
+    });
+
+    it('uses custom timecode start', () => {
+        const xml = generateFCPXML(testProject, [], [], {
+            target_fps: 24,
+            timecode_start: '01:00:00:00',
+        });
+        // 01:00:00:00 at 24fps = 86400 frames, rational = 86400*100/2400s = 8640000/2400s
+        assert.ok(xml.includes('tcStart="8640000/2400s"'));
+    });
+
+    it('generates correct format name for 4K 24fps', () => {
+        const xml = generateFCPXML(testProject, [], [], {
+            target_resolution: '3840x2160',
+            target_fps: 24,
+        });
+        assert.ok(xml.includes('FFVideoFormat2160p24'));
+    });
+});
+
+// ── Transition Tests ─────────────────────────────────────────────────
+
+const transitionShots = [
+    { id: 'ts1', shot_code: 'SC01_SH01', duration_ms: 3000, scene_number: 1,
+      transition_in_type: 'cut', transition_in_duration_ms: 0,
+      transition_out_type: 'dissolve', transition_out_duration_ms: 500 },
+    { id: 'ts2', shot_code: 'SC01_SH02', duration_ms: 5000, scene_number: 1,
+      transition_in_type: 'dissolve', transition_in_duration_ms: 500,
+      transition_out_type: 'cut', transition_out_duration_ms: 0 },
+    { id: 'ts3', shot_code: 'SC02_SH01', duration_ms: 4000, scene_number: 2,
+      transition_in_type: 'wipe-left', transition_in_duration_ms: 1000,
+      transition_out_type: 'cut', transition_out_duration_ms: 0 },
+];
+
+describe('generateEDL with transitions', () => {
+    it('uses D event type for dissolve', () => {
+        const edl = generateEDL(testProject, transitionShots);
+        const lines = edl.split('\n').filter(l => /^\d{3}/.test(l));
+        // Shot 2 has dissolve transition_in
+        assert.ok(lines[1].includes('D'), 'Second event should be dissolve');
+    });
+
+    it('uses W event type for wipe', () => {
+        const edl = generateEDL(testProject, transitionShots);
+        const lines = edl.split('\n').filter(l => /^\d{3}/.test(l));
+        assert.ok(lines[2].includes('W'), 'Third event should be wipe');
+    });
+
+    it('uses C event type for cut (first shot)', () => {
+        const edl = generateEDL(testProject, transitionShots);
+        const lines = edl.split('\n').filter(l => /^\d{3}/.test(l));
+        assert.ok(lines[0].includes('C'), 'First event should be cut');
+    });
+});
+
+describe('generateFCPXML with transitions', () => {
+    it('includes transition element for dissolve', () => {
+        const xml = generateFCPXML(testProject, transitionShots, []);
+        assert.ok(xml.includes('<transition name="dissolve"'));
+    });
+
+    it('includes transition element for wipe', () => {
+        const xml = generateFCPXML(testProject, transitionShots, []);
+        assert.ok(xml.includes('<transition name="wipe-left"'));
+    });
+
+    it('does not add transition for first shot (even if cut)', () => {
+        const xml = generateFCPXML(testProject, transitionShots, []);
+        // Count transitions - should be 2 (dissolve on shot 2, wipe on shot 3)
+        const transCount = (xml.match(/<transition /g) || []).length;
+        assert.equal(transCount, 2);
+    });
+
+    it('includes filter-video reference', () => {
+        const xml = generateFCPXML(testProject, transitionShots, []);
+        assert.ok(xml.includes('<filter-video'));
+    });
+});
+
+describe('generatePremiereXML with transitions', () => {
+    it('includes transitionitem for dissolve', () => {
+        const xml = generatePremiereXML(testProject, transitionShots, []);
+        assert.ok(xml.includes('<transitionitem>'));
+        assert.ok(xml.includes('Cross Dissolve'));
+    });
+
+    it('includes transitionitem for wipe', () => {
+        const xml = generatePremiereXML(testProject, transitionShots, []);
+        assert.ok(xml.includes('Wipe'));
+    });
+
+    it('has correct transition count', () => {
+        const xml = generatePremiereXML(testProject, transitionShots, []);
+        const transCount = (xml.match(/<transitionitem>/g) || []).length;
+        assert.equal(transCount, 2);
+    });
+});
+
+describe('generatePremiereXML with custom settings', () => {
+    it('uses 4K resolution in samplecharacteristics', () => {
+        const shots = [{ id: 's1', shot_code: 'SH01', duration_ms: 1000, scene_number: 1 }];
+        const assets = [{ id: 'a1', shot_id: 's1', asset_type: 'video_final', file_path: '/v.mov', file_name: 'v.mov', duration_ms: 1000 }];
+        const xml = generatePremiereXML(testProject, shots, assets, {
+            target_resolution: '3840x2160',
+        });
+        assert.ok(xml.includes('<width>3840</width>'));
+        assert.ok(xml.includes('<height>2160</height>'));
+    });
+
+    it('sets NTSC to TRUE for 29.97fps', () => {
+        const xml = generatePremiereXML(testProject, testShots, testAssets, {
+            target_fps: 29.97,
+        });
+        assert.ok(xml.includes('<ntsc>TRUE</ntsc>'));
+        assert.ok(xml.includes('<timebase>30</timebase>'));
+    });
+
+    it('sets NTSC to FALSE for 25fps', () => {
+        const xml = generatePremiereXML(testProject, testShots, testAssets, {
+            target_fps: 25,
+        });
+        assert.ok(xml.includes('<ntsc>FALSE</ntsc>'));
+        assert.ok(xml.includes('<timebase>25</timebase>'));
+    });
+
+    it('calculates frames at custom fps', () => {
+        const shots = [{ id: 's1', shot_code: 'SH01', duration_ms: 1000, scene_number: 1 }];
+        const xml = generatePremiereXML(testProject, shots, [], { target_fps: 30 });
+        // 1000ms at 30fps = 30 frames
+        assert.ok(xml.includes('<duration>30</duration>'));
     });
 });

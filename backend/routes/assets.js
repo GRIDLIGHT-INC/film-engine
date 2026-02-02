@@ -46,6 +46,20 @@ function handleAssets(req, res, urlParts, query) {
         if (req.method === 'POST') return createMusicCue(req, res, projectId);
     }
 
+    // /film/projects/:id/music-rights
+    if (urlParts[1] === 'projects' && urlParts[3] === 'music-rights' && req.method === 'GET') {
+        const projectId = urlParts[2];
+        if (!UUID_RE.test(projectId)) return badReq(res, 'Invalid project ID');
+        return getMusicRightsSummary(req, res, projectId);
+    }
+
+    // /film/music-cues/:id/rights — update license fields
+    if (urlParts[1] === 'music-cues' && urlParts[2] && urlParts[3] === 'rights' && req.method === 'PUT') {
+        const cueId = urlParts[2];
+        if (!UUID_RE.test(cueId)) return badReq(res, 'Invalid cue ID');
+        return updateMusicRights(req, res, cueId);
+    }
+
     // /film/projects/:id/color-presets
     if (urlParts[1] === 'projects' && urlParts[3] === 'color-presets') {
         const projectId = urlParts[2];
@@ -205,6 +219,94 @@ function createMusicCue(req, res, projectId) {
 
     const row = db.prepare('SELECT * FROM film_music_cues WHERE id = ?').get(id);
     res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(row));
+}
+
+// --- Music Rights ---
+
+const VALID_LICENSE_STATUSES = ['unknown', 'pending', 'licensed', 'expired', 'rejected', 'public_domain', 'original'];
+const VALID_LICENSE_TYPES = ['sync', 'master', 'blanket', 'creative_commons', 'public_domain', 'original', 'work_for_hire'];
+
+function getMusicRightsSummary(req, res, projectId) {
+    const cues = db.prepare(
+        'SELECT * FROM film_music_cues WHERE project_id = ? ORDER BY title'
+    ).all(projectId);
+
+    const byStatus = {};
+    let totalCost = 0;
+    for (const cue of cues) {
+        const status = cue.license_status || 'unknown';
+        byStatus[status] = (byStatus[status] || 0) + 1;
+        totalCost += cue.license_cost || 0;
+    }
+
+    const needsAttention = cues.filter(c =>
+        !c.license_status || c.license_status === 'unknown' || c.license_status === 'pending'
+    );
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        total_cues: cues.length,
+        by_status: byStatus,
+        total_license_cost: totalCost,
+        needs_attention: needsAttention,
+        cues,
+    }));
+}
+
+function updateMusicRights(req, res, cueId) {
+    const body = req.body;
+    const fields = [];
+    const values = [];
+
+    if (body.license_status !== undefined) {
+        if (!VALID_LICENSE_STATUSES.includes(body.license_status)) {
+            return badReq(res, `Invalid license_status. Valid: ${VALID_LICENSE_STATUSES.join(', ')}`);
+        }
+        fields.push('license_status = ?');
+        values.push(body.license_status);
+    }
+    if (body.license_type !== undefined) {
+        if (body.license_type && !VALID_LICENSE_TYPES.includes(body.license_type)) {
+            return badReq(res, `Invalid license_type. Valid: ${VALID_LICENSE_TYPES.join(', ')}`);
+        }
+        fields.push('license_type = ?');
+        values.push(body.license_type);
+    }
+    if (body.license_holder !== undefined) {
+        fields.push('license_holder = ?');
+        values.push((body.license_holder || '').slice(0, 500));
+    }
+    if (body.license_cost !== undefined) {
+        fields.push('license_cost = ?');
+        values.push(Number(body.license_cost) || 0);
+    }
+    if (body.license_expiry !== undefined) {
+        fields.push('license_expiry = ?');
+        values.push((body.license_expiry || '').slice(0, 50));
+    }
+    if (body.license_territory !== undefined) {
+        fields.push('license_territory = ?');
+        values.push((body.license_territory || '').slice(0, 200));
+    }
+
+    if (fields.length === 0) {
+        return badReq(res, 'No valid license fields to update');
+    }
+
+    values.push(cueId);
+    const result = db.prepare(
+        `UPDATE film_music_cues SET ${fields.join(', ')} WHERE id = ?`
+    ).run(...values);
+
+    if (result.changes === 0) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Music cue not found' }));
+        return;
+    }
+
+    const row = db.prepare('SELECT * FROM film_music_cues WHERE id = ?').get(cueId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(row));
 }
 

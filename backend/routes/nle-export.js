@@ -9,6 +9,8 @@
 
 const { db, generateId } = require('../db/database');
 const { generateFCPXML, generateEDL, generatePremiereXML } = require('../lib/nle-export');
+const { generateFDX } = require('../lib/fdx-generator');
+const { parseFountain } = require('../lib/fountain-parser');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -18,12 +20,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function getProjectShots(projectId) {
     return db.prepare(`
         SELECT s.id, s.shot_code, s.duration_ms, s.scene_id, s.status,
+               s.sort_order, s.transition_in_type, s.transition_in_duration_ms,
+               s.transition_out_type, s.transition_out_duration_ms,
                sc.scene_number, sc.int_ext, sc.location, sc.time_of_day,
                sc.description, sc.characters_present
         FROM film_shots s
         JOIN film_scenes sc ON s.scene_id = sc.id
         WHERE sc.project_id = ? AND sc.status != 'removed'
-        ORDER BY sc.scene_number, s.shot_code
+        ORDER BY s.sort_order, sc.scene_number, s.shot_code
     `).all(projectId);
 }
 
@@ -63,8 +67,8 @@ function handleNLEExport(req, res, urlParts, query) {
         return;
     }
 
-    // Verify project exists
-    const project = db.prepare('SELECT id, title, logline, genre, status FROM film_projects WHERE id = ?').get(projectId);
+    // Verify project exists (include settings columns)
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Project not found' }));
@@ -89,6 +93,7 @@ function handleNLEExport(req, res, urlParts, query) {
                 { id: 'fcpxml', name: 'Final Cut Pro XML', extension: '.fcpxml', content_type: 'application/xml' },
                 { id: 'edl', name: 'CMX 3600 EDL', extension: '.edl', content_type: 'text/plain' },
                 { id: 'premiere', name: 'Premiere Pro XML', extension: '.xml', content_type: 'application/xml' },
+                { id: 'fdx', name: 'Final Draft XML', extension: '.fdx', content_type: 'application/xml' },
             ],
         }));
         return;
@@ -99,8 +104,17 @@ function handleNLEExport(req, res, urlParts, query) {
     const assets = getProjectAssets(projectId);
     const safeTitle = (project.title || 'timeline').replace(/[^a-zA-Z0-9_-]/g, '_');
 
+    // Build settings object from project row
+    const settings = {
+        target_fps: project.target_fps,
+        target_resolution: project.target_resolution,
+        timecode_start: project.timecode_start,
+        aspect_ratio: project.aspect_ratio,
+        color_space: project.color_space,
+    };
+
     if (format === 'fcpxml') {
-        const content = generateFCPXML(project, shots, assets);
+        const content = generateFCPXML(project, shots, assets, settings);
         const fileName = `${safeTitle}.fcpxml`;
         registerExportAsset(projectId, 'fcpxml', fileName, content);
         res.writeHead(200, {
@@ -112,7 +126,7 @@ function handleNLEExport(req, res, urlParts, query) {
     }
 
     if (format === 'edl') {
-        const content = generateEDL(project, shots);
+        const content = generateEDL(project, shots, settings);
         const fileName = `${safeTitle}.edl`;
         registerExportAsset(projectId, 'edl', fileName, content);
         res.writeHead(200, {
@@ -124,7 +138,7 @@ function handleNLEExport(req, res, urlParts, query) {
     }
 
     if (format === 'premiere') {
-        const content = generatePremiereXML(project, shots, assets);
+        const content = generatePremiereXML(project, shots, assets, settings);
         const fileName = `${safeTitle}.prproj.xml`;
         registerExportAsset(projectId, 'premiere_xml', fileName, content);
         res.writeHead(200, {
@@ -135,8 +149,33 @@ function handleNLEExport(req, res, urlParts, query) {
         return;
     }
 
+    if (format === 'fdx') {
+        // Get latest script for this project
+        const script = db.prepare(`
+            SELECT fountain_content FROM film_scripts
+            WHERE project_id = ? ORDER BY version DESC LIMIT 1
+        `).get(projectId);
+
+        let content;
+        if (script && script.fountain_content) {
+            const ast = parseFountain(script.fountain_content);
+            content = generateFDX(ast, { title: project.title });
+        } else {
+            content = generateFDX(null);
+        }
+
+        const fileName = `${safeTitle}.fdx`;
+        registerExportAsset(projectId, 'fdx', fileName, content);
+        res.writeHead(200, {
+            'Content-Type': 'application/xml',
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+        });
+        res.end(content);
+        return;
+    }
+
     res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: `Unknown export format: ${format}. Valid formats: fcpxml, edl, premiere` }));
+    res.end(JSON.stringify({ error: `Unknown export format: ${format}. Valid formats: fcpxml, edl, premiere, fdx` }));
 }
 
 module.exports = { handleNLEExport };

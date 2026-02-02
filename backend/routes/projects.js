@@ -3,6 +3,7 @@
  * POST/GET/PUT/DELETE /film/projects
  */
 const { db, generateId } = require('../db/database');
+const { validateProjectSettings, resolveDeliveryPreset } = require('../lib/project-presets');
 
 // UUID v4 format check
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -10,6 +11,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const VALID_STATUSES = [
     'concept', 'script', 'pre-production', 'storyboard',
     'production', 'post-production', 'review', 'export', 'complete'
+];
+
+const SETTINGS_COLUMNS = [
+    'target_resolution', 'target_fps', 'aspect_ratio', 'aspect_ratio_custom',
+    'color_space', 'delivery_format', 'timecode_start',
 ];
 
 function handleProjects(req, res, urlParts, query) {
@@ -102,18 +108,43 @@ function createProject(req, res) {
         return;
     }
 
+    // Validate project settings if any provided
+    const settingsFields = {};
+    for (const key of SETTINGS_COLUMNS) {
+        if (body[key] !== undefined) settingsFields[key] = body[key];
+    }
+    if (Object.keys(settingsFields).length > 0) {
+        const validation = validateProjectSettings(settingsFields);
+        if (!validation.valid) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid project settings', details: validation.errors }));
+            return;
+        }
+    }
+
     const id = generateId();
     const title = body.title.trim().slice(0, 500);
     const logline = (body.logline || '').trim().slice(0, 2000);
     const genre = (body.genre || '').trim().slice(0, 100);
     const style_preset = (body.style_preset || '').trim().slice(0, 100);
     const status = VALID_STATUSES.includes(body.status) ? body.status : 'concept';
+    const target_resolution = settingsFields.target_resolution || '1920x1080';
+    const target_fps = settingsFields.target_fps !== undefined ? Number(settingsFields.target_fps) : 24;
+    const aspect_ratio = settingsFields.aspect_ratio || '16:9';
+    const aspect_ratio_custom = settingsFields.aspect_ratio_custom || '';
+    const color_space = settingsFields.color_space || 'Rec.709';
+    const delivery_format = settingsFields.delivery_format || '';
+    const timecode_start = settingsFields.timecode_start || '01:00:00:00';
     const now = new Date().toISOString();
 
     db.prepare(`
-        INSERT INTO film_projects (id, title, logline, genre, style_preset, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, title, logline, genre, style_preset, status, now, now);
+        INSERT INTO film_projects (id, title, logline, genre, style_preset, status,
+            target_resolution, target_fps, aspect_ratio, aspect_ratio_custom,
+            color_space, delivery_format, timecode_start, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, title, logline, genre, style_preset, status,
+        target_resolution, target_fps, aspect_ratio, aspect_ratio_custom,
+        color_space, delivery_format, timecode_start, now, now);
 
     const row = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(id);
 
@@ -151,6 +182,26 @@ function updateProject(req, res, id) {
     if (body.status !== undefined && VALID_STATUSES.includes(body.status)) {
         fields.push('status = ?');
         values.push(body.status);
+    }
+
+    // Project settings columns
+    const settingsToValidate = {};
+    for (const key of SETTINGS_COLUMNS) {
+        if (body[key] !== undefined) settingsToValidate[key] = body[key];
+    }
+    if (Object.keys(settingsToValidate).length > 0) {
+        const validation = validateProjectSettings(settingsToValidate);
+        if (!validation.valid) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid project settings', details: validation.errors }));
+            return;
+        }
+        for (const key of SETTINGS_COLUMNS) {
+            if (body[key] !== undefined) {
+                fields.push(`${key} = ?`);
+                values.push(key === 'target_fps' ? Number(body[key]) : String(body[key]));
+            }
+        }
     }
 
     if (fields.length === 0) {
@@ -197,4 +248,57 @@ function deleteProject(req, res, id) {
     res.end(JSON.stringify({ deleted: true }));
 }
 
-module.exports = { handleProjects };
+/**
+ * POST /film/projects/:id/settings/preset — apply a delivery preset
+ */
+function handleProjectSettingsPreset(req, res, parts) {
+    if (req.method !== 'POST') {
+        res.writeHead(405, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+    }
+
+    const id = parts[2];
+    if (!UUID_RE.test(id)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid project ID' }));
+        return;
+    }
+
+    const body = req.body;
+    const presetId = body.preset;
+    if (!presetId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'preset field is required' }));
+        return;
+    }
+
+    const preset = resolveDeliveryPreset(presetId);
+    if (!preset) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Unknown preset: ${presetId}` }));
+        return;
+    }
+
+    const result = db.prepare(`
+        UPDATE film_projects SET
+            target_resolution = ?, target_fps = ?, aspect_ratio = ?,
+            color_space = ?, delivery_format = ?, updated_at = datetime('now')
+        WHERE id = ?
+    `).run(
+        preset.target_resolution, preset.target_fps, preset.aspect_ratio,
+        preset.color_space, preset.id, id
+    );
+
+    if (result.changes === 0) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Project not found' }));
+        return;
+    }
+
+    const row = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(id);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ project: row, applied_preset: preset }));
+}
+
+module.exports = { handleProjects, handleProjectSettingsPreset };

@@ -1,0 +1,102 @@
+/**
+ * FILM-022-028: Dialogue Builder
+ *
+ * Pure functions for extracting dialogue from scene cards and building
+ * voice synthesis payloads. No DB dependency.
+ */
+
+const VALID_EMOTIONS = [
+    'neutral', 'happy', 'sad', 'angry', 'surprised', 'fearful',
+    'disgusted', 'contemptuous', 'excited', 'tender', 'whispered',
+    'shouting', 'sarcastic', 'pleading',
+];
+
+/**
+ * Extract dialogue entries from a parsed scene card.
+ *
+ * @param {object} sceneCard - Parsed scene_card_yaml
+ * @returns {Array<{ character: string, line: string, emotion: string, index: number }>}
+ */
+function extractDialogue(sceneCard) {
+    if (!sceneCard || !Array.isArray(sceneCard.dialogue)) return [];
+
+    return sceneCard.dialogue
+        .filter(dl => dl && dl.character && dl.line)
+        .map((dl, index) => ({
+            character: dl.character,
+            line: dl.line,
+            emotion: VALID_EMOTIONS.includes(dl.emotion) ? dl.emotion : 'neutral',
+            index,
+        }));
+}
+
+/**
+ * Build a payload for the POST /voice endpoint.
+ *
+ * @param {object} dialogueLine - { character, line, emotion, index }
+ * @param {object|null} voiceProfile - film_voice_profiles row
+ * @param {object|null} character - film_characters row
+ * @returns {object} Payload for POST /voice
+ */
+function buildVoicePayload(dialogueLine, voiceProfile, character) {
+    const payload = {
+        text: dialogueLine.line,
+        model: 'qwen3-tts',
+        language: 'en',
+        emotion: dialogueLine.emotion || 'neutral',
+        speed: 1.0,
+        output_format: 'wav',
+        sample_rate: 24000,
+        stream: true,
+    };
+
+    if (voiceProfile) {
+        if (voiceProfile.voice_id) payload.voice_id = voiceProfile.voice_id;
+        if (voiceProfile.speaker_embedding) payload.speaker_embedding = voiceProfile.speaker_embedding;
+        if (voiceProfile.model) payload.model = voiceProfile.model;
+        if (voiceProfile.language) payload.language = voiceProfile.language;
+        if (voiceProfile.speed) payload.speed = voiceProfile.speed;
+    }
+
+    if (character && character.name) {
+        payload.character_name = character.name;
+    }
+
+    return payload;
+}
+
+/**
+ * Build a filename for a dialogue audio clip.
+ *
+ * @param {string} shotCode
+ * @param {string} characterName
+ * @param {number} lineIndex
+ * @returns {string} e.g. '1A_JOHN_0.wav'
+ */
+function dialogueFilename(shotCode, characterName, lineIndex) {
+    const safeName = characterName.replace(/[^a-zA-Z0-9_-]/g, '_').toUpperCase();
+    return `${shotCode}_${safeName}_${lineIndex}.wav`;
+}
+
+/**
+ * Calculate total expected dialogue duration based on text length.
+ * Rough estimate: ~150 words per minute, ~5 chars per word.
+ *
+ * @param {string} text
+ * @param {number} [speed=1.0]
+ * @returns {number} Estimated duration in ms
+ */
+function estimateDialogueDuration(text, speed) {
+    const s = speed || 1.0;
+    const words = text.split(/\s+/).length;
+    const durationSec = (words / 150) * 60 / s;
+    return Math.max(500, Math.round(durationSec * 1000));
+}
+
+module.exports = {
+    extractDialogue,
+    buildVoicePayload,
+    dialogueFilename,
+    estimateDialogueDuration,
+    VALID_EMOTIONS,
+};

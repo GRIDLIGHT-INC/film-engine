@@ -37,6 +37,11 @@ function handleRenderLedger(req, res, urlParts, query) {
     // GET /film/shots/:id/renders — render history
     if (sub === 'renders' && req.method === 'GET') return getRenderHistory(req, res, shotId, query);
 
+    // GET /film/shots/:id/versions/compare?a=X&b=Y — A/B comparison
+    if (sub === 'versions' && urlParts[4] === 'compare' && req.method === 'GET') {
+        return compareVersions(req, res, shotId, query);
+    }
+
     // GET /film/shots/:id/versions — shot version history
     if (sub === 'versions' && req.method === 'GET') return getShotVersions(req, res, shotId);
 
@@ -182,6 +187,82 @@ function reRender(req, res, shotId) {
         params: reRenderParams,
         hint: 'Submit these params to the render pipeline. The ledger entry will be created on completion.'
     }));
+}
+
+/**
+ * GET /film/shots/:id/versions/compare?a=X&b=Y
+ * Returns both versions with their render params and a param diff.
+ */
+function compareVersions(req, res, shotId, query) {
+    const versionA = parseInt(query.a);
+    const versionB = parseInt(query.b);
+
+    if (isNaN(versionA) || isNaN(versionB)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Query params a and b (version numbers) are required' }));
+        return;
+    }
+
+    if (versionA === versionB) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Versions a and b must be different' }));
+        return;
+    }
+
+    const verA = db.prepare(
+        'SELECT * FROM film_shot_versions WHERE shot_id = ? AND version = ?'
+    ).get(shotId, versionA);
+    const verB = db.prepare(
+        'SELECT * FROM film_shot_versions WHERE shot_id = ? AND version = ?'
+    ).get(shotId, versionB);
+
+    if (!verA || !verB) {
+        const missing = !verA ? versionA : versionB;
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Version ${missing} not found for this shot` }));
+        return;
+    }
+
+    // Get render ledger entries for both versions
+    const renderA = db.prepare(
+        'SELECT * FROM render_ledger WHERE shot_id = ? AND version = ? ORDER BY created_at DESC LIMIT 1'
+    ).get(shotId, versionA);
+    const renderB = db.prepare(
+        'SELECT * FROM render_ledger WHERE shot_id = ? AND version = ? ORDER BY created_at DESC LIMIT 1'
+    ).get(shotId, versionB);
+
+    // Compute param diff between render entries
+    const paramDiff = computeParamDiff(renderA, renderB);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        shot_id: shotId,
+        version_a: { version: verA, render_params: renderA || null },
+        version_b: { version: verB, render_params: renderB || null },
+        param_diff: paramDiff,
+    }));
+}
+
+const COMPARE_FIELDS = [
+    'model_id', 'model_hash', 'seed', 'sampler', 'steps', 'guidance',
+    'lora_ids', 'controlnets', 'prompt', 'negative_prompt',
+    'camera_params', 'lighting_params', 'resolution', 'fps', 'mode',
+];
+
+function computeParamDiff(renderA, renderB) {
+    if (!renderA || !renderB) return null;
+
+    const diff = {};
+    for (const field of COMPARE_FIELDS) {
+        const valA = renderA[field];
+        const valB = renderB[field];
+        const strA = typeof valA === 'object' ? JSON.stringify(valA) : String(valA ?? '');
+        const strB = typeof valB === 'object' ? JSON.stringify(valB) : String(valB ?? '');
+        if (strA !== strB) {
+            diff[field] = { a: valA, b: valB };
+        }
+    }
+    return diff;
 }
 
 module.exports = { handleRenderLedger };

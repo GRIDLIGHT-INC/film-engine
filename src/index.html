@@ -2767,7 +2767,9 @@
                 </button>
                 <button class="nav-item" data-page="storyboard" onclick="navigateTo('storyboard')">
                     <span class="nav-icon">&#128444;</span> Storyboard
-                    <span class="badge-soon">Soon</span>
+                </button>
+                <button class="nav-item" data-page="acts" onclick="navigateTo('acts')">
+                    <span class="nav-icon">&#127917;</span> Acts
                 </button>
                 <div class="sidebar-divider"></div>
                 <div class="nav-section">Elements</div>
@@ -2802,10 +2804,18 @@
                 <button class="nav-item" data-page="renderhistory" onclick="navigateTo('renderhistory')">
                     <span class="nav-icon">&#128260;</span> Render History
                 </button>
+                <button class="nav-item" data-page="continuity" onclick="navigateTo('continuity')">
+                    <span class="nav-icon">&#128247;</span> Continuity
+                </button>
+                <button class="nav-item" data-page="budget" onclick="navigateTo('budget')">
+                    <span class="nav-icon">&#128176;</span> Budget
+                </button>
                 <div class="sidebar-divider"></div>
                 <button class="nav-item" data-page="exportpage" onclick="navigateTo('exportpage')">
                     <span class="nav-icon">&#128228;</span> Export
-                    <span class="badge-soon">Soon</span>
+                </button>
+                <button class="nav-item" data-page="pipeline" onclick="navigateTo('pipeline')">
+                    <span class="nav-icon">&#9881;</span> Pipeline
                 </button>
                 <button class="nav-item" data-page="settings" onclick="navigateTo('settings')">
                     <span class="nav-icon">&#9881;</span> Settings
@@ -2823,14 +2833,26 @@
         <div class="page active" id="page-projects">
             <div class="flex-between mb-16">
                 <h2>Projects</h2>
-                <button class="btn btn-primary" onclick="showModal('newProjectModal')">+ New Project</button>
+                <div>
+                    <input type="file" id="projectBundleInput" accept=".tar.gz,.tgz" style="display:none" onchange="importBundle(this)">
+                    <button class="btn btn-secondary" onclick="document.getElementById('projectBundleInput').click()" style="margin-right:8px;">Import Bundle</button>
+                    <button class="btn btn-primary" onclick="showModal('newProjectModal')">+ New Project</button>
+                </div>
             </div>
+            <div id="projectImportStatus" class="text-sm mb-8" style="display:none;"></div>
             <div id="projectList"></div>
         </div>
 
         <!-- ── 2. DASHBOARD ─────────────────────────────────────── -->
         <div class="page" id="page-dashboard">
             <div class="page-header"><h2>Dashboard</h2></div>
+            <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+                <button class="btn btn-secondary btn-sm" onclick="navigateTo('scenes')">Scenes</button>
+                <button class="btn btn-secondary btn-sm" onclick="navigateTo('shotboard')">Shot Board</button>
+                <button class="btn btn-secondary btn-sm" onclick="navigateTo('storyboard')">Storyboard</button>
+                <button class="btn btn-secondary btn-sm" onclick="navigateTo('pipeline')">Pipeline</button>
+                <button class="btn btn-secondary btn-sm" onclick="navigateTo('exportpage')">Export</button>
+            </div>
             <div class="dashboard-grid" id="dashStats"></div>
             <div class="flex-between mb-8">
                 <span class="section-label">Shot Status</span>
@@ -2841,6 +2863,10 @@
                 <span class="section-label">Upcoming Milestones</span>
             </div>
             <div id="dashMilestones"></div>
+            <div class="flex-between mb-8" style="margin-top:24px;">
+                <span class="section-label">Recent Activity</span>
+            </div>
+            <div id="dashRecentActivity"></div>
         </div>
 
         <!-- ── 3. SCREENPLAY ────────────────────────────────────── -->
@@ -2902,6 +2928,7 @@
                         <div class="toolbar-divider"></div>
                         <span id="saveStatusIndicator" class="save-status saved">Saved</span>
                         <div class="toolbar-divider"></div>
+                        <button class="toolbar-btn" id="commentsToggle" onclick="toggleComments()" title="Toggle Comments">Comments</button>
                         <button class="toolbar-btn" id="aiChatToggle" onclick="toggleAIChat()" title="AI Assistant (Ctrl+Shift+A)">AI Chat</button>
                         <button class="toolbar-btn" onclick="openAIGenerateModal()" title="AI Generate for Current Element" style="background:var(--primary);color:white;">✨ Generate</button>
                         <button class="toolbar-btn" onclick="openTitlePageModal()" title="Edit Title Page">Title Page</button>
@@ -3146,26 +3173,24 @@
             <div class="kanban-board" id="kanbanBoard"></div>
         </div>
 
-        <!-- ── 6. STORYBOARD (Coming Soon) ──────────────────────── -->
+        <!-- ── 6. STORYBOARD ────────────────────────────────────── -->
         <div class="page" id="page-storyboard">
-            <div class="page-header"><h2>Storyboard</h2></div>
-            <div class="coming-soon-wrapper" style="min-height:400px;">
-                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
-                    <div class="card" style="height:180px;"></div>
-                    <div class="card" style="height:180px;"></div>
-                    <div class="card" style="height:180px;"></div>
-                    <div class="card" style="height:180px;"></div>
-                    <div class="card" style="height:180px;"></div>
-                    <div class="card" style="height:180px;"></div>
-                    <div class="card" style="height:180px;"></div>
-                    <div class="card" style="height:180px;"></div>
-                </div>
-                <div class="coming-soon-overlay">
-                    <div class="cs-icon">&#128444;</div>
-                    <h3>Storyboard</h3>
-                    <p>Requires ImageGen pipeline. Visual storyboard frames will be generated from scene cards.</p>
+            <div class="flex-between mb-16">
+                <h2>Storyboard</h2>
+                <div>
+                    <button class="btn btn-primary" onclick="generateAllStoryboards()">Generate All</button>
                 </div>
             </div>
+            <div id="storyboardProgress" style="display:none;" class="card mb-16">
+                <div class="flex-between mb-8">
+                    <span id="storyboardProgressLabel">Generating storyboards...</span>
+                    <span id="storyboardProgressPct">0%</span>
+                </div>
+                <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;">
+                    <div id="storyboardProgressBar" style="background:var(--primary);height:100%;width:0%;transition:width 0.3s;"></div>
+                </div>
+            </div>
+            <div id="storyboardGrid" class="entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
         </div>
 
         <!-- ── 7. CHARACTERS ────────────────────────────────────── -->
@@ -3267,38 +3292,119 @@
             <div id="renderTableWrap"></div>
         </div>
 
-        <!-- ── 16. EXPORT (Coming Soon) ─────────────────────────── -->
+        <!-- ── 16. EXPORT ──────────────────────────────────────── -->
         <div class="page" id="page-exportpage">
             <div class="page-header"><h2>Export</h2></div>
-            <div class="coming-soon-wrapper" style="min-height:300px;">
-                <div class="entity-grid">
-                    <div class="card" style="text-align:center;padding:30px;">
-                        <div style="font-size:32px;margin-bottom:8px;">&#128196;</div>
-                        <h3>FCPXML</h3>
-                        <p class="text-sm text-muted">Final Cut Pro timeline</p>
-                    </div>
-                    <div class="card" style="text-align:center;padding:30px;">
-                        <div style="font-size:32px;margin-bottom:8px;">&#128221;</div>
-                        <h3>EDL</h3>
-                        <p class="text-sm text-muted">Edit Decision List</p>
-                    </div>
-                    <div class="card" style="text-align:center;padding:30px;">
-                        <div style="font-size:32px;margin-bottom:8px;">&#127909;</div>
-                        <h3>ProRes</h3>
-                        <p class="text-sm text-muted">Apple ProRes 422 LT</p>
-                    </div>
-                    <div class="card" style="text-align:center;padding:30px;">
-                        <div style="font-size:32px;margin-bottom:8px;">&#127916;</div>
-                        <h3>Premiere XML</h3>
-                        <p class="text-sm text-muted">Adobe Premiere Pro</p>
-                    </div>
-                </div>
-                <div class="coming-soon-overlay">
-                    <div class="cs-icon">&#128228;</div>
-                    <h3>Export</h3>
-                    <p>Requires full render pipeline. Export to FCPXML, EDL, ProRes, and Premiere formats.</p>
+            <div id="exportInfo" class="card mb-16">
+                <div class="flex-between">
+                    <div><span id="exportShotCount">0</span> shots &middot; <span id="exportDuration">0s</span> estimated</div>
                 </div>
             </div>
+            <div class="entity-grid" id="exportGrid">
+                <div class="card" style="text-align:center;padding:30px;">
+                    <div style="font-size:32px;margin-bottom:8px;">&#128196;</div>
+                    <h3>FCPXML</h3>
+                    <p class="text-sm text-muted mb-8">Final Cut Pro timeline</p>
+                    <button class="btn btn-primary btn-sm" onclick="downloadExport('fcpxml')">Download</button>
+                </div>
+                <div class="card" style="text-align:center;padding:30px;">
+                    <div style="font-size:32px;margin-bottom:8px;">&#128221;</div>
+                    <h3>EDL</h3>
+                    <p class="text-sm text-muted mb-8">Edit Decision List (CMX 3600)</p>
+                    <button class="btn btn-primary btn-sm" onclick="downloadExport('edl')">Download</button>
+                </div>
+                <div class="card" style="text-align:center;padding:30px;">
+                    <div style="font-size:32px;margin-bottom:8px;">&#127916;</div>
+                    <h3>Premiere XML</h3>
+                    <p class="text-sm text-muted mb-8">Adobe Premiere Pro / DaVinci Resolve</p>
+                    <button class="btn btn-primary btn-sm" onclick="downloadExport('premiere')">Download</button>
+                </div>
+                <div class="card" style="text-align:center;padding:30px;">
+                    <div style="font-size:32px;margin-bottom:8px;">&#128264;</div>
+                    <h3>SRT Subtitles</h3>
+                    <p class="text-sm text-muted mb-8">Subtitle file from dialogue</p>
+                    <button class="btn btn-primary btn-sm" onclick="downloadExport('srt')">Download</button>
+                </div>
+                <div class="card" style="text-align:center;padding:30px;">
+                    <div style="font-size:32px;margin-bottom:8px;">&#128209;</div>
+                    <h3>FDX</h3>
+                    <p class="text-sm text-muted mb-8">Final Draft XML screenplay</p>
+                    <button class="btn btn-primary btn-sm" onclick="downloadExport('fdx')">Download</button>
+                </div>
+            </div>
+            <h3 class="mb-8" style="margin-top:24px;">Project Bundle</h3>
+            <p class="text-sm text-muted mb-8">Export the entire project (data + assets) as a portable archive, or import a bundle from another machine.</p>
+            <div class="entity-grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">
+                <div class="card" style="text-align:center;padding:30px;">
+                    <div style="font-size:32px;margin-bottom:8px;">&#128230;</div>
+                    <h3>Export Bundle</h3>
+                    <p class="text-sm text-muted mb-8">Download .tar.gz with all project data and assets</p>
+                    <button class="btn btn-primary btn-sm" onclick="downloadBundle()">Download Bundle</button>
+                </div>
+                <div class="card" style="text-align:center;padding:30px;">
+                    <div style="font-size:32px;margin-bottom:8px;">&#128229;</div>
+                    <h3>Import Bundle</h3>
+                    <p class="text-sm text-muted mb-8">Import a project bundle from another machine</p>
+                    <input type="file" id="bundleFileInput" accept=".tar.gz,.tgz" style="display:none" onchange="importBundle(this)">
+                    <button class="btn btn-secondary btn-sm" onclick="document.getElementById('bundleFileInput').click()">Choose File...</button>
+                    <div id="importStatus" class="text-sm mt-8" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── ACTS (FILM-146) ─────────────────────────────────── -->
+        <div class="page" id="page-acts">
+            <div class="flex-between mb-16">
+                <h2>Acts</h2>
+                <button class="btn btn-primary" onclick="showModal('actModal')">+ Act</button>
+            </div>
+            <div id="actsList"></div>
+        </div>
+
+        <!-- ── CONTINUITY BOARD (FILM-163) ────────────────────── -->
+        <div class="page" id="page-continuity">
+            <div class="flex-between mb-16">
+                <h2>Continuity Board</h2>
+                <div>
+                    <select id="continuityFilter" onchange="loadContinuity()" style="width:auto;display:inline-block;min-width:150px;margin-right:8px;">
+                        <option value="">All Types</option>
+                        <option value="visual">Visual</option>
+                        <option value="wardrobe">Wardrobe</option>
+                        <option value="prop">Prop</option>
+                        <option value="lighting">Lighting</option>
+                        <option value="color">Color</option>
+                        <option value="framing">Framing</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="showModal('continuityModal')">+ Reference</button>
+                </div>
+            </div>
+            <div class="entity-grid" id="continuityGrid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));"></div>
+        </div>
+
+        <!-- ── BUDGET DASHBOARD (FILM-164) ────────────────────── -->
+        <div class="page" id="page-budget">
+            <div class="flex-between mb-16">
+                <h2>Budget</h2>
+                <div>
+                    <button class="btn btn-secondary" onclick="showModal('budgetLimitModal')" style="margin-right:8px;">Set Limit</button>
+                    <button class="btn btn-primary" onclick="showModal('costEntryModal')">+ Cost Entry</button>
+                </div>
+            </div>
+            <div id="budgetSummary" class="mb-16"></div>
+            <div id="budgetBreakdown" class="mb-16"></div>
+            <h3 class="mb-8">Cost Ledger</h3>
+            <div id="budgetLedger"></div>
+        </div>
+
+        <!-- ── 16b. PIPELINE ──────────────────────────────────────── -->
+        <div class="page" id="page-pipeline">
+            <div class="flex-between mb-16">
+                <h2>Pipeline Monitor</h2>
+                <button class="btn btn-secondary" onclick="loadPipeline()">Refresh</button>
+            </div>
+            <div id="pipelineActive" class="mb-16"></div>
+            <h3 class="mb-8">Recent Runs</h3>
+            <div id="pipelineHistory"></div>
         </div>
 
         <!-- ── 17. SETTINGS ─────────────────────────────────────── -->
@@ -3348,6 +3454,96 @@
                     <button class="btn btn-danger" onclick="deleteCurrentProject()">Delete Project</button>
                 </div>
             </div>
+            <!-- FILM-138: Technical Project Settings -->
+            <div class="card mt-16" style="max-width:600px;" id="settingsTechnicalCard">
+                <h3 class="mb-8">Technical Settings</h3>
+                <p class="text-sm text-muted mb-16">Resolution, frame rate, color space, and delivery format for NLE exports.</p>
+                <div class="form-group">
+                    <label>Delivery Preset</label>
+                    <select id="settingsDeliveryPreset" onchange="applyDeliveryPreset(this.value)">
+                        <option value="">Custom</option>
+                        <option value="theatrical_dcp">Theatrical DCP</option>
+                        <option value="imax">IMAX</option>
+                        <option value="streaming_hd">Streaming HD</option>
+                        <option value="streaming_4k">Streaming 4K</option>
+                        <option value="social_media">Social Media</option>
+                        <option value="broadcast">Broadcast</option>
+                    </select>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div class="form-group">
+                        <label>Aspect Ratio</label>
+                        <select id="settingsAspectRatio" onchange="onAspectRatioChange(this.value)">
+                            <option value="16:9">16:9 Standard HD/UHD</option>
+                            <option value="2.39:1">2.39:1 Anamorphic Scope</option>
+                            <option value="2.35:1">2.35:1 Panavision Scope</option>
+                            <option value="1.85:1">1.85:1 Flat Widescreen</option>
+                            <option value="1.43:1">1.43:1 IMAX Full Frame</option>
+                            <option value="1.90:1">1.90:1 IMAX Digital</option>
+                            <option value="4:3">4:3 Academy</option>
+                            <option value="9:16">9:16 Vertical/Mobile</option>
+                            <option value="1:1">1:1 Square</option>
+                            <option value="2:1">2:1 Univisium (Netflix)</option>
+                            <option value="2.76:1">2.76:1 Ultra Panavision 70</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="customAspectGroup" style="display:none;">
+                        <label>Custom Ratio</label>
+                        <input type="text" id="settingsAspectCustom" placeholder="e.g. 2.20:1">
+                    </div>
+                    <div class="form-group">
+                        <label>Resolution</label>
+                        <select id="settingsResolution">
+                            <option value="1280x720">720p (1280x720)</option>
+                            <option value="1920x1080" selected>1080p (1920x1080)</option>
+                            <option value="2048x1080">2K DCI (2048x1080)</option>
+                            <option value="3840x2160">4K UHD (3840x2160)</option>
+                            <option value="4096x2160">4K DCI (4096x2160)</option>
+                            <option value="5632x4096">IMAX 5.6K (5632x4096)</option>
+                            <option value="7680x4320">8K (7680x4320)</option>
+                            <option value="12288x8640">IMAX 12K (12288x8640)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Frame Rate</label>
+                        <select id="settingsFps">
+                            <option value="23.976">23.976 fps</option>
+                            <option value="24" selected>24 fps (Film)</option>
+                            <option value="25">25 fps (PAL)</option>
+                            <option value="29.97">29.97 fps (NTSC DF)</option>
+                            <option value="30">30 fps</option>
+                            <option value="48">48 fps (HFR)</option>
+                            <option value="60">60 fps</option>
+                            <option value="120">120 fps</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Color Space</label>
+                        <select id="settingsColorSpace">
+                            <option value="sRGB">sRGB</option>
+                            <option value="Rec.709" selected>Rec.709</option>
+                            <option value="DCI-P3">DCI-P3</option>
+                            <option value="Rec.2020">Rec.2020</option>
+                            <option value="ACES">ACES</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Timecode Start</label>
+                    <input type="text" id="settingsTimecodeStart" placeholder="01:00:00:00" value="01:00:00:00" style="max-width:200px;font-family:monospace;">
+                </div>
+                <!-- Aspect Ratio Preview -->
+                <div style="margin-top:12px;">
+                    <label class="text-sm text-muted">Preview</label>
+                    <div id="aspectPreview" style="margin-top:6px;width:200px;height:112px;border:2px solid var(--primary);border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all 0.3s;background:rgba(233,30,99,0.05);">
+                        <span class="text-sm text-muted" id="aspectPreviewLabel">16:9</span>
+                    </div>
+                </div>
+                <div class="btn-row" style="margin-top:16px;">
+                    <button class="btn btn-primary" onclick="saveTechnicalSettings()">Save Technical Settings</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -3371,6 +3567,23 @@
                 <div class="form-group"><label>Title</label><input type="text" data-field="title" placeholder="My Film"></div>
                 <div class="form-group"><label>Logline</label><textarea data-field="logline" rows="2" placeholder="A brief summary..."></textarea></div>
                 <div class="form-group"><label>Genre</label><input type="text" data-field="genre" placeholder="Drama, Sci-Fi, Thriller"></div>
+                <div class="form-group"><label>Style Preset</label>
+                    <select data-field="style_preset">
+                        <option value="cinematic">Cinematic</option>
+                        <option value="noir">Noir</option>
+                        <option value="anime">Anime</option>
+                        <option value="documentary">Documentary</option>
+                        <option value="horror">Horror</option>
+                        <option value="fantasy">Fantasy</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Target FPS</label>
+                    <select data-field="target_fps">
+                        <option value="24">24 fps (Film)</option>
+                        <option value="25">25 fps (PAL)</option>
+                        <option value="30">30 fps (NTSC)</option>
+                    </select>
+                </div>
                 <div class="btn-row">
                     <button class="btn btn-primary" onclick="createProject()">Create Project</button>
                     <button class="btn btn-secondary" onclick="closeModal('newProjectModal')">Cancel</button>
@@ -3920,6 +4133,96 @@
         </div>
     </div>
 
+    <!-- Act Modal (FILM-146) -->
+    <div class="modal-overlay" id="actModal">
+        <div class="modal">
+            <div class="modal-header"><h3 id="actModalTitle">New Act</h3><button class="modal-close" onclick="closeModal('actModal')">&times;</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="actEditId">
+                <div class="form-group"><label>Act Number</label><input type="number" data-field="act_number" min="1" value="1"></div>
+                <div class="form-group"><label>Name</label><input type="text" data-field="name" placeholder="Act name (e.g. Act I - Setup)"></div>
+                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="What happens in this act?"></textarea></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveAct()">Save</button>
+                    <button class="btn btn-secondary" onclick="closeModal('actModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Continuity Reference Modal (FILM-163) -->
+    <div class="modal-overlay" id="continuityModal">
+        <div class="modal">
+            <div class="modal-header"><h3>New Continuity Reference</h3><button class="modal-close" onclick="closeModal('continuityModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Reference Type</label>
+                    <select data-field="ref_type">
+                        <option value="visual">Visual</option>
+                        <option value="wardrobe">Wardrobe</option>
+                        <option value="prop">Prop</option>
+                        <option value="lighting">Lighting</option>
+                        <option value="color">Color</option>
+                        <option value="framing">Framing</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Title</label><input type="text" data-field="title" placeholder="Reference title"></div>
+                <div class="form-group"><label>Description</label><textarea data-field="description" rows="3" placeholder="Detailed description of the continuity reference..."></textarea></div>
+                <div class="form-group"><label>Scene ID (optional)</label><input type="text" data-field="scene_id" placeholder="Link to a scene"></div>
+                <div class="form-group"><label>Tags</label><input type="text" data-field="tags" placeholder="Comma-separated tags"></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveContinuityRef()">Save</button>
+                    <button class="btn btn-secondary" onclick="closeModal('continuityModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Budget Limit Modal (FILM-164) -->
+    <div class="modal-overlay" id="budgetLimitModal">
+        <div class="modal">
+            <div class="modal-header"><h3>Set Budget Limit</h3><button class="modal-close" onclick="closeModal('budgetLimitModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Budget Limit ($)</label><input type="number" data-field="budget_limit" min="0" step="0.01" placeholder="0.00"></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveBudgetLimit()">Save</button>
+                    <button class="btn btn-secondary" onclick="closeModal('budgetLimitModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cost Entry Modal (FILM-164) -->
+    <div class="modal-overlay" id="costEntryModal">
+        <div class="modal">
+            <div class="modal-header"><h3>Add Cost Entry</h3><button class="modal-close" onclick="closeModal('costEntryModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Cost Type</label>
+                    <select data-field="cost_type">
+                        <option value="render_gpu">Render GPU</option>
+                        <option value="image_generation">Image Generation</option>
+                        <option value="video_generation">Video Generation</option>
+                        <option value="voice_synthesis">Voice Synthesis</option>
+                        <option value="music_generation">Music Generation</option>
+                        <option value="api_call">API Call</option>
+                        <option value="storage">Storage</option>
+                        <option value="license">License</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>Amount ($)</label><input type="number" data-field="amount" min="0" step="0.01" placeholder="0.00"></div>
+                    <div class="form-group"><label>GPU Seconds</label><input type="number" data-field="gpu_seconds" min="0" placeholder="0"></div>
+                </div>
+                <div class="form-group"><label>Description</label><input type="text" data-field="description" placeholder="What was this for?"></div>
+                <div class="form-group"><label>Model Used</label><input type="text" data-field="model_used" placeholder="e.g. SDXL, GPT-4"></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveCostEntry()">Save</button>
+                    <button class="btn btn-secondary" onclick="closeModal('costEntryModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ════════════════════════════════════════════════════════════
          JAVASCRIPT
          ════════════════════════════════════════════════════════════ -->
@@ -4016,6 +4319,7 @@
             screenplay: loadScreenplayPage,
             scenes: loadScenes,
             shotboard: loadShotBoard,
+            storyboard: loadStoryboard,
             characters: loadCharacters,
             locations: loadLocations,
             props: loadProps,
@@ -4025,7 +4329,12 @@
             milestones: loadMilestones,
             notes: loadNotesPage,
             renderhistory: loadRenderPage,
+            exportpage: loadExportPage,
+            pipeline: loadPipeline,
             settings: loadSettings,
+            acts: loadActs,
+            continuity: loadContinuity,
+            budget: loadBudget,
         };
         if (loaders[page]) loaders[page]();
     }
@@ -4155,6 +4464,21 @@
                     <span style="font-size:12px;">${esc(m.title)}</span>
                     <span style="font-size:10px;color:var(--text-muted);margin-left:auto;">${m.completion_pct || 0}%</span>
                 </div>`).join('');
+
+            // Recent activity from render ledger
+            try {
+                const sbData = await api('/projects/' + state.currentProject.id + '/status-board');
+                const allShots = [];
+                (sbData.scenes || []).forEach(sc => (sc.shots || []).forEach(sh => allShots.push({ ...sh, scene_number: sc.scene_number })));
+                const recent = allShots.slice(0, 10);
+                document.getElementById('dashRecentActivity').innerHTML = recent.length === 0 ?
+                    '<p class="text-sm text-muted">No shot activity yet.</p>' :
+                    recent.map(s => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:12px;">
+                        <span class="badge ${s.status === 'approved' ? 'approved' : ''}">${esc(s.status)}</span>
+                        <span>Sc${s.scene_number} / ${esc(s.shot_code)}</span>
+                        ${s.duration_ms ? '<span class="text-muted">' + (s.duration_ms/1000).toFixed(1) + 's</span>' : ''}
+                    </div>`).join('');
+            } catch (e) { /* ignore */ }
 
             setStatus('Dashboard loaded');
         } catch (err) { setStatus('Error: ' + err.message); }
@@ -6370,9 +6694,14 @@
             navList.innerHTML = scenes.map((scene, i) => `
                 <div class="scene-nav-item ${i === currentSceneIndex ? 'current' : ''}"
                      data-scene-index="${i}"
-                     onclick="scrollToScene(${i})">
+                     draggable="true"
+                     onclick="scrollToScene(${i})"
+                     ondragstart="onSceneNavDragStart(event, ${i})"
+                     ondragover="onSceneNavDragOver(event)"
+                     ondragleave="onSceneNavDragLeave(event)"
+                     ondrop="onSceneNavDrop(event, ${i})">
                     <div class="scene-nav-header">
-                        <span class="scene-nav-num">#${scene.num}</span>
+                        <span class="scene-nav-num" style="cursor:grab;">#${scene.num}</span>
                         <span class="scene-nav-title">${escapeHtml(scene.heading)}</span>
                     </div>
                     ${scene.characters.length > 0 ? `<div class="scene-nav-chars">${scene.characters.slice(0, 3).join(', ')}${scene.characters.length > 3 ? '...' : ''}</div>` : ''}
@@ -6646,6 +6975,39 @@
 
         draggedCardIndex = null;
         document.querySelectorAll('.index-card.dragging').forEach(el => el.classList.remove('dragging'));
+    }
+
+    // Scene navigator sidebar drag-drop
+    let draggedNavSceneIndex = null;
+
+    function onSceneNavDragStart(event, index) {
+        draggedNavSceneIndex = index;
+        event.target.classList.add('dragging');
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', index);
+    }
+
+    function onSceneNavDragOver(event) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        event.currentTarget.style.borderTop = '2px solid var(--primary)';
+    }
+
+    function onSceneNavDragLeave(event) {
+        event.currentTarget.style.borderTop = '';
+    }
+
+    function onSceneNavDrop(event, targetIndex) {
+        event.preventDefault();
+        event.currentTarget.style.borderTop = '';
+        const sourceIndex = draggedNavSceneIndex;
+        if (sourceIndex === null || sourceIndex === targetIndex) {
+            draggedNavSceneIndex = null;
+            return;
+        }
+        reorderScenes(sourceIndex, targetIndex);
+        draggedNavSceneIndex = null;
+        document.querySelectorAll('.scene-nav-item.dragging').forEach(el => el.classList.remove('dragging'));
     }
 
     function reorderScenes(fromIndex, toIndex) {
@@ -9172,9 +9534,16 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                     </div>
                     ${shots.length === 0 ? '<p class="text-sm text-muted" style="text-align:center;padding:20px 0;">Empty</p>' :
                     shots.map(s => `
-                        <div class="kanban-card">
-                            <div class="shot-code">Sc${s.scene_number} / ${esc(s.shot_code)}</div>
-                            <div class="shot-meta">${esc(s.location || '')} ${s.duration_ms ? '&middot; ' + (s.duration_ms/1000).toFixed(1) + 's' : ''}</div>
+                        <div class="kanban-card" draggable="true"
+                             ondragstart="onShotDragStart(event,'${s.id}')"
+                             ondragend="onShotDragEnd(event)"
+                             ondragover="onShotDragOver(event)"
+                             ondrop="onShotDrop(event,'${s.id}')"
+                             onclick="openShotDetail('${s.id}')" style="cursor:pointer;">
+                            <img src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(s.shot_code)}.png"
+                                 style="width:100%;height:60px;object-fit:cover;border-radius:4px;margin-bottom:6px;display:block;" onerror="this.style.display='none'">
+                            <div class="shot-code">&#9776; Sc${s.scene_number} / ${esc(s.shot_code)}</div>
+                            <div class="shot-meta">${esc(s.location || '')} ${s.duration_ms ? '&middot; ' + (s.duration_ms/1000).toFixed(1) + 's' : ''}${s.transition_in_type && s.transition_in_type !== 'cut' ? ' &middot; ' + esc(s.transition_in_type) : ''}</div>
                         </div>`).join('')}
                 </div>`).join('');
             setStatus(state.shots.length + ' shot(s)');
@@ -9833,6 +10202,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
         } else {
             pc.classList.add('hidden');
         }
+        loadTechnicalSettings();
     }
 
     function saveSettings() {
@@ -9867,6 +10237,447 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             document.getElementById('navProjectName').textContent = state.currentProject.title;
             setStatusDot(state.currentProject.status);
             setStatus('Project updated');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FILM-146: ACT MANAGEMENT
+    // ══════════════════════════════════════════════════════════════
+    async function loadActs() {
+        if (!state.currentProject) return;
+        setStatus('Loading acts...');
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/acts');
+            const acts = data.acts || [];
+            const scenesData = await api('/projects/' + state.currentProject.id + '/scenes');
+            const allScenes = scenesData.scenes || [];
+            const el = document.getElementById('actsList');
+
+            if (acts.length === 0 && allScenes.length === 0) {
+                el.innerHTML = '<div class="empty-state"><div class="icon">&#127917;</div><h3>No acts</h3><p>Create acts to organize your scenes into a structure.</p></div>';
+                return;
+            }
+
+            const assignedSceneIds = new Set();
+            let html = '';
+
+            // Render each act with its scenes
+            acts.sort((a, b) => a.sort_order - b.sort_order);
+            for (const act of acts) {
+                const actScenes = allScenes.filter(s => s.act_id === act.id);
+                actScenes.forEach(s => assignedSceneIds.add(s.id));
+                html += `
+                    <div class="card mb-8" style="border-left:3px solid var(--primary);">
+                        <div class="flex-between mb-8">
+                            <div>
+                                <h3 style="font-size:14px;">Act ${act.act_number}: ${esc(act.name || 'Untitled')}</h3>
+                                <p class="text-sm text-muted">${esc(act.description || '')}</p>
+                            </div>
+                            <div>
+                                <button class="btn btn-secondary btn-sm" onclick="editAct('${act.id}')">Edit</button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteAct('${act.id}')">Delete</button>
+                            </div>
+                        </div>
+                        <div class="act-scenes" id="act-scenes-${act.id}" style="min-height:30px;border:1px dashed var(--border);border-radius:8px;padding:8px;"
+                             ondragover="event.preventDefault();this.style.background='rgba(233,30,99,0.08)'"
+                             ondragleave="this.style.background=''"
+                             ondrop="dropSceneOnAct(event,'${act.id}');this.style.background=''">
+                            ${actScenes.length === 0 ? '<p class="text-sm text-muted" style="text-align:center;padding:8px;">Drag scenes here</p>' :
+                            actScenes.map(s => `<div class="scene-act-item" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${s.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface-2);border-radius:6px;margin-bottom:4px;cursor:grab;">
+                                <span style="font-weight:600;font-size:12px;color:var(--primary);">Sc${s.scene_number}</span>
+                                <span class="text-sm">${esc(s.int_ext || '')} ${esc(s.location || '')}</span>
+                                <span class="badge" style="margin-left:auto;font-size:10px;">${esc(s.status)}</span>
+                            </div>`).join('')}
+                        </div>
+                    </div>`;
+            }
+
+            // Unassigned scenes
+            const unassigned = allScenes.filter(s => !assignedSceneIds.has(s.id));
+            if (unassigned.length > 0) {
+                html += `
+                    <div class="card mb-8" style="border-left:3px solid var(--text-muted);">
+                        <h3 style="font-size:14px;" class="mb-8">Unassigned Scenes</h3>
+                        <div style="min-height:30px;">
+                            ${unassigned.map(s => `<div class="scene-act-item" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${s.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface-2);border-radius:6px;margin-bottom:4px;cursor:grab;">
+                                <span style="font-weight:600;font-size:12px;color:var(--primary);">Sc${s.scene_number}</span>
+                                <span class="text-sm">${esc(s.int_ext || '')} ${esc(s.location || '')}</span>
+                                <span class="badge" style="margin-left:auto;font-size:10px;">${esc(s.status)}</span>
+                            </div>`).join('')}
+                        </div>
+                    </div>`;
+            }
+
+            el.innerHTML = html;
+            setStatus(acts.length + ' act(s), ' + allScenes.length + ' scene(s)');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function saveAct() {
+        if (!state.currentProject) return;
+        const data = getModalData('actModal');
+        const editId = document.getElementById('actEditId').value;
+        try {
+            if (editId) {
+                await api('/acts/' + editId, { method: 'PUT', body: JSON.stringify(data) });
+            } else {
+                await api('/projects/' + state.currentProject.id + '/acts', { method: 'POST', body: JSON.stringify(data) });
+            }
+            closeModal('actModal');
+            loadActs();
+            setStatus('Act saved');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function editAct(actId) {
+        try {
+            const act = await api('/acts/' + actId);
+            document.getElementById('actEditId').value = actId;
+            document.getElementById('actModalTitle').textContent = 'Edit Act';
+            setModalData('actModal', act);
+            showModal('actModal');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteAct(actId) {
+        if (!confirm('Delete this act? Scenes will become unassigned.')) return;
+        try {
+            await api('/acts/' + actId, { method: 'DELETE' });
+            loadActs();
+            setStatus('Act deleted');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function dropSceneOnAct(event, actId) {
+        event.preventDefault();
+        const sceneId = event.dataTransfer.getData('text/plain');
+        if (!sceneId) return;
+        try {
+            await api('/acts/' + actId + '/assign', { method: 'POST', body: JSON.stringify({ scene_ids: [sceneId] }) });
+            loadActs();
+            setStatus('Scene assigned to act');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FILM-147: SHOT DRAG-DROP REORDER
+    // ══════════════════════════════════════════════════════════════
+    let dragShotId = null;
+
+    function onShotDragStart(e, shotId) {
+        dragShotId = shotId;
+        e.dataTransfer.effectAllowed = 'move';
+        e.target.style.opacity = '0.5';
+    }
+
+    function onShotDragEnd(e) {
+        e.target.style.opacity = '1';
+        dragShotId = null;
+        document.querySelectorAll('.shot-drop-zone').forEach(z => z.classList.remove('active'));
+    }
+
+    function onShotDragOver(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    }
+
+    async function onShotDrop(e, targetShotId) {
+        e.preventDefault();
+        if (!dragShotId || dragShotId === targetShotId || !state.currentProject) return;
+
+        // Build new order: move dragShotId before targetShotId
+        const shotIds = state.shots.map(s => s.id);
+        const fromIdx = shotIds.indexOf(dragShotId);
+        const toIdx = shotIds.indexOf(targetShotId);
+        if (fromIdx === -1 || toIdx === -1) return;
+
+        shotIds.splice(fromIdx, 1);
+        shotIds.splice(toIdx, 0, dragShotId);
+
+        try {
+            await api('/projects/' + state.currentProject.id + '/shots/reorder', {
+                method: 'POST',
+                body: JSON.stringify({ shot_ids: shotIds })
+            });
+            setStatus('Shots reordered');
+            loadShotBoard();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FILM-163: CONTINUITY BOARD
+    // ══════════════════════════════════════════════════════════════
+    async function loadContinuity() {
+        if (!state.currentProject) return;
+        setStatus('Loading continuity board...');
+        try {
+            const filter = document.getElementById('continuityFilter')?.value || '';
+            let url = '/projects/' + state.currentProject.id + '/continuity/board';
+            if (filter) url += '?ref_type=' + filter;
+            const data = await api(url);
+            const refs = data.refs || data.board || [];
+            const el = document.getElementById('continuityGrid');
+
+            if (refs.length === 0) {
+                el.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#128247;</div><h3>No continuity references</h3><p>Add references to track visual continuity across scenes.</p></div>';
+                setStatus('No continuity refs');
+                return;
+            }
+
+            // Group by ref_type
+            const groups = {};
+            refs.forEach(r => {
+                const type = r.ref_type || 'visual';
+                if (!groups[type]) groups[type] = [];
+                groups[type].push(r);
+            });
+
+            const typeIcons = { visual: '&#128065;', wardrobe: '&#128087;', prop: '&#127917;', lighting: '&#128161;', color: '&#127912;', framing: '&#128247;' };
+
+            el.innerHTML = Object.entries(groups).map(([type, items]) => `
+                <div style="grid-column:1/-1;">
+                    <h3 class="mb-8" style="font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);">
+                        ${typeIcons[type] || ''} ${type}
+                    </h3>
+                </div>
+                ${items.map(r => `
+                    <div class="entity-card">
+                        <div class="entity-card-header">
+                            <div class="entity-avatar" style="background:var(--surface-3);">${typeIcons[r.ref_type] || '&#128247;'}</div>
+                            <div>
+                                <h3 style="font-size:13px;">${esc(r.title || 'Untitled')}</h3>
+                                <p class="text-sm text-muted">${esc(r.ref_type)}</p>
+                            </div>
+                        </div>
+                        <p class="text-sm">${esc(r.description || '')}</p>
+                        ${r.tags ? '<div class="tag-row" style="margin-top:8px;">' + r.tags.split(',').map(t => '<span class="tag">' + esc(t.trim()) + '</span>').join('') + '</div>' : ''}
+                        <div style="margin-top:8px;">
+                            <button class="btn btn-danger btn-sm" onclick="deleteContinuityRef('${r.id}')">Delete</button>
+                        </div>
+                    </div>
+                `).join('')}
+            `).join('');
+            setStatus(refs.length + ' continuity ref(s)');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function saveContinuityRef() {
+        if (!state.currentProject) return;
+        const data = getModalData('continuityModal');
+        try {
+            await api('/projects/' + state.currentProject.id + '/continuity', { method: 'POST', body: JSON.stringify(data) });
+            closeModal('continuityModal');
+            loadContinuity();
+            setStatus('Continuity reference saved');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteContinuityRef(refId) {
+        if (!confirm('Delete this continuity reference?')) return;
+        try {
+            await api('/continuity/' + refId, { method: 'DELETE' });
+            loadContinuity();
+            setStatus('Reference deleted');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FILM-164: BUDGET DASHBOARD
+    // ══════════════════════════════════════════════════════════════
+    async function loadBudget() {
+        if (!state.currentProject) return;
+        setStatus('Loading budget...');
+        try {
+            const [summary, ledger, forecast] = await Promise.all([
+                api('/projects/' + state.currentProject.id + '/budget/summary'),
+                api('/projects/' + state.currentProject.id + '/budget/ledger?limit=50'),
+                api('/projects/' + state.currentProject.id + '/budget/forecast'),
+            ]);
+
+            // Summary cards
+            const total = summary.total_spent || 0;
+            const limit = summary.budget_limit || 0;
+            const pct = limit > 0 ? Math.min(100, (total / limit * 100)).toFixed(1) : 0;
+            const barColor = pct > 90 ? 'var(--error)' : pct > 70 ? 'var(--warning)' : 'var(--success)';
+
+            document.getElementById('budgetSummary').innerHTML = `
+                <div class="card">
+                    <div class="flex-between mb-8">
+                        <div>
+                            <span class="text-sm text-muted">Total Spent</span>
+                            <h2 style="font-size:24px;">$${total.toFixed(2)}</h2>
+                        </div>
+                        <div style="text-align:right;">
+                            <span class="text-sm text-muted">Budget Limit</span>
+                            <h2 style="font-size:24px;">${limit > 0 ? '$' + limit.toFixed(2) : 'Not set'}</h2>
+                        </div>
+                    </div>
+                    ${limit > 0 ? `
+                        <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden;">
+                            <div style="background:${barColor};height:100%;width:${pct}%;transition:width 0.3s;border-radius:4px;"></div>
+                        </div>
+                        <p class="text-sm text-muted" style="margin-top:4px;">${pct}% used</p>
+                    ` : ''}
+                    ${forecast.avg_daily_spend ? `<p class="text-sm" style="margin-top:8px;">Avg daily: $${forecast.avg_daily_spend.toFixed(2)}${forecast.days_until_exhausted ? ' &middot; ~' + forecast.days_until_exhausted + ' days remaining' : ''}</p>` : ''}
+                </div>`;
+
+            // Breakdown by type (inline SVG bar chart)
+            const breakdown = summary.by_type || [];
+            if (breakdown.length > 0) {
+                const maxAmt = Math.max(...breakdown.map(b => b.total_amount));
+                const typeColors = { render_gpu: '#e91e63', image_generation: '#2196f3', video_generation: '#9c27b0', voice_synthesis: '#ff9800', music_generation: '#4caf50', api_call: '#00bcd4', storage: '#607d8b', license: '#795548', other: '#9e9e9e' };
+                document.getElementById('budgetBreakdown').innerHTML = `
+                    <h3 class="mb-8">Cost Breakdown</h3>
+                    <div class="card">
+                        ${breakdown.map(b => `
+                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                                <span class="text-sm" style="width:120px;flex-shrink:0;">${esc(b.cost_type.replace(/_/g, ' '))}</span>
+                                <div style="flex:1;background:var(--border);border-radius:3px;height:16px;overflow:hidden;">
+                                    <div style="background:${typeColors[b.cost_type] || '#9e9e9e'};height:100%;width:${maxAmt > 0 ? (b.total_amount / maxAmt * 100) : 0}%;border-radius:3px;"></div>
+                                </div>
+                                <span class="text-sm" style="width:80px;text-align:right;">$${b.total_amount.toFixed(2)}</span>
+                                <span class="text-sm text-muted" style="width:40px;text-align:right;">${b.entry_count}x</span>
+                            </div>
+                        `).join('')}
+                    </div>`;
+            } else {
+                document.getElementById('budgetBreakdown').innerHTML = '';
+            }
+
+            // Ledger table
+            const entries = ledger.entries || [];
+            if (entries.length === 0) {
+                document.getElementById('budgetLedger').innerHTML = '<p class="text-sm text-muted">No cost entries yet.</p>';
+            } else {
+                document.getElementById('budgetLedger').innerHTML = `
+                    <table class="render-table">
+                        <tr><th>Type</th><th>Amount</th><th>Description</th><th>Model</th><th>Date</th><th></th></tr>
+                        ${entries.map(e => `<tr>
+                            <td><span class="badge">${esc(e.cost_type)}</span></td>
+                            <td>$${(e.amount || 0).toFixed(2)}</td>
+                            <td class="text-sm">${esc(e.description || '-')}</td>
+                            <td class="text-sm text-muted">${esc(e.model_used || '-')}</td>
+                            <td class="text-sm text-muted">${new Date(e.created_at).toLocaleDateString()}</td>
+                            <td><button class="btn btn-danger btn-sm" onclick="deleteCostEntry('${e.id}')" style="padding:2px 6px;font-size:10px;">x</button></td>
+                        </tr>`).join('')}
+                    </table>`;
+            }
+            setStatus('Budget loaded');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function saveCostEntry() {
+        if (!state.currentProject) return;
+        const data = getModalData('costEntryModal');
+        data.amount = parseFloat(data.amount) || 0;
+        data.gpu_seconds = parseInt(data.gpu_seconds) || 0;
+        try {
+            await api('/projects/' + state.currentProject.id + '/budget', { method: 'POST', body: JSON.stringify(data) });
+            closeModal('costEntryModal');
+            loadBudget();
+            setStatus('Cost entry added');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteCostEntry(entryId) {
+        if (!confirm('Delete this cost entry?')) return;
+        try {
+            await api('/budget/' + entryId, { method: 'DELETE' });
+            loadBudget();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function saveBudgetLimit() {
+        if (!state.currentProject) return;
+        const data = getModalData('budgetLimitModal');
+        try {
+            await api('/projects/' + state.currentProject.id + '/budget/limit', { method: 'PUT', body: JSON.stringify({ budget_limit: parseFloat(data.budget_limit) || 0 }) });
+            closeModal('budgetLimitModal');
+            loadBudget();
+            setStatus('Budget limit updated');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FILM-138: TECHNICAL PROJECT SETTINGS
+    // ══════════════════════════════════════════════════════════════
+    const DELIVERY_PRESETS = {
+        theatrical_dcp: { aspect_ratio: '2.39:1', target_resolution: '4096x2160', target_fps: 24, color_space: 'DCI-P3' },
+        imax: { aspect_ratio: '1.43:1', target_resolution: '5632x4096', target_fps: 24, color_space: 'DCI-P3' },
+        streaming_hd: { aspect_ratio: '16:9', target_resolution: '1920x1080', target_fps: 24, color_space: 'Rec.709' },
+        streaming_4k: { aspect_ratio: '16:9', target_resolution: '3840x2160', target_fps: 24, color_space: 'Rec.709' },
+        social_media: { aspect_ratio: '9:16', target_resolution: '1080x1920', target_fps: 30, color_space: 'sRGB' },
+        broadcast: { aspect_ratio: '16:9', target_resolution: '1920x1080', target_fps: 29.97, color_space: 'Rec.709' },
+    };
+
+    function applyDeliveryPreset(name) {
+        const preset = DELIVERY_PRESETS[name];
+        if (!preset) return;
+        document.getElementById('settingsAspectRatio').value = preset.aspect_ratio;
+        document.getElementById('settingsResolution').value = preset.target_resolution;
+        document.getElementById('settingsFps').value = String(preset.target_fps);
+        document.getElementById('settingsColorSpace').value = preset.color_space;
+        onAspectRatioChange(preset.aspect_ratio);
+    }
+
+    function onAspectRatioChange(val) {
+        document.getElementById('customAspectGroup').style.display = val === 'custom' ? '' : 'none';
+        updateAspectPreview(val === 'custom' ? document.getElementById('settingsAspectCustom').value : val);
+    }
+
+    function updateAspectPreview(ratio) {
+        const box = document.getElementById('aspectPreview');
+        const label = document.getElementById('aspectPreviewLabel');
+        if (!box) return;
+        let w = 200, h = 112;
+        const parsed = parseAspectRatio(ratio);
+        if (parsed > 0) {
+            if (parsed >= 1) { w = 200; h = Math.round(200 / parsed); }
+            else { h = 200; w = Math.round(200 * parsed); }
+        }
+        box.style.width = w + 'px';
+        box.style.height = Math.max(h, 30) + 'px';
+        label.textContent = ratio || '16:9';
+    }
+
+    function parseAspectRatio(str) {
+        if (!str) return 16/9;
+        const m1 = str.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+        if (m1) return parseFloat(m1[1]) / parseFloat(m1[2]);
+        return 16/9;
+    }
+
+    function loadTechnicalSettings() {
+        const tc = document.getElementById('settingsTechnicalCard');
+        if (!state.currentProject) { tc.classList.add('hidden'); return; }
+        tc.classList.remove('hidden');
+        const p = state.currentProject;
+        if (p.aspect_ratio) document.getElementById('settingsAspectRatio').value = p.aspect_ratio;
+        if (p.aspect_ratio_custom) document.getElementById('settingsAspectCustom').value = p.aspect_ratio_custom;
+        if (p.target_resolution) document.getElementById('settingsResolution').value = p.target_resolution;
+        if (p.target_fps) document.getElementById('settingsFps').value = String(p.target_fps);
+        if (p.color_space) document.getElementById('settingsColorSpace').value = p.color_space;
+        if (p.delivery_format) document.getElementById('settingsDeliveryPreset').value = p.delivery_format;
+        if (p.timecode_start) document.getElementById('settingsTimecodeStart').value = p.timecode_start;
+        onAspectRatioChange(document.getElementById('settingsAspectRatio').value);
+    }
+
+    async function saveTechnicalSettings() {
+        if (!state.currentProject) return;
+        const ar = document.getElementById('settingsAspectRatio').value;
+        const data = {
+            aspect_ratio: ar,
+            aspect_ratio_custom: ar === 'custom' ? document.getElementById('settingsAspectCustom').value.trim() : '',
+            target_resolution: document.getElementById('settingsResolution').value,
+            target_fps: parseFloat(document.getElementById('settingsFps').value),
+            color_space: document.getElementById('settingsColorSpace').value,
+            delivery_format: document.getElementById('settingsDeliveryPreset').value,
+            timecode_start: document.getElementById('settingsTimecodeStart').value.trim() || '01:00:00:00',
+        };
+        try {
+            const p = await api('/projects/' + state.currentProject.id, { method: 'PUT', body: JSON.stringify(data) });
+            state.currentProject = { ...state.currentProject, ...p };
+            setStatus('Technical settings saved');
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -10593,6 +11404,550 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             if (e.target === overlay) overlay.classList.remove('open');
         });
     });
+
+    // ══════════════════════════════════════════════════════════════
+    // INLINE SCREENPLAY COMMENTS
+    // ══════════════════════════════════════════════════════════════
+    let commentsVisible = false;
+    let screenplayComments = [];
+
+    function toggleComments() {
+        commentsVisible = !commentsVisible;
+        const btn = document.getElementById('commentsToggle');
+        if (btn) btn.style.background = commentsVisible ? 'var(--primary)' : '';
+        if (btn) btn.style.color = commentsVisible ? 'white' : '';
+        if (commentsVisible) loadScreenplayComments();
+        else clearCommentHighlights();
+    }
+
+    async function loadScreenplayComments() {
+        if (!state.currentProject) return;
+        try {
+            // Get latest script
+            const scripts = await api('/projects/' + state.currentProject.id + '/scripts');
+            const versions = scripts.versions || scripts.scripts || [];
+            if (versions.length === 0) return;
+            const latestId = versions[versions.length - 1].id || versions[0].id;
+            const data = await api('/scripts/' + latestId + '/comments');
+            screenplayComments = data.comments || [];
+            renderCommentHighlights();
+        } catch (err) { /* ignore */ }
+    }
+
+    function renderCommentHighlights() {
+        clearCommentHighlights();
+        if (!commentsVisible || screenplayComments.length === 0) return;
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        // Show comment markers in the margin
+        const blocks = editor.querySelectorAll('[data-element-type]');
+        screenplayComments.forEach(c => {
+            if (c.resolved) return;
+            const block = blocks[c.element_index];
+            if (!block) return;
+            block.style.borderRight = '3px solid #f59e0b';
+            block.title = (c.author || 'user') + ': ' + (c.content || '');
+        });
+    }
+
+    function clearCommentHighlights() {
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+        editor.querySelectorAll('[data-element-type]').forEach(b => {
+            b.style.borderRight = '';
+            b.title = '';
+        });
+    }
+
+    async function addScreenplayComment() {
+        if (!state.currentProject) return;
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) {
+            setStatus('Select text in the editor to add a comment');
+            return;
+        }
+
+        const content = prompt('Enter comment:');
+        if (!content) return;
+
+        // Find element index
+        const anchor = sel.anchorNode;
+        let block = anchor?.nodeType === 3 ? anchor.parentElement : anchor;
+        while (block && !block.dataset?.elementType && block !== editor) block = block.parentElement;
+        if (!block || block === editor) return;
+
+        const blocks = Array.from(editor.querySelectorAll('[data-element-type]'));
+        const elementIndex = blocks.indexOf(block);
+
+        try {
+            const scripts = await api('/projects/' + state.currentProject.id + '/scripts');
+            const versions = scripts.versions || scripts.scripts || [];
+            if (versions.length === 0) return;
+            const latestId = versions[versions.length - 1].id || versions[0].id;
+
+            await api('/scripts/' + latestId + '/comments', {
+                method: 'POST',
+                body: JSON.stringify({
+                    element_index: elementIndex,
+                    start_offset: sel.anchorOffset || 0,
+                    end_offset: sel.focusOffset || 0,
+                    content,
+                    author: 'user',
+                }),
+            });
+            setStatus('Comment added');
+            loadScreenplayComments();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // SSE STREAMING HELPER
+    // ══════════════════════════════════════════════════════════════
+    function streamSSE(path, onEvent, onDone, onError) {
+        const es = new EventSource(API() + path);
+        es.onmessage = e => {
+            const data = JSON.parse(e.data);
+            if (data.done) { es.close(); onDone?.(data); }
+            else onEvent(data);
+        };
+        es.onerror = () => { es.close(); onError?.(); };
+        return es;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // STORYBOARD GRID VIEWER (FILM-067)
+    // ══════════════════════════════════════════════════════════════
+    async function loadStoryboard() {
+        if (!state.currentProject) return;
+        setStatus('Loading storyboard...');
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/storyboard');
+            const frames = data.frames || [];
+            const grid = document.getElementById('storyboardGrid');
+            if (frames.length === 0) {
+                grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
+                    <div class="icon">&#128444;</div>
+                    <h3>No storyboard frames</h3>
+                    <p>Click "Generate All" to create storyboard frames from your scene cards.</p>
+                </div>`;
+            } else {
+                grid.innerHTML = frames.map(f => `
+                    <div class="card" style="padding:0;overflow:hidden;">
+                        <div style="position:relative;background:var(--surface-alt,var(--surface));min-height:160px;">
+                            <img src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(f.shot_code)}.png"
+                                 style="width:100%;display:block;" onerror="this.style.display='none'">
+                        </div>
+                        <div style="padding:10px;">
+                            <div class="flex-between">
+                                <strong>Sc${f.scene_number} / ${esc(f.shot_code)}</strong>
+                                <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')">Regen</button>
+                            </div>
+                            ${f.camera ? '<span class="tag">' + esc(f.camera) + '</span>' : ''}
+                            ${f.lighting ? '<span class="tag">' + esc(f.lighting) + '</span>' : ''}
+                            ${f.dialogue_preview ? '<p class="text-sm text-muted" style="margin-top:6px;">' + esc(f.dialogue_preview) + '</p>' : ''}
+                        </div>
+                    </div>`).join('');
+            }
+            setStatus(frames.length + ' storyboard frame(s)');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function generateAllStoryboards() {
+        if (!state.currentProject) return;
+        const prog = document.getElementById('storyboardProgress');
+        const bar = document.getElementById('storyboardProgressBar');
+        const lbl = document.getElementById('storyboardProgressLabel');
+        const pct = document.getElementById('storyboardProgressPct');
+        prog.style.display = 'block';
+        bar.style.width = '0%';
+        lbl.textContent = 'Starting storyboard generation...';
+        pct.textContent = '0%';
+
+        streamSSE(
+            '/projects/' + state.currentProject.id + '/storyboard/generate/stream',
+            (ev) => {
+                const p = ev.progress || 0;
+                bar.style.width = p + '%';
+                pct.textContent = Math.round(p) + '%';
+                lbl.textContent = ev.message || ('Generating ' + (ev.shot_code || '...'));
+            },
+            () => {
+                bar.style.width = '100%';
+                pct.textContent = '100%';
+                lbl.textContent = 'Complete!';
+                setTimeout(() => { prog.style.display = 'none'; }, 2000);
+                loadStoryboard();
+                setStatus('Storyboard generation complete');
+            },
+            () => {
+                prog.style.display = 'none';
+                setStatus('Storyboard generation failed');
+            }
+        );
+    }
+
+    async function regenerateStoryboard(shotId) {
+        if (!confirm('Regenerate this storyboard frame?')) return;
+        setStatus('Regenerating...');
+        try {
+            await api('/shots/' + shotId + '/storyboard/regenerate', { method: 'POST' });
+            setStatus('Storyboard frame regenerated');
+            loadStoryboard();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // SHOT CARD EDITOR (FILM-068)
+    // ══════════════════════════════════════════════════════════════
+    let shotDetailPanel = null;
+
+    function openShotDetail(shotId) {
+        const shot = state.shots.find(s => s.id === shotId);
+        if (!shot) return;
+        closeShotDetail();
+
+        const panel = document.createElement('div');
+        panel.id = 'shotDetailPanel';
+        panel.className = 'card';
+        panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:420px;z-index:200;overflow-y:auto;border-radius:0;border-left:1px solid var(--border);box-shadow:-4px 0 20px rgba(0,0,0,0.3);';
+        panel.innerHTML = `
+            <div class="flex-between mb-16">
+                <h2>Sc${shot.scene_number} / ${esc(shot.shot_code)}</h2>
+                <button class="btn btn-secondary btn-sm" onclick="closeShotDetail()">&times;</button>
+            </div>
+            <div style="background:var(--surface-alt,var(--surface));border-radius:8px;min-height:140px;margin-bottom:12px;overflow:hidden;">
+                <img src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(shot.shot_code)}.png"
+                     style="width:100%;display:block;" onerror="this.parentElement.innerHTML='<p class=\\'text-sm text-muted\\' style=\\'padding:40px;text-align:center;\\'>No storyboard</p>'">
+            </div>
+            <div class="mb-8">
+                <span class="badge ${shot.status === 'approved' ? 'approved' : ''}">${esc(shot.status)}</span>
+                ${shot.duration_ms ? '<span class="tag">' + (shot.duration_ms/1000).toFixed(1) + 's</span>' : ''}
+            </div>
+            <table style="width:100%;font-size:13px;" class="mb-16">
+                <tr><td class="text-muted" style="width:100px;">Camera</td><td>${esc(shot.camera || '-')}</td></tr>
+                <tr><td class="text-muted">Lighting</td><td>${esc(shot.lighting || '-')}</td></tr>
+                <tr><td class="text-muted">Location</td><td>${esc(shot.location || '-')}</td></tr>
+                <tr><td class="text-muted">Characters</td><td>${esc(shot.characters || '-')}</td></tr>
+            </table>
+            ${shot.scene_card_yaml ? '<h4 class="mb-8">Scene Card</h4><pre style="font-size:11px;max-height:200px;overflow:auto;background:var(--bg);padding:8px;border-radius:4px;">' + esc(shot.scene_card_yaml) + '</pre>' : ''}
+            <div style="margin-top:12px;padding:10px;background:var(--surface-2);border-radius:8px;" class="mb-16">
+                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);">Transitions</h4>
+                <div style="display:grid;grid-template-columns:1fr 80px;gap:8px;margin-bottom:8px;">
+                    <div>
+                        <label class="text-sm text-muted">In</label>
+                        <select id="shotTransitionIn" style="font-size:12px;" onchange="saveShotTransition('${shot.id}')">
+                            <option value="cut" ${(shot.transition_in_type||'cut')==='cut'?'selected':''}>Cut</option>
+                            <option value="dissolve" ${shot.transition_in_type==='dissolve'?'selected':''}>Dissolve</option>
+                            <option value="cross-dissolve" ${shot.transition_in_type==='cross-dissolve'?'selected':''}>Cross Dissolve</option>
+                            <option value="fade-from-black" ${shot.transition_in_type==='fade-from-black'?'selected':''}>Fade from Black</option>
+                            <option value="fade-from-white" ${shot.transition_in_type==='fade-from-white'?'selected':''}>Fade from White</option>
+                            <option value="wipe-left" ${shot.transition_in_type==='wipe-left'?'selected':''}>Wipe Left</option>
+                            <option value="wipe-right" ${shot.transition_in_type==='wipe-right'?'selected':''}>Wipe Right</option>
+                            <option value="dip-to-black" ${shot.transition_in_type==='dip-to-black'?'selected':''}>Dip to Black</option>
+                            <option value="dip-to-white" ${shot.transition_in_type==='dip-to-white'?'selected':''}>Dip to White</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-sm text-muted">ms</label>
+                        <input type="number" id="shotTransitionInMs" value="${shot.transition_in_duration_ms||0}" min="0" max="5000" step="100" style="font-size:12px;" onchange="saveShotTransition('${shot.id}')">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 80px;gap:8px;">
+                    <div>
+                        <label class="text-sm text-muted">Out</label>
+                        <select id="shotTransitionOut" style="font-size:12px;" onchange="saveShotTransition('${shot.id}')">
+                            <option value="cut" ${(shot.transition_out_type||'cut')==='cut'?'selected':''}>Cut</option>
+                            <option value="dissolve" ${shot.transition_out_type==='dissolve'?'selected':''}>Dissolve</option>
+                            <option value="cross-dissolve" ${shot.transition_out_type==='cross-dissolve'?'selected':''}>Cross Dissolve</option>
+                            <option value="fade-from-black" ${shot.transition_out_type==='fade-from-black'?'selected':''}>Fade from Black</option>
+                            <option value="fade-from-white" ${shot.transition_out_type==='fade-from-white'?'selected':''}>Fade from White</option>
+                            <option value="wipe-left" ${shot.transition_out_type==='wipe-left'?'selected':''}>Wipe Left</option>
+                            <option value="wipe-right" ${shot.transition_out_type==='wipe-right'?'selected':''}>Wipe Right</option>
+                            <option value="dip-to-black" ${shot.transition_out_type==='dip-to-black'?'selected':''}>Dip to Black</option>
+                            <option value="dip-to-white" ${shot.transition_out_type==='dip-to-white'?'selected':''}>Dip to White</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-sm text-muted">ms</label>
+                        <input type="number" id="shotTransitionOutMs" value="${shot.transition_out_duration_ms||0}" min="0" max="5000" step="100" style="font-size:12px;" onchange="saveShotTransition('${shot.id}')">
+                    </div>
+                </div>
+            </div>
+            <div class="mb-16" style="margin-top:12px;">
+                <button class="btn btn-primary btn-sm" onclick="regenerateStoryboard('${shot.id}')">Regenerate Storyboard</button>
+                <button class="btn btn-secondary btn-sm" onclick="runShotPipeline('${shot.id}')">Run Pipeline</button>
+                <button class="btn btn-secondary btn-sm" onclick="openABCompare('${shot.id}')" style="margin-top:4px;">A/B Compare</button>
+            </div>
+            <div id="shotDetailNotes"></div>
+        `;
+        document.body.appendChild(panel);
+        shotDetailPanel = panel;
+        loadShotDetailNotes(shotId);
+    }
+
+    function closeShotDetail() {
+        const existing = document.getElementById('shotDetailPanel');
+        if (existing) existing.remove();
+        shotDetailPanel = null;
+    }
+
+    async function loadShotDetailNotes(shotId) {
+        try {
+            const data = await api('/shots/' + shotId + '/notes');
+            const notes = data.notes || [];
+            const el = document.getElementById('shotDetailNotes');
+            if (!el) return;
+            el.innerHTML = `<h4 class="mb-8">Notes (${notes.length})</h4>` +
+                notes.map(n => `<div class="card mb-8" style="padding:8px;">
+                    <span class="badge">${esc(n.note_type)}</span>
+                    <p class="text-sm">${esc(n.content)}</p>
+                    <p class="text-sm text-muted">${new Date(n.created_at).toLocaleDateString()}</p>
+                </div>`).join('') +
+                `<div style="margin-top:8px;">
+                    <textarea id="shotDetailNoteInput" rows="2" placeholder="Add a note..." style="width:100%;font-size:12px;"></textarea>
+                    <button class="btn btn-primary btn-sm" style="margin-top:4px;" onclick="addShotDetailNote('${shotId}')">Add Note</button>
+                </div>`;
+        } catch (err) { /* ignore */ }
+    }
+
+    async function addShotDetailNote(shotId) {
+        const content = document.getElementById('shotDetailNoteInput')?.value?.trim();
+        if (!content) return;
+        try {
+            await api('/shots/' + shotId + '/notes', { method: 'POST', body: JSON.stringify({ content, note_type: 'direction' }) });
+            loadShotDetailNotes(shotId);
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function runShotPipeline(shotId) {
+        setStatus('Starting pipeline for shot...');
+        try {
+            await api('/shots/' + shotId + '/render', { method: 'POST', body: JSON.stringify({ step: 'keyframe' }) });
+            setStatus('Pipeline run started');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FILM-143: TRANSITION PICKER
+    // ══════════════════════════════════════════════════════════════
+    async function saveShotTransition(shotId) {
+        const data = {
+            transition_in_type: document.getElementById('shotTransitionIn')?.value || 'cut',
+            transition_in_duration_ms: parseInt(document.getElementById('shotTransitionInMs')?.value) || 0,
+            transition_out_type: document.getElementById('shotTransitionOut')?.value || 'cut',
+            transition_out_duration_ms: parseInt(document.getElementById('shotTransitionOutMs')?.value) || 0,
+        };
+        try {
+            await api('/shots/' + shotId + '/transition', { method: 'PUT', body: JSON.stringify(data) });
+            setStatus('Transition saved');
+            // Update local state
+            const shot = state.shots.find(s => s.id === shotId);
+            if (shot) Object.assign(shot, data);
+        } catch (err) { setStatus('Error saving transition: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FILM-155: A/B VERSION COMPARISON
+    // ══════════════════════════════════════════════════════════════
+    async function openABCompare(shotId) {
+        try {
+            const data = await api('/shots/' + shotId + '/versions');
+            const versions = data.versions || [];
+            if (versions.length < 2) { setStatus('Need at least 2 versions to compare'); return; }
+            closeShotDetail();
+
+            const panel = document.createElement('div');
+            panel.id = 'abComparePanel';
+            panel.className = 'card';
+            panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:700px;z-index:200;overflow-y:auto;border-radius:0;border-left:1px solid var(--border);box-shadow:-4px 0 20px rgba(0,0,0,0.3);';
+
+            const vOpts = versions.map((v, i) => `<option value="${v.version_number}">${v.version_number} (${new Date(v.created_at).toLocaleDateString()})</option>`).join('');
+
+            panel.innerHTML = `
+                <div class="flex-between mb-16">
+                    <h2>A/B Compare</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="closeABCompare()">&times;</button>
+                </div>
+                <div style="display:flex;gap:12px;margin-bottom:16px;">
+                    <div class="form-group" style="flex:1;"><label>Version A</label><select id="abVersionA" onchange="loadABCompare('${shotId}')">${vOpts}</select></div>
+                    <div class="form-group" style="flex:1;"><label>Version B</label><select id="abVersionB" onchange="loadABCompare('${shotId}')">${vOpts.replace('selected','')}</select></div>
+                </div>
+                <div style="position:relative;margin-bottom:16px;">
+                    <div style="display:flex;gap:8px;" id="abImages">
+                        <div style="flex:1;text-align:center;"><div class="text-sm text-muted mb-8">A</div><div id="abImgA" style="background:var(--surface-2);min-height:150px;border-radius:8px;overflow:hidden;"></div></div>
+                        <div style="flex:1;text-align:center;"><div class="text-sm text-muted mb-8">B</div><div id="abImgB" style="background:var(--surface-2);min-height:150px;border-radius:8px;overflow:hidden;"></div></div>
+                    </div>
+                </div>
+                <div class="mb-8"><label class="text-sm text-muted">Crossfade</label><input type="range" id="abSlider" min="0" max="100" value="50" style="width:100%;" oninput="updateABCrossfade(this.value)"></div>
+                <div id="abDiffPanel" style="margin-top:16px;"></div>
+            `;
+            document.body.appendChild(panel);
+
+            // Default: A = first, B = second
+            document.getElementById('abVersionB').selectedIndex = 1;
+            loadABCompare(shotId);
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function loadABCompare(shotId) {
+        const a = document.getElementById('abVersionA')?.value;
+        const b = document.getElementById('abVersionB')?.value;
+        if (!a || !b) return;
+        try {
+            const data = await api('/shots/' + shotId + '/versions/compare?a=' + a + '&b=' + b);
+            const imgA = document.getElementById('abImgA');
+            const imgB = document.getElementById('abImgB');
+            if (data.version_a?.thumbnail_path) imgA.innerHTML = `<img src="${API_BASE}/film/${data.version_a.thumbnail_path}" style="width:100%;display:block;" onerror="this.parentElement.innerHTML='<p class=\\'text-sm text-muted\\' style=\\'padding:30px;\\'>No image</p>'">`;
+            else imgA.innerHTML = '<p class="text-sm text-muted" style="padding:30px;">No image</p>';
+            if (data.version_b?.thumbnail_path) imgB.innerHTML = `<img src="${API_BASE}/film/${data.version_b.thumbnail_path}" style="width:100%;display:block;" onerror="this.parentElement.innerHTML='<p class=\\'text-sm text-muted\\' style=\\'padding:30px;\\'>No image</p>'">`;
+            else imgB.innerHTML = '<p class="text-sm text-muted" style="padding:30px;">No image</p>';
+
+            // Show parameter diff
+            const diff = data.param_diff || {};
+            const keys = Object.keys(diff);
+            const diffEl = document.getElementById('abDiffPanel');
+            if (keys.length === 0) {
+                diffEl.innerHTML = '<p class="text-sm text-muted">No parameter differences.</p>';
+            } else {
+                diffEl.innerHTML = `<h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);">Parameter Differences</h4>
+                    <table style="width:100%;font-size:12px;">
+                    <tr style="color:var(--text-muted);"><th style="text-align:left;">Field</th><th>A</th><th>B</th></tr>
+                    ${keys.map(k => `<tr><td style="color:var(--primary);">${esc(k)}</td><td>${esc(String(diff[k].a ?? '-'))}</td><td>${esc(String(diff[k].b ?? '-'))}</td></tr>`).join('')}
+                    </table>`;
+            }
+        } catch (err) { setStatus('Error loading comparison: ' + err.message); }
+    }
+
+    function updateABCrossfade(val) {
+        const imgA = document.getElementById('abImgA');
+        const imgB = document.getElementById('abImgB');
+        if (imgA) imgA.style.opacity = 1 - val / 100;
+        if (imgB) imgB.style.opacity = val / 100;
+    }
+
+    function closeABCompare() {
+        const p = document.getElementById('abComparePanel');
+        if (p) p.remove();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // EXPORT PAGE (FILM-065 partial)
+    // ══════════════════════════════════════════════════════════════
+    async function loadExportPage() {
+        if (!state.currentProject) return;
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/shotlist');
+            const shots = data.shots || [];
+            const totalMs = shots.reduce((sum, s) => sum + (s.duration_ms || 0), 0);
+            document.getElementById('exportShotCount').textContent = shots.length;
+            document.getElementById('exportDuration').textContent = (totalMs / 1000).toFixed(1) + 's';
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function downloadExport(format) {
+        if (!state.currentProject) return;
+        const pid = state.currentProject.id;
+        const urls = {
+            fcpxml: API() + '/projects/' + pid + '/export/fcpxml',
+            edl: API() + '/projects/' + pid + '/export/edl',
+            premiere: API() + '/projects/' + pid + '/export/premiere',
+            srt: API() + '/projects/' + pid + '/export/srt',
+            fdx: API() + '/projects/' + pid + '/export/fdx',
+        };
+        if (urls[format]) {
+            window.open(urls[format], '_blank');
+            setStatus('Downloading ' + format.toUpperCase() + '...');
+        }
+    }
+
+    // ── Project Bundle Export/Import ─────────────────────────────
+    function downloadBundle() {
+        if (!state.currentProject) return;
+        window.open(API() + '/projects/' + state.currentProject.id + '/bundle', '_blank');
+        setStatus('Downloading project bundle...');
+    }
+
+    async function importBundle(input) {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        // Show status in whichever page has a status element
+        const statusEl = document.getElementById('importStatus') || document.getElementById('projectImportStatus');
+        if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Reading file...'; statusEl.style.color = ''; }
+
+        try {
+            const arrayBuf = await file.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuf);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            const base64 = btoa(binary);
+            if (statusEl) statusEl.textContent = 'Uploading and importing...';
+            const result = await api('/projects/import', {
+                method: 'POST',
+                body: { bundle: base64 },
+            });
+            if (statusEl) { statusEl.style.color = 'var(--success)'; statusEl.textContent = 'Imported: ' + (result.project ? result.project.title : 'project') + ' (assets: ' + (result.stats ? result.stats.assets_copied : 0) + ')'; }
+            setStatus('Project imported successfully');
+            await loadProjects();
+        } catch (err) {
+            if (statusEl) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Import failed: ' + err.message; }
+            setStatus('Import failed: ' + err.message);
+        }
+        input.value = '';
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // PIPELINE MONITOR (FILM-069)
+    // ══════════════════════════════════════════════════════════════
+    async function loadPipeline() {
+        if (!state.currentProject) return;
+        setStatus('Loading pipeline...');
+        try {
+            // Load recent renders across all shots
+            const sbData = await api('/projects/' + state.currentProject.id + '/status-board');
+            const allShots = [];
+            (sbData.scenes || []).forEach(s => (s.shots || []).forEach(sh => allShots.push({ ...sh, scene_number: s.scene_number })));
+
+            // Show active (generating) shots
+            const active = allShots.filter(s => s.status === 'generating');
+            const activeEl = document.getElementById('pipelineActive');
+            if (active.length === 0) {
+                activeEl.innerHTML = '<div class="card"><p class="text-sm text-muted">No active pipeline runs.</p></div>';
+            } else {
+                activeEl.innerHTML = '<h3 class="mb-8">Active Runs</h3>' + active.map(s => `
+                    <div class="card mb-8">
+                        <div class="flex-between">
+                            <strong>Sc${s.scene_number} / ${esc(s.shot_code)}</strong>
+                            <span class="badge">generating</span>
+                        </div>
+                        <div style="background:var(--border);border-radius:4px;height:4px;margin-top:8px;">
+                            <div style="background:var(--primary);height:100%;width:50%;border-radius:4px;"></div>
+                        </div>
+                    </div>`).join('');
+            }
+
+            // Show history table of completed/pending
+            const histEl = document.getElementById('pipelineHistory');
+            const others = allShots.filter(s => s.status !== 'generating');
+            if (others.length === 0) {
+                histEl.innerHTML = '<p class="text-sm text-muted">No pipeline history yet.</p>';
+            } else {
+                histEl.innerHTML = `<table class="render-table">
+                    <tr><th>Shot</th><th>Scene</th><th>Status</th><th>Duration</th></tr>
+                    ${others.map(s => `<tr>
+                        <td>${esc(s.shot_code)}</td>
+                        <td>Sc${s.scene_number}</td>
+                        <td><span class="badge ${s.status === 'approved' ? 'approved' : ''}">${esc(s.status)}</span></td>
+                        <td>${s.duration_ms ? (s.duration_ms/1000).toFixed(1) + 's' : '-'}</td>
+                    </tr>`).join('')}
+                </table>`;
+            }
+            setStatus(allShots.length + ' shot(s) in pipeline');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
 
     // ══════════════════════════════════════════════════════════════
     // UTILITIES

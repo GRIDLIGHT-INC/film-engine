@@ -897,3 +897,696 @@ generation:
   seed: null
   negative_prompt: "blurry, distorted"
 ```
+
+---
+
+## Voice & Dialogue (Phase 4)
+
+### Generate Voice for Shot
+
+```
+POST /film/shots/:id/voice/generate
+```
+
+Extracts dialogue from the shot's scene card, matches characters to voice profiles, and generates audio via `POST /voice`.
+
+**Response** `200`
+```json
+{
+  "shot_id": "uuid",
+  "shot_code": "1A",
+  "dialogue_count": 2,
+  "audio_files": [
+    {
+      "character": "JOHN",
+      "line": "Hello there.",
+      "status": "complete",
+      "audio_url": "/film/audio/{pid}/1A_JOHN_0.wav",
+      "duration_ms": 1200
+    }
+  ]
+}
+```
+
+### Generate Voice (SSE Stream)
+
+```
+POST /film/shots/:id/voice/generate/stream
+```
+
+SSE events: `status`, `progress` (per line), `result`, `done`
+
+### Batch Voice Generation
+
+```
+POST /film/projects/:id/voice/batch
+POST /film/projects/:id/voice/batch/stream
+```
+
+### Voice Job Status
+
+```
+GET /film/shots/:id/voice
+GET /film/projects/:id/voice?status=complete
+```
+
+### Serve Audio File
+
+```
+GET /film/audio/:projectId/:filename
+```
+
+---
+
+## Video Generation (Phase 5)
+
+### Generate Video for Shot
+
+```
+POST /film/shots/:id/video/generate
+```
+
+Uses storyboard keyframe as init_image, maps camera movements to camera_control.
+
+**Response** `200`
+```json
+{
+  "shot_id": "uuid",
+  "shot_code": "1A",
+  "job_id": "uuid",
+  "status": "complete",
+  "video_url": "/film/video/{pid}/1A.mp4",
+  "duration_ms": 4000
+}
+```
+
+### Generate Video (SSE Stream)
+
+```
+POST /film/shots/:id/video/generate/stream
+```
+
+### Batch Video Generation
+
+```
+POST /film/projects/:id/video/batch
+POST /film/projects/:id/video/batch/stream
+```
+
+### Video Job Status
+
+```
+GET /film/shots/:id/video
+GET /film/projects/:id/video?status=complete
+```
+
+### Serve Video File
+
+```
+GET /film/video/:projectId/:filename
+```
+
+---
+
+## Lip-Sync (Phase 6)
+
+### Generate Lip-Sync
+
+```
+POST /film/shots/:id/lipsync/generate
+```
+
+Requires both `video_raw` and `audio_dialogue` assets for the shot.
+
+**Response** `200`
+```json
+{
+  "shot_id": "uuid",
+  "shot_code": "1A",
+  "job_id": "uuid",
+  "status": "complete",
+  "video_url": "/film/video/{pid}/1A_synced.mp4"
+}
+```
+
+### Generate Lip-Sync (SSE Stream)
+
+```
+POST /film/shots/:id/lipsync/generate/stream
+```
+
+### Batch Lip-Sync
+
+```
+POST /film/projects/:id/lipsync/batch
+```
+
+### Lip-Sync Status
+
+```
+GET /film/shots/:id/lipsync
+GET /film/projects/:id/lipsync?status=complete
+```
+
+---
+
+## Music & Sound Design (Phase 7)
+
+### Generate Music Score
+
+```
+POST /film/scenes/:id/music/generate
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `mood` | string | Override mood (tense, joyful, epic, calm, etc.) |
+| `genre` | string | Override genre |
+| `description` | string | Custom music description |
+
+**Response** `200`
+```json
+{
+  "scene_id": "uuid",
+  "job_id": "uuid",
+  "status": "complete",
+  "music_url": "/film/music/{pid}/1_score.wav",
+  "duration_s": 30,
+  "mood": "tense",
+  "genre": "thriller"
+}
+```
+
+### Generate Music (SSE Stream)
+
+```
+POST /film/scenes/:id/music/generate/stream
+```
+
+### Generate SFX
+
+```
+POST /film/shots/:id/sfx/generate
+```
+
+Extracts SFX cues from scene card's `sfx_cues` array.
+
+### Generate Ambient Audio
+
+```
+POST /film/scenes/:id/ambient/generate
+```
+
+Auto-detects ambient sounds from location (office, street, forest, etc.) and time of day.
+
+### Batch Music/SFX/Ambient
+
+```
+POST /film/projects/:id/music/batch
+POST /film/projects/:id/music/batch/stream
+```
+
+### List Music Jobs
+
+```
+GET /film/projects/:id/music/jobs?type=score&status=complete
+```
+
+### Serve Music File
+
+```
+GET /film/music/:projectId/:filename
+```
+
+---
+
+## Post-Production (Phase 9)
+
+### Upscale Video
+
+```
+POST /film/shots/:id/post/upscale
+```
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `model` | string | `realesrgan-video` | Upscaling model |
+| `scale_factor` | number | `2` | Scale factor |
+
+### Face Restoration
+
+```
+POST /film/shots/:id/post/face-restore
+```
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `face_model` | string | `codeformer` | Face restoration model |
+| `face_weight` | number | `0.7` | Restoration strength |
+
+### Color Grading
+
+```
+POST /film/shots/:id/post/color-grade
+```
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `lut_preset` | string | `cinematic_warm` | LUT preset name |
+| `film_grain` | number | `0.15` | Film grain amount |
+| `color_preset_id` | string | | Use a saved color preset |
+
+### Full Composite (All Steps)
+
+```
+POST /film/shots/:id/post/composite
+```
+
+Runs upscale → face-restore → color-grade sequentially.
+
+### Batch Post-Production
+
+```
+POST /film/projects/:id/post/batch
+POST /film/projects/:id/post/batch/stream
+```
+
+### Post Job Status
+
+```
+GET /film/shots/:id/post
+GET /film/projects/:id/post?type=upscale&status=complete
+```
+
+---
+
+## Pipeline Orchestrator (Phase 12)
+
+### Run Shot Pipeline
+
+```
+POST /film/shots/:id/pipeline/run
+```
+
+Runs the full 9-step pipeline for a single shot.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `skip_steps` | string[] | Steps to skip (e.g., `["voice", "lipsync"]`) |
+| `start_from` | string | Resume from this step |
+| `only_steps` | string[] | Run only these steps |
+
+**Pipeline steps:** `keyframe` → `video` → `voice` → `lipsync` → `music` → `sfx` → `ambient` → `post` → `assembly`
+
+**Response** `200`
+```json
+{
+  "run_id": "uuid",
+  "shot_id": "uuid",
+  "status": "complete",
+  "steps_completed": ["keyframe", "video", "music", "sfx", "ambient", "post", "assembly"],
+  "steps_failed": [],
+  "total_steps": 7,
+  "progress_pct": 100
+}
+```
+
+### Run Shot Pipeline (SSE Stream)
+
+```
+POST /film/shots/:id/pipeline/run/stream
+```
+
+SSE events: `status`, `step_start`, `step_complete`, `step_retry`, `step_failed`, `result`, `done`
+
+### Run Scene Pipeline
+
+```
+POST /film/scenes/:id/pipeline/run
+```
+
+Runs the pipeline for all shots in a scene. Returns `202 Accepted`.
+
+### Run Project Pipeline
+
+```
+POST /film/projects/:id/pipeline/run
+```
+
+Runs the pipeline for all shots in the project. Returns `202 Accepted`.
+
+### Pipeline Status
+
+```
+GET /film/pipeline/:id
+```
+
+### Pipeline Control
+
+```
+POST /film/pipeline/:id/pause
+POST /film/pipeline/:id/resume
+POST /film/pipeline/:id/cancel
+```
+
+### List Pipeline Runs
+
+```
+GET /film/projects/:id/pipeline?status=running
+```
+
+---
+
+## Character Reference Sheets (FILM-014)
+
+### Generate Reference Sheet
+
+```
+POST /film/characters/:id/refsheet/generate
+```
+
+Generates front, side, and back views of the character using their appearance prompt.
+
+**Response** `200`
+```json
+{
+  "character_id": "uuid",
+  "character_name": "JOHN",
+  "views": [
+    { "view": "front", "status": "complete", "image_url": "/film/refsheets/{pid}/john_front.png" },
+    { "view": "side", "status": "complete", "image_url": "/film/refsheets/{pid}/john_side.png" },
+    { "view": "back", "status": "complete", "image_url": "/film/refsheets/{pid}/john_back.png" }
+  ],
+  "job_id": "uuid"
+}
+```
+
+### Get Reference Sheet Status
+
+```
+GET /film/characters/:id/refsheet
+```
+
+---
+
+## Viseme Tracks (FILM-027, FILM-039)
+
+### Generate Viseme Track
+
+```
+POST /film/shots/:id/lipsync/viseme
+```
+
+Generates MPEG-4 viseme track from shot dialogue text.
+
+**Response** `200`
+```json
+{
+  "shot_id": "uuid",
+  "tracks": [
+    {
+      "character": "JOHN",
+      "line": "Hello there.",
+      "duration_ms": 1200,
+      "viseme_count": 8,
+      "visemes": [
+        { "viseme": "PP", "start_ms": 0, "end_ms": 100 },
+        { "viseme": "EE", "start_ms": 100, "end_ms": 250 }
+      ]
+    }
+  ]
+}
+```
+
+### Get Viseme Tracks
+
+```
+GET /film/shots/:id/lipsync/viseme
+```
+
+### Viseme-Guided Sync
+
+```
+POST /film/shots/:id/lipsync/viseme-sync
+```
+
+Enhances lip-sync using pre-generated viseme tracks. Sends viseme guidance (blend shapes, timing, weight) alongside video and audio to the lipsync endpoint.
+
+---
+
+## Multi-Clip Stitching (FILM-033)
+
+### Stitch Long Shot
+
+```
+POST /film/shots/:id/video/stitch
+```
+
+For shots exceeding 5 seconds, generates sub-clips and stitches them together with transitions.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_clip_ms` | number | `5000` | Maximum sub-clip duration |
+| `transition` | string | `cross-dissolve` | Transition type |
+
+**Transitions:** `cross-dissolve`, `cut`, `fade-through-black`, `dip-to-white`, `wipe-left`, `wipe-right`
+
+**Response** `200`
+```json
+{
+  "shot_id": "uuid",
+  "shot_code": "1A",
+  "job_id": "uuid",
+  "status": "complete",
+  "clip_count": 3,
+  "video_url": "/film/video/{pid}/1A_stitched.mp4",
+  "duration_ms": 12000
+}
+```
+
+---
+
+## Shot-to-Shot Color Matching (FILM-057)
+
+### Color Match Shot
+
+```
+POST /film/shots/:id/post/color-match
+```
+
+Matches color grading to the previous shot in the scene for visual continuity.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `reference_shot_id` | string | auto | Reference shot (defaults to previous in scene) |
+| `strength` | number | `0.7` | Match strength (0-1) |
+
+### Batch Color Match
+
+```
+POST /film/projects/:id/post/color-match
+```
+
+Color-matches all shots in the project against their scene neighbors.
+
+---
+
+## ProRes/DNxHR Encoding (FILM-062)
+
+### Encode Shot
+
+```
+POST /film/shots/:id/post/encode
+```
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `codec` | string | `prores-422-lt` | Target codec |
+
+**Supported codecs:** `prores-422-proxy`, `prores-422-lt`, `prores-422`, `prores-422-hq`, `dnxhr-lb`, `dnxhr-sq`, `dnxhr-hq`, `h264`, `h265`
+
+### Batch Encode
+
+```
+POST /film/projects/:id/post/encode
+```
+
+---
+
+## Audio Mix (FILM-093, FILM-063)
+
+### Mix Shot Audio
+
+```
+POST /film/shots/:id/audio/mix
+```
+
+Mixes all audio tracks for a shot (dialogue, music, SFX, ambient) with auto-ducking.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `lufs_target` | number | `-14` | LUFS normalization target |
+| `ducking` | boolean | `true` | Enable auto-ducking during dialogue |
+| `output_format` | string | `wav` | Output format |
+
+**Response** `200`
+```json
+{
+  "shot_id": "uuid",
+  "job_id": "uuid",
+  "status": "complete",
+  "track_count": 4,
+  "audio_url": "/film/music/{pid}/1A_mix.wav",
+  "lufs_target": -14
+}
+```
+
+### Mix Project Audio
+
+```
+POST /film/projects/:id/music/mix
+```
+
+### Export Stems
+
+```
+GET /film/projects/:id/music/stems
+```
+
+Returns audio stems grouped by type (dialogue, music, SFX, ambient).
+
+### Export SRT Subtitles
+
+```
+GET /film/projects/:id/music/srt
+```
+
+Generates SRT subtitles from all dialogue across the project.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `include_character` | string | `true` | Include character name prefix |
+
+**Response** `200` (text/plain, SRT format)
+
+---
+
+## Smart Scheduling (FILM-072)
+
+### Build Schedule
+
+```
+POST /film/projects/:id/pipeline/schedule
+```
+
+Builds an optimized execution schedule that groups pipeline steps by GPU model to minimize VRAM swapping.
+
+**Response** `200`
+```json
+{
+  "schedule_id": "uuid",
+  "project_id": "uuid",
+  "phases": [
+    {
+      "model": "sdxl",
+      "vram_gb": 6.5,
+      "load_time_s": 15,
+      "tasks": [
+        { "shot_id": "uuid", "shot_code": "1A", "step": "keyframe" },
+        { "shot_id": "uuid", "shot_code": "1B", "step": "keyframe" }
+      ]
+    }
+  ],
+  "estimated_load_time_s": 120,
+  "estimated_swaps": 6,
+  "residency": {
+    "resident": ["sdxl", "animatediff-sdxl"],
+    "evict": ["musicgen-large"],
+    "total_vram_gb": 19.5,
+    "budget_gb": 24
+  }
+}
+```
+
+### Get Latest Schedule
+
+```
+GET /film/projects/:id/pipeline/schedule
+```
+
+---
+
+## QA & Quality Gates (FILM-073–075)
+
+### Run Project QA
+
+```
+POST /film/projects/:id/qa/run
+```
+
+Runs all QA checks across shots, scenes, and project scope.
+
+**Response** `200`
+```json
+{
+  "run_id": "uuid",
+  "project_id": "uuid",
+  "scope": "project",
+  "total_checks": 45,
+  "passed": 38,
+  "failed": 7,
+  "results": [
+    {
+      "check_id": "has_keyframe",
+      "scope": "shot",
+      "severity": "error",
+      "label": "Shot has storyboard keyframe",
+      "target_id": "uuid",
+      "target_code": "1A",
+      "passed": false,
+      "detail": "Missing keyframe asset"
+    }
+  ],
+  "summary": { "errors": 2, "warnings": 3, "info": 2 }
+}
+```
+
+### Get QA History
+
+```
+GET /film/projects/:id/qa
+```
+
+### Get Latest QA Run
+
+```
+GET /film/projects/:id/qa/latest
+```
+
+### Continuity Check
+
+```
+GET /film/projects/:id/qa/continuity
+```
+
+Checks lighting consistency, character disappearances, and time-of-day changes across scenes.
+
+### Acceptance Rubric
+
+```
+GET /film/projects/:id/qa/rubric
+```
+
+Returns the acceptance criteria with current compliance status.
+
+### Run Scene QA
+
+```
+POST /film/scenes/:id/qa/run
+```
+
+### Run Shot QA
+
+```
+POST /film/shots/:id/qa/run
+```

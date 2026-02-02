@@ -42,17 +42,41 @@
  *   GET    /film/projects/:id/storyboard                  — View storyboard frames
  *   POST   /film/shots/:id/storyboard/regenerate          — Regenerate single shot
  *   GET    /film/storyboards/:projectId/:filename          — Serve storyboard image
+ *   POST   /film/shots/:id/voice/generate[/stream]         — Voice generation
+ *   POST   /film/projects/:id/voice/batch[/stream]          — Batch voice generation
+ *   GET    /film/shots/:id/voice                            — Voice job status
+ *   GET    /film/audio/:projectId/:filename                 — Serve audio files
+ *   POST   /film/shots/:id/video/generate[/stream]          — Video generation
+ *   POST   /film/projects/:id/video/batch[/stream]          — Batch video generation
+ *   GET    /film/video/:projectId/:filename                 — Serve video files
+ *   POST   /film/shots/:id/lipsync/generate[/stream]        — Lip-sync generation
+ *   POST   /film/projects/:id/lipsync/batch                 — Batch lip-sync
+ *   POST   /film/scenes/:id/music/generate[/stream]         — Music score generation
+ *   POST   /film/shots/:id/sfx/generate                     — SFX generation
+ *   POST   /film/scenes/:id/ambient/generate                — Ambient audio generation
+ *   POST   /film/projects/:id/music/batch[/stream]          — Batch music generation
+ *   GET    /film/music/:projectId/:filename                 — Serve music files
+ *   POST   /film/shots/:id/post/[upscale|face-restore|color-grade|composite] — Post-production
+ *   POST   /film/projects/:id/post/batch[/stream]           — Batch post-production
+ *   POST   /film/shots/:id/pipeline/run[/stream]            — Shot pipeline
+ *   POST   /film/scenes/:id/pipeline/run                    — Scene pipeline
+ *   POST   /film/projects/:id/pipeline/run                  — Project pipeline
+ *   GET    /film/pipeline/:id                               — Pipeline run status
+ *   POST   /film/pipeline/:id/[pause|resume|cancel]         — Pipeline control
  */
 
 const http = require('http');
 const { ensureSchema } = require('./db/schema');
-const { handleProjects } = require('./routes/projects');
-const { handleScripts } = require('./routes/scripts');
+const { handleProjects, handleProjectSettingsPreset } = require('./routes/projects');
+const { handleScripts, handleComments } = require('./routes/scripts');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
 const { handleBreakdown } = require('./routes/breakdown');
 const { handleScreenplayAI } = require('./routes/screenplay-ai');
 const { handleCharacters } = require('./routes/characters');
+const { handleActs } = require('./routes/acts');
+const { handleSubtitles } = require('./routes/subtitles');
+const { handleAudioDeliverables } = require('./routes/audio-deliverables');
 const { handleLocations } = require('./routes/locations');
 const { handleNotes } = require('./routes/notes');
 const { handleAssets } = require('./routes/assets');
@@ -63,6 +87,19 @@ const { handleCallSheets } = require('./routes/call-sheets');
 const { handleTextConvert } = require('./routes/text-convert');
 const { handleNLEExport } = require('./routes/nle-export');
 const { handleStoryboard } = require('./routes/storyboard');
+const { handleVoice } = require('./routes/voice');
+const { handleVideoGen } = require('./routes/video-gen');
+const { handleLipsync } = require('./routes/lipsync');
+const { handleMusicGen } = require('./routes/music-gen');
+const { handlePostProduction } = require('./routes/post-production');
+const { handlePipeline } = require('./routes/pipeline');
+const { handleQA } = require('./routes/qa');
+const { handleProjectBundle } = require('./routes/project-bundle');
+const { handleContinuity } = require('./routes/continuity');
+const { handleCredits } = require('./routes/credits');
+const { handleMarketing } = require('./routes/marketing');
+const { handleBudget } = require('./routes/budget');
+const { handleBackups } = require('./routes/backups');
 
 const PORT = process.env.PORT || 3100;
 
@@ -129,10 +166,13 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // Parse body for POST/PUT
+    // Parse body for POST/PUT (larger limit for bundle import)
     if (req.method === 'POST' || req.method === 'PUT') {
+        const maxSize = (parts[1] === 'projects' && parts[2] === 'import')
+            ? 500 * 1024 * 1024  // 500MB for bundle import
+            : 10 * 1024 * 1024;  // 10MB default
         try {
-            req.body = await readBody(req);
+            req.body = await readBody(req, maxSize);
         } catch (err) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: err.message }));
@@ -192,6 +232,26 @@ const server = http.createServer(async (req, res) => {
             return await handleShots(req, res, parts, query);
         }
 
+        // Route: /film/projects/:id/shots/reorder
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'shots' && parts[4] === 'reorder') {
+            return await handleShots(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/subtitles[/export/:fmt|/languages|/convert]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'subtitles') {
+            return handleSubtitles(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/audio-deliverables[/manifest]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'audio-deliverables') {
+            return handleAudioDeliverables(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/acts
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'acts') {
+            return handleActs(req, res, parts, query);
+        }
+
         // Route: /film/projects/:id/characters
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'characters') {
             return handleCharacters(req, res, parts, query);
@@ -222,6 +282,41 @@ const server = http.createServer(async (req, res) => {
             return handleAssets(req, res, parts, query);
         }
 
+        // Route: /film/projects/:id/music-rights
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'music-rights') {
+            return handleAssets(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/continuity[/board]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'continuity') {
+            return handleContinuity(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/credits[/reorder]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'credits') {
+            return handleCredits(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/title-cards
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'title-cards') {
+            return handleCredits(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/marketing
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'marketing') {
+            return handleMarketing(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/budget[/ledger|/forecast|/limit]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'budget') {
+            return handleBudget(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/backups
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'backups') {
+            return handleBackups(req, res, parts, query);
+        }
+
         // Route: /film/projects/:id/dashboard
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'dashboard') {
             return handleDashboard(req, res, parts, query);
@@ -237,6 +332,16 @@ const server = http.createServer(async (req, res) => {
             return handleDashboard(req, res, parts, query);
         }
 
+        // Route: /film/projects/import (must come before generic /film/projects/:id)
+        if (parts[1] === 'projects' && parts[2] === 'import') {
+            return handleProjectBundle(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/bundle — export project archive
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'bundle') {
+            return handleProjectBundle(req, res, parts, query);
+        }
+
         // Route: /film/projects/:id/export[/fcpxml|edl|premiere]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'export') {
             return handleNLEExport(req, res, parts, query);
@@ -247,9 +352,69 @@ const server = http.createServer(async (req, res) => {
             return await handleStoryboard(req, res, parts, query);
         }
 
+        // Route: /film/projects/:id/voice[/batch[/stream]]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'voice') {
+            return await handleVoice(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/video[/batch[/stream]]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'video') {
+            return await handleVideoGen(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/lipsync[/batch]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'lipsync') {
+            return await handleLipsync(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/music[/batch[/stream]|/jobs]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'music') {
+            return await handleMusicGen(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/post[/batch[/stream]]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'post') {
+            return await handlePostProduction(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/pipeline[/run|/schedule]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'pipeline') {
+            return await handlePipeline(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/qa[/run|/latest|/continuity|/rubric]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'qa') {
+            return handleQA(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/settings/preset
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'settings' && parts[4] === 'preset') {
+            return handleProjectSettingsPreset(req, res, parts);
+        }
+
         // Route: /film/projects[/:id]
         if (parts[1] === 'projects') {
             return await handleProjects(req, res, parts, query);
+        }
+
+        // Route: /film/audio/:projectId/:filename — serve audio files
+        if (parts[1] === 'audio' && parts[2] && parts[3]) {
+            return handleVoice(req, res, parts, query);
+        }
+
+        // Route: /film/video/:projectId/:filename — serve video files
+        if (parts[1] === 'video' && parts[2] && parts[3]) {
+            return handleVideoGen(req, res, parts, query);
+        }
+
+        // Route: /film/music/:projectId/:filename — serve music files
+        if (parts[1] === 'music' && parts[2] && parts[3]) {
+            return handleMusicGen(req, res, parts, query);
+        }
+
+        // Route: /film/pipeline/:id[/pause|resume|cancel]
+        if (parts[1] === 'pipeline' && parts[2]) {
+            return await handlePipeline(req, res, parts, query);
         }
 
         // Route: /film/scenes/:id/call-sheet
@@ -257,9 +422,79 @@ const server = http.createServer(async (req, res) => {
             return handleCallSheets(req, res, parts, query);
         }
 
+        // Route: /film/scenes/:id/music/generate[/stream]
+        if (parts[1] === 'scenes' && parts[2] && parts[3] === 'music') {
+            return await handleMusicGen(req, res, parts, query);
+        }
+
+        // Route: /film/scenes/:id/ambient/generate
+        if (parts[1] === 'scenes' && parts[2] && parts[3] === 'ambient') {
+            return await handleMusicGen(req, res, parts, query);
+        }
+
+        // Route: /film/scenes/:id/pipeline/run
+        if (parts[1] === 'scenes' && parts[2] && parts[3] === 'pipeline') {
+            return await handlePipeline(req, res, parts, query);
+        }
+
+        // Route: /film/scenes/:id/qa/run
+        if (parts[1] === 'scenes' && parts[2] && parts[3] === 'qa') {
+            return handleQA(req, res, parts, query);
+        }
+
         // Route: /film/scenes/:id
         if (parts[1] === 'scenes') {
             return await handleScenes(req, res, parts, query);
+        }
+
+        // Route: /film/acts/:id[/assign]
+        if (parts[1] === 'acts') {
+            return handleActs(req, res, parts, query);
+        }
+
+        // Route: /film/subtitles/:id
+        if (parts[1] === 'subtitles') {
+            return handleSubtitles(req, res, parts, query);
+        }
+
+        // Route: /film/audio-deliverables/:id
+        if (parts[1] === 'audio-deliverables') {
+            return handleAudioDeliverables(req, res, parts, query);
+        }
+
+        // Route: /film/continuity/:id
+        if (parts[1] === 'continuity') {
+            return handleContinuity(req, res, parts, query);
+        }
+
+        // Route: /film/credits/:id
+        if (parts[1] === 'credits') {
+            return handleCredits(req, res, parts, query);
+        }
+
+        // Route: /film/title-cards/:id
+        if (parts[1] === 'title-cards') {
+            return handleCredits(req, res, parts, query);
+        }
+
+        // Route: /film/marketing/:id[/generate]
+        if (parts[1] === 'marketing') {
+            return handleMarketing(req, res, parts, query);
+        }
+
+        // Route: /film/budget/:id
+        if (parts[1] === 'budget') {
+            return handleBudget(req, res, parts, query);
+        }
+
+        // Route: /film/music-cues/:id/rights
+        if (parts[1] === 'music-cues' && parts[2] && parts[3] === 'rights') {
+            return handleAssets(req, res, parts, query);
+        }
+
+        // Route: /film/backups/:id[/download|/restore]
+        if (parts[1] === 'backups') {
+            return handleBackups(req, res, parts, query);
         }
 
         // Route: /film/characters/:id[/voice|/costumes]
@@ -282,6 +517,16 @@ const server = http.createServer(async (req, res) => {
             return handleAssets(req, res, parts, query);
         }
 
+        // Route: /film/scripts/:id/comments
+        if (parts[1] === 'scripts' && parts[2] && parts[3] === 'comments') {
+            return handleComments(req, res, parts, query);
+        }
+
+        // Route: /film/comments/:id (update/delete)
+        if (parts[1] === 'comments' && parts[2]) {
+            return handleComments(req, res, parts, query);
+        }
+
         // Route: /film/notes/:id (update/delete)
         if (parts[1] === 'notes') {
             return handleNotes(req, res, parts, query);
@@ -292,9 +537,50 @@ const server = http.createServer(async (req, res) => {
             return await handleStoryboard(req, res, parts, query);
         }
 
+        // Route: /film/shots/:id/voice[/generate[/stream]]
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'voice') {
+            return await handleVoice(req, res, parts, query);
+        }
+
+        // Route: /film/shots/:id/video[/generate[/stream]]
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'video') {
+            return await handleVideoGen(req, res, parts, query);
+        }
+
+        // Route: /film/shots/:id/lipsync[/generate[/stream]]
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'lipsync') {
+            return await handleLipsync(req, res, parts, query);
+        }
+
+        // Route: /film/shots/:id/sfx/generate
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'sfx') {
+            return await handleMusicGen(req, res, parts, query);
+        }
+
+        // Route: /film/shots/:id/post[/upscale|face-restore|color-grade|composite]
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'post') {
+            return await handlePostProduction(req, res, parts, query);
+        }
+
+        // Route: /film/shots/:id/audio/mix
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'audio') {
+            return await handleMusicGen(req, res, parts, query);
+        }
+
+        // Route: /film/shots/:id/pipeline/run[/stream]
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'pipeline') {
+            return await handlePipeline(req, res, parts, query);
+        }
+
+        // Route: /film/shots/:id/qa/run
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'qa') {
+            return handleQA(req, res, parts, query);
+        }
+
         // Route: /film/shots/:id/notes, /film/shots/:id/review,
         //        /film/shots/:id/render, /film/shots/:id/renders,
-        //        /film/shots/:id/versions, /film/shots/:id/re-render
+        //        /film/shots/:id/versions, /film/shots/:id/re-render,
+        //        /film/shots/:id/order, /film/shots/:id/transition
         if (parts[1] === 'shots' && parts[2] && parts[3]) {
             const sub = parts[3];
             if (sub === 'notes' || sub === 'review') {
@@ -302,6 +588,9 @@ const server = http.createServer(async (req, res) => {
             }
             if (sub === 'render' || sub === 'renders' || sub === 'versions' || sub === 're-render') {
                 return handleRenderLedger(req, res, parts, query);
+            }
+            if (sub === 'order' || sub === 'transition') {
+                return await handleShots(req, res, parts, query);
             }
         }
 
@@ -338,7 +627,10 @@ function start() {
         console.log('          /film/locations, /film/props, /film/notes, /film/assets,');
         console.log('          /film/*/dashboard, /film/*/milestones, /film/*/render,');
         console.log('          /film/*/advance-status, /film/*/call-sheet, /film/*/breakdown,');
-        console.log('          /film/*/export, /film/*/storyboard');
+        console.log('          /film/*/export, /film/*/storyboard, /film/*/voice, /film/*/video,');
+        console.log('          /film/*/lipsync, /film/*/music, /film/*/sfx, /film/*/post,');
+        console.log('          /film/*/pipeline, /film/*/qa, /film/*/audio/mix, /film/*/schedule,');
+        console.log('          /film/audio/*, /film/video/*, /film/music/*, /film/*/refsheet');
     });
 }
 

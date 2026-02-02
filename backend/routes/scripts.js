@@ -963,4 +963,104 @@ function getScreenplaySuggestions(req, res, projectId) {
     }));
 }
 
-module.exports = { handleScripts };
+/**
+ * Handle screenplay comment routes:
+ *   POST /film/scripts/:id/comments — add comment
+ *   GET  /film/scripts/:id/comments — list comments
+ *   PUT  /film/comments/:id — edit/resolve
+ *   DELETE /film/comments/:id — delete
+ */
+function handleComments(req, res, urlParts, query) {
+    // /film/scripts/:id/comments
+    if (urlParts[1] === 'scripts' && urlParts[2] && urlParts[3] === 'comments') {
+        const scriptId = urlParts[2];
+
+        if (req.method === 'GET') {
+            const rows = db.prepare(`
+                SELECT * FROM film_screenplay_comments
+                WHERE script_id = ? ORDER BY element_index, start_offset
+            `).all(scriptId);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ comments: rows }));
+            return;
+        }
+
+        if (req.method === 'POST') {
+            try {
+                const data = req.body || {};
+                const id = generateId();
+                db.prepare(`
+                    INSERT INTO film_screenplay_comments (id, script_id, element_index, start_offset, end_offset, content, author)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                `).run(id, scriptId, data.element_index || 0, data.start_offset || 0, data.end_offset || 0, data.content || '', data.author || 'user');
+                const comment = db.prepare('SELECT * FROM film_screenplay_comments WHERE id = ?').get(id);
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(comment));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+            return;
+        }
+
+        res.writeHead(405, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+    }
+
+    // /film/comments/:id
+    if (urlParts[1] === 'comments' && urlParts[2]) {
+        const commentId = urlParts[2];
+
+        if (req.method === 'PUT') {
+            try {
+                const data = req.body || {};
+                const sets = [];
+                const vals = [];
+                if (data.content !== undefined) { sets.push('content = ?'); vals.push(data.content); }
+                if (data.resolved !== undefined) { sets.push('resolved = ?'); vals.push(data.resolved ? 1 : 0); }
+                if (sets.length === 0) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'No fields to update' }));
+                    return;
+                }
+                sets.push("updated_at = datetime('now')");
+                vals.push(commentId);
+                db.prepare(`UPDATE film_screenplay_comments SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+                const comment = db.prepare('SELECT * FROM film_screenplay_comments WHERE id = ?').get(commentId);
+                if (!comment) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Comment not found' }));
+                    return;
+                }
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(comment));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+            return;
+        }
+
+        if (req.method === 'DELETE') {
+            const result = db.prepare('DELETE FROM film_screenplay_comments WHERE id = ?').run(commentId);
+            if (result.changes === 0) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Comment not found' }));
+                return;
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ deleted: true }));
+            return;
+        }
+
+        res.writeHead(405, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+}
+
+module.exports = { handleScripts, handleComments };
