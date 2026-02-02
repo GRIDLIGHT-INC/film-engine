@@ -913,6 +913,37 @@
             border-radius: 3px;
             margin: 0.5em 0;
         }
+        /* FILM-109: Dual Dialogue Container */
+        .screenplay-page .dual-dialogue-container {
+            display: flex;
+            gap: 16px;
+            margin: 1em 0;
+        }
+        .screenplay-page .dual-dialogue-column {
+            flex: 1;
+            max-width: 45%;
+        }
+        .screenplay-page .dual-dialogue-column .sp-character,
+        .screenplay-page .dual-dialogue-column [data-element-type="character"] {
+            margin-left: 0;
+            text-align: center;
+        }
+        .screenplay-page .dual-dialogue-column .sp-dialogue,
+        .screenplay-page .dual-dialogue-column [data-element-type="dialogue"] {
+            margin-left: 0;
+            margin-right: 0;
+            text-align: left;
+        }
+        .screenplay-page .dual-dialogue-column .sp-parenthetical,
+        .screenplay-page .dual-dialogue-column [data-element-type="parenthetical"] {
+            margin-left: 1em;
+            margin-right: 0;
+        }
+        .screenplay-page .dual-dialogue-column.right {
+            border-left: 1px solid #ccc;
+            padding-left: 16px;
+        }
+        /* Legacy support for single dual-dialogue marker */
         .screenplay-page .sp-dual-dialogue {
             text-transform: uppercase;
             margin-top: 1em;
@@ -3392,7 +3423,12 @@
                 const shortcut = KEYBOARD_SHORTCUTS[event.key];
                 const block = getCurrentBlock();
                 if (block) {
-                    setBlockElementType(block, shortcut.type);
+                    // FILM-109: Special handling for dual dialogue
+                    if (shortcut.type === 'dual-dialogue') {
+                        toggleDualDialogue(block);
+                    } else {
+                        setBlockElementType(block, shortcut.type);
+                    }
                     clearAutoDetectSuggestion(block);
                     const selector = document.getElementById('elementTypeSelector');
                     if (selector) selector.value = shortcut.type;
@@ -3643,6 +3679,174 @@
         selection.removeAllRanges();
         selection.addRange(range);
         block.focus();
+    }
+
+    // FILM-109: Toggle dual dialogue - pairs current character/dialogue with previous
+    function toggleDualDialogue(block) {
+        if (!block) return;
+
+        const editor = document.getElementById('screenplayEditor');
+        const type = block.dataset.elementType;
+
+        // Check if already in a dual dialogue container
+        const existingContainer = block.closest('.dual-dialogue-container');
+        if (existingContainer) {
+            // Un-dual: extract blocks back to normal flow
+            undualDialogue(existingContainer, editor);
+            return;
+        }
+
+        // Find the character block - either current or walk back to find it
+        let characterBlock = null;
+        let dialogueBlocks = [];
+
+        if (type === 'character' || type === 'dual-dialogue') {
+            characterBlock = block;
+        } else if (type === 'dialogue' || type === 'parenthetical') {
+            // Walk back to find the character
+            let sibling = block.previousElementSibling;
+            while (sibling) {
+                const sibType = sibling.dataset?.elementType;
+                if (sibType === 'character' || sibType === 'dual-dialogue') {
+                    characterBlock = sibling;
+                    break;
+                }
+                if (sibType === 'dialogue' || sibType === 'parenthetical') {
+                    dialogueBlocks.unshift(sibling);
+                }
+                sibling = sibling.previousElementSibling;
+            }
+            dialogueBlocks.push(block);
+        } else {
+            return; // Can only create dual dialogue from character/dialogue elements
+        }
+
+        if (!characterBlock) return;
+
+        // Collect all dialogue blocks for this character
+        if (dialogueBlocks.length === 0) {
+            let sibling = characterBlock.nextElementSibling;
+            while (sibling) {
+                const sibType = sibling.dataset?.elementType;
+                if (sibType === 'dialogue' || sibType === 'parenthetical') {
+                    dialogueBlocks.push(sibling);
+                } else {
+                    break;
+                }
+                sibling = sibling.nextElementSibling;
+            }
+        }
+
+        // Find the previous character block and its dialogues
+        let prevCharacter = null;
+        let prevDialogues = [];
+        let searchBlock = characterBlock.previousElementSibling;
+
+        // Skip any page break indicators
+        while (searchBlock && searchBlock.classList.contains('page-break-indicator')) {
+            searchBlock = searchBlock.previousElementSibling;
+        }
+
+        while (searchBlock) {
+            const sibType = searchBlock.dataset?.elementType;
+            if (sibType === 'character') {
+                prevCharacter = searchBlock;
+                break;
+            }
+            if (sibType === 'dialogue' || sibType === 'parenthetical') {
+                prevDialogues.unshift(searchBlock);
+            } else if (sibType === 'scene-heading' || sibType === 'action' || sibType === 'transition') {
+                break; // Stop at non-dialogue elements
+            }
+            searchBlock = searchBlock.previousElementSibling;
+        }
+
+        if (!prevCharacter) {
+            setStatus('No previous character found for dual dialogue');
+            return;
+        }
+
+        // Create the dual dialogue container
+        const container = document.createElement('div');
+        container.className = 'dual-dialogue-container';
+        container.contentEditable = 'false';
+
+        // Left column (first character)
+        const leftCol = document.createElement('div');
+        leftCol.className = 'dual-dialogue-column left';
+        leftCol.contentEditable = 'true';
+
+        // Right column (second character - marked with ^)
+        const rightCol = document.createElement('div');
+        rightCol.className = 'dual-dialogue-column right';
+        rightCol.contentEditable = 'true';
+
+        // Move elements to columns
+        leftCol.appendChild(prevCharacter.cloneNode(true));
+        prevDialogues.forEach(d => leftCol.appendChild(d.cloneNode(true)));
+
+        const rightChar = characterBlock.cloneNode(true);
+        rightChar.dataset.dualRight = 'true'; // Mark as right side for serializer
+        rightCol.appendChild(rightChar);
+        dialogueBlocks.forEach(d => rightCol.appendChild(d.cloneNode(true)));
+
+        // Make cloned elements editable
+        leftCol.querySelectorAll('[data-element-type]').forEach(el => el.contentEditable = 'true');
+        rightCol.querySelectorAll('[data-element-type]').forEach(el => el.contentEditable = 'true');
+
+        container.appendChild(leftCol);
+        container.appendChild(rightCol);
+
+        // Insert container before the first element and remove originals
+        prevCharacter.before(container);
+
+        // Remove original elements
+        prevCharacter.remove();
+        prevDialogues.forEach(d => d.remove());
+        characterBlock.remove();
+        dialogueBlocks.forEach(d => d.remove());
+
+        // Focus the right column
+        const firstRightBlock = rightCol.querySelector('[data-element-type]');
+        if (firstRightBlock) {
+            setCursorToBlock(firstRightBlock);
+        }
+
+        editorDirty = true;
+        setStatus('Dual dialogue created');
+    }
+
+    // FILM-109: Extract dual dialogue back to normal flow
+    function undualDialogue(container, editor) {
+        const leftCol = container.querySelector('.dual-dialogue-column.left');
+        const rightCol = container.querySelector('.dual-dialogue-column.right');
+
+        if (!leftCol || !rightCol) return;
+
+        // Get all blocks from both columns
+        const leftBlocks = Array.from(leftCol.querySelectorAll('[data-element-type]'));
+        const rightBlocks = Array.from(rightCol.querySelectorAll('[data-element-type]'));
+
+        // Remove dual marker from right character
+        rightBlocks.forEach(b => delete b.dataset.dualRight);
+
+        // Insert blocks before the container
+        leftBlocks.forEach(b => {
+            const clone = b.cloneNode(true);
+            clone.contentEditable = 'true';
+            container.before(clone);
+        });
+        rightBlocks.forEach(b => {
+            const clone = b.cloneNode(true);
+            clone.contentEditable = 'true';
+            container.before(clone);
+        });
+
+        // Remove container
+        container.remove();
+
+        editorDirty = true;
+        setStatus('Dual dialogue removed');
     }
 
     // FILM-108: Calculate page count based on element types
@@ -4106,21 +4310,13 @@
     function serializeEditorToFountain(editor) {
         // Convert editor HTML back to Fountain text
         // Handles data-element-type and inline formatting (bold, italic, underline)
-        let elements = editor.querySelectorAll('[data-element-type]');
-
-        // Fallback: if no data-element-type elements, try sp-* classes
-        if (elements.length === 0) {
-            elements = editor.querySelectorAll('[class^="sp-"]');
-        }
 
         const lines = [];
         let prevType = null;
 
-        elements.forEach(el => {
-            // Get text with Fountain formatting markers
+        // FILM-109: Helper to serialize a single element
+        function serializeElement(el, isRightDualChar = false) {
             const text = extractFormattedText(el).trim();
-
-            // Get element type
             let elementType = el.dataset && el.dataset.elementType;
             if (!elementType) {
                 const classes = [...el.classList];
@@ -4128,15 +4324,12 @@
                 elementType = spClass ? spClass.replace('sp-', '') : 'action';
             }
 
-            // Skip empty elements
             if (!text) return;
 
             switch (elementType) {
                 case 'scene-heading':
-                    // Preserve original if already has prefix, otherwise force with .
                     const hasPrefix = /^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(text);
                     let headingLine = hasPrefix ? text.toUpperCase() : '.' + text.toUpperCase();
-                    // FILM-107: Add scene number in Fountain #N# format if present
                     const sceneNumber = el.dataset && el.dataset.sceneNumber;
                     if (sceneNumber) {
                         headingLine += ' #' + sceneNumber + '#';
@@ -4144,7 +4337,12 @@
                     lines.push('', headingLine);
                     break;
                 case 'character':
-                    lines.push('', text.toUpperCase());
+                    // FILM-109: Add ^ suffix for right-side dual dialogue character
+                    if (isRightDualChar || el.dataset.dualRight) {
+                        lines.push('', text.toUpperCase() + ' ^');
+                    } else {
+                        lines.push('', text.toUpperCase());
+                    }
                     break;
                 case 'dialogue':
                     lines.push(text);
@@ -4157,7 +4355,6 @@
                     }
                     break;
                 case 'transition':
-                    // Use > prefix if not ending with :
                     if (text.endsWith(':')) {
                         lines.push('', text.toUpperCase());
                     } else {
@@ -4185,7 +4382,40 @@
                     break;
             }
             prevType = elementType;
-        });
+        }
+
+        // Walk through direct children of editor
+        for (const child of editor.children) {
+            // FILM-109: Handle dual dialogue containers
+            if (child.classList.contains('dual-dialogue-container')) {
+                const leftCol = child.querySelector('.dual-dialogue-column.left');
+                const rightCol = child.querySelector('.dual-dialogue-column.right');
+
+                // Serialize left column first
+                if (leftCol) {
+                    const leftEls = leftCol.querySelectorAll('[data-element-type]');
+                    leftEls.forEach(el => serializeElement(el, false));
+                }
+
+                // Serialize right column (first character gets ^ suffix)
+                if (rightCol) {
+                    const rightEls = Array.from(rightCol.querySelectorAll('[data-element-type]'));
+                    rightEls.forEach((el, i) => {
+                        const isFirstChar = i === 0 && el.dataset.elementType === 'character';
+                        serializeElement(el, isFirstChar);
+                    });
+                }
+                continue;
+            }
+
+            // Skip page break indicators and other non-element children
+            if (child.classList.contains('page-break-indicator')) continue;
+
+            // Regular elements
+            if (child.dataset && child.dataset.elementType) {
+                serializeElement(child, false);
+            }
+        }
 
         return lines.join('\n').trim();
     }
