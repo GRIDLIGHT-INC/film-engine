@@ -55,6 +55,7 @@ const { handleDashboard } = require('./routes/dashboard');
 const { handleRenderLedger } = require('./routes/render-ledger');
 const { handleProductionStatus } = require('./routes/production-status');
 const { handleCallSheets } = require('./routes/call-sheets');
+const { handleTextConvert } = require('./routes/text-convert');
 
 const PORT = process.env.PORT || 3100;
 
@@ -142,6 +143,11 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/projects/:id/screenplay-ai (FILM-112)
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'screenplay-ai') {
             return await handleScreenplayAI(req, res, parts);
+        }
+
+        // Route: /film/projects/:id/text-to-screenplay[/preview] (FILM-117)
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'text-to-screenplay') {
+            return await handleTextConvert(req, res, parts);
         }
 
         // Route: /film/projects/:id/advance-status
