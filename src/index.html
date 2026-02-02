@@ -1063,6 +1063,60 @@
             font-weight: 600;
         }
 
+        /* FILM-128: Title Page Styles */
+        .title-page-block {
+            text-align: center;
+            padding: 60px 20px;
+            margin-bottom: 40px;
+            border-bottom: 2px solid var(--border);
+            font-family: 'Courier New', monospace;
+            pointer-events: none;
+            user-select: none;
+        }
+        .title-page-block .title-main {
+            font-size: 24px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+        .title-page-block .title-credit {
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .title-page-block .title-author {
+            font-size: 16px;
+            margin-bottom: 30px;
+        }
+        .title-page-block .title-source {
+            font-size: 12px;
+            font-style: italic;
+            margin-bottom: 30px;
+        }
+        .title-page-block .title-draft {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .title-page-block .title-contact {
+            font-size: 10px;
+            color: var(--text-muted);
+            white-space: pre-line;
+        }
+        .title-page-block .title-edit-hint {
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-top: 20px;
+            opacity: 0.5;
+        }
+        .title-page-modal .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .title-page-modal .form-group-full {
+            grid-column: 1 / -1;
+        }
+
         /* Editor Toolbar */
         .screenplay-toolbar {
             display: flex;
@@ -2468,6 +2522,7 @@
                         <span id="saveStatusIndicator" class="save-status saved">Saved</span>
                         <div class="toolbar-divider"></div>
                         <button class="toolbar-btn" id="aiChatToggle" onclick="toggleAIChat()" title="AI Assistant (Ctrl+Shift+A)">AI</button>
+                        <button class="toolbar-btn" onclick="openTitlePageModal()" title="Edit Title Page">Title Page</button>
                         <button class="toolbar-btn" onclick="openTextConvertModal()" title="Convert Text to Screenplay">Convert</button>
                         <button class="toolbar-btn suggestions-btn" id="suggestionsBtn" onclick="openSuggestionsPanel()" title="Entity Suggestions" style="display:none;">
                             <span id="suggestionsBadge" class="suggestions-badge">0</span>
@@ -3322,6 +3377,61 @@
         </div>
     </div>
 
+    <!-- FILM-128: Title Page Modal -->
+    <div class="modal-overlay" id="titlePageModal">
+        <div class="modal modal-md title-page-modal">
+            <div class="modal-header">
+                <h3>Edit Title Page</h3>
+                <button class="modal-close" onclick="closeModal('titlePageModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group form-group-full">
+                        <label>Title</label>
+                        <input type="text" id="titlePageTitle" placeholder="Screenplay Title">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Credit</label>
+                        <input type="text" id="titlePageCredit" placeholder="Written by" value="Written by">
+                    </div>
+                    <div class="form-group">
+                        <label>Author(s)</label>
+                        <input type="text" id="titlePageAuthor" placeholder="Author Name">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Source (Optional)</label>
+                    <input type="text" id="titlePageSource" placeholder="Based on the novel by...">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Draft Date</label>
+                        <input type="text" id="titlePageDraft" placeholder="January 2026">
+                    </div>
+                    <div class="form-group">
+                        <label>Copyright</label>
+                        <input type="text" id="titlePageCopyright" placeholder="© 2026 Author Name">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Contact Info</label>
+                    <textarea id="titlePageContact" rows="3" placeholder="Agent Name&#10;Agency&#10;Email / Phone"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Notes (Optional)</label>
+                    <textarea id="titlePageNotes" rows="2" placeholder="Any additional notes..."></textarea>
+                </div>
+                <div class="btn-row mt-16">
+                    <button class="btn btn-primary" onclick="saveTitlePage()">Save Title Page</button>
+                    <button class="btn btn-outline" onclick="clearTitlePage()">Clear</button>
+                    <button class="btn btn-secondary" onclick="closeModal('titlePageModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ════════════════════════════════════════════════════════════
          JAVASCRIPT
          ════════════════════════════════════════════════════════════ -->
@@ -4000,6 +4110,18 @@
         updateSceneNumbers();
         // FILM-105: Initialize undo stack with loaded content
         initUndoStack();
+
+        // FILM-128: Update currentTitlePage from loaded content
+        const titlePageBlock = editor.querySelector('[data-element-type="title-page"]');
+        if (titlePageBlock && titlePageBlock.dataset.titlePageData) {
+            try {
+                currentTitlePage = JSON.parse(titlePageBlock.dataset.titlePageData);
+            } catch (e) {
+                currentTitlePage = null;
+            }
+        } else {
+            currentTitlePage = null;
+        }
     }
 
     function parseFountainToHTML(text) {
@@ -4008,8 +4130,60 @@
         const htmlParts = [];
         let prevLineBlank = true;
         let inDialogue = false;
+        let startIndex = 0;
+
+        // FILM-128: Parse title page at the start of the document
+        const titlePage = {};
+        let inTitlePage = false;
+        let currentKey = null;
+        let currentValue = [];
 
         for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const keyMatch = line.match(/^([A-Za-z][A-Za-z\s]*?)\s*:\s*(.*)$/);
+
+            if (keyMatch && (i === 0 || inTitlePage)) {
+                inTitlePage = true;
+                // Save previous key-value
+                if (currentKey) {
+                    titlePage[currentKey.toLowerCase().replace(/\s+/g, '_')] = currentValue.join('\n').trim();
+                }
+                currentKey = keyMatch[1];
+                currentValue = keyMatch[2] ? [keyMatch[2]] : [];
+            } else if (inTitlePage && line.match(/^\s{3,}/) && currentKey) {
+                // Multi-line value (indented continuation)
+                currentValue.push(line.trim());
+            } else if (inTitlePage && line.trim() === '') {
+                // End of title page
+                if (currentKey) {
+                    titlePage[currentKey.toLowerCase().replace(/\s+/g, '_')] = currentValue.join('\n').trim();
+                }
+                startIndex = i + 1;
+                break;
+            } else if (!inTitlePage && line.trim() !== '') {
+                // Not a title page
+                break;
+            }
+        }
+
+        // Render title page block if found
+        if (Object.keys(titlePage).length > 0) {
+            const titlePageData = JSON.stringify(titlePage).replace(/"/g, '&quot;');
+            let titleHtml = '<div class="screenplay-block title-page-block" data-element-type="title-page" data-title-page-data="' + titlePageData + '" contenteditable="false">';
+            titleHtml += '<div class="title-page-content">';
+            if (titlePage.title) titleHtml += `<div class="title-page-title">${escapeHtml(titlePage.title)}</div>`;
+            if (titlePage.credit) titleHtml += `<div class="title-page-credit">${escapeHtml(titlePage.credit)}</div>`;
+            if (titlePage.author) titleHtml += `<div class="title-page-author">${escapeHtml(titlePage.author)}</div>`;
+            if (titlePage.source) titleHtml += `<div class="title-page-source">${escapeHtml(titlePage.source)}</div>`;
+            if (titlePage.draft_date) titleHtml += `<div class="title-page-draft">${escapeHtml(titlePage.draft_date)}</div>`;
+            if (titlePage.contact) titleHtml += `<div class="title-page-contact">${escapeHtml(titlePage.contact.replace(/\n/g, '<br>'))}</div>`;
+            titleHtml += '</div>';
+            titleHtml += '<button class="title-page-edit-btn" onclick="openTitlePageModal()" title="Edit Title Page">Edit</button>';
+            titleHtml += '</div>';
+            htmlParts.push(titleHtml);
+        }
+
+        for (let i = startIndex; i < lines.length; i++) {
             const line = lines[i];
             const trimmed = line.trim();
             const nextLine = lines[i + 1] || '';
@@ -6028,6 +6202,225 @@
         }
     }
 
+    // FILM-128: Title Page Editor
+    let currentTitlePage = null;
+
+    function openTitlePageModal() {
+        const modal = document.getElementById('titlePageModal');
+        if (!modal) return;
+
+        // Try to parse existing title page from editor content
+        const editor = document.getElementById('screenplayEditor');
+        const existingTitlePage = parseTitlePageFromEditor(editor);
+
+        if (existingTitlePage) {
+            currentTitlePage = existingTitlePage;
+        } else if (currentProject) {
+            // Fall back to project metadata
+            currentTitlePage = {
+                title: currentProject.title || '',
+                credit: 'Written by',
+                author: currentProject.author || '',
+                source: '',
+                draft_date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+                contact: ''
+            };
+        } else {
+            currentTitlePage = {
+                title: '',
+                credit: 'Written by',
+                author: '',
+                source: '',
+                draft_date: '',
+                contact: ''
+            };
+        }
+
+        // Populate form fields
+        document.getElementById('titlePageTitle').value = currentTitlePage.title || '';
+        document.getElementById('titlePageCredit').value = currentTitlePage.credit || 'Written by';
+        document.getElementById('titlePageAuthor').value = currentTitlePage.author || '';
+        document.getElementById('titlePageSource').value = currentTitlePage.source || '';
+        document.getElementById('titlePageDraftDate').value = currentTitlePage.draft_date || '';
+        document.getElementById('titlePageContact').value = currentTitlePage.contact || '';
+
+        modal.classList.add('active');
+    }
+
+    function parseTitlePageFromEditor(editor) {
+        if (!editor) return null;
+
+        // Check for title page block at the start
+        const firstBlock = editor.querySelector('[data-element-type="title-page"]');
+        if (firstBlock) {
+            return JSON.parse(firstBlock.dataset.titlePageData || '{}');
+        }
+
+        // Try to parse from Fountain content
+        const content = serializeEditorToFountain(editor);
+        return parseTitlePageFromFountain(content);
+    }
+
+    function parseTitlePageFromFountain(content) {
+        if (!content) return null;
+
+        const lines = content.split('\n');
+        const titlePage = {};
+        let inTitlePage = false;
+        let currentKey = null;
+        let currentValue = [];
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+
+            // Title page starts with a key: value pair
+            const keyMatch = line.match(/^([A-Za-z][A-Za-z\s]*?)\s*:\s*(.*)$/);
+            if (keyMatch && (i === 0 || inTitlePage)) {
+                inTitlePage = true;
+
+                // Save previous key-value
+                if (currentKey) {
+                    titlePage[currentKey.toLowerCase().replace(/\s+/g, '_')] = currentValue.join('\n').trim();
+                }
+
+                currentKey = keyMatch[1];
+                currentValue = keyMatch[2] ? [keyMatch[2]] : [];
+            } else if (inTitlePage && line.match(/^\s{3,}/) && currentKey) {
+                // Multi-line value (indented continuation)
+                currentValue.push(line.trim());
+            } else if (inTitlePage && line.trim() === '') {
+                // End of title page
+                if (currentKey) {
+                    titlePage[currentKey.toLowerCase().replace(/\s+/g, '_')] = currentValue.join('\n').trim();
+                }
+                break;
+            } else if (!inTitlePage && line.trim() !== '') {
+                // Not a title page
+                break;
+            }
+        }
+
+        // Save last key-value if we ended without blank line
+        if (currentKey && !titlePage[currentKey.toLowerCase().replace(/\s+/g, '_')]) {
+            titlePage[currentKey.toLowerCase().replace(/\s+/g, '_')] = currentValue.join('\n').trim();
+        }
+
+        return Object.keys(titlePage).length > 0 ? titlePage : null;
+    }
+
+    function saveTitlePage() {
+        const modal = document.getElementById('titlePageModal');
+
+        currentTitlePage = {
+            title: document.getElementById('titlePageTitle').value.trim(),
+            credit: document.getElementById('titlePageCredit').value.trim(),
+            author: document.getElementById('titlePageAuthor').value.trim(),
+            source: document.getElementById('titlePageSource').value.trim(),
+            draft_date: document.getElementById('titlePageDraftDate').value.trim(),
+            contact: document.getElementById('titlePageContact').value.trim()
+        };
+
+        updateEditorTitlePage(currentTitlePage);
+
+        modal.classList.remove('active');
+        editorDirty = true;
+        triggerAutoSave();
+        setStatus('Title page updated');
+    }
+
+    function clearTitlePage() {
+        document.getElementById('titlePageTitle').value = '';
+        document.getElementById('titlePageCredit').value = 'Written by';
+        document.getElementById('titlePageAuthor').value = '';
+        document.getElementById('titlePageSource').value = '';
+        document.getElementById('titlePageDraftDate').value = '';
+        document.getElementById('titlePageContact').value = '';
+    }
+
+    function updateEditorTitlePage(titlePage) {
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        // Remove existing title page block if present
+        const existingBlock = editor.querySelector('[data-element-type="title-page"]');
+        if (existingBlock) {
+            existingBlock.remove();
+        }
+
+        // Only add if there's content
+        if (!titlePage.title && !titlePage.author) {
+            return;
+        }
+
+        // Create title page block (non-editable display)
+        const block = document.createElement('div');
+        block.className = 'screenplay-block title-page-block';
+        block.dataset.elementType = 'title-page';
+        block.dataset.titlePageData = JSON.stringify(titlePage);
+        block.contentEditable = 'false';
+
+        let html = '<div class="title-page-content">';
+        if (titlePage.title) {
+            html += `<div class="title-page-title">${escapeHtml(titlePage.title)}</div>`;
+        }
+        if (titlePage.credit) {
+            html += `<div class="title-page-credit">${escapeHtml(titlePage.credit)}</div>`;
+        }
+        if (titlePage.author) {
+            html += `<div class="title-page-author">${escapeHtml(titlePage.author)}</div>`;
+        }
+        if (titlePage.source) {
+            html += `<div class="title-page-source">${escapeHtml(titlePage.source)}</div>`;
+        }
+        if (titlePage.draft_date) {
+            html += `<div class="title-page-draft">${escapeHtml(titlePage.draft_date)}</div>`;
+        }
+        if (titlePage.contact) {
+            html += `<div class="title-page-contact">${escapeHtml(titlePage.contact.replace(/\n/g, '<br>'))}</div>`;
+        }
+        html += '</div>';
+        html += '<button class="title-page-edit-btn" onclick="openTitlePageModal()" title="Edit Title Page">Edit</button>';
+
+        block.innerHTML = html;
+
+        // Insert at the beginning of editor
+        editor.insertBefore(block, editor.firstChild);
+    }
+
+    function serializeTitlePageToFountain(titlePage) {
+        if (!titlePage || (!titlePage.title && !titlePage.author)) {
+            return '';
+        }
+
+        const lines = [];
+
+        if (titlePage.title) {
+            lines.push(`Title: ${titlePage.title}`);
+        }
+        if (titlePage.credit) {
+            lines.push(`Credit: ${titlePage.credit}`);
+        }
+        if (titlePage.author) {
+            lines.push(`Author: ${titlePage.author}`);
+        }
+        if (titlePage.source) {
+            lines.push(`Source: ${titlePage.source}`);
+        }
+        if (titlePage.draft_date) {
+            lines.push(`Draft date: ${titlePage.draft_date}`);
+        }
+        if (titlePage.contact) {
+            // Multi-line contact info needs indentation
+            const contactLines = titlePage.contact.split('\n');
+            lines.push(`Contact: ${contactLines[0]}`);
+            for (let i = 1; i < contactLines.length; i++) {
+                lines.push(`   ${contactLines[i]}`);
+            }
+        }
+
+        return lines.join('\n') + '\n\n';
+    }
+
     // FILM-116: Quick stats summary update without full recalculation
     function updateScriptStatsSummary() {
         const editor = document.getElementById('screenplayEditor');
@@ -6701,6 +7094,20 @@
         const lines = [];
         let prevType = null;
 
+        // FILM-128: Handle title page block at the start
+        const titlePageBlock = editor.querySelector('[data-element-type="title-page"]');
+        if (titlePageBlock && titlePageBlock.dataset.titlePageData) {
+            try {
+                const titlePage = JSON.parse(titlePageBlock.dataset.titlePageData);
+                const titlePageFountain = serializeTitlePageToFountain(titlePage);
+                if (titlePageFountain) {
+                    lines.push(titlePageFountain.trim());
+                }
+            } catch (e) {
+                console.error('Failed to serialize title page:', e);
+            }
+        }
+
         // FILM-109: Helper to serialize a single element
         function serializeElement(el, isRightDualChar = false) {
             const text = extractFormattedText(el).trim();
@@ -6797,6 +7204,9 @@
 
             // Skip page break indicators and other non-element children
             if (child.classList.contains('page-break-indicator')) continue;
+
+            // FILM-128: Skip title page block (already serialized at the start)
+            if (child.dataset && child.dataset.elementType === 'title-page') continue;
 
             // Regular elements
             if (child.dataset && child.dataset.elementType) {
