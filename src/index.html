@@ -1117,6 +1117,98 @@
             grid-column: 1 / -1;
         }
 
+        /* FILM-129: Revision Tracking Styles */
+        .revision-colors {
+            --revision-white: #f8f8f8;
+            --revision-blue: #add8e6;
+            --revision-pink: #ffb6c1;
+            --revision-yellow: #fffacd;
+            --revision-green: #90ee90;
+            --revision-goldenrod: #daa520;
+            --revision-buff: #f5deb3;
+            --revision-salmon: #fa8072;
+            --revision-cherry: #de3163;
+        }
+        .revision-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .revision-indicator .revision-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 1px solid rgba(0,0,0,0.2);
+        }
+        .revision-dot.white { background: var(--revision-white); }
+        .revision-dot.blue { background: var(--revision-blue); }
+        .revision-dot.pink { background: var(--revision-pink); }
+        .revision-dot.yellow { background: var(--revision-yellow); }
+        .revision-dot.green { background: var(--revision-green); }
+        .revision-dot.goldenrod { background: var(--revision-goldenrod); }
+        .revision-dot.buff { background: var(--revision-buff); }
+        .revision-dot.salmon { background: var(--revision-salmon); }
+        .revision-dot.cherry { background: var(--revision-cherry); }
+        .revision-strip {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+        }
+        .revision-strip.white { background: var(--revision-white); }
+        .revision-strip.blue { background: var(--revision-blue); }
+        .revision-strip.pink { background: var(--revision-pink); }
+        .revision-strip.yellow { background: var(--revision-yellow); }
+        .revision-strip.green { background: var(--revision-green); }
+        .revision-strip.goldenrod { background: var(--revision-goldenrod); }
+        .revision-strip.buff { background: var(--revision-buff); }
+        .revision-strip.salmon { background: var(--revision-salmon); }
+        .revision-strip.cherry { background: var(--revision-cherry); }
+        .screenplay-page {
+            position: relative;
+        }
+        .screenplay-page.revised::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            border-radius: 2px;
+        }
+        .screenplay-page.revised.white::before { background: var(--revision-white); }
+        .screenplay-page.revised.blue::before { background: var(--revision-blue); }
+        .screenplay-page.revised.pink::before { background: var(--revision-pink); }
+        .screenplay-page.revised.yellow::before { background: var(--revision-yellow); }
+        .screenplay-page.revised.green::before { background: var(--revision-green); }
+        .screenplay-page.revised.goldenrod::before { background: var(--revision-goldenrod); }
+        .screenplay-page.revised.buff::before { background: var(--revision-buff); }
+        .screenplay-page.revised.salmon::before { background: var(--revision-salmon); }
+        .screenplay-page.revised.cherry::before { background: var(--revision-cherry); }
+        .scene-nav-item .revision-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+        .mark-revision-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            margin-left: auto;
+        }
+        .mark-revision-toggle input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+        }
+
         /* Editor Toolbar */
         .screenplay-toolbar {
             display: flex;
@@ -2528,6 +2620,15 @@
                             <span id="suggestionsBadge" class="suggestions-badge">0</span>
                         </button>
                         <button class="toolbar-btn" onclick="toggleShortcutHelp()" title="Keyboard Shortcuts (Ctrl+/)">?</button>
+                        <!-- FILM-129: Revision Indicator -->
+                        <div class="revision-indicator" id="revisionIndicator" style="display:none;">
+                            <span class="revision-dot" id="revisionDot"></span>
+                            <span id="revisionLabel">Draft</span>
+                        </div>
+                        <label class="mark-revision-toggle" id="markRevisionToggle" style="display:none;">
+                            <input type="checkbox" id="markAsRevisionCheckbox">
+                            Mark as Revision
+                        </label>
                         <!-- FILM-127: View Mode Toggle -->
                         <div class="view-mode-toggle" style="margin-left:auto;">
                             <button class="view-mode-btn active" onclick="setViewMode('editor')" id="viewModeEditor">Editor</button>
@@ -3831,11 +3932,16 @@
                 const deltaClass = wordDelta > 0 ? 'positive' : wordDelta < 0 ? 'negative' : '';
                 const deltaText = wordDelta !== 0 ? (wordDelta > 0 ? `+${wordDelta}` : wordDelta) : '';
 
+                // FILM-129: Revision indicator
+                const revisionBadge = s.revision_number ?
+                    `<span class="revision-dot ${s.revision_color}" style="width:8px;height:8px;display:inline-block;border-radius:50%;margin-right:4px;" title="Revision ${s.revision_number} (${s.revision_color})"></span>` : '';
+                const revisionText = s.revision_number ? ` Rev ${s.revision_number}` : '';
+
                 html += `
                 <div class="version-item" onclick="toggleVersionSelect(${s.version})" data-version="${s.version}">
                     <input type="checkbox" onclick="event.stopPropagation(); toggleVersionSelect(${s.version})"
                            id="versionCheck_${s.version}" ${selectedVersions.includes(s.version) ? 'checked' : ''}>
-                    <span class="version-badge">v${s.version}</span>
+                    ${revisionBadge}<span class="version-badge">v${s.version}${revisionText}</span>
                     <div class="version-meta">
                         <div class="version-meta-primary">
                             <span>${s.word_count.toLocaleString()} words</span>
@@ -4069,11 +4175,14 @@
                 renderFountainToEditor(data.fountain_content);
                 updateEditorStats();
                 updateSaveStatus('saved');
+                // FILM-129: Load revision info
+                loadRevisionInfo(data);
             } else if (data.content) {
                 document.getElementById('scriptInput').value = data.content;
                 document.getElementById('screenplayEditor').innerHTML = '<div class="sp-action" data-element-type="action">' + escapeHtml(data.content) + '</div>';
                 currentScriptVersion = parseInt(ver);
                 updateSaveStatus('saved');
+                loadRevisionInfo(null);
             }
         } catch (err) { setStatus('Error: ' + err.message); }
     }
@@ -4089,12 +4198,15 @@
                 updateEditorStats(data.page_count, data.scene_count);
                 updateSaveStatus('saved');
                 setStatus(`Loaded v${data.version} — ${data.scene_count} scenes`);
+                // FILM-129: Load revision info
+                loadRevisionInfo(data);
             }
         } catch (err) {
             // No Fountain content yet - that's OK
             document.getElementById('screenplayEditor').innerHTML = '';
             currentScriptVersion = null;
             updateSaveStatus('saved');
+            loadRevisionInfo(null);
         }
     }
 
@@ -6421,6 +6533,83 @@
         return lines.join('\n') + '\n\n';
     }
 
+    // FILM-129: Revision Tracking
+    const REVISION_COLORS = ['white', 'blue', 'pink', 'yellow', 'green', 'goldenrod', 'buff', 'salmon', 'cherry'];
+    let currentRevision = null;
+    let currentRevisionPagesChanged = [];
+
+    function updateRevisionIndicator() {
+        const indicator = document.getElementById('revisionIndicator');
+        const dot = document.getElementById('revisionDot');
+        const label = document.getElementById('revisionLabel');
+        const toggle = document.getElementById('markRevisionToggle');
+
+        if (!indicator || !currentProject) return;
+
+        if (currentRevision && currentRevision.revision_number) {
+            indicator.style.display = 'inline-flex';
+            dot.className = 'revision-dot ' + currentRevision.revision_color;
+            label.textContent = `Rev ${currentRevision.revision_number} (${currentRevision.revision_color})`;
+
+            // Show toggle for marking new revisions
+            if (toggle) {
+                toggle.style.display = 'flex';
+            }
+        } else {
+            indicator.style.display = 'inline-flex';
+            dot.className = 'revision-dot white';
+            label.textContent = 'Draft';
+
+            if (toggle) {
+                toggle.style.display = 'flex';
+            }
+        }
+    }
+
+    function loadRevisionInfo(scriptData) {
+        if (scriptData && scriptData.revision_number) {
+            currentRevision = {
+                revision_number: scriptData.revision_number,
+                revision_color: scriptData.revision_color,
+                revision_date: scriptData.revision_date
+            };
+            currentRevisionPagesChanged = scriptData.revision_pages_changed || [];
+        } else {
+            currentRevision = null;
+            currentRevisionPagesChanged = [];
+        }
+        updateRevisionIndicator();
+        updateRevisionPageMarkers();
+    }
+
+    function updateRevisionPageMarkers() {
+        // Mark scenes in the navigator with revision colors
+        const navItems = document.querySelectorAll('.scene-nav-item');
+
+        navItems.forEach((item, index) => {
+            // Remove existing revision dot
+            const existingDot = item.querySelector('.revision-dot');
+            if (existingDot) {
+                existingDot.remove();
+            }
+
+            // Check if this scene's page is in the changed pages
+            // Approximate: each scene is roughly 1 page
+            const scenePage = index + 1;
+            if (currentRevision && currentRevisionPagesChanged.includes(scenePage)) {
+                const dot = document.createElement('span');
+                dot.className = 'revision-dot ' + currentRevision.revision_color;
+                dot.title = `Changed in revision ${currentRevision.revision_number}`;
+                item.appendChild(dot);
+            }
+        });
+    }
+
+    function getMarkAsRevision() {
+        const checkbox = document.getElementById('markAsRevisionCheckbox');
+        return checkbox ? checkbox.checked : false;
+    }
+
     // FILM-116: Quick stats summary update without full recalculation
     function updateScriptStatsSummary() {
         const editor = document.getElementById('screenplayEditor');
@@ -7065,10 +7254,25 @@
         updateSaveStatus('saving');
         setStatus('Saving...');
         try {
+            // FILM-129: Check if this should be marked as a revision
+            const markAsRevision = getMarkAsRevision();
+            const requestBody = { fountain_content: fountainText };
+            if (markAsRevision) {
+                requestBody.mark_as_revision = true;
+            }
+
             const data = await api('/projects/' + state.currentProject.id + '/script', {
-                method: 'POST', body: JSON.stringify({ fountain_content: fountainText })
+                method: 'POST', body: JSON.stringify(requestBody)
             });
-            setStatus(`Saved as v${data.script.version}`);
+
+            // FILM-129: Update revision info
+            loadRevisionInfo(data.script);
+
+            // Reset the mark as revision checkbox after saving
+            const checkbox = document.getElementById('markAsRevisionCheckbox');
+            if (checkbox) checkbox.checked = false;
+
+            setStatus(`Saved as v${data.script.version}${markAsRevision ? ' (Revision)' : ''}`);
             editorDirty = false;
             currentFountainContent = fountainText;
             currentScriptVersion = data.script.version; // FILM-104: Track version for auto-save

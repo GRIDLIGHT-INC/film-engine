@@ -17,6 +17,19 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Estimate page count: ~55 lines per page in Fountain format
 const LINES_PER_PAGE = 55;
 
+// FILM-129: Standard revision colors in order
+const REVISION_COLORS = [
+    'white',      // Original (draft)
+    'blue',       // 1st revision
+    'pink',       // 2nd revision
+    'yellow',     // 3rd revision
+    'green',      // 4th revision
+    'goldenrod',  // 5th revision
+    'buff',       // 6th revision
+    'salmon',     // 7th revision
+    'cherry'      // 8th revision
+];
+
 function handleScripts(req, res, urlParts, query) {
     const projectId = urlParts[2];
     const sub = urlParts[3]; // 'script' or 'scripts' or 'screenplay'
@@ -86,6 +99,64 @@ function handleScripts(req, res, urlParts, query) {
 
     res.writeHead(405, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Method not allowed' }));
+}
+
+/**
+ * FILM-129: Get the next revision color in sequence
+ */
+function getNextRevisionColor(projectId) {
+    // Get all existing revisions for this project
+    const scripts = db.prepare(`
+        SELECT revision_number, revision_color FROM film_scripts
+        WHERE project_id = ? AND revision_number IS NOT NULL
+        ORDER BY revision_number DESC
+        LIMIT 1
+    `).get(projectId);
+
+    if (!scripts || !scripts.revision_number) {
+        return { number: 1, color: REVISION_COLORS[1] }; // First revision is blue
+    }
+
+    const nextNumber = scripts.revision_number + 1;
+    const colorIndex = Math.min(nextNumber, REVISION_COLORS.length - 1);
+    return { number: nextNumber, color: REVISION_COLORS[colorIndex] };
+}
+
+/**
+ * FILM-129: Detect which pages changed between two Fountain scripts
+ * Returns array of page numbers (1-indexed) that have changes
+ */
+function detectChangedPages(oldFountain, newFountain) {
+    if (!oldFountain || !newFountain) return [];
+
+    const oldLines = oldFountain.split('\n');
+    const newLines = newFountain.split('\n');
+
+    // Determine pages (approximately LINES_PER_PAGE lines per page)
+    const oldPages = [];
+    const newPages = [];
+
+    for (let i = 0; i < oldLines.length; i += LINES_PER_PAGE) {
+        oldPages.push(oldLines.slice(i, i + LINES_PER_PAGE).join('\n'));
+    }
+    for (let i = 0; i < newLines.length; i += LINES_PER_PAGE) {
+        newPages.push(newLines.slice(i, i + LINES_PER_PAGE).join('\n'));
+    }
+
+    // Find changed pages
+    const changedPages = [];
+    const maxPages = Math.max(oldPages.length, newPages.length);
+
+    for (let i = 0; i < maxPages; i++) {
+        const oldPage = oldPages[i] || '';
+        const newPage = newPages[i] || '';
+
+        if (oldPage !== newPage) {
+            changedPages.push(i + 1); // 1-indexed
+        }
+    }
+
+    return changedPages;
 }
 
 /**
@@ -393,12 +464,36 @@ function uploadScript(req, res, projectId) {
     const scriptId = generateId();
     const now = new Date().toISOString();
 
-    // Insert script with Fountain-specific columns
+    // FILM-129: Handle revision marking
+    let revisionNumber = null;
+    let revisionColor = null;
+    let revisionDate = null;
+    let revisionPagesChanged = '[]';
+
+    if (body.mark_as_revision) {
+        const nextRevision = getNextRevisionColor(projectId);
+        revisionNumber = nextRevision.number;
+        revisionColor = nextRevision.color;
+        revisionDate = now;
+
+        // Detect changed pages from previous version
+        const prevScript = db.prepare(`
+            SELECT fountain_content FROM film_scripts
+            WHERE project_id = ? ORDER BY version DESC LIMIT 1
+        `).get(projectId);
+
+        if (prevScript && prevScript.fountain_content) {
+            const changedPages = detectChangedPages(prevScript.fountain_content, fountainContent);
+            revisionPagesChanged = JSON.stringify(changedPages);
+        }
+    }
+
+    // Insert script with Fountain-specific columns and revision tracking
     db.prepare(`
         INSERT INTO film_scripts
-        (id, project_id, version, content, word_count, format, fountain_content, title_page_json, page_count, scene_count, dialogue_percentage, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(scriptId, projectId, nextVersion, content, wordCount, format, fountainContent, titlePageJson, pageCount, sceneCount, dialoguePercentage, now);
+        (id, project_id, version, content, word_count, format, fountain_content, title_page_json, page_count, scene_count, dialogue_percentage, revision_number, revision_color, revision_date, revision_pages_changed, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(scriptId, projectId, nextVersion, content, wordCount, format, fountainContent, titlePageJson, pageCount, sceneCount, dialoguePercentage, revisionNumber, revisionColor, revisionDate, revisionPagesChanged, now);
 
     const scriptRow = db.prepare('SELECT * FROM film_scripts WHERE id = ?').get(scriptId);
 
@@ -712,11 +807,23 @@ function getLatestFountain(req, res, projectId) {
 
 function listScripts(req, res, projectId) {
     const rows = db.prepare(`
-        SELECT id, project_id, version, word_count, format, page_count, scene_count, dialogue_percentage, created_at
+        SELECT id, project_id, version, word_count, format, page_count, scene_count, dialogue_percentage,
+               revision_number, revision_color, revision_date, revision_pages_changed, created_at
         FROM film_scripts
         WHERE project_id = ?
         ORDER BY version DESC
     `).all(projectId);
+
+    // Parse revision_pages_changed JSON for each row
+    for (const row of rows) {
+        if (row.revision_pages_changed) {
+            try {
+                row.revision_pages_changed = JSON.parse(row.revision_pages_changed);
+            } catch (e) {
+                row.revision_pages_changed = [];
+            }
+        }
+    }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ scripts: rows }));
@@ -739,6 +846,15 @@ function getScript(req, res, projectId, version) {
             row.title_page = JSON.parse(row.title_page_json);
         } catch (e) {
             row.title_page = {};
+        }
+    }
+
+    // FILM-129: Parse revision_pages_changed
+    if (row.revision_pages_changed) {
+        try {
+            row.revision_pages_changed = JSON.parse(row.revision_pages_changed);
+        } catch (e) {
+            row.revision_pages_changed = [];
         }
     }
 
