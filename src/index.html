@@ -1370,8 +1370,25 @@
         }
         .ai-chat-input-area .send-row {
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
+            align-items: center;
             margin-top: 8px;
+        }
+        .ai-context-toggle {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+        .ai-context-toggle input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+        }
+        .ai-context-toggle:hover {
+            color: var(--text-primary);
         }
         .ai-chat-input-area .send-btn {
             padding: 6px 16px;
@@ -1754,6 +1771,10 @@
                     <div class="ai-chat-input-area">
                         <textarea id="aiChatInput" placeholder="Ask me anything about your screenplay..." onkeydown="handleAIChatKeydown(event)"></textarea>
                         <div class="send-row">
+                            <label class="ai-context-toggle" title="Include the current scene text as context for more relevant responses">
+                                <input type="checkbox" id="aiIncludeSceneContext" checked>
+                                <span>Scene context</span>
+                            </label>
                             <button class="send-btn" onclick="sendAIMessage()" id="aiSendBtn">Send</button>
                         </div>
                     </div>
@@ -3657,6 +3678,93 @@
         return null;
     }
 
+    // FILM-115: Get the Fountain text for the scene the cursor is currently in
+    function getCurrentSceneFountain() {
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return '';
+
+        const currentBlock = getCurrentBlock();
+        if (!currentBlock) return '';
+
+        // Get all blocks
+        const allBlocks = Array.from(editor.querySelectorAll('[data-element-type]'));
+        const currentIndex = allBlocks.indexOf(currentBlock);
+        if (currentIndex === -1) return '';
+
+        // Find the scene heading before current position
+        let sceneStartIndex = -1;
+        for (let i = currentIndex; i >= 0; i--) {
+            if (allBlocks[i].dataset.elementType === 'scene-heading') {
+                sceneStartIndex = i;
+                break;
+            }
+        }
+
+        // If no scene heading found, start from beginning
+        if (sceneStartIndex === -1) sceneStartIndex = 0;
+
+        // Find the next scene heading (or end of document)
+        let sceneEndIndex = allBlocks.length;
+        for (let i = sceneStartIndex + 1; i < allBlocks.length; i++) {
+            if (allBlocks[i].dataset.elementType === 'scene-heading') {
+                sceneEndIndex = i;
+                break;
+            }
+        }
+
+        // Extract blocks for this scene
+        const sceneBlocks = allBlocks.slice(sceneStartIndex, sceneEndIndex);
+        if (sceneBlocks.length === 0) return '';
+
+        // Serialize to Fountain format
+        const lines = [];
+        let prevType = null;
+
+        for (const block of sceneBlocks) {
+            const type = block.dataset.elementType;
+            let text = '';
+            for (const child of block.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    text += child.textContent;
+                } else if (child.nodeType === Node.ELEMENT_NODE &&
+                           !child.classList.contains('scene-number-gutter')) {
+                    text += child.innerText || '';
+                }
+            }
+            text = text.trim();
+            if (!text) continue;
+
+            switch (type) {
+                case 'scene-heading':
+                    const hasPrefix = /^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(text);
+                    lines.push(hasPrefix ? text.toUpperCase() : '.' + text.toUpperCase());
+                    break;
+                case 'character':
+                    lines.push('', text.toUpperCase());
+                    break;
+                case 'dialogue':
+                    lines.push(text);
+                    break;
+                case 'parenthetical':
+                    lines.push(text.startsWith('(') ? text : '(' + text + ')');
+                    break;
+                case 'transition':
+                    lines.push('', text.endsWith(':') ? text.toUpperCase() : '> ' + text.toUpperCase());
+                    break;
+                case 'action':
+                default:
+                    if (prevType !== 'action' && prevType !== null && prevType !== 'scene-heading') {
+                        lines.push('');
+                    }
+                    lines.push(text);
+                    break;
+            }
+            prevType = type;
+        }
+
+        return lines.join('\n').trim();
+    }
+
     function onEditorKeydown(event) {
         const isMod = event.ctrlKey || event.metaKey;
 
@@ -4730,6 +4838,10 @@
                 }
             }
 
+            // FILM-115: Get current scene context for context-aware conversation (if enabled)
+            const includeSceneContext = document.getElementById('aiIncludeSceneContext')?.checked ?? true;
+            const currentSceneFountain = includeSceneContext ? getCurrentSceneFountain() : '';
+
             // Call AI API via backend
             const response = await api(`/projects/${state.currentProject.id}/screenplay-ai`, {
                 method: 'POST',
@@ -4737,7 +4849,8 @@
                     mode: mode,
                     message: message,
                     conversation_history: conversationHistory.slice(0, -1),
-                    original_content: originalContent
+                    original_content: originalContent,
+                    current_scene_fountain: currentSceneFountain // FILM-115
                 })
             });
 

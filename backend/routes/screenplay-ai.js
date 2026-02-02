@@ -80,6 +80,7 @@ Return only the formatted screenplay content.`
 
 function handleScreenplayAI(req, res, urlParts) {
     const projectId = urlParts[2];
+    const subRoute = urlParts[4]; // 'stream' for SSE mode
 
     if (!UUID_RE.test(projectId)) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -93,12 +94,23 @@ function handleScreenplayAI(req, res, urlParts) {
         return;
     }
 
+    // FILM-115: Handle streaming endpoint
+    if (subRoute === 'stream') {
+        return processScreenplayAIStream(req, res, projectId);
+    }
+
     return processScreenplayAI(req, res, projectId);
 }
 
 async function processScreenplayAI(req, res, projectId) {
     const body = req.body || {};
-    const { mode = 'brainstorm', message, conversation_history = [], original_content = '' } = body;
+    const {
+        mode = 'brainstorm',
+        message,
+        conversation_history = [],
+        original_content = '',
+        current_scene_fountain = '' // FILM-115: Current scene context
+    } = body;
 
     if (!message || typeof message !== 'string') {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -176,13 +188,26 @@ async function processScreenplayAI(req, res, projectId) {
         .replace('{recent_scenes}', recentScenes)
         .replace('{original_content}', original_content || '(No content provided)');
 
-    // Build messages array
+    // FILM-115: Add current scene context if provided
+    if (current_scene_fountain) {
+        systemPrompt += `\n\nCURRENT SCENE (cursor is here):\n${current_scene_fountain.slice(0, 2000)}`;
+    }
+
+    // Build messages array with truncation
     const messages = [];
 
-    // Add conversation history
+    // FILM-115: Truncate conversation history to last 20 messages or ~8000 tokens
     if (Array.isArray(conversation_history)) {
-        for (const msg of conversation_history.slice(-10)) { // Limit to last 10 messages
+        let tokenCount = 0;
+        const maxTokens = 8000;
+        const recentHistory = conversation_history.slice(-20);
+
+        for (const msg of recentHistory) {
             if (msg.role && msg.content) {
+                // Rough token estimation: ~4 chars per token
+                const msgTokens = Math.ceil(msg.content.length / 4);
+                if (tokenCount + msgTokens > maxTokens) break;
+                tokenCount += msgTokens;
                 messages.push({ role: msg.role, content: msg.content });
             }
         }
@@ -262,6 +287,118 @@ async function processScreenplayAI(req, res, projectId) {
             hint: 'Ensure the Gridlight gateway is running and GATEWAY_URL is set.',
             mode
         }));
+    }
+}
+
+// FILM-115: SSE streaming endpoint for screenplay AI
+async function processScreenplayAIStream(req, res, projectId) {
+    const body = req.body || {};
+    const {
+        mode = 'brainstorm',
+        message,
+        conversation_history = [],
+        current_scene_fountain = ''
+    } = body;
+
+    if (!message) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Message is required' }));
+        return;
+    }
+
+    // Get project context (simplified for streaming)
+    const project = db.prepare(`
+        SELECT title, genre, logline
+        FROM film_projects WHERE id = ?
+    `).get(projectId);
+
+    if (!project) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Project not found' }));
+        return;
+    }
+
+    // Build simple system prompt
+    let systemPrompt = `You are an AI screenplay assistant for "${project.title || 'Untitled'}" (${project.genre || 'genre not specified'}).`;
+    if (current_scene_fountain) {
+        systemPrompt += `\n\nCurrent scene context:\n${current_scene_fountain.slice(0, 1500)}`;
+    }
+
+    // Truncate history for streaming
+    const truncatedHistory = conversation_history.slice(-10).filter(m => m.role && m.content);
+
+    const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
+    const apiToken = process.env.API_TOKEN || 'dev-token';
+
+    // SSE headers
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*'
+    });
+
+    const sendEvent = (event, data) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    sendEvent('status', { phase: 'sending', message: 'Sending to AI...' });
+
+    try {
+        const aiRes = await fetch(`${gatewayUrl}/chat/intelligent`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiToken}`
+            },
+            body: JSON.stringify({
+                message: message,
+                system_prompt: systemPrompt,
+                conversation_history: truncatedHistory,
+                domain: 'screenplay',
+                stream: true,
+                options: {
+                    temperature: 0.7,
+                    max_tokens: 4000
+                }
+            })
+        });
+
+        if (!aiRes.ok) {
+            sendEvent('error', { message: 'AI service returned error', status: aiRes.status });
+            res.end();
+            return;
+        }
+
+        sendEvent('status', { phase: 'generating', message: 'AI is responding...' });
+
+        // Handle streaming response
+        const contentType = aiRes.headers.get('content-type') || '';
+        if (contentType.includes('text/event-stream')) {
+            // Relay SSE chunks
+            const reader = aiRes.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                sendEvent('chunk', { text: chunk });
+            }
+        } else {
+            // Non-streaming response
+            const aiData = await aiRes.json();
+            const responseText = aiData.response || aiData.message || '';
+            sendEvent('chunk', { text: responseText });
+        }
+
+        sendEvent('done', { message: 'Complete' });
+        res.end();
+
+    } catch (err) {
+        sendEvent('error', { message: 'AI gateway unavailable', details: err.message });
+        res.end();
     }
 }
 
