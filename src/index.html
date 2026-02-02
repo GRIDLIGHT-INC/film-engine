@@ -1366,6 +1366,100 @@
             }
         }
 
+        /* FILM-131: Import Modal Styles */
+        .import-dropzone {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius-lg);
+            padding: 40px 20px;
+            text-align: center;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            background: var(--surface);
+        }
+        .import-dropzone:hover,
+        .import-dropzone.dragover {
+            border-color: var(--primary);
+            background: rgba(var(--primary-rgb), 0.05);
+        }
+        .import-dropzone.dragover {
+            transform: scale(1.02);
+        }
+        .import-dropzone-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        .import-dropzone-text {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .import-dropzone-hint {
+            font-size: 11px;
+            color: var(--text-muted);
+            opacity: 0.7;
+        }
+        .import-file-input {
+            display: none;
+        }
+        .import-progress {
+            display: none;
+            padding: 20px;
+            text-align: center;
+        }
+        .import-progress.active {
+            display: block;
+        }
+        .import-progress-spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .import-result {
+            display: none;
+            padding: 20px;
+        }
+        .import-result.active {
+            display: block;
+        }
+        .import-result-success {
+            color: var(--success);
+        }
+        .import-result-error {
+            color: var(--danger);
+        }
+        .import-stats {
+            background: var(--surface-2);
+            padding: 12px;
+            border-radius: var(--radius-sm);
+            margin: 12px 0;
+            font-size: 12px;
+        }
+        .import-stats-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+        }
+        .import-warnings {
+            margin-top: 12px;
+            padding: 10px;
+            background: rgba(255, 193, 7, 0.1);
+            border-radius: var(--radius-sm);
+            font-size: 11px;
+        }
+        .import-warnings-title {
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #e6a800;
+        }
+
         /* Editor Toolbar */
         .screenplay-toolbar {
             display: flex;
@@ -2787,6 +2881,8 @@
                                 </button>
                             </div>
                         </div>
+                        <!-- FILM-131: Import Button -->
+                        <button class="toolbar-btn" onclick="openImportModal()" title="Import Final Draft or Fountain">Import</button>
                         <button class="toolbar-btn" onclick="openTextConvertModal()" title="Convert Text to Screenplay">Convert</button>
                         <button class="toolbar-btn suggestions-btn" id="suggestionsBtn" onclick="openSuggestionsPanel()" title="Entity Suggestions" style="display:none;">
                             <span id="suggestionsBadge" class="suggestions-badge">0</span>
@@ -3701,6 +3797,54 @@
                     <button class="btn btn-outline" onclick="clearTitlePage()">Clear</button>
                     <button class="btn btn-secondary" onclick="closeModal('titlePageModal')">Cancel</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FILM-131: Import Script Modal -->
+    <div class="modal-overlay" id="importScriptModal">
+        <div class="modal modal-md">
+            <div class="modal-header">
+                <h3>Import Script</h3>
+                <button class="modal-close" onclick="closeModal('importScriptModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Dropzone -->
+                <div class="import-dropzone" id="importDropzone"
+                     onclick="document.getElementById('importFileInput').click()"
+                     ondragenter="handleDragEnter(event)"
+                     ondragleave="handleDragLeave(event)"
+                     ondragover="handleDragOver(event)"
+                     ondrop="handleFileDrop(event)">
+                    <div class="import-dropzone-icon">📄</div>
+                    <div class="import-dropzone-text">
+                        Drop a file here or click to browse
+                    </div>
+                    <div class="import-dropzone-hint">
+                        Supported: Final Draft (.fdx), Fountain (.fountain)
+                    </div>
+                </div>
+                <input type="file" id="importFileInput" class="import-file-input"
+                       accept=".fdx,.xml,.fountain,.txt"
+                       onchange="handleFileSelect(event)">
+
+                <!-- Progress -->
+                <div class="import-progress" id="importProgress">
+                    <div class="import-progress-spinner"></div>
+                    <div id="importProgressText">Importing...</div>
+                </div>
+
+                <!-- Result -->
+                <div class="import-result" id="importResult">
+                    <div id="importResultIcon"></div>
+                    <div id="importResultMessage"></div>
+                    <div class="import-stats" id="importStats"></div>
+                    <div class="import-warnings" id="importWarnings" style="display:none;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="resetImportModal()">Import Another</button>
+                <button class="btn btn-secondary" onclick="closeModal('importScriptModal')">Close</button>
             </div>
         </div>
     </div>
@@ -7074,6 +7218,193 @@
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    }
+
+    // FILM-131: Import Script Functions
+    function openImportModal() {
+        resetImportModal();
+        document.getElementById('importScriptModal').classList.add('active');
+    }
+
+    function resetImportModal() {
+        // Show dropzone, hide progress and result
+        document.getElementById('importDropzone').style.display = 'block';
+        document.getElementById('importProgress').classList.remove('active');
+        document.getElementById('importResult').classList.remove('active');
+        document.getElementById('importFileInput').value = '';
+        document.getElementById('importWarnings').style.display = 'none';
+    }
+
+    function handleDragEnter(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        document.getElementById('importDropzone').classList.add('dragover');
+    }
+
+    function handleDragLeave(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        document.getElementById('importDropzone').classList.remove('dragover');
+    }
+
+    function handleDragOver(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    function handleFileDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        document.getElementById('importDropzone').classList.remove('dragover');
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            processImportFile(files[0]);
+        }
+    }
+
+    function handleFileSelect(e) {
+        const files = e.target.files;
+        if (files.length > 0) {
+            processImportFile(files[0]);
+        }
+    }
+
+    async function processImportFile(file) {
+        const filename = file.name.toLowerCase();
+        const isFDX = filename.endsWith('.fdx') || filename.endsWith('.xml');
+        const isFountain = filename.endsWith('.fountain') || filename.endsWith('.txt');
+
+        if (!isFDX && !isFountain) {
+            showImportError('Unsupported file type. Please use .fdx, .fountain, or .txt files.');
+            return;
+        }
+
+        // Show progress
+        document.getElementById('importDropzone').style.display = 'none';
+        document.getElementById('importProgress').classList.add('active');
+        document.getElementById('importProgressText').textContent = isFDX ?
+            'Parsing Final Draft file...' : 'Reading Fountain file...';
+
+        try {
+            const content = await readFileAsText(file);
+
+            if (isFDX) {
+                await importFDXContent(content);
+            } else {
+                await importFountainContent(content);
+            }
+        } catch (err) {
+            showImportError('Error reading file: ' + err.message);
+        }
+    }
+
+    function readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = (e) => reject(new Error('Failed to read file'));
+            reader.readAsText(file);
+        });
+    }
+
+    async function importFDXContent(fdxContent) {
+        if (!state.currentProject) {
+            showImportError('Please select a project first.');
+            return;
+        }
+
+        document.getElementById('importProgressText').textContent = 'Converting to Fountain format...';
+
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/script/import-fdx', {
+                method: 'POST',
+                body: JSON.stringify({ fdx_content: fdxContent })
+            });
+
+            // Show success
+            showImportSuccess(data, 'Final Draft');
+        } catch (err) {
+            showImportError('Import failed: ' + err.message);
+        }
+    }
+
+    async function importFountainContent(fountainContent) {
+        if (!state.currentProject) {
+            showImportError('Please select a project first.');
+            return;
+        }
+
+        document.getElementById('importProgressText').textContent = 'Saving script...';
+
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/script', {
+                method: 'POST',
+                body: JSON.stringify({ fountain_content: fountainContent })
+            });
+
+            // Show success
+            showImportSuccess(data, 'Fountain');
+        } catch (err) {
+            showImportError('Import failed: ' + err.message);
+        }
+    }
+
+    function showImportSuccess(data, format) {
+        document.getElementById('importProgress').classList.remove('active');
+        document.getElementById('importResult').classList.add('active');
+
+        document.getElementById('importResultIcon').innerHTML = '<span style="font-size:48px;color:var(--success);">✓</span>';
+        document.getElementById('importResultMessage').innerHTML = `<strong class="import-result-success">Import Successful</strong>`;
+
+        // Build stats
+        const script = data.script || {};
+        const scenesCount = data.scenes_extracted || script.scene_count || 0;
+        const wordCount = script.word_count || 0;
+        const pageCount = script.page_count || 0;
+
+        let statsHtml = `
+            <div class="import-stats-item"><span>Format:</span><span>${format}</span></div>
+            <div class="import-stats-item"><span>Scenes:</span><span>${scenesCount}</span></div>
+            <div class="import-stats-item"><span>Words:</span><span>${wordCount.toLocaleString()}</span></div>
+            <div class="import-stats-item"><span>Pages:</span><span>${pageCount}</span></div>
+            <div class="import-stats-item"><span>Version:</span><span>v${script.version}</span></div>
+        `;
+        document.getElementById('importStats').innerHTML = statsHtml;
+
+        // Show warnings if any
+        if (data.import_metadata && data.import_metadata.warnings && data.import_metadata.warnings.length > 0) {
+            const warningsDiv = document.getElementById('importWarnings');
+            warningsDiv.style.display = 'block';
+            warningsDiv.innerHTML = `
+                <div class="import-warnings-title">Warnings</div>
+                <ul style="margin:0;padding-left:16px;font-size:11px;">
+                    ${data.import_metadata.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}
+                </ul>
+            `;
+        }
+
+        // Load the imported content into editor
+        if (script.fountain_content || data.script.fountain_content) {
+            currentFountainContent = script.fountain_content || data.script.fountain_content;
+            currentScriptVersion = script.version;
+            renderFountainToEditor(currentFountainContent);
+            updateEditorStats();
+            updateSaveStatus('saved');
+            loadRevisionInfo(script);
+            loadScriptVersions();
+        }
+
+        setStatus(`Imported ${format} script - ${scenesCount} scenes`);
+    }
+
+    function showImportError(message) {
+        document.getElementById('importProgress').classList.remove('active');
+        document.getElementById('importResult').classList.add('active');
+
+        document.getElementById('importResultIcon').innerHTML = '<span style="font-size:48px;color:var(--danger);">✗</span>';
+        document.getElementById('importResultMessage').innerHTML = `<strong class="import-result-error">${escapeHtml(message)}</strong>`;
+        document.getElementById('importStats').innerHTML = '';
     }
 
     // FILM-116: Quick stats summary update without full recalculation
