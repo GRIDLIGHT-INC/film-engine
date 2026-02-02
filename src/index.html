@@ -939,6 +939,15 @@
             display: flex;
             flex-direction: column;
             gap: 12px;
+            transition: width 0.2s ease, padding 0.2s ease, opacity 0.2s ease;
+            overflow: hidden;
+        }
+        .screenplay-toolbar-panel.collapsed {
+            width: 40px;
+            padding: 8px;
+        }
+        .screenplay-toolbar-panel.collapsed > *:not(.panel-toggle-btn) {
+            display: none;
         }
         .screenplay-main-panel {
             flex: 1;
@@ -953,6 +962,34 @@
             border: 1px solid var(--border);
             border-radius: var(--radius-sm);
             padding: 12px;
+            transition: width 0.2s ease, padding 0.2s ease, opacity 0.2s ease;
+            overflow: hidden;
+        }
+        .screenplay-sidebar-panel.collapsed {
+            width: 40px;
+            padding: 8px;
+        }
+        .screenplay-sidebar-panel.collapsed > *:not(.panel-toggle-btn) {
+            display: none;
+        }
+        .panel-toggle-btn {
+            width: 100%;
+            padding: 6px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 8px;
+        }
+        .panel-toggle-btn:hover {
+            background: var(--surface-3);
+        }
+        .collapsed .panel-toggle-btn {
+            margin-bottom: 0;
         }
 
         /* FILM-127: Index Cards View */
@@ -2815,7 +2852,8 @@
 
             <div class="screenplay-editor-container">
                 <!-- Left Toolbar Panel -->
-                <div class="screenplay-toolbar-panel">
+                <div class="screenplay-toolbar-panel" id="leftToolbarPanel">
+                    <button class="panel-toggle-btn" onclick="toggleLeftPanel()" title="Toggle Panel">◀</button>
                     <div class="section-label">Element Type</div>
                     <select id="elementTypeSelector" onchange="setElementType(this.value)">
                         <option value="action">Action</option>
@@ -2864,7 +2902,8 @@
                         <div class="toolbar-divider"></div>
                         <span id="saveStatusIndicator" class="save-status saved">Saved</span>
                         <div class="toolbar-divider"></div>
-                        <button class="toolbar-btn" id="aiChatToggle" onclick="toggleAIChat()" title="AI Assistant (Ctrl+Shift+A)">AI</button>
+                        <button class="toolbar-btn" id="aiChatToggle" onclick="toggleAIChat()" title="AI Assistant (Ctrl+Shift+A)">AI Chat</button>
+                        <button class="toolbar-btn" onclick="openAIGenerateModal()" title="AI Generate for Current Element" style="background:var(--primary);color:white;">✨ Generate</button>
                         <button class="toolbar-btn" onclick="openTitlePageModal()" title="Edit Title Page">Title Page</button>
                         <!-- FILM-130: Export Dropdown -->
                         <div class="export-dropdown" id="exportDropdown">
@@ -3052,7 +3091,8 @@
                 </div>
 
                 <!-- Right Sidebar Panel - Script Versions -->
-                <div class="screenplay-sidebar-panel">
+                <div class="screenplay-sidebar-panel" id="rightSidebarPanel">
+                    <button class="panel-toggle-btn" onclick="toggleRightPanel()" title="Toggle Panel">▶</button>
                     <div class="section-label">Script Versions</div>
                     <div id="scriptVersions"></div>
                 </div>
@@ -3845,6 +3885,37 @@
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="resetImportModal()">Import Another</button>
                 <button class="btn btn-secondary" onclick="closeModal('importScriptModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Generate Modal -->
+    <div class="modal-overlay" id="aiGenerateModal">
+        <div class="modal modal-md">
+            <div class="modal-header">
+                <h3>AI Generate</h3>
+                <button class="modal-close" onclick="closeModal('aiGenerateModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Current Element Type</label>
+                    <div id="aiGenCurrentType" style="font-weight:600;color:var(--primary);text-transform:uppercase;margin-bottom:12px;"></div>
+                </div>
+                <div class="form-group">
+                    <label>What should I generate?</label>
+                    <div id="aiGenPromptHint" class="text-sm text-muted mb-8"></div>
+                    <textarea id="aiGenPrompt" class="form-control" rows="4" placeholder="Describe what you want..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="aiGenUseContext" checked>
+                        Include surrounding screenplay context
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="executeAIGenerate()" id="aiGenSubmitBtn">Generate</button>
+                <button class="btn btn-secondary" onclick="closeModal('aiGenerateModal')">Cancel</button>
             </div>
         </div>
     </div>
@@ -4725,23 +4796,31 @@
         editorDirty = true;
         updateEditorStats();
 
-        // Ensure block structure: wrap any orphan text nodes in action blocks
+        // Ensure block structure: wrap any orphan text nodes in blocks
         const editor = document.getElementById('screenplayEditor');
         const childNodes = [...editor.childNodes];
+
+        // Determine default type: scene-heading if no existing blocks (first line)
+        const existingBlocks = editor.querySelectorAll('[data-element-type]:not([data-element-type="title-page"])');
+        const defaultType = existingBlocks.length === 0 ? 'scene-heading' : 'action';
+
         for (const node of childNodes) {
             // Skip if already a proper element with data-element-type
             if (node.nodeType === 1 && node.dataset && node.dataset.elementType) continue;
 
             // Text node or element without data-element-type
             if (node.nodeType === 3 && node.textContent.trim()) {
-                // Wrap text node in action block
-                const block = createBlock(node.textContent, 'action');
+                // Wrap text node in block
+                const block = createBlock(node.textContent, defaultType);
                 editor.replaceChild(block, node);
                 setCursorToBlock(block);
+                // Update element type selector
+                const selector = document.getElementById('elementTypeSelector');
+                if (selector) selector.value = defaultType;
             } else if (node.nodeType === 1 && !node.dataset.elementType) {
                 // Element without data-element-type - add it
                 const text = node.innerText || '';
-                const block = createBlock(text, 'action');
+                const block = createBlock(text, defaultType);
                 editor.replaceChild(block, node);
             }
         }
@@ -5785,9 +5864,12 @@
             if (autoDetectTimer) clearTimeout(autoDetectTimer);
 
             if (!block) {
-                // No block - create first one
-                const newBlock = createBlock('', 'action');
-                document.getElementById('screenplayEditor').appendChild(newBlock);
+                // No block - create first one (scene-heading by default)
+                const editor = document.getElementById('screenplayEditor');
+                const existingBlocks = editor.querySelectorAll('[data-element-type]:not([data-element-type="title-page"])');
+                const defaultType = existingBlocks.length === 0 ? 'scene-heading' : 'action';
+                const newBlock = createBlock('', defaultType);
+                editor.appendChild(newBlock);
                 setCursorToBlock(newBlock);
                 return;
             }
@@ -7405,6 +7487,113 @@
         document.getElementById('importResultIcon').innerHTML = '<span style="font-size:48px;color:var(--danger);">✗</span>';
         document.getElementById('importResultMessage').innerHTML = `<strong class="import-result-error">${escapeHtml(message)}</strong>`;
         document.getElementById('importStats').innerHTML = '';
+    }
+
+    // Panel Toggle Functions
+    function toggleLeftPanel() {
+        const panel = document.getElementById('leftToolbarPanel');
+        const btn = panel.querySelector('.panel-toggle-btn');
+        panel.classList.toggle('collapsed');
+        btn.textContent = panel.classList.contains('collapsed') ? '▶' : '◀';
+    }
+
+    function toggleRightPanel() {
+        const panel = document.getElementById('rightSidebarPanel');
+        const btn = panel.querySelector('.panel-toggle-btn');
+        panel.classList.toggle('collapsed');
+        btn.textContent = panel.classList.contains('collapsed') ? '◀' : '▶';
+    }
+
+    // AI Generate Functions
+    const AI_GENERATE_HINTS = {
+        'scene-heading': 'Describe the type of location you need (e.g., "A cozy coffee shop in Brooklyn" or "An abandoned warehouse")',
+        'action': 'Describe what should happen in this scene (e.g., "Sarah discovers a hidden letter in the desk drawer")',
+        'character': 'Describe the character entering or speaking (e.g., "A mysterious stranger in a trench coat")',
+        'dialogue': 'Describe what the character should say or convey (e.g., "Express reluctance to help but hint at past history")',
+        'parenthetical': 'Describe the emotional tone or action (e.g., "frustrated", "whispering")',
+        'transition': 'Describe the type of transition (e.g., "dramatic time jump" or "match cut to")',
+        'centered': 'Describe what centered text you need (e.g., "A poetic chapter title" or "Time card")',
+        'lyrics': 'Describe the song or mood (e.g., "A melancholic ballad about lost love")',
+        'note': 'Describe what note you need (e.g., "Production note about special effects needed")'
+    };
+
+    function openAIGenerateModal() {
+        const block = getCurrentBlock();
+        const elementType = block?.dataset?.elementType || 'scene-heading';
+
+        document.getElementById('aiGenCurrentType').textContent = elementType.replace('-', ' ');
+        document.getElementById('aiGenPromptHint').textContent = AI_GENERATE_HINTS[elementType] || 'Describe what you want to generate...';
+        document.getElementById('aiGenPrompt').value = '';
+        document.getElementById('aiGenerateModal').classList.add('active');
+        document.getElementById('aiGenPrompt').focus();
+    }
+
+    async function executeAIGenerate() {
+        const prompt = document.getElementById('aiGenPrompt').value.trim();
+        if (!prompt) {
+            setStatus('Please enter a prompt');
+            return;
+        }
+
+        const block = getCurrentBlock();
+        const elementType = block?.dataset?.elementType || 'scene-heading';
+        const useContext = document.getElementById('aiGenUseContext').checked;
+
+        // Get surrounding context if enabled
+        let context = '';
+        if (useContext) {
+            const editor = document.getElementById('screenplayEditor');
+            const blocks = editor.querySelectorAll('[data-element-type]');
+            const currentIndex = Array.from(blocks).indexOf(block);
+
+            // Get 5 blocks before and after for context
+            const start = Math.max(0, currentIndex - 5);
+            const end = Math.min(blocks.length, currentIndex + 5);
+
+            for (let i = start; i < end; i++) {
+                if (i === currentIndex) continue;
+                const b = blocks[i];
+                context += `[${b.dataset.elementType}] ${b.innerText.trim()}\n`;
+            }
+        }
+
+        const submitBtn = document.getElementById('aiGenSubmitBtn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Generating...';
+
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/screenplay-ai', {
+                method: 'POST',
+                body: JSON.stringify({
+                    mode: 'generate-element',
+                    element_type: elementType,
+                    prompt: prompt,
+                    context: context
+                })
+            });
+
+            // Insert generated content
+            if (data.content) {
+                if (block) {
+                    block.innerText = data.content;
+                } else {
+                    const newBlock = createBlock(data.content, elementType);
+                    document.getElementById('screenplayEditor').appendChild(newBlock);
+                    setCursorToBlock(newBlock);
+                }
+
+                editorDirty = true;
+                triggerAutoSave();
+                setStatus('Content generated');
+            }
+
+            closeModal('aiGenerateModal');
+        } catch (err) {
+            setStatus('AI error: ' + err.message);
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Generate';
+        }
     }
 
     // FILM-116: Quick stats summary update without full recalculation
