@@ -3322,7 +3322,7 @@
         return true;
     }
 
-    // Update element type dropdown when selection changes
+    // FILM-110: Update element type dropdown and toolbar state when selection changes
     function onEditorSelectionChange() {
         const block = getCurrentBlock();
         if (block) {
@@ -3335,10 +3335,12 @@
             updateCurrentSceneDisplay(block);
             // FILM-106: Update scene navigator highlight
             updateCurrentSceneHighlight();
+            // FILM-110: Update character count and speaking character
+            updateBlockStatusInfo(block, elementType);
         }
     }
 
-    // Update scene number display based on current position
+    // FILM-110: Update scene number display based on current position
     function updateCurrentSceneDisplay(block) {
         const editor = document.getElementById('screenplayEditor');
         const sceneDisplay = document.getElementById('currentSceneNum');
@@ -3346,14 +3348,87 @@
 
         // Find the nearest scene heading above current block
         let sceneNum = 0;
+        let sceneHeading = null;
         const blocks = editor.querySelectorAll('[data-element-type]');
         for (const b of blocks) {
             if (b.dataset.elementType === 'scene-heading') {
                 sceneNum++;
+                sceneHeading = b;
             }
             if (b === block) break;
         }
-        sceneDisplay.textContent = sceneNum > 0 ? `Scene: ${sceneNum}` : 'Scene: —';
+
+        // Use scene number from data attribute if available (FILM-107)
+        if (sceneHeading && sceneHeading.dataset.sceneNumber) {
+            sceneDisplay.textContent = `Scene: #${sceneHeading.dataset.sceneNumber}`;
+        } else {
+            sceneDisplay.textContent = sceneNum > 0 ? `Scene: ${sceneNum}` : 'Scene: —';
+        }
+    }
+
+    // FILM-110: Update block status info (character count, speaking character)
+    function updateBlockStatusInfo(block, elementType) {
+        // Get or create status info element
+        let statusInfo = document.getElementById('blockStatusInfo');
+        if (!statusInfo) {
+            // Create status info element in toolbar
+            const toolbar = document.querySelector('.screenplay-toolbar');
+            if (toolbar) {
+                const divider = document.createElement('div');
+                divider.className = 'toolbar-divider';
+                statusInfo = document.createElement('span');
+                statusInfo.id = 'blockStatusInfo';
+                statusInfo.style.cssText = 'font-size:10px;color:var(--text-muted);';
+                toolbar.insertBefore(divider, toolbar.querySelector('.save-status'));
+                toolbar.insertBefore(statusInfo, toolbar.querySelector('.save-status'));
+            }
+        }
+
+        if (!statusInfo) return;
+
+        // Get block text (excluding gutter elements)
+        let text = '';
+        for (const child of block.childNodes) {
+            if (child.nodeType === Node.TEXT_NODE) {
+                text += child.textContent;
+            } else if (child.nodeType === Node.ELEMENT_NODE &&
+                       !child.classList.contains('scene-number-gutter')) {
+                text += child.innerText || '';
+            }
+        }
+        const charCount = text.length;
+
+        // Build status info
+        let info = `${charCount} chars`;
+
+        // If in dialogue/parenthetical, show speaking character
+        if (elementType === 'dialogue' || elementType === 'parenthetical') {
+            const speakingChar = findSpeakingCharacter(block);
+            if (speakingChar) {
+                info = `${speakingChar}: ${charCount} chars`;
+            }
+        }
+
+        statusInfo.textContent = info;
+    }
+
+    // FILM-110: Find the speaking character for a dialogue block
+    function findSpeakingCharacter(block) {
+        let sibling = block.previousElementSibling;
+        while (sibling) {
+            const type = sibling.dataset?.elementType;
+            if (type === 'character' || type === 'dual-dialogue') {
+                // Get character name (excluding extensions)
+                let name = sibling.innerText.trim();
+                name = name.replace(/\s*\([^)]*\)\s*$/, ''); // Remove (V.O.) etc.
+                return name.toUpperCase();
+            }
+            if (type === 'scene-heading' || type === 'action' || type === 'transition') {
+                break; // Stop at non-dialogue elements
+            }
+            sibling = sibling.previousElementSibling;
+        }
+        return null;
     }
 
     function onEditorKeydown(event) {
