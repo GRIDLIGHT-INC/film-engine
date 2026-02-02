@@ -1033,6 +1033,74 @@
             text-align: center;
         }
 
+        /* FILM-106: Scene Navigator */
+        .scene-navigator {
+            margin-top: 8px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            max-height: 350px;
+            display: flex;
+            flex-direction: column;
+        }
+        .scene-nav-stats {
+            padding: 8px 10px;
+            font-size: 10px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 4px;
+        }
+        .scene-nav-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px;
+        }
+        .scene-nav-item {
+            padding: 6px 8px;
+            margin-bottom: 2px;
+            border-radius: 4px;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            transition: all 0.15s ease;
+        }
+        .scene-nav-item:hover {
+            background: var(--surface);
+        }
+        .scene-nav-item.current {
+            background: rgba(233, 30, 99, 0.1);
+            border-left-color: var(--primary);
+        }
+        .scene-nav-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .scene-nav-num {
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--primary);
+            min-width: 24px;
+        }
+        .scene-nav-title {
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--text);
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .scene-nav-chars {
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-top: 2px;
+            margin-left: 30px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         /* FILM-103: Autocomplete Dropdown */
         .autocomplete-dropdown {
             display: none;
@@ -1295,11 +1363,12 @@
                     </select>
 
                     <div class="section-label mt-16">Navigation</div>
-                    <button class="btn btn-outline" onclick="toggleSceneNavigator()" style="width:100%;font-size:11px;">
+                    <button class="btn btn-outline" onclick="toggleSceneNavigator()" title="Ctrl+Shift+O" style="width:100%;font-size:11px;">
                         Scene Navigator
                     </button>
-                    <div id="sceneNavigator" style="display:none; margin-top:8px; max-height:300px; overflow-y:auto;">
-                        <div id="sceneNavList"></div>
+                    <div id="sceneNavigator" class="scene-navigator" style="display:none;">
+                        <div id="sceneNavStats" class="scene-nav-stats"></div>
+                        <div id="sceneNavList" class="scene-nav-list"></div>
                     </div>
 
                     <div class="section-label mt-16">Actions</div>
@@ -2472,6 +2541,9 @@
 
         // FILM-104: Trigger debounced auto-save
         triggerAutoSave();
+
+        // FILM-106: Trigger scene navigator update
+        triggerSceneNavUpdate();
     }
 
     // FILM-104: Debounced auto-save
@@ -3148,6 +3220,8 @@
             }
             // Update current scene display
             updateCurrentSceneDisplay(block);
+            // FILM-106: Update scene navigator highlight
+            updateCurrentSceneHighlight();
         }
     }
 
@@ -3196,6 +3270,13 @@
             if (event.key === 'y') {
                 event.preventDefault();
                 editorRedo();
+                return;
+            }
+
+            // FILM-106: Ctrl/Cmd + Shift + O for scene navigator
+            if ((event.key === 'o' || event.key === 'O') && event.shiftKey) {
+                event.preventDefault();
+                toggleSceneNavigator();
                 return;
             }
 
@@ -3493,41 +3574,164 @@
         document.getElementById('editorPageCount').textContent = `Pages: ${pages}`;
     }
 
+    // FILM-106: Enhanced scene navigator
+    let sceneNavTimer = null;
+    const SCENE_NAV_UPDATE_DELAY = 1000; // 1 second debounce
+    let currentSceneIndex = -1;
+
     function updateSceneNavigator(fountainText) {
         const navList = document.getElementById('sceneNavList');
+        const navStats = document.getElementById('sceneNavStats');
         if (!navList) return;
 
+        // Parse scenes from editor DOM for better accuracy
+        const editor = document.getElementById('screenplayEditor');
+        const scenes = parseSceneOutline(editor);
+
+        // Update stats
+        const pageCount = Math.ceil((editor?.innerText || '').split('\n').length / 55);
+        if (navStats) {
+            navStats.innerHTML = `<span>${scenes.length} scene${scenes.length !== 1 ? 's' : ''}</span> · <span>~${pageCount} page${pageCount !== 1 ? 's' : ''}</span>`;
+        }
+
+        // Render scene list
+        if (scenes.length === 0) {
+            navList.innerHTML = '<p class="text-sm text-muted" style="padding:8px;">No scenes yet. Start with a scene heading like "INT. LOCATION - DAY"</p>';
+        } else {
+            navList.innerHTML = scenes.map((scene, i) => `
+                <div class="scene-nav-item ${i === currentSceneIndex ? 'current' : ''}"
+                     data-scene-index="${i}"
+                     onclick="scrollToScene(${i})">
+                    <div class="scene-nav-header">
+                        <span class="scene-nav-num">#${scene.num}</span>
+                        <span class="scene-nav-title">${escapeHtml(scene.heading)}</span>
+                    </div>
+                    ${scene.characters.length > 0 ? `<div class="scene-nav-chars">${scene.characters.slice(0, 3).join(', ')}${scene.characters.length > 3 ? '...' : ''}</div>` : ''}
+                </div>
+            `).join('');
+        }
+    }
+
+    // Parse scene outline from editor DOM
+    function parseSceneOutline(editor) {
+        if (!editor) return [];
+
         const scenes = [];
-        const lines = (fountainText || '').split('\n');
+        const blocks = editor.querySelectorAll('[data-element-type]');
+        let currentScene = null;
         let sceneNum = 0;
 
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || (trimmed.startsWith('.') && trimmed.length > 1)) {
+        for (const block of blocks) {
+            const type = block.dataset.elementType;
+            const text = block.innerText.trim();
+
+            if (type === 'scene-heading') {
+                // Save previous scene
+                if (currentScene) {
+                    scenes.push(currentScene);
+                }
+
                 sceneNum++;
-                scenes.push({ num: sceneNum, text: trimmed.slice(0, 40) });
+                // Parse heading to extract location/time
+                let heading = text;
+                if (heading.length > 35) {
+                    heading = heading.slice(0, 35) + '...';
+                }
+
+                currentScene = {
+                    num: sceneNum,
+                    heading: heading,
+                    characters: [],
+                    element: block
+                };
+            } else if (type === 'character' && currentScene) {
+                // Extract character name (remove extensions like V.O., O.S.)
+                const charName = text.replace(/\s*\([^)]*\)\s*$/, '').toUpperCase();
+                if (charName && !currentScene.characters.includes(charName)) {
+                    currentScene.characters.push(charName);
+                }
             }
         }
 
-        navList.innerHTML = scenes.length === 0 ? '<p class="text-sm text-muted">No scenes</p>' :
-            scenes.map(s => `<div style="padding:4px 8px;font-size:10px;cursor:pointer;border-radius:4px;"
-                onmouseover="this.style.background='var(--surface-2)'"
-                onmouseout="this.style.background='transparent'"
-                onclick="scrollToScene(${s.num})">
-                <span class="badge" style="font-size:9px;">${s.num}</span> ${escapeHtml(s.text)}...
-            </div>`).join('');
+        // Don't forget the last scene
+        if (currentScene) {
+            scenes.push(currentScene);
+        }
+
+        return scenes;
+    }
+
+    // Debounced scene navigator update
+    function triggerSceneNavUpdate() {
+        if (sceneNavTimer) clearTimeout(sceneNavTimer);
+        sceneNavTimer = setTimeout(() => {
+            updateSceneNavigator();
+            updateCurrentSceneHighlight();
+        }, SCENE_NAV_UPDATE_DELAY);
+    }
+
+    // Update current scene highlight based on cursor position
+    function updateCurrentSceneHighlight() {
+        const block = getCurrentBlock();
+        if (!block) return;
+
+        const editor = document.getElementById('screenplayEditor');
+        const blocks = editor.querySelectorAll('[data-element-type]');
+
+        // Find which scene the cursor is in
+        let sceneIndex = -1;
+        for (const b of blocks) {
+            if (b.dataset.elementType === 'scene-heading') {
+                sceneIndex++;
+            }
+            if (b === block || b.contains(block)) {
+                break;
+            }
+        }
+
+        if (sceneIndex !== currentSceneIndex) {
+            currentSceneIndex = sceneIndex;
+
+            // Update highlight in nav
+            const navItems = document.querySelectorAll('.scene-nav-item');
+            navItems.forEach((item, i) => {
+                item.classList.toggle('current', i === currentSceneIndex);
+            });
+
+            // Scroll nav to show current scene
+            const currentItem = document.querySelector('.scene-nav-item.current');
+            if (currentItem) {
+                currentItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
     }
 
     function toggleSceneNavigator() {
         const nav = document.getElementById('sceneNavigator');
-        nav.style.display = nav.style.display === 'none' ? 'block' : 'none';
+        const isVisible = nav.style.display !== 'none';
+        nav.style.display = isVisible ? 'none' : 'block';
+
+        if (!isVisible) {
+            // Update when opening
+            updateSceneNavigator();
+            updateCurrentSceneHighlight();
+        }
     }
 
-    function scrollToScene(num) {
+    function scrollToScene(index) {
         const editor = document.getElementById('screenplayEditor');
-        const headings = editor.querySelectorAll('.sp-scene-heading');
-        if (headings[num - 1]) {
-            headings[num - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const headings = editor.querySelectorAll('[data-element-type="scene-heading"]');
+        if (headings[index]) {
+            headings[index].scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // Place cursor at the scene heading
+            setCursorToBlock(headings[index]);
+            currentSceneIndex = index;
+
+            // Update nav highlight
+            const navItems = document.querySelectorAll('.scene-nav-item');
+            navItems.forEach((item, i) => {
+                item.classList.toggle('current', i === index);
+            });
         }
     }
 
@@ -3737,6 +3941,7 @@
                             <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd> Save</div>
                             <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>Z</kbd> Undo</div>
                             <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> Redo</div>
+                            <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> + <kbd>O</kbd> Scene Navigator</div>
                             <div class="shortcut-item"><kbd>Ctrl/Cmd</kbd> + <kbd>/</kbd> This help</div>
                             <div class="shortcut-item"><kbd>Esc</kbd> Close/Cancel</div>
                         </div>
