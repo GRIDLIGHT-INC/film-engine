@@ -2656,9 +2656,11 @@
                         <label>Style Notes (Optional)</label>
                         <textarea id="convertStyleNotes" rows="2" placeholder="e.g., Film noir style, sparse dialogue, visual storytelling..."></textarea>
                     </div>
+                    <div class="convert-estimate" id="convertEstimate" style="display:none;font-size:11px;color:var(--text-muted);margin-bottom:12px;"></div>
                     <div class="btn-row">
                         <button class="btn btn-primary" onclick="detectChapters()">Detect Chapters</button>
                         <button class="btn btn-secondary" onclick="startConversion()">Convert Selected</button>
+                        <button class="btn btn-outline" onclick="convertFullDocument()">Convert Full Document</button>
                     </div>
                 </div>
 
@@ -2668,7 +2670,9 @@
                         <div class="convert-progress-bar">
                             <div class="convert-progress-fill" id="convertProgressFill"></div>
                         </div>
-                        <div class="convert-progress-status" id="convertProgressStatus">0 / 0 chapters</div>
+                        <div class="convert-progress-status" id="convertProgressStatus">0 / 0 chunks</div>
+                        <div class="convert-progress-eta" id="convertProgressETA" style="font-size:11px;color:var(--text-muted);margin-top:8px;"></div>
+                        <button class="btn btn-outline btn-sm" onclick="cancelConversion()" style="margin-top:16px;">Cancel</button>
                     </div>
                 </div>
 
@@ -6848,6 +6852,10 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
     // ══════════════════════════════════════════════════════════════
     let detectedChapters = [];
     let conversionResults = [];
+    let conversionCancelled = false;
+    let currentAbortController = null;
+    const MAX_CHUNK_SIZE = 8000;
+    const CONTEXT_OVERLAP = 500;
 
     function openTextConvertModal() {
         document.getElementById('textConvertModal').classList.add('open');
@@ -6878,9 +6886,22 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
         reader.onload = (e) => {
             document.getElementById('convertSourceText').value = e.target.result;
             detectChapters();
+            updateConversionEstimate();
         };
         reader.readAsText(file);
     }
+
+    // FILM-119: Update estimate when text changes
+    document.addEventListener('DOMContentLoaded', () => {
+        const sourceText = document.getElementById('convertSourceText');
+        if (sourceText) {
+            let estimateTimer;
+            sourceText.addEventListener('input', () => {
+                clearTimeout(estimateTimer);
+                estimateTimer = setTimeout(updateConversionEstimate, 500);
+            });
+        }
+    });
 
     function detectChapters() {
         const text = document.getElementById('convertSourceText').value;
@@ -6986,6 +7007,187 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
         renderChaptersList();
     }
 
+    // FILM-119: Chunk text at sentence boundaries
+    function chunkText(text, maxSize = MAX_CHUNK_SIZE) {
+        if (text.length <= maxSize) {
+            return [{ title: 'Full Text', content: text }];
+        }
+
+        const chunks = [];
+        let remaining = text;
+        let chunkNum = 1;
+
+        while (remaining.length > 0) {
+            if (remaining.length <= maxSize) {
+                chunks.push({ title: `Chunk ${chunkNum}`, content: remaining });
+                break;
+            }
+
+            // Find a good break point (sentence end) near maxSize
+            let breakPoint = maxSize;
+            const searchStart = Math.max(0, maxSize - 500);
+            const searchText = remaining.slice(searchStart, maxSize + 200);
+
+            // Look for sentence endings
+            const sentenceEnd = searchText.lastIndexOf('. ');
+            const questionEnd = searchText.lastIndexOf('? ');
+            const exclamEnd = searchText.lastIndexOf('! ');
+            const paragraphEnd = searchText.lastIndexOf('\n\n');
+
+            const bestEnd = Math.max(sentenceEnd, questionEnd, exclamEnd, paragraphEnd);
+            if (bestEnd > 0) {
+                breakPoint = searchStart + bestEnd + 2;
+            }
+
+            chunks.push({
+                title: `Chunk ${chunkNum}`,
+                content: remaining.slice(0, breakPoint).trim()
+            });
+
+            remaining = remaining.slice(breakPoint).trim();
+            chunkNum++;
+        }
+
+        return chunks;
+    }
+
+    // FILM-119: Calculate and display estimated time
+    function updateConversionEstimate() {
+        const text = document.getElementById('convertSourceText').value;
+        const estimateEl = document.getElementById('convertEstimate');
+
+        if (!text.trim()) {
+            estimateEl.style.display = 'none';
+            return;
+        }
+
+        const textLength = text.length;
+        const chunkCount = Math.ceil(textLength / MAX_CHUNK_SIZE);
+        const estimatedSeconds = chunkCount * 15; // ~15 sec per chunk
+
+        estimateEl.style.display = 'block';
+        estimateEl.textContent = `Full document: ${textLength.toLocaleString()} chars (~${chunkCount} chunk${chunkCount !== 1 ? 's' : ''}, ~${Math.ceil(estimatedSeconds / 60)} min)`;
+    }
+
+    // FILM-119: Convert full document with chunking
+    async function convertFullDocument() {
+        const text = document.getElementById('convertSourceText').value.trim();
+        if (!text) {
+            alert('Please enter text first');
+            return;
+        }
+
+        if (!state.currentProject) {
+            alert('Please select a project first');
+            return;
+        }
+
+        const styleNotes = document.getElementById('convertStyleNotes').value.trim();
+        const chunks = chunkText(text);
+
+        // Show progress UI
+        document.getElementById('convertStep1').style.display = 'none';
+        document.getElementById('convertStep2').style.display = 'block';
+
+        conversionResults = [];
+        conversionCancelled = false;
+        const total = chunks.length;
+        const startTime = Date.now();
+        let previousContext = '';
+
+        for (let i = 0; i < chunks.length; i++) {
+            if (conversionCancelled) {
+                document.getElementById('convertProgressLabel').textContent = 'Cancelled';
+                break;
+            }
+
+            const chunk = chunks[i];
+
+            // Update progress
+            document.getElementById('convertProgressLabel').textContent = `Converting ${chunk.title}...`;
+            document.getElementById('convertProgressFill').style.width = `${((i) / total) * 100}%`;
+            document.getElementById('convertProgressStatus').textContent = `${i} / ${total} chunks`;
+
+            // Estimate remaining time
+            if (i > 0) {
+                const elapsed = (Date.now() - startTime) / 1000;
+                const avgPerChunk = elapsed / i;
+                const remaining = Math.ceil(avgPerChunk * (total - i));
+                document.getElementById('convertProgressETA').textContent = `~${remaining}s remaining`;
+            }
+
+            try {
+                // Include context overlap from previous chunk
+                let textToConvert = chunk.content;
+                if (previousContext) {
+                    textToConvert = `[CONTEXT FROM PREVIOUS SECTION:]\n${previousContext}\n\n[NEW SECTION TO CONVERT:]\n${chunk.content}`;
+                }
+
+                currentAbortController = new AbortController();
+
+                const response = await fetch(`${API()}/projects/${state.currentProject.id}/text-to-screenplay/preview`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: textToConvert,
+                        chapter_title: chunk.title,
+                        style_notes: styleNotes
+                    }),
+                    signal: currentAbortController.signal
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // Store context overlap for next chunk
+                if (data.fountain_text) {
+                    previousContext = data.fountain_text.slice(-CONTEXT_OVERLAP);
+                }
+
+                conversionResults.push({
+                    chapter: chunk,
+                    success: true,
+                    fountain_text: data.fountain_text,
+                    scenes_detected: data.scenes_detected || [],
+                    characters_detected: data.characters_detected || [],
+                    validation: data.validation
+                });
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    break;
+                }
+                conversionResults.push({
+                    chapter: chunk,
+                    success: false,
+                    error: error.message
+                });
+            }
+
+            currentAbortController = null;
+        }
+
+        // Update final progress
+        if (!conversionCancelled) {
+            document.getElementById('convertProgressFill').style.width = '100%';
+            document.getElementById('convertProgressStatus').textContent = `${total} / ${total} chunks - Complete!`;
+            document.getElementById('convertProgressETA').textContent = '';
+        }
+
+        // Show results after brief delay
+        setTimeout(showConversionResults, 500);
+    }
+
+    // FILM-119: Cancel conversion
+    function cancelConversion() {
+        conversionCancelled = true;
+        if (currentAbortController) {
+            currentAbortController.abort();
+        }
+    }
+
     async function startConversion() {
         const selectedChapters = detectedChapters.filter(ch => ch.selected);
         if (selectedChapters.length === 0) {
@@ -7005,46 +7207,104 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
         document.getElementById('convertStep2').style.display = 'block';
 
         conversionResults = [];
+        conversionCancelled = false;
         const total = selectedChapters.length;
+        const startTime = Date.now();
+        let previousContext = '';
 
         for (let i = 0; i < selectedChapters.length; i++) {
+            if (conversionCancelled) {
+                document.getElementById('convertProgressLabel').textContent = 'Cancelled';
+                break;
+            }
+
             const chapter = selectedChapters[i];
 
-            // Update progress
-            document.getElementById('convertProgressLabel').textContent = `Converting: ${chapter.title}`;
-            document.getElementById('convertProgressFill').style.width = `${((i) / total) * 100}%`;
-            document.getElementById('convertProgressStatus').textContent = `${i} / ${total} chapters`;
+            // FILM-119: Chunk large chapters
+            const chunks = chapter.content.length > MAX_CHUNK_SIZE
+                ? chunkText(chapter.content)
+                : [{ title: chapter.title, content: chapter.content }];
 
-            try {
-                const response = await api(`/projects/${state.currentProject.id}/text-to-screenplay/preview`, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        text: chapter.content,
-                        chapter_title: chapter.title,
-                        style_notes: styleNotes
-                    })
-                });
+            for (let j = 0; j < chunks.length; j++) {
+                if (conversionCancelled) break;
 
-                conversionResults.push({
-                    chapter: chapter,
-                    success: true,
-                    fountain_text: response.fountain_text,
-                    scenes_detected: response.scenes_detected || [],
-                    characters_detected: response.characters_detected || [],
-                    validation: response.validation
-                });
-            } catch (error) {
-                conversionResults.push({
-                    chapter: chapter,
-                    success: false,
-                    error: error.message
-                });
+                const chunk = chunks[j];
+                const label = chunks.length > 1
+                    ? `${chapter.title} (part ${j + 1}/${chunks.length})`
+                    : chapter.title;
+
+                // Update progress
+                document.getElementById('convertProgressLabel').textContent = `Converting: ${label}`;
+                document.getElementById('convertProgressFill').style.width = `${((i + j / chunks.length) / total) * 100}%`;
+                document.getElementById('convertProgressStatus').textContent = `${i} / ${total} chapters`;
+
+                // Estimate remaining time
+                if (i > 0 || j > 0) {
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    const progress = i + j / chunks.length;
+                    const avgPerUnit = elapsed / progress;
+                    const remaining = Math.ceil(avgPerUnit * (total - progress));
+                    document.getElementById('convertProgressETA').textContent = `~${remaining}s remaining`;
+                }
+
+                try {
+                    // Include context overlap from previous chunk
+                    let textToConvert = chunk.content;
+                    if (previousContext && j > 0) {
+                        textToConvert = `[CONTEXT:]\n${previousContext}\n\n[CONVERT:]\n${chunk.content}`;
+                    }
+
+                    currentAbortController = new AbortController();
+
+                    const response = await fetch(`${API()}/projects/${state.currentProject.id}/text-to-screenplay/preview`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text: textToConvert,
+                            chapter_title: label,
+                            style_notes: styleNotes
+                        }),
+                        signal: currentAbortController.signal
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data = await response.json();
+
+                    // Store context overlap
+                    if (data.fountain_text) {
+                        previousContext = data.fountain_text.slice(-CONTEXT_OVERLAP);
+                    }
+
+                    conversionResults.push({
+                        chapter: { ...chapter, title: label },
+                        success: true,
+                        fountain_text: data.fountain_text,
+                        scenes_detected: data.scenes_detected || [],
+                        characters_detected: data.characters_detected || [],
+                        validation: data.validation
+                    });
+                } catch (error) {
+                    if (error.name === 'AbortError') break;
+                    conversionResults.push({
+                        chapter: { ...chapter, title: label },
+                        success: false,
+                        error: error.message
+                    });
+                }
+
+                currentAbortController = null;
             }
         }
 
         // Update final progress
-        document.getElementById('convertProgressFill').style.width = '100%';
-        document.getElementById('convertProgressStatus').textContent = `${total} / ${total} chapters - Complete!`;
+        if (!conversionCancelled) {
+            document.getElementById('convertProgressFill').style.width = '100%';
+            document.getElementById('convertProgressStatus').textContent = `${total} / ${total} chapters - Complete!`;
+            document.getElementById('convertProgressETA').textContent = '';
+        }
 
         // Show results after brief delay
         setTimeout(showConversionResults, 500);
