@@ -926,6 +926,40 @@
             background: rgba(255, 255, 255, 0.5);
         }
 
+        /* FILM-107: Scene Number Gutter */
+        .screenplay-page [data-element-type="scene-heading"] {
+            position: relative;
+        }
+        .screenplay-page .scene-number-gutter {
+            position: absolute;
+            left: -1.4in;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 10pt;
+            color: #666;
+            width: 1.2in;
+            text-align: right;
+            padding-right: 8px;
+            cursor: default;
+            user-select: none;
+            font-family: 'Courier Prime', 'Courier New', monospace;
+        }
+        .screenplay-page .scene-number-gutter:hover {
+            color: #333;
+        }
+        .screenplay-page .scene-number-gutter.locked {
+            color: #e91e63;
+        }
+        .screenplay-page .scene-number-gutter.editing {
+            background: rgba(0, 0, 0, 0.05);
+            color: #000;
+            border: 1px solid #ccc;
+            border-radius: 2px;
+            padding: 1px 4px;
+            cursor: text;
+            outline: none;
+        }
+
         /* FILM-101: Auto-detect suggestion hint */
         .screenplay-page .has-suggestion {
             position: relative;
@@ -1386,6 +1420,9 @@
                         <button class="toolbar-btn" onclick="formatUnderline()" title="Underline (Ctrl+U)"><u>U</u></button>
                         <div class="toolbar-divider"></div>
                         <span id="currentSceneNum" style="font-size:11px;color:var(--text-muted);">Scene: —</span>
+                        <button class="toolbar-btn" id="lockSceneNumsBtn" onclick="toggleLockSceneNumbers()" title="Lock Scene Numbers">
+                            🔓
+                        </button>
                         <div class="toolbar-stats">
                             <span id="editorPageCount">Pages: 0</span>
                             <span id="editorWordCount">Words: 0</span>
@@ -2291,6 +2328,9 @@
     let undoTimer = null;
     let lastUndoTimestamp = 0;
 
+    // FILM-107: Scene numbering state
+    let sceneNumbersLocked = false;
+
     // FILM-102: Keyboard shortcuts
     const KEYBOARD_SHORTCUTS = {
         // Element type shortcuts (Ctrl/Cmd + number)
@@ -2389,6 +2429,8 @@
         editor.innerHTML = html;
         editorDirty = false;
         updateSceneNavigator(fountainText);
+        // FILM-107: Update scene numbers after loading
+        updateSceneNumbers();
         // FILM-105: Initialize undo stack with loaded content
         initUndoStack();
     }
@@ -2430,8 +2472,16 @@
 
             // Scene heading
             if (/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || trimmed.startsWith('.')) {
-                const headingText = trimmed.startsWith('.') ? trimmed.slice(1) : trimmed;
-                htmlParts.push(`<div class="sp-scene-heading" data-element-type="scene-heading">${escapeHtml(headingText)}</div>`);
+                let headingText = trimmed.startsWith('.') ? trimmed.slice(1) : trimmed;
+                // FILM-107: Extract scene number from #N# format
+                let sceneNum = '';
+                const sceneNumMatch = headingText.match(/\s+#([^#]+)#\s*$/);
+                if (sceneNumMatch) {
+                    sceneNum = sceneNumMatch[1];
+                    headingText = headingText.replace(/\s+#[^#]+#\s*$/, '');
+                }
+                const sceneNumAttr = sceneNum ? ` data-scene-number="${escapeHtml(sceneNum)}"` : '';
+                htmlParts.push(`<div class="sp-scene-heading" data-element-type="scene-heading"${sceneNumAttr}>${escapeHtml(headingText)}</div>`);
                 prevLineBlank = true;
                 inDialogue = false;
                 continue;
@@ -3619,11 +3669,20 @@
         const scenes = [];
         const blocks = editor.querySelectorAll('[data-element-type]');
         let currentScene = null;
-        let sceneNum = 0;
+        let autoSceneNum = 0;
 
         for (const block of blocks) {
             const type = block.dataset.elementType;
-            const text = block.innerText.trim();
+            // FILM-107: Get text excluding scene number gutter
+            let text = '';
+            for (const child of block.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    text += child.textContent;
+                } else if (child.nodeType === Node.ELEMENT_NODE && !child.classList.contains('scene-number-gutter')) {
+                    text += child.innerText || '';
+                }
+            }
+            text = text.trim();
 
             if (type === 'scene-heading') {
                 // Save previous scene
@@ -3631,7 +3690,9 @@
                     scenes.push(currentScene);
                 }
 
-                sceneNum++;
+                autoSceneNum++;
+                // FILM-107: Use data-scene-number if available, otherwise auto-calculate
+                const sceneNum = block.dataset.sceneNumber || String(autoSceneNum);
                 // Parse heading to extract location/time
                 let heading = text;
                 if (heading.length > 35) {
@@ -3667,6 +3728,10 @@
         sceneNavTimer = setTimeout(() => {
             updateSceneNavigator();
             updateCurrentSceneHighlight();
+            // FILM-107: Update scene numbers when content changes
+            if (!sceneNumbersLocked) {
+                updateSceneNumbers();
+            }
         }, SCENE_NAV_UPDATE_DELAY);
     }
 
@@ -3735,6 +3800,117 @@
         }
     }
 
+    // FILM-107: Scene numbering functions
+    function toggleLockSceneNumbers() {
+        sceneNumbersLocked = !sceneNumbersLocked;
+        const btn = document.getElementById('lockSceneNumsBtn');
+        if (btn) {
+            btn.textContent = sceneNumbersLocked ? '🔒' : '🔓';
+            btn.classList.toggle('active', sceneNumbersLocked);
+            btn.title = sceneNumbersLocked ? 'Unlock Scene Numbers' : 'Lock Scene Numbers';
+        }
+        // Update gutter display to show locked state
+        updateSceneNumberGutters();
+    }
+
+    function updateSceneNumbers() {
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        const sceneHeadings = editor.querySelectorAll('[data-element-type="scene-heading"]');
+        let autoNum = 0;
+
+        sceneHeadings.forEach(heading => {
+            autoNum++;
+
+            if (!sceneNumbersLocked) {
+                // When unlocked, auto-calculate sequential numbers
+                heading.dataset.sceneNumber = String(autoNum);
+            }
+            // When locked, preserve existing data-scene-number attributes
+
+            // Update the gutter display
+            updateSceneGutter(heading);
+        });
+    }
+
+    function updateSceneGutter(heading) {
+        // Remove existing gutter span if any
+        let gutter = heading.querySelector('.scene-number-gutter');
+        if (!gutter) {
+            gutter = document.createElement('span');
+            gutter.className = 'scene-number-gutter';
+            gutter.contentEditable = 'false';
+            heading.insertBefore(gutter, heading.firstChild);
+
+            // Double-click to edit scene number
+            gutter.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                startEditSceneNumber(heading, gutter);
+            });
+        }
+
+        const sceneNum = heading.dataset.sceneNumber || '';
+        gutter.textContent = sceneNum;
+        gutter.classList.toggle('locked', sceneNumbersLocked);
+    }
+
+    function updateSceneNumberGutters() {
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        const sceneHeadings = editor.querySelectorAll('[data-element-type="scene-heading"]');
+        sceneHeadings.forEach(heading => {
+            updateSceneGutter(heading);
+        });
+    }
+
+    function startEditSceneNumber(heading, gutter) {
+        // Make gutter editable
+        gutter.classList.add('editing');
+        gutter.contentEditable = 'true';
+        gutter.focus();
+
+        // Select all text
+        const range = document.createRange();
+        range.selectNodeContents(gutter);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        // Handle blur to save
+        const finishEdit = () => {
+            const newNum = gutter.textContent.trim();
+            if (newNum) {
+                heading.dataset.sceneNumber = newNum;
+                // Lock numbers when manually edited
+                if (!sceneNumbersLocked) {
+                    toggleLockSceneNumbers();
+                }
+            }
+            gutter.contentEditable = 'false';
+            gutter.classList.remove('editing');
+            gutter.classList.toggle('locked', sceneNumbersLocked);
+            gutter.removeEventListener('blur', finishEdit);
+            gutter.removeEventListener('keydown', handleEditKey);
+        };
+
+        const handleEditKey = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                gutter.blur();
+            } else if (e.key === 'Escape') {
+                // Restore original
+                gutter.textContent = heading.dataset.sceneNumber || '';
+                gutter.blur();
+            }
+        };
+
+        gutter.addEventListener('blur', finishEdit);
+        gutter.addEventListener('keydown', handleEditKey);
+    }
+
     async function saveScreenplay() {
         if (!state.currentProject) return;
         const editor = document.getElementById('screenplayEditor');
@@ -3801,7 +3977,13 @@
                 case 'scene-heading':
                     // Preserve original if already has prefix, otherwise force with .
                     const hasPrefix = /^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(text);
-                    lines.push('', hasPrefix ? text.toUpperCase() : '.' + text.toUpperCase());
+                    let headingLine = hasPrefix ? text.toUpperCase() : '.' + text.toUpperCase();
+                    // FILM-107: Add scene number in Fountain #N# format if present
+                    const sceneNumber = el.dataset && el.dataset.sceneNumber;
+                    if (sceneNumber) {
+                        headingLine += ' #' + sceneNumber + '#';
+                    }
+                    lines.push('', headingLine);
                     break;
                 case 'character':
                     lines.push('', text.toUpperCase());
@@ -3858,6 +4040,10 @@
             if (node.nodeType === Node.TEXT_NODE) {
                 result += node.textContent;
             } else if (node.nodeType === Node.ELEMENT_NODE) {
+                // FILM-107: Skip scene number gutter elements
+                if (node.classList && node.classList.contains('scene-number-gutter')) {
+                    return;
+                }
                 const tag = node.tagName.toLowerCase();
                 const isBold = tag === 'b' || tag === 'strong' || node.style.fontWeight === 'bold';
                 const isItalic = tag === 'i' || tag === 'em' || node.style.fontStyle === 'italic';
