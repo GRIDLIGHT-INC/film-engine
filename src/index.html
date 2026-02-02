@@ -1297,6 +1297,18 @@
         .ai-chat-close:hover {
             color: var(--text);
         }
+        .ai-analyze-btn {
+            padding: 4px 10px;
+            font-size: 11px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            cursor: pointer;
+        }
+        .ai-analyze-btn:hover {
+            background: var(--border);
+        }
         .ai-chat-messages {
             flex: 1;
             overflow-y: auto;
@@ -1498,6 +1510,118 @@
         }
         .screenplay-import-content.open {
             display: block;
+        }
+
+        /* FILM-116: Script Stats Section */
+        .script-stats-section {
+            margin-top: 12px;
+        }
+        .script-stats-toggle {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .script-stats-toggle:hover {
+            background: var(--surface-2);
+        }
+        .script-stats-summary {
+            margin-left: auto;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .script-stats-content {
+            display: none;
+            margin-top: 8px;
+            padding: 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+        }
+        .script-stats-content.open {
+            display: block;
+        }
+        .script-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .stat-item {
+            text-align: center;
+            padding: 8px;
+            background: var(--surface-2);
+            border-radius: var(--radius-sm);
+        }
+        .stat-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text);
+        }
+        .stat-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .script-stats-details {
+            font-size: 11px;
+            padding: 8px 0;
+            border-top: 1px solid var(--border);
+        }
+        .stats-detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+        }
+        .stats-detail-label {
+            color: var(--text-muted);
+        }
+        .stats-character-breakdown {
+            font-size: 11px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+        }
+        .stats-character-breakdown h5 {
+            font-size: 11px;
+            font-weight: 600;
+            margin: 0 0 6px 0;
+            color: var(--text-muted);
+        }
+        .character-stat-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 4px 0;
+        }
+        .character-stat-name {
+            width: 80px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .character-stat-fill {
+            flex: 1;
+            height: 6px;
+            background: var(--surface-2);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .character-stat-fill-inner {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 3px;
+        }
+        .character-stat-count {
+            width: 50px;
+            text-align: right;
+            color: var(--text-muted);
         }
 
         /* ══════════════════════════════════════════════════════════
@@ -1743,6 +1867,62 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- FILM-116: Script Stats Card -->
+                    <div class="script-stats-section">
+                        <div class="script-stats-toggle" onclick="toggleScriptStats()">
+                            <span id="statsToggleIcon">▶</span>
+                            <span>Script Statistics</span>
+                            <span class="script-stats-summary" id="scriptStatsSummary"></span>
+                        </div>
+                        <div class="script-stats-content" id="scriptStatsContent">
+                            <div class="script-stats-grid" id="scriptStatsGrid">
+                                <div class="stat-item">
+                                    <div class="stat-value" id="statTotalWords">—</div>
+                                    <div class="stat-label">Total Words</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value" id="statDialogueWords">—</div>
+                                    <div class="stat-label">Dialogue Words</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value" id="statActionWords">—</div>
+                                    <div class="stat-label">Action Words</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value" id="statDialoguePct">—</div>
+                                    <div class="stat-label">Dialogue %</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value" id="statSceneCount">—</div>
+                                    <div class="stat-label">Scenes</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value" id="statAvgSceneLen">—</div>
+                                    <div class="stat-label">Avg Scene (lines)</div>
+                                </div>
+                            </div>
+                            <div class="script-stats-details">
+                                <div class="stats-detail-row">
+                                    <span class="stats-detail-label">Scenes by INT/EXT:</span>
+                                    <span id="statIntExt">—</span>
+                                </div>
+                                <div class="stats-detail-row">
+                                    <span class="stats-detail-label">Scenes by Time:</span>
+                                    <span id="statTimeOfDay">—</span>
+                                </div>
+                                <div class="stats-detail-row">
+                                    <span class="stats-detail-label">Longest Scene:</span>
+                                    <span id="statLongestScene">—</span>
+                                </div>
+                                <div class="stats-detail-row">
+                                    <span class="stats-detail-label">Shortest Scene:</span>
+                                    <span id="statShortestScene">—</span>
+                                </div>
+                            </div>
+                            <div class="stats-character-breakdown" id="statsCharacterBreakdown"></div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Right Sidebar Panel - Script Versions -->
@@ -1761,6 +1941,7 @@
                             <option value="rewrite">Rewrite</option>
                             <option value="convert">Convert</option>
                         </select>
+                        <button class="ai-analyze-btn" onclick="runAIScriptAnalysis()" title="AI Script Analysis">Analyze</button>
                         <button class="ai-chat-close" onclick="toggleAIChat()" title="Close">×</button>
                     </div>
                     <div class="ai-chat-messages" id="aiChatMessages">
@@ -4510,7 +4691,29 @@
             if (!sceneNumbersLocked) {
                 updateSceneNumbers();
             }
+            // FILM-116: Update stats summary if stats panel is open
+            const statsContent = document.getElementById('scriptStatsContent');
+            if (statsContent && statsContent.classList.contains('open')) {
+                updateScriptStats();
+            } else {
+                // Just update summary line
+                updateScriptStatsSummary();
+            }
         }, SCENE_NAV_UPDATE_DELAY);
+    }
+
+    // FILM-116: Quick stats summary update without full recalculation
+    function updateScriptStatsSummary() {
+        const editor = document.getElementById('screenplayEditor');
+        const summary = document.getElementById('scriptStatsSummary');
+        if (!editor || !summary) return;
+
+        // Quick word count and scene count
+        const text = editor.innerText || '';
+        const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+        const sceneCount = (text.match(/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/gim) || []).length;
+
+        summary.textContent = wordCount > 0 ? `${wordCount.toLocaleString()} words · ${sceneCount} scenes` : '';
     }
 
     // Update current scene highlight based on cursor position
@@ -5426,6 +5629,261 @@
         const icon = document.getElementById('importToggleIcon');
         content.classList.toggle('open');
         icon.textContent = content.classList.contains('open') ? '▼' : '▶';
+    }
+
+    // FILM-116: Script Stats Functions
+    function toggleScriptStats() {
+        const content = document.getElementById('scriptStatsContent');
+        const icon = document.getElementById('statsToggleIcon');
+        content.classList.toggle('open');
+        icon.textContent = content.classList.contains('open') ? '▼' : '▶';
+        if (content.classList.contains('open')) {
+            updateScriptStats();
+        }
+    }
+
+    function updateScriptStats() {
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        // Get Fountain text and parse it
+        const fountainText = editorToFountain(editor);
+        if (!fountainText.trim()) {
+            document.getElementById('scriptStatsSummary').textContent = 'No content';
+            return;
+        }
+
+        // Use the FountainParser's analyzeScreenplay function
+        // Since the parser is isomorphic, we can use it in browser if loaded
+        let parsed, stats;
+        if (typeof FountainParser !== 'undefined') {
+            parsed = FountainParser.parseFountain(fountainText);
+            stats = FountainParser.analyzeScreenplay(parsed);
+        } else {
+            // Fallback: basic local analysis
+            stats = analyzeScreenplayLocal(fountainText);
+        }
+
+        // Update summary in toggle bar
+        document.getElementById('scriptStatsSummary').textContent =
+            `${stats.total_words.toLocaleString()} words · ${stats.scene_count} scenes`;
+
+        // Update main stats grid
+        document.getElementById('statTotalWords').textContent = stats.total_words.toLocaleString();
+        document.getElementById('statDialogueWords').textContent = stats.dialogue_words.toLocaleString();
+        document.getElementById('statActionWords').textContent = stats.action_words.toLocaleString();
+        document.getElementById('statDialoguePct').textContent = stats.dialogue_percentage + '%';
+        document.getElementById('statSceneCount').textContent = stats.scene_count;
+        document.getElementById('statAvgSceneLen').textContent = stats.avg_scene_length;
+
+        // Update detail rows
+        const intExtText = Object.entries(stats.scenes_by_int_ext || {})
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(', ') || '—';
+        document.getElementById('statIntExt').textContent = intExtText;
+
+        const timeText = Object.entries(stats.scenes_by_time || {})
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(', ') || '—';
+        document.getElementById('statTimeOfDay').textContent = timeText;
+
+        document.getElementById('statLongestScene').textContent = stats.longest_scene
+            ? `Scene #${stats.longest_scene.scene_number} (${stats.longest_scene.length} lines)`
+            : '—';
+        document.getElementById('statShortestScene').textContent = stats.shortest_scene
+            ? `Scene #${stats.shortest_scene.scene_number} (${stats.shortest_scene.length} lines)`
+            : '—';
+
+        // Character breakdown
+        const charBreakdown = document.getElementById('statsCharacterBreakdown');
+        const charEntries = Object.entries(stats.character_dialogue || {})
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10);
+
+        if (charEntries.length > 0) {
+            const maxWords = charEntries[0][1];
+            charBreakdown.innerHTML = `
+                <h5>Dialogue by Character</h5>
+                ${charEntries.map(([name, words]) => `
+                    <div class="character-stat-bar">
+                        <span class="character-stat-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+                        <div class="character-stat-fill">
+                            <div class="character-stat-fill-inner" style="width: ${Math.round(words / maxWords * 100)}%"></div>
+                        </div>
+                        <span class="character-stat-count">${words} wds</span>
+                    </div>
+                `).join('')}
+            `;
+        } else {
+            charBreakdown.innerHTML = '';
+        }
+    }
+
+    // Fallback local analysis if FountainParser not available
+    function analyzeScreenplayLocal(text) {
+        const lines = text.split('\n');
+        let totalWords = 0;
+        let dialogueWords = 0;
+        let actionWords = 0;
+        let sceneCount = 0;
+        const sceneLengths = [];
+        let currentSceneLength = 0;
+        let inDialogue = false;
+        const characterDialogue = {};
+        let currentCharacter = null;
+        const scenesByIntExt = {};
+        const scenesByTime = {};
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            const words = trimmed.split(/\s+/).length;
+            totalWords += words;
+
+            // Scene heading detection
+            if (/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || trimmed.startsWith('.')) {
+                if (currentSceneLength > 0) {
+                    sceneLengths.push({ scene_number: String(sceneCount), length: currentSceneLength });
+                }
+                sceneCount++;
+                currentSceneLength = 1;
+                inDialogue = false;
+
+                // Track INT/EXT
+                const intExtMatch = trimmed.match(/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)/i);
+                if (intExtMatch) {
+                    const key = intExtMatch[1].toUpperCase();
+                    scenesByIntExt[key] = (scenesByIntExt[key] || 0) + 1;
+                }
+
+                // Track time of day
+                const timeMatch = trimmed.match(/[-–—]\s*(DAY|NIGHT|MORNING|EVENING|DUSK|DAWN|CONTINUOUS|LATER)/i);
+                if (timeMatch) {
+                    const key = timeMatch[1].toUpperCase();
+                    scenesByTime[key] = (scenesByTime[key] || 0) + 1;
+                }
+            }
+            // Character detection (all caps, not too long)
+            else if (/^[A-Z][A-Z0-9\s\-'\.]+(\s*\([^)]+\))?$/.test(trimmed) && trimmed.length < 40) {
+                currentCharacter = trimmed.replace(/\s*\([^)]+\)\s*$/, '');
+                if (!characterDialogue[currentCharacter]) {
+                    characterDialogue[currentCharacter] = 0;
+                }
+                inDialogue = true;
+                currentSceneLength++;
+            }
+            // Dialogue (after character)
+            else if (inDialogue && !trimmed.startsWith('(')) {
+                dialogueWords += words;
+                if (currentCharacter) {
+                    characterDialogue[currentCharacter] += words;
+                }
+                currentSceneLength++;
+            }
+            // Action
+            else {
+                actionWords += words;
+                inDialogue = false;
+                currentSceneLength++;
+            }
+        }
+
+        // Save final scene
+        if (currentSceneLength > 0) {
+            sceneLengths.push({ scene_number: String(sceneCount), length: currentSceneLength });
+        }
+
+        const avgSceneLength = sceneLengths.length > 0
+            ? Math.round(sceneLengths.reduce((sum, s) => sum + s.length, 0) / sceneLengths.length * 10) / 10
+            : 0;
+
+        const sortedScenes = [...sceneLengths].sort((a, b) => b.length - a.length);
+
+        return {
+            total_words: totalWords,
+            dialogue_words: dialogueWords,
+            action_words: actionWords,
+            dialogue_percentage: totalWords > 0 ? Math.round(dialogueWords / totalWords * 100) : 0,
+            scene_count: sceneCount,
+            scenes_by_int_ext: scenesByIntExt,
+            scenes_by_time: scenesByTime,
+            avg_scene_length: avgSceneLength,
+            longest_scene: sortedScenes[0] || null,
+            shortest_scene: sortedScenes[sortedScenes.length - 1] || null,
+            character_dialogue: characterDialogue
+        };
+    }
+
+    // FILM-116: AI Script Analysis
+    async function runAIScriptAnalysis() {
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        const fountainText = editorToFountain(editor);
+        if (!fountainText.trim()) {
+            alert('No screenplay content to analyze');
+            return;
+        }
+
+        // Add user message indicating analysis request
+        if (!state.aiChat) state.aiChat = [];
+        state.aiChat.push({ role: 'user', content: '[Requesting full script analysis...]' });
+        renderAIChatMessages();
+
+        // Open AI chat if not open
+        const panel = document.getElementById('aiChatPanel');
+        if (!panel.classList.contains('open')) {
+            toggleAIChat();
+        }
+
+        // Scroll to bottom
+        const messages = document.getElementById('aiChatMessages');
+        messages.scrollTop = messages.scrollHeight;
+
+        try {
+            if (!state.currentProject) {
+                throw new Error('No project selected');
+            }
+
+            // Send analysis request to AI endpoint
+            const response = await api(`/projects/${state.currentProject.id}/screenplay-ai`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    mode: 'brainstorm',
+                    message: `Please analyze this screenplay and provide a comprehensive assessment including:
+
+1. **Pacing Assessment** - Is the story moving at an appropriate pace? Are there slow sections or rushed moments?
+2. **Dialogue-to-Action Ratio** - Is there a good balance between dialogue and visual storytelling?
+3. **Character Voice Distinctiveness** - Do characters have unique voices? Can you tell them apart by their dialogue?
+4. **Scene Length Distribution** - Are scene lengths varied appropriately? Any scenes that feel too long or too short?
+5. **Potential Plot Holes** - Any logical inconsistencies or loose threads?
+6. **Formatting Suggestions** - Any screenplay formatting improvements?
+
+Here is the full screenplay:
+
+${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
+                    conversation_history: []
+                })
+            });
+
+            // Add AI response as structured analysis
+            state.aiChat.push({
+                role: 'assistant',
+                content: response.content,
+                isAnalysis: true
+            });
+
+            saveAIChatHistory();
+            renderAIChatMessages();
+
+        } catch (error) {
+            state.aiChat.push({
+                role: 'assistant',
+                content: `Analysis failed: ${error.message}. The AI endpoint may not be configured.`
+            });
+            renderAIChatMessages();
+        }
     }
 
     function importToEditor() {
