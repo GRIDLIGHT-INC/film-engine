@@ -960,6 +960,38 @@
             outline: none;
         }
 
+        /* FILM-108: Page Break Indicators */
+        .screenplay-page .page-break-indicator {
+            position: relative;
+            width: 100%;
+            height: 24px;
+            margin: 8px 0;
+            pointer-events: none;
+            user-select: none;
+        }
+        .screenplay-page .page-break-indicator::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            border-top: 1px dashed #ccc;
+        }
+        .screenplay-page .page-break-indicator::after {
+            content: attr(data-page-label);
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: #fff;
+            padding: 0 12px;
+            font-size: 9px;
+            color: #999;
+            font-family: system-ui, sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
         /* FILM-101: Auto-detect suggestion hint */
         .screenplay-page .has-suggestion {
             position: relative;
@@ -3613,15 +3645,141 @@
         block.focus();
     }
 
+    // FILM-108: Calculate page count based on element types
+    function calculatePageEstimate(editor) {
+        if (!editor) return { lines: 0, pages: 0 };
+
+        const blocks = editor.querySelectorAll('[data-element-type]');
+        let totalLines = 0;
+
+        blocks.forEach(block => {
+            const type = block.dataset.elementType;
+            // Get text excluding gutter elements
+            let text = '';
+            for (const child of block.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    text += child.textContent;
+                } else if (child.nodeType === Node.ELEMENT_NODE &&
+                           !child.classList.contains('scene-number-gutter') &&
+                           !child.classList.contains('page-break-indicator')) {
+                    text += child.innerText || '';
+                }
+            }
+            const charCount = text.trim().length;
+
+            switch (type) {
+                case 'scene-heading':
+                    totalLines += 2; // heading + blank line
+                    break;
+                case 'action':
+                    totalLines += Math.ceil(charCount / 60) + 1; // wrapped lines + blank
+                    break;
+                case 'character':
+                    totalLines += 1;
+                    break;
+                case 'dialogue':
+                    totalLines += Math.ceil(charCount / 35); // narrower column
+                    break;
+                case 'parenthetical':
+                    totalLines += 1;
+                    break;
+                case 'transition':
+                    totalLines += 2; // transition + blank
+                    break;
+                case 'centered':
+                    totalLines += 2;
+                    break;
+                case 'dual-dialogue':
+                    totalLines += 1;
+                    break;
+                case 'lyrics':
+                    totalLines += Math.ceil(charCount / 50) + 1;
+                    break;
+                case 'note':
+                    totalLines += 1;
+                    break;
+                default:
+                    totalLines += Math.ceil(charCount / 60) + 1;
+            }
+        });
+
+        const pages = Math.max(1, Math.ceil(totalLines / 55));
+        return { lines: totalLines, pages };
+    }
+
     function updateEditorStats(pageCount, sceneCount) {
         const editor = document.getElementById('screenplayEditor');
         const text = editor.innerText || '';
         const words = text.trim().split(/\s+/).filter(w => w.length > 0).length;
-        const lines = text.split('\n').length;
-        const pages = pageCount || Math.ceil(lines / 55);
+
+        // FILM-108: Use proper page estimation
+        const estimate = calculatePageEstimate(editor);
+        const pages = pageCount || estimate.pages;
 
         document.getElementById('editorWordCount').textContent = `Words: ${words.toLocaleString()}`;
-        document.getElementById('editorPageCount').textContent = `Pages: ${pages}`;
+        document.getElementById('editorPageCount').textContent = `~${pages} pages (~${pages} min)`;
+
+        // FILM-108: Update page break indicators
+        updatePageBreakIndicators(editor);
+    }
+
+    // FILM-108: Render soft page break indicators
+    function updatePageBreakIndicators(editor) {
+        if (!editor) return;
+
+        // Remove existing page break indicators
+        const existing = editor.querySelectorAll('.page-break-indicator');
+        existing.forEach(el => el.remove());
+
+        const blocks = Array.from(editor.querySelectorAll('[data-element-type]'));
+        let currentLine = 0;
+        let pageNum = 1;
+
+        for (let i = 0; i < blocks.length; i++) {
+            const block = blocks[i];
+            const type = block.dataset.elementType;
+
+            // Get text excluding gutter elements
+            let text = '';
+            for (const child of block.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    text += child.textContent;
+                } else if (child.nodeType === Node.ELEMENT_NODE &&
+                           !child.classList.contains('scene-number-gutter')) {
+                    text += child.innerText || '';
+                }
+            }
+            const charCount = text.trim().length;
+
+            // Calculate lines for this element
+            let elementLines = 0;
+            switch (type) {
+                case 'scene-heading': elementLines = 2; break;
+                case 'action': elementLines = Math.ceil(charCount / 60) + 1; break;
+                case 'character': elementLines = 1; break;
+                case 'dialogue': elementLines = Math.ceil(charCount / 35); break;
+                case 'parenthetical': elementLines = 1; break;
+                case 'transition': elementLines = 2; break;
+                case 'centered': elementLines = 2; break;
+                case 'dual-dialogue': elementLines = 1; break;
+                case 'lyrics': elementLines = Math.ceil(charCount / 50) + 1; break;
+                case 'note': elementLines = 1; break;
+                default: elementLines = Math.ceil(charCount / 60) + 1;
+            }
+
+            currentLine += elementLines;
+
+            // Check if we crossed a page boundary
+            if (currentLine >= 55 * pageNum && i < blocks.length - 1) {
+                pageNum++;
+                // Insert page break indicator after this block
+                const indicator = document.createElement('div');
+                indicator.className = 'page-break-indicator';
+                indicator.dataset.pageLabel = `Page ${pageNum}`;
+                indicator.contentEditable = 'false';
+                block.after(indicator);
+            }
+        }
     }
 
     // FILM-106: Enhanced scene navigator
@@ -3638,10 +3796,10 @@
         const editor = document.getElementById('screenplayEditor');
         const scenes = parseSceneOutline(editor);
 
-        // Update stats
-        const pageCount = Math.ceil((editor?.innerText || '').split('\n').length / 55);
+        // Update stats (FILM-108: Use proper page estimation)
+        const estimate = calculatePageEstimate(editor);
         if (navStats) {
-            navStats.innerHTML = `<span>${scenes.length} scene${scenes.length !== 1 ? 's' : ''}</span> · <span>~${pageCount} page${pageCount !== 1 ? 's' : ''}</span>`;
+            navStats.innerHTML = `<span>${scenes.length} scene${scenes.length !== 1 ? 's' : ''}</span> · <span>~${estimate.pages} page${estimate.pages !== 1 ? 's' : ''}</span>`;
         }
 
         // Render scene list
