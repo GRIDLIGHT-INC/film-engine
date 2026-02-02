@@ -1251,6 +1251,146 @@
             background: rgba(233, 30, 99, 0.2);
         }
 
+        /* FILM-111: AI Chat Panel */
+        .ai-chat-panel {
+            width: 320px;
+            flex-shrink: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            display: none;
+            flex-direction: column;
+            height: 100%;
+        }
+        .ai-chat-panel.visible {
+            display: flex;
+        }
+        .ai-chat-header {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ai-chat-header h4 {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 600;
+            flex: 1;
+        }
+        .ai-chat-mode-select {
+            font-size: 11px;
+            padding: 4px 8px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+        }
+        .ai-chat-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+        }
+        .ai-chat-close:hover {
+            color: var(--text);
+        }
+        .ai-chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .ai-chat-message {
+            max-width: 90%;
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .ai-chat-message.user {
+            align-self: flex-end;
+            background: var(--primary);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        .ai-chat-message.assistant {
+            align-self: flex-start;
+            background: var(--surface-2);
+            color: var(--text);
+            border-bottom-left-radius: 4px;
+        }
+        .ai-chat-message .screenplay-preview {
+            background: #fff;
+            color: #111;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+            font-family: 'Courier Prime', monospace;
+            font-size: 9px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .ai-chat-message .insert-btn {
+            margin-top: 8px;
+            font-size: 10px;
+            padding: 4px 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .ai-chat-message .insert-btn:hover {
+            opacity: 0.9;
+        }
+        .ai-chat-input-area {
+            padding: 12px;
+            border-top: 1px solid var(--border);
+        }
+        .ai-chat-input-area textarea {
+            width: 100%;
+            min-height: 60px;
+            max-height: 120px;
+            resize: vertical;
+            font-size: 12px;
+            padding: 8px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+        }
+        .ai-chat-input-area textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .ai-chat-input-area .send-row {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 8px;
+        }
+        .ai-chat-input-area .send-btn {
+            padding: 6px 16px;
+            background: var(--gradient);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .ai-chat-input-area .send-btn:hover {
+            opacity: 0.9;
+        }
+        .ai-chat-input-area .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         /* Import Section */
         .screenplay-import-section {
             margin-top: 16px;
@@ -1493,6 +1633,7 @@
                         <div class="toolbar-divider"></div>
                         <span id="saveStatusIndicator" class="save-status saved">Saved</span>
                         <div class="toolbar-divider"></div>
+                        <button class="toolbar-btn" id="aiChatToggle" onclick="toggleAIChat()" title="AI Assistant (Ctrl+Shift+A)">AI</button>
                         <button class="toolbar-btn" onclick="toggleShortcutHelp()" title="Keyboard Shortcuts (Ctrl+/)">?</button>
                     </div>
 
@@ -1526,11 +1667,35 @@
                     </div>
                 </div>
 
-                <!-- Right Sidebar Panel -->
+                <!-- Right Sidebar Panel - Script Versions -->
                 <div class="screenplay-sidebar-panel">
-                    <div class="section-label">AI Assistant</div>
-                    <p class="text-sm text-muted">Chat panel coming soon. Get suggestions for dialogue, scene descriptions, and more.</p>
-                    <div id="scriptVersions" style="margin-top:16px;"></div>
+                    <div class="section-label">Script Versions</div>
+                    <div id="scriptVersions"></div>
+                </div>
+
+                <!-- FILM-111: AI Chat Panel -->
+                <div class="ai-chat-panel" id="aiChatPanel">
+                    <div class="ai-chat-header">
+                        <h4>AI Assistant</h4>
+                        <select class="ai-chat-mode-select" id="aiChatMode">
+                            <option value="brainstorm">Brainstorm</option>
+                            <option value="write-scene">Write Scene</option>
+                            <option value="rewrite">Rewrite</option>
+                            <option value="convert">Convert</option>
+                        </select>
+                        <button class="ai-chat-close" onclick="toggleAIChat()" title="Close">×</button>
+                    </div>
+                    <div class="ai-chat-messages" id="aiChatMessages">
+                        <div class="ai-chat-message assistant">
+                            Hi! I can help you brainstorm ideas, write scenes, rewrite dialogue, or convert content to screenplay format. What would you like to work on?
+                        </div>
+                    </div>
+                    <div class="ai-chat-input-area">
+                        <textarea id="aiChatInput" placeholder="Ask me anything about your screenplay..." onkeydown="handleAIChatKeydown(event)"></textarea>
+                        <div class="send-row">
+                            <button class="send-btn" onclick="sendAIMessage()" id="aiSendBtn">Send</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -3468,6 +3633,13 @@
                 return;
             }
 
+            // FILM-111: Ctrl/Cmd + Shift + A for AI chat
+            if ((event.key === 'a' || event.key === 'A') && event.shiftKey) {
+                event.preventDefault();
+                toggleAIChat();
+                return;
+            }
+
             // Ctrl/Cmd + / or ? to toggle shortcut help
             if (event.key === '/' || event.key === '?') {
                 event.preventDefault();
@@ -4346,6 +4518,194 @@
 
         gutter.addEventListener('blur', finishEdit);
         gutter.addEventListener('keydown', handleEditKey);
+    }
+
+    // FILM-111: AI Chat Panel functions
+    function toggleAIChat() {
+        const panel = document.getElementById('aiChatPanel');
+        const btn = document.getElementById('aiChatToggle');
+        if (panel) {
+            const isVisible = panel.classList.toggle('visible');
+            if (btn) {
+                btn.classList.toggle('active', isVisible);
+            }
+            // Load chat history when opening
+            if (isVisible && state.currentProject) {
+                loadAIChatHistory();
+            }
+        }
+    }
+
+    function loadAIChatHistory() {
+        if (!state.currentProject) return;
+        const key = `aiChat_${state.currentProject.id}`;
+        const saved = localStorage.getItem(key);
+        if (saved) {
+            try {
+                state.aiChat = JSON.parse(saved);
+                renderAIChatMessages();
+            } catch (e) {
+                state.aiChat = [];
+            }
+        } else {
+            state.aiChat = [];
+        }
+    }
+
+    function saveAIChatHistory() {
+        if (!state.currentProject) return;
+        const key = `aiChat_${state.currentProject.id}`;
+        localStorage.setItem(key, JSON.stringify(state.aiChat || []));
+    }
+
+    function renderAIChatMessages() {
+        const container = document.getElementById('aiChatMessages');
+        if (!container) return;
+
+        // Keep the initial welcome message if no history
+        if (!state.aiChat || state.aiChat.length === 0) {
+            container.innerHTML = `
+                <div class="ai-chat-message assistant">
+                    Hi! I can help you brainstorm ideas, write scenes, rewrite dialogue, or convert content to screenplay format. What would you like to work on?
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = state.aiChat.map((msg, i) => {
+            const isScreenplay = msg.role === 'assistant' && msg.hasScreenplay;
+            return `
+                <div class="ai-chat-message ${msg.role}">
+                    ${escapeHtml(msg.content)}
+                    ${isScreenplay ? `
+                        <div class="screenplay-preview">${msg.screenplayHtml || ''}</div>
+                        <button class="insert-btn" onclick="insertAIContent(${i})">Insert into Editor</button>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+
+        // Scroll to bottom
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function handleAIChatKeydown(event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendAIMessage();
+        }
+    }
+
+    async function sendAIMessage() {
+        const input = document.getElementById('aiChatInput');
+        const sendBtn = document.getElementById('aiSendBtn');
+        const mode = document.getElementById('aiChatMode').value;
+        const message = input.value.trim();
+
+        if (!message) return;
+
+        // Add user message
+        if (!state.aiChat) state.aiChat = [];
+        state.aiChat.push({ role: 'user', content: message });
+
+        // Clear input and disable send
+        input.value = '';
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Sending...';
+
+        // Render user message immediately
+        renderAIChatMessages();
+
+        try {
+            // Get context from editor
+            const editor = document.getElementById('screenplayEditor');
+            const currentContent = editor ? editor.innerText.slice(0, 2000) : '';
+            const block = getCurrentBlock();
+            const currentElement = block ? block.innerText : '';
+
+            // Build prompt based on mode
+            let systemPrompt = '';
+            switch (mode) {
+                case 'brainstorm':
+                    systemPrompt = 'You are a creative writing assistant helping brainstorm screenplay ideas. Be concise and creative.';
+                    break;
+                case 'write-scene':
+                    systemPrompt = 'You are a screenplay writer. Write scenes in proper Fountain format. Include scene headings, action, character names, and dialogue.';
+                    break;
+                case 'rewrite':
+                    systemPrompt = 'You are a screenplay editor. Rewrite the provided content to improve dialogue, pacing, or clarity while maintaining the original intent.';
+                    break;
+                case 'convert':
+                    systemPrompt = 'You are a screenplay formatter. Convert the provided text into proper Fountain screenplay format.';
+                    break;
+            }
+
+            // Call AI API
+            const response = await api('/ai/chat', {
+                method: 'POST',
+                body: JSON.stringify({
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: `Current screenplay context:\n${currentContent}\n\nCurrent element:\n${currentElement}\n\nUser request: ${message}` }
+                    ],
+                    mode: mode
+                })
+            });
+
+            // Check if response contains screenplay content
+            const hasScreenplay = /^(INT\.|EXT\.|\.|\@|>)/m.test(response.content);
+            const screenplayHtml = hasScreenplay ? parseFountainToHTML(response.content) : '';
+
+            state.aiChat.push({
+                role: 'assistant',
+                content: response.content,
+                hasScreenplay: hasScreenplay,
+                screenplayHtml: screenplayHtml,
+                rawContent: response.content
+            });
+
+            saveAIChatHistory();
+            renderAIChatMessages();
+
+        } catch (error) {
+            // Add error message
+            state.aiChat.push({
+                role: 'assistant',
+                content: `Sorry, I encountered an error: ${error.message}. The AI endpoint may not be configured yet.`
+            });
+            renderAIChatMessages();
+        } finally {
+            sendBtn.disabled = false;
+            sendBtn.textContent = 'Send';
+        }
+    }
+
+    function insertAIContent(messageIndex) {
+        const msg = state.aiChat[messageIndex];
+        if (!msg || !msg.rawContent) return;
+
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        // Parse the raw content and append to editor
+        const html = parseFountainToHTML(msg.rawContent);
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+
+        // Get current cursor position or append at end
+        const block = getCurrentBlock();
+        if (block) {
+            // Insert after current block
+            block.after(...temp.children);
+        } else {
+            // Append to editor
+            editor.innerHTML += html;
+        }
+
+        editorDirty = true;
+        triggerAutoSave();
+        triggerSceneNavUpdate();
+        setStatus('AI content inserted');
     }
 
     async function saveScreenplay() {
