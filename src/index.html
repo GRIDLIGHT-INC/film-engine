@@ -4574,13 +4574,25 @@
 
         container.innerHTML = state.aiChat.map((msg, i) => {
             const isScreenplay = msg.role === 'assistant' && msg.hasScreenplay;
+            // FILM-113: Different action buttons for valid Fountain content
+            let actionButtons = '';
+            if (isScreenplay) {
+                if (msg.isValidFountain) {
+                    actionButtons = `
+                        <div class="ai-action-buttons" style="display:flex;gap:6px;flex-wrap:wrap;">
+                            <button class="insert-btn" onclick="insertAIContentAtCursor(${i})">Insert at Cursor</button>
+                            <button class="insert-btn" onclick="appendAIContent(${i})">Append to Script</button>
+                            <button class="insert-btn" style="background:var(--warning);" onclick="replaceCurrentScene(${i})">Replace Scene</button>
+                        </div>
+                    `;
+                } else {
+                    actionButtons = `<button class="insert-btn" onclick="insertAIContent(${i})">Insert into Editor</button>`;
+                }
+            }
             return `
                 <div class="ai-chat-message ${msg.role}">
                     ${escapeHtml(msg.content)}
-                    ${isScreenplay ? `
-                        <div class="screenplay-preview">${msg.screenplayHtml || ''}</div>
-                        <button class="insert-btn" onclick="insertAIContent(${i})">Insert into Editor</button>
-                    ` : ''}
+                    ${isScreenplay ? `<div class="screenplay-preview">${msg.screenplayHtml || ''}</div>${actionButtons}` : ''}
                 </div>
             `;
         }).join('');
@@ -4638,8 +4650,8 @@
                 })
             });
 
-            // Check if response contains screenplay content
-            const hasScreenplay = /^(INT\.|EXT\.|\.|\@|>)/m.test(response.content);
+            // FILM-113: Check if response contains valid screenplay content
+            const hasScreenplay = response.is_valid_fountain || /^(INT\.|EXT\.|\.|\@|>)/m.test(response.content);
             const screenplayHtml = hasScreenplay ? parseFountainToHTML(response.content) : '';
 
             state.aiChat.push({
@@ -4647,7 +4659,9 @@
                 content: response.content,
                 hasScreenplay: hasScreenplay,
                 screenplayHtml: screenplayHtml,
-                rawContent: response.content
+                rawContent: response.content,
+                mode: mode,
+                isValidFountain: response.is_valid_fountain || false
             });
 
             saveAIChatHistory();
@@ -4666,32 +4680,130 @@
         }
     }
 
+    // FILM-113: Insert AI content at cursor position
     function insertAIContent(messageIndex) {
+        insertAIContentAtCursor(messageIndex);
+    }
+
+    function insertAIContentAtCursor(messageIndex) {
         const msg = state.aiChat[messageIndex];
         if (!msg || !msg.rawContent) return;
 
         const editor = document.getElementById('screenplayEditor');
         if (!editor) return;
 
-        // Parse the raw content and append to editor
+        // Parse the raw content
         const html = parseFountainToHTML(msg.rawContent);
         const temp = document.createElement('div');
         temp.innerHTML = html;
 
-        // Get current cursor position or append at end
+        // Get current cursor position
         const block = getCurrentBlock();
         if (block) {
             // Insert after current block
             block.after(...temp.children);
         } else {
-            // Append to editor
+            // Append to editor if no cursor position
             editor.innerHTML += html;
         }
 
         editorDirty = true;
         triggerAutoSave();
         triggerSceneNavUpdate();
-        setStatus('AI content inserted');
+        updateSceneNumbers();
+        setStatus('AI content inserted at cursor');
+    }
+
+    // FILM-113: Append AI content to end of script
+    function appendAIContent(messageIndex) {
+        const msg = state.aiChat[messageIndex];
+        if (!msg || !msg.rawContent) return;
+
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        // Parse and append to end
+        const html = parseFountainToHTML(msg.rawContent);
+        editor.innerHTML += html;
+
+        editorDirty = true;
+        triggerAutoSave();
+        triggerSceneNavUpdate();
+        updateSceneNumbers();
+        setStatus('AI content appended to script');
+
+        // Scroll to bottom
+        editor.scrollTop = editor.scrollHeight;
+    }
+
+    // FILM-113: Replace current scene with AI content
+    function replaceCurrentScene(messageIndex) {
+        const msg = state.aiChat[messageIndex];
+        if (!msg || !msg.rawContent) return;
+
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        const block = getCurrentBlock();
+        if (!block) {
+            setStatus('No current position - use Append instead');
+            return;
+        }
+
+        // Find the current scene boundaries
+        let sceneStart = block;
+        let sceneEnd = block;
+
+        // Walk back to find scene heading
+        let prev = block.previousElementSibling;
+        while (prev) {
+            if (prev.dataset?.elementType === 'scene-heading') {
+                sceneStart = prev;
+                break;
+            }
+            sceneStart = prev;
+            prev = prev.previousElementSibling;
+        }
+
+        // Walk forward to find next scene heading or end
+        let next = block.nextElementSibling;
+        while (next) {
+            if (next.dataset?.elementType === 'scene-heading') {
+                break;
+            }
+            sceneEnd = next;
+            next = next.nextElementSibling;
+        }
+
+        // Collect all blocks in current scene to remove
+        const blocksToRemove = [];
+        let current = sceneStart;
+        while (current && current !== next) {
+            blocksToRemove.push(current);
+            current = current.nextElementSibling;
+        }
+
+        // Parse new content
+        const html = parseFountainToHTML(msg.rawContent);
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+
+        // Insert new content before first block to remove
+        const insertBefore = blocksToRemove[0];
+        if (insertBefore) {
+            for (const newBlock of temp.children) {
+                insertBefore.before(newBlock.cloneNode(true));
+            }
+        }
+
+        // Remove old scene blocks
+        blocksToRemove.forEach(b => b.remove());
+
+        editorDirty = true;
+        triggerAutoSave();
+        triggerSceneNavUpdate();
+        updateSceneNumbers();
+        setStatus('Scene replaced with AI content');
     }
 
     async function saveScreenplay() {

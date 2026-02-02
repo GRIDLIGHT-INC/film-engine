@@ -24,22 +24,31 @@ Known Characters:
 Known Locations:
 {locations}`,
 
-    'write-scene': `You are a professional screenplay writer. Write scenes in proper Fountain screenplay format. Include:
-- Scene headings (INT./EXT. LOCATION - TIME)
-- Action lines (present tense, visual descriptions)
-- Character names (ALL CAPS)
-- Dialogue (natural, character-appropriate)
-- Parentheticals where needed
+    'write-scene': `You are a professional screenplay writer. Write scenes in proper Fountain screenplay format.
 
-Match the tone and style of the project. Write concise, visual, shootable scenes.
+FOUNTAIN FORMAT RULES:
+1. Scene headings: Start with INT. or EXT. followed by location and time (e.g., "INT. COFFEE SHOP - DAY")
+2. Action: Present tense, visual descriptions. No blank lines between consecutive action paragraphs.
+3. Character cues: Character names in ALL CAPS on their own line before dialogue
+4. Dialogue: Immediately follows character name. Natural, character-appropriate speech.
+5. Parentheticals: In (parentheses) between character name and dialogue for tone/direction
+6. Transitions: Optional, like "CUT TO:" or "FADE OUT." at end of scenes
+
+Write concise, visual, shootable scenes that match the project's tone and genre.
 
 PROJECT CONTEXT:
 Title: {title}
 Genre: {genre}
 Logline: {logline}
 
-Known Characters:
-{characters}`,
+CHARACTERS:
+{characters}
+
+LOCATIONS:
+{locations}
+
+STORY CONTINUITY (recent scenes):
+{recent_scenes}`,
 
     rewrite: `You are a screenplay editor and script doctor. Improve the provided content while maintaining the original intent. Focus on:
 - Sharper dialogue
@@ -124,6 +133,26 @@ async function processScreenplayAI(req, res, projectId) {
         ? locations.map(l => `- ${l.name}${l.description ? `: ${l.description.slice(0, 80)}` : ''}`).join('\n')
         : '(No locations defined yet)';
 
+    // FILM-113: Get recent scenes for story continuity (write-scene mode)
+    let recentScenes = '(No previous scenes)';
+    if (mode === 'write-scene') {
+        const scenes = db.prepare(`
+            SELECT scene_number, int_ext, location, time_of_day, description
+            FROM film_scenes
+            WHERE project_id = ?
+            ORDER BY scene_number DESC
+            LIMIT 3
+        `).all(projectId);
+
+        if (scenes.length > 0) {
+            recentScenes = scenes.reverse().map(s => {
+                const heading = `${s.int_ext || 'INT.'} ${s.location || 'LOCATION'} - ${s.time_of_day || 'DAY'}`;
+                const summary = s.description ? s.description.slice(0, 150) : '(No description)';
+                return `Scene ${s.scene_number}: ${heading}\n   ${summary}`;
+            }).join('\n\n');
+        }
+    }
+
     // Build system prompt
     let systemPrompt = SYSTEM_PROMPTS[mode] || SYSTEM_PROMPTS.brainstorm;
     systemPrompt = systemPrompt
@@ -131,7 +160,8 @@ async function processScreenplayAI(req, res, projectId) {
         .replace('{genre}', project.genre || 'Not specified')
         .replace('{logline}', project.logline || 'Not specified')
         .replace('{characters}', charList)
-        .replace('{locations}', locList);
+        .replace('{locations}', locList)
+        .replace('{recent_scenes}', recentScenes);
 
     // Build messages array
     const messages = [];
@@ -185,11 +215,30 @@ async function processScreenplayAI(req, res, projectId) {
         const aiData = await aiRes.json();
         const responseText = aiData.response || aiData.message || '';
 
+        // FILM-113: Validate Fountain content for write-scene mode
+        let isValidFountain = false;
+        let fountainValidation = {};
+        if (mode === 'write-scene') {
+            const hasSceneHeading = /^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/im.test(responseText);
+            const hasCharacter = /^[A-Z][A-Z\s\-'\.]+$/m.test(responseText);
+            const hasDialogue = responseText.includes('\n') && responseText.length > 50;
+
+            isValidFountain = hasSceneHeading && hasCharacter;
+            fountainValidation = {
+                has_scene_heading: hasSceneHeading,
+                has_character: hasCharacter,
+                has_dialogue: hasDialogue,
+                is_valid: isValidFountain
+            };
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             content: responseText,
             mode,
-            project_id: projectId
+            project_id: projectId,
+            is_valid_fountain: isValidFountain,
+            validation: fountainValidation
         }));
 
     } catch (err) {
