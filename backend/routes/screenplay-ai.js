@@ -50,18 +50,23 @@ LOCATIONS:
 STORY CONTINUITY (recent scenes):
 {recent_scenes}`,
 
-    rewrite: `You are a screenplay editor and script doctor. Improve the provided content while maintaining the original intent. Focus on:
-- Sharper dialogue
-- Clearer action descriptions
-- Better pacing
-- Stronger character voices
-- Visual storytelling
+    rewrite: `You are a screenplay editor and script doctor. Improve the provided content while maintaining the original intent.
 
-Return the rewritten content in proper Fountain format.
+REWRITE GUIDELINES:
+- Preserve character names exactly as given
+- Maintain scene heading format (INT./EXT. LOCATION - TIME)
+- Keep the same scene structure unless explicitly asked to restructure
+- Focus on: sharper dialogue, clearer action, better pacing, stronger character voices
+- Return ONLY the rewritten content in proper Fountain format
+- Do not add commentary or explanations before/after the screenplay content
+
+ORIGINAL CONTENT TO REWRITE:
+{original_content}
 
 PROJECT CONTEXT:
 Title: {title}
-Genre: {genre}`,
+Genre: {genre}
+Characters: {characters}`,
 
     convert: `You are a screenplay formatter. Convert the provided text into proper Fountain screenplay format. Include:
 - Correct scene headings
@@ -93,11 +98,18 @@ function handleScreenplayAI(req, res, urlParts) {
 
 async function processScreenplayAI(req, res, projectId) {
     const body = req.body || {};
-    const { mode = 'brainstorm', message, conversation_history = [] } = body;
+    const { mode = 'brainstorm', message, conversation_history = [], original_content = '' } = body;
 
     if (!message || typeof message !== 'string') {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Message is required' }));
+        return;
+    }
+
+    // FILM-114: For rewrite mode, original_content is required
+    if (mode === 'rewrite' && !original_content) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'original_content is required for rewrite mode' }));
         return;
     }
 
@@ -161,7 +173,8 @@ async function processScreenplayAI(req, res, projectId) {
         .replace('{logline}', project.logline || 'Not specified')
         .replace('{characters}', charList)
         .replace('{locations}', locList)
-        .replace('{recent_scenes}', recentScenes);
+        .replace('{recent_scenes}', recentScenes)
+        .replace('{original_content}', original_content || '(No content provided)');
 
     // Build messages array
     const messages = [];

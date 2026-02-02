@@ -1391,6 +1391,67 @@
             cursor: not-allowed;
         }
 
+        /* FILM-114: Diff view for rewrite mode */
+        .ai-diff-view {
+            font-family: 'Courier Prime', monospace;
+            font-size: 10px;
+            background: var(--surface-2);
+            border-radius: 4px;
+            padding: 8px;
+            margin-top: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .ai-diff-line {
+            padding: 2px 4px;
+            border-radius: 2px;
+            margin: 1px 0;
+        }
+        .ai-diff-line.removed {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            text-decoration: line-through;
+        }
+        .ai-diff-line.added {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+        }
+        .ai-diff-line.unchanged {
+            color: var(--text-muted);
+        }
+        .ai-rewrite-buttons {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .ai-rewrite-buttons .accept-btn {
+            background: var(--success);
+            color: white;
+        }
+        .ai-rewrite-buttons .reject-btn {
+            background: var(--error);
+            color: white;
+        }
+        .ai-selected-context {
+            font-size: 10px;
+            background: var(--surface-3);
+            border-radius: 4px;
+            padding: 6px 8px;
+            margin-bottom: 8px;
+            border-left: 2px solid var(--primary);
+        }
+        .ai-selected-context .label {
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .ai-selected-context .content {
+            color: var(--text);
+            font-family: 'Courier Prime', monospace;
+            white-space: pre-wrap;
+            max-height: 60px;
+            overflow-y: auto;
+        }
+
         /* Import Section */
         .screenplay-import-section {
             margin-top: 16px;
@@ -4574,6 +4635,23 @@
 
         container.innerHTML = state.aiChat.map((msg, i) => {
             const isScreenplay = msg.role === 'assistant' && msg.hasScreenplay;
+            const isRewrite = msg.role === 'assistant' && msg.mode === 'rewrite' && msg.originalContent;
+
+            // FILM-114: Special rendering for rewrite mode with diff view
+            if (isRewrite) {
+                const diffHtml = generateDiffView(msg.originalContent, msg.rawContent);
+                return `
+                    <div class="ai-chat-message ${msg.role}">
+                        <div style="margin-bottom:8px;">Rewrite suggestion:</div>
+                        <div class="ai-diff-view">${diffHtml}</div>
+                        <div class="ai-rewrite-buttons">
+                            <button class="insert-btn accept-btn" onclick="acceptRewrite(${i})">Accept Rewrite</button>
+                            <button class="insert-btn reject-btn" onclick="rejectRewrite(${i})">Reject</button>
+                        </div>
+                    </div>
+                `;
+            }
+
             // FILM-113: Different action buttons for valid Fountain content
             let actionButtons = '';
             if (isScreenplay) {
@@ -4640,13 +4718,26 @@
                 .filter(m => m.role === 'user' || m.role === 'assistant')
                 .map(m => ({ role: m.role, content: m.content }));
 
+            // FILM-114: Get selected text for rewrite mode
+            let originalContent = '';
+            let selectedBlocks = [];
+            if (mode === 'rewrite') {
+                const result = getSelectedEditorContent();
+                originalContent = result.content;
+                selectedBlocks = result.blocks;
+                if (!originalContent) {
+                    throw new Error('Please select text in the editor to rewrite');
+                }
+            }
+
             // Call AI API via backend
             const response = await api(`/projects/${state.currentProject.id}/screenplay-ai`, {
                 method: 'POST',
                 body: JSON.stringify({
                     mode: mode,
                     message: message,
-                    conversation_history: conversationHistory.slice(0, -1) // Exclude current message
+                    conversation_history: conversationHistory.slice(0, -1),
+                    original_content: originalContent
                 })
             });
 
@@ -4661,7 +4752,10 @@
                 screenplayHtml: screenplayHtml,
                 rawContent: response.content,
                 mode: mode,
-                isValidFountain: response.is_valid_fountain || false
+                isValidFountain: response.is_valid_fountain || false,
+                // FILM-114: Store original content and selected blocks for rewrite mode
+                originalContent: originalContent,
+                selectedBlocks: selectedBlocks
             });
 
             saveAIChatHistory();
@@ -4678,6 +4772,122 @@
             sendBtn.disabled = false;
             sendBtn.textContent = 'Send';
         }
+    }
+
+    // FILM-114: Get selected content from editor for rewrite mode
+    function getSelectedEditorContent() {
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) {
+            return { content: '', blocks: [] };
+        }
+
+        const range = selection.getRangeAt(0);
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor || !editor.contains(range.commonAncestorContainer)) {
+            return { content: '', blocks: [] };
+        }
+
+        // Get all blocks that intersect with the selection
+        const blocks = [];
+        const allBlocks = editor.querySelectorAll('[data-element-type]');
+        for (const block of allBlocks) {
+            if (range.intersectsNode(block)) {
+                blocks.push(block);
+            }
+        }
+
+        // Get text content
+        let content = '';
+        for (const block of blocks) {
+            let text = '';
+            for (const child of block.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    text += child.textContent;
+                } else if (child.nodeType === Node.ELEMENT_NODE &&
+                           !child.classList.contains('scene-number-gutter')) {
+                    text += child.innerText || '';
+                }
+            }
+            if (text.trim()) {
+                content += text.trim() + '\n';
+            }
+        }
+
+        return { content: content.trim(), blocks: blocks };
+    }
+
+    // FILM-114: Generate diff view comparing original and new content
+    function generateDiffView(original, rewritten) {
+        const origLines = original.split('\n').filter(l => l.trim());
+        const newLines = rewritten.split('\n').filter(l => l.trim());
+
+        let html = '';
+        const maxLen = Math.max(origLines.length, newLines.length);
+
+        // Simple line-by-line comparison
+        for (let i = 0; i < maxLen; i++) {
+            const origLine = origLines[i] || '';
+            const newLine = newLines[i] || '';
+
+            if (!origLine && newLine) {
+                html += `<div class="ai-diff-line added">+ ${escapeHtml(newLine)}</div>`;
+            } else if (origLine && !newLine) {
+                html += `<div class="ai-diff-line removed">- ${escapeHtml(origLine)}</div>`;
+            } else if (origLine !== newLine) {
+                html += `<div class="ai-diff-line removed">- ${escapeHtml(origLine)}</div>`;
+                html += `<div class="ai-diff-line added">+ ${escapeHtml(newLine)}</div>`;
+            } else {
+                html += `<div class="ai-diff-line unchanged">  ${escapeHtml(origLine)}</div>`;
+            }
+        }
+
+        return html;
+    }
+
+    // FILM-114: Accept rewrite - replace selected blocks with new content
+    function acceptRewrite(messageIndex) {
+        const msg = state.aiChat[messageIndex];
+        if (!msg || !msg.rawContent) return;
+
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        // Find the selected blocks again (or use stored reference)
+        const result = getSelectedEditorContent();
+        if (result.blocks.length === 0) {
+            // Fall back to inserting at current position
+            insertAIContentAtCursor(messageIndex);
+            return;
+        }
+
+        // Parse new content
+        const html = parseFountainToHTML(msg.rawContent);
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+
+        // Insert new content before first selected block
+        const firstBlock = result.blocks[0];
+        for (const newBlock of temp.children) {
+            firstBlock.before(newBlock.cloneNode(true));
+        }
+
+        // Remove old blocks
+        result.blocks.forEach(b => b.remove());
+
+        editorDirty = true;
+        triggerAutoSave();
+        triggerSceneNavUpdate();
+        updateSceneNumbers();
+        setStatus('Rewrite accepted');
+    }
+
+    // FILM-114: Reject rewrite - dismiss the suggestion
+    function rejectRewrite(messageIndex) {
+        setStatus('Rewrite rejected');
+        // Optionally remove the message from chat
+        // state.aiChat.splice(messageIndex, 1);
+        // saveAIChatHistory();
+        // renderAIChatMessages();
     }
 
     // FILM-113: Insert AI content at cursor position
