@@ -1979,6 +1979,175 @@
             color: var(--text-muted);
         }
 
+        /* FILM-126: Enhanced stats dashboard */
+        .stats-dashboard-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 8px;
+        }
+        .stats-tab {
+            padding: 4px 12px;
+            font-size: 11px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+            transition: background 0.2s;
+        }
+        .stats-tab:hover {
+            background: var(--surface-2);
+        }
+        .stats-tab.active {
+            background: var(--surface-2);
+            color: var(--text);
+            font-weight: 600;
+        }
+        .stats-tab-content {
+            display: none;
+        }
+        .stats-tab-content.active {
+            display: block;
+        }
+        .stats-donut-container {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 16px;
+        }
+        .stats-donut {
+            position: relative;
+            width: 100px;
+            height: 100px;
+        }
+        .stats-donut-ring {
+            fill: none;
+            stroke-width: 20;
+        }
+        .stats-donut-ring.bg {
+            stroke: var(--surface-2);
+        }
+        .stats-donut-ring.dialogue {
+            stroke: var(--accent);
+            stroke-linecap: round;
+            transform: rotate(-90deg);
+            transform-origin: center;
+            transition: stroke-dasharray 0.5s ease;
+        }
+        .stats-donut-label {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        .stats-donut-label-value {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .stats-donut-label-text {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+        .stats-donut-legend {
+            flex: 1;
+        }
+        .stats-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 11px;
+        }
+        .stats-legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        .stats-legend-dot.dialogue { background: var(--accent); }
+        .stats-legend-dot.action { background: var(--surface-3); }
+        .stats-scene-bars {
+            margin-top: 12px;
+        }
+        .stats-scene-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 4px 0;
+            font-size: 10px;
+        }
+        .stats-scene-bar-label {
+            width: 45px;
+            text-align: right;
+            color: var(--text-muted);
+        }
+        .stats-scene-bar-track {
+            flex: 1;
+            height: 8px;
+            background: var(--surface-2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .stats-scene-bar-fill {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        .stats-scene-bar-fill.short { background: #ff9800; }
+        .stats-scene-bar-fill.long { background: #f44336; }
+        .stats-scene-bar-value {
+            width: 40px;
+            font-size: 9px;
+            color: var(--text-muted);
+        }
+        .stats-ratio-bars {
+            margin-top: 12px;
+        }
+        .stats-ratio-bar {
+            margin-bottom: 12px;
+        }
+        .stats-ratio-bar-label {
+            font-size: 11px;
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .stats-ratio-bar-track {
+            height: 20px;
+            background: var(--surface-2);
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+        }
+        .stats-ratio-bar-segment {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: 600;
+            color: white;
+            transition: width 0.3s ease;
+        }
+        .stats-ratio-bar-segment:nth-child(1) { background: var(--accent); }
+        .stats-ratio-bar-segment:nth-child(2) { background: #2196f3; }
+        .stats-ratio-bar-segment:nth-child(3) { background: #4caf50; }
+        .stats-ratio-bar-segment:nth-child(4) { background: #ff9800; }
+        .stats-ratio-bar-segment:nth-child(5) { background: #9c27b0; }
+        .stats-runtime {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 8px;
+        }
+        .stats-runtime-note {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
         /* ══════════════════════════════════════════════════════════
            STATUS BAR
            ══════════════════════════════════════════════════════════ */
@@ -2235,51 +2404,107 @@
                             <span class="script-stats-summary" id="scriptStatsSummary"></span>
                         </div>
                         <div class="script-stats-content" id="scriptStatsContent">
-                            <div class="script-stats-grid" id="scriptStatsGrid">
-                                <div class="stat-item">
-                                    <div class="stat-value" id="statTotalWords">—</div>
-                                    <div class="stat-label">Total Words</div>
-                                </div>
-                                <div class="stat-item">
-                                    <div class="stat-value" id="statDialogueWords">—</div>
-                                    <div class="stat-label">Dialogue Words</div>
-                                </div>
-                                <div class="stat-item">
-                                    <div class="stat-value" id="statActionWords">—</div>
-                                    <div class="stat-label">Action Words</div>
-                                </div>
-                                <div class="stat-item">
-                                    <div class="stat-value" id="statDialoguePct">—</div>
-                                    <div class="stat-label">Dialogue %</div>
-                                </div>
-                                <div class="stat-item">
-                                    <div class="stat-value" id="statSceneCount">—</div>
-                                    <div class="stat-label">Scenes</div>
-                                </div>
-                                <div class="stat-item">
-                                    <div class="stat-value" id="statAvgSceneLen">—</div>
-                                    <div class="stat-label">Avg Scene (lines)</div>
+                            <!-- FILM-126: Tabbed stats dashboard -->
+                            <div class="stats-dashboard-tabs">
+                                <button class="stats-tab active" onclick="switchStatsTab('overview')">Overview</button>
+                                <button class="stats-tab" onclick="switchStatsTab('dialogue')">Dialogue</button>
+                                <button class="stats-tab" onclick="switchStatsTab('scenes')">Scenes</button>
+                                <button class="stats-tab" onclick="switchStatsTab('characters')">Characters</button>
+                            </div>
+
+                            <!-- Overview Tab -->
+                            <div class="stats-tab-content active" id="statsTabOverview">
+                                <div class="stats-runtime" id="statRuntime">Est. Runtime: —</div>
+                                <div class="stats-runtime-note">Based on ~1 minute per screenplay page</div>
+                                <div class="script-stats-grid" style="margin-top:12px;">
+                                    <div class="stat-item">
+                                        <div class="stat-value" id="statTotalWords">—</div>
+                                        <div class="stat-label">Words</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-value" id="statPageCount">—</div>
+                                        <div class="stat-label">Pages</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-value" id="statSceneCount">—</div>
+                                        <div class="stat-label">Scenes</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-value" id="statDialoguePct">—</div>
+                                        <div class="stat-label">Dialogue</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-value" id="statActionPct">—</div>
+                                        <div class="stat-label">Action</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-value" id="statAvgSceneLen">—</div>
+                                        <div class="stat-label">Avg Scene</div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="script-stats-details">
-                                <div class="stats-detail-row">
-                                    <span class="stats-detail-label">Scenes by INT/EXT:</span>
-                                    <span id="statIntExt">—</span>
-                                </div>
-                                <div class="stats-detail-row">
-                                    <span class="stats-detail-label">Scenes by Time:</span>
-                                    <span id="statTimeOfDay">—</span>
-                                </div>
-                                <div class="stats-detail-row">
-                                    <span class="stats-detail-label">Longest Scene:</span>
-                                    <span id="statLongestScene">—</span>
-                                </div>
-                                <div class="stats-detail-row">
-                                    <span class="stats-detail-label">Shortest Scene:</span>
-                                    <span id="statShortestScene">—</span>
+
+                            <!-- Dialogue Tab -->
+                            <div class="stats-tab-content" id="statsTabDialogue">
+                                <div class="stats-donut-container">
+                                    <div class="stats-donut">
+                                        <svg viewBox="0 0 100 100" width="100" height="100">
+                                            <circle class="stats-donut-ring bg" cx="50" cy="50" r="40"/>
+                                            <circle class="stats-donut-ring dialogue" id="donutDialogue" cx="50" cy="50" r="40"
+                                                stroke-dasharray="0 251.2"/>
+                                        </svg>
+                                        <div class="stats-donut-label">
+                                            <div class="stats-donut-label-value" id="donutPctLabel">—%</div>
+                                            <div class="stats-donut-label-text">Dialogue</div>
+                                        </div>
+                                    </div>
+                                    <div class="stats-donut-legend">
+                                        <div class="stats-legend-item">
+                                            <span class="stats-legend-dot dialogue"></span>
+                                            <span>Dialogue: <strong id="statDialogueWords">—</strong> words</span>
+                                        </div>
+                                        <div class="stats-legend-item">
+                                            <span class="stats-legend-dot action"></span>
+                                            <span>Action: <strong id="statActionWords">—</strong> words</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="stats-character-breakdown" id="statsCharacterBreakdown"></div>
+
+                            <!-- Scenes Tab -->
+                            <div class="stats-tab-content" id="statsTabScenes">
+                                <div class="script-stats-details" style="border:none;padding:0;">
+                                    <div class="stats-detail-row">
+                                        <span class="stats-detail-label">Longest Scene:</span>
+                                        <span id="statLongestScene">—</span>
+                                    </div>
+                                    <div class="stats-detail-row">
+                                        <span class="stats-detail-label">Shortest Scene:</span>
+                                        <span id="statShortestScene">—</span>
+                                    </div>
+                                </div>
+                                <div class="stats-ratio-bars">
+                                    <div class="stats-ratio-bar">
+                                        <div class="stats-ratio-bar-label">
+                                            <span>INT / EXT Distribution</span>
+                                        </div>
+                                        <div class="stats-ratio-bar-track" id="intExtBar"></div>
+                                    </div>
+                                    <div class="stats-ratio-bar">
+                                        <div class="stats-ratio-bar-label">
+                                            <span>Time of Day</span>
+                                        </div>
+                                        <div class="stats-ratio-bar-track" id="timeOfDayBar"></div>
+                                    </div>
+                                </div>
+                                <h5 style="margin:16px 0 8px;font-size:11px;color:var(--text-muted);">Scene Lengths</h5>
+                                <div class="stats-scene-bars" id="sceneLengthBars"></div>
+                            </div>
+
+                            <!-- Characters Tab -->
+                            <div class="stats-tab-content" id="statsTabCharacters">
+                                <div class="stats-character-breakdown" id="statsCharacterBreakdown"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -6377,6 +6602,17 @@
         }
     }
 
+    // FILM-126: Switch between stats dashboard tabs
+    function switchStatsTab(tabName) {
+        document.querySelectorAll('.stats-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.textContent.toLowerCase() === tabName);
+        });
+        document.querySelectorAll('.stats-tab-content').forEach(content => {
+            const contentId = content.id.replace('statsTab', '').toLowerCase();
+            content.classList.toggle('active', contentId === tabName);
+        });
+    }
+
     function updateScriptStats() {
         const editor = document.getElementById('screenplayEditor');
         if (!editor) return;
@@ -6399,29 +6635,55 @@
             stats = analyzeScreenplayLocal(fountainText);
         }
 
+        // FILM-126: Compute additional stats
+        const lineCount = fountainText.split('\n').length;
+        const pageCount = Math.ceil(lineCount / 55); // ~55 lines per page
+        const runtimeMinutes = pageCount; // ~1 min per page
+        const actionPct = stats.total_words > 0 ? Math.round((stats.action_words / stats.total_words) * 100) : 0;
+
         // Update summary in toggle bar
         document.getElementById('scriptStatsSummary').textContent =
             `${stats.total_words.toLocaleString()} words · ${stats.scene_count} scenes`;
 
-        // Update main stats grid
+        // Overview tab
         document.getElementById('statTotalWords').textContent = stats.total_words.toLocaleString();
-        document.getElementById('statDialogueWords').textContent = stats.dialogue_words.toLocaleString();
-        document.getElementById('statActionWords').textContent = stats.action_words.toLocaleString();
-        document.getElementById('statDialoguePct').textContent = stats.dialogue_percentage + '%';
         document.getElementById('statSceneCount').textContent = stats.scene_count;
-        document.getElementById('statAvgSceneLen').textContent = stats.avg_scene_length;
+        document.getElementById('statDialoguePct').textContent = stats.dialogue_percentage + '%';
+        document.getElementById('statAvgSceneLen').textContent = stats.avg_scene_length + ' ln';
 
-        // Update detail rows
-        const intExtText = Object.entries(stats.scenes_by_int_ext || {})
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(', ') || '—';
-        document.getElementById('statIntExt').textContent = intExtText;
+        // FILM-126: New overview stats
+        const pageCountEl = document.getElementById('statPageCount');
+        if (pageCountEl) pageCountEl.textContent = pageCount;
 
-        const timeText = Object.entries(stats.scenes_by_time || {})
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(', ') || '—';
-        document.getElementById('statTimeOfDay').textContent = timeText;
+        const actionPctEl = document.getElementById('statActionPct');
+        if (actionPctEl) actionPctEl.textContent = actionPct + '%';
 
+        const runtimeEl = document.getElementById('statRuntime');
+        if (runtimeEl) {
+            const hours = Math.floor(runtimeMinutes / 60);
+            const mins = runtimeMinutes % 60;
+            runtimeEl.textContent = `Est. Runtime: ${hours > 0 ? hours + 'h ' : ''}${mins}min`;
+        }
+
+        // Dialogue tab - donut chart
+        const donutCircle = document.getElementById('donutDialogue');
+        const donutLabel = document.getElementById('donutPctLabel');
+        if (donutCircle && donutLabel) {
+            const circumference = 2 * Math.PI * 40; // radius = 40
+            const dashLen = (stats.dialogue_percentage / 100) * circumference;
+            donutCircle.setAttribute('stroke-dasharray', `${dashLen} ${circumference}`);
+            donutLabel.textContent = stats.dialogue_percentage + '%';
+        }
+
+        // Update dialogue/action word counts (in both tabs)
+        document.querySelectorAll('#statDialogueWords').forEach(el => {
+            el.textContent = stats.dialogue_words.toLocaleString();
+        });
+        document.querySelectorAll('#statActionWords').forEach(el => {
+            el.textContent = stats.action_words.toLocaleString();
+        });
+
+        // Scenes tab
         document.getElementById('statLongestScene').textContent = stats.longest_scene
             ? `Scene #${stats.longest_scene.scene_number} (${stats.longest_scene.length} lines)`
             : '—';
@@ -6429,28 +6691,85 @@
             ? `Scene #${stats.shortest_scene.scene_number} (${stats.shortest_scene.length} lines)`
             : '—';
 
-        // Character breakdown
+        // FILM-126: INT/EXT ratio bar
+        const intExtBar = document.getElementById('intExtBar');
+        if (intExtBar && stats.scenes_by_int_ext) {
+            const total = Object.values(stats.scenes_by_int_ext).reduce((a, b) => a + b, 0);
+            intExtBar.innerHTML = Object.entries(stats.scenes_by_int_ext)
+                .map(([k, v]) => {
+                    const pct = total > 0 ? Math.round((v / total) * 100) : 0;
+                    return `<div class="stats-ratio-bar-segment" style="width:${pct}%">${k} (${v})</div>`;
+                }).join('');
+        }
+
+        // FILM-126: Time of day ratio bar
+        const timeOfDayBar = document.getElementById('timeOfDayBar');
+        if (timeOfDayBar && stats.scenes_by_time) {
+            const total = Object.values(stats.scenes_by_time).reduce((a, b) => a + b, 0);
+            timeOfDayBar.innerHTML = Object.entries(stats.scenes_by_time)
+                .map(([k, v]) => {
+                    const pct = total > 0 ? Math.round((v / total) * 100) : 0;
+                    return `<div class="stats-ratio-bar-segment" style="width:${pct}%">${k} (${v})</div>`;
+                }).join('');
+        }
+
+        // FILM-126: Scene length bars
+        const sceneLengthBars = document.getElementById('sceneLengthBars');
+        if (sceneLengthBars && stats.scene_lengths) {
+            const maxLen = Math.max(...stats.scene_lengths.map(s => s.length), 1);
+            const LINES_PER_PAGE = 55;
+            const shortThreshold = LINES_PER_PAGE * 0.5; // < 0.5 pages
+            const longThreshold = LINES_PER_PAGE * 5;     // > 5 pages
+
+            sceneLengthBars.innerHTML = stats.scene_lengths.slice(0, 20).map(s => {
+                const pages = (s.length / LINES_PER_PAGE).toFixed(1);
+                const pct = Math.round((s.length / maxLen) * 100);
+                const isShort = s.length < shortThreshold;
+                const isLong = s.length > longThreshold;
+                const fillClass = isShort ? 'short' : isLong ? 'long' : '';
+
+                return `
+                    <div class="stats-scene-bar">
+                        <span class="stats-scene-bar-label">Sc ${s.scene_number}</span>
+                        <div class="stats-scene-bar-track">
+                            <div class="stats-scene-bar-fill ${fillClass}" style="width:${pct}%"></div>
+                        </div>
+                        <span class="stats-scene-bar-value">${pages}pg</span>
+                    </div>
+                `;
+            }).join('');
+
+            if (stats.scene_lengths.length > 20) {
+                sceneLengthBars.innerHTML += '<div style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:8px;">Showing first 20 scenes</div>';
+            }
+        }
+
+        // Characters tab
         const charBreakdown = document.getElementById('statsCharacterBreakdown');
         const charEntries = Object.entries(stats.character_dialogue || {})
             .sort((a, b) => b[1] - a[1])
-            .slice(0, 10);
+            .slice(0, 15);
 
         if (charEntries.length > 0) {
             const maxWords = charEntries[0][1];
+            const totalDialogue = stats.dialogue_words || 1;
+
             charBreakdown.innerHTML = `
-                <h5>Dialogue by Character</h5>
-                ${charEntries.map(([name, words]) => `
+                <h5 style="margin-bottom:8px;">Dialogue by Character</h5>
+                ${charEntries.map(([name, words]) => {
+                    const pct = Math.round((words / totalDialogue) * 100);
+                    return `
                     <div class="character-stat-bar">
                         <span class="character-stat-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
                         <div class="character-stat-fill">
                             <div class="character-stat-fill-inner" style="width: ${Math.round(words / maxWords * 100)}%"></div>
                         </div>
-                        <span class="character-stat-count">${words} wds</span>
+                        <span class="character-stat-count">${words} (${pct}%)</span>
                     </div>
-                `).join('')}
+                `;}).join('')}
             `;
         } else {
-            charBreakdown.innerHTML = '';
+            charBreakdown.innerHTML = '<p class="text-sm text-muted">No character dialogue detected.</p>';
         }
     }
 
@@ -6546,7 +6865,8 @@
             avg_scene_length: avgSceneLength,
             longest_scene: sortedScenes[0] || null,
             shortest_scene: sortedScenes[sortedScenes.length - 1] || null,
-            character_dialogue: characterDialogue
+            character_dialogue: characterDialogue,
+            scene_lengths: sceneLengths // FILM-126: Include for scene length bars
         };
     }
 
