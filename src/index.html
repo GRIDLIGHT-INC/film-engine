@@ -1077,6 +1077,32 @@
             font-weight: bold;
             text-transform: uppercase;
             margin: 1em 0;
+            position: relative;
+        }
+
+        /* FILM-124: Scene status icons */
+        .scene-status-icon {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            margin-right: 6px;
+            font-size: 12px;
+            line-height: 16px;
+            text-align: center;
+            border-radius: 50%;
+            vertical-align: middle;
+        }
+        .scene-status-icon.written {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+        .scene-status-icon.broken_down {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+        .scene-status-icon.pending {
+            background: rgba(158, 158, 158, 0.2);
+            color: #9e9e9e;
         }
         .screenplay-page .sp-action {
             margin: 1em 0;
@@ -2172,7 +2198,12 @@
 
         <!-- ── 4. SCENES ────────────────────────────────────────── -->
         <div class="page" id="page-scenes">
-            <div class="page-header"><h2>Scenes</h2></div>
+            <div class="page-header">
+                <h2>Scenes</h2>
+                <button class="btn btn-primary" onclick="breakdownAllScenes()" id="breakdownAllBtn" style="display:none;">
+                    &#9881; Break Down All New Scenes
+                </button>
+            </div>
             <div id="scenesList"></div>
         </div>
 
@@ -6216,6 +6247,84 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
         loadLatestFountain();
         // FILM-121: Check for entity suggestions
         checkScreenplaySuggestions();
+        // FILM-124: Update scene status icons after a small delay to ensure editor is rendered
+        setTimeout(updateSceneStatusIcons, 500);
+    }
+
+    // FILM-124: Update scene heading status icons in the screenplay editor
+    function updateSceneStatusIcons() {
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor || !state.scenes || state.scenes.length === 0) return;
+
+        const sceneHeadings = editor.querySelectorAll('[data-element-type="scene-heading"]');
+
+        sceneHeadings.forEach((heading, index) => {
+            // Remove existing status icon if any
+            const existingIcon = heading.querySelector('.scene-status-icon');
+            if (existingIcon) existingIcon.remove();
+
+            // Try to match scene by number or location
+            const headingText = heading.textContent.trim();
+            const sceneNumAttr = heading.dataset.sceneNumber;
+
+            // Find matching scene in state
+            let matchedScene = null;
+
+            // First try by scene number attribute
+            if (sceneNumAttr) {
+                matchedScene = state.scenes.find(s => String(s.scene_number) === sceneNumAttr);
+            }
+
+            // Fallback: try by location
+            if (!matchedScene) {
+                const locMatch = headingText.match(/(?:INT|EXT|INT\.?\/EXT)[\.\s]+([^-]+)/i);
+                if (locMatch) {
+                    const location = locMatch[1].trim().toUpperCase();
+                    matchedScene = state.scenes.find(s =>
+                        s.location && s.location.toUpperCase() === location
+                    );
+                }
+            }
+
+            // Fallback: match by index if scene count matches heading count
+            if (!matchedScene && state.scenes.length === sceneHeadings.length) {
+                matchedScene = state.scenes[index];
+            }
+
+            // Add status icon if we found a matching scene
+            if (matchedScene && matchedScene.status) {
+                const icon = document.createElement('span');
+                icon.className = `scene-status-icon ${matchedScene.status}`;
+                icon.title = getSceneStatusLabel(matchedScene.status);
+
+                // Icon based on status
+                if (matchedScene.status === 'broken_down') {
+                    icon.innerHTML = '✓';
+                } else if (matchedScene.status === 'written') {
+                    icon.innerHTML = '⏱';
+                } else {
+                    icon.innerHTML = '○';
+                }
+
+                heading.insertBefore(icon, heading.firstChild);
+            }
+        });
+    }
+
+    function getSceneStatusLabel(status) {
+        const labels = {
+            'written': 'Ready for breakdown',
+            'broken_down': 'Breakdown complete',
+            'pending': 'Not yet written',
+            'removed': 'Removed from screenplay'
+        };
+        return labels[status] || status;
+    }
+
+    // FILM-124: Re-render screenplay editor (called after breakdowns)
+    function renderScreenplayEditor() {
+        // Just update status icons - don't reload entire editor
+        updateSceneStatusIcons();
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -6228,10 +6337,28 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             const data = await api('/projects/' + state.currentProject.id + '/scenes');
             state.scenes = data.scenes || [];
             const el = document.getElementById('scenesList');
+
+            // FILM-124: Show/hide "Break Down All" button based on written scenes
+            const writtenScenes = state.scenes.filter(s => s.status === 'written');
+            const breakdownAllBtn = document.getElementById('breakdownAllBtn');
+            if (breakdownAllBtn) {
+                breakdownAllBtn.style.display = writtenScenes.length > 0 ? 'inline-flex' : 'none';
+                if (writtenScenes.length > 0) {
+                    breakdownAllBtn.textContent = `⚙ Break Down ${writtenScenes.length} Scene${writtenScenes.length > 1 ? 's' : ''}`;
+                }
+            }
+
             if (state.scenes.length === 0) {
                 el.innerHTML = `<div class="empty-state"><div class="icon">&#127916;</div><h3>No scenes yet</h3><p>Upload a screenplay to auto-extract scenes.</p></div>`;
             } else {
-                el.innerHTML = state.scenes.map(s => `
+                el.innerHTML = state.scenes.map(s => {
+                    // FILM-124: Breakdown button only for 'written' status scenes
+                    const canBreakdown = s.status === 'written';
+                    const breakdownBtn = canBreakdown
+                        ? `<button class="btn btn-sm" onclick="event.stopPropagation(); breakdownScene('${s.id}')" title="Generate shots for this scene">&#9881; Break Down</button>`
+                        : '';
+
+                    return `
                     <div class="scene-row" id="scene-${s.id}">
                         <div class="scene-row-header" onclick="toggleScene('${s.id}')">
                             <div class="scene-number">${s.scene_number}</div>
@@ -6239,13 +6366,18 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                                 <h4>${esc(s.int_ext || '')} ${esc(s.location || '')} ${s.time_of_day ? '- ' + esc(s.time_of_day) : ''}</h4>
                                 <p>${esc((s.characters_present || []).join(', ') || 'No characters')} &middot; ${s.shot_count || 0} shot(s)</p>
                             </div>
+                            ${breakdownBtn}
                             <span class="badge ${s.status}">${(s.status || '').replace(/_/g, ' ')}</span>
                             <span class="scene-expand">&#9654;</span>
                         </div>
                         <div class="scene-shots" id="scene-shots-${s.id}"></div>
-                    </div>`).join('');
+                    </div>`;
+                }).join('');
             }
             setStatus(state.scenes.length + ' scene(s)');
+
+            // FILM-124: Update status icons in screenplay editor
+            updateSceneStatusIcons();
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -6269,6 +6401,75 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                         <span class="text-muted">${sh.duration_ms ? (sh.duration_ms/1000).toFixed(1) + 's' : ''}</span>
                     </div>`).join('');
         } catch (err) { shotsEl.innerHTML = '<p class="text-sm" style="color:var(--error);">Failed to load shots.</p>'; }
+    }
+
+    // FILM-124: Break down a single scene into shots
+    async function breakdownScene(sceneId) {
+        if (!state.currentProject) return;
+        setStatus('Breaking down scene...');
+        try {
+            const result = await api('/projects/' + state.currentProject.id + '/breakdown', {
+                method: 'POST',
+                body: JSON.stringify({ scene_id: sceneId, auto_save: true })
+            });
+
+            if (result.parse_error) {
+                setStatus('Breakdown failed: ' + result.parse_error);
+                return;
+            }
+
+            const cardCount = result.card_count || (result.saved && result.saved[0]?.saved) || 0;
+            setStatus(`Scene broken down: ${cardCount} shot(s) created`);
+
+            // Reload scenes to update status and shot counts
+            loadScenes();
+
+            // Also reload screenplay to update status icons
+            if (typeof renderScreenplayEditor === 'function') {
+                renderScreenplayEditor();
+            }
+        } catch (err) {
+            setStatus('Breakdown error: ' + err.message);
+        }
+    }
+
+    // FILM-124: Break down all scenes in 'written' status
+    async function breakdownAllScenes() {
+        if (!state.currentProject) return;
+        const writtenScenes = state.scenes.filter(s => s.status === 'written');
+        if (writtenScenes.length === 0) {
+            setStatus('No scenes to break down');
+            return;
+        }
+
+        const confirmMsg = `Break down ${writtenScenes.length} scene(s) into shots?\n\nThis will generate shot cards for all scenes in "written" status.`;
+        if (!confirm(confirmMsg)) return;
+
+        setStatus(`Breaking down ${writtenScenes.length} scene(s)...`);
+        try {
+            const result = await api('/projects/' + state.currentProject.id + '/breakdown', {
+                method: 'POST',
+                body: JSON.stringify({ all_scenes: true, auto_save: true })
+            });
+
+            if (result.parse_error) {
+                setStatus('Breakdown failed: ' + result.parse_error);
+                return;
+            }
+
+            const totalCards = result.total_cards || (result.saved?.reduce((sum, s) => sum + (s.saved || 0), 0)) || 0;
+            setStatus(`Breakdown complete: ${totalCards} shot(s) created`);
+
+            // Reload scenes to update status and shot counts
+            loadScenes();
+
+            // Also reload screenplay to update status icons
+            if (typeof renderScreenplayEditor === 'function') {
+                renderScreenplayEditor();
+            }
+        } catch (err) {
+            setStatus('Breakdown error: ' + err.message);
+        }
     }
 
     // ══════════════════════════════════════════════════════════════
