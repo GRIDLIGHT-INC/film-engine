@@ -906,6 +906,30 @@
             background: rgba(255, 255, 255, 0.5);
         }
 
+        /* FILM-101: Auto-detect suggestion hint */
+        .screenplay-page .has-suggestion {
+            position: relative;
+        }
+        .screenplay-page .auto-detect-hint {
+            position: absolute;
+            right: -10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--primary);
+            color: white;
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            cursor: pointer;
+            opacity: 0.8;
+            text-transform: capitalize;
+            font-family: system-ui, sans-serif;
+            white-space: nowrap;
+        }
+        .screenplay-page .auto-detect-hint:hover {
+            opacity: 1;
+        }
+
         /* Import Section */
         .screenplay-import-section {
             margin-top: 16px;
@@ -1964,18 +1988,59 @@
     // Element type management constants (FILM-100)
     const ELEMENT_TYPES = ['action', 'scene-heading', 'character', 'dialogue', 'parenthetical', 'transition', 'centered', 'dual-dialogue', 'lyrics', 'note'];
     const TAB_CYCLE = ['action', 'character', 'dialogue']; // Tab cycles through these
-    const AUTO_NEXT_TYPE = {
-        'scene-heading': 'action',
-        'action': 'action',
-        'character': 'dialogue',
-        'dialogue': 'action',
-        'parenthetical': 'dialogue',
-        'transition': 'scene-heading',
-        'centered': 'action',
-        'dual-dialogue': 'action',
-        'lyrics': 'action',
-        'note': 'action'
+
+    // FILM-101: Configurable auto-formatting rules
+    const AUTO_FORMAT_RULES = {
+        // What type comes next after Enter (non-empty line)
+        nextType: {
+            'scene-heading': 'action',
+            'action': 'action',
+            'character': 'dialogue',
+            'dialogue': 'character',  // Next speaker after dialogue
+            'parenthetical': 'dialogue',
+            'transition': 'scene-heading',
+            'centered': 'action',
+            'dual-dialogue': 'dialogue',
+            'lyrics': 'lyrics',
+            'note': 'action'
+        },
+        // What type to switch to on empty line Enter
+        emptyLineType: {
+            'scene-heading': 'action',
+            'action': 'action',
+            'character': 'action',
+            'dialogue': 'action',      // Empty dialogue -> back to action
+            'parenthetical': 'dialogue',
+            'transition': 'action',
+            'centered': 'action',
+            'dual-dialogue': 'action',
+            'lyrics': 'action',
+            'note': 'action'
+        },
+        // Context-aware Tab cycles
+        tabCycles: {
+            'default': ['action', 'character', 'dialogue'],
+            'after-scene': ['action', 'character'],
+            'in-dialogue': ['dialogue', 'parenthetical', 'character']
+        },
+        // Patterns for auto-detection
+        patterns: {
+            sceneHeading: /^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i,
+            transition: /^[A-Z][A-Z\s]+:$/,
+            forcedSceneHeading: /^\./,
+            forcedCharacter: /^@/,
+            forcedTransition: /^>/,
+            forcedAction: /^!/,
+            parenthetical: /^\s*\([^)]+\)\s*$/
+        }
     };
+
+    // Alias for backwards compatibility
+    const AUTO_NEXT_TYPE = AUTO_FORMAT_RULES.nextType;
+
+    // Debounce timer for auto-detection
+    let autoDetectTimer = null;
+    const AUTO_DETECT_DELAY = 400; // ms
 
     async function uploadScreenplay() {
         if (!state.currentProject) return;
@@ -2186,6 +2251,120 @@
                 editor.replaceChild(block, node);
             }
         }
+
+        // FILM-101: Debounced auto-detection of element types
+        if (autoDetectTimer) clearTimeout(autoDetectTimer);
+        autoDetectTimer = setTimeout(() => {
+            autoDetectElementType();
+        }, AUTO_DETECT_DELAY);
+    }
+
+    // FILM-101: Smart element type detection based on content
+    function autoDetectElementType() {
+        const block = getCurrentBlock();
+        if (!block) return;
+
+        const text = block.innerText.trim();
+        if (!text) return;
+
+        const currentType = block.dataset.elementType || 'action';
+        let detectedType = null;
+
+        // Check for forced element markers first
+        if (AUTO_FORMAT_RULES.patterns.forcedSceneHeading.test(text)) {
+            detectedType = 'scene-heading';
+        } else if (AUTO_FORMAT_RULES.patterns.forcedCharacter.test(text)) {
+            detectedType = 'character';
+        } else if (AUTO_FORMAT_RULES.patterns.forcedTransition.test(text)) {
+            detectedType = 'transition';
+        } else if (AUTO_FORMAT_RULES.patterns.forcedAction.test(text)) {
+            detectedType = 'action';
+        }
+        // Check for scene heading (INT./EXT.)
+        else if (AUTO_FORMAT_RULES.patterns.sceneHeading.test(text)) {
+            detectedType = 'scene-heading';
+        }
+        // Check for transition (ALL CAPS ending with :)
+        else if (AUTO_FORMAT_RULES.patterns.transition.test(text) && text.length > 3) {
+            detectedType = 'transition';
+        }
+        // Check for parenthetical
+        else if (AUTO_FORMAT_RULES.patterns.parenthetical.test(text) && currentType === 'dialogue') {
+            detectedType = 'parenthetical';
+        }
+        // Check for known character name (all caps, matches state.characters)
+        else if (isKnownCharacter(text)) {
+            detectedType = 'character';
+        }
+
+        // Apply detected type if different and makes sense
+        if (detectedType && detectedType !== currentType) {
+            // Show suggestion indicator (visual hint)
+            showAutoDetectSuggestion(block, detectedType);
+        }
+    }
+
+    // Check if text matches a known character name
+    function isKnownCharacter(text) {
+        // Must be all caps (allowing spaces, hyphens, periods)
+        const cleanText = text.replace(/\s*\([^)]*\)\s*$/, '').trim(); // Remove extensions like (V.O.)
+        if (!/^[A-Z][A-Z\s\-'\.]+$/.test(cleanText)) return false;
+
+        // Check against known characters from state
+        if (state.characters && state.characters.length > 0) {
+            const upperText = cleanText.toUpperCase();
+            return state.characters.some(char => {
+                const charName = (char.name || '').toUpperCase();
+                return charName === upperText || charName.startsWith(upperText);
+            });
+        }
+
+        // If no characters loaded yet, consider it a potential character
+        // if it's all caps and not a transition pattern
+        return cleanText.length >= 2 && cleanText.length <= 30 && !cleanText.endsWith(':');
+    }
+
+    // Show visual hint for auto-detected element type
+    function showAutoDetectSuggestion(block, suggestedType) {
+        // Remove any existing suggestion indicator
+        const existingHint = block.querySelector('.auto-detect-hint');
+        if (existingHint) existingHint.remove();
+
+        // Add suggestion class to block
+        block.classList.add('has-suggestion');
+        block.dataset.suggestedType = suggestedType;
+
+        // Create hint element
+        const hint = document.createElement('span');
+        hint.className = 'auto-detect-hint';
+        hint.textContent = suggestedType.replace('-', ' ');
+        hint.title = 'Press Tab to accept';
+        hint.onclick = (e) => {
+            e.stopPropagation();
+            acceptAutoDetectSuggestion(block);
+        };
+        block.appendChild(hint);
+    }
+
+    // Accept the auto-detected suggestion
+    function acceptAutoDetectSuggestion(block) {
+        const suggestedType = block.dataset.suggestedType;
+        if (suggestedType) {
+            setBlockElementType(block, suggestedType);
+            clearAutoDetectSuggestion(block);
+            // Update dropdown
+            const selector = document.getElementById('elementTypeSelector');
+            if (selector) selector.value = suggestedType;
+        }
+    }
+
+    // Clear auto-detect suggestion
+    function clearAutoDetectSuggestion(block) {
+        if (!block) return;
+        block.classList.remove('has-suggestion');
+        delete block.dataset.suggestedType;
+        const hint = block.querySelector('.auto-detect-hint');
+        if (hint) hint.remove();
     }
 
     // Update element type dropdown when selection changes
@@ -2228,26 +2407,48 @@
             return;
         }
 
-        // Tab key: cycle element type (Action -> Character -> Dialogue -> Action)
+        // Escape key: clear auto-detect suggestion
+        if (event.key === 'Escape') {
+            const block = getCurrentBlock();
+            if (block && block.dataset.suggestedType) {
+                clearAutoDetectSuggestion(block);
+                return;
+            }
+        }
+
+        // Tab key: accept suggestion or cycle element type
         if (event.key === 'Tab') {
             event.preventDefault();
             const block = getCurrentBlock();
             if (block) {
+                // If there's a suggestion, accept it
+                if (block.dataset.suggestedType) {
+                    acceptAutoDetectSuggestion(block);
+                    return;
+                }
+
+                // Otherwise, cycle through types based on context
                 const currentType = block.dataset.elementType || 'action';
-                const currentIndex = TAB_CYCLE.indexOf(currentType);
-                const nextIndex = (currentIndex + 1) % TAB_CYCLE.length;
-                setBlockElementType(block, TAB_CYCLE[nextIndex]);
+                const cycle = getContextualTabCycle(block, currentType);
+                const currentIndex = cycle.indexOf(currentType);
+                const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % cycle.length : 0;
+                setBlockElementType(block, cycle[nextIndex]);
+                clearAutoDetectSuggestion(block);
                 // Update dropdown
                 const selector = document.getElementById('elementTypeSelector');
-                if (selector) selector.value = TAB_CYCLE[nextIndex].replace('-', '_');
+                if (selector) selector.value = cycle[nextIndex];
             }
             return;
         }
 
-        // Enter key: handle block creation
+        // Enter key: handle block creation with smart formatting
         if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
             const block = getCurrentBlock();
+
+            // Clear any pending auto-detect
+            if (autoDetectTimer) clearTimeout(autoDetectTimer);
+
             if (!block) {
                 // No block - create first one
                 const newBlock = createBlock('', 'action');
@@ -2256,28 +2457,102 @@
                 return;
             }
 
+            // If there's a suggestion, apply it first
+            if (block.dataset.suggestedType) {
+                const suggestedType = block.dataset.suggestedType;
+                setBlockElementType(block, suggestedType);
+                clearAutoDetectSuggestion(block);
+            }
+
+            // Get text (excluding any hint elements)
+            const hint = block.querySelector('.auto-detect-hint');
+            if (hint) hint.remove();
             const text = block.innerText.trim();
             const currentType = block.dataset.elementType || 'action';
 
+            // Apply immediate auto-detection for undetected types
+            const detectedType = detectElementTypeImmediate(text, currentType);
+            if (detectedType && detectedType !== currentType) {
+                setBlockElementType(block, detectedType);
+            }
+
+            const finalType = block.dataset.elementType || 'action';
+
             if (text === '') {
-                // Empty block: cycle back to action
-                if (currentType !== 'action') {
-                    setBlockElementType(block, 'action');
+                // Empty block: use emptyLineType rules
+                const emptyType = AUTO_FORMAT_RULES.emptyLineType[finalType] || 'action';
+                if (emptyType !== finalType) {
+                    setBlockElementType(block, emptyType);
                     const selector = document.getElementById('elementTypeSelector');
-                    if (selector) selector.value = 'action';
+                    if (selector) selector.value = emptyType;
                 }
             } else {
                 // Non-empty: create new block with auto-next type
-                const nextType = AUTO_NEXT_TYPE[currentType] || 'action';
+                const nextType = AUTO_FORMAT_RULES.nextType[finalType] || 'action';
                 const newBlock = createBlock('', nextType);
                 block.parentNode.insertBefore(newBlock, block.nextSibling);
                 setCursorToBlock(newBlock);
                 // Update dropdown
                 const selector = document.getElementById('elementTypeSelector');
-                if (selector) selector.value = nextType.replace('-', '_');
+                if (selector) selector.value = nextType;
             }
             return;
         }
+    }
+
+    // Get context-aware Tab cycle based on current position
+    function getContextualTabCycle(block, currentType) {
+        // If in dialogue context, use dialogue cycle
+        if (['dialogue', 'parenthetical'].includes(currentType)) {
+            return AUTO_FORMAT_RULES.tabCycles['in-dialogue'];
+        }
+
+        // Check if we're right after a scene heading
+        const prevBlock = block.previousElementSibling;
+        if (prevBlock && prevBlock.dataset.elementType === 'scene-heading') {
+            return AUTO_FORMAT_RULES.tabCycles['after-scene'];
+        }
+
+        return AUTO_FORMAT_RULES.tabCycles['default'];
+    }
+
+    // Immediate element type detection (called on Enter, no debounce)
+    function detectElementTypeImmediate(text, currentType) {
+        if (!text) return null;
+
+        // Check for forced element markers
+        if (AUTO_FORMAT_RULES.patterns.forcedSceneHeading.test(text)) {
+            return 'scene-heading';
+        }
+        if (AUTO_FORMAT_RULES.patterns.forcedCharacter.test(text)) {
+            return 'character';
+        }
+        if (AUTO_FORMAT_RULES.patterns.forcedTransition.test(text)) {
+            return 'transition';
+        }
+
+        // Check for scene heading
+        if (AUTO_FORMAT_RULES.patterns.sceneHeading.test(text)) {
+            return 'scene-heading';
+        }
+
+        // Check for transition (ALL CAPS ending with :)
+        if (AUTO_FORMAT_RULES.patterns.transition.test(text) && text.length > 3) {
+            return 'transition';
+        }
+
+        // Check for parenthetical in dialogue context
+        if (AUTO_FORMAT_RULES.patterns.parenthetical.test(text) &&
+            ['dialogue', 'character'].includes(currentType)) {
+            return 'parenthetical';
+        }
+
+        // Check for character (all caps, reasonable length)
+        if (currentType === 'action' && isKnownCharacter(text)) {
+            return 'character';
+        }
+
+        return null;
     }
 
     // Get the current block element containing the cursor
