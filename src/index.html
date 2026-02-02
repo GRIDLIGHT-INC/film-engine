@@ -1209,6 +1209,163 @@
             height: 14px;
         }
 
+        /* FILM-130: Export Dropdown Styles */
+        .export-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        .export-dropdown-content {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            min-width: 160px;
+            z-index: 100;
+        }
+        .export-dropdown.open .export-dropdown-content {
+            display: block;
+        }
+        .export-dropdown-item {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            text-align: left;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            color: var(--text);
+        }
+        .export-dropdown-item:hover {
+            background: var(--surface-2);
+        }
+        .export-dropdown-item small {
+            color: var(--text-muted);
+            margin-left: 4px;
+        }
+
+        /* FILM-130: Print Styles */
+        @media print {
+            /* Hide all non-screenplay UI */
+            .sidebar, .screenplay-toolbar, .scene-navigator,
+            .screenplay-ai-panel, .suggestions-panel, .modal-overlay,
+            .index-cards-container, header, footer, nav,
+            .toolbar-btn, .view-mode-toggle, .revision-indicator,
+            .mark-revision-toggle, .title-page-edit-btn {
+                display: none !important;
+            }
+
+            /* Full width editor */
+            .main-content, .screenplay-container, .screenplay-editor-column {
+                width: 100% !important;
+                max-width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+
+            #screenplayEditor {
+                padding: 0 !important;
+                border: none !important;
+                background: white !important;
+            }
+
+            /* Page setup */
+            @page {
+                size: letter;
+                margin: 1in;
+            }
+
+            @page :first {
+                margin-top: 0.5in;
+            }
+
+            /* Page numbers */
+            @page {
+                @bottom-center {
+                    content: counter(page);
+                    font-family: 'Courier New', monospace;
+                    font-size: 12pt;
+                }
+            }
+
+            /* Screenplay formatting */
+            body {
+                font-family: 'Courier New', monospace !important;
+                font-size: 12pt !important;
+                line-height: 1 !important;
+                color: black !important;
+                background: white !important;
+            }
+
+            .sp-scene-heading, [data-element-type="scene-heading"] {
+                margin-top: 24pt;
+                margin-bottom: 12pt;
+                font-weight: bold;
+                text-transform: uppercase;
+            }
+
+            .sp-action, [data-element-type="action"] {
+                margin-bottom: 12pt;
+            }
+
+            .sp-character, [data-element-type="character"] {
+                margin-top: 12pt;
+                margin-left: 2in;
+                text-transform: uppercase;
+            }
+
+            .sp-parenthetical, [data-element-type="parenthetical"] {
+                margin-left: 1.5in;
+                max-width: 2.5in;
+            }
+
+            .sp-dialogue, [data-element-type="dialogue"] {
+                margin-left: 1in;
+                max-width: 3.5in;
+                margin-bottom: 12pt;
+            }
+
+            .sp-transition, [data-element-type="transition"] {
+                text-align: right;
+                margin-top: 12pt;
+                margin-bottom: 12pt;
+            }
+
+            .sp-centered, [data-element-type="centered"] {
+                text-align: center;
+            }
+
+            /* Title page */
+            .title-page-block {
+                page-break-after: always;
+                text-align: center;
+                padding-top: 3in;
+            }
+
+            .title-page-title {
+                font-size: 24pt;
+                text-transform: uppercase;
+                margin-bottom: 36pt;
+            }
+
+            .title-page-credit {
+                margin-bottom: 12pt;
+            }
+
+            .title-page-author {
+                margin-bottom: 72pt;
+            }
+
+            /* Page breaks */
+            .page-break-indicator {
+                page-break-after: always;
+            }
+        }
+
         /* Editor Toolbar */
         .screenplay-toolbar {
             display: flex;
@@ -2615,6 +2772,21 @@
                         <div class="toolbar-divider"></div>
                         <button class="toolbar-btn" id="aiChatToggle" onclick="toggleAIChat()" title="AI Assistant (Ctrl+Shift+A)">AI</button>
                         <button class="toolbar-btn" onclick="openTitlePageModal()" title="Edit Title Page">Title Page</button>
+                        <!-- FILM-130: Export Dropdown -->
+                        <div class="export-dropdown" id="exportDropdown">
+                            <button class="toolbar-btn" onclick="toggleExportDropdown()" title="Export Screenplay">Export</button>
+                            <div class="export-dropdown-content">
+                                <button class="export-dropdown-item" onclick="exportToFountain()">
+                                    Fountain <small>.fountain</small>
+                                </button>
+                                <button class="export-dropdown-item" onclick="exportToPlainText()">
+                                    Plain Text <small>.txt</small>
+                                </button>
+                                <button class="export-dropdown-item" onclick="exportToPDF()">
+                                    PDF <small>Print/Save as PDF</small>
+                                </button>
+                            </div>
+                        </div>
                         <button class="toolbar-btn" onclick="openTextConvertModal()" title="Convert Text to Screenplay">Convert</button>
                         <button class="toolbar-btn suggestions-btn" id="suggestionsBtn" onclick="openSuggestionsPanel()" title="Entity Suggestions" style="display:none;">
                             <span id="suggestionsBadge" class="suggestions-badge">0</span>
@@ -6608,6 +6780,300 @@
     function getMarkAsRevision() {
         const checkbox = document.getElementById('markAsRevisionCheckbox');
         return checkbox ? checkbox.checked : false;
+    }
+
+    // FILM-130: Export Functionality
+    function toggleExportDropdown() {
+        const dropdown = document.getElementById('exportDropdown');
+        dropdown.classList.toggle('open');
+
+        // Close on click outside
+        const closeHandler = (e) => {
+            if (!dropdown.contains(e.target)) {
+                dropdown.classList.remove('open');
+                document.removeEventListener('click', closeHandler);
+            }
+        };
+
+        if (dropdown.classList.contains('open')) {
+            // Delay to avoid immediate close
+            setTimeout(() => {
+                document.addEventListener('click', closeHandler);
+            }, 10);
+        }
+    }
+
+    function exportToFountain() {
+        const editor = document.getElementById('screenplayEditor');
+        const fountainText = serializeEditorToFountain(editor);
+
+        if (!fountainText.trim()) {
+            setStatus('Nothing to export');
+            return;
+        }
+
+        // Generate filename
+        const projectTitle = currentProject?.title || 'screenplay';
+        const safeTitle = projectTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        const filename = `${safeTitle}.fountain`;
+
+        // Create and download blob
+        const blob = new Blob([fountainText], { type: 'text/plain;charset=utf-8' });
+        downloadBlob(blob, filename);
+
+        setStatus(`Exported ${filename}`);
+        document.getElementById('exportDropdown').classList.remove('open');
+    }
+
+    function exportToPlainText() {
+        const editor = document.getElementById('screenplayEditor');
+        const fountainText = serializeEditorToFountain(editor);
+
+        if (!fountainText.trim()) {
+            setStatus('Nothing to export');
+            return;
+        }
+
+        // Convert Fountain to plain text
+        const plainText = fountainToPlainText(fountainText);
+
+        // Generate filename
+        const projectTitle = currentProject?.title || 'screenplay';
+        const safeTitle = projectTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        const filename = `${safeTitle}.txt`;
+
+        // Create and download blob
+        const blob = new Blob([plainText], { type: 'text/plain;charset=utf-8' });
+        downloadBlob(blob, filename);
+
+        setStatus(`Exported ${filename}`);
+        document.getElementById('exportDropdown').classList.remove('open');
+    }
+
+    function fountainToPlainText(fountain) {
+        const lines = fountain.split('\n');
+        const result = [];
+        let prevWasBlank = true;
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+
+            // Skip title page key-value pairs at the start
+            if (result.length === 0 && /^[A-Za-z][A-Za-z\s]*?:/.test(trimmed)) {
+                continue;
+            }
+
+            // Remove Fountain markup
+            let plainLine = trimmed
+                .replace(/^\.\s*/, '')          // Forced scene heading
+                .replace(/^@/, '')              // Forced character
+                .replace(/^>\s*/, '')           // Forced transition or centered
+                .replace(/\s*<$/, '')           // End of centered
+                .replace(/^~\s*/, '')           // Lyrics
+                .replace(/\[\[([^\]]*)\]\]/g, '$1')  // Notes
+                .replace(/\*\*\*(.+?)\*\*\*/g, '$1') // Bold+italic
+                .replace(/\*\*(.+?)\*\*/g, '$1')     // Bold
+                .replace(/\*(.+?)\*/g, '$1')         // Italic
+                .replace(/_(.+?)_/g, '$1')           // Underline
+                .replace(/\s*\^$/, '')          // Dual dialogue marker
+                .replace(/\s*#[^#]+#\s*$/, ''); // Scene numbers
+
+            // Scene heading - add extra spacing
+            if (/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(plainLine) || /^\./.test(trimmed)) {
+                if (result.length > 0 && !prevWasBlank) {
+                    result.push('');
+                }
+                result.push(plainLine.toUpperCase());
+                prevWasBlank = false;
+                continue;
+            }
+
+            // Character - center-ish with uppercase
+            if (prevWasBlank && /^[A-Z][A-Z\s\-'\.]+$/.test(plainLine.replace(/\s*\([^)]*\)\s*$/, ''))) {
+                result.push('');
+                result.push('        ' + plainLine); // Indent character
+                prevWasBlank = false;
+                continue;
+            }
+
+            // Parenthetical
+            if (/^\(.*\)$/.test(plainLine)) {
+                result.push('      ' + plainLine);
+                prevWasBlank = false;
+                continue;
+            }
+
+            // Transition
+            if (/^[A-Z\s]+TO:$/.test(plainLine) || /^[A-Z\s]+:$/.test(plainLine)) {
+                result.push('');
+                result.push('                                        ' + plainLine);
+                result.push('');
+                prevWasBlank = true;
+                continue;
+            }
+
+            // Dialogue - indent
+            if (!prevWasBlank && result.length > 0) {
+                const prevLine = result[result.length - 1].trim();
+                if (/^[A-Z][A-Z\s\-'\.]+$/.test(prevLine.replace(/\s*\([^)]*\)\s*$/, '')) ||
+                    /^\(.*\)$/.test(prevLine)) {
+                    result.push('    ' + plainLine);
+                    prevWasBlank = false;
+                    continue;
+                }
+            }
+
+            // Regular line
+            if (!trimmed) {
+                prevWasBlank = true;
+            } else {
+                prevWasBlank = false;
+            }
+            result.push(plainLine);
+        }
+
+        return result.join('\n').trim();
+    }
+
+    function exportToPDF() {
+        const editor = document.getElementById('screenplayEditor');
+
+        if (!editor.innerText.trim()) {
+            setStatus('Nothing to export');
+            return;
+        }
+
+        // Clone the editor content
+        const content = editor.innerHTML;
+
+        // Generate print-ready HTML
+        const projectTitle = currentProject?.title || 'Screenplay';
+        const printHTML = generatePrintHTML(content, projectTitle);
+
+        // Open in new window and print
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(printHTML);
+        printWindow.document.close();
+
+        // Wait for content to load, then print
+        printWindow.onload = () => {
+            printWindow.focus();
+            printWindow.print();
+        };
+
+        setStatus('Opening print dialog for PDF export...');
+        document.getElementById('exportDropdown').classList.remove('open');
+    }
+
+    function generatePrintHTML(editorContent, title) {
+        return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>${escapeHtml(title)}</title>
+    <style>
+        @page {
+            size: letter;
+            margin: 1in;
+        }
+        @page :first {
+            margin-top: 0.5in;
+        }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12pt;
+            line-height: 1;
+            color: black;
+            background: white;
+            margin: 0;
+            padding: 0;
+        }
+        /* Title Page */
+        .title-page-block {
+            page-break-after: always;
+            text-align: center;
+            padding-top: 3in;
+        }
+        .title-page-title { font-size: 24pt; text-transform: uppercase; margin-bottom: 36pt; font-weight: normal; }
+        .title-page-credit { font-size: 12pt; margin-bottom: 12pt; }
+        .title-page-author { font-size: 12pt; margin-bottom: 72pt; }
+        .title-page-source { font-size: 12pt; font-style: italic; margin-bottom: 24pt; }
+        .title-page-draft { font-size: 10pt; margin-bottom: 6pt; }
+        .title-page-contact { font-size: 10pt; white-space: pre-line; }
+        .title-page-content { padding: 0; }
+        .title-page-edit-btn { display: none; }
+        /* Scene Heading */
+        .sp-scene-heading, [data-element-type="scene-heading"] {
+            margin-top: 24pt;
+            margin-bottom: 12pt;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        /* Action */
+        .sp-action, [data-element-type="action"] {
+            margin-bottom: 12pt;
+        }
+        /* Character */
+        .sp-character, [data-element-type="character"] {
+            margin-top: 12pt;
+            margin-left: 2in;
+            text-transform: uppercase;
+        }
+        /* Parenthetical */
+        .sp-parenthetical, [data-element-type="parenthetical"] {
+            margin-left: 1.5in;
+            max-width: 2.5in;
+        }
+        /* Dialogue */
+        .sp-dialogue, [data-element-type="dialogue"] {
+            margin-left: 1in;
+            max-width: 3.5in;
+            margin-bottom: 12pt;
+        }
+        /* Transition */
+        .sp-transition, [data-element-type="transition"] {
+            text-align: right;
+            margin-top: 12pt;
+            margin-bottom: 12pt;
+        }
+        /* Centered */
+        .sp-centered, [data-element-type="centered"] {
+            text-align: center;
+        }
+        /* Lyrics */
+        .sp-lyrics, [data-element-type="lyrics"] {
+            font-style: italic;
+            margin-left: 1in;
+        }
+        /* Note - hidden in print */
+        .sp-note, [data-element-type="note"] {
+            display: none;
+        }
+        /* Page breaks */
+        .page-break-indicator {
+            page-break-after: always;
+        }
+        /* Scene number gutter */
+        .scene-number-gutter {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    ${editorContent}
+</body>
+</html>`;
+    }
+
+    function downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
     // FILM-116: Quick stats summary update without full recalculation
