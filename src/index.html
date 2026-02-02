@@ -880,6 +880,31 @@
             text-align: center;
             margin: 1em 0;
         }
+        .screenplay-page .sp-lyrics {
+            font-style: italic;
+            margin-left: 1in;
+            margin: 0.5em 0;
+        }
+        .screenplay-page .sp-note {
+            color: #666;
+            font-style: italic;
+            background: rgba(255, 235, 59, 0.15);
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin: 0.5em 0;
+        }
+        .screenplay-page .sp-dual-dialogue {
+            text-transform: uppercase;
+            margin-top: 1em;
+            margin-left: 2.2in;
+            border-left: 2px solid var(--primary);
+            padding-left: 8px;
+        }
+        /* Selected/focused block highlight */
+        .screenplay-page [data-element-type]:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.5);
+        }
 
         /* Import Section */
         .screenplay-import-section {
@@ -1078,11 +1103,15 @@
                     <div class="section-label">Element Type</div>
                     <select id="elementTypeSelector" onchange="setElementType(this.value)">
                         <option value="action">Action</option>
-                        <option value="scene_heading">Scene Heading</option>
+                        <option value="scene-heading">Scene Heading</option>
                         <option value="character">Character</option>
                         <option value="dialogue">Dialogue</option>
                         <option value="parenthetical">Parenthetical</option>
                         <option value="transition">Transition</option>
+                        <option value="centered">Centered</option>
+                        <option value="dual-dialogue">Dual Dialogue</option>
+                        <option value="lyrics">Lyrics</option>
+                        <option value="note">Note</option>
                     </select>
 
                     <div class="section-label mt-16">Navigation</div>
@@ -1121,7 +1150,9 @@
                              contenteditable="true"
                              spellcheck="true"
                              oninput="onEditorInput()"
-                             onkeydown="onEditorKeydown(event)">
+                             onkeydown="onEditorKeydown(event)"
+                             onclick="onEditorSelectionChange()"
+                             onkeyup="onEditorSelectionChange()">
                         </div>
                     </div>
 
@@ -1930,6 +1961,22 @@
     let currentFountainContent = '';
     let editorDirty = false;
 
+    // Element type management constants (FILM-100)
+    const ELEMENT_TYPES = ['action', 'scene-heading', 'character', 'dialogue', 'parenthetical', 'transition', 'centered', 'dual-dialogue', 'lyrics', 'note'];
+    const TAB_CYCLE = ['action', 'character', 'dialogue']; // Tab cycles through these
+    const AUTO_NEXT_TYPE = {
+        'scene-heading': 'action',
+        'action': 'action',
+        'character': 'dialogue',
+        'dialogue': 'action',
+        'parenthetical': 'dialogue',
+        'transition': 'scene-heading',
+        'centered': 'action',
+        'dual-dialogue': 'action',
+        'lyrics': 'action',
+        'note': 'action'
+    };
+
     async function uploadScreenplay() {
         if (!state.currentProject) return;
         const content = document.getElementById('scriptInput').value.trim();
@@ -2025,35 +2072,60 @@
                 continue;
             }
 
+            // Lyrics
+            if (trimmed.startsWith('~')) {
+                const lyricsText = trimmed.slice(1).trim();
+                htmlParts.push(`<div class="sp-lyrics" data-element-type="lyrics">${escapeHtml(lyricsText)}</div>`);
+                prevLineBlank = false;
+                continue;
+            }
+
+            // Note
+            if (trimmed.startsWith('[[') && trimmed.endsWith(']]')) {
+                const noteText = trimmed.slice(2, -2).trim();
+                htmlParts.push(`<div class="sp-note" data-element-type="note">${escapeHtml(noteText)}</div>`);
+                prevLineBlank = false;
+                continue;
+            }
+
             // Scene heading
             if (/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || trimmed.startsWith('.')) {
-                const text = trimmed.startsWith('.') ? trimmed.slice(1) : trimmed;
-                htmlParts.push(`<div class="sp-scene-heading">${escapeHtml(text)}</div>`);
+                const headingText = trimmed.startsWith('.') ? trimmed.slice(1) : trimmed;
+                htmlParts.push(`<div class="sp-scene-heading" data-element-type="scene-heading">${escapeHtml(headingText)}</div>`);
                 prevLineBlank = true;
                 inDialogue = false;
+                continue;
+            }
+
+            // Centered (check before transition since both start with >)
+            if (trimmed.startsWith('>') && trimmed.endsWith('<')) {
+                const centeredText = trimmed.slice(1, -1).trim();
+                htmlParts.push(`<div class="sp-centered" data-element-type="centered">${escapeHtml(centeredText)}</div>`);
+                prevLineBlank = true;
                 continue;
             }
 
             // Transition
             if (prevLineBlank && (/^[A-Z\s]+TO:$/.test(trimmed) || trimmed.startsWith('>'))) {
-                const text = trimmed.startsWith('>') ? trimmed.slice(1).trim() : trimmed;
-                htmlParts.push(`<div class="sp-transition">${escapeHtml(text)}</div>`);
+                const transitionText = trimmed.startsWith('>') ? trimmed.slice(1).trim() : trimmed;
+                htmlParts.push(`<div class="sp-transition" data-element-type="transition">${escapeHtml(transitionText)}</div>`);
                 prevLineBlank = true;
                 inDialogue = false;
                 continue;
             }
 
-            // Centered
-            if (trimmed.startsWith('>') && trimmed.endsWith('<')) {
-                const text = trimmed.slice(1, -1).trim();
-                htmlParts.push(`<div class="sp-centered">${escapeHtml(text)}</div>`);
-                prevLineBlank = true;
+            // Dual dialogue character (ends with ^)
+            if (prevLineBlank && trimmed.endsWith('^')) {
+                const charText = trimmed.slice(0, -1).trim();
+                htmlParts.push(`<div class="sp-character sp-dual-dialogue" data-element-type="dual-dialogue">${escapeHtml(charText)}</div>`);
+                inDialogue = true;
+                prevLineBlank = false;
                 continue;
             }
 
             // Character (all caps, followed by dialogue)
             if (prevLineBlank && !nextBlank && /^[A-Z][A-Z\s\-'\.]+$/.test(trimmed.replace(/\s*\([^)]*\)\s*\^?$/, ''))) {
-                htmlParts.push(`<div class="sp-character">${escapeHtml(trimmed)}</div>`);
+                htmlParts.push(`<div class="sp-character" data-element-type="character">${escapeHtml(trimmed)}</div>`);
                 inDialogue = true;
                 prevLineBlank = false;
                 continue;
@@ -2061,20 +2133,20 @@
 
             // Parenthetical
             if (inDialogue && /^\s*\([^)]+\)\s*$/.test(trimmed)) {
-                htmlParts.push(`<div class="sp-parenthetical">${escapeHtml(trimmed)}</div>`);
+                htmlParts.push(`<div class="sp-parenthetical" data-element-type="parenthetical">${escapeHtml(trimmed)}</div>`);
                 prevLineBlank = false;
                 continue;
             }
 
             // Dialogue
             if (inDialogue) {
-                htmlParts.push(`<div class="sp-dialogue">${escapeHtml(trimmed)}</div>`);
+                htmlParts.push(`<div class="sp-dialogue" data-element-type="dialogue">${escapeHtml(trimmed)}</div>`);
                 prevLineBlank = false;
                 continue;
             }
 
             // Default: Action
-            htmlParts.push(`<div class="sp-action">${escapeHtml(trimmed)}</div>`);
+            htmlParts.push(`<div class="sp-action" data-element-type="action">${escapeHtml(trimmed)}</div>`);
             prevLineBlank = false;
             inDialogue = false;
         }
@@ -2093,19 +2165,182 @@
     function onEditorInput() {
         editorDirty = true;
         updateEditorStats();
+
+        // Ensure block structure: wrap any orphan text nodes in action blocks
+        const editor = document.getElementById('screenplayEditor');
+        const childNodes = [...editor.childNodes];
+        for (const node of childNodes) {
+            // Skip if already a proper element with data-element-type
+            if (node.nodeType === 1 && node.dataset && node.dataset.elementType) continue;
+
+            // Text node or element without data-element-type
+            if (node.nodeType === 3 && node.textContent.trim()) {
+                // Wrap text node in action block
+                const block = createBlock(node.textContent, 'action');
+                editor.replaceChild(block, node);
+                setCursorToBlock(block);
+            } else if (node.nodeType === 1 && !node.dataset.elementType) {
+                // Element without data-element-type - add it
+                const text = node.innerText || '';
+                const block = createBlock(text, 'action');
+                editor.replaceChild(block, node);
+            }
+        }
+    }
+
+    // Update element type dropdown when selection changes
+    function onEditorSelectionChange() {
+        const block = getCurrentBlock();
+        if (block) {
+            const elementType = block.dataset.elementType || 'action';
+            const selector = document.getElementById('elementTypeSelector');
+            if (selector) {
+                selector.value = elementType;
+            }
+            // Update current scene display
+            updateCurrentSceneDisplay(block);
+        }
+    }
+
+    // Update scene number display based on current position
+    function updateCurrentSceneDisplay(block) {
+        const editor = document.getElementById('screenplayEditor');
+        const sceneDisplay = document.getElementById('currentSceneNum');
+        if (!editor || !sceneDisplay) return;
+
+        // Find the nearest scene heading above current block
+        let sceneNum = 0;
+        const blocks = editor.querySelectorAll('[data-element-type]');
+        for (const b of blocks) {
+            if (b.dataset.elementType === 'scene-heading') {
+                sceneNum++;
+            }
+            if (b === block) break;
+        }
+        sceneDisplay.textContent = sceneNum > 0 ? `Scene: ${sceneNum}` : 'Scene: —';
     }
 
     function onEditorKeydown(event) {
-        // Handle tab for indentation
-        if (event.key === 'Tab') {
-            event.preventDefault();
-            document.execCommand('insertText', false, '    ');
-        }
         // Ctrl+S to save
         if (event.key === 's' && (event.ctrlKey || event.metaKey)) {
             event.preventDefault();
             saveScreenplay();
+            return;
         }
+
+        // Tab key: cycle element type (Action -> Character -> Dialogue -> Action)
+        if (event.key === 'Tab') {
+            event.preventDefault();
+            const block = getCurrentBlock();
+            if (block) {
+                const currentType = block.dataset.elementType || 'action';
+                const currentIndex = TAB_CYCLE.indexOf(currentType);
+                const nextIndex = (currentIndex + 1) % TAB_CYCLE.length;
+                setBlockElementType(block, TAB_CYCLE[nextIndex]);
+                // Update dropdown
+                const selector = document.getElementById('elementTypeSelector');
+                if (selector) selector.value = TAB_CYCLE[nextIndex].replace('-', '_');
+            }
+            return;
+        }
+
+        // Enter key: handle block creation
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            const block = getCurrentBlock();
+            if (!block) {
+                // No block - create first one
+                const newBlock = createBlock('', 'action');
+                document.getElementById('screenplayEditor').appendChild(newBlock);
+                setCursorToBlock(newBlock);
+                return;
+            }
+
+            const text = block.innerText.trim();
+            const currentType = block.dataset.elementType || 'action';
+
+            if (text === '') {
+                // Empty block: cycle back to action
+                if (currentType !== 'action') {
+                    setBlockElementType(block, 'action');
+                    const selector = document.getElementById('elementTypeSelector');
+                    if (selector) selector.value = 'action';
+                }
+            } else {
+                // Non-empty: create new block with auto-next type
+                const nextType = AUTO_NEXT_TYPE[currentType] || 'action';
+                const newBlock = createBlock('', nextType);
+                block.parentNode.insertBefore(newBlock, block.nextSibling);
+                setCursorToBlock(newBlock);
+                // Update dropdown
+                const selector = document.getElementById('elementTypeSelector');
+                if (selector) selector.value = nextType.replace('-', '_');
+            }
+            return;
+        }
+    }
+
+    // Get the current block element containing the cursor
+    function getCurrentBlock() {
+        const selection = window.getSelection();
+        if (!selection.rangeCount) return null;
+
+        let node = selection.anchorNode;
+        if (!node) return null;
+
+        // Walk up to find a block with data-element-type
+        while (node && node !== document.getElementById('screenplayEditor')) {
+            if (node.nodeType === 1 && node.dataset && node.dataset.elementType) {
+                return node;
+            }
+            node = node.parentNode;
+        }
+
+        // If no block found, look for any direct child div
+        const editor = document.getElementById('screenplayEditor');
+        node = selection.anchorNode;
+        while (node && node.parentNode !== editor) {
+            node = node.parentNode;
+        }
+        return (node && node.nodeType === 1) ? node : null;
+    }
+
+    // Create a new block element with the given text and type
+    function createBlock(text, elementType) {
+        const block = document.createElement('div');
+        block.dataset.elementType = elementType;
+        block.className = 'sp-' + elementType;
+        block.innerText = text || '';
+        // Ensure block is focusable
+        block.setAttribute('contenteditable', 'true');
+        return block;
+    }
+
+    // Set the element type on a block, updating CSS classes
+    function setBlockElementType(block, elementType) {
+        if (!block) return;
+
+        // Remove all sp-* classes
+        const classes = [...block.classList].filter(c => c.startsWith('sp-'));
+        classes.forEach(c => block.classList.remove(c));
+
+        // Set new type and class
+        block.dataset.elementType = elementType;
+        block.classList.add('sp-' + elementType);
+
+        editorDirty = true;
+    }
+
+    // Move cursor to the start of a block
+    function setCursorToBlock(block) {
+        if (!block) return;
+        const range = document.createRange();
+        const selection = window.getSelection();
+        range.selectNodeContents(block);
+        range.collapse(true); // Collapse to start
+        selection.removeAllRanges();
+        selection.addRange(range);
+        block.focus();
     }
 
     function updateEditorStats(pageCount, sceneCount) {
@@ -2182,28 +2417,75 @@
 
     function editorToFountain(editor) {
         // Convert editor HTML back to Fountain text
-        const elements = editor.querySelectorAll('[class^="sp-"]');
+        // Uses data-element-type attribute for element identification
+        // Falls back to class names for backwards compatibility
+        let elements = editor.querySelectorAll('[data-element-type]');
+
+        // Fallback: if no data-element-type elements, try sp-* classes
+        if (elements.length === 0) {
+            elements = editor.querySelectorAll('[class^="sp-"]');
+        }
+
         const lines = [];
+        let prevType = null;
 
         elements.forEach(el => {
             const text = el.innerText.trim();
+            // Try data-element-type first, then infer from class
+            let elementType = el.dataset && el.dataset.elementType;
+            if (!elementType) {
+                // Infer from class
+                const classes = [...el.classList];
+                const spClass = classes.find(c => c.startsWith('sp-'));
+                elementType = spClass ? spClass.replace('sp-', '') : 'action';
+            }
+
+            // Skip empty elements (but scene-headings might be important)
             if (!text) return;
 
-            if (el.classList.contains('sp-scene-heading')) {
-                lines.push('', text);
-            } else if (el.classList.contains('sp-character')) {
-                lines.push('', text);
-            } else if (el.classList.contains('sp-dialogue')) {
-                lines.push(text);
-            } else if (el.classList.contains('sp-parenthetical')) {
-                lines.push(text);
-            } else if (el.classList.contains('sp-transition')) {
-                lines.push('', text);
-            } else if (el.classList.contains('sp-centered')) {
-                lines.push('', '> ' + text + ' <');
-            } else {
-                lines.push('', text);
+            switch (elementType) {
+                case 'scene-heading':
+                    lines.push('', text.toUpperCase());
+                    break;
+                case 'character':
+                    lines.push('', text.toUpperCase());
+                    break;
+                case 'dialogue':
+                    lines.push(text);
+                    break;
+                case 'parenthetical':
+                    // Ensure parentheses
+                    if (!text.startsWith('(')) {
+                        lines.push('(' + text + ')');
+                    } else {
+                        lines.push(text);
+                    }
+                    break;
+                case 'transition':
+                    lines.push('', text.toUpperCase());
+                    break;
+                case 'centered':
+                    lines.push('', '> ' + text + ' <');
+                    break;
+                case 'lyrics':
+                    lines.push('~' + text);
+                    break;
+                case 'note':
+                    lines.push('[[' + text + ']]');
+                    break;
+                case 'dual-dialogue':
+                    // Mark as dual dialogue (caret suffix)
+                    lines.push('', text.toUpperCase() + ' ^');
+                    break;
+                case 'action':
+                default:
+                    if (prevType !== 'action' && prevType !== null) {
+                        lines.push('');
+                    }
+                    lines.push(text);
+                    break;
             }
+            prevType = elementType;
         });
 
         return lines.join('\n').trim();
@@ -2222,22 +2504,19 @@
     }
 
     function setElementType(type) {
-        // Apply element type to current selection
-        const selection = window.getSelection();
-        if (!selection.rangeCount) return;
+        // Normalize type (dropdown uses underscores, data attributes use hyphens)
+        const normalizedType = type.replace('_', '-');
 
-        const range = selection.getRangeAt(0);
-        const container = range.commonAncestorContainer;
-        const element = container.nodeType === 1 ? container : container.parentElement;
-
-        // Find the closest sp-* element
-        const spElement = element.closest('[class^="sp-"]') || element;
-        if (spElement && spElement.classList) {
-            // Remove existing sp-* classes
-            const classes = [...spElement.classList].filter(c => c.startsWith('sp-'));
-            classes.forEach(c => spElement.classList.remove(c));
-            // Add new class
-            spElement.classList.add('sp-' + type.replace('_', '-'));
+        // Get current block
+        const block = getCurrentBlock();
+        if (block) {
+            setBlockElementType(block, normalizedType);
+        } else {
+            // If no block exists, create one
+            const editor = document.getElementById('screenplayEditor');
+            const newBlock = createBlock('', normalizedType);
+            editor.appendChild(newBlock);
+            setCursorToBlock(newBlock);
         }
     }
 
