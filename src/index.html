@@ -6340,11 +6340,16 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
+    // FILM-122: Track original name for rename confirmation
+    let editingCharacterOriginalName = '';
+    let editingLocationOriginalName = '';
+
     function editCharacter(id) {
         const c = state.characters.find(x => x.id === id);
         if (!c) return;
         document.getElementById('characterModalTitle').textContent = 'Edit Character';
         document.getElementById('characterEditId').value = id;
+        editingCharacterOriginalName = c.name || ''; // Store original name
         setModalData('characterModal', c);
         showModal('characterModal');
     }
@@ -6354,18 +6359,37 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
         const editId = document.getElementById('characterEditId').value;
         const data = getModalData('characterModal');
         if (!data.name) return;
+
+        // FILM-122: Check for name change and confirm screenplay propagation
+        let propagateToScreenplay = true;
+        if (editId && editingCharacterOriginalName && data.name !== editingCharacterOriginalName) {
+            const confirmMsg = `Rename "${editingCharacterOriginalName}" to "${data.name}" in the screenplay too?\n\n` +
+                'This will update all character cues in the screenplay.';
+            propagateToScreenplay = confirm(confirmMsg);
+            data.propagate_to_screenplay = propagateToScreenplay;
+        }
+
         try {
+            let response;
             if (editId) {
-                await api('/characters/' + editId, { method: 'PUT', body: JSON.stringify(data) });
+                response = await api('/characters/' + editId, { method: 'PUT', body: JSON.stringify(data) });
             } else {
-                await api('/projects/' + state.currentProject.id + '/characters', { method: 'POST', body: JSON.stringify(data) });
+                response = await api('/projects/' + state.currentProject.id + '/characters', { method: 'POST', body: JSON.stringify(data) });
             }
+
+            // Show screenplay update info if applicable
+            if (response.screenplay_update && response.screenplay_update.updated) {
+                setStatus(`Character saved. Updated ${response.screenplay_update.occurrences} occurrence(s) in screenplay.`);
+            } else {
+                setStatus('Character saved');
+            }
+
             closeModal('characterModal');
             clearModal('characterModal');
             document.getElementById('characterEditId').value = '';
             document.getElementById('characterModalTitle').textContent = 'New Character';
+            editingCharacterOriginalName = '';
             loadCharacters();
-            setStatus('Character saved');
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -6418,6 +6442,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
         if (!l) return;
         document.getElementById('locationModalTitle').textContent = 'Edit Location';
         document.getElementById('locationEditId').value = id;
+        editingLocationOriginalName = l.name || ''; // FILM-122: Store original name
         setModalData('locationModal', l);
         showModal('locationModal');
     }
@@ -6427,18 +6452,43 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
         const editId = document.getElementById('locationEditId').value;
         const data = getModalData('locationModal');
         if (!data.name) return;
+
+        // FILM-122: Check for name change and confirm screenplay propagation
+        let propagateToScreenplay = true;
+        if (editId && editingLocationOriginalName && data.name !== editingLocationOriginalName) {
+            const confirmMsg = `Rename "${editingLocationOriginalName}" to "${data.name}" in the screenplay too?\n\n` +
+                'This will update all scene headings in the screenplay.';
+            propagateToScreenplay = confirm(confirmMsg);
+            data.propagate_to_screenplay = propagateToScreenplay;
+        }
+
         try {
+            let result;
             if (editId) {
-                await api('/locations/' + editId, { method: 'PUT', body: JSON.stringify(data) });
+                result = await api('/locations/' + editId, { method: 'PUT', body: JSON.stringify(data) });
             } else {
-                await api('/projects/' + state.currentProject.id + '/locations', { method: 'POST', body: JSON.stringify(data) });
+                result = await api('/projects/' + state.currentProject.id + '/locations', { method: 'POST', body: JSON.stringify(data) });
             }
             closeModal('locationModal');
             clearModal('locationModal');
             document.getElementById('locationEditId').value = '';
             document.getElementById('locationModalTitle').textContent = 'New Location';
+            editingLocationOriginalName = '';
             loadLocations();
-            setStatus('Location saved');
+
+            // FILM-122: Show screenplay update status
+            if (result && result.screenplay_update) {
+                const su = result.screenplay_update;
+                if (su.updated) {
+                    setStatus(`Location saved. Screenplay updated: ${su.occurrences} occurrence(s) renamed (v${su.new_version})`);
+                    // Reload screenplay to show changes
+                    loadScreenplay();
+                } else {
+                    setStatus(`Location saved. Screenplay: ${su.reason || 'no changes needed'}`);
+                }
+            } else {
+                setStatus('Location saved');
+            }
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
