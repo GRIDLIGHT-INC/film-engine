@@ -37,6 +37,7 @@
  *   POST   /film/projects/:id/advance-status             — Evaluate & advance project status
  *   GET    /film/scenes/:id/call-sheet                   — Scene call sheet
  *   GET    /film/projects/:id/call-sheet                 — Full project call sheet
+ *   GET    /film/projects/:id/export[/fcpxml|edl|premiere] — NLE export
  */
 
 const http = require('http');
@@ -56,6 +57,7 @@ const { handleRenderLedger } = require('./routes/render-ledger');
 const { handleProductionStatus } = require('./routes/production-status');
 const { handleCallSheets } = require('./routes/call-sheets');
 const { handleTextConvert } = require('./routes/text-convert');
+const { handleNLEExport } = require('./routes/nle-export');
 
 const PORT = process.env.PORT || 3100;
 
@@ -225,6 +227,11 @@ const server = http.createServer(async (req, res) => {
             return handleDashboard(req, res, parts, query);
         }
 
+        // Route: /film/projects/:id/export[/fcpxml|edl|premiere]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'export') {
+            return handleNLEExport(req, res, parts, query);
+        }
+
         // Route: /film/projects[/:id]
         if (parts[1] === 'projects') {
             return await handleProjects(req, res, parts, query);
@@ -310,7 +317,8 @@ function start() {
         console.log('  Routes: /film/projects, /film/shots, /film/scenes, /film/characters,');
         console.log('          /film/locations, /film/props, /film/notes, /film/assets,');
         console.log('          /film/*/dashboard, /film/*/milestones, /film/*/render,');
-        console.log('          /film/*/advance-status, /film/*/call-sheet, /film/*/breakdown');
+        console.log('          /film/*/advance-status, /film/*/call-sheet, /film/*/breakdown,');
+        console.log('          /film/*/export');
     });
 }
 
