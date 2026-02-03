@@ -12,8 +12,15 @@
  * Simple XML parser for FDX files
  * Uses regex-based parsing to avoid external dependencies
  */
+
+// Escape special regex characters in tag names to prevent regex injection
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function parseXMLElement(xml, tagName) {
-    const regex = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'gi');
+    const safe = escapeRegex(tagName);
+    const regex = new RegExp(`<${safe}[^>]*>([\\s\\S]*?)<\\/${safe}>`, 'gi');
     const matches = [];
     let match;
     while ((match = regex.exec(xml)) !== null) {
@@ -33,12 +40,14 @@ function parseXMLAttributes(tag) {
 }
 
 function getTagContent(xml, tagName) {
-    const match = xml.match(new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i'));
+    const safe = escapeRegex(tagName);
+    const match = xml.match(new RegExp(`<${safe}[^>]*>([\\s\\S]*?)<\\/${safe}>`, 'i'));
     return match ? match[1] : '';
 }
 
 function getAllTags(xml, tagName) {
-    const regex = new RegExp(`<${tagName}([^>]*)>([\\s\\S]*?)<\\/${tagName}>`, 'gi');
+    const safe = escapeRegex(tagName);
+    const regex = new RegExp(`<${safe}([^>]*)>([\\s\\S]*?)<\\/${safe}>`, 'gi');
     const results = [];
     let match;
     while ((match = regex.exec(xml)) !== null) {
@@ -51,7 +60,8 @@ function getAllTags(xml, tagName) {
 }
 
 function getSelfClosingTags(xml, tagName) {
-    const regex = new RegExp(`<${tagName}([^/>]*)\\/>`, 'gi');
+    const safe = escapeRegex(tagName);
+    const regex = new RegExp(`<${safe}([^/>]*)\\/>`, 'gi');
     const results = [];
     let match;
     while ((match = regex.exec(xml)) !== null) {

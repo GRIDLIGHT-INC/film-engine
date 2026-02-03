@@ -73,6 +73,19 @@ function fileExists(projectId, subdir, filename) {
 }
 
 /**
+ * Validate that a resolved path is contained within an allowed base directory.
+ * Prevents path traversal attacks.
+ * @param {string} filePath - The path to validate
+ * @param {string} baseDir - The allowed base directory
+ * @returns {boolean}
+ */
+function isPathContained(filePath, baseDir) {
+    const resolved = path.resolve(filePath);
+    const resolvedBase = path.resolve(baseDir);
+    return resolved.startsWith(resolvedBase + path.sep) || resolved === resolvedBase;
+}
+
+/**
  * Serve a static file from data/{subdir}/{projectId}/{filename}.
  * Handles sanitization, 404s, and correct content types.
  * @param {http.ServerResponse} res
@@ -89,6 +102,11 @@ function serveFile(res, projectId, subdir, filename) {
     }
 
     const filePath = getFilePath(projectId, subdir, filename);
+    if (!isPathContained(filePath, DATA_DIR)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid file path' }));
+        return;
+    }
     if (!fs.existsSync(filePath)) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'File not found' }));
@@ -132,5 +150,6 @@ module.exports = {
     getFileUrl,
     fileExists,
     serveFile,
+    isPathContained,
     DATA_DIR,
 };

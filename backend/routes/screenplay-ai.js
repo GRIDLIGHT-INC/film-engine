@@ -218,7 +218,7 @@ async function processScreenplayAI(req, res, projectId) {
 
     // Call AI gateway
     const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
-    const apiToken = process.env.API_TOKEN || 'dev-token';
+    const apiToken = process.env.API_TOKEN || process.env.GRIDLIGHT_API_KEY || '';
 
     try {
         const aiRes = await fetch(`${gatewayUrl}/chat/intelligent`, {
@@ -328,7 +328,7 @@ async function processScreenplayAIStream(req, res, projectId) {
     const truncatedHistory = conversation_history.slice(-10).filter(m => m.role && m.content);
 
     const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
-    const apiToken = process.env.API_TOKEN || 'dev-token';
+    const apiToken = process.env.API_TOKEN || process.env.GRIDLIGHT_API_KEY || '';
 
     // SSE headers
     res.writeHead(200, {

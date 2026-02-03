@@ -12,8 +12,10 @@ const fs = require('fs');
 const path = require('path');
 const { db, generateId } = require('../db/database');
 const { exportProjectData, importProjectData } = require('../lib/backup');
+const { isPathContained } = require('../lib/file-storage');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const BACKUP_DIR = path.join(__dirname, '..', 'data', 'backups');
 
 function handleBackups(req, res, urlParts, query) {
     // /film/projects/:id/backups
@@ -76,14 +78,13 @@ function createBackup(req, res, projectId) {
     const now = new Date().toISOString();
     const safeName = (project.title || 'project').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
     const fileName = `backup_${safeName}_${now.replace(/[:.]/g, '-')}.json`;
-    const backupDir = path.join(__dirname, '..', 'data', 'backups');
 
     // Ensure backup directory exists
-    if (!fs.existsSync(backupDir)) {
-        fs.mkdirSync(backupDir, { recursive: true });
+    if (!fs.existsSync(BACKUP_DIR)) {
+        fs.mkdirSync(BACKUP_DIR, { recursive: true });
     }
 
-    const filePath = path.join(backupDir, fileName);
+    const filePath = path.join(BACKUP_DIR, fileName);
     const jsonStr = JSON.stringify(result.data, null, 2);
     fs.writeFileSync(filePath, jsonStr, 'utf8');
 
@@ -93,7 +94,7 @@ function createBackup(req, res, projectId) {
     `).run(
         backupId, projectId,
         body.backup_type || 'manual',
-        filePath,
+        fileName,
         Buffer.byteLength(jsonStr, 'utf8'),
         JSON.stringify(result.tablesIncluded),
         JSON.stringify(result.rowCounts),
@@ -117,6 +118,20 @@ function getBackup(req, res, backupId) {
     res.end(JSON.stringify(row));
 }
 
+/**
+ * Resolve backup file_path from DB to an absolute path within BACKUP_DIR.
+ * Handles both old absolute paths and new relative filenames.
+ * Returns null if the resolved path escapes BACKUP_DIR.
+ */
+function resolveBackupPath(storedPath) {
+    // If it's just a filename (new format), join with BACKUP_DIR
+    const resolved = path.isAbsolute(storedPath)
+        ? path.resolve(storedPath)
+        : path.resolve(BACKUP_DIR, storedPath);
+    if (!isPathContained(resolved, BACKUP_DIR)) return null;
+    return resolved;
+}
+
 function downloadBackup(req, res, backupId) {
     const row = db.prepare('SELECT * FROM film_backups WHERE id = ?').get(backupId);
     if (!row) {
@@ -125,14 +140,15 @@ function downloadBackup(req, res, backupId) {
         return;
     }
 
-    if (!fs.existsSync(row.file_path)) {
+    const filePath = resolveBackupPath(row.file_path);
+    if (!filePath || !fs.existsSync(filePath)) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Backup file not found on disk' }));
         return;
     }
 
-    const content = fs.readFileSync(row.file_path, 'utf8');
-    const fileName = path.basename(row.file_path);
+    const content = fs.readFileSync(filePath, 'utf8');
+    const fileName = path.basename(filePath);
     res.writeHead(200, {
         'Content-Type': 'application/json',
         'Content-Disposition': `attachment; filename="${fileName}"`,
@@ -148,7 +164,8 @@ function restoreBackup(req, res, backupId) {
         return;
     }
 
-    if (!fs.existsSync(row.file_path)) {
+    const filePath = resolveBackupPath(row.file_path);
+    if (!filePath || !fs.existsSync(filePath)) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Backup file not found on disk' }));
         return;
@@ -156,7 +173,7 @@ function restoreBackup(req, res, backupId) {
 
     let backupData;
     try {
-        const content = fs.readFileSync(row.file_path, 'utf8');
+        const content = fs.readFileSync(filePath, 'utf8');
         backupData = JSON.parse(content);
     } catch (e) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -184,8 +201,9 @@ function deleteBackup(req, res, backupId) {
     }
 
     // Delete file from disk if it exists
-    if (fs.existsSync(row.file_path)) {
-        fs.unlinkSync(row.file_path);
+    const filePath = resolveBackupPath(row.file_path);
+    if (filePath && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
     }
 
     db.prepare('DELETE FROM film_backups WHERE id = ?').run(backupId);

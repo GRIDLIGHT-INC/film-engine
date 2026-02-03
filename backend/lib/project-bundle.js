@@ -17,7 +17,7 @@ const { db, generateId } = require('../db/database');
 const { DATA_DIR } = require('./file-storage');
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const crypto = require('crypto');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -123,7 +123,10 @@ function exportProject(projectId) {
     const safeTitle = (project.title || 'project').replace(/[^a-zA-Z0-9_-]/g, '_');
     const archiveName = `${safeTitle}-${projectId.slice(0, 8)}.tar.gz`;
     const archivePath = path.join(tmpBase, archiveName);
-    execSync(`tar czf "${archivePath}" -C "${stagingDir}" .`);
+    const tarCreate = spawnSync('tar', ['czf', archivePath, '-C', stagingDir, '.'], { stdio: 'pipe' });
+    if (tarCreate.status !== 0) {
+        throw new Error('Failed to create archive: ' + (tarCreate.stderr?.toString() || 'unknown error'));
+    }
 
     // Clean up staging directory
     fs.rmSync(stagingDir, { recursive: true, force: true });
@@ -146,7 +149,11 @@ function importProject(archiveBuffer) {
     // Write buffer to temp file and extract
     const tmpArchive = path.join(tmpBase, `import-${Date.now()}.tar.gz`);
     fs.writeFileSync(tmpArchive, archiveBuffer);
-    execSync(`tar xzf "${tmpArchive}" -C "${extractDir}"`);
+    const tarExtract = spawnSync('tar', ['xzf', tmpArchive, '-C', extractDir], { stdio: 'pipe' });
+    if (tarExtract.status !== 0) {
+        fs.unlinkSync(tmpArchive);
+        throw new Error('Failed to extract archive: ' + (tarExtract.stderr?.toString() || 'unknown error'));
+    }
     fs.unlinkSync(tmpArchive);
 
     // Read manifest
@@ -191,7 +198,9 @@ function importProject(archiveBuffer) {
 
             let inserted = 0;
             for (const row of rows) {
-                const remapped = { ...row };
+                const remapped = Object.fromEntries(
+                    Object.entries(row).filter(([k]) => !['__proto__', 'constructor', 'prototype'].includes(k))
+                );
 
                 // Remap the row's own ID
                 if (remapped.id && idMap[remapped.id]) {

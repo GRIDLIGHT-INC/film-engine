@@ -7531,8 +7531,10 @@
             return;
         }
 
-        // Clone the editor content
-        const content = editor.innerHTML;
+        // Clone the editor content and sanitize for print
+        const content = editor.innerHTML
+            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+            .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
 
         // Generate print-ready HTML
         const projectTitle = currentProject?.title || 'Screenplay';

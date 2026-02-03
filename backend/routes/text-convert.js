@@ -137,7 +137,7 @@ async function processTextConversion(req, res, projectId, isPreview) {
 
     // Call AI gateway
     const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
-    const apiToken = process.env.API_TOKEN || 'dev-token';
+    const apiToken = process.env.API_TOKEN || process.env.GRIDLIGHT_API_KEY || '';
 
     try {
         const aiRes = await fetch(`${gatewayUrl}/chat/intelligent`, {

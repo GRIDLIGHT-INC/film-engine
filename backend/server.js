@@ -103,6 +103,72 @@ const { handleBackups } = require('./routes/backups');
 
 const PORT = process.env.PORT || 3100;
 
+// ── Rate Limiter ────────────────────────────────────────────────────
+// Sliding-window rate limiter keyed by client IP.
+// RATE_LIMIT_WINDOW_MS: window size (default 60s)
+// RATE_LIMIT_MAX_GENERAL: max general requests per window (default 200)
+// RATE_LIMIT_MAX_GENERATION: max generation requests per window (default 10)
+const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
+const RATE_LIMIT_MAX_GENERAL = parseInt(process.env.RATE_LIMIT_MAX_GENERAL || '200', 10);
+const RATE_LIMIT_MAX_GENERATION = parseInt(process.env.RATE_LIMIT_MAX_GENERATION || '10', 10);
+
+const _rateBuckets = {};  // ip → { general: [timestamps], generation: [timestamps] }
+
+function _getRateBucket(ip) {
+    if (!_rateBuckets[ip]) _rateBuckets[ip] = { general: [], generation: [] };
+    return _rateBuckets[ip];
+}
+
+function _pruneTimestamps(arr, now) {
+    const cutoff = now - RATE_LIMIT_WINDOW;
+    while (arr.length && arr[0] < cutoff) arr.shift();
+}
+
+// Clean stale entries every 5 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const ip of Object.keys(_rateBuckets)) {
+        const b = _rateBuckets[ip];
+        _pruneTimestamps(b.general, now);
+        _pruneTimestamps(b.generation, now);
+        if (!b.general.length && !b.generation.length) delete _rateBuckets[ip];
+    }
+}, 5 * 60 * 1000).unref();
+
+/**
+ * Check rate limit. Returns true if allowed, false if limited.
+ */
+function checkRateLimit(ip, bucket) {
+    const now = Date.now();
+    const b = _getRateBucket(ip);
+    const arr = b[bucket];
+    _pruneTimestamps(arr, now);
+    const max = bucket === 'generation' ? RATE_LIMIT_MAX_GENERATION : RATE_LIMIT_MAX_GENERAL;
+    if (arr.length >= max) return false;
+    arr.push(now);
+    return true;
+}
+
+// Generation routes that consume GPU/API resources
+const GENERATION_ROUTES = new Set([
+    'breakdown', 'storyboard', 'voice', 'video', 'lipsync',
+    'music', 'pipeline', 'screenplay-ai', 'text-to-screenplay',
+    'post', 'qa',
+]);
+
+// Strip prototype pollution keys (__proto__, constructor, prototype) recursively
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+function stripDangerousKeys(obj) {
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(stripDangerousKeys);
+    const clean = {};
+    for (const key of Object.keys(obj)) {
+        if (DANGEROUS_KEYS.has(key)) continue;
+        clean[key] = stripDangerousKeys(obj[key]);
+    }
+    return clean;
+}
+
 // Parse JSON body from request
 function readBody(req, maxSize = 10 * 1024 * 1024) {
     return new Promise((resolve, reject) => {
@@ -119,7 +185,7 @@ function readBody(req, maxSize = 10 * 1024 * 1024) {
         });
         req.on('end', () => {
             if (!body) { resolve({}); return; }
-            try { resolve(JSON.parse(body)); }
+            try { resolve(stripDangerousKeys(JSON.parse(body))); }
             catch (e) { reject(new Error('Invalid JSON')); }
         });
         req.on('error', reject);
@@ -141,14 +207,40 @@ const server = http.createServer(async (req, res) => {
     const query = parseQuery(url.search);
     const parts = pathname.split('/').filter(Boolean); // ['film', 'projects', ...]
 
-    // CORS
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    // Security headers
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+    // CORS — restrict to configured origins (default: allow all for local dev)
+    const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS || '*';
+    const origin = req.headers.origin || '';
+    if (allowedOrigins === '*') {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+    } else {
+        const origins = allowedOrigins.split(',').map(o => o.trim());
+        if (origins.includes(origin)) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
+            res.setHeader('Vary', 'Origin');
+        }
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     if (req.method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
+        return;
+    }
+
+    // Rate limiting
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    const subRoute = parts[3] || '';
+    const rateBucket = (req.method === 'POST' && GENERATION_ROUTES.has(subRoute)) ? 'generation' : 'general';
+    if (!checkRateLimit(clientIp, rateBucket)) {
+        res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': String(Math.ceil(RATE_LIMIT_WINDOW / 1000)) });
+        res.end(JSON.stringify({ error: 'Too many requests. Please try again later.' }));
         return;
     }
 
@@ -605,7 +697,7 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
         console.error('Request error:', err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Internal server error', details: err.message }));
+        res.end(JSON.stringify({ error: 'Internal server error' }));
     }
 });
 

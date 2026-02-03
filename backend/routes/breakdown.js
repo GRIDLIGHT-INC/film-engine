@@ -113,7 +113,7 @@ async function breakdownSync(req, res, projectId) {
 
     // Call Gridlight AI
     const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
-    const apiToken = process.env.API_TOKEN || 'dev-token';
+    const apiToken = process.env.API_TOKEN || process.env.GRIDLIGHT_API_KEY || '';
 
     try {
         const aiRes = await fetch(`${gatewayUrl}/chat/intelligent`, {
@@ -203,7 +203,7 @@ async function breakdownStream(req, res, projectId) {
     }
 
     const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
-    const apiToken = process.env.API_TOKEN || 'dev-token';
+    const apiToken = process.env.API_TOKEN || process.env.GRIDLIGHT_API_KEY || '';
 
     // SSE headers
     res.writeHead(200, {

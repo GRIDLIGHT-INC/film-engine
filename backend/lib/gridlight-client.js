@@ -7,7 +7,11 @@
  */
 
 const GRIDLIGHT_URL = process.env.GRIDLIGHT_URL || process.env.GATEWAY_URL || 'http://localhost:8080';
-const GRIDLIGHT_API_KEY = process.env.GRIDLIGHT_API_KEY || process.env.IMAGEGEN_API_KEY || 'dev-token';
+const GRIDLIGHT_API_KEY = process.env.GRIDLIGHT_API_KEY || process.env.IMAGEGEN_API_KEY || '';
+
+if (!GRIDLIGHT_API_KEY) {
+    console.warn('[security] GRIDLIGHT_API_KEY not set. External API calls will be sent without authentication.');
+}
 
 // ── Request Queue / Semaphore (FILM-034) ────────────────────────────
 // Limits concurrent requests to external services to avoid overwhelming
