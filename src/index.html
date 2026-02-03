@@ -2723,6 +2723,186 @@
         .text-sm { font-size: 11px; }
         .gap-8 { gap: 8px; }
         .hidden { display: none !important; }
+
+        /* ══════════════════════════════════════════════════════════════
+           CUSTOM TOOLTIPS
+           ══════════════════════════════════════════════════════════════ */
+        [data-tooltip] {
+            position: relative;
+        }
+        [data-tooltip]::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--surface-3);
+            color: var(--text);
+            border: 1px solid var(--border-bright);
+            padding: 6px 10px;
+            border-radius: var(--radius-xs);
+            font-size: 11px;
+            font-weight: 400;
+            line-height: 1.4;
+            white-space: normal;
+            max-width: 260px;
+            width: max-content;
+            pointer-events: none;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease 0.4s, visibility 0.2s ease 0.4s;
+            z-index: 9998;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5), var(--glow-primary);
+            text-align: left;
+            letter-spacing: 0;
+            text-transform: none;
+        }
+        [data-tooltip]::before {
+            content: '';
+            position: absolute;
+            bottom: calc(100% + 3px);
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: var(--border-bright);
+            pointer-events: none;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease 0.4s, visibility 0.2s ease 0.4s;
+            z-index: 9998;
+        }
+        [data-tooltip]:hover::after,
+        [data-tooltip]:hover::before {
+            opacity: 1;
+            visibility: visible;
+        }
+        /* Bottom-positioned variant */
+        [data-tooltip-pos="bottom"]::after {
+            bottom: auto;
+            top: calc(100% + 8px);
+        }
+        [data-tooltip-pos="bottom"]::before {
+            bottom: auto;
+            top: calc(100% + 3px);
+            border-top-color: transparent;
+            border-bottom-color: var(--border-bright);
+        }
+        /* Right-positioned variant for sidebar items */
+        [data-tooltip-pos="right"]::after {
+            bottom: auto;
+            top: 50%;
+            left: calc(100% + 10px);
+            transform: translateY(-50%);
+        }
+        [data-tooltip-pos="right"]::before {
+            bottom: auto;
+            top: 50%;
+            left: calc(100% + 5px);
+            transform: translateY(-50%);
+            border-top-color: transparent;
+            border-right-color: var(--border-bright);
+        }
+        /* Prevent text-transform inheritance on nav-items */
+        .nav-item[data-tooltip]::after {
+            text-transform: none;
+        }
+
+        /* ══════════════════════════════════════════════════════════════
+           GLOSSARY MODAL
+           ══════════════════════════════════════════════════════════════ */
+        .glossary-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: var(--radius-xs);
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 8px;
+        }
+        .glossary-btn:hover {
+            color: var(--text);
+            border-color: var(--border-bright);
+            box-shadow: var(--glow-primary);
+        }
+        .glossary-search {
+            width: 100%;
+            padding: 8px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xs);
+            color: var(--text);
+            font-size: 12px;
+            margin-bottom: 16px;
+            outline: none;
+        }
+        .glossary-search:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(233,30,99,0.15);
+        }
+        .glossary-search::placeholder {
+            color: var(--text-muted);
+        }
+        .glossary-content {
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        .glossary-category {
+            margin-bottom: 16px;
+        }
+        .glossary-category-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--primary);
+            font-weight: 600;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid var(--border);
+        }
+        .glossary-term {
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.02);
+        }
+        .glossary-term-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--secondary);
+        }
+        .glossary-term-def {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+            line-height: 1.5;
+        }
+        .glossary-empty {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 20px;
+            font-size: 12px;
+        }
+        .glossary-term mark {
+            background: rgba(233,30,99,0.3);
+            color: var(--text);
+            border-radius: 2px;
+            padding: 0 2px;
+        }
+        .info-hint {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            font-size: 12px;
+            color: var(--text-muted);
+            cursor: help;
+            vertical-align: middle;
+            margin-left: 4px;
+        }
     </style>
 </head>
 <body>
@@ -2733,6 +2913,7 @@
         <div class="sidebar-header">
             <h1>Film Engine</h1>
             <p>AI Production Pipeline</p>
+            <button class="glossary-btn" onclick="showModal('glossaryModal')">&#128218; Glossary</button>
         </div>
 
         <!-- State 1: Project List Mode -->
@@ -2753,71 +2934,71 @@
             </div>
             <div class="sidebar-content">
                 <div class="nav-section">Production</div>
-                <button class="nav-item" data-page="dashboard" onclick="navigateTo('dashboard')">
+                <button class="nav-item" data-page="dashboard" onclick="navigateTo('dashboard')" data-tooltip="Project overview with shot progress, status board, and quick navigation" data-tooltip-pos="right">
                     <span class="nav-icon">&#128202;</span> Dashboard
                 </button>
-                <button class="nav-item" data-page="screenplay" onclick="navigateTo('screenplay')">
+                <button class="nav-item" data-page="screenplay" onclick="navigateTo('screenplay')" data-tooltip="Screenplay editor with Fountain formatting and AI writing assistant" data-tooltip-pos="right">
                     <span class="nav-icon">&#128221;</span> Screenplay
                 </button>
-                <button class="nav-item" data-page="scenes" onclick="navigateTo('scenes')">
+                <button class="nav-item" data-page="scenes" onclick="navigateTo('scenes')" data-tooltip="Scenes extracted from your screenplay with INT/EXT headings" data-tooltip-pos="right">
                     <span class="nav-icon">&#127916;</span> Scenes
                 </button>
-                <button class="nav-item" data-page="shotboard" onclick="navigateTo('shotboard')">
+                <button class="nav-item" data-page="shotboard" onclick="navigateTo('shotboard')" data-tooltip="Kanban board of shots organized by scene with scene cards" data-tooltip-pos="right">
                     <span class="nav-icon">&#127919;</span> Shot Board
                 </button>
-                <button class="nav-item" data-page="storyboard" onclick="navigateTo('storyboard')">
+                <button class="nav-item" data-page="storyboard" onclick="navigateTo('storyboard')" data-tooltip="AI-generated visual keyframes for each shot in your project" data-tooltip-pos="right">
                     <span class="nav-icon">&#128444;</span> Storyboard
                 </button>
-                <button class="nav-item" data-page="acts" onclick="navigateTo('acts')">
+                <button class="nav-item" data-page="acts" onclick="navigateTo('acts')" data-tooltip="Organize scenes into acts and sequences for narrative structure" data-tooltip-pos="right">
                     <span class="nav-icon">&#127917;</span> Acts
                 </button>
                 <div class="sidebar-divider"></div>
                 <div class="nav-section">Elements</div>
-                <button class="nav-item" data-page="characters" onclick="navigateTo('characters')">
+                <button class="nav-item" data-page="characters" onclick="navigateTo('characters')" data-tooltip="Character profiles with appearance prompts, LoRA tokens, and voice settings" data-tooltip-pos="right">
                     <span class="nav-icon">&#128100;</span> Characters
                 </button>
-                <button class="nav-item" data-page="locations" onclick="navigateTo('locations')">
+                <button class="nav-item" data-page="locations" onclick="navigateTo('locations')" data-tooltip="Filming locations with lighting defaults and visual descriptions" data-tooltip-pos="right">
                     <span class="nav-icon">&#128205;</span> Locations
                 </button>
-                <button class="nav-item" data-page="props" onclick="navigateTo('props')">
+                <button class="nav-item" data-page="props" onclick="navigateTo('props')" data-tooltip="Physical props and set pieces with scene assignments" data-tooltip-pos="right">
                     <span class="nav-icon">&#127917;</span> Props
                 </button>
                 <div class="sidebar-divider"></div>
                 <div class="nav-section">Media</div>
-                <button class="nav-item" data-page="assets" onclick="navigateTo('assets')">
+                <button class="nav-item" data-page="assets" onclick="navigateTo('assets')" data-tooltip="Registry of all generated and imported media files" data-tooltip-pos="right">
                     <span class="nav-icon">&#128230;</span> Assets
                 </button>
-                <button class="nav-item" data-page="musiccues" onclick="navigateTo('musiccues')">
+                <button class="nav-item" data-page="musiccues" onclick="navigateTo('musiccues')" data-tooltip="Score, SFX, and ambient audio cues tied to scenes" data-tooltip-pos="right">
                     <span class="nav-icon">&#127925;</span> Music Cues
                 </button>
-                <button class="nav-item" data-page="colorgrading" onclick="navigateTo('colorgrading')">
+                <button class="nav-item" data-page="colorgrading" onclick="navigateTo('colorgrading')" data-tooltip="LUT presets and color correction parameters for shots" data-tooltip-pos="right">
                     <span class="nav-icon">&#127912;</span> Color Grading
                 </button>
                 <div class="sidebar-divider"></div>
                 <div class="nav-section">Workflow</div>
-                <button class="nav-item" data-page="milestones" onclick="navigateTo('milestones')">
+                <button class="nav-item" data-page="milestones" onclick="navigateTo('milestones')" data-tooltip="Production timeline tracking with target and completion dates" data-tooltip-pos="right">
                     <span class="nav-icon">&#128203;</span> Milestones
                 </button>
-                <button class="nav-item" data-page="notes" onclick="navigateTo('notes')">
+                <button class="nav-item" data-page="notes" onclick="navigateTo('notes')" data-tooltip="Direction notes, revision requests, and shot approval workflow" data-tooltip-pos="right">
                     <span class="nav-icon">&#128221;</span> Notes & Reviews
                 </button>
-                <button class="nav-item" data-page="renderhistory" onclick="navigateTo('renderhistory')">
+                <button class="nav-item" data-page="renderhistory" onclick="navigateTo('renderhistory')" data-tooltip="Full parameter history of every render for reproducibility" data-tooltip-pos="right">
                     <span class="nav-icon">&#128260;</span> Render History
                 </button>
-                <button class="nav-item" data-page="continuity" onclick="navigateTo('continuity')">
+                <button class="nav-item" data-page="continuity" onclick="navigateTo('continuity')" data-tooltip="Reference board for visual, wardrobe, prop, and lighting consistency" data-tooltip-pos="right">
                     <span class="nav-icon">&#128247;</span> Continuity
                 </button>
-                <button class="nav-item" data-page="budget" onclick="navigateTo('budget')">
+                <button class="nav-item" data-page="budget" onclick="navigateTo('budget')" data-tooltip="Cost tracking per render and API call with forecasting" data-tooltip-pos="right">
                     <span class="nav-icon">&#128176;</span> Budget
                 </button>
                 <div class="sidebar-divider"></div>
-                <button class="nav-item" data-page="exportpage" onclick="navigateTo('exportpage')">
+                <button class="nav-item" data-page="exportpage" onclick="navigateTo('exportpage')" data-tooltip="Export timelines to FCPXML, EDL, Premiere XML, or FDX formats" data-tooltip-pos="right">
                     <span class="nav-icon">&#128228;</span> Export
                 </button>
-                <button class="nav-item" data-page="pipeline" onclick="navigateTo('pipeline')">
+                <button class="nav-item" data-page="pipeline" onclick="navigateTo('pipeline')" data-tooltip="Automated 9-step production pipeline from keyframe to assembly" data-tooltip-pos="right">
                     <span class="nav-icon">&#9881;</span> Pipeline
                 </button>
-                <button class="nav-item" data-page="settings" onclick="navigateTo('settings')">
+                <button class="nav-item" data-page="settings" onclick="navigateTo('settings')" data-tooltip="Resolution, frame rate, aspect ratio, color space, and delivery presets" data-tooltip-pos="right">
                     <span class="nav-icon">&#9881;</span> Settings
                 </button>
             </div>
@@ -2847,11 +3028,11 @@
         <div class="page" id="page-dashboard">
             <div class="page-header"><h2>Dashboard</h2></div>
             <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
-                <button class="btn btn-secondary btn-sm" onclick="navigateTo('scenes')">Scenes</button>
-                <button class="btn btn-secondary btn-sm" onclick="navigateTo('shotboard')">Shot Board</button>
-                <button class="btn btn-secondary btn-sm" onclick="navigateTo('storyboard')">Storyboard</button>
-                <button class="btn btn-secondary btn-sm" onclick="navigateTo('pipeline')">Pipeline</button>
-                <button class="btn btn-secondary btn-sm" onclick="navigateTo('exportpage')">Export</button>
+                <button class="btn btn-secondary btn-sm" onclick="navigateTo('scenes')" data-tooltip="View extracted scenes from your screenplay" data-tooltip-pos="bottom">Scenes</button>
+                <button class="btn btn-secondary btn-sm" onclick="navigateTo('shotboard')" data-tooltip="Kanban board for managing individual shots" data-tooltip-pos="bottom">Shot Board</button>
+                <button class="btn btn-secondary btn-sm" onclick="navigateTo('storyboard')" data-tooltip="View and generate AI storyboard keyframes" data-tooltip-pos="bottom">Storyboard</button>
+                <button class="btn btn-secondary btn-sm" onclick="navigateTo('pipeline')" data-tooltip="Run automated production pipeline on shots" data-tooltip-pos="bottom">Pipeline</button>
+                <button class="btn btn-secondary btn-sm" onclick="navigateTo('exportpage')" data-tooltip="Export project to NLE timeline formats" data-tooltip-pos="bottom">Export</button>
             </div>
             <div class="dashboard-grid" id="dashStats"></div>
             <div class="flex-between mb-8">
@@ -2913,12 +3094,12 @@
                 <div class="screenplay-main-panel">
                     <!-- Toolbar -->
                     <div class="screenplay-toolbar">
-                        <button class="toolbar-btn" onclick="formatBold()" title="Bold (Ctrl+B)"><b>B</b></button>
-                        <button class="toolbar-btn" onclick="formatItalic()" title="Italic (Ctrl+I)"><i>I</i></button>
-                        <button class="toolbar-btn" onclick="formatUnderline()" title="Underline (Ctrl+U)"><u>U</u></button>
+                        <button class="toolbar-btn" onclick="formatBold()" data-tooltip="Bold text (Ctrl+B)"><b>B</b></button>
+                        <button class="toolbar-btn" onclick="formatItalic()" data-tooltip="Italic text (Ctrl+I)"><i>I</i></button>
+                        <button class="toolbar-btn" onclick="formatUnderline()" data-tooltip="Underline text (Ctrl+U)"><u>U</u></button>
                         <div class="toolbar-divider"></div>
                         <span id="currentSceneNum" style="font-size:11px;color:var(--text-muted);">Scene: —</span>
-                        <button class="toolbar-btn" id="lockSceneNumsBtn" onclick="toggleLockSceneNumbers()" title="Lock Scene Numbers">
+                        <button class="toolbar-btn" id="lockSceneNumsBtn" onclick="toggleLockSceneNumbers()" data-tooltip="Lock scene numbers to prevent reflow during editing">
                             🔓
                         </button>
                         <div class="toolbar-stats">
@@ -2928,13 +3109,13 @@
                         <div class="toolbar-divider"></div>
                         <span id="saveStatusIndicator" class="save-status saved">Saved</span>
                         <div class="toolbar-divider"></div>
-                        <button class="toolbar-btn" id="commentsToggle" onclick="toggleComments()" title="Toggle Comments">Comments</button>
-                        <button class="toolbar-btn" id="aiChatToggle" onclick="toggleAIChat()" title="AI Assistant (Ctrl+Shift+A)">AI Chat</button>
-                        <button class="toolbar-btn" onclick="openAIGenerateModal()" title="AI Generate for Current Element" style="background:var(--primary);color:white;">✨ Generate</button>
-                        <button class="toolbar-btn" onclick="openTitlePageModal()" title="Edit Title Page">Title Page</button>
+                        <button class="toolbar-btn" id="commentsToggle" onclick="toggleComments()" data-tooltip="Toggle inline comment annotations on the screenplay">Comments</button>
+                        <button class="toolbar-btn" id="aiChatToggle" onclick="toggleAIChat()" data-tooltip="Open AI writing assistant for brainstorming and rewriting (Ctrl+Shift+A)">AI Chat</button>
+                        <button class="toolbar-btn" onclick="openAIGenerateModal()" data-tooltip="Use AI to generate content for the current screenplay element" style="background:var(--primary);color:white;">✨ Generate</button>
+                        <button class="toolbar-btn" onclick="openTitlePageModal()" data-tooltip="Edit screenplay title page metadata (title, author, draft date)">Title Page</button>
                         <!-- FILM-130: Export Dropdown -->
                         <div class="export-dropdown" id="exportDropdown">
-                            <button class="toolbar-btn" onclick="toggleExportDropdown()" title="Export Screenplay">Export</button>
+                            <button class="toolbar-btn" onclick="toggleExportDropdown()" data-tooltip="Export screenplay as Fountain, plain text, PDF, or Final Draft FDX">Export</button>
                             <div class="export-dropdown-content">
                                 <button class="export-dropdown-item" onclick="exportToFountain()">
                                     Fountain <small>.fountain</small>
@@ -2948,12 +3129,12 @@
                             </div>
                         </div>
                         <!-- FILM-131: Import Button -->
-                        <button class="toolbar-btn" onclick="openImportModal()" title="Import Final Draft or Fountain">Import</button>
-                        <button class="toolbar-btn" onclick="openTextConvertModal()" title="Convert Text to Screenplay">Convert</button>
-                        <button class="toolbar-btn suggestions-btn" id="suggestionsBtn" onclick="openSuggestionsPanel()" title="Entity Suggestions" style="display:none;">
+                        <button class="toolbar-btn" onclick="openImportModal()" data-tooltip="Import a Final Draft (.fdx) or Fountain (.fountain) screenplay file">Import</button>
+                        <button class="toolbar-btn" onclick="openTextConvertModal()" data-tooltip="Convert plain text or prose into properly formatted Fountain screenplay">Convert</button>
+                        <button class="toolbar-btn suggestions-btn" id="suggestionsBtn" onclick="openSuggestionsPanel()" data-tooltip="Auto-detected character and location names from your screenplay" style="display:none;">
                             <span id="suggestionsBadge" class="suggestions-badge">0</span>
                         </button>
-                        <button class="toolbar-btn" onclick="toggleShortcutHelp()" title="Keyboard Shortcuts (Ctrl+/)">?</button>
+                        <button class="toolbar-btn" onclick="toggleShortcutHelp()" data-tooltip="Show keyboard shortcut reference (Ctrl+/)">?</button>
                         <!-- FILM-129: Revision Indicator -->
                         <div class="revision-indicator" id="revisionIndicator" style="display:none;">
                             <span class="revision-dot" id="revisionDot"></span>
@@ -4219,6 +4400,20 @@
                     <button class="btn btn-primary" onclick="saveCostEntry()">Save</button>
                     <button class="btn btn-secondary" onclick="closeModal('costEntryModal')">Cancel</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Glossary Modal -->
+    <div class="modal-overlay" id="glossaryModal">
+        <div class="modal" style="max-width:600px;">
+            <div class="modal-header">
+                <h3>&#128218; Film Production Glossary</h3>
+                <button class="modal-close" onclick="closeModal('glossaryModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" class="glossary-search" id="glossarySearch" placeholder="Search terms..." oninput="filterGlossary()">
+                <div class="glossary-content" id="glossaryContent"></div>
             </div>
         </div>
     </div>
@@ -11979,6 +12174,136 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             document.getElementById('statusConnection').innerHTML = '<span class="status-dot-offline">&#9679;</span> Offline';
         }
     }
+
+    // ══════════════════════════════════════════════════════════════
+    // GLOSSARY
+    // ══════════════════════════════════════════════════════════════
+    const GLOSSARY = {
+        'Platform Sections': {
+            'Dashboard': 'Central overview showing shot completion progress, status board with production phase indicators, and quick navigation to key sections.',
+            'Screenplay': 'Full-featured screenplay editor supporting Fountain markup format with real-time formatting, scene navigation, AI writing assistant, and export to PDF/FDX.',
+            'Scenes': 'Scenes extracted from your screenplay, identified by INT./EXT. headings. Each scene has a location, time of day, and associated shots.',
+            'Shot Board': 'Kanban-style board organizing individual shots by scene. Each shot has a scene card (YAML) describing camera, lighting, characters, and style.',
+            'Storyboard': 'AI-generated visual keyframes for every shot, created using SDXL-optimized prompts with style locking for visual consistency across scenes.',
+            'Acts': 'Narrative structure dividing your project into acts and sequences. Scenes can be assigned to acts for organizational clarity.',
+            'Characters': 'Character profiles including visual appearance prompts for AI generation, LoRA/TI tokens for consistent likeness, and voice profile settings.',
+            'Locations': 'Filming locations with default lighting setups and visual descriptions used during storyboard and video generation.',
+            'Props': 'Physical objects and set pieces tracked per scene for continuity and breakdown purposes.',
+            'Assets': 'Registry of all generated and imported media files across 22 types: keyframes, video, audio, subtitles, LUTs, reference images, and more.',
+            'Music Cues': 'Score, sound effect, and ambient audio cues tied to specific scenes with mood, tempo, and instrumentation metadata.',
+            'Color Grading': 'LUT presets and color correction parameters (temperature, tint, contrast, saturation, grain) applied during post-production.',
+            'Milestones': 'Production timeline markers with target and actual completion dates for tracking overall project progress.',
+            'Notes & Reviews': 'Direction notes, revision requests, and approval workflow for shots. Supports 10 note types covering camera, lighting, performance, VFX, and more.',
+            'Render History': 'Complete parameter capture for every render: seed, sampler, steps, guidance, model hashes, LoRAs, and ControlNets for full reproducibility.',
+            'Continuity': 'Reference board for tracking visual, wardrobe, prop, lighting, color, and framing consistency across shots and scenes.',
+            'Budget': 'Cost tracking for GPU renders, API calls, licenses, and storage with spend-vs-limit visualization and forecasting.',
+            'Export': 'Export project timelines to professional NLE formats: FCPXML (Final Cut Pro), EDL (universal), Premiere XML, and FDX (Final Draft).',
+            'Pipeline': 'Automated 9-step shot production: keyframe, video, voice, lipsync, music, SFX, ambient, post-production, and assembly.',
+            'Settings': 'Per-project technical configuration: resolution, frame rate, aspect ratio, color space, and delivery presets.'
+        },
+        'Film Production': {
+            'Scene': 'A continuous block of action occurring in one location and time. Identified by INT. (interior) or EXT. (exterior) headings in a screenplay.',
+            'Shot': 'A single continuous camera take within a scene. The fundamental unit of visual storytelling, defined by a scene card with camera, lighting, and character parameters.',
+            'Take': 'One recorded version of a shot. Multiple takes may be rendered with different seeds or parameters.',
+            'Keyframe': 'A still image representing the visual target for a shot, generated via AI image generation and used as the init_image for video generation.',
+            'Storyboard': 'A sequence of visual panels (keyframes) representing the planned shots of a film, used for pre-visualization before production.',
+            'Script Breakdown': 'AI analysis of a screenplay that extracts scenes, identifies characters, locations, props, and generates individual shot descriptions.',
+            'Call Sheet': 'A production document listing all elements needed for a scene or shooting day: characters, locations, props, and equipment.',
+            'Shot List': 'An ordered list of all shots for a project or scene, including camera angles, movements, and descriptions.',
+            'Render': 'The process of generating a visual or audio asset using AI models. Parameters are logged in the render ledger for reproducibility.',
+            'Composite': 'Combining multiple post-production steps (upscaling, face restoration, color grading) into a single final output.',
+            'Lipsync': 'Combining raw video with dialogue audio to produce video where character lip movements match the spoken words.',
+            'Viseme': 'A visual representation of a phoneme (speech sound) as a mouth shape. Film Engine uses the MPEG-4 standard with 15 viseme positions.',
+            'LoRA': 'Low-Rank Adaptation. A small trained model that modifies AI image generation to produce consistent character appearances.',
+            'TI Token': 'Textual Inversion token. A learned text embedding that represents a specific visual concept (character, style) for AI generation.',
+            'Scene Card': 'A YAML-formatted description of a shot containing camera type, movement, lighting, characters, props, and style parameters.'
+        },
+        'Technical Formats': {
+            'FCPXML': 'Final Cut Pro XML. Native timeline interchange format for Apple Final Cut Pro, version 1.11. Supports clips, markers, audio lanes, and transitions.',
+            'EDL': 'Edit Decision List. CMX 3600 format, a universal plain-text edit list with timecodes. Compatible with virtually all NLE software.',
+            'Premiere XML': 'FCP 7 xmeml v5 format. Timeline interchange compatible with Adobe Premiere Pro, DaVinci Resolve, and other NLEs.',
+            'FDX': 'Final Draft XML. The native file format of Final Draft screenwriting software, version 5.',
+            'SRT': 'SubRip Text. A simple subtitle format with sequential numbering, timecodes, and text. Widely supported by media players.',
+            'VTT': 'WebVTT (Web Video Text Tracks). A W3C standard subtitle format for HTML5 video with styling support.',
+            'Fountain': 'A plain-text screenplay markup format. Human-readable syntax that can be parsed into formatted screenplay output.',
+            'LUFS': 'Loudness Units relative to Full Scale. The broadcast standard for measuring audio loudness. Targets: streaming -14, broadcast -24, cinema -27.',
+            'ProRes': 'Apple ProRes. A family of intermediate codecs (422 Proxy, LT, Standard, HQ) used in professional post-production workflows.',
+            'DNxHR': 'Avid DNxHR. Professional intermediate codec (LB, SQ, HQ) used in Avid Media Composer and other editing systems.',
+            'LUT': 'Look-Up Table. A mathematical formula that transforms color values, used for color grading to apply a specific visual look.',
+            'Color Space': 'The range of colors available for rendering. sRGB for web, Rec.709 for HD, DCI-P3 for digital cinema, Rec.2020 for HDR/UHD, ACES for VFX.'
+        },
+        'Production Workflow': {
+            'Production Status': 'The project state machine: Concept, Script, PreProduction, Storyboard, Production, PostProduction, Review, Export, Complete.',
+            'Pipeline Steps': 'The 9-step automated process: keyframe generation, video generation, voice synthesis, lipsync, music, SFX, ambient, post-production, assembly.',
+            'QA Checks': '11 automated quality checks across shot/scene/project scopes validating keyframes, video, audio, lipsync, duration, completeness, and technical specs.',
+            'Acceptance Rubric': 'Minimum quality standards: 1024x576 resolution, 24fps, -24 to -14 LUFS audio, h264/h265 codec, 100% shot coverage.',
+            'Style Lock': 'Deterministic seed variation per scene ensuring visual consistency across all shots within the same scene.',
+            'Smart Scheduling': 'Pipeline optimization that groups GPU tasks by model to minimize VRAM swapping and model load times.'
+        },
+        'Audio Production': {
+            'Stems': 'Individual audio tracks (dialogue, music, SFX, ambient) exported separately for mixing flexibility in post-production.',
+            'M&E Mix': 'Music & Effects mix. An audio track containing everything except dialogue, used for foreign language dubbing.',
+            'Ducking': 'Automatically lowering background audio (music, ambient) volume when dialogue is playing. Uses attack/release envelope shaping.',
+            'LUFS Normalization': 'Adjusting audio loudness to match target levels for specific delivery platforms (streaming, broadcast, cinema).',
+            'Audio Mix': 'Combining dialogue (0dB), music (-8dB), SFX (-4dB), and ambient (-12dB) tracks with ducking and LUFS normalization.'
+        }
+    };
+
+    function renderGlossary(filter = '') {
+        const container = document.getElementById('glossaryContent');
+        const query = filter.toLowerCase().trim();
+        let html = '';
+        let totalMatches = 0;
+
+        for (const [category, terms] of Object.entries(GLOSSARY)) {
+            const sortedTerms = Object.entries(terms).sort((a, b) => a[0].localeCompare(b[0]));
+            const filtered = query
+                ? sortedTerms.filter(([name, def]) =>
+                    name.toLowerCase().includes(query) || def.toLowerCase().includes(query))
+                : sortedTerms;
+
+            if (filtered.length === 0) continue;
+            totalMatches += filtered.length;
+
+            html += `<div class="glossary-category">`;
+            html += `<div class="glossary-category-title">${category}</div>`;
+            for (const [name, def] of filtered) {
+                const highlightedName = query
+                    ? name.replace(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'), '<mark>$1</mark>')
+                    : name;
+                const highlightedDef = query
+                    ? def.replace(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'), '<mark>$1</mark>')
+                    : def;
+                html += `<div class="glossary-term">
+                    <div class="glossary-term-name">${highlightedName}</div>
+                    <div class="glossary-term-def">${highlightedDef}</div>
+                </div>`;
+            }
+            html += `</div>`;
+        }
+
+        if (totalMatches === 0) {
+            html = `<div class="glossary-empty">No terms matching "${filter}"</div>`;
+        }
+
+        container.innerHTML = html;
+    }
+
+    function filterGlossary() {
+        const val = document.getElementById('glossarySearch').value;
+        renderGlossary(val);
+    }
+
+    // Hook into showModal to render glossary on open
+    const _origShowModal = showModal;
+    showModal = function(id) {
+        _origShowModal(id);
+        if (id === 'glossaryModal') {
+            document.getElementById('glossarySearch').value = '';
+            renderGlossary();
+            setTimeout(() => document.getElementById('glossarySearch').focus(), 50);
+        }
+    };
 
     // ══════════════════════════════════════════════════════════════
     // INIT
