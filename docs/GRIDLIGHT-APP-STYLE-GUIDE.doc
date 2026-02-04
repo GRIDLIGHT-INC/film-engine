@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+  <meta charset="UTF-8">
+  <meta name="ProgId" content="Word.Document">
+  <meta name="Generator" content="Microsoft Word 15">
+  <meta name="Originator" content="Microsoft Word 15">
+  <title>GRIDLIGHT App Style Guide</title>
+  <!--[if gte mso 9]>
+  <xml>
+    <w:WordDocument>
+      <w:View>Print</w:View>
+      <w:Zoom>100</w:Zoom>
+      <w:DoNotOptimizeForBrowser/>
+    </w:WordDocument>
+  </xml>
+  <![endif]-->
+  <style>
+    @page {
+      size: letter;
+      margin: 1in;
+    }
+
+    body {
+      font-family: 'Segoe UI', Calibri, Arial, sans-serif;
+      font-size: 11pt;
+      line-height: 1.5;
+      color: #333;
+      max-width: 7.5in;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 28pt;
+      font-weight: bold;
+      color: #e91e63;
+      margin-top: 0;
+      margin-bottom: 12pt;
+      border-bottom: 3px solid #e91e63;
+      padding-bottom: 8pt;
+    }
+
+    h2 {
+      font-size: 18pt;
+      font-weight: bold;
+      color: #1a1a2e;
+      margin-top: 24pt;
+      margin-bottom: 12pt;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 6pt;
+    }
+
+    h3 {
+      font-size: 14pt;
+      font-weight: bold;
+      color: #a855f7;
+      margin-top: 18pt;
+      margin-bottom: 8pt;
+    }
+
+    h4 {
+      font-size: 12pt;
+      font-weight: bold;
+      color: #333;
+      margin-top: 14pt;
+      margin-bottom: 6pt;
+    }
+
+    p {
+      margin-bottom: 10pt;
+    }
+
+    .lead {
+      font-size: 12pt;
+      color: #666;
+      margin-bottom: 18pt;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12pt 0;
+      font-size: 10pt;
+    }
+
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8pt 10pt;
+      text-align: left;
+    }
+
+    th {
+      background-color: #1a1a2e;
+      color: white;
+      font-weight: bold;
+    }
+
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+
+    code {
+      font-family: 'Consolas', 'Courier New', monospace;
+      background-color: #f5f5f5;
+      padding: 2pt 4pt;
+      border-radius: 3pt;
+      font-size: 9pt;
+    }
+
+    pre {
+      font-family: 'Consolas', 'Courier New', monospace;
+      background-color: #1a1a2e;
+      color: #f5f5f5;
+      padding: 12pt;
+      border-radius: 6pt;
+      font-size: 9pt;
+      line-height: 1.4;
+      overflow-x: auto;
+      margin: 12pt 0;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .color-table {
+      margin: 12pt 0;
+    }
+
+    .color-swatch {
+      display: inline-block;
+      width: 40pt;
+      height: 20pt;
+      border: 1px solid #ddd;
+      vertical-align: middle;
+      margin-right: 8pt;
+    }
+
+    ul, ol {
+      margin: 10pt 0;
+      padding-left: 24pt;
+    }
+
+    li {
+      margin-bottom: 6pt;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid #ddd;
+      margin: 24pt 0;
+    }
+
+    .tree {
+      font-family: 'Consolas', 'Courier New', monospace;
+      background-color: #f5f5f5;
+      padding: 12pt;
+      border-radius: 6pt;
+      font-size: 9pt;
+      line-height: 1.6;
+      margin: 12pt 0;
+    }
+
+    .gradient-box {
+      height: 30pt;
+      border-radius: 4pt;
+      margin: 8pt 0 16pt 0;
+      border: 1px solid #ddd;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    .toc {
+      background-color: #f9f9f9;
+      padding: 16pt;
+      border-radius: 6pt;
+      margin-bottom: 24pt;
+    }
+
+    .toc-title {
+      font-weight: bold;
+      font-size: 14pt;
+      margin-bottom: 12pt;
+      color: #1a1a2e;
+    }
+
+    .toc a {
+      color: #a855f7;
+      text-decoration: none;
+    }
+
+    .toc ul {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .toc li {
+      margin-bottom: 4pt;
+    }
+
+    .note {
+      background-color: #fff3e0;
+      border-left: 4pt solid #f59e0b;
+      padding: 10pt 14pt;
+      margin: 12pt 0;
+    }
+
+    .footer {
+      text-align: center;
+      font-size: 9pt;
+      color: #888;
+      margin-top: 36pt;
+      padding-top: 12pt;
+      border-top: 1px solid #ddd;
+    }
+  </style>
+</head>
+<body>
+
+<h1>GRIDLIGHT App Style Guide</h1>
+<p class="lead">This document defines the visual design standards, color palette, and application requirements for building Gridlight applications. All internal apps should follow these guidelines for a consistent user experience.</p>
+
+<div class="toc">
+  <div class="toc-title">Table of Contents</div>
+  <ul>
+    <li>1. App Requirements</li>
+    <li>2. Directory Structure</li>
+    <li>3. Manifest File</li>
+    <li>4. Color Palette</li>
+    <li>5. Typography</li>
+    <li>6. Backgrounds & Surfaces</li>
+    <li>7. CRT & Retro Effects</li>
+    <li>8. Neon Glow Effects</li>
+    <li>9. Buttons & Interactive Elements</li>
+    <li>10. Status Indicators</li>
+    <li>11. Custom Scrollbars</li>
+    <li>12. Animations</li>
+    <li>13. Spacing & Layout</li>
+    <li>14. CSS Variables Reference</li>
+  </ul>
+</div>
+
+<hr>
+
+<h2>1. App Requirements</h2>
+<p>Every Gridlight app must include:</p>
+
+<table>
+  <tr>
+    <th>File</th>
+    <th>Required</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td><code>gridlight.json</code></td>
+    <td>Yes</td>
+    <td>App manifest with metadata and configuration</td>
+  </tr>
+  <tr>
+    <td><code>src/index.html</code></td>
+    <td>Yes</td>
+    <td>Frontend entry point</td>
+  </tr>
+  <tr>
+    <td><code>src/assets/icon.svg</code></td>
+    <td>Recommended</td>
+    <td>App icon (SVG preferred, PNG accepted)</td>
+  </tr>
+  <tr>
+    <td><code>README.md</code></td>
+    <td>Optional</td>
+    <td>Documentation for developers</td>
+  </tr>
+</table>
+
+<h3>App Types</h3>
+<table>
+  <tr>
+    <th>Type</th>
+    <th>Description</th>
+    <th>Backend Required</th>
+  </tr>
+  <tr>
+    <td><code>standalone</code></td>
+    <td>Single-page HTML app loaded via file://</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td><code>hybrid</code></td>
+    <td>App with a backend server process</td>
+    <td>Yes</td>
+  </tr>
+</table>
+
+<hr>
+
+<h2>2. Directory Structure</h2>
+
+<h3>Standalone App</h3>
+<div class="tree">
+my-app/<br>
+├── gridlight.json          # App manifest (required)<br>
+├── README.md               # Documentation (optional)<br>
+└── src/<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── index.html          # Entry point (required)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── styles.css          # Styles (optional)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── app.js              # JavaScript (optional)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;└── assets/<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── icon.svg        # App icon<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── background.png  # Background image (optional)
+</div>
+
+<h3>Hybrid App</h3>
+<div class="tree">
+my-app/<br>
+├── gridlight.json          # App manifest (required)<br>
+├── README.md               # Documentation (optional)<br>
+├── package.json            # Node.js dependencies<br>
+├── src/<br>
+│&nbsp;&nbsp;&nbsp;├── index.html          # Frontend entry<br>
+│&nbsp;&nbsp;&nbsp;└── assets/<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── icon.svg<br>
+└── backend/<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── server.js           # Backend entry point<br>
+&nbsp;&nbsp;&nbsp;&nbsp;└── package.json        # Backend dependencies
+</div>
+
+<hr>
+
+<h2>3. Manifest File</h2>
+<p>The <code>gridlight.json</code> manifest tells Gridlight how to display, launch, and manage the app.</p>
+
+<h3>Minimal Example (Standalone)</h3>
+<pre>{
+  "name": "My App",
+  "version": "1.0.0",
+  "short_description": "Brief description for the app card",
+  "entry": "src/index.html",
+  "runtime": "1.0",
+  "type": "standalone",
+  "icon": "src/assets/icon.svg"
+}</pre>
+
+<h3>Full Example (Hybrid)</h3>
+<pre>{
+  "name": "My Hybrid App",
+  "version": "1.0.0",
+  "short_description": "Brief description for the app card",
+  "detailed_description": "Longer description with full feature details",
+  "usage_instructions": "How to use the app",
+  "author": "Gridlight",
+  "icon": "src/assets/icon.svg",
+  "entry": "src/index.html",
+  "runtime": "1.0",
+  "type": "hybrid",
+  "gridlight_version_required": "0.6.2",
+  "backend": {
+    "entry": "backend/server.js",
+    "port": 3001,
+    "install": "npm install"
+  },
+  "permissions": ["network", "storage", "clipboard"],
+  "window": {
+    "width": 1200,
+    "height": 800
+  }
+}</pre>
+
+<h3>Key Fields</h3>
+<table>
+  <tr>
+    <th>Field</th>
+    <th>Type</th>
+    <th>Required</th>
+    <th>Description</th>
+  </tr>
+  <tr><td><code>name</code></td><td>string</td><td>Yes</td><td>Display name (shown in app card and title bar)</td></tr>
+  <tr><td><code>version</code></td><td>string</td><td>Yes</td><td>Semantic version (e.g., "1.0.0")</td></tr>
+  <tr><td><code>short_description</code></td><td>string</td><td>No</td><td>1-2 sentences for app card</td></tr>
+  <tr><td><code>entry</code></td><td>string</td><td>Yes</td><td>Relative path to frontend HTML</td></tr>
+  <tr><td><code>runtime</code></td><td>string</td><td>Yes</td><td>Always "1.0"</td></tr>
+  <tr><td><code>type</code></td><td>string</td><td>Yes</td><td>"standalone" or "hybrid"</td></tr>
+  <tr><td><code>icon</code></td><td>string</td><td>No</td><td>Relative path to icon file</td></tr>
+  <tr><td><code>window.width</code></td><td>number</td><td>No</td><td>Initial width (default: 1500)</td></tr>
+  <tr><td><code>window.height</code></td><td>number</td><td>No</td><td>Initial height (default: 875)</td></tr>
+</table>
+
+<hr class="page-break">
+
+<h2>4. Color Palette</h2>
+
+<h3>Primary Colors</h3>
+<table>
+  <tr>
+    <th>Name</th>
+    <th>Hex</th>
+    <th>RGB</th>
+    <th>Usage</th>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #0a0a0f;"></span>Background (Dark)</td>
+    <td><code>#0a0a0f</code></td>
+    <td>rgb(10, 10, 15)</td>
+    <td>Desktop app shell, darkest background</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #0f0f23;"></span>Background</td>
+    <td><code>#0f0f23</code></td>
+    <td>rgb(15, 15, 35)</td>
+    <td>Page background (chat apps)</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #0d0d14;"></span>Surface Dark</td>
+    <td><code>#0d0d14</code></td>
+    <td>rgb(13, 13, 20)</td>
+    <td>Code blocks, terminal backgrounds</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #12121a;"></span>Surface Header</td>
+    <td><code>#12121a</code></td>
+    <td>rgb(18, 18, 26)</td>
+    <td>Headers, navigation bars</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #1a1a2e;"></span>Surface</td>
+    <td><code>#1a1a2e</code></td>
+    <td>rgb(26, 26, 46)</td>
+    <td>Cards, panels, containers</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #252542;"></span>Surface Elevated</td>
+    <td><code>#252542</code></td>
+    <td>rgb(37, 37, 66)</td>
+    <td>Elevated elements, hover states</td>
+  </tr>
+</table>
+
+<h3>Brand Gradients</h3>
+
+<h4>Primary Gradient (Chat Apps) - Pink to Blue diagonal:</h4>
+<div class="gradient-box" style="background: linear-gradient(135deg, #e91e63 0%, #2196f3 100%);"></div>
+<pre>background: linear-gradient(135deg, #e91e63 0%, #2196f3 100%);</pre>
+
+<h4>Desktop Gradient - Pink through Purple to Blue horizontal:</h4>
+<div class="gradient-box" style="background: linear-gradient(to right, #ec4899, #a855f7, #3b82f6);"></div>
+<pre>background: linear-gradient(to right, #ec4899, #a855f7, #3b82f6);
+/* Tailwind: bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 */</pre>
+
+<h4>Destructive Gradient - Red through Rose to Pink:</h4>
+<div class="gradient-box" style="background: linear-gradient(to right, #ef4444, #f43f5e, #ec4899);"></div>
+<pre>background: linear-gradient(to right, #ef4444, #f43f5e, #ec4899);
+/* Tailwind: bg-gradient-to-r from-red-500 via-rose-500 to-pink-500 */</pre>
+
+<h3>Accent Colors</h3>
+<table>
+  <tr>
+    <th>Name</th>
+    <th>Hex</th>
+    <th>Usage</th>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #a855f7;"></span>Purple (Primary Accent)</td>
+    <td><code>#a855f7</code></td>
+    <td>Tab highlights, focus states, interactive elements</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #ec4899;"></span>Pink</td>
+    <td><code>#ec4899</code></td>
+    <td>Notification badges, alerts</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #3b82f6;"></span>Blue</td>
+    <td><code>#3b82f6</code></td>
+    <td>Links, info states</td>
+  </tr>
+</table>
+
+<h3>Status Colors</h3>
+<table>
+  <tr>
+    <th>Status</th>
+    <th>Hex</th>
+    <th>Usage</th>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #22c55e;"></span>Success</td>
+    <td><code>#22c55e</code></td>
+    <td>Success states, confirmations</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #00ff88;"></span>Neon Green</td>
+    <td><code>#00ff88</code></td>
+    <td>Monitor online status, real-time indicators</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #ef4444;"></span>Error</td>
+    <td><code>#ef4444</code></td>
+    <td>Errors, destructive actions</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #ff4444;"></span>Neon Red</td>
+    <td><code>#ff4444</code></td>
+    <td>Monitor offline status, critical alerts</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #f59e0b;"></span>Warning</td>
+    <td><code>#f59e0b</code></td>
+    <td>Warnings, cautions</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #3b82f6;"></span>Info</td>
+    <td><code>#3b82f6</code></td>
+    <td>Information, processing</td>
+  </tr>
+</table>
+
+<h3>Feature Accent Colors</h3>
+<table>
+  <tr>
+    <th>Name</th>
+    <th>Hex</th>
+    <th>Usage</th>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #22c55e;"></span>Intelligent/AI</td>
+    <td><code>#22c55e</code></td>
+    <td>AI-related features, intelligent mode</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #8b5cf6;"></span>RAG/Knowledge</td>
+    <td><code>#8b5cf6</code></td>
+    <td>Knowledge base features, RAG queries</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #f97316;"></span>Creative</td>
+    <td><code>#f97316</code></td>
+    <td>Creative/generation features</td>
+  </tr>
+  <tr>
+    <td><span class="color-swatch" style="background: #06b6d4;"></span>Analysis</td>
+    <td><code>#06b6d4</code></td>
+    <td>Analytics, data visualization</td>
+  </tr>
+</table>
+
+<hr class="page-break">
+
+<h2>5. Typography</h2>
+
+<h3>Font Stack</h3>
+<pre>font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+             'Helvetica Neue', Arial, sans-serif;</pre>
+
+<h3>Monospace (Code)</h3>
+<pre>font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas,
+             'Courier New', monospace;</pre>
+
+<h3>Font Sizes</h3>
+<table>
+  <tr>
+    <th>Element</th>
+    <th>Size</th>
+    <th>Weight</th>
+    <th>Line Height</th>
+  </tr>
+  <tr><td>H1</td><td>24px</td><td>600</td><td>1.3</td></tr>
+  <tr><td>H2</td><td>20px</td><td>600</td><td>1.3</td></tr>
+  <tr><td>H3</td><td>16px</td><td>600</td><td>1.4</td></tr>
+  <tr><td>Body</td><td>14px</td><td>400</td><td>1.5</td></tr>
+  <tr><td>Small</td><td>12px</td><td>400</td><td>1.4</td></tr>
+  <tr><td>Caption</td><td>11px</td><td>400</td><td>1.3</td></tr>
+</table>
+
+<hr>
+
+<h2>6. Backgrounds & Surfaces</h2>
+
+<h3>Glass Effect (Frosted Glass)</h3>
+<pre>.card {
+  background: rgba(15, 15, 35, 0.86);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+}</pre>
+
+<h3>Surface Variants</h3>
+<pre>/* Standard surface */
+.surface {
+  background: rgba(26, 26, 46, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Elevated surface (hover, active) */
+.surface-elevated {
+  background: rgba(37, 37, 66, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Input fields */
+.input-surface {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Input focus state */
+.input-surface:focus {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #e91e63;
+  box-shadow: 0 0 0 2px rgba(233, 30, 99, 0.2);
+}</pre>
+
+<hr>
+
+<h2>7. CRT & Retro Effects</h2>
+<p>Gridlight uses retro CRT-inspired visual effects for an 80s aesthetic. These are optional but add to the brand identity.</p>
+
+<h3>Scanline Overlay</h3>
+<pre>.crt-overlay {
+  position: relative;
+  overflow: hidden;
+}
+
+.crt-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.15),
+    rgba(0, 0, 0, 0.15) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+  z-index: 9999;
+  animation: crt-flicker 0.15s infinite;
+}
+
+@keyframes crt-flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.98; }
+}</pre>
+
+<h3>Tab Bar Scanlines</h3>
+<pre>.tab-bar-retro::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    transparent 0px,
+    transparent 2px,
+    rgba(0, 0, 0, 0.05) 2px,
+    rgba(0, 0, 0, 0.05) 4px
+  );
+}</pre>
+
+<hr class="page-break">
+
+<h2>8. Neon Glow Effects</h2>
+
+<h3>Icon Glow (Active State)</h3>
+<pre>.icon-active svg {
+  filter:
+    drop-shadow(0 0 2px currentColor)
+    drop-shadow(0 0 6px currentColor)
+    drop-shadow(0 0 12px rgba(168, 85, 247, 0.4));
+}
+
+.icon-active {
+  transform: scale(1.15);
+}
+
+.icon-active,
+.icon-inactive {
+  transition: transform 0.2s ease, filter 0.3s ease, color 0.3s ease;
+}</pre>
+
+<h3>Text Glow (Active Labels)</h3>
+<pre>.label-active {
+  text-shadow:
+    0 0 4px rgba(168, 85, 247, 0.6),
+    0 0 8px rgba(168, 85, 247, 0.3);
+}</pre>
+
+<h3>Status Indicator Glow</h3>
+<pre>/* Online/success indicator */
+.status-online {
+  background: #00ff88;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.5);
+}
+
+/* Offline/error indicator */
+.status-offline {
+  background: #ff4444;
+  box-shadow: 0 0 8px rgba(255, 68, 68, 0.5);
+}</pre>
+
+<hr>
+
+<h2>9. Buttons & Interactive Elements</h2>
+
+<h3>Primary Button (Gradient)</h3>
+<pre>.btn-primary {
+  background: linear-gradient(135deg, #e91e63 0%, #2196f3 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(233, 30, 99, 0.3);
+}</pre>
+
+<h3>Secondary Button</h3>
+<pre>.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}</pre>
+
+<h3>Destructive Button</h3>
+<pre>.btn-destructive {
+  background: linear-gradient(to right, #ef4444, #f43f5e, #ec4899);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+}
+
+.btn-destructive:hover {
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}</pre>
+
+<hr>
+
+<h2>10. Status Indicators</h2>
+
+<h3>Badges</h3>
+<pre>.badge-success { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+.badge-error { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+.badge-warning { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.badge-info { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }</pre>
+
+<h3>Loading Spinner</h3>
+<pre>.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #e91e63;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}</pre>
+
+<hr>
+
+<h2>11. Custom Scrollbars</h2>
+<pre>.scroll-area::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(147, 51, 234, 0.4);
+  border-radius: 3px;
+}
+
+.scroll-area::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 51, 234, 0.6);
+}</pre>
+
+<hr>
+
+<h2>12. Animations</h2>
+
+<h3>Slide-In (Panel Entry)</h3>
+<pre>@keyframes slide-in-from-right {
+  from {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in-from-right 0.25s ease-out;
+}</pre>
+
+<h3>Pulse (Loading)</h3>
+<pre>@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}</pre>
+
+<hr class="page-break">
+
+<h2>13. Spacing & Layout</h2>
+
+<h3>Spacing Scale</h3>
+<table>
+  <tr><th>Name</th><th>Value</th><th>Usage</th></tr>
+  <tr><td>xs</td><td>4px</td><td>Tight spacing</td></tr>
+  <tr><td>sm</td><td>8px</td><td>Small gaps</td></tr>
+  <tr><td>md</td><td>16px</td><td>Standard spacing</td></tr>
+  <tr><td>lg</td><td>24px</td><td>Section spacing</td></tr>
+  <tr><td>xl</td><td>32px</td><td>Large gaps</td></tr>
+  <tr><td>2xl</td><td>48px</td><td>Major sections</td></tr>
+</table>
+
+<h3>Border Radius</h3>
+<table>
+  <tr><th>Name</th><th>Value</th><th>Usage</th></tr>
+  <tr><td>sm</td><td>4px</td><td>Small elements</td></tr>
+  <tr><td>md</td><td>8px</td><td>Buttons, inputs</td></tr>
+  <tr><td>lg</td><td>12px</td><td>Cards</td></tr>
+  <tr><td>xl</td><td>16px</td><td>Large cards, modals</td></tr>
+  <tr><td>2xl</td><td>24px</td><td>Full-size panels</td></tr>
+  <tr><td>full</td><td>9999px</td><td>Pills, avatars</td></tr>
+</table>
+
+<hr>
+
+<h2>14. CSS Variables Reference</h2>
+<pre>:root {
+  /* Background Colors */
+  --gl-bg-darkest: #0a0a0f;
+  --gl-bg-primary: #0f0f23;
+  --gl-bg-code: #0d0d14;
+  --gl-bg-header: #12121a;
+  --gl-bg-surface: #1a1a2e;
+  --gl-bg-elevated: #252542;
+
+  /* Glass Effects */
+  --gl-glass-bg: rgba(15, 15, 35, 0.86);
+  --gl-glass-bg-light: rgba(26, 26, 46, 0.6);
+  --gl-glass-border: rgba(255, 255, 255, 0.1);
+
+  /* Brand Colors */
+  --gl-brand-pink: #e91e63;
+  --gl-brand-purple: #a855f7;
+  --gl-brand-blue: #2196f3;
+
+  /* Brand Gradients */
+  --gl-brand-gradient: linear-gradient(135deg, #e91e63 0%, #2196f3 100%);
+  --gl-brand-gradient-desktop: linear-gradient(to right, #ec4899, #a855f7, #3b82f6);
+  --gl-brand-gradient-destructive: linear-gradient(to right, #ef4444, #f43f5e, #ec4899);
+
+  /* Text Colors */
+  --gl-text-primary: #ffffff;
+  --gl-text-secondary: #aaaaaa;
+  --gl-text-muted: #888888;
+  --gl-text-disabled: #666666;
+
+  /* Status Colors */
+  --gl-success: #22c55e;
+  --gl-success-neon: #00ff88;
+  --gl-error: #ef4444;
+  --gl-error-neon: #ff4444;
+  --gl-warning: #f59e0b;
+  --gl-info: #3b82f6;
+
+  /* Accent Colors */
+  --gl-accent-purple: #a855f7;
+  --gl-accent-pink: #ec4899;
+  --gl-accent-ai: #22c55e;
+  --gl-accent-rag: #8b5cf6;
+  --gl-accent-creative: #f97316;
+  --gl-accent-analysis: #06b6d4;
+
+  /* Neon Glow Colors */
+  --gl-glow-purple: rgba(168, 85, 247, 0.4);
+  --gl-glow-pink: rgba(236, 72, 153, 0.6);
+  --gl-glow-green: rgba(0, 255, 136, 0.5);
+  --gl-glow-red: rgba(255, 68, 68, 0.5);
+
+  /* Borders */
+  --gl-border-subtle: rgba(255, 255, 255, 0.08);
+  --gl-border-default: rgba(255, 255, 255, 0.15);
+  --gl-border-focus: #e91e63;
+  --gl-border-focus-purple: #a855f7;
+
+  /* Spacing */
+  --gl-space-xs: 4px;
+  --gl-space-sm: 8px;
+  --gl-space-md: 16px;
+  --gl-space-lg: 24px;
+  --gl-space-xl: 32px;
+  --gl-space-2xl: 48px;
+
+  /* Border Radius */
+  --gl-radius-sm: 4px;
+  --gl-radius-md: 8px;
+  --gl-radius-lg: 12px;
+  --gl-radius-xl: 16px;
+  --gl-radius-2xl: 24px;
+  --gl-radius-full: 9999px;
+
+  /* Transitions */
+  --gl-transition-fast: 0.15s ease;
+  --gl-transition-normal: 0.2s ease;
+  --gl-transition-slow: 0.3s ease;
+}</pre>
+
+<hr>
+
+<h2>Branding Guidelines</h2>
+
+<h3>Text Usage</h3>
+<ul>
+  <li>Use <strong>GRIDLIGHT</strong> (all caps) for headers, titles, and logos</li>
+  <li>Use <strong>Gridlight</strong> (title case) for body text, descriptions, and prose</li>
+  <li>Never use "GridLight" (camelCase)</li>
+</ul>
+
+<h3>Brand Assets</h3>
+<p>The following brand assets are included in the <code>docs/</code> folder:</p>
+
+<table>
+  <tr>
+    <th>File</th>
+    <th>Description</th>
+    <th>Usage</th>
+  </tr>
+  <tr>
+    <td><code>background.png</code></td>
+    <td>Dark space/grid background image</td>
+    <td>Page backgrounds, hero sections</td>
+  </tr>
+  <tr>
+    <td><code>logo.png</code></td>
+    <td>Gridlight logo mark (icon only)</td>
+    <td>App icons, favicons, small branding</td>
+  </tr>
+  <tr>
+    <td><code>name_grid.png</code></td>
+    <td>Gridlight wordmark with grid styling</td>
+    <td>Headers, splash screens, marketing</td>
+  </tr>
+</table>
+
+<h4>Background Image Usage</h4>
+<pre>body {
+  background-color: #0f0f23;
+  background-image: url('docs/background.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}</pre>
+
+<h4>Logo Usage</h4>
+<pre>&lt;!-- Icon/logo mark --&gt;
+&lt;img src="docs/logo.png" alt="Gridlight" width="48" height="48"&gt;
+
+&lt;!-- Full wordmark --&gt;
+&lt;img src="docs/name_grid.png" alt="GRIDLIGHT" height="32"&gt;</pre>
+
+<hr>
+
+<h2>Design Philosophy</h2>
+<p>Gridlight's visual identity draws inspiration from:</p>
+<ul>
+  <li><strong>Retro 80s Aesthetics</strong>: CRT scanlines, neon glows, and subtle flicker effects</li>
+  <li><strong>Cyberpunk/Synthwave</strong>: Pink-purple-blue gradients, dark backgrounds</li>
+  <li><strong>Modern Glass Morphism</strong>: Frosted glass cards with backdrop blur</li>
+  <li><strong>High Contrast for Accessibility</strong>: White text on dark backgrounds with clear status colors</li>
+</ul>
+
+<p>When building apps, aim for:</p>
+<ul>
+  <li>Dark, immersive interfaces that don't strain the eyes</li>
+  <li>Subtle retro effects that enhance without distracting</li>
+  <li>Clear visual hierarchy using color and glow</li>
+  <li>Smooth, purposeful animations</li>
+</ul>
+
+<div class="footer">
+  <em>This style guide is based on the Gridlight design system, desktop application patterns, and gridlight-chat application styles.</em>
+</div>
+
+</body>
+</html>
