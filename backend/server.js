@@ -99,6 +99,7 @@ const { handleContinuity } = require('./routes/continuity');
 const { handleCredits } = require('./routes/credits');
 const { handleMarketing } = require('./routes/marketing');
 const { handleBudget } = require('./routes/budget');
+const { handleBudgetEstimate } = require('./routes/budget-estimate');
 const { handleBackups } = require('./routes/backups');
 
 const PORT = process.env.PORT || 3100;
@@ -399,6 +400,11 @@ const server = http.createServer(async (req, res) => {
             return handleMarketing(req, res, parts, query);
         }
 
+        // Route: /film/projects/:id/budget/estimate[/analyze|/web-search|/ai|/:eid]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'budget' && parts[4] === 'estimate') {
+            return handleBudgetEstimate(req, res, parts, query);
+        }
+
         // Route: /film/projects/:id/budget[/ledger|/forecast|/limit]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'budget') {
             return handleBudget(req, res, parts, query);
@@ -574,6 +580,11 @@ const server = http.createServer(async (req, res) => {
             return handleMarketing(req, res, parts, query);
         }
 
+        // Route: /film/budget/templates, /film/budget/talent-tiers, /film/budget/location-types
+        if (parts[1] === 'budget' && (parts[2] === 'templates' || parts[2] === 'talent-tiers' || parts[2] === 'location-types')) {
+            return handleBudgetEstimate(req, res, parts, query);
+        }
+
         // Route: /film/budget/:id
         if (parts[1] === 'budget') {
             return handleBudget(req, res, parts, query);
@@ -589,9 +600,19 @@ const server = http.createServer(async (req, res) => {
             return handleBackups(req, res, parts, query);
         }
 
+        // Route: /film/characters/:id/cost
+        if (parts[1] === 'characters' && parts[2] && parts[3] === 'cost') {
+            return handleBudgetEstimate(req, res, parts, query);
+        }
+
         // Route: /film/characters/:id[/voice|/costumes]
         if (parts[1] === 'characters') {
             return handleCharacters(req, res, parts, query);
+        }
+
+        // Route: /film/locations/:id/cost
+        if (parts[1] === 'locations' && parts[2] && parts[3] === 'cost') {
+            return handleBudgetEstimate(req, res, parts, query);
         }
 
         // Route: /film/locations/:id

@@ -6,66 +6,149 @@
     <title>Film Engine</title>
     <style>
         /* ══════════════════════════════════════════════════════════
-           DESIGN TOKENS — retro 80s gridlight-chat aesthetic
+           GRIDLIGHT DESIGN SYSTEM — Official Style Guide
            ══════════════════════════════════════════════════════════ */
         :root {
-            --bg: #0f0f23;
-            --surface: #1a1a2e;
-            --surface-2: #16213e;
-            --surface-3: #1e2a4a;
-            --text: #e0e0e0;
-            --text-muted: #7a7a9e;
-            --primary: #e91e63;
-            --secondary: #2196f3;
-            --accent: #e91e63;
-            --gradient: linear-gradient(135deg, #e91e63, #2196f3);
-            --border: rgba(255,255,255,0.06);
-            --border-bright: rgba(233,30,99,0.3);
-            --success: #22c55e;
-            --warning: #f59e0b;
-            --error: #ef4444;
-            --info: #38bdf8;
-            --glow-primary: 0 0 10px rgba(233,30,99,0.4), 0 0 20px rgba(233,30,99,0.2);
-            --glow-text: 0 0 8px currentColor;
-            --radius: 25px;
-            --radius-sm: 12px;
-            --radius-xs: 8px;
-            --transition: all 0.3s ease;
-            --sidebar-w: 260px;
+            /* Background Colors */
+            --gl-bg-darkest: #0a0a0f;
+            --gl-bg-primary: #0f0f23;
+            --gl-bg-code: #0d0d14;
+            --gl-bg-header: #12121a;
+            --gl-bg-surface: #1a1a2e;
+            --gl-bg-elevated: #252542;
+
+            /* Glass Effects */
+            --gl-glass-bg: rgba(15, 15, 35, 0.86);
+            --gl-glass-bg-light: rgba(26, 26, 46, 0.6);
+            --gl-glass-border: rgba(255, 255, 255, 0.1);
+
+            /* Brand Colors */
+            --gl-brand-pink: #e91e63;
+            --gl-brand-purple: #a855f7;
+            --gl-brand-blue: #2196f3;
+
+            /* Brand Gradients */
+            --gl-brand-gradient: linear-gradient(135deg, #e91e63 0%, #2196f3 100%);
+            --gl-brand-gradient-desktop: linear-gradient(to right, #ec4899, #a855f7, #3b82f6);
+            --gl-brand-gradient-destructive: linear-gradient(to right, #ef4444, #f43f5e, #ec4899);
+
+            /* Text Colors */
+            --gl-text-primary: #ffffff;
+            --gl-text-secondary: #aaaaaa;
+            --gl-text-muted: #888888;
+            --gl-text-disabled: #666666;
+
+            /* Status Colors */
+            --gl-success: #22c55e;
+            --gl-success-neon: #00ff88;
+            --gl-error: #ef4444;
+            --gl-error-neon: #ff4444;
+            --gl-warning: #f59e0b;
+            --gl-info: #3b82f6;
+
+            /* Accent Colors */
+            --gl-accent-purple: #a855f7;
+            --gl-accent-pink: #ec4899;
+            --gl-accent-ai: #22c55e;
+            --gl-accent-rag: #8b5cf6;
+            --gl-accent-creative: #f97316;
+            --gl-accent-analysis: #06b6d4;
+
+            /* Neon Glow Colors */
+            --gl-glow-purple: rgba(168, 85, 247, 0.4);
+            --gl-glow-pink: rgba(236, 72, 153, 0.6);
+            --gl-glow-green: rgba(0, 255, 136, 0.5);
+            --gl-glow-red: rgba(255, 68, 68, 0.5);
+            --gl-glow-brand: 0 0 10px rgba(233,30,99,0.4), 0 0 20px rgba(233,30,99,0.2);
+
+            /* Borders */
+            --gl-border-subtle: rgba(255, 255, 255, 0.08);
+            --gl-border-default: rgba(255, 255, 255, 0.15);
+            --gl-border-focus: #e91e63;
+            --gl-border-focus-purple: #a855f7;
+
+            /* Scrollbar */
+            --gl-scrollbar-thumb: rgba(147, 51, 234, 0.4);
+            --gl-scrollbar-thumb-hover: rgba(147, 51, 234, 0.6);
+
+            /* Spacing */
+            --gl-space-xs: 4px;
+            --gl-space-sm: 8px;
+            --gl-space-md: 16px;
+            --gl-space-lg: 24px;
+            --gl-space-xl: 32px;
+            --gl-space-2xl: 48px;
+
+            /* Border Radius */
+            --gl-radius-sm: 4px;
+            --gl-radius-md: 8px;
+            --gl-radius-lg: 12px;
+            --gl-radius-xl: 16px;
+            --gl-radius-2xl: 24px;
+            --gl-radius-full: 9999px;
+
+            /* Typography */
+            --gl-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            --gl-font-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+
+            /* Transitions */
+            --gl-transition-fast: 0.15s ease;
+            --gl-transition-normal: 0.2s ease;
+            --gl-transition-slow: 0.3s ease;
+
+            /* App-specific */
+            --gl-sidebar-w: 260px;
+
+            /* Screenplay Revision Colors (Industry Standard) */
+            --revision-white: #f8f8f8;
+            --revision-blue: #add8e6;
+            --revision-pink: #ffb6c1;
+            --revision-yellow: #fffacd;
+            --revision-green: #90ee90;
+            --revision-goldenrod: #daa520;
+            --revision-buff: #f5deb3;
+            --revision-salmon: #fa8072;
+            --revision-cherry: #de3163;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-            background: var(--bg);
-            color: var(--text);
+            background: var(--gl-bg-primary);
+            color: var(--gl-text-primary);
             min-height: 100vh;
             display: flex;
             overflow: hidden;
         }
 
-        /* ── CRT Scanline Overlay ──────────────────────────────── */
+        /* ── CRT Scanline Overlay (Gridlight style guide) ───────── */
         body::before {
             content: '';
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
+            inset: 0;
             background: repeating-linear-gradient(
                 0deg,
-                rgba(0,0,0,0.1) 0px,
-                rgba(0,0,0,0.1) 1px,
+                rgba(0, 0, 0, 0.15),
+                rgba(0, 0, 0, 0.15) 1px,
                 transparent 1px,
                 transparent 2px
             );
             pointer-events: none;
             z-index: 9999;
+            animation: crt-flicker 0.15s infinite;
+        }
+
+        @keyframes crt-flicker {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.98; }
         }
 
         /* ── CRT Cyan Grid ─────────────────────────────────────── */
         body::after {
             content: '';
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
+            inset: 0;
             background:
                 linear-gradient(90deg, rgba(0,245,255,0.03) 1px, transparent 1px),
                 linear-gradient(rgba(0,245,255,0.03) 1px, transparent 1px);
@@ -74,18 +157,18 @@
             z-index: -1;
         }
 
-        /* ── Scrollbar ─────────────────────────────────────────── */
+        /* ── Scrollbar (Purple per Gridlight style guide) ──────── */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(233,30,99,0.3); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(233,30,99,0.5); }
+        ::-webkit-scrollbar-thumb { background: var(--gl-scrollbar-thumb); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--gl-scrollbar-thumb-hover); }
 
         /* ── Typography ────────────────────────────────────────── */
         .section-label {
             font-size: 10px;
             text-transform: uppercase;
             letter-spacing: 1.5px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             margin-bottom: 12px;
             font-weight: 600;
         }
@@ -96,9 +179,9 @@
            SIDEBAR
            ══════════════════════════════════════════════════════════ */
         .sidebar {
-            width: var(--sidebar-w);
-            background: var(--surface);
-            border-right: 1px solid var(--border);
+            width: var(--gl-sidebar-w);
+            background: var(--gl-bg-surface);
+            border-right: 1px solid var(--gl-border-subtle);
             display: flex;
             flex-direction: column;
             height: 100vh;
@@ -110,22 +193,22 @@
 
         .sidebar-header {
             padding: 20px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
         }
         .sidebar-header h1 {
             font-size: 16px; font-weight: 700;
-            background: var(--gradient);
+            background: var(--gl-brand-gradient);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             text-shadow: none;
         }
-        .sidebar-header p { font-size: 10px; color: var(--text-muted); margin-top: 2px; letter-spacing: 0.5px; }
+        .sidebar-header p { font-size: 10px; color: var(--gl-text-muted); margin-top: 2px; letter-spacing: 0.5px; }
 
         .sidebar-content { flex: 1; overflow-y: auto; padding: 8px 0; }
 
         .sidebar-divider {
             height: 1px;
-            background: var(--border);
+            background: var(--gl-border-subtle);
             margin: 8px 16px;
         }
 
@@ -134,30 +217,30 @@
             font-size: 9px;
             text-transform: uppercase;
             letter-spacing: 1.5px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             font-weight: 600;
         }
 
         .nav-item {
             display: flex; align-items: center; gap: 10px;
             padding: 9px 20px;
-            cursor: pointer; color: var(--text-muted);
+            cursor: pointer; color: var(--gl-text-muted);
             font-size: 12px; font-weight: 500;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
             border: none; background: none;
             width: 100%; text-align: left;
             font-family: inherit;
             position: relative;
         }
-        .nav-item:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+        .nav-item:hover { color: var(--gl-text-primary); background: rgba(255,255,255,0.03); }
         .nav-item.active {
-            color: var(--primary);
+            color: var(--gl-brand-pink);
             background: rgba(233,30,99,0.08);
         }
         .nav-item.active::before {
             content: '';
             position: absolute; left: 0; top: 4px; bottom: 4px;
-            width: 3px; background: var(--primary);
+            width: 3px; background: var(--gl-brand-pink);
             border-radius: 0 3px 3px 0;
         }
         .nav-item .nav-icon { width: 18px; text-align: center; font-size: 13px; }
@@ -167,7 +250,7 @@
             padding: 1px 5px;
             border-radius: 4px;
             background: rgba(255,255,255,0.06);
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-left: auto;
@@ -176,18 +259,18 @@
         .sidebar-back-btn {
             display: flex; align-items: center; gap: 8px;
             padding: 10px 20px;
-            color: var(--text-muted); font-size: 12px;
+            color: var(--gl-text-muted); font-size: 12px;
             cursor: pointer; border: none; background: none;
             width: 100%; text-align: left; font-family: inherit;
-            transition: var(--transition);
-            border-bottom: 1px solid var(--border);
+            transition: var(--gl-transition-slow);
+            border-bottom: 1px solid var(--gl-border-subtle);
         }
-        .sidebar-back-btn:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+        .sidebar-back-btn:hover { color: var(--gl-text-primary); background: rgba(255,255,255,0.03); }
 
         .sidebar-project-name {
             padding: 12px 20px;
             font-size: 14px; font-weight: 600;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
             display: flex; align-items: center; gap: 8px;
         }
         .sidebar-project-name .status-dot {
@@ -198,22 +281,22 @@
         .new-project-btn {
             margin: 10px 12px;
             padding: 9px 16px;
-            background: var(--gradient);
+            background: var(--gl-brand-gradient);
             color: white;
             border: none;
-            border-radius: var(--radius);
+            border-radius: var(--gl-radius-2xl);
             font-size: 12px; font-weight: 600;
             cursor: pointer;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
             font-family: inherit;
         }
-        .new-project-btn:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: var(--glow-primary); }
+        .new-project-btn:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: var(--gl-glow-brand); }
 
         /* ══════════════════════════════════════════════════════════
            MAIN CONTENT
            ══════════════════════════════════════════════════════════ */
         .main {
-            margin-left: var(--sidebar-w);
+            margin-left: var(--gl-sidebar-w);
             flex: 1;
             padding: 28px 32px 60px;
             height: 100vh;
@@ -234,12 +317,12 @@
            CARDS & GLASS
            ══════════════════════════════════════════════════════════ */
         .card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             padding: 20px;
             margin-bottom: 12px;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
         }
         .card:hover { border-color: rgba(255,255,255,0.1); }
 
@@ -247,8 +330,8 @@
             background: rgba(26,26,46,0.7);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             padding: 20px;
         }
 
@@ -258,21 +341,21 @@
         .btn {
             padding: 7px 16px;
             border: none;
-            border-radius: var(--radius);
+            border-radius: var(--gl-radius-2xl);
             font-size: 12px; font-weight: 500;
             cursor: pointer;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
             font-family: inherit;
             display: inline-flex; align-items: center; gap: 6px;
         }
         .btn:hover { transform: translateY(-1px); }
-        .btn-primary { background: var(--gradient); color: white; }
-        .btn-primary:hover { box-shadow: var(--glow-primary); }
-        .btn-secondary { background: rgba(255,255,255,0.06); color: var(--text); }
+        .btn-primary { background: var(--gl-brand-gradient); color: white; }
+        .btn-primary:hover { box-shadow: var(--gl-glow-brand); }
+        .btn-secondary { background: rgba(255,255,255,0.06); color: var(--gl-text-primary); }
         .btn-secondary:hover { background: rgba(255,255,255,0.1); }
-        .btn-danger { background: rgba(239,68,68,0.12); color: var(--error); }
+        .btn-danger { background: rgba(239,68,68,0.12); color: var(--gl-error); }
         .btn-danger:hover { background: rgba(239,68,68,0.2); }
-        .btn-success { background: rgba(34,197,94,0.12); color: var(--success); }
+        .btn-success { background: rgba(34,197,94,0.12); color: var(--gl-success); }
         .btn-sm { padding: 4px 10px; font-size: 11px; }
         .btn-xs { padding: 2px 6px; font-size: 10px; }
         .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -283,7 +366,7 @@
         .form-group { margin-bottom: 14px; }
         .form-group label {
             display: block; font-size: 10px; font-weight: 600;
-            margin-bottom: 5px; color: var(--text-muted);
+            margin-bottom: 5px; color: var(--gl-text-muted);
             text-transform: uppercase; letter-spacing: 0.5px;
         }
 
@@ -291,25 +374,25 @@
             width: 100%;
             padding: 9px 12px;
             background: rgba(255,255,255,0.04);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-xs);
-            color: var(--text);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-md);
+            color: var(--gl-text-primary);
             font-family: inherit;
             font-size: 12px;
             outline: none;
             transition: border-color 0.2s;
         }
-        input:focus, textarea:focus, select:focus { border-color: var(--primary); }
+        input:focus, textarea:focus, select:focus { border-color: var(--gl-brand-pink); }
         textarea { resize: vertical; min-height: 70px; }
         select { cursor: pointer; }
-        input[type="range"] { width: 100%; accent-color: var(--primary); }
+        input[type="range"] { width: 100%; accent-color: var(--gl-brand-pink); }
 
         /* ══════════════════════════════════════════════════════════
            BADGES
            ══════════════════════════════════════════════════════════ */
         .badge {
             font-size: 10px; padding: 2px 8px; border-radius: 4px;
-            background: rgba(255,255,255,0.06); color: var(--text-muted);
+            background: rgba(255,255,255,0.06); color: var(--gl-text-muted);
             font-weight: 500; white-space: nowrap;
         }
         .badge.concept { background: rgba(139,92,246,0.15); color: #a78bfa; }
@@ -321,13 +404,42 @@
         .badge.review { background: rgba(244,114,182,0.15); color: #f472b6; }
         .badge.export { background: rgba(251,146,60,0.15); color: #fb923c; }
         .badge.complete { background: rgba(34,197,94,0.2); color: #22c55e; }
-        .badge.pending { background: rgba(255,255,255,0.06); color: var(--text-muted); }
+        .badge.pending { background: rgba(255,255,255,0.06); color: var(--gl-text-muted); }
         .badge.generating { background: rgba(59,130,246,0.15); color: #60a5fa; }
         .badge.approved { background: rgba(34,197,94,0.2); color: #22c55e; }
         .badge.failed { background: rgba(239,68,68,0.15); color: #f87171; }
         .badge.in_progress { background: rgba(245,158,11,0.15); color: #fbbf24; }
         .badge.completed { background: rgba(34,197,94,0.2); color: #22c55e; }
-        .badge.skipped { background: rgba(255,255,255,0.06); color: var(--text-muted); }
+        .badge.skipped { background: rgba(255,255,255,0.06); color: var(--gl-text-muted); }
+        .badge-warning { background: rgba(245,158,11,0.15); color: #fbbf24; }
+
+        /* ── Tab Bar ─────────────────────────────────────────────── */
+        .tab-bar {
+            display: flex;
+            gap: 4px;
+            background: var(--gl-bg-surface);
+            padding: 4px;
+            border-radius: var(--gl-radius-lg);
+        }
+        .tab-btn {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            color: var(--gl-text-muted);
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: var(--gl-radius-md);
+            cursor: pointer;
+            transition: var(--gl-transition-fast);
+        }
+        .tab-btn:hover {
+            color: var(--gl-text-primary);
+            background: var(--gl-bg-elevated);
+        }
+        .tab-btn.active {
+            background: var(--gl-brand-pink);
+            color: white;
+        }
 
         /* ══════════════════════════════════════════════════════════
            MODAL
@@ -342,8 +454,8 @@
         .modal-overlay.open { display: flex; }
 
         .modal {
-            background: var(--surface-2);
-            border: 1px solid var(--border);
+            background: var(--gl-bg-header);
+            border: 1px solid var(--gl-border-subtle);
             border-radius: 16px;
             width: 90%; max-width: 520px;
             max-height: 85vh; overflow-y: auto;
@@ -367,15 +479,15 @@
         .modal-header {
             display: flex; align-items: center; justify-content: space-between;
             padding: 14px 20px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
             position: relative; z-index: 2;
         }
         .modal-header h3 { font-size: 14px; font-weight: 600; }
         .modal-close {
-            background: none; border: none; color: var(--text-muted);
+            background: none; border: none; color: var(--gl-text-muted);
             font-size: 18px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
         }
-        .modal-close:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+        .modal-close:hover { color: var(--gl-text-primary); background: rgba(255,255,255,0.05); }
         .modal-body { padding: 20px; position: relative; z-index: 2; }
 
         /* FILM-118: Large modal for text conversion */
@@ -403,21 +515,21 @@
         }
         .suggestion-count {
             font-weight: normal;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .suggestions-list {
             max-height: 200px;
             overflow-y: auto;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            background: var(--surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
+            background: var(--gl-bg-surface);
         }
         .suggestion-item {
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 8px 12px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
             font-size: 12px;
         }
         .suggestion-item:last-child {
@@ -431,7 +543,7 @@
         }
         .suggestion-item-meta {
             font-size: 11px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .suggestion-item button {
             padding: 4px 10px;
@@ -462,17 +574,17 @@
         .chapters-list {
             max-height: 200px;
             overflow-y: auto;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             padding: 8px;
-            background: var(--surface);
+            background: var(--gl-bg-surface);
         }
         .chapter-item {
             display: flex;
             align-items: flex-start;
             gap: 8px;
             padding: 6px 4px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
         }
         .chapter-item:last-child {
             border-bottom: none;
@@ -489,7 +601,7 @@
         }
         .chapter-item-preview {
             font-size: 11px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             margin-top: 2px;
             max-height: 40px;
             overflow: hidden;
@@ -509,20 +621,20 @@
         }
         .convert-progress-bar {
             height: 8px;
-            background: var(--surface);
+            background: var(--gl-bg-surface);
             border-radius: 4px;
             overflow: hidden;
             margin-bottom: 8px;
         }
         .convert-progress-fill {
             height: 100%;
-            background: var(--accent);
+            background: var(--gl-brand-pink);
             width: 0%;
             transition: width 0.3s ease;
         }
         .convert-progress-status {
             font-size: 12px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .convert-preview-container {
             display: grid;
@@ -538,7 +650,7 @@
             font-size: 12px;
             font-weight: 600;
             padding: 6px 0;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
             margin-bottom: 8px;
         }
         .preview-content {
@@ -546,10 +658,10 @@
             height: 300px;
             overflow-y: auto;
             padding: 12px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            font-family: var(--font-mono);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
+            font-family: var(--gl-font-mono);
             font-size: 11px;
             white-space: pre-wrap;
         }
@@ -558,10 +670,10 @@
         }
         .convert-results-summary {
             font-size: 12px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             padding: 8px 12px;
-            background: var(--surface);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border-radius: var(--gl-radius-lg);
             margin-bottom: 16px;
         }
 
@@ -571,29 +683,29 @@
         .project-card {
             display: flex; align-items: center; gap: 14px;
             padding: 14px 18px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             cursor: pointer;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
             margin-bottom: 8px;
         }
         .project-card:hover {
-            border-color: var(--border-bright);
+            border-color: var(--gl-border-focus);
             transform: translateY(-2px);
             box-shadow: 0 4px 20px rgba(233,30,99,0.1);
         }
         .project-icon {
             width: 42px; height: 42px;
-            background: var(--gradient);
+            background: var(--gl-brand-gradient);
             border-radius: 10px;
             display: flex; align-items: center; justify-content: center;
             font-size: 18px; flex-shrink: 0;
         }
         .project-info { flex: 1; min-width: 0; }
         .project-info h3 { font-size: 14px; font-weight: 600; }
-        .project-info p { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .project-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+        .project-info p { font-size: 11px; color: var(--gl-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .project-meta { font-size: 10px; color: var(--gl-text-muted); margin-top: 2px; }
 
         /* ══════════════════════════════════════════════════════════
            DASHBOARD
@@ -605,22 +717,22 @@
             margin-bottom: 24px;
         }
         .stat-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             padding: 16px;
             text-align: center;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
         }
         .stat-card:hover { border-color: rgba(233,30,99,0.2); }
         .stat-card .value {
             font-size: 28px; font-weight: 700;
-            background: var(--gradient);
+            background: var(--gl-brand-gradient);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
         .stat-card .label {
-            font-size: 9px; color: var(--text-muted); margin-top: 4px;
+            font-size: 9px; color: var(--gl-text-muted); margin-top: 4px;
             text-transform: uppercase; letter-spacing: 0.5px;
         }
 
@@ -636,16 +748,16 @@
            SCENES
            ══════════════════════════════════════════════════════════ */
         .scene-row {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             margin-bottom: 8px;
             overflow: hidden;
         }
         .scene-row-header {
             display: flex; align-items: center; gap: 12px;
             padding: 12px 16px; cursor: pointer;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
         }
         .scene-row-header:hover { background: rgba(255,255,255,0.02); }
         .scene-number {
@@ -653,20 +765,20 @@
             background: rgba(233,30,99,0.1);
             border-radius: 8px;
             display: flex; align-items: center; justify-content: center;
-            font-weight: 700; font-size: 13px; color: var(--primary);
+            font-weight: 700; font-size: 13px; color: var(--gl-brand-pink);
             flex-shrink: 0;
         }
         .scene-info { flex: 1; min-width: 0; }
         .scene-info h4 { font-size: 13px; font-weight: 600; }
-        .scene-info p { font-size: 11px; color: var(--text-muted); }
+        .scene-info p { font-size: 11px; color: var(--gl-text-muted); }
         .scene-shots {
             display: none;
             padding: 0 16px 12px;
-            border-top: 1px solid var(--border);
+            border-top: 1px solid var(--gl-border-subtle);
         }
         .scene-row.expanded .scene-shots { display: block; }
         .scene-row.expanded .scene-expand { transform: rotate(90deg); }
-        .scene-expand { transition: transform 0.2s; color: var(--text-muted); font-size: 11px; }
+        .scene-expand { transition: transform 0.2s; color: var(--gl-text-muted); font-size: 11px; }
 
         /* ══════════════════════════════════════════════════════════
            KANBAN (Shot Board)
@@ -679,15 +791,15 @@
         }
         .kanban-column {
             background: rgba(255,255,255,0.02);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             padding: 12px;
             min-height: 200px;
         }
         .kanban-column-header {
             font-size: 11px; font-weight: 600;
             text-transform: uppercase; letter-spacing: 1px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             margin-bottom: 10px;
             display: flex; justify-content: space-between; align-items: center;
         }
@@ -696,20 +808,20 @@
             padding: 1px 6px; border-radius: 4px; font-size: 10px;
         }
         .kanban-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-xs);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-md);
             padding: 10px;
             margin-bottom: 8px;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
             cursor: default;
         }
         .kanban-card:hover { border-color: rgba(233,30,99,0.2); }
         .kanban-card .shot-code {
-            font-size: 11px; font-weight: 700; color: var(--primary);
+            font-size: 11px; font-weight: 700; color: var(--gl-brand-pink);
             margin-bottom: 4px;
         }
-        .kanban-card .shot-meta { font-size: 10px; color: var(--text-muted); }
+        .kanban-card .shot-meta { font-size: 10px; color: var(--gl-text-muted); }
 
         /* ══════════════════════════════════════════════════════════
            CHARACTER / LOCATION / PROP CARDS
@@ -720,27 +832,27 @@
             gap: 12px;
         }
         .entity-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             padding: 16px;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
         }
         .entity-card:hover { border-color: rgba(233,30,99,0.2); transform: translateY(-2px); }
         .entity-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
         .entity-avatar {
             width: 38px; height: 38px;
             border-radius: 50%;
-            background: var(--gradient);
+            background: var(--gl-brand-gradient);
             display: flex; align-items: center; justify-content: center;
             font-size: 16px; flex-shrink: 0; color: white; font-weight: 700;
         }
         .entity-card h3 { font-size: 14px; }
-        .entity-card p { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+        .entity-card p { font-size: 11px; color: var(--gl-text-muted); line-height: 1.4; }
         .entity-card .tag-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
         .tag {
             font-size: 9px; padding: 2px 6px; border-radius: 4px;
-            background: rgba(255,255,255,0.05); color: var(--text-muted);
+            background: rgba(255,255,255,0.05); color: var(--gl-text-muted);
         }
         .entity-card .card-actions { display: flex; gap: 6px; margin-top: 12px; }
 
@@ -753,13 +865,13 @@
         }
         .asset-table th {
             font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
-            color: var(--text-muted); text-align: left;
-            padding: 8px 12px; border-bottom: 1px solid var(--border);
+            color: var(--gl-text-muted); text-align: left;
+            padding: 8px 12px; border-bottom: 1px solid var(--gl-border-subtle);
             font-weight: 600;
         }
         .asset-table td {
             padding: 10px 12px; font-size: 12px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
         }
         .asset-table tr:hover td { background: rgba(255,255,255,0.02); }
 
@@ -771,24 +883,24 @@
         }
         .filter-pill {
             padding: 4px 12px;
-            border-radius: var(--radius);
+            border-radius: var(--gl-radius-2xl);
             font-size: 11px; font-weight: 500;
             background: rgba(255,255,255,0.04);
-            color: var(--text-muted);
-            border: 1px solid var(--border);
+            color: var(--gl-text-muted);
+            border: 1px solid var(--gl-border-subtle);
             cursor: pointer;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
         }
-        .filter-pill:hover { border-color: rgba(233,30,99,0.3); color: var(--text); }
-        .filter-pill.active { background: rgba(233,30,99,0.12); color: var(--primary); border-color: rgba(233,30,99,0.3); }
+        .filter-pill:hover { border-color: rgba(233,30,99,0.3); color: var(--gl-text-primary); }
+        .filter-pill.active { background: rgba(233,30,99,0.12); color: var(--gl-brand-pink); border-color: rgba(233,30,99,0.3); }
 
         /* ══════════════════════════════════════════════════════════
            MUSIC CUE CARDS
            ══════════════════════════════════════════════════════════ */
         .cue-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             padding: 14px;
             margin-bottom: 8px;
             display: flex; align-items: center; gap: 12px;
@@ -808,11 +920,11 @@
            COLOR PRESET
            ══════════════════════════════════════════════════════════ */
         .color-preset-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             padding: 16px;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
         }
         .color-preset-card:hover { border-color: rgba(233,30,99,0.2); }
         .color-preview {
@@ -829,7 +941,7 @@
         .milestone-timeline::before {
             content: '';
             position: absolute; left: 11px; top: 0; bottom: 0;
-            width: 2px; background: var(--border);
+            width: 2px; background: var(--gl-border-subtle);
         }
         .milestone-node {
             position: relative; padding: 0 0 20px 24px;
@@ -838,18 +950,18 @@
             content: '';
             position: absolute; left: -17px; top: 4px;
             width: 10px; height: 10px; border-radius: 50%;
-            background: var(--border); border: 2px solid var(--bg);
+            background: var(--gl-border-subtle); border: 2px solid var(--gl-bg-primary);
         }
-        .milestone-node.completed::before { background: var(--success); }
-        .milestone-node.in_progress::before { background: var(--warning); }
-        .milestone-node.pending::before { background: var(--text-muted); }
+        .milestone-node.completed::before { background: var(--gl-success); }
+        .milestone-node.in_progress::before { background: var(--gl-warning); }
+        .milestone-node.pending::before { background: var(--gl-text-muted); }
         .milestone-progress {
             height: 4px; border-radius: 2px; background: rgba(255,255,255,0.06);
             margin-top: 6px; overflow: hidden;
         }
         .milestone-progress-fill {
             height: 100%; border-radius: 2px;
-            background: var(--gradient);
+            background: var(--gl-brand-gradient);
             transition: width 0.5s ease;
         }
 
@@ -857,15 +969,15 @@
            NOTES
            ══════════════════════════════════════════════════════════ */
         .note-item {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-xs);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-md);
             padding: 12px;
             margin-bottom: 8px;
         }
         .note-item.resolved { opacity: 0.5; }
         .note-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-        .note-content { font-size: 12px; line-height: 1.5; color: var(--text); }
+        .note-content { font-size: 12px; line-height: 1.5; color: var(--gl-text-primary); }
 
         /* ══════════════════════════════════════════════════════════
            RENDER TABLE
@@ -873,12 +985,12 @@
         .render-table { width: 100%; border-collapse: collapse; }
         .render-table th {
             font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
-            color: var(--text-muted); text-align: left;
-            padding: 8px 10px; border-bottom: 1px solid var(--border);
+            color: var(--gl-text-muted); text-align: left;
+            padding: 8px 10px; border-bottom: 1px solid var(--gl-border-subtle);
         }
         .render-table td {
             padding: 8px 10px; font-size: 11px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
             font-family: 'SF Mono', 'Menlo', monospace;
         }
 
@@ -894,20 +1006,20 @@
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             z-index: 10;
-            border-radius: var(--radius-sm);
+            border-radius: var(--gl-radius-lg);
         }
         .coming-soon-overlay .cs-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.6; }
         .coming-soon-overlay h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-        .coming-soon-overlay p { font-size: 12px; color: var(--text-muted); text-align: center; max-width: 280px; }
+        .coming-soon-overlay p { font-size: 12px; color: var(--gl-text-muted); text-align: center; max-width: 280px; }
 
         /* ══════════════════════════════════════════════════════════
            EMPTY STATE
            ══════════════════════════════════════════════════════════ */
         .empty-state {
-            text-align: center; padding: 50px 20px; color: var(--text-muted);
+            text-align: center; padding: 50px 20px; color: var(--gl-text-muted);
         }
         .empty-state .icon { font-size: 40px; margin-bottom: 12px; opacity: 0.4; }
-        .empty-state h3 { font-size: 15px; margin-bottom: 6px; color: var(--text); }
+        .empty-state h3 { font-size: 15px; margin-bottom: 6px; color: var(--gl-text-primary); }
         .empty-state p { font-size: 12px; max-width: 350px; margin: 0 auto; }
 
         /* ══════════════════════════════════════════════════════════
@@ -932,9 +1044,9 @@
         .screenplay-toolbar-panel {
             width: 200px;
             flex-shrink: 0;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             padding: 12px;
             display: flex;
             flex-direction: column;
@@ -958,9 +1070,9 @@
         .screenplay-sidebar-panel {
             width: 280px;
             flex-shrink: 0;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             padding: 12px;
             transition: width 0.2s ease, padding 0.2s ease, opacity 0.2s ease;
             overflow: hidden;
@@ -975,9 +1087,9 @@
         .panel-toggle-btn {
             width: 100%;
             padding: 6px;
-            background: var(--surface-2);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-header);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             cursor: pointer;
             font-size: 14px;
             display: flex;
@@ -986,7 +1098,7 @@
             margin-bottom: 8px;
         }
         .panel-toggle-btn:hover {
-            background: var(--surface-3);
+            background: var(--gl-bg-elevated);
         }
         .collapsed .panel-toggle-btn {
             margin-bottom: 0;
@@ -1006,9 +1118,9 @@
             gap: 16px;
         }
         .index-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-2xl);
             padding: 12px;
             cursor: grab;
             transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
@@ -1023,7 +1135,7 @@
             cursor: grabbing;
         }
         .index-card.drop-target {
-            border-color: var(--primary);
+            border-color: var(--gl-brand-pink);
             background: rgba(233, 30, 99, 0.05);
         }
         .index-card-header {
@@ -1035,7 +1147,7 @@
         .index-card-number {
             font-size: 12px;
             font-weight: 600;
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
             padding: 2px 8px;
             border-radius: 4px;
         }
@@ -1053,11 +1165,11 @@
             font-weight: 600;
             text-transform: uppercase;
             margin-bottom: 8px;
-            color: var(--text);
+            color: var(--gl-text-primary);
         }
         .index-card-preview {
             font-size: 10px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             line-height: 1.4;
             max-height: 40px;
             overflow: hidden;
@@ -1067,18 +1179,18 @@
             display: flex;
             gap: 8px;
             font-size: 9px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             flex-wrap: wrap;
         }
         .index-card-meta-item {
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
             padding: 2px 6px;
             border-radius: 3px;
         }
         .view-mode-toggle {
             display: flex;
-            background: var(--surface-2);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-header);
+            border-radius: var(--gl-radius-lg);
             padding: 2px;
         }
         .view-mode-btn {
@@ -1086,17 +1198,17 @@
             font-size: 11px;
             border: none;
             background: transparent;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             cursor: pointer;
-            border-radius: var(--radius-sm);
+            border-radius: var(--gl-radius-lg);
             transition: background 0.2s, color 0.2s;
         }
         .view-mode-btn:hover {
-            background: var(--surface);
+            background: var(--gl-bg-surface);
         }
         .view-mode-btn.active {
-            background: var(--surface);
-            color: var(--text);
+            background: var(--gl-bg-surface);
+            color: var(--gl-text-primary);
             font-weight: 600;
         }
 
@@ -1105,7 +1217,7 @@
             text-align: center;
             padding: 60px 20px;
             margin-bottom: 40px;
-            border-bottom: 2px solid var(--border);
+            border-bottom: 2px solid var(--gl-border-subtle);
             font-family: 'Courier New', monospace;
             pointer-events: none;
             user-select: none;
@@ -1131,17 +1243,17 @@
         }
         .title-page-block .title-draft {
             font-size: 11px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             margin-bottom: 8px;
         }
         .title-page-block .title-contact {
             font-size: 10px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             white-space: pre-line;
         }
         .title-page-block .title-edit-hint {
             font-size: 9px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             margin-top: 20px;
             opacity: 0.5;
         }
@@ -1256,9 +1368,9 @@
             position: absolute;
             top: 100%;
             left: 0;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             min-width: 160px;
             z-index: 100;
@@ -1275,13 +1387,13 @@
             border: none;
             cursor: pointer;
             font-size: 12px;
-            color: var(--text);
+            color: var(--gl-text-primary);
         }
         .export-dropdown-item:hover {
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
         }
         .export-dropdown-item small {
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             margin-left: 4px;
         }
 
@@ -1405,18 +1517,18 @@
 
         /* FILM-131: Import Modal Styles */
         .import-dropzone {
-            border: 2px dashed var(--border);
-            border-radius: var(--radius-lg);
+            border: 2px dashed var(--gl-border-subtle);
+            border-radius: var(--gl-radius-xl);
             padding: 40px 20px;
             text-align: center;
             transition: all 0.2s ease;
             cursor: pointer;
-            background: var(--surface);
+            background: var(--gl-bg-surface);
         }
         .import-dropzone:hover,
         .import-dropzone.dragover {
-            border-color: var(--primary);
-            background: rgba(var(--primary-rgb), 0.05);
+            border-color: var(--gl-brand-pink);
+            background: rgba(233, 30, 99, 0.05);
         }
         .import-dropzone.dragover {
             transform: scale(1.02);
@@ -1428,12 +1540,12 @@
         }
         .import-dropzone-text {
             font-size: 14px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             margin-bottom: 8px;
         }
         .import-dropzone-hint {
             font-size: 11px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             opacity: 0.7;
         }
         .import-file-input {
@@ -1450,8 +1562,8 @@
         .import-progress-spinner {
             width: 32px;
             height: 32px;
-            border: 3px solid var(--border);
-            border-top-color: var(--primary);
+            border: 3px solid var(--gl-border-subtle);
+            border-top-color: var(--gl-brand-pink);
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin: 0 auto 12px;
@@ -1467,15 +1579,15 @@
             display: block;
         }
         .import-result-success {
-            color: var(--success);
+            color: var(--gl-success);
         }
         .import-result-error {
-            color: var(--danger);
+            color: var(--gl-error);
         }
         .import-stats {
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
             padding: 12px;
-            border-radius: var(--radius-sm);
+            border-radius: var(--gl-radius-lg);
             margin: 12px 0;
             font-size: 12px;
         }
@@ -1488,7 +1600,7 @@
             margin-top: 12px;
             padding: 10px;
             background: rgba(255, 193, 7, 0.1);
-            border-radius: var(--radius-sm);
+            border-radius: var(--gl-radius-lg);
             font-size: 11px;
         }
         .import-warnings-title {
@@ -1503,9 +1615,9 @@
             align-items: center;
             gap: 8px;
             padding: 8px 12px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             margin-bottom: 12px;
             flex-wrap: wrap;
         }
@@ -1516,21 +1628,21 @@
         }
         .screenplay-toolbar .toolbar-btn {
             padding: 4px 8px;
-            background: var(--surface-2);
-            border: 1px solid var(--border);
+            background: var(--gl-bg-header);
+            border: 1px solid var(--gl-border-subtle);
             border-radius: 4px;
-            color: var(--text);
+            color: var(--gl-text-primary);
             cursor: pointer;
             font-size: 12px;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
         }
         .screenplay-toolbar .toolbar-btn:hover {
-            background: var(--surface-3);
-            border-color: var(--primary);
+            background: var(--gl-bg-elevated);
+            border-color: var(--gl-brand-pink);
         }
         .screenplay-toolbar .toolbar-btn.active {
-            background: var(--primary);
-            border-color: var(--primary);
+            background: var(--gl-brand-pink);
+            border-color: var(--gl-brand-pink);
         }
         .suggestions-btn {
             position: relative;
@@ -1542,7 +1654,7 @@
             min-width: 16px;
             height: 16px;
             padding: 0 4px;
-            background: var(--accent);
+            background: var(--gl-brand-pink);
             color: white;
             border-radius: 8px;
             font-size: 10px;
@@ -1551,13 +1663,13 @@
         .screenplay-toolbar .toolbar-divider {
             width: 1px;
             height: 20px;
-            background: var(--border);
+            background: var(--gl-border-subtle);
             margin: 0 4px;
         }
         .screenplay-toolbar .toolbar-stats {
             margin-left: auto;
             font-size: 11px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             display: flex;
             gap: 12px;
         }
@@ -1574,8 +1686,8 @@
             background: rgba(76, 175, 80, 0.1);
         }
         .save-status.saving {
-            color: var(--text-muted);
-            background: var(--surface-2);
+            color: var(--gl-text-muted);
+            background: var(--gl-bg-header);
         }
         .save-status.unsaved {
             color: var(--warning, #ff9800);
@@ -1586,9 +1698,9 @@
         .screenplay-scroll-container {
             flex: 1;
             overflow: auto;
-            background: var(--surface-2);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-header);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             padding: 20px;
         }
 
@@ -1604,7 +1716,7 @@
             line-height: 1;
             background: #fff;
             color: #111;
-            border: 1px solid var(--border);
+            border: 1px solid var(--gl-border-subtle);
             box-shadow: 0 4px 20px rgba(0,0,0,0.3);
         }
         .screenplay-page:focus {
@@ -1654,8 +1766,8 @@
             align-items: center;
             gap: 10px;
             padding: 8px 12px;
-            background: var(--surface-2);
-            border: 1px solid var(--border);
+            background: var(--gl-bg-header);
+            border: 1px solid var(--gl-border-subtle);
             border-radius: 8px;
             margin-bottom: 6px;
             font-size: 11px;
@@ -1663,17 +1775,17 @@
             transition: background 0.2s;
         }
         .version-item:hover {
-            background: var(--surface-3);
+            background: var(--gl-bg-elevated);
         }
         .version-item.selected {
-            border-color: var(--primary);
+            border-color: var(--gl-brand-pink);
             background: rgba(233, 30, 99, 0.05);
         }
         .version-item .version-badge {
             font-weight: 600;
             padding: 2px 6px;
             border-radius: 4px;
-            background: var(--surface-1);
+            background: var(--gl-bg-header);
         }
         .version-item .version-meta {
             flex: 1;
@@ -1688,7 +1800,7 @@
         }
         .version-item .version-meta-secondary {
             font-size: 10px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .version-actions {
             display: flex;
@@ -1704,7 +1816,7 @@
             gap: 8px;
             margin-bottom: 10px;
             padding: 8px;
-            background: var(--surface-1);
+            background: var(--gl-bg-header);
             border-radius: 6px;
         }
         .diff-view {
@@ -1715,20 +1827,20 @@
             overflow-y: auto;
         }
         .diff-panel {
-            border: 1px solid var(--border);
+            border: 1px solid var(--gl-border-subtle);
             border-radius: 8px;
             overflow: hidden;
         }
         .diff-panel-header {
             padding: 8px 12px;
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
             font-weight: 600;
             font-size: 12px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
         }
         .diff-content {
             padding: 8px;
-            font-family: var(--font-mono);
+            font-family: var(--gl-font-mono);
             font-size: 11px;
             white-space: pre-wrap;
             max-height: 50vh;
@@ -1748,13 +1860,13 @@
             border-left: 3px solid #f44336;
         }
         .diff-line.unchanged {
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .diff-stats {
             display: flex;
             gap: 16px;
             padding: 12px;
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
             border-radius: 8px;
             margin-bottom: 12px;
         }
@@ -1769,7 +1881,7 @@
         .diff-stat-value.negative { color: #f44336; }
         .diff-stat-label {
             font-size: 11px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
 
         .screenplay-page .sp-action {
@@ -1845,7 +1957,7 @@
             text-transform: uppercase;
             margin-top: 1em;
             margin-left: 2.2in;
-            border-left: 2px solid var(--primary);
+            border-left: 2px solid var(--gl-brand-pink);
             padding-left: 8px;
         }
         /* Selected/focused block highlight */
@@ -1929,7 +2041,7 @@
             right: -10px;
             top: 50%;
             transform: translateY(-50%);
-            background: var(--primary);
+            background: var(--gl-brand-pink);
             color: white;
             font-size: 9px;
             padding: 2px 6px;
@@ -1965,9 +2077,9 @@
             visibility: visible;
         }
         .shortcut-help-content {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-2xl);
             max-width: 600px;
             max-height: 80vh;
             overflow-y: auto;
@@ -1978,7 +2090,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 16px 20px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
         }
         .shortcut-help-header h3 {
             margin: 0;
@@ -1988,13 +2100,13 @@
             background: none;
             border: none;
             font-size: 24px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             cursor: pointer;
             padding: 0;
             line-height: 1;
         }
         .shortcut-help-close:hover {
-            color: var(--text);
+            color: var(--gl-text-primary);
         }
         .shortcut-help-sections {
             display: grid;
@@ -2006,7 +2118,7 @@
             margin: 0 0 12px 0;
             font-size: 12px;
             text-transform: uppercase;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             letter-spacing: 0.5px;
         }
         .shortcut-item {
@@ -2017,8 +2129,8 @@
             font-size: 12px;
         }
         .shortcut-item kbd {
-            background: var(--surface-2);
-            border: 1px solid var(--border);
+            background: var(--gl-bg-header);
+            border: 1px solid var(--gl-border-subtle);
             border-radius: 4px;
             padding: 2px 6px;
             font-family: monospace;
@@ -2030,9 +2142,9 @@
         /* FILM-106: Scene Navigator */
         .scene-navigator {
             margin-top: 8px;
-            background: var(--surface-2);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-header);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             max-height: 350px;
             display: flex;
             flex-direction: column;
@@ -2040,8 +2152,8 @@
         .scene-nav-stats {
             padding: 8px 10px;
             font-size: 10px;
-            color: var(--text-muted);
-            border-bottom: 1px solid var(--border);
+            color: var(--gl-text-muted);
+            border-bottom: 1px solid var(--gl-border-subtle);
             display: flex;
             gap: 4px;
         }
@@ -2059,11 +2171,11 @@
             transition: all 0.15s ease;
         }
         .scene-nav-item:hover {
-            background: var(--surface);
+            background: var(--gl-bg-surface);
         }
         .scene-nav-item.current {
             background: rgba(233, 30, 99, 0.1);
-            border-left-color: var(--primary);
+            border-left-color: var(--gl-brand-pink);
         }
         .scene-nav-header {
             display: flex;
@@ -2073,13 +2185,13 @@
         .scene-nav-num {
             font-size: 9px;
             font-weight: 600;
-            color: var(--primary);
+            color: var(--gl-brand-pink);
             min-width: 24px;
         }
         .scene-nav-title {
             font-size: 10px;
             font-weight: 500;
-            color: var(--text);
+            color: var(--gl-text-primary);
             flex: 1;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -2087,7 +2199,7 @@
         }
         .scene-nav-chars {
             font-size: 9px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             margin-top: 2px;
             margin-left: 30px;
             overflow: hidden;
@@ -2099,9 +2211,9 @@
         .autocomplete-dropdown {
             display: none;
             position: fixed;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
             max-height: 240px;
             overflow-y: auto;
@@ -2116,14 +2228,14 @@
             padding: 8px 12px;
             cursor: pointer;
             font-size: 12px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
         }
         .autocomplete-item:last-child {
             border-bottom: none;
         }
         .autocomplete-item:hover,
         .autocomplete-item.selected {
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
         }
         .autocomplete-item.unrecognized .autocomplete-text {
             color: var(--warning, #ff9800);
@@ -2133,11 +2245,11 @@
             flex: 1;
         }
         .autocomplete-desc {
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             font-size: 10px;
         }
         .autocomplete-action {
-            color: var(--primary);
+            color: var(--gl-brand-pink);
             font-size: 10px;
             padding: 2px 6px;
             background: rgba(233, 30, 99, 0.1);
@@ -2152,9 +2264,9 @@
         .ai-chat-panel {
             width: 320px;
             flex-shrink: 0;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             display: none;
             flex-direction: column;
             height: 100%;
@@ -2164,7 +2276,7 @@
         }
         .ai-chat-header {
             padding: 12px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
             display: flex;
             align-items: center;
             gap: 8px;
@@ -2178,33 +2290,33 @@
         .ai-chat-mode-select {
             font-size: 11px;
             padding: 4px 8px;
-            background: var(--surface-2);
-            border: 1px solid var(--border);
+            background: var(--gl-bg-header);
+            border: 1px solid var(--gl-border-subtle);
             border-radius: 4px;
-            color: var(--text);
+            color: var(--gl-text-primary);
         }
         .ai-chat-close {
             background: none;
             border: none;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             cursor: pointer;
             font-size: 16px;
             padding: 4px;
         }
         .ai-chat-close:hover {
-            color: var(--text);
+            color: var(--gl-text-primary);
         }
         .ai-analyze-btn {
             padding: 4px 10px;
             font-size: 11px;
-            background: var(--surface);
-            border: 1px solid var(--border);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
             border-radius: 4px;
-            color: var(--text);
+            color: var(--gl-text-primary);
             cursor: pointer;
         }
         .ai-analyze-btn:hover {
-            background: var(--border);
+            background: var(--gl-border-subtle);
         }
         .ai-chat-messages {
             flex: 1;
@@ -2223,14 +2335,14 @@
         }
         .ai-chat-message.user {
             align-self: flex-end;
-            background: var(--primary);
+            background: var(--gl-brand-pink);
             color: white;
             border-bottom-right-radius: 4px;
         }
         .ai-chat-message.assistant {
             align-self: flex-start;
-            background: var(--surface-2);
-            color: var(--text);
+            background: var(--gl-bg-header);
+            color: var(--gl-text-primary);
             border-bottom-left-radius: 4px;
         }
         .ai-chat-message .screenplay-preview {
@@ -2248,7 +2360,7 @@
             margin-top: 8px;
             font-size: 10px;
             padding: 4px 8px;
-            background: var(--primary);
+            background: var(--gl-brand-pink);
             color: white;
             border: none;
             border-radius: 4px;
@@ -2259,7 +2371,7 @@
         }
         .ai-chat-input-area {
             padding: 12px;
-            border-top: 1px solid var(--border);
+            border-top: 1px solid var(--gl-border-subtle);
         }
         .ai-chat-input-area textarea {
             width: 100%;
@@ -2268,14 +2380,14 @@
             resize: vertical;
             font-size: 12px;
             padding: 8px;
-            background: var(--surface-2);
-            border: 1px solid var(--border);
+            background: var(--gl-bg-header);
+            border: 1px solid var(--gl-border-subtle);
             border-radius: 8px;
-            color: var(--text);
+            color: var(--gl-text-primary);
         }
         .ai-chat-input-area textarea:focus {
             outline: none;
-            border-color: var(--primary);
+            border-color: var(--gl-brand-pink);
         }
         .ai-chat-input-area .send-row {
             display: flex;
@@ -2288,7 +2400,7 @@
             align-items: center;
             gap: 4px;
             font-size: 11px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             cursor: pointer;
         }
         .ai-context-toggle input[type="checkbox"] {
@@ -2297,11 +2409,11 @@
             cursor: pointer;
         }
         .ai-context-toggle:hover {
-            color: var(--text-primary);
+            color: var(--gl-text-primary);
         }
         .ai-chat-input-area .send-btn {
             padding: 6px 16px;
-            background: var(--gradient);
+            background: var(--gl-brand-gradient);
             color: white;
             border: none;
             border-radius: 6px;
@@ -2321,7 +2433,7 @@
         .ai-diff-view {
             font-family: 'Courier Prime', monospace;
             font-size: 10px;
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
             border-radius: 4px;
             padding: 8px;
             margin-top: 8px;
@@ -2343,7 +2455,7 @@
             color: #4ade80;
         }
         .ai-diff-line.unchanged {
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .ai-rewrite-buttons {
             display: flex;
@@ -2351,27 +2463,27 @@
             margin-top: 8px;
         }
         .ai-rewrite-buttons .accept-btn {
-            background: var(--success);
+            background: var(--gl-success);
             color: white;
         }
         .ai-rewrite-buttons .reject-btn {
-            background: var(--error);
+            background: var(--gl-error);
             color: white;
         }
         .ai-selected-context {
             font-size: 10px;
-            background: var(--surface-3);
+            background: var(--gl-bg-elevated);
             border-radius: 4px;
             padding: 6px 8px;
             margin-bottom: 8px;
-            border-left: 2px solid var(--primary);
+            border-left: 2px solid var(--gl-brand-pink);
         }
         .ai-selected-context .label {
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             margin-bottom: 4px;
         }
         .ai-selected-context .content {
-            color: var(--text);
+            color: var(--gl-text-primary);
             font-family: 'Courier Prime', monospace;
             white-space: pre-wrap;
             max-height: 60px;
@@ -2388,22 +2500,22 @@
             align-items: center;
             gap: 8px;
             padding: 8px 12px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             font-size: 12px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .screenplay-import-toggle:hover {
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
         }
         .screenplay-import-content {
             display: none;
             margin-top: 12px;
             padding: 12px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
         }
         .screenplay-import-content.open {
             display: block;
@@ -2419,27 +2531,27 @@
             align-items: center;
             gap: 8px;
             padding: 8px 12px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
             font-size: 12px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .script-stats-toggle:hover {
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
         }
         .script-stats-summary {
             margin-left: auto;
             font-size: 11px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .script-stats-content {
             display: none;
             margin-top: 8px;
             padding: 12px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
         }
         .script-stats-content.open {
             display: block;
@@ -2453,23 +2565,23 @@
         .stat-item {
             text-align: center;
             padding: 8px;
-            background: var(--surface-2);
-            border-radius: var(--radius-sm);
+            background: var(--gl-bg-header);
+            border-radius: var(--gl-radius-lg);
         }
         .stat-value {
             font-size: 18px;
             font-weight: 600;
-            color: var(--text);
+            color: var(--gl-text-primary);
         }
         .stat-label {
             font-size: 10px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             margin-top: 2px;
         }
         .script-stats-details {
             font-size: 11px;
             padding: 8px 0;
-            border-top: 1px solid var(--border);
+            border-top: 1px solid var(--gl-border-subtle);
         }
         .stats-detail-row {
             display: flex;
@@ -2477,19 +2589,19 @@
             padding: 4px 0;
         }
         .stats-detail-label {
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .stats-character-breakdown {
             font-size: 11px;
             margin-top: 8px;
             padding-top: 8px;
-            border-top: 1px solid var(--border);
+            border-top: 1px solid var(--gl-border-subtle);
         }
         .stats-character-breakdown h5 {
             font-size: 11px;
             font-weight: 600;
             margin: 0 0 6px 0;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .character-stat-bar {
             display: flex;
@@ -2506,19 +2618,19 @@
         .character-stat-fill {
             flex: 1;
             height: 6px;
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
             border-radius: 3px;
             overflow: hidden;
         }
         .character-stat-fill-inner {
             height: 100%;
-            background: var(--accent);
+            background: var(--gl-brand-pink);
             border-radius: 3px;
         }
         .character-stat-count {
             width: 50px;
             text-align: right;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
 
         /* FILM-126: Enhanced stats dashboard */
@@ -2526,7 +2638,7 @@
             display: flex;
             gap: 4px;
             margin-bottom: 12px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
             padding-bottom: 8px;
         }
         .stats-tab {
@@ -2534,17 +2646,17 @@
             font-size: 11px;
             border: none;
             background: transparent;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             cursor: pointer;
-            border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+            border-radius: var(--gl-radius-lg) var(--gl-radius-lg) 0 0;
             transition: background 0.2s;
         }
         .stats-tab:hover {
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
         }
         .stats-tab.active {
-            background: var(--surface-2);
-            color: var(--text);
+            background: var(--gl-bg-header);
+            color: var(--gl-text-primary);
             font-weight: 600;
         }
         .stats-tab-content {
@@ -2569,10 +2681,10 @@
             stroke-width: 20;
         }
         .stats-donut-ring.bg {
-            stroke: var(--surface-2);
+            stroke: var(--gl-bg-header);
         }
         .stats-donut-ring.dialogue {
-            stroke: var(--accent);
+            stroke: var(--gl-brand-pink);
             stroke-linecap: round;
             transform: rotate(-90deg);
             transform-origin: center;
@@ -2591,7 +2703,7 @@
         }
         .stats-donut-label-text {
             font-size: 10px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .stats-donut-legend {
             flex: 1;
@@ -2608,8 +2720,8 @@
             height: 10px;
             border-radius: 50%;
         }
-        .stats-legend-dot.dialogue { background: var(--accent); }
-        .stats-legend-dot.action { background: var(--surface-3); }
+        .stats-legend-dot.dialogue { background: var(--gl-brand-pink); }
+        .stats-legend-dot.action { background: var(--gl-bg-elevated); }
         .stats-scene-bars {
             margin-top: 12px;
         }
@@ -2623,18 +2735,18 @@
         .stats-scene-bar-label {
             width: 45px;
             text-align: right;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .stats-scene-bar-track {
             flex: 1;
             height: 8px;
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
             border-radius: 4px;
             overflow: hidden;
         }
         .stats-scene-bar-fill {
             height: 100%;
-            background: var(--accent);
+            background: var(--gl-brand-pink);
             border-radius: 4px;
             transition: width 0.3s ease;
         }
@@ -2643,7 +2755,7 @@
         .stats-scene-bar-value {
             width: 40px;
             font-size: 9px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .stats-ratio-bars {
             margin-top: 12px;
@@ -2659,7 +2771,7 @@
         }
         .stats-ratio-bar-track {
             height: 20px;
-            background: var(--surface-2);
+            background: var(--gl-bg-header);
             border-radius: 4px;
             overflow: hidden;
             display: flex;
@@ -2674,7 +2786,7 @@
             color: white;
             transition: width 0.3s ease;
         }
-        .stats-ratio-bar-segment:nth-child(1) { background: var(--accent); }
+        .stats-ratio-bar-segment:nth-child(1) { background: var(--gl-brand-pink); }
         .stats-ratio-bar-segment:nth-child(2) { background: #2196f3; }
         .stats-ratio-bar-segment:nth-child(3) { background: #4caf50; }
         .stats-ratio-bar-segment:nth-child(4) { background: #ff9800; }
@@ -2682,35 +2794,35 @@
         .stats-runtime {
             font-size: 14px;
             font-weight: 600;
-            color: var(--text);
+            color: var(--gl-text-primary);
             margin-bottom: 8px;
         }
         .stats-runtime-note {
             font-size: 10px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
 
         /* ══════════════════════════════════════════════════════════
            STATUS BAR
            ══════════════════════════════════════════════════════════ */
         .status-bar {
-            position: fixed; bottom: 0; left: var(--sidebar-w); right: 0;
-            background: var(--surface);
-            border-top: 1px solid var(--border);
+            position: fixed; bottom: 0; left: var(--gl-sidebar-w); right: 0;
+            background: var(--gl-bg-surface);
+            border-top: 1px solid var(--gl-border-subtle);
             padding: 5px 20px;
-            font-size: 10px; color: var(--text-muted);
+            font-size: 10px; color: var(--gl-text-muted);
             display: flex; justify-content: space-between; align-items: center;
             z-index: 100;
         }
-        .status-dot-online { color: var(--success); }
-        .status-dot-offline { color: var(--error); }
+        .status-dot-online { color: var(--gl-success); }
+        .status-dot-offline { color: var(--gl-error); }
 
         /* ══════════════════════════════════════════════════════════
            UTILITIES
            ══════════════════════════════════════════════════════════ */
         .loading-spinner {
             display: inline-block; width: 14px; height: 14px;
-            border: 2px solid var(--border); border-top-color: var(--primary);
+            border: 2px solid var(--gl-border-subtle); border-top-color: var(--gl-brand-pink);
             border-radius: 50%; animation: spin 0.8s linear infinite;
             vertical-align: middle;
         }
@@ -2719,7 +2831,7 @@
         .mt-16 { margin-top: 16px; }
         .mb-16 { margin-bottom: 16px; }
         .mb-8 { margin-bottom: 8px; }
-        .text-muted { color: var(--text-muted); }
+        .text-muted { color: var(--gl-text-muted); }
         .text-sm { font-size: 11px; }
         .gap-8 { gap: 8px; }
         .hidden { display: none !important; }
@@ -2736,11 +2848,11 @@
             bottom: calc(100% + 8px);
             left: 50%;
             transform: translateX(-50%);
-            background: var(--surface-3);
-            color: var(--text);
-            border: 1px solid var(--border-bright);
+            background: var(--gl-bg-elevated);
+            color: var(--gl-text-primary);
+            border: 1px solid var(--gl-border-focus);
             padding: 6px 10px;
-            border-radius: var(--radius-xs);
+            border-radius: var(--gl-radius-md);
             font-size: 11px;
             font-weight: 400;
             line-height: 1.4;
@@ -2752,7 +2864,7 @@
             visibility: hidden;
             transition: opacity 0.2s ease 0.4s, visibility 0.2s ease 0.4s;
             z-index: 9998;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5), var(--glow-primary);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5), var(--gl-glow-brand);
             text-align: left;
             letter-spacing: 0;
             text-transform: none;
@@ -2764,7 +2876,7 @@
             left: 50%;
             transform: translateX(-50%);
             border: 5px solid transparent;
-            border-top-color: var(--border-bright);
+            border-top-color: var(--gl-border-focus);
             pointer-events: none;
             opacity: 0;
             visibility: hidden;
@@ -2785,7 +2897,7 @@
             bottom: auto;
             top: calc(100% + 3px);
             border-top-color: transparent;
-            border-bottom-color: var(--border-bright);
+            border-bottom-color: var(--gl-border-focus);
         }
         /* Right-positioned variant for sidebar items */
         [data-tooltip-pos="right"]::after {
@@ -2800,7 +2912,7 @@
             left: calc(100% + 5px);
             transform: translateY(-50%);
             border-top-color: transparent;
-            border-right-color: var(--border-bright);
+            border-right-color: var(--gl-border-focus);
         }
         /* Prevent text-transform inheritance on nav-items */
         .nav-item[data-tooltip]::after {
@@ -2812,40 +2924,40 @@
            ══════════════════════════════════════════════════════════════ */
         .glossary-btn {
             background: none;
-            border: 1px solid var(--border);
-            color: var(--text-muted);
+            border: 1px solid var(--gl-border-subtle);
+            color: var(--gl-text-muted);
             font-size: 11px;
             padding: 4px 10px;
-            border-radius: var(--radius-xs);
+            border-radius: var(--gl-radius-md);
             cursor: pointer;
-            transition: var(--transition);
+            transition: var(--gl-transition-slow);
             display: flex;
             align-items: center;
             gap: 4px;
             margin-top: 8px;
         }
         .glossary-btn:hover {
-            color: var(--text);
-            border-color: var(--border-bright);
-            box-shadow: var(--glow-primary);
+            color: var(--gl-text-primary);
+            border-color: var(--gl-border-focus);
+            box-shadow: var(--gl-glow-brand);
         }
         .glossary-search {
             width: 100%;
             padding: 8px 12px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-xs);
-            color: var(--text);
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-md);
+            color: var(--gl-text-primary);
             font-size: 12px;
             margin-bottom: 16px;
             outline: none;
         }
         .glossary-search:focus {
-            border-color: var(--primary);
+            border-color: var(--gl-brand-pink);
             box-shadow: 0 0 0 2px rgba(233,30,99,0.15);
         }
         .glossary-search::placeholder {
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
         }
         .glossary-content {
             max-height: 60vh;
@@ -2858,11 +2970,11 @@
             font-size: 10px;
             text-transform: uppercase;
             letter-spacing: 1.5px;
-            color: var(--primary);
+            color: var(--gl-brand-pink);
             font-weight: 600;
             margin-bottom: 8px;
             padding-bottom: 4px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--gl-border-subtle);
         }
         .glossary-term {
             padding: 6px 0;
@@ -2871,23 +2983,23 @@
         .glossary-term-name {
             font-size: 12px;
             font-weight: 600;
-            color: var(--secondary);
+            color: var(--gl-brand-blue);
         }
         .glossary-term-def {
             font-size: 11px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             margin-top: 2px;
             line-height: 1.5;
         }
         .glossary-empty {
             text-align: center;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             padding: 20px;
             font-size: 12px;
         }
         .glossary-term mark {
             background: rgba(233,30,99,0.3);
-            color: var(--text);
+            color: var(--gl-text-primary);
             border-radius: 2px;
             padding: 0 2px;
         }
@@ -2898,7 +3010,7 @@
             width: 16px;
             height: 16px;
             font-size: 12px;
-            color: var(--text-muted);
+            color: var(--gl-text-muted);
             cursor: help;
             vertical-align: middle;
             margin-left: 4px;
@@ -3039,7 +3151,7 @@
                 <span class="section-label">Shot Status</span>
             </div>
             <div class="status-bar-chart" id="dashShotBar"></div>
-            <div id="dashShotLegend" style="display:flex;gap:16px;margin-bottom:24px;font-size:10px;color:var(--text-muted);"></div>
+            <div id="dashShotLegend" style="display:flex;gap:16px;margin-bottom:24px;font-size:10px;color:var(--gl-text-muted);"></div>
             <div class="flex-between mb-8">
                 <span class="section-label">Upcoming Milestones</span>
             </div>
@@ -3098,7 +3210,7 @@
                         <button class="toolbar-btn" onclick="formatItalic()" data-tooltip="Italic text (Ctrl+I)"><i>I</i></button>
                         <button class="toolbar-btn" onclick="formatUnderline()" data-tooltip="Underline text (Ctrl+U)"><u>U</u></button>
                         <div class="toolbar-divider"></div>
-                        <span id="currentSceneNum" style="font-size:11px;color:var(--text-muted);">Scene: —</span>
+                        <span id="currentSceneNum" style="font-size:11px;color:var(--gl-text-muted);">Scene: —</span>
                         <button class="toolbar-btn" id="lockSceneNumsBtn" onclick="toggleLockSceneNumbers()" data-tooltip="Lock scene numbers to prevent reflow during editing">
                             🔓
                         </button>
@@ -3111,7 +3223,7 @@
                         <div class="toolbar-divider"></div>
                         <button class="toolbar-btn" id="commentsToggle" onclick="toggleComments()" data-tooltip="Toggle inline comment annotations on the screenplay">Comments</button>
                         <button class="toolbar-btn" id="aiChatToggle" onclick="toggleAIChat()" data-tooltip="Open AI writing assistant for brainstorming and rewriting (Ctrl+Shift+A)">AI Chat</button>
-                        <button class="toolbar-btn" onclick="openAIGenerateModal()" data-tooltip="Use AI to generate content for the current screenplay element" style="background:var(--primary);color:white;">✨ Generate</button>
+                        <button class="toolbar-btn" onclick="openAIGenerateModal()" data-tooltip="Use AI to generate content for the current screenplay element" style="background:var(--gl-brand-pink);color:white;">✨ Generate</button>
                         <button class="toolbar-btn" onclick="openTitlePageModal()" data-tooltip="Edit screenplay title page metadata (title, author, draft date)">Title Page</button>
                         <!-- FILM-130: Export Dropdown -->
                         <div class="export-dropdown" id="exportDropdown">
@@ -3286,7 +3398,7 @@
                                         <div class="stats-ratio-bar-track" id="timeOfDayBar"></div>
                                     </div>
                                 </div>
-                                <h5 style="margin:16px 0 8px;font-size:11px;color:var(--text-muted);">Scene Lengths</h5>
+                                <h5 style="margin:16px 0 8px;font-size:11px;color:var(--gl-text-muted);">Scene Lengths</h5>
                                 <div class="stats-scene-bars" id="sceneLengthBars"></div>
                             </div>
 
@@ -3367,8 +3479,8 @@
                     <span id="storyboardProgressLabel">Generating storyboards...</span>
                     <span id="storyboardProgressPct">0%</span>
                 </div>
-                <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;">
-                    <div id="storyboardProgressBar" style="background:var(--primary);height:100%;width:0%;transition:width 0.3s;"></div>
+                <div style="background:var(--gl-border-subtle);border-radius:4px;height:6px;overflow:hidden;">
+                    <div id="storyboardProgressBar" style="background:var(--gl-brand-pink);height:100%;width:0%;transition:width 0.3s;"></div>
                 </div>
             </div>
             <div id="storyboardGrid" class="entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
@@ -3566,15 +3678,56 @@
         <div class="page" id="page-budget">
             <div class="flex-between mb-16">
                 <h2>Budget</h2>
-                <div>
-                    <button class="btn btn-secondary" onclick="showModal('budgetLimitModal')" style="margin-right:8px;">Set Limit</button>
-                    <button class="btn btn-primary" onclick="showModal('costEntryModal')">+ Cost Entry</button>
+                <div class="tab-bar" id="budgetTabs">
+                    <button class="tab-btn active" data-tab="tracking" onclick="switchBudgetTab('tracking')">Cost Tracking</button>
+                    <button class="tab-btn" data-tab="estimation" onclick="switchBudgetTab('estimation')">Budget Estimation</button>
                 </div>
             </div>
-            <div id="budgetSummary" class="mb-16"></div>
-            <div id="budgetBreakdown" class="mb-16"></div>
-            <h3 class="mb-8">Cost Ledger</h3>
-            <div id="budgetLedger"></div>
+
+            <!-- Cost Tracking Tab -->
+            <div id="budgetTabTracking" class="budget-tab-content">
+                <div class="flex-between mb-16">
+                    <div></div>
+                    <div>
+                        <button class="btn btn-secondary" onclick="showModal('budgetLimitModal')" style="margin-right:8px;">Set Limit</button>
+                        <button class="btn btn-primary" onclick="showModal('costEntryModal')">+ Cost Entry</button>
+                    </div>
+                </div>
+                <div id="budgetSummary" class="mb-16"></div>
+                <div id="budgetBreakdown" class="mb-16"></div>
+                <h3 class="mb-8">Cost Ledger</h3>
+                <div id="budgetLedger"></div>
+            </div>
+
+            <!-- Budget Estimation Tab -->
+            <div id="budgetTabEstimation" class="budget-tab-content" style="display:none;">
+                <div class="flex-between mb-16">
+                    <div>
+                        <label class="text-sm text-muted" style="margin-right:8px;">Template:</label>
+                        <select id="budgetTemplateSelect" onchange="generateBudgetEstimate()" style="padding:6px 12px;background:var(--gl-bg-surface);border:1px solid var(--gl-border-subtle);border-radius:var(--gl-radius-md);color:var(--gl-text-primary);">
+                            <option value="micro">Micro Budget (&lt;$100K)</option>
+                            <option value="indie" selected>Indie ($100K-$1M)</option>
+                            <option value="low">Low Budget ($1M-$5M)</option>
+                            <option value="mid">Mid Budget ($5M-$20M)</option>
+                            <option value="studio">Studio ($20M+)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button class="btn btn-secondary" onclick="generateBudgetEstimate()" style="margin-right:8px;">Refresh Estimate</button>
+                        <button class="btn btn-primary" onclick="exportBudgetEstimate()">Export CSV</button>
+                    </div>
+                </div>
+
+                <!-- Project Analysis Summary -->
+                <div id="budgetAnalysisSummary" class="mb-16"></div>
+
+                <!-- Missing Data Cards -->
+                <div id="budgetMissingData" class="mb-16"></div>
+
+                <!-- Budget Breakdown -->
+                <div id="budgetEstimateBreakdown"></div>
+            </div>
         </div>
 
         <!-- ── 16b. PIPELINE ──────────────────────────────────────── -->
@@ -3717,7 +3870,7 @@
                 <!-- Aspect Ratio Preview -->
                 <div style="margin-top:12px;">
                     <label class="text-sm text-muted">Preview</label>
-                    <div id="aspectPreview" style="margin-top:6px;width:200px;height:112px;border:2px solid var(--primary);border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all 0.3s;background:rgba(233,30,99,0.05);">
+                    <div id="aspectPreview" style="margin-top:6px;width:200px;height:112px;border:2px solid var(--gl-brand-pink);border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all 0.3s;background:rgba(233,30,99,0.05);">
                         <span class="text-sm text-muted" id="aspectPreviewLabel">16:9</span>
                     </div>
                 </div>
@@ -4091,7 +4244,7 @@
                         <label>Style Notes (Optional)</label>
                         <textarea id="convertStyleNotes" rows="2" placeholder="e.g., Film noir style, sparse dialogue, visual storytelling..."></textarea>
                     </div>
-                    <div class="convert-estimate" id="convertEstimate" style="display:none;font-size:11px;color:var(--text-muted);margin-bottom:12px;"></div>
+                    <div class="convert-estimate" id="convertEstimate" style="display:none;font-size:11px;color:var(--gl-text-muted);margin-bottom:12px;"></div>
                     <div class="btn-row">
                         <button class="btn btn-primary" onclick="detectChapters()">Detect Chapters</button>
                         <button class="btn btn-secondary" onclick="startConversion()">Convert Selected</button>
@@ -4106,7 +4259,7 @@
                             <div class="convert-progress-fill" id="convertProgressFill"></div>
                         </div>
                         <div class="convert-progress-status" id="convertProgressStatus">0 / 0 chunks</div>
-                        <div class="convert-progress-eta" id="convertProgressETA" style="font-size:11px;color:var(--text-muted);margin-top:8px;"></div>
+                        <div class="convert-progress-eta" id="convertProgressETA" style="font-size:11px;color:var(--gl-text-muted);margin-top:8px;"></div>
                         <button class="btn btn-outline btn-sm" onclick="cancelConversion()" style="margin-top:16px;">Cancel</button>
                     </div>
                 </div>
@@ -4293,7 +4446,7 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label>Current Element Type</label>
-                    <div id="aiGenCurrentType" style="font-weight:600;color:var(--primary);text-transform:uppercase;margin-bottom:12px;"></div>
+                    <div id="aiGenCurrentType" style="font-weight:600;color:var(--gl-brand-pink);text-transform:uppercase;margin-bottom:12px;"></div>
                 </div>
                 <div class="form-group">
                     <label>What should I generate?</label>
@@ -4657,7 +4810,7 @@
                 upcoming.map(m => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
                     <span class="badge ${m.status}">${m.status}</span>
                     <span style="font-size:12px;">${esc(m.title)}</span>
-                    <span style="font-size:10px;color:var(--text-muted);margin-left:auto;">${m.completion_pct || 0}%</span>
+                    <span style="font-size:10px;color:var(--gl-text-muted);margin-left:auto;">${m.completion_pct || 0}%</span>
                 </div>`).join('');
 
             // Recent activity from render ledger
@@ -6082,7 +6235,7 @@
                 divider.className = 'toolbar-divider';
                 statusInfo = document.createElement('span');
                 statusInfo.id = 'blockStatusInfo';
-                statusInfo.style.cssText = 'font-size:10px;color:var(--text-muted);';
+                statusInfo.style.cssText = 'font-size:10px;color:var(--gl-text-muted);';
                 toolbar.insertBefore(divider, toolbar.querySelector('.save-status'));
                 toolbar.insertBefore(statusInfo, toolbar.querySelector('.save-status'));
             }
@@ -7185,7 +7338,7 @@
     function onSceneNavDragOver(event) {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
-        event.currentTarget.style.borderTop = '2px solid var(--primary)';
+        event.currentTarget.style.borderTop = '2px solid var(--gl-brand-pink)';
     }
 
     function onSceneNavDragLeave(event) {
@@ -7995,7 +8148,7 @@
         document.getElementById('importProgress').classList.remove('active');
         document.getElementById('importResult').classList.add('active');
 
-        document.getElementById('importResultIcon').innerHTML = '<span style="font-size:48px;color:var(--success);">✓</span>';
+        document.getElementById('importResultIcon').innerHTML = '<span style="font-size:48px;color:var(--gl-success);">✓</span>';
         document.getElementById('importResultMessage').innerHTML = `<strong class="import-result-success">Import Successful</strong>`;
 
         // Build stats
@@ -8043,7 +8196,7 @@
         document.getElementById('importProgress').classList.remove('active');
         document.getElementById('importResult').classList.add('active');
 
-        document.getElementById('importResultIcon').innerHTML = '<span style="font-size:48px;color:var(--danger);">✗</span>';
+        document.getElementById('importResultIcon').innerHTML = '<span style="font-size:48px;color:var(--gl-error);">✗</span>';
         document.getElementById('importResultMessage').innerHTML = `<strong class="import-result-error">${escapeHtml(message)}</strong>`;
         document.getElementById('importStats').innerHTML = '';
     }
@@ -8424,7 +8577,7 @@
                         <div class="ai-action-buttons" style="display:flex;gap:6px;flex-wrap:wrap;">
                             <button class="insert-btn" onclick="insertAIContentAtCursor(${i})">Insert at Cursor</button>
                             <button class="insert-btn" onclick="appendAIContent(${i})">Append to Script</button>
-                            <button class="insert-btn" style="background:var(--warning);" onclick="replaceCurrentScene(${i})">Replace Scene</button>
+                            <button class="insert-btn" style="background:var(--gl-warning);" onclick="replaceCurrentScene(${i})">Replace Scene</button>
                         </div>
                     `;
                 } else {
@@ -9267,7 +9420,7 @@
             }).join('');
 
             if (stats.scene_lengths.length > 20) {
-                sceneLengthBars.innerHTML += '<div style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:8px;">Showing first 20 scenes</div>';
+                sceneLengthBars.innerHTML += '<div style="font-size:10px;color:var(--gl-text-muted);text-align:center;margin-top:8px;">Showing first 20 scenes</div>';
             }
         }
 
@@ -9631,11 +9784,11 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             shotsEl.innerHTML = shots.length === 0 ? '<p class="text-sm text-muted" style="padding:8px;">No shots in this scene.</p>' :
                 shots.map(sh => `
                     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12px;">
-                        <span style="background:rgba(233,30,99,0.12);color:var(--primary);padding:2px 6px;border-radius:4px;font-weight:600;font-size:11px;">${esc(sh.shot_code)}</span>
+                        <span style="background:rgba(233,30,99,0.12);color:var(--gl-brand-pink);padding:2px 6px;border-radius:4px;font-weight:600;font-size:11px;">${esc(sh.shot_code)}</span>
                         <span class="badge ${sh.status}">${sh.status}</span>
                         <span class="text-muted">${sh.duration_ms ? (sh.duration_ms/1000).toFixed(1) + 's' : ''}</span>
                     </div>`).join('');
-        } catch (err) { shotsEl.innerHTML = '<p class="text-sm" style="color:var(--error);">Failed to load shots.</p>'; }
+        } catch (err) { shotsEl.innerHTML = '<p class="text-sm" style="color:var(--gl-error);">Failed to load shots.</p>'; }
     }
 
     // FILM-124: Break down a single scene into shots
@@ -10204,7 +10357,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                         </div>
                         ${m.description ? '<p class="text-sm text-muted" style="margin-top:4px;">' + esc(m.description) + '</p>' : ''}
                         <div class="milestone-progress"><div class="milestone-progress-fill" style="width:${m.completion_pct || 0}%;"></div></div>
-                        <div style="display:flex;gap:12px;font-size:10px;color:var(--text-muted);margin-top:4px;">
+                        <div style="display:flex;gap:12px;font-size:10px;color:var(--gl-text-muted);margin-top:4px;">
                             <span>${m.completion_pct || 0}% complete</span>
                             ${m.target_date ? '<span>Target: ' + m.target_date + '</span>' : ''}
                             ${m.actual_date ? '<span>Actual: ' + m.actual_date + '</span>' : ''}
@@ -10464,7 +10617,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                 const actScenes = allScenes.filter(s => s.act_id === act.id);
                 actScenes.forEach(s => assignedSceneIds.add(s.id));
                 html += `
-                    <div class="card mb-8" style="border-left:3px solid var(--primary);">
+                    <div class="card mb-8" style="border-left:3px solid var(--gl-brand-pink);">
                         <div class="flex-between mb-8">
                             <div>
                                 <h3 style="font-size:14px;">Act ${act.act_number}: ${esc(act.name || 'Untitled')}</h3>
@@ -10475,13 +10628,13 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                                 <button class="btn btn-danger btn-sm" onclick="deleteAct('${act.id}')">Delete</button>
                             </div>
                         </div>
-                        <div class="act-scenes" id="act-scenes-${act.id}" style="min-height:30px;border:1px dashed var(--border);border-radius:8px;padding:8px;"
+                        <div class="act-scenes" id="act-scenes-${act.id}" style="min-height:30px;border:1px dashed var(--gl-border-subtle);border-radius:8px;padding:8px;"
                              ondragover="event.preventDefault();this.style.background='rgba(233,30,99,0.08)'"
                              ondragleave="this.style.background=''"
                              ondrop="dropSceneOnAct(event,'${act.id}');this.style.background=''">
                             ${actScenes.length === 0 ? '<p class="text-sm text-muted" style="text-align:center;padding:8px;">Drag scenes here</p>' :
-                            actScenes.map(s => `<div class="scene-act-item" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${s.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface-2);border-radius:6px;margin-bottom:4px;cursor:grab;">
-                                <span style="font-weight:600;font-size:12px;color:var(--primary);">Sc${s.scene_number}</span>
+                            actScenes.map(s => `<div class="scene-act-item" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${s.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--gl-bg-header);border-radius:6px;margin-bottom:4px;cursor:grab;">
+                                <span style="font-weight:600;font-size:12px;color:var(--gl-brand-pink);">Sc${s.scene_number}</span>
                                 <span class="text-sm">${esc(s.int_ext || '')} ${esc(s.location || '')}</span>
                                 <span class="badge" style="margin-left:auto;font-size:10px;">${esc(s.status)}</span>
                             </div>`).join('')}
@@ -10493,11 +10646,11 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             const unassigned = allScenes.filter(s => !assignedSceneIds.has(s.id));
             if (unassigned.length > 0) {
                 html += `
-                    <div class="card mb-8" style="border-left:3px solid var(--text-muted);">
+                    <div class="card mb-8" style="border-left:3px solid var(--gl-text-muted);">
                         <h3 style="font-size:14px;" class="mb-8">Unassigned Scenes</h3>
                         <div style="min-height:30px;">
-                            ${unassigned.map(s => `<div class="scene-act-item" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${s.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface-2);border-radius:6px;margin-bottom:4px;cursor:grab;">
-                                <span style="font-weight:600;font-size:12px;color:var(--primary);">Sc${s.scene_number}</span>
+                            ${unassigned.map(s => `<div class="scene-act-item" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${s.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--gl-bg-header);border-radius:6px;margin-bottom:4px;cursor:grab;">
+                                <span style="font-weight:600;font-size:12px;color:var(--gl-brand-pink);">Sc${s.scene_number}</span>
                                 <span class="text-sm">${esc(s.int_ext || '')} ${esc(s.location || '')}</span>
                                 <span class="badge" style="margin-left:auto;font-size:10px;">${esc(s.status)}</span>
                             </div>`).join('')}
@@ -10633,14 +10786,14 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
 
             el.innerHTML = Object.entries(groups).map(([type, items]) => `
                 <div style="grid-column:1/-1;">
-                    <h3 class="mb-8" style="font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);">
+                    <h3 class="mb-8" style="font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">
                         ${typeIcons[type] || ''} ${type}
                     </h3>
                 </div>
                 ${items.map(r => `
                     <div class="entity-card">
                         <div class="entity-card-header">
-                            <div class="entity-avatar" style="background:var(--surface-3);">${typeIcons[r.ref_type] || '&#128247;'}</div>
+                            <div class="entity-avatar" style="background:var(--gl-bg-elevated);">${typeIcons[r.ref_type] || '&#128247;'}</div>
                             <div>
                                 <h3 style="font-size:13px;">${esc(r.title || 'Untitled')}</h3>
                                 <p class="text-sm text-muted">${esc(r.ref_type)}</p>
@@ -10695,7 +10848,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             const total = summary.total_spent || 0;
             const limit = summary.budget_limit || 0;
             const pct = limit > 0 ? Math.min(100, (total / limit * 100)).toFixed(1) : 0;
-            const barColor = pct > 90 ? 'var(--error)' : pct > 70 ? 'var(--warning)' : 'var(--success)';
+            const barColor = pct > 90 ? 'var(--gl-error)' : pct > 70 ? 'var(--gl-warning)' : 'var(--gl-success)';
 
             document.getElementById('budgetSummary').innerHTML = `
                 <div class="card">
@@ -10710,7 +10863,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                         </div>
                     </div>
                     ${limit > 0 ? `
-                        <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden;">
+                        <div style="background:var(--gl-border-subtle);border-radius:4px;height:8px;overflow:hidden;">
                             <div style="background:${barColor};height:100%;width:${pct}%;transition:width 0.3s;border-radius:4px;"></div>
                         </div>
                         <p class="text-sm text-muted" style="margin-top:4px;">${pct}% used</p>
@@ -10729,7 +10882,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                         ${breakdown.map(b => `
                             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
                                 <span class="text-sm" style="width:120px;flex-shrink:0;">${esc(b.cost_type.replace(/_/g, ' '))}</span>
-                                <div style="flex:1;background:var(--border);border-radius:3px;height:16px;overflow:hidden;">
+                                <div style="flex:1;background:var(--gl-border-subtle);border-radius:3px;height:16px;overflow:hidden;">
                                     <div style="background:${typeColors[b.cost_type] || '#9e9e9e'};height:100%;width:${maxAmt > 0 ? (b.total_amount / maxAmt * 100) : 0}%;border-radius:3px;"></div>
                                 </div>
                                 <span class="text-sm" style="width:80px;text-align:right;">$${b.total_amount.toFixed(2)}</span>
@@ -10793,6 +10946,327 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             loadBudget();
             setStatus('Budget limit updated');
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FILM-165: BUDGET ESTIMATION
+    // ══════════════════════════════════════════════════════════════
+    let currentBudgetEstimate = null;
+
+    function switchBudgetTab(tab) {
+        document.querySelectorAll('#budgetTabs .tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tab);
+        });
+        document.getElementById('budgetTabTracking').style.display = tab === 'tracking' ? 'block' : 'none';
+        document.getElementById('budgetTabEstimation').style.display = tab === 'estimation' ? 'block' : 'none';
+        if (tab === 'estimation' && !currentBudgetEstimate) {
+            generateBudgetEstimate();
+        }
+    }
+
+    async function generateBudgetEstimate() {
+        if (!state.currentProject) return;
+        const template = document.getElementById('budgetTemplateSelect').value;
+        setStatus('Generating budget estimate...');
+        try {
+            const estimate = await api('/projects/' + state.currentProject.id + '/budget/estimate?template=' + template + '&refresh=true');
+            currentBudgetEstimate = estimate;
+            renderBudgetEstimate(estimate);
+            setStatus('Budget estimate generated');
+        } catch (err) {
+            setStatus('Error: ' + err.message);
+            document.getElementById('budgetAnalysisSummary').innerHTML = '<p class="text-muted">Failed to generate estimate. Make sure you have scenes and shots created.</p>';
+        }
+    }
+
+    function renderBudgetEstimate(estimate) {
+        // Project Analysis Summary
+        const stats = estimate.stats || {};
+        document.getElementById('budgetAnalysisSummary').innerHTML = `
+            <div class="card">
+                <h3 class="mb-8">Project Analysis</h3>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:16px;">
+                    <div class="text-center">
+                        <div class="text-2xl" style="color:var(--gl-brand-pink);">${stats.scene_count || 0}</div>
+                        <div class="text-sm text-muted">Scenes</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl" style="color:var(--gl-brand-blue);">${stats.shot_count || 0}</div>
+                        <div class="text-sm text-muted">Shots</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl" style="color:var(--gl-accent-purple);">${stats.character_count || 0}</div>
+                        <div class="text-sm text-muted">Characters</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl" style="color:var(--gl-success);">${stats.location_count || 0}</div>
+                        <div class="text-sm text-muted">Locations</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl" style="color:var(--gl-warning);">${stats.shooting_days_estimate || '?'}</div>
+                        <div class="text-sm text-muted">Est. Shoot Days</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl" style="color:var(--gl-info);">${stats.complexity_score || 0}</div>
+                        <div class="text-sm text-muted">Complexity</div>
+                    </div>
+                </div>
+            </div>`;
+
+        // Missing Data Cards
+        const missingData = estimate.missing_data || [];
+        if (missingData.length > 0) {
+            document.getElementById('budgetMissingData').innerHTML = `
+                <div class="card" style="border-color:var(--gl-warning);background:rgba(245,158,11,0.05);">
+                    <div class="flex-between mb-8">
+                        <h3 style="color:var(--gl-warning);">Missing Cost Data (${missingData.length})</h3>
+                        <span class="badge badge-warning">Estimates may be inaccurate</span>
+                    </div>
+                    <p class="text-sm text-muted mb-8">The following items need cost information for accurate budgeting. Click to enter values.</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                        ${missingData.slice(0, 10).map(item => `
+                            <button class="btn btn-secondary btn-sm" onclick="showCostInputModal('${item.entity_type}', '${item.entity_id}', '${esc(item.entity_name)}')">
+                                ${item.entity_type === 'character' ? '👤' : '📍'} ${esc(item.entity_name)}
+                                <span class="text-muted" style="margin-left:4px;">$${item.suggested_range ? (item.suggested_range.min + '-' + item.suggested_range.max) : '?'}</span>
+                            </button>
+                        `).join('')}
+                        ${missingData.length > 10 ? `<span class="text-muted text-sm">+${missingData.length - 10} more</span>` : ''}
+                    </div>
+                </div>`;
+        } else {
+            document.getElementById('budgetMissingData').innerHTML = '';
+        }
+
+        // Budget Breakdown by Category
+        const lineItems = estimate.line_items || [];
+        const categories = {
+            above_the_line: { label: 'Above the Line', items: [], total: 0 },
+            below_the_line_production: { label: 'Below the Line (Production)', items: [], total: 0 },
+            post_production: { label: 'Post-Production', items: [], total: 0 },
+            other: { label: 'Other', items: [], total: 0 }
+        };
+
+        for (const item of lineItems) {
+            const cat = categories[item.category] || categories.other;
+            cat.items.push(item);
+            cat.total += item.amount || 0;
+        }
+
+        const confidenceColors = { high: 'var(--gl-success)', medium: 'var(--gl-warning)', low: 'var(--gl-error)' };
+        const sourceIcons = { manual: '✏️', estimated: '📊', calculated: '🔢', web_search: '🔍', ai_estimate: '🤖' };
+
+        document.getElementById('budgetEstimateBreakdown').innerHTML = `
+            <div class="card mb-16">
+                <div class="flex-between mb-16">
+                    <h2>Total Estimated Budget</h2>
+                    <div class="text-right">
+                        <div class="text-3xl" style="color:var(--gl-brand-pink);">$${(estimate.total_estimated || 0).toLocaleString()}</div>
+                        <div class="text-sm text-muted">${estimate.template_label || estimate.template}</div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding-top:16px;border-top:1px solid var(--gl-border-subtle);">
+                    <div>
+                        <div class="text-sm text-muted">Above the Line</div>
+                        <div class="text-lg">$${(estimate.above_the_line || 0).toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-muted">Below the Line</div>
+                        <div class="text-lg">$${(estimate.below_the_line || 0).toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-muted">Post-Production</div>
+                        <div class="text-lg">$${(estimate.post_production || 0).toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-muted">Other + Contingency</div>
+                        <div class="text-lg">$${(estimate.other_costs || 0).toLocaleString()}</div>
+                    </div>
+                </div>
+            </div>
+
+            ${Object.entries(categories).filter(([k, v]) => v.items.length > 0).map(([key, cat]) => `
+                <div class="card mb-8">
+                    <details open>
+                        <summary style="cursor:pointer;user-select:none;" class="flex-between">
+                            <h3>${cat.label}</h3>
+                            <span class="text-lg">$${cat.total.toLocaleString()}</span>
+                        </summary>
+                        <table class="entity-table" style="margin-top:12px;">
+                            <thead>
+                                <tr><th>Item</th><th>Description</th><th style="text-align:right;">Amount</th><th>Source</th></tr>
+                            </thead>
+                            <tbody>
+                                ${cat.items.map(item => `
+                                    <tr>
+                                        <td>${esc(item.subcategory.replace(/_/g, ' '))}</td>
+                                        <td class="text-muted text-sm">${esc(item.description || '')}</td>
+                                        <td style="text-align:right;">$${(item.amount || 0).toLocaleString()}</td>
+                                        <td>
+                                            <span title="${item.source}" style="color:${confidenceColors[item.confidence] || confidenceColors.low};">
+                                                ${sourceIcons[item.source] || ''}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </details>
+                </div>
+            `).join('')}
+
+            ${(estimate.assumptions || []).length > 0 ? `
+                <div class="card">
+                    <h3 class="mb-8">Assumptions</h3>
+                    <ul class="text-sm text-muted" style="margin:0;padding-left:20px;">
+                        ${estimate.assumptions.map(a => `<li>${esc(a)}</li>`).join('')}
+                    </ul>
+                </div>
+            ` : ''}
+        `;
+    }
+
+    function showCostInputModal(entityType, entityId, entityName) {
+        const html = `
+            <div class="modal-header">
+                <h3>Set Cost: ${esc(entityName)}</h3>
+                <button class="modal-close" onclick="closeModal('costInputModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                ${entityType === 'character' ? `
+                    <div class="form-group">
+                        <label>Talent Tier</label>
+                        <select id="costInputTier" data-field="talent_tier">
+                            <option value="unknown">Unknown</option>
+                            <option value="background">Background / Extra ($150-300/day)</option>
+                            <option value="day_player">Day Player ($1K-3K/day)</option>
+                            <option value="supporting">Supporting ($5K-25K/week)</option>
+                            <option value="lead">Lead ($25K-100K/project)</option>
+                            <option value="star">Star ($100K-500K/project)</option>
+                            <option value="a_list">A-List ($500K-20M/project)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Day Rate ($)</label>
+                        <input type="number" id="costInputDayRate" data-field="day_rate" min="0" step="100" placeholder="e.g., 5000">
+                    </div>
+                    <div class="form-group">
+                        <label>Shooting Days</label>
+                        <input type="number" id="costInputShootingDays" data-field="shooting_days" min="1" placeholder="e.g., 10">
+                    </div>
+                    <div class="form-group">
+                        <label>Actor Name (optional)</label>
+                        <input type="text" id="costInputActorName" data-field="actor_name" placeholder="e.g., Tom Hanks">
+                    </div>
+                ` : `
+                    <div class="form-group">
+                        <label>Location Type</label>
+                        <select id="costInputLocType" data-field="location_type">
+                            <option value="unknown">Unknown</option>
+                            <option value="practical">Practical Location ($500-5K/day)</option>
+                            <option value="studio">Studio / Stage ($2K-25K/day)</option>
+                            <option value="backlot">Backlot ($1K-10K/day)</option>
+                            <option value="remote">Remote Location ($3K-15K/day)</option>
+                            <option value="international">International ($5K-50K/day)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Daily Rate ($)</label>
+                        <input type="number" id="costInputDailyRate" data-field="daily_rate" min="0" step="100" placeholder="e.g., 2500">
+                    </div>
+                    <div class="form-group">
+                        <label>Shoot Days</label>
+                        <input type="number" id="costInputShootDays" data-field="shoot_days" min="1" placeholder="e.g., 3">
+                    </div>
+                    <div class="form-group">
+                        <label>Permits Cost ($)</label>
+                        <input type="number" id="costInputPermits" data-field="permits_cost" min="0" step="50" placeholder="e.g., 500">
+                    </div>
+                `}
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('costInputModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveCostInput('${entityType}', '${entityId}')">Save</button>
+            </div>
+        `;
+
+        // Create or reuse modal
+        let modal = document.getElementById('costInputModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'costInputModal';
+            modal.className = 'modal-overlay';
+            modal.innerHTML = '<div class="modal">' + html + '</div>';
+            document.body.appendChild(modal);
+        } else {
+            modal.querySelector('.modal').innerHTML = html;
+        }
+        modal.classList.add('active');
+    }
+
+    async function saveCostInput(entityType, entityId) {
+        const data = {};
+        document.querySelectorAll('#costInputModal [data-field]').forEach(el => {
+            const field = el.dataset.field;
+            const val = el.value;
+            if (val) {
+                if (['day_rate', 'daily_rate', 'permits_cost', 'travel_allowance'].includes(field)) {
+                    data[field] = parseFloat(val);
+                } else if (['shooting_days', 'shoot_days', 'prep_days'].includes(field)) {
+                    data[field] = parseInt(val);
+                } else {
+                    data[field] = val;
+                }
+            }
+        });
+
+        if (Object.keys(data).length === 0) {
+            setStatus('Please enter at least one value');
+            return;
+        }
+
+        try {
+            await api('/' + entityType + 's/' + entityId + '/cost', { method: 'PUT', body: JSON.stringify(data) });
+            closeModal('costInputModal');
+            setStatus('Cost data saved');
+            generateBudgetEstimate();
+        } catch (err) {
+            setStatus('Error: ' + err.message);
+        }
+    }
+
+    function exportBudgetEstimate() {
+        if (!currentBudgetEstimate) {
+            setStatus('No estimate to export');
+            return;
+        }
+
+        const lines = [
+            ['Category', 'Subcategory', 'Description', 'Amount', 'Source', 'Confidence'],
+            ...currentBudgetEstimate.line_items.map(item => [
+                item.category,
+                item.subcategory,
+                item.description || '',
+                item.amount || 0,
+                item.source || '',
+                item.confidence || ''
+            ])
+        ];
+
+        lines.push([]);
+        lines.push(['TOTAL', '', '', currentBudgetEstimate.total_estimated]);
+        lines.push([]);
+        lines.push(['Template', currentBudgetEstimate.template]);
+        lines.push(['Generated', new Date().toISOString()]);
+
+        const csv = lines.map(row => row.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (state.currentProject?.title || 'budget') + '_estimate.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        setStatus('Budget estimate exported');
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -11541,7 +12015,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
 
         let summaryHtml = `<strong>${successCount}</strong> chapter${successCount !== 1 ? 's' : ''} converted`;
         if (failCount > 0) {
-            summaryHtml += ` | <span style="color: var(--error);">${failCount} failed</span>`;
+            summaryHtml += ` | <span style="color: var(--gl-error);">${failCount} failed</span>`;
         }
         summaryHtml += ` | <strong>${allScenes.length}</strong> scenes detected`;
         summaryHtml += ` | <strong>${allCharacters.length}</strong> characters: ${allCharacters.slice(0, 5).join(', ')}${allCharacters.length > 5 ? '...' : ''}`;
@@ -11611,7 +12085,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
     function toggleComments() {
         commentsVisible = !commentsVisible;
         const btn = document.getElementById('commentsToggle');
-        if (btn) btn.style.background = commentsVisible ? 'var(--primary)' : '';
+        if (btn) btn.style.background = commentsVisible ? 'var(--gl-brand-pink)' : '';
         if (btn) btn.style.color = commentsVisible ? 'white' : '';
         if (commentsVisible) loadScreenplayComments();
         else clearCommentHighlights();
@@ -11734,7 +12208,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             } else {
                 grid.innerHTML = frames.map(f => `
                     <div class="card" style="padding:0;overflow:hidden;">
-                        <div style="position:relative;background:var(--surface-alt,var(--surface));min-height:160px;">
+                        <div style="position:relative;background:var(--surface-alt,var(--gl-bg-surface));min-height:160px;">
                             <img src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(f.shot_code)}.png"
                                  style="width:100%;display:block;" onerror="this.style.display='none'">
                         </div>
@@ -11810,13 +12284,13 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
         const panel = document.createElement('div');
         panel.id = 'shotDetailPanel';
         panel.className = 'card';
-        panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:420px;z-index:200;overflow-y:auto;border-radius:0;border-left:1px solid var(--border);box-shadow:-4px 0 20px rgba(0,0,0,0.3);';
+        panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:420px;z-index:200;overflow-y:auto;border-radius:0;border-left:1px solid var(--gl-border-subtle);box-shadow:-4px 0 20px rgba(0,0,0,0.3);';
         panel.innerHTML = `
             <div class="flex-between mb-16">
                 <h2>Sc${shot.scene_number} / ${esc(shot.shot_code)}</h2>
                 <button class="btn btn-secondary btn-sm" onclick="closeShotDetail()">&times;</button>
             </div>
-            <div style="background:var(--surface-alt,var(--surface));border-radius:8px;min-height:140px;margin-bottom:12px;overflow:hidden;">
+            <div style="background:var(--surface-alt,var(--gl-bg-surface));border-radius:8px;min-height:140px;margin-bottom:12px;overflow:hidden;">
                 <img src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(shot.shot_code)}.png"
                      style="width:100%;display:block;" onerror="this.parentElement.innerHTML='<p class=\\'text-sm text-muted\\' style=\\'padding:40px;text-align:center;\\'>No storyboard</p>'">
             </div>
@@ -11830,9 +12304,9 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                 <tr><td class="text-muted">Location</td><td>${esc(shot.location || '-')}</td></tr>
                 <tr><td class="text-muted">Characters</td><td>${esc(shot.characters || '-')}</td></tr>
             </table>
-            ${shot.scene_card_yaml ? '<h4 class="mb-8">Scene Card</h4><pre style="font-size:11px;max-height:200px;overflow:auto;background:var(--bg);padding:8px;border-radius:4px;">' + esc(shot.scene_card_yaml) + '</pre>' : ''}
-            <div style="margin-top:12px;padding:10px;background:var(--surface-2);border-radius:8px;" class="mb-16">
-                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);">Transitions</h4>
+            ${shot.scene_card_yaml ? '<h4 class="mb-8">Scene Card</h4><pre style="font-size:11px;max-height:200px;overflow:auto;background:var(--gl-bg-primary);padding:8px;border-radius:4px;">' + esc(shot.scene_card_yaml) + '</pre>' : ''}
+            <div style="margin-top:12px;padding:10px;background:var(--gl-bg-header);border-radius:8px;" class="mb-16">
+                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">Transitions</h4>
                 <div style="display:grid;grid-template-columns:1fr 80px;gap:8px;margin-bottom:8px;">
                     <div>
                         <label class="text-sm text-muted">In</label>
@@ -11960,7 +12434,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             const panel = document.createElement('div');
             panel.id = 'abComparePanel';
             panel.className = 'card';
-            panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:700px;z-index:200;overflow-y:auto;border-radius:0;border-left:1px solid var(--border);box-shadow:-4px 0 20px rgba(0,0,0,0.3);';
+            panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:700px;z-index:200;overflow-y:auto;border-radius:0;border-left:1px solid var(--gl-border-subtle);box-shadow:-4px 0 20px rgba(0,0,0,0.3);';
 
             const vOpts = versions.map((v, i) => `<option value="${v.version_number}">${v.version_number} (${new Date(v.created_at).toLocaleDateString()})</option>`).join('');
 
@@ -11975,8 +12449,8 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                 </div>
                 <div style="position:relative;margin-bottom:16px;">
                     <div style="display:flex;gap:8px;" id="abImages">
-                        <div style="flex:1;text-align:center;"><div class="text-sm text-muted mb-8">A</div><div id="abImgA" style="background:var(--surface-2);min-height:150px;border-radius:8px;overflow:hidden;"></div></div>
-                        <div style="flex:1;text-align:center;"><div class="text-sm text-muted mb-8">B</div><div id="abImgB" style="background:var(--surface-2);min-height:150px;border-radius:8px;overflow:hidden;"></div></div>
+                        <div style="flex:1;text-align:center;"><div class="text-sm text-muted mb-8">A</div><div id="abImgA" style="background:var(--gl-bg-header);min-height:150px;border-radius:8px;overflow:hidden;"></div></div>
+                        <div style="flex:1;text-align:center;"><div class="text-sm text-muted mb-8">B</div><div id="abImgB" style="background:var(--gl-bg-header);min-height:150px;border-radius:8px;overflow:hidden;"></div></div>
                     </div>
                 </div>
                 <div class="mb-8"><label class="text-sm text-muted">Crossfade</label><input type="range" id="abSlider" min="0" max="100" value="50" style="width:100%;" oninput="updateABCrossfade(this.value)"></div>
@@ -12010,10 +12484,10 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             if (keys.length === 0) {
                 diffEl.innerHTML = '<p class="text-sm text-muted">No parameter differences.</p>';
             } else {
-                diffEl.innerHTML = `<h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);">Parameter Differences</h4>
+                diffEl.innerHTML = `<h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">Parameter Differences</h4>
                     <table style="width:100%;font-size:12px;">
-                    <tr style="color:var(--text-muted);"><th style="text-align:left;">Field</th><th>A</th><th>B</th></tr>
-                    ${keys.map(k => `<tr><td style="color:var(--primary);">${esc(k)}</td><td>${esc(String(diff[k].a ?? '-'))}</td><td>${esc(String(diff[k].b ?? '-'))}</td></tr>`).join('')}
+                    <tr style="color:var(--gl-text-muted);"><th style="text-align:left;">Field</th><th>A</th><th>B</th></tr>
+                    ${keys.map(k => `<tr><td style="color:var(--gl-brand-pink);">${esc(k)}</td><td>${esc(String(diff[k].a ?? '-'))}</td><td>${esc(String(diff[k].b ?? '-'))}</td></tr>`).join('')}
                     </table>`;
             }
         } catch (err) { setStatus('Error loading comparison: ' + err.message); }
@@ -12086,11 +12560,11 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                 method: 'POST',
                 body: { bundle: base64 },
             });
-            if (statusEl) { statusEl.style.color = 'var(--success)'; statusEl.textContent = 'Imported: ' + (result.project ? result.project.title : 'project') + ' (assets: ' + (result.stats ? result.stats.assets_copied : 0) + ')'; }
+            if (statusEl) { statusEl.style.color = 'var(--gl-success)'; statusEl.textContent = 'Imported: ' + (result.project ? result.project.title : 'project') + ' (assets: ' + (result.stats ? result.stats.assets_copied : 0) + ')'; }
             setStatus('Project imported successfully');
             await loadProjects();
         } catch (err) {
-            if (statusEl) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Import failed: ' + err.message; }
+            if (statusEl) { statusEl.style.color = 'var(--gl-error)'; statusEl.textContent = 'Import failed: ' + err.message; }
             setStatus('Import failed: ' + err.message);
         }
         input.value = '';
@@ -12120,8 +12594,8 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                             <strong>Sc${s.scene_number} / ${esc(s.shot_code)}</strong>
                             <span class="badge">generating</span>
                         </div>
-                        <div style="background:var(--border);border-radius:4px;height:4px;margin-top:8px;">
-                            <div style="background:var(--primary);height:100%;width:50%;border-radius:4px;"></div>
+                        <div style="background:var(--gl-border-subtle);border-radius:4px;height:4px;margin-top:8px;">
+                            <div style="background:var(--gl-brand-pink);height:100%;width:50%;border-radius:4px;"></div>
                         </div>
                     </div>`).join('');
             }
