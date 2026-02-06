@@ -101,6 +101,7 @@ const { handleMarketing } = require('./routes/marketing');
 const { handleBudget } = require('./routes/budget');
 const { handleBudgetEstimate } = require('./routes/budget-estimate');
 const { handleBackups } = require('./routes/backups');
+const { handleDemoProject } = require('./routes/demo-project');
 
 const PORT = process.env.PORT || 3100;
 
@@ -483,6 +484,11 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/projects/:id/qa[/run|/latest|/continuity|/rubric]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'qa') {
             return handleQA(req, res, parts, query);
+        }
+
+        // Route: /film/projects/demo — create demo project
+        if (parts[1] === 'projects' && parts[2] === 'demo') {
+            return handleDemoProject(req, res);
         }
 
         // Route: /film/projects/:id/settings/preset

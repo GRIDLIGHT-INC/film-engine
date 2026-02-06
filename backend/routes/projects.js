@@ -26,6 +26,7 @@ function handleProjects(req, res, urlParts, query) {
     if (req.method === 'GET' && id) return getProject(req, res, id);
     if (req.method === 'POST' && !id) return createProject(req, res);
     if (req.method === 'PUT' && id) return updateProject(req, res, id);
+    if (req.method === 'DELETE' && !id) return deleteAllProjects(req, res);
     if (req.method === 'DELETE' && id) return deleteProject(req, res, id);
 
     res.writeHead(405, { 'Content-Type': 'application/json' });
@@ -99,12 +100,28 @@ function getProject(req, res, id) {
     res.end(JSON.stringify(project));
 }
 
+// Titles that indicate automated/accidental creation
+const BLOCKED_TITLES = ['undefined', 'null', 'untitled', 'new project', 'test', ''];
+
 function createProject(req, res) {
     const body = req.body;
 
     if (!body.title || typeof body.title !== 'string' || body.title.trim().length === 0) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Title is required' }));
+        return;
+    }
+
+    const trimmedTitle = body.title.trim();
+    if (trimmedTitle.length < 3) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Title must be at least 3 characters' }));
+        return;
+    }
+
+    if (BLOCKED_TITLES.includes(trimmedTitle.toLowerCase())) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Please provide a meaningful project title' }));
         return;
     }
 
@@ -246,6 +263,20 @@ function deleteProject(req, res, id) {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ deleted: true }));
+}
+
+function deleteAllProjects(req, res) {
+    const count = db.prepare('SELECT COUNT(*) AS count FROM film_projects').get().count;
+    if (count === 0) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ deleted: 0, message: 'No projects to delete' }));
+        return;
+    }
+
+    db.prepare('DELETE FROM film_projects').run();
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ deleted: count }));
 }
 
 /**

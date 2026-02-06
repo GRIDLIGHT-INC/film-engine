@@ -706,6 +706,16 @@
         .project-info h3 { font-size: 14px; font-weight: 600; }
         .project-info p { font-size: 11px; color: var(--gl-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .project-meta { font-size: 10px; color: var(--gl-text-muted); margin-top: 2px; }
+        .project-delete-btn {
+            background: none; border: none; color: var(--gl-text-muted); font-size: 18px;
+            cursor: pointer; padding: 4px 8px; border-radius: var(--gl-radius-sm);
+            opacity: 0; transition: var(--gl-transition-fast); flex-shrink: 0;
+        }
+        .project-card:hover .project-delete-btn { opacity: 1; }
+        .project-delete-btn:hover { color: var(--gl-error); background: rgba(239,68,68,0.15); }
+        .project-list-actions {
+            display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+        }
 
         /* ══════════════════════════════════════════════════════════
            DASHBOARD
@@ -4727,9 +4737,17 @@
             // Main project list
             const el = document.getElementById('projectList');
             if (state.projects.length === 0) {
-                el.innerHTML = `<div class="empty-state"><div class="icon">&#127916;</div><h3>No projects yet</h3><p>Create your first film project to start.</p></div>`;
+                el.innerHTML = `<div class="empty-state"><div class="icon">&#127916;</div><h3>No projects yet</h3><p>Create your first film project or load a demo.</p>
+                    <div class="project-list-actions" style="justify-content:center;margin-top:12px;">
+                        <button class="btn btn-primary" onclick="showModal('newProjectModal')">New Project</button>
+                        <button class="btn btn-secondary" onclick="loadDemoProject()">Load Demo Project</button>
+                    </div></div>`;
             } else {
-                el.innerHTML = state.projects.map(p => `
+                el.innerHTML = `<div class="project-list-actions">
+                        <button class="btn btn-secondary" onclick="loadDemoProject()">Load Demo</button>
+                        <button class="btn btn-secondary" style="color:var(--gl-error);border-color:var(--gl-error);" onclick="deleteAllProjects()">Delete All</button>
+                    </div>` +
+                    state.projects.map(p => `
                     <div class="project-card" onclick="openProject('${p.id}')">
                         <div class="project-icon">&#127916;</div>
                         <div class="project-info">
@@ -4738,6 +4756,7 @@
                             <div class="project-meta">${p.genre ? esc(p.genre) + ' &middot; ' : ''}${new Date(p.created_at).toLocaleDateString()}</div>
                         </div>
                         <span class="badge ${p.status}">${p.status.replace(/-/g, ' ')}</span>
+                        <button class="project-delete-btn" onclick="event.stopPropagation(); deleteProjectById('${p.id}', '${esc(p.title).replace(/'/g, "\\'")}')" title="Delete project">&times;</button>
                     </div>
                 `).join('');
             }
@@ -4765,6 +4784,35 @@
             await api('/projects/' + state.currentProject.id, { method: 'DELETE' });
             backToProjectList();
             setStatus('Project deleted');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteProjectById(id, title) {
+        if (!confirm('Delete "' + title + '"? This cannot be undone.')) return;
+        try {
+            await api('/projects/' + id, { method: 'DELETE' });
+            await loadProjects();
+            setStatus('Project deleted');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteAllProjects() {
+        if (!confirm('Delete ALL projects? This cannot be undone.')) return;
+        if (!confirm('Are you sure? This will permanently remove every project and all associated data.')) return;
+        try {
+            await api('/projects', { method: 'DELETE' });
+            await loadProjects();
+            setStatus('All projects deleted');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function loadDemoProject() {
+        setStatus('Creating demo project...');
+        try {
+            const result = await api('/projects/demo', { method: 'POST' });
+            await loadProjects();
+            if (result.project_id) openProject(result.project_id);
+            setStatus('Demo project loaded: Neon Requiem');
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
