@@ -136,7 +136,11 @@ async function breakdownSync(req, res, projectId) {
         if (!aiRes.ok) {
             const errText = await aiRes.text();
             res.writeHead(502, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'AI service error', details: errText }));
+            res.end(JSON.stringify({
+                error: 'AI service error',
+                details: errText,
+                hint: `Gridlight AI returned ${aiRes.status}. Ensure the gateway is running at ${gatewayUrl} and GRIDLIGHT_API_KEY is set.`
+            }));
             return;
         }
 

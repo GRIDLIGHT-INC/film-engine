@@ -1048,7 +1048,7 @@
         .screenplay-editor-container {
             display: flex;
             gap: 16px;
-            height: calc(100vh - 200px);
+            height: calc(100vh - 140px);
             min-height: 600px;
         }
         .screenplay-toolbar-panel {
@@ -3181,8 +3181,8 @@
 
             <div class="screenplay-editor-container">
                 <!-- Left Toolbar Panel -->
-                <div class="screenplay-toolbar-panel" id="leftToolbarPanel">
-                    <button class="panel-toggle-btn" onclick="toggleLeftPanel()" title="Toggle Panel">◀</button>
+                <div class="screenplay-toolbar-panel collapsed" id="leftToolbarPanel">
+                    <button class="panel-toggle-btn" onclick="toggleLeftPanel()" title="Toggle Panel">▶</button>
                     <div class="section-label">Element Type</div>
                     <select id="elementTypeSelector" onchange="setElementType(this.value)">
                         <option value="action">Action</option>
@@ -3421,8 +3421,8 @@
                 </div>
 
                 <!-- Right Sidebar Panel - Script Versions -->
-                <div class="screenplay-sidebar-panel" id="rightSidebarPanel">
-                    <button class="panel-toggle-btn" onclick="toggleRightPanel()" title="Toggle Panel">▶</button>
+                <div class="screenplay-sidebar-panel collapsed" id="rightSidebarPanel">
+                    <button class="panel-toggle-btn" onclick="toggleRightPanel()" title="Toggle Panel">◀</button>
                     <div class="section-label">Script Versions</div>
                     <div id="scriptVersions"></div>
                 </div>
@@ -6722,7 +6722,12 @@
         const block = document.createElement('div');
         block.dataset.elementType = elementType;
         block.className = 'sp-' + elementType;
-        block.innerText = text || '';
+        if (text) {
+            block.innerText = text;
+        } else {
+            // Empty blocks need a <br> to maintain height and accept cursor
+            block.appendChild(document.createElement('br'));
+        }
         // Ensure block is focusable
         block.setAttribute('contenteditable', 'true');
         return block;
@@ -9800,7 +9805,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                             <div class="scene-number">${s.scene_number}</div>
                             <div class="scene-info">
                                 <h4>${esc(s.int_ext || '')} ${esc(s.location || '')} ${s.time_of_day ? '- ' + esc(s.time_of_day) : ''}</h4>
-                                <p>${esc((s.characters_present || []).join(', ') || 'No characters')} &middot; ${s.shot_count || 0} shot(s)</p>
+                                <p>${esc(parseJsonArray(s.characters_present).join(', ') || 'No characters')} &middot; ${s.shot_count || 0} shot(s)</p>
                             </div>
                             ${breakdownBtn}
                             <span class="badge ${s.status}">${(s.status || '').replace(/_/g, ' ')}</span>
@@ -9865,7 +9870,8 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                 renderScreenplayEditor();
             }
         } catch (err) {
-            setStatus('Breakdown error: ' + err.message);
+            const hint = err.hint ? ' — ' + err.hint : '';
+            setStatus('Breakdown error: ' + err.message + hint);
         }
     }
 
@@ -12674,6 +12680,12 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
     function esc(str) {
         if (str == null) return '';
         return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function parseJsonArray(val) {
+        if (Array.isArray(val)) return val;
+        if (typeof val === 'string') { try { const p = JSON.parse(val); return Array.isArray(p) ? p : []; } catch(e) { return []; } }
+        return [];
     }
 
     function setStatus(text) { document.getElementById('statusText').textContent = text; }
