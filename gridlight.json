@@ -23,6 +23,12 @@
   },
   "permissions": ["storage", "network", "filesystem"],
   "gridlight_version_required": "0.6.2",
+  "connections": [
+    { "id": "filesystem", "required": false },
+    { "id": "fetch-web", "required": false },
+    { "id": "adobe-cc", "required": false },
+    { "id": "google-drive", "required": false }
+  ],
   "window": {
     "maximized": true
   }
