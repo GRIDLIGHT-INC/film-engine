@@ -42,9 +42,10 @@ Once the user selects a branch:
 git checkout <branch-name>
 ```
 
-If it's a remote branch that doesn't exist locally:
+If it's a remote branch that doesn't exist locally, detect the remote name:
 ```bash
-git checkout -b <branch-name> origin/<branch-name>
+REMOTE=$(git remote | head -1)
+git checkout -b <branch-name> ${REMOTE}/<branch-name>
 ```
 
 ## Step 4: Confirm

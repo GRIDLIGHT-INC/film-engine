@@ -1,100 +1,164 @@
 ---
 name: check-code
-description: Check for linting issues, improvements, and bugs
+description: Run strict linting, formatting, type checks, and complexity analysis on changed or specified files
 ---
 
 # Check Code Quality
 
-Run linting, formatting, and code quality checks across the codebase.
+Run strict linting, formatting, type checks, and complexity analysis. Auto-detects project type.
 
-## Backend (Rust)
+## Step 1: Detect Project Structure
 
-### Format Check
+Scan the repository root to identify what exists:
 
 ```bash
-cd backend
+ls package.json Cargo.toml pyproject.toml setup.py requirements.txt go.mod Makefile 2>/dev/null
+```
+
+Also check for common tool configs:
+
+```bash
+ls .eslintrc* eslint.config* .prettierrc* biome.json tsconfig.json rustfmt.toml .clippy.toml .flake8 .ruff.toml ruff.toml 2>/dev/null
+```
+
+Record which stacks are present:
+- **Node/TS**: `package.json` exists
+- **Rust**: `Cargo.toml` exists
+- **Python**: `pyproject.toml`, `setup.py`, or `requirements.txt` exists
+- **Go**: `go.mod` exists
+
+Check for monorepo structure (multiple package.json, Cargo.toml in subdirectories).
+
+## Step 2: Determine Scope
+
+If arguments are provided, check only those files/directories.
+
+Otherwise, check files changed since the last commit:
+
+```bash
+git diff --name-only HEAD
+git diff --name-only --cached
+```
+
+If no changes, check all tracked files:
+```bash
+git ls-files
+```
+
+## Step 3: Run Stack-Specific Checks
+
+### Node/TypeScript Projects
+
+For each directory containing a `package.json`:
+
+**Format Check:**
+```bash
+# Check if prettier is available
+npx prettier --check . 2>/dev/null || echo "Prettier not configured"
+```
+
+**Lint:**
+```bash
+# Use the project's lint script if available
+npm run lint 2>/dev/null || npx eslint . 2>/dev/null || echo "ESLint not configured"
+```
+
+**Type Check:**
+```bash
+npx tsc --noEmit 2>/dev/null || echo "TypeScript not configured"
+```
+
+**Auto-fix (if issues found):**
+```bash
+npm run lint -- --fix 2>/dev/null
+npx prettier --write . 2>/dev/null
+```
+
+### Rust Projects
+
+For each directory containing a `Cargo.toml`:
+
+```bash
 cargo fmt --check
+SQLX_OFFLINE=true cargo clippy -- -D warnings -W clippy::pedantic 2>/dev/null || cargo clippy -- -D warnings
 ```
 
-### Apply Formatting
+### Python Projects
 
 ```bash
-cd backend
-cargo fmt
+# Prefer ruff (fast), fall back to flake8/pylint
+ruff check . 2>/dev/null || flake8 . 2>/dev/null || pylint **/*.py 2>/dev/null
+ruff format --check . 2>/dev/null || black --check . 2>/dev/null
+mypy . 2>/dev/null || echo "Type checking not configured"
 ```
 
-### Lint with Clippy
+### Go Projects
 
 ```bash
-cd backend
-SQLX_OFFLINE=true cargo clippy -- -D warnings
+go vet ./...
+gofmt -l .
+golangci-lint run 2>/dev/null || echo "golangci-lint not installed"
 ```
 
-### Clippy with More Suggestions
+## Step 4: Dependency Security Audit
+
+Run audit for detected stacks:
 
 ```bash
-cd backend
-SQLX_OFFLINE=true cargo clippy -- -W clippy::pedantic
+# Node
+npm audit 2>/dev/null
+
+# Rust
+cargo audit 2>/dev/null
+
+# Python
+pip-audit 2>/dev/null || safety check 2>/dev/null
 ```
 
-## Frontend (TypeScript/React)
+## Step 5: Code Complexity Scan
 
-### ESLint Check
+Search for complexity indicators in changed files:
+
+1. **Long functions** — Find functions longer than 50 lines
+2. **Deep nesting** — Find code with more than 4 levels of nesting
+3. **Large files** — Flag files over 300 lines
+4. **Duplicated patterns** — Note similar code blocks
+
+Use grep/search to identify these in the changed files and report them.
+
+## Step 6: HIGH-RISK Marker Audit
+
+Check for any `//HIGH-RISK-UNREVIEWED` or `//HIGH-RISK-REVIEWED` markers in changed files:
 
 ```bash
-cd frontend
-npm run lint
+git diff --name-only HEAD | xargs grep -n "HIGH-RISK" 2>/dev/null
 ```
 
-### Fix Auto-fixable Issues
+Report:
+- Any HIGH-RISK functions that were modified (should be marked UNREVIEWED)
+- Any UNREVIEWED functions that haven't been addressed
+- Total count of HIGH-RISK markers in the project
 
-```bash
-cd frontend
-npm run lint -- --fix
-```
+## Step 7: Report
 
-### Type Check
+Present a summary:
 
-```bash
-cd frontend
-npx tsc --noEmit
-```
+### ✅ Passed
+- Checks that passed cleanly
 
-## Full Code Check
+### ❌ Failed
+- Checks that found issues (with file:line references)
 
-Run all checks:
+### ⚠️ Warnings
+- Complexity concerns
+- Large files
+- Missing lint/format configs
+- Unreviewed HIGH-RISK functions
 
-```bash
-# Backend
-cd backend
-cargo fmt --check
-SQLX_OFFLINE=true cargo clippy -- -D warnings
+### 🔧 Auto-Fixed
+- Issues that were automatically resolved
 
-# Frontend
-cd frontend
-npm run lint
-npx tsc --noEmit
-```
-
-## Common Issues
-
-### Unused Imports
-```bash
-# Rust - Clippy will catch these
-cargo clippy -- -W unused-imports
-
-# TypeScript - ESLint catches these
-npm run lint
-```
-
-### Security Audit
-
-```bash
-# Rust dependencies
-cd backend
-cargo audit
-
-# npm dependencies
-cd frontend
-npm audit
-```
+### 📊 Stats
+- Files checked: X
+- Issues found: X (Y auto-fixed)
+- HIGH-RISK markers: X unreviewed / Y reviewed

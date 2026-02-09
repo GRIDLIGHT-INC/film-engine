@@ -1,33 +1,41 @@
 ---
 name: sync-branch
-description: Sync branch with remote (pull then push)
+description: Sync branch with remote (pull then push) — auto-detects remote name
 ---
 
 # Sync Branch
 
 Follow these steps:
 
-1. **Check Current State**
+1. **Detect Remote**
+```bash
+   REMOTE=$(git remote | head -1)
+   echo "Using remote: $REMOTE"
+```
+
+2. **Check Current State**
 ```bash
    git status
    git branch --show-current
 ```
    Verify current branch and check for uncommitted changes.
 
-2. **Pull Latest Changes**
+3. **Pull Latest Changes**
    If there are uncommitted changes, warn me before proceeding.
 ```bash
-   git fetch origin
-   git pull origin <current-branch>
+   git fetch ${REMOTE}
+   git pull ${REMOTE} <current-branch>
 ```
    Handle any merge conflicts if they occur.
 
-3. **Push Local Changes**
+4. **Push Local Changes**
+
+Push to all configured remotes:
 ```bash
-   git push origin <current-branch>
+   git remote | while read r; do git push $r <current-branch>; done
 ```
 
-4. **Report Status**
+5. **Report Status**
    Confirm sync is complete and show the current state.
 
 Wait for my approval before executing git commands if there are uncommitted changes or conflicts.

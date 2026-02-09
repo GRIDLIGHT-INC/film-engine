@@ -6,6 +6,7 @@
  * Gathers project context and calls Gridlight's /chat/intelligent endpoint.
  */
 const { db } = require('../db/database');
+const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -75,7 +76,33 @@ Characters: {characters}`,
 - Dialogue with correct indentation
 - Transitions where appropriate
 
-Return only the formatted screenplay content.`
+Return only the formatted screenplay content.`,
+
+    'generate-element': `You are a professional screenplay writer. Generate a single screenplay element of the specified type.
+
+ELEMENT TYPE: {element_type}
+
+RULES:
+- Return ONLY the raw text content for the element — no labels, no formatting markers, no quotes.
+- Match the tone and style of the project.
+- For scene-heading: Return a valid scene heading like "INT. LOCATION - TIME OF DAY"
+- For action: Return vivid, present-tense visual action description.
+- For character: Return a character name in ALL CAPS.
+- For dialogue: Return natural, character-appropriate dialogue lines only.
+- For parenthetical: Return a brief parenthetical direction (without parentheses).
+- For transition: Return a transition like "CUT TO:" or "DISSOLVE TO:"
+- For centered: Return centered text content.
+- For lyrics: Return song lyrics.
+- For note: Return a production note.
+- Do NOT include any explanation or commentary — just the element text.
+
+SURROUNDING CONTEXT:
+{context}
+
+PROJECT CONTEXT:
+Title: {title}
+Genre: {genre}
+Characters: {characters}`
 };
 
 function handleScreenplayAI(req, res, urlParts) {
@@ -109,7 +136,9 @@ async function processScreenplayAI(req, res, projectId) {
         message,
         conversation_history = [],
         original_content = '',
-        current_scene_fountain = '' // FILM-115: Current scene context
+        current_scene_fountain = '', // FILM-115: Current scene context
+        element_type = '',
+        context = ''
     } = body;
 
     if (!message || typeof message !== 'string') {
@@ -186,56 +215,55 @@ async function processScreenplayAI(req, res, projectId) {
         .replace('{characters}', charList)
         .replace('{locations}', locList)
         .replace('{recent_scenes}', recentScenes)
-        .replace('{original_content}', original_content || '(No content provided)');
+        .replace('{original_content}', original_content || '(No content provided)')
+        .replace('{element_type}', element_type || 'action')
+        .replace('{context}', context || '(No surrounding context)');
 
     // FILM-115: Add current scene context if provided
     if (current_scene_fountain) {
         systemPrompt += `\n\nCURRENT SCENE (cursor is here):\n${current_scene_fountain.slice(0, 2000)}`;
     }
 
-    // Build messages array with truncation
-    const messages = [];
-
-    // FILM-115: Truncate conversation history to last 20 messages or ~8000 tokens
+    // Build conversation history in Gridlight format: {question, answer} pairs
+    const gridlightHistory = [];
     if (Array.isArray(conversation_history)) {
         let tokenCount = 0;
         const maxTokens = 8000;
         const recentHistory = conversation_history.slice(-20);
 
-        for (const msg of recentHistory) {
-            if (msg.role && msg.content) {
-                // Rough token estimation: ~4 chars per token
-                const msgTokens = Math.ceil(msg.content.length / 4);
-                if (tokenCount + msgTokens > maxTokens) break;
-                tokenCount += msgTokens;
-                messages.push({ role: msg.role, content: msg.content });
+        // Convert {role, content} pairs to {question, answer} pairs
+        for (let i = 0; i < recentHistory.length - 1; i += 2) {
+            const userMsg = recentHistory[i];
+            const assistantMsg = recentHistory[i + 1];
+            if (userMsg?.role === 'user' && assistantMsg?.role === 'assistant') {
+                const pairTokens = Math.ceil((userMsg.content.length + assistantMsg.content.length) / 4);
+                if (tokenCount + pairTokens > maxTokens) break;
+                tokenCount += pairTokens;
+                gridlightHistory.push({
+                    question: userMsg.content,
+                    answer: assistantMsg.content
+                });
             }
         }
     }
 
-    // Add current message
-    messages.push({ role: 'user', content: message });
+    // Call AI gateway — Gridlight expects { question, conversation_history: [{question,answer}] }
+    // Embed system prompt as context in the question
+    const fullQuestion = systemPrompt + '\n\n---\n\nUser request:\n' + message;
 
-    // Call AI gateway
-    const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
-    const apiToken = process.env.API_TOKEN || process.env.GRIDLIGHT_API_KEY || '';
+    const aiHeaders = { 'Content-Type': 'application/json' };
+    if (GRIDLIGHT_API_KEY) {
+        aiHeaders['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
+    }
 
     try {
-        const aiRes = await fetch(`${gatewayUrl}/chat/intelligent`, {
+        const aiRes = await fetch(`${GRIDLIGHT_URL}/chat/intelligent`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiToken}`
-            },
+            headers: aiHeaders,
             body: JSON.stringify({
-                message: message,
-                system_prompt: systemPrompt,
-                conversation_history: messages.slice(0, -1), // Exclude current message
-                domain: 'screenplay',
-                options: {
-                    temperature: mode === 'brainstorm' ? 0.8 : 0.7,
-                    max_tokens: 4000
-                }
+                question: fullQuestion,
+                conversation_history: gridlightHistory.length > 0 ? gridlightHistory : undefined,
+                stream: false
             })
         });
 
@@ -251,7 +279,7 @@ async function processScreenplayAI(req, res, projectId) {
         }
 
         const aiData = await aiRes.json();
-        const responseText = aiData.response || aiData.message || '';
+        const responseText = aiData.answer || aiData.response || aiData.message || '';
 
         // FILM-113: Validate Fountain content for write-scene mode
         let isValidFountain = false;
@@ -284,7 +312,7 @@ async function processScreenplayAI(req, res, projectId) {
         res.end(JSON.stringify({
             error: 'AI gateway unavailable',
             details: err.message,
-            hint: 'Ensure the Gridlight gateway is running and GATEWAY_URL is set.',
+            hint: `Ensure the Gridlight gateway is running at ${GRIDLIGHT_URL} and GRIDLIGHT_API_KEY is set.`,
             mode
         }));
     }
@@ -324,11 +352,24 @@ async function processScreenplayAIStream(req, res, projectId) {
         systemPrompt += `\n\nCurrent scene context:\n${current_scene_fountain.slice(0, 1500)}`;
     }
 
-    // Truncate history for streaming
-    const truncatedHistory = conversation_history.slice(-10).filter(m => m.role && m.content);
+    // Convert history to Gridlight format: {question, answer} pairs
+    const gridlightHistory = [];
+    const recentHistory = conversation_history.slice(-10).filter(m => m.role && m.content);
+    for (let i = 0; i < recentHistory.length - 1; i += 2) {
+        const userMsg = recentHistory[i];
+        const assistantMsg = recentHistory[i + 1];
+        if (userMsg?.role === 'user' && assistantMsg?.role === 'assistant') {
+            gridlightHistory.push({ question: userMsg.content, answer: assistantMsg.content });
+        }
+    }
 
-    const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
-    const apiToken = process.env.API_TOKEN || process.env.GRIDLIGHT_API_KEY || '';
+    // Embed system prompt in question for Gridlight
+    const fullQuestion = systemPrompt + '\n\n---\n\nUser request:\n' + message;
+
+    const streamHeaders = { 'Content-Type': 'application/json' };
+    if (GRIDLIGHT_API_KEY) {
+        streamHeaders['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
+    }
 
     // SSE headers
     res.writeHead(200, {
@@ -345,22 +386,13 @@ async function processScreenplayAIStream(req, res, projectId) {
     sendEvent('status', { phase: 'sending', message: 'Sending to AI...' });
 
     try {
-        const aiRes = await fetch(`${gatewayUrl}/chat/intelligent`, {
+        const aiRes = await fetch(`${GRIDLIGHT_URL}/chat/intelligent`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiToken}`
-            },
+            headers: streamHeaders,
             body: JSON.stringify({
-                message: message,
-                system_prompt: systemPrompt,
-                conversation_history: truncatedHistory,
-                domain: 'screenplay',
-                stream: true,
-                options: {
-                    temperature: 0.7,
-                    max_tokens: 4000
-                }
+                question: fullQuestion,
+                conversation_history: gridlightHistory.length > 0 ? gridlightHistory : undefined,
+                stream: true
             })
         });
 
@@ -375,21 +407,41 @@ async function processScreenplayAIStream(req, res, projectId) {
         // Handle streaming response
         const contentType = aiRes.headers.get('content-type') || '';
         if (contentType.includes('text/event-stream')) {
-            // Relay SSE chunks
+            // Parse Gridlight SSE: event: token/done, data: {content/answer}
             const reader = aiRes.body.getReader();
             const decoder = new TextDecoder();
+            let buffer = '';
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const chunk = decoder.decode(value, { stream: true });
-                sendEvent('chunk', { text: chunk });
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+
+                let currentEvent = '';
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        currentEvent = line.slice(7).trim();
+                    } else if (line.startsWith('data: ')) {
+                        const dataStr = line.slice(6).trim();
+                        if (!dataStr || dataStr === '[DONE]') continue;
+                        try {
+                            const data = JSON.parse(dataStr);
+                            if (currentEvent === 'token' && data.content) {
+                                sendEvent('chunk', { text: data.content });
+                            } else if (currentEvent === 'done' && data.answer) {
+                                sendEvent('chunk', { text: data.answer });
+                            }
+                        } catch (_) { /* skip unparseable */ }
+                    }
+                }
             }
         } else {
-            // Non-streaming response
+            // Non-streaming JSON response
             const aiData = await aiRes.json();
-            const responseText = aiData.response || aiData.message || '';
+            const responseText = aiData.answer || aiData.response || aiData.message || '';
             sendEvent('chunk', { text: responseText });
         }
 

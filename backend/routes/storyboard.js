@@ -15,11 +15,10 @@ const path = require('path');
 const crypto = require('crypto');
 const { db, generateId } = require('../db/database');
 const { buildStoryboardPrompt, applyStyleLock } = require('../lib/storyboard-prompt');
+const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATA_DIR = process.env.FILM_DATA_DIR || path.join(__dirname, '..', '..', 'data');
-const IMAGEGEN_URL = process.env.IMAGEGEN_URL || 'http://localhost:8080';
-const IMAGEGEN_API_KEY = process.env.IMAGEGEN_API_KEY || '';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -45,8 +44,23 @@ function storyboardImagePath(projectId, shotCode) {
 }
 
 /**
- * Call the ImageGen API to generate an image.
+ * Resolve an image URL from Gridlight response.
+ * Handles full URLs, absolute paths, and bare filenames.
+ */
+function resolveImageUrl(imageUrl) {
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+        return imageUrl;
+    }
+    if (imageUrl.startsWith('/')) {
+        return `${GRIDLIGHT_URL}${imageUrl}`;
+    }
+    return `${GRIDLIGHT_URL}/images/${imageUrl}`;
+}
+
+/**
+ * Call the ImageGen API to generate an image (non-streaming).
  * Returns a Buffer of the image data (PNG).
+ * API returns JSON with url field; image is fetched from GET /images/{filename}.
  */
 async function callImageGen(prompt, negativePrompt, seed, options) {
     const opts = options || {};
@@ -69,11 +83,11 @@ async function callImageGen(prompt, negativePrompt, seed, options) {
     }
 
     const headers = { 'Content-Type': 'application/json' };
-    if (IMAGEGEN_API_KEY) {
-        headers['Authorization'] = `Bearer ${IMAGEGEN_API_KEY}`;
+    if (GRIDLIGHT_API_KEY) {
+        headers['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
     }
 
-    const response = await fetch(`${IMAGEGEN_URL}/image`, {
+    const response = await fetch(`${GRIDLIGHT_URL}/image`, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -84,8 +98,162 @@ async function callImageGen(prompt, negativePrompt, seed, options) {
         throw new Error(`ImageGen error ${response.status}: ${errText}`);
     }
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-    return buffer;
+    const contentType = response.headers.get('content-type') || '';
+
+    // API returns JSON with url field (full URL or path or filename)
+    if (contentType.includes('application/json')) {
+        const data = await response.json();
+        const imageUrl = data.url || data.image_url || data.filename;
+        if (!imageUrl) {
+            throw new Error('ImageGen returned JSON but no url field');
+        }
+        // Resolve to a fetchable URL
+        let fetchUrl;
+        if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+            fetchUrl = imageUrl;
+        } else if (imageUrl.startsWith('/')) {
+            fetchUrl = `${GRIDLIGHT_URL}${imageUrl}`;
+        } else {
+            fetchUrl = `${GRIDLIGHT_URL}/images/${imageUrl}`;
+        }
+        const imgRes = await fetch(fetchUrl);
+        if (!imgRes.ok) {
+            throw new Error(`Failed to fetch generated image: ${imgRes.status}`);
+        }
+        return Buffer.from(await imgRes.arrayBuffer());
+    }
+
+    // Legacy: raw binary response
+    return Buffer.from(await response.arrayBuffer());
+}
+
+/**
+ * Call the ImageGen API with SSE streaming for progress updates.
+ * Returns { buffer, metadata } where buffer is the PNG image data.
+ * Calls onProgress callback with progress events during generation.
+ */
+async function callImageGenStream(prompt, negativePrompt, seed, options, onProgress) {
+    const opts = options || {};
+    const payload = {
+        prompt,
+        negative_prompt: negativePrompt,
+        model: opts.model || 'sdxl',
+        width: opts.width || 1024,
+        height: opts.height || 1024,
+        steps: opts.steps || 30,
+        guidance_scale: opts.guidance_scale || 7.5,
+        seed: seed || null,
+        stream: true,
+    };
+
+    if (opts.ip_adapter_image) {
+        payload.ip_adapter_image = opts.ip_adapter_image;
+        payload.ip_adapter_weight = opts.ip_adapter_weight || 0.7;
+    }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (GRIDLIGHT_API_KEY) {
+        headers['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
+    }
+
+    const response = await fetch(`${GRIDLIGHT_URL}/image`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`ImageGen error ${response.status}: ${errText}`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+
+    // Handle SSE streaming response
+    // Gridlight sends named events: event: progress, event: image, event: done
+    if (contentType.includes('text/event-stream')) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let imageUrl = null;
+        let metadata = {};
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            let currentEvent = '';
+            for (const line of lines) {
+                if (line.startsWith('event: ')) {
+                    currentEvent = line.slice(7).trim();
+                    continue;
+                }
+                if (!line.startsWith('data: ')) continue;
+                const dataStr = line.slice(6).trim();
+                if (!dataStr || dataStr === '[DONE]') continue;
+
+                try {
+                    const data = JSON.parse(dataStr);
+
+                    if (currentEvent === 'progress') {
+                        // Gridlight progress: { step, total_steps, percentage }
+                        if (onProgress) onProgress({
+                            type: 'progress',
+                            step: data.step || 0,
+                            total_steps: data.total_steps || payload.steps,
+                        });
+                    } else if (currentEvent === 'image') {
+                        // Gridlight image event: { url, generated_at }
+                        imageUrl = data.url || data.image_url;
+                    } else if (currentEvent === 'done') {
+                        // Gridlight done event: { status, url, seed }
+                        if (!imageUrl) imageUrl = data.url || data.image_url;
+                        metadata = {
+                            seed: data.seed,
+                            model: data.model,
+                            generation_time_ms: data.generation_time_ms,
+                        };
+                    } else if (currentEvent === 'error') {
+                        throw new Error(data.message || data.error || 'Image generation failed');
+                    }
+                } catch (parseErr) {
+                    if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+                }
+                currentEvent = '';
+            }
+        }
+
+        if (!imageUrl) {
+            throw new Error('Image generation stream completed but no image URL received');
+        }
+
+        // Download the generated image
+        const imgRes = await fetch(resolveImageUrl(imageUrl));
+        if (!imgRes.ok) {
+            throw new Error(`Failed to fetch generated image: ${imgRes.status}`);
+        }
+
+        return { buffer: Buffer.from(await imgRes.arrayBuffer()), metadata };
+    }
+
+    // Handle JSON response (non-streaming fallback)
+    if (contentType.includes('application/json')) {
+        const data = await response.json();
+        const imageUrl = data.url || data.image_url || data.filename;
+        if (!imageUrl) throw new Error('No url in image response');
+
+        const imgRes = await fetch(resolveImageUrl(imageUrl));
+        if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`);
+
+        return { buffer: Buffer.from(await imgRes.arrayBuffer()), metadata: data };
+    }
+
+    // Legacy: raw binary
+    return { buffer: Buffer.from(await response.arrayBuffer()), metadata: {} };
 }
 
 /**
@@ -175,12 +343,13 @@ function handleStoryboard(req, res, urlParts, query) {
         const sub = urlParts[4]; // 'generate' or undefined
 
         if (sub === 'generate') {
+            const stream = urlParts[5] === 'stream';
+            // Allow GET for SSE stream (EventSource only supports GET)
+            if (stream && (req.method === 'GET' || req.method === 'POST')) {
+                return generateStoryboardStream(req, res, projectId);
+            }
             if (req.method !== 'POST') {
                 return json(res, 405, { error: 'Method not allowed' });
-            }
-            const stream = urlParts[5] === 'stream';
-            if (stream) {
-                return generateStoryboardStream(req, res, projectId);
             }
             return generateStoryboard(req, res, projectId);
         }
@@ -518,18 +687,33 @@ async function generateStoryboardStream(req, res, projectId) {
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shot.shot_id);
 
         try {
-            const imageBuffer = await callImageGen(prompt, negative_prompt, styleParams.seed, {
-                ip_adapter_image: styleParams.ip_adapter_image,
-                ip_adapter_weight: styleParams.ip_adapter_weight,
-            });
+            const { buffer: imageBuffer, metadata } = await callImageGenStream(
+                prompt, negative_prompt, styleParams.seed,
+                {
+                    ip_adapter_image: styleParams.ip_adapter_image,
+                    ip_adapter_weight: styleParams.ip_adapter_weight,
+                },
+                (progressData) => {
+                    // Relay per-image generation progress to the client
+                    sendEvent({
+                        type: 'image_progress',
+                        shot_index: i,
+                        total_shots: shots.length,
+                        shot_code: shot.shot_code,
+                        scene_number: shot.scene_number,
+                        ...progressData,
+                    });
+                }
+            );
 
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
             fs.writeFileSync(imgPath, imageBuffer);
 
             registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`);
 
+            const actualSeed = (metadata && metadata.seed) || styleParams.seed;
             logToRenderLedger(shot.shot_id, {
-                seed: styleParams.seed,
+                seed: actualSeed,
                 prompt,
                 negative_prompt,
                 camera_params: sceneCard.camera,
@@ -548,6 +732,8 @@ async function generateStoryboardStream(req, res, projectId) {
                 scene_number: shot.scene_number,
                 phase: 'complete',
                 image_url: storyboardImageUrl(projectId, shot.shot_code),
+                seed: actualSeed,
+                generation_time_ms: metadata?.generation_time_ms,
             });
             shotsCompleted++;
 

@@ -7,7 +7,18 @@ description: Create a commit message, commit changes, push, and create a PR
 
 Follow these steps:
 
-## Step 1: Check for Task Context
+## Step 1: Detect Remote and Base Branch
+
+```bash
+REMOTE=$(git remote | head -1)
+BASE=$(git symbolic-ref refs/remotes/${REMOTE}/HEAD 2>/dev/null | sed "s|refs/remotes/${REMOTE}/||")
+if [ -z "$BASE" ]; then
+  git rev-parse --verify ${REMOTE}/dev &>/dev/null && BASE=dev || BASE=main
+fi
+echo "Remote: $REMOTE, Base: $BASE"
+```
+
+## Step 2: Check for Task Context
 
 Get the current branch name and check for a task file:
 ```bash
@@ -18,7 +29,7 @@ If branch matches `GRD-XXX-*` pattern, read `.claude/tasks/GRD-XXX.md` to get:
 - Original description (intent)
 - Acceptance criteria (planned outcomes)
 
-## Step 2: Review Changes
+## Step 3: Review Changes
 
 ```bash
 git status
@@ -26,7 +37,7 @@ git diff
 ```
 Show what files changed and summarize the actual implementation.
 
-## Step 3: Create Commit Message
+## Step 4: Create Commit Message
 
 Based on the changes, write a commit message:
 - Use present tense ("Add feature" not "Added feature")
@@ -36,15 +47,19 @@ Based on the changes, write a commit message:
 - Include "Resolves GRD-XXX" if applicable
 - Do NOT include any Co-Authored-By lines
 
-## Step 4: Commit and Push
+## Step 5: Commit and Push
 
 ```bash
-git add .
+git add <specific-files>
 git commit -m "<your-generated-message>"
-git push origin <current-branch>
 ```
 
-## Step 5: Create Pull Request
+Push to all configured remotes:
+```bash
+git remote | while read r; do git push $r <current-branch>; done
+```
+
+## Step 6: Create Pull Request
 
 PR title format: `GRD-XXX: Brief description`
 
@@ -74,19 +89,19 @@ Brief description of what was implemented.
 - How it was tested
 ```
 
-Create the PR:
+Create the PR against the detected base branch:
 ```bash
-gh pr create --title "GRD-XXX: <description>" --body "<PR-body>" --base main
+gh pr create --title "GRD-XXX: <description>" --body "<PR-body>" --base ${BASE}
 ```
 
-## Step 6: Cleanup Task File
+## Step 7: Cleanup Task File
 
 After PR is created successfully, delete the task context file:
 ```bash
 rm .claude/tasks/GRD-XXX.md
 git add .claude/tasks/
 git commit -m "Remove task file for GRD-XXX after PR created"
-git push
+git remote | while read r; do git push $r <current-branch>; done
 ```
 
 Report the PR URL to the user.

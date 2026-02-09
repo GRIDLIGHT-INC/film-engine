@@ -227,6 +227,21 @@ function handleDemoProject(req, res) {
         return;
     }
 
+    // Prevent duplicate demo projects
+    const existing = db.prepare(
+        "SELECT id FROM film_projects WHERE title = 'Neon Requiem' LIMIT 1"
+    ).get();
+    if (existing) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            project_id: existing.id,
+            title: 'Neon Requiem',
+            already_exists: true,
+            message: 'Demo project already exists'
+        }));
+        return;
+    }
+
     try {
         const result = createDemoProject();
         res.writeHead(201, { 'Content-Type': 'application/json' });

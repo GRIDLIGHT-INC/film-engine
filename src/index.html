@@ -1097,8 +1097,8 @@
         .panel-toggle-btn {
             width: 100%;
             padding: 6px;
-            background: var(--gl-bg-header);
-            border: 1px solid var(--gl-border-subtle);
+            background: #555;
+            border: 1px solid #666;
             border-radius: var(--gl-radius-lg);
             cursor: pointer;
             font-size: 14px;
@@ -1106,9 +1106,10 @@
             align-items: center;
             justify-content: center;
             margin-bottom: 8px;
+            color: #ddd;
         }
         .panel-toggle-btn:hover {
-            background: var(--gl-bg-elevated);
+            background: #666;
         }
         .collapsed .panel-toggle-btn {
             margin-bottom: 0;
@@ -1229,8 +1230,24 @@
             margin-bottom: 40px;
             border-bottom: 2px solid var(--gl-border-subtle);
             font-family: 'Courier New', monospace;
-            pointer-events: none;
+            cursor: pointer;
             user-select: none;
+            position: relative;
+        }
+        .title-page-block .title-page-edit-btn {
+            pointer-events: auto;
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-md, 6px);
+            padding: 6px 16px;
+            cursor: pointer;
+            color: var(--gl-text-primary);
+            font-size: 12px;
+            margin-top: 12px;
+            transition: background 0.15s;
+        }
+        .title-page-block .title-page-edit-btn:hover {
+            background: var(--gl-bg-elevated);
         }
         .title-page-block .title-main {
             font-size: 24px;
@@ -1716,11 +1733,11 @@
 
         /* Screenplay Page */
         .screenplay-page {
-            width: 8.5in;
+            width: 11.3in;
             max-width: 100%;
             min-height: 11in;
             margin: 0 auto;
-            padding: 1in 1in 1in 1.5in;
+            padding: 1in 1.2in 1in 1.5in;
             font-family: 'Courier Prime', 'Courier New', Courier, monospace;
             font-size: 12pt;
             line-height: 1;
@@ -3489,8 +3506,17 @@
                     <span id="storyboardProgressLabel">Generating storyboards...</span>
                     <span id="storyboardProgressPct">0%</span>
                 </div>
-                <div style="background:var(--gl-border-subtle);border-radius:4px;height:6px;overflow:hidden;">
-                    <div id="storyboardProgressBar" style="background:var(--gl-brand-pink);height:100%;width:0%;transition:width 0.3s;"></div>
+                <div style="background:var(--gl-border-subtle);border-radius:4px;height:8px;overflow:hidden;margin-bottom:8px;">
+                    <div id="storyboardProgressBar" style="background:linear-gradient(90deg,#e91e63,#2196f3);height:100%;width:0%;transition:width 0.3s ease;border-radius:4px;"></div>
+                </div>
+                <div id="storyboardImageProgress" style="display:none;">
+                    <div class="flex-between" style="font-size:12px;color:var(--gl-text-muted);margin-bottom:4px;">
+                        <span id="storyboardImageLabel">Loading model...</span>
+                        <span id="storyboardImageStep"></span>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:6px;overflow:hidden;">
+                        <div id="storyboardImageBar" style="width:0%;height:100%;background:linear-gradient(90deg,#7c4dff,#ab47bc);border-radius:4px;transition:width 0.2s ease;"></div>
+                    </div>
                 </div>
             </div>
             <div id="storyboardGrid" class="entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
@@ -4812,7 +4838,11 @@
             const result = await api('/projects/demo', { method: 'POST' });
             await loadProjects();
             if (result.project_id) openProject(result.project_id);
-            setStatus('Demo project loaded: Neon Requiem');
+            if (result.already_exists) {
+                setStatus('Demo project already exists — opening Neon Requiem');
+            } else {
+                setStatus('Demo project loaded: Neon Requiem');
+            }
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -5388,7 +5418,7 @@
         // Render title page block if found
         if (Object.keys(titlePage).length > 0) {
             const titlePageData = JSON.stringify(titlePage).replace(/"/g, '&quot;');
-            let titleHtml = '<div class="screenplay-block title-page-block" data-element-type="title-page" data-title-page-data="' + titlePageData + '" contenteditable="false">';
+            let titleHtml = '<div class="screenplay-block title-page-block" data-element-type="title-page" data-title-page-data="' + titlePageData + '" contenteditable="false" onclick="openTitlePageModal()">';
             titleHtml += '<div class="title-page-content">';
             if (titlePage.title) titleHtml += `<div class="title-page-title">${escapeHtml(titlePage.title)}</div>`;
             if (titlePage.credit) titleHtml += `<div class="title-page-credit">${escapeHtml(titlePage.credit)}</div>`;
@@ -5530,10 +5560,19 @@
 
             // Text node or element without data-element-type
             if (node.nodeType === 3 && node.textContent.trim()) {
-                // Wrap text node in block
+                // Wrap text node in block — preserve cursor at end of typed text
+                const textLen = node.textContent.length;
                 const block = createBlock(node.textContent, defaultType);
                 editor.replaceChild(block, node);
-                setCursorToBlock(block);
+                // Place cursor at end of content (not start) so typing continues naturally
+                const range = document.createRange();
+                const sel = window.getSelection();
+                const textNode = block.firstChild || block;
+                const offset = textNode.nodeType === 3 ? Math.min(textLen, textNode.length) : 0;
+                range.setStart(textNode, offset);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
                 // Update element type selector
                 const selector = document.getElementById('elementTypeSelector');
                 if (selector) selector.value = defaultType;
@@ -7488,12 +7527,12 @@
 
         if (existingTitlePage) {
             currentTitlePage = existingTitlePage;
-        } else if (currentProject) {
+        } else if (state.currentProject) {
             // Fall back to project metadata
             currentTitlePage = {
-                title: currentProject.title || '',
+                title: state.currentProject.title || '',
                 credit: 'Written by',
-                author: currentProject.author || '',
+                author: state.currentProject.author || '',
                 source: '',
                 draft_date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
                 contact: ''
@@ -7631,6 +7670,7 @@
         block.dataset.elementType = 'title-page';
         block.dataset.titlePageData = JSON.stringify(titlePage);
         block.contentEditable = 'false';
+        block.onclick = () => openTitlePageModal();
 
         let html = '<div class="title-page-content">';
         if (titlePage.title) {
@@ -7705,7 +7745,7 @@
         const label = document.getElementById('revisionLabel');
         const toggle = document.getElementById('markRevisionToggle');
 
-        if (!indicator || !currentProject) return;
+        if (!indicator || !state.currentProject) return;
 
         if (currentRevision && currentRevision.revision_number) {
             indicator.style.display = 'inline-flex';
@@ -7802,7 +7842,7 @@
         }
 
         // Generate filename
-        const projectTitle = currentProject?.title || 'screenplay';
+        const projectTitle = state.currentProject?.title || 'screenplay';
         const safeTitle = projectTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
         const filename = `${safeTitle}.fountain`;
 
@@ -7827,7 +7867,7 @@
         const plainText = fountainToPlainText(fountainText);
 
         // Generate filename
-        const projectTitle = currentProject?.title || 'screenplay';
+        const projectTitle = state.currentProject?.title || 'screenplay';
         const safeTitle = projectTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
         const filename = `${safeTitle}.txt`;
 
@@ -7938,7 +7978,7 @@
             .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
 
         // Generate print-ready HTML
-        const projectTitle = currentProject?.title || 'Screenplay';
+        const projectTitle = state.currentProject?.title || 'Screenplay';
         const printHTML = generatePrintHTML(content, projectTitle);
 
         // Open in new window and print
@@ -12271,9 +12311,9 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
                                 <strong>Sc${f.scene_number} / ${esc(f.shot_code)}</strong>
                                 <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')">Regen</button>
                             </div>
-                            ${f.camera ? '<span class="tag">' + esc(f.camera) + '</span>' : ''}
-                            ${f.lighting ? '<span class="tag">' + esc(f.lighting) + '</span>' : ''}
-                            ${f.dialogue_preview ? '<p class="text-sm text-muted" style="margin-top:6px;">' + esc(f.dialogue_preview) + '</p>' : ''}
+                            ${f.camera && f.camera.shot_type ? '<span class="tag">' + esc(f.camera.shot_type) + '</span>' : (typeof f.camera === 'string' && f.camera ? '<span class="tag">' + esc(f.camera) + '</span>' : '')}
+                            ${f.lighting && f.lighting.type ? '<span class="tag">' + esc(f.lighting.type) + '</span>' : (typeof f.lighting === 'string' && f.lighting ? '<span class="tag">' + esc(f.lighting) + '</span>' : '')}
+                            ${f.description ? '<p class="text-sm text-muted" style="margin-top:6px;">' + esc(f.description.slice(0, 80)) + '</p>' : ''}
                         </div>
                     </div>`).join('');
             }
@@ -12287,29 +12327,85 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
         const bar = document.getElementById('storyboardProgressBar');
         const lbl = document.getElementById('storyboardProgressLabel');
         const pct = document.getElementById('storyboardProgressPct');
+        const imgProg = document.getElementById('storyboardImageProgress');
+        const imgLbl = document.getElementById('storyboardImageLabel');
+        const imgStep = document.getElementById('storyboardImageStep');
+        const imgBar = document.getElementById('storyboardImageBar');
         prog.style.display = 'block';
+        imgProg.style.display = 'none';
         bar.style.width = '0%';
         lbl.textContent = 'Starting storyboard generation...';
         pct.textContent = '0%';
 
+        let totalShots = 1;
+
         streamSSE(
             '/projects/' + state.currentProject.id + '/storyboard/generate/stream',
             (ev) => {
-                const p = ev.progress || 0;
-                bar.style.width = p + '%';
-                pct.textContent = Math.round(p) + '%';
-                lbl.textContent = ev.message || ('Generating ' + (ev.shot_code || '...'));
+                if (ev.type === 'status' && ev.total_shots) {
+                    totalShots = ev.total_shots;
+                }
+
+                if (ev.type === 'scene') {
+                    lbl.textContent = 'Scene ' + ev.scene_number + (ev.location ? ' — ' + ev.location : '');
+                }
+
+                if (ev.type === 'progress') {
+                    const shotP = ((ev.shot_index || 0) / totalShots) * 100;
+                    if (ev.phase === 'generating') {
+                        bar.style.width = shotP + '%';
+                        pct.textContent = Math.round(shotP) + '%';
+                        lbl.textContent = 'Generating ' + (ev.shot_code || '...');
+                        imgProg.style.display = 'block';
+                        imgLbl.textContent = 'Preparing...';
+                        imgStep.textContent = '';
+                        imgBar.style.width = '0%';
+                    } else if (ev.phase === 'complete') {
+                        const doneP = (((ev.shot_index || 0) + 1) / totalShots) * 100;
+                        bar.style.width = doneP + '%';
+                        pct.textContent = Math.round(doneP) + '%';
+                        lbl.textContent = ev.shot_code + ' complete';
+                        imgProg.style.display = 'none';
+                        // Refresh the image in the grid if visible
+                        const grid = document.getElementById('storyboardGrid');
+                        if (ev.image_url && grid) {
+                            const imgs = grid.querySelectorAll('img');
+                            imgs.forEach(img => {
+                                if (img.src.includes(ev.shot_code)) {
+                                    img.src = API_BASE + ev.image_url + '?t=' + Date.now();
+                                    img.style.display = 'block';
+                                }
+                            });
+                        }
+                    }
+                }
+
+                // Per-image generation progress (step-by-step like gridlight-chat)
+                if (ev.type === 'image_progress') {
+                    imgProg.style.display = 'block';
+                    if (ev.message) {
+                        imgLbl.textContent = ev.message;
+                    }
+                    if (typeof ev.step === 'number' && ev.total_steps) {
+                        const stepPct = Math.round((ev.step / ev.total_steps) * 100);
+                        imgBar.style.width = stepPct + '%';
+                        imgStep.textContent = 'Step ' + ev.step + '/' + ev.total_steps + ' (' + stepPct + '%)';
+                        imgLbl.textContent = 'Generating...';
+                    }
+                }
             },
             () => {
                 bar.style.width = '100%';
                 pct.textContent = '100%';
                 lbl.textContent = 'Complete!';
+                imgProg.style.display = 'none';
                 setTimeout(() => { prog.style.display = 'none'; }, 2000);
                 loadStoryboard();
                 setStatus('Storyboard generation complete');
             },
             () => {
                 prog.style.display = 'none';
+                imgProg.style.display = 'none';
                 setStatus('Storyboard generation failed');
             }
         );

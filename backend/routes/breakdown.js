@@ -10,6 +10,7 @@
 const { db, generateId } = require('../db/database');
 const { validateSceneCards } = require('../lib/scene-card-schema');
 const { parseFountain, ELEMENT_TYPES } = require('../lib/fountain-parser');
+const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -112,24 +113,21 @@ async function breakdownSync(req, res, projectId) {
     }
 
     // Call Gridlight AI
-    const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
-    const apiToken = process.env.API_TOKEN || process.env.GRIDLIGHT_API_KEY || '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (GRIDLIGHT_API_KEY) {
+        headers['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
+    }
 
     try {
-        const aiRes = await fetch(`${gatewayUrl}/chat/intelligent`, {
+        // Gridlight /chat/intelligent expects { question, conversation_history: [{question,answer}] }
+        const fullQuestion = BREAKDOWN_SYSTEM_PROMPT + contextHint + '\n\n---\n\nPlease break down the following screenplay:\n\n' + prompt + contextHint;
+
+        const aiRes = await fetch(`${GRIDLIGHT_URL}/chat/intelligent`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiToken}`
-            },
+            headers,
             body: JSON.stringify({
-                message: prompt + contextHint,
-                system_prompt: BREAKDOWN_SYSTEM_PROMPT,
-                domain: 'film-production',
-                options: {
-                    temperature: 0.7,
-                    max_tokens: 8000
-                }
+                question: fullQuestion,
+                stream: false
             })
         });
 
@@ -139,13 +137,13 @@ async function breakdownSync(req, res, projectId) {
             res.end(JSON.stringify({
                 error: 'AI service error',
                 details: errText,
-                hint: `Gridlight AI returned ${aiRes.status}. Ensure the gateway is running at ${gatewayUrl} and GRIDLIGHT_API_KEY is set.`
+                hint: `Gridlight AI returned ${aiRes.status}. Ensure the gateway is running at ${GRIDLIGHT_URL} and GRIDLIGHT_API_KEY is set.`
             }));
             return;
         }
 
         const aiData = await aiRes.json();
-        const responseText = aiData.response || aiData.message || '';
+        const responseText = aiData.answer || aiData.response || aiData.message || '';
 
         // Parse AI response
         let result;
@@ -180,7 +178,7 @@ async function breakdownSync(req, res, projectId) {
         res.end(JSON.stringify({
             error: 'AI gateway unavailable',
             details: err.message,
-            hint: 'Ensure the Gridlight gateway is running and GATEWAY_URL is set.'
+            hint: `Ensure the Gridlight gateway is running at ${GRIDLIGHT_URL} and GRIDLIGHT_API_KEY is set.`
         }));
     }
 }
@@ -206,8 +204,10 @@ async function breakdownStream(req, res, projectId) {
         if (hints.length) contextHint = `\n\nPROJECT CONTEXT: ${hints.join('. ')}.\n`;
     }
 
-    const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
-    const apiToken = process.env.API_TOKEN || process.env.GRIDLIGHT_API_KEY || '';
+    const streamHeaders = { 'Content-Type': 'application/json' };
+    if (GRIDLIGHT_API_KEY) {
+        streamHeaders['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
+    }
 
     // SSE headers
     res.writeHead(200, {
@@ -224,18 +224,15 @@ async function breakdownStream(req, res, projectId) {
     sendEvent('status', { phase: 'sending', message: 'Sending screenplay to AI...' });
 
     try {
-        const aiRes = await fetch(`${gatewayUrl}/chat/intelligent`, {
+        // Gridlight /chat/intelligent expects { question, stream }
+        const fullQuestion = BREAKDOWN_SYSTEM_PROMPT + contextHint + '\n\n---\n\nPlease break down the following screenplay:\n\n' + prompt + contextHint;
+
+        const aiRes = await fetch(`${GRIDLIGHT_URL}/chat/intelligent`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiToken}`
-            },
+            headers: streamHeaders,
             body: JSON.stringify({
-                message: prompt + contextHint,
-                system_prompt: BREAKDOWN_SYSTEM_PROMPT,
-                domain: 'film-production',
-                stream: true,
-                options: { temperature: 0.7, max_tokens: 8000 }
+                question: fullQuestion,
+                stream: true
             })
         });
 
@@ -247,21 +244,41 @@ async function breakdownStream(req, res, projectId) {
 
         sendEvent('status', { phase: 'generating', message: 'AI is generating scene cards...' });
 
-        // If streaming, try to read chunked response
+        // Handle response — may be SSE stream or JSON
         const contentType = aiRes.headers.get('content-type') || '';
         if (contentType.includes('text/event-stream')) {
-            // Gateway returns SSE — relay chunks
+            // Gateway returns SSE — extract answer from token/done events
             let accumulated = '';
             const reader = aiRes.body.getReader();
             const decoder = new TextDecoder();
+            let buffer = '';
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const chunk = decoder.decode(value, { stream: true });
-                accumulated += chunk;
-                sendEvent('chunk', { text: chunk });
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+
+                let currentEvent = '';
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        currentEvent = line.slice(7).trim();
+                    } else if (line.startsWith('data: ')) {
+                        const dataStr = line.slice(6).trim();
+                        if (!dataStr || dataStr === '[DONE]') continue;
+                        try {
+                            const data = JSON.parse(dataStr);
+                            if (currentEvent === 'token' && data.content) {
+                                accumulated += data.content;
+                                sendEvent('chunk', { text: data.content });
+                            } else if (currentEvent === 'done' && data.answer) {
+                                accumulated = data.answer;
+                            }
+                        } catch (_) { /* skip unparseable */ }
+                    }
+                }
             }
 
             sendEvent('status', { phase: 'parsing', message: 'Parsing AI response...' });
@@ -277,9 +294,9 @@ async function breakdownStream(req, res, projectId) {
                 sendEvent('result', parsed);
             }
         } else {
-            // Non-streaming response
+            // Non-streaming JSON response
             const aiData = await aiRes.json();
-            const responseText = aiData.response || aiData.message || '';
+            const responseText = aiData.answer || aiData.response || aiData.message || '';
 
             sendEvent('status', { phase: 'parsing', message: 'Parsing AI response...' });
 
