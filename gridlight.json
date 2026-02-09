@@ -11,7 +11,9 @@
   "type": "hybrid",
   "backend": {
     "entry": "backend/server.js",
-    "port": 3100
+    "port": 3100,
+    "install": "npm install --production",
+    "path": "backend"
   },
   "dependencies": {
     "components": [],
