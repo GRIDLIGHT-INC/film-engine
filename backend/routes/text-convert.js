@@ -135,25 +135,23 @@ async function processTextConversion(req, res, projectId, isPreview) {
     }
     userMessage += text;
 
-    // Call AI gateway
-    const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
-    const apiToken = process.env.API_TOKEN || process.env.GRIDLIGHT_API_KEY || '';
+    // Call AI gateway — Gridlight /chat/intelligent expects { question }
+    // Embed system prompt in the question since Gridlight has no system_prompt field
+    const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
+    const fullQuestion = systemPrompt + '\n\n---\n\n' + userMessage;
+
+    const aiHeaders = { 'Content-Type': 'application/json' };
+    if (GRIDLIGHT_API_KEY) {
+        aiHeaders['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
+    }
 
     try {
-        const aiRes = await fetch(`${gatewayUrl}/chat/intelligent`, {
+        const aiRes = await fetch(`${GRIDLIGHT_URL}/chat/intelligent`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiToken}`
-            },
+            headers: aiHeaders,
             body: JSON.stringify({
-                message: userMessage,
-                system_prompt: systemPrompt,
-                domain: 'screenplay',
-                options: {
-                    temperature: 0.6,
-                    max_tokens: 4000
-                }
+                question: fullQuestion,
+                stream: false
             })
         });
 
@@ -168,7 +166,7 @@ async function processTextConversion(req, res, projectId, isPreview) {
         }
 
         const aiData = await aiRes.json();
-        const fountainText = aiData.response || aiData.message || '';
+        const fountainText = aiData.answer || '';
 
         // Validate output
         const validation = validateFountainOutput(fountainText);
@@ -196,7 +194,7 @@ async function processTextConversion(req, res, projectId, isPreview) {
         res.end(JSON.stringify({
             error: 'AI gateway unavailable',
             details: err.message,
-            hint: 'Ensure the Gridlight gateway is running and GATEWAY_URL is set.'
+            hint: 'Ensure the Gridlight gateway is running and GRIDLIGHT_URL is set.'
         }));
     }
 }

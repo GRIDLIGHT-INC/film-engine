@@ -247,11 +247,14 @@ async function breakdownStream(req, res, projectId) {
         // Handle response — may be SSE stream or JSON
         const contentType = aiRes.headers.get('content-type') || '';
         if (contentType.includes('text/event-stream')) {
-            // Gridlight SSE format: data: {"token": "word"} per chunk, data: [DONE] at end
+            // Gridlight /chat/intelligent SSE format:
+            //   event: token\ndata: {"delta":"word"}\n\n  — per token
+            //   event: final\ndata: {"answer":"full text"}\n\n  — final result
             let accumulated = '';
             const reader = aiRes.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            let currentEvent = '';
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -262,18 +265,28 @@ async function breakdownStream(req, res, projectId) {
                 buffer = lines.pop();
 
                 for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        currentEvent = line.slice(7).trim();
+                        continue;
+                    }
                     if (!line.startsWith('data: ')) continue;
                     const dataStr = line.slice(6).trim();
                     if (!dataStr || dataStr === '[DONE]') continue;
                     try {
                         const data = JSON.parse(dataStr);
-                        if (data.token) {
+                        if (currentEvent === 'token' && data.delta) {
+                            accumulated += data.delta;
+                            sendEvent('chunk', { text: data.delta });
+                        } else if (currentEvent === 'final' && data.answer) {
+                            accumulated = data.answer;
+                        } else if (data.token) {
                             accumulated += data.token;
                             sendEvent('chunk', { text: data.token });
                         } else if (data.answer) {
                             accumulated = data.answer;
                         }
                     } catch (_) { /* skip unparseable */ }
+                    currentEvent = '';
                 }
             }
 

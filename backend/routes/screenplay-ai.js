@@ -168,12 +168,12 @@ async function processScreenplayAI(req, res, projectId) {
 
     // Get characters
     const characters = db.prepare(`
-        SELECT name, personality_notes, role
+        SELECT name, personality_notes, description
         FROM film_characters WHERE project_id = ?
     `).all(projectId);
 
     const charList = characters.length > 0
-        ? characters.map(c => `- ${c.name}${c.role ? ` (${c.role})` : ''}${c.personality_notes ? `: ${c.personality_notes.slice(0, 100)}` : ''}`).join('\n')
+        ? characters.map(c => `- ${c.name}${c.description ? ` (${c.description.slice(0, 60)})` : ''}${c.personality_notes ? `: ${c.personality_notes.slice(0, 100)}` : ''}`).join('\n')
         : '(No characters defined yet)';
 
     // Get locations
@@ -407,10 +407,13 @@ async function processScreenplayAIStream(req, res, projectId) {
         // Handle streaming response
         const contentType = aiRes.headers.get('content-type') || '';
         if (contentType.includes('text/event-stream')) {
-            // Gridlight SSE format: data: {"token": "word"} per chunk, data: [DONE] at end
+            // Gridlight /chat/intelligent SSE format:
+            //   event: token\ndata: {"delta":"word"}\n\n  — per token
+            //   event: final\ndata: {"answer":"full text"}\n\n  — final result
             const reader = aiRes.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            let currentEvent = '';
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -421,17 +424,26 @@ async function processScreenplayAIStream(req, res, projectId) {
                 buffer = lines.pop();
 
                 for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        currentEvent = line.slice(7).trim();
+                        continue;
+                    }
                     if (!line.startsWith('data: ')) continue;
                     const dataStr = line.slice(6).trim();
                     if (!dataStr || dataStr === '[DONE]') continue;
                     try {
                         const data = JSON.parse(dataStr);
-                        if (data.token) {
+                        if (currentEvent === 'token' && data.delta) {
+                            sendEvent('chunk', { text: data.delta });
+                        } else if (currentEvent === 'final' && data.answer) {
+                            sendEvent('chunk', { text: data.answer });
+                        } else if (data.token) {
                             sendEvent('chunk', { text: data.token });
                         } else if (data.answer) {
                             sendEvent('chunk', { text: data.answer });
                         }
                     } catch (_) { /* skip unparseable */ }
+                    currentEvent = '';
                 }
             }
         } else {

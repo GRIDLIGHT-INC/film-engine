@@ -7,7 +7,7 @@
  */
 
 const GRIDLIGHT_URL = process.env.GRIDLIGHT_URL || process.env.GATEWAY_URL || 'http://localhost:8080';
-const GRIDLIGHT_API_KEY = process.env.GRIDLIGHT_API_KEY || process.env.IMAGEGEN_API_KEY || '';
+const GRIDLIGHT_API_KEY = process.env.GRIDLIGHT_API_KEY || process.env.IMAGEGEN_API_KEY || 'dev-token';
 
 if (!GRIDLIGHT_API_KEY) {
     console.warn('[security] GRIDLIGHT_API_KEY not set. External API calls will be sent without authentication.');
@@ -283,13 +283,14 @@ async function relayGridlightSSE(endpoint, payload, res, callbacks) {
                     // Relay to client
                     res.write(`data: ${JSON.stringify(data)}\n\n`);
 
-                    // Call appropriate callback
-                    if (data.type === 'complete' || data.type === 'completed') {
+                    // Call appropriate callback (Gridlight uses data.event, fallback to data.type)
+                    const eventType = data.event || data.type;
+                    if (eventType === 'complete' || eventType === 'completed') {
                         finalData = data;
                         if (cb.onComplete) cb.onComplete(data);
-                    } else if (data.type === 'error') {
+                    } else if (eventType === 'error') {
                         if (cb.onError) cb.onError(data);
-                    } else if (data.type === 'progress') {
+                    } else if (eventType === 'progress') {
                         if (cb.onProgress) cb.onProgress(data);
                     }
                 } catch (_) {

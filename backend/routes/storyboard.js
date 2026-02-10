@@ -100,12 +100,12 @@ async function callImageGen(prompt, negativePrompt, seed, options) {
 
     const contentType = response.headers.get('content-type') || '';
 
-    // API returns JSON with image_urls array (or url/image_url fallback)
+    // API returns JSON with image_url field (singular string)
     if (contentType.includes('application/json')) {
         const data = await response.json();
-        const imageUrl = (data.image_urls && data.image_urls[0]) || data.url || data.image_url || data.filename;
+        const imageUrl = data.image_url || data.url || (data.image_urls && data.image_urls[0]) || data.filename;
         if (!imageUrl) {
-            throw new Error('ImageGen returned JSON but no image_urls field');
+            throw new Error('ImageGen returned JSON but no image_url field');
         }
         // Resolve to a fetchable URL
         let fetchUrl;
@@ -170,8 +170,9 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
     const contentType = response.headers.get('content-type') || '';
 
     // Handle SSE streaming response
-    // Gridlight SSE: data: {"step":N,"total_steps":M} for progress,
-    // data: {"status":"success","image_urls":[...],"seed":N,...} for result, data: [DONE] at end
+    // Gridlight /image SSE format (plain data: lines, event type embedded in JSON):
+    //   data: {"event":"progress","step":N,"total_steps":M}
+    //   data: {"event":"completed","image_url":"http://...","seed":N,"generation_time_ms":N}
     if (contentType.includes('text/event-stream')) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -195,28 +196,28 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
                 try {
                     const data = JSON.parse(dataStr);
 
-                    if (data.step !== undefined && data.total_steps !== undefined) {
-                        // Progress update: { step, total_steps }
+                    if (data.event === 'progress' || (data.step !== undefined && data.total_steps !== undefined)) {
                         if (onProgress) onProgress({
                             type: 'progress',
                             step: data.step || 0,
                             total_steps: data.total_steps || payload.steps,
                         });
-                    } else if (data.image_urls && data.image_urls.length > 0) {
-                        // Final result: { status, image_urls, seed, model_used, generation_time_ms }
-                        imageUrl = data.image_urls[0];
+                    } else if (data.event === 'completed' && data.image_url) {
+                        imageUrl = data.image_url;
                         metadata = {
                             seed: data.seed,
-                            model: data.model_used || data.model,
+                            model: data.model || data.model_used,
                             generation_time_ms: data.generation_time_ms,
                         };
-                    } else if (data.url || data.image_url) {
-                        // Fallback: single url field
-                        if (!imageUrl) imageUrl = data.url || data.image_url;
+                    } else if (data.image_url || data.url) {
+                        if (!imageUrl) imageUrl = data.image_url || data.url;
                         if (data.seed) metadata.seed = data.seed;
                         if (data.generation_time_ms) metadata.generation_time_ms = data.generation_time_ms;
-                    } else if (data.error || data.message) {
-                        throw new Error(data.error || data.message || 'Image generation failed');
+                    } else if (data.image_urls && data.image_urls.length > 0) {
+                        if (!imageUrl) imageUrl = data.image_urls[0];
+                        if (data.seed) metadata.seed = data.seed;
+                    } else if (data.error) {
+                        throw new Error(data.error || 'Image generation failed');
                     }
                 } catch (parseErr) {
                     if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
@@ -240,8 +241,8 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
     // Handle JSON response (non-streaming fallback)
     if (contentType.includes('application/json')) {
         const data = await response.json();
-        const imageUrl = (data.image_urls && data.image_urls[0]) || data.url || data.image_url || data.filename;
-        if (!imageUrl) throw new Error('No image_urls in image response');
+        const imageUrl = data.image_url || data.url || (data.image_urls && data.image_urls[0]) || data.filename;
+        if (!imageUrl) throw new Error('No image_url in image response');
 
         const imgRes = await fetch(resolveImageUrl(imageUrl));
         if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`);
