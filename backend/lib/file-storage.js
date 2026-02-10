@@ -7,8 +7,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const DATA_DIR = process.env.FILM_DATA_DIR || path.join(__dirname, '..', '..', 'data');
+const DATA_DIR = process.env.FILM_DATA_DIR || path.join(os.homedir(), '.gridlight', 'film-engine', 'data');
 
 /**
  * Ensure a directory exists under data/{subdir}/{projectId}/

@@ -1,10 +1,21 @@
+// Set up temp data dir before any module imports (database.js reads DATA_DIR at require time)
+const os = require('os');
+const crypto = require('crypto');
+const _testDir = require('path').join(os.tmpdir(), 'film-bundle-test-' + crypto.randomUUID().slice(0, 8));
+require('fs').mkdirSync(_testDir, { recursive: true });
+process.env.FILM_DATA_DIR = _testDir;
+
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { exportProject, importProject, EXPORT_TABLES, ASSET_SUBDIRS } = require('../lib/project-bundle');
 const { db, generateId } = require('../db/database');
+const { ensureSchema } = require('../db/schema');
 const { DATA_DIR } = require('../lib/file-storage');
 const fs = require('fs');
 const path = require('path');
+
+// Run migrations on the temp DB
+ensureSchema();
 
 describe('project-bundle', () => {
     let projectId;

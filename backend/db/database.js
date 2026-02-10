@@ -7,8 +7,9 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-// Database file lives in the app's data directory
-const DATA_DIR = process.env.FILM_DATA_DIR || path.join(__dirname, '..', '..', 'data');
+// Database file lives in a persistent user data directory (not inside the app)
+const os = require('os');
+const DATA_DIR = process.env.FILM_DATA_DIR || path.join(os.homedir(), '.gridlight', 'film-engine', 'data');
 const DB_PATH = path.join(DATA_DIR, 'film-engine.db');
 
 // Ensure data directory exists

@@ -17,8 +17,9 @@ const { db, generateId } = require('../db/database');
 const { buildStoryboardPrompt, applyStyleLock } = require('../lib/storyboard-prompt');
 const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
 
+const os = require('os');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DATA_DIR = process.env.FILM_DATA_DIR || path.join(__dirname, '..', '..', 'data');
+const DATA_DIR = process.env.FILM_DATA_DIR || path.join(os.homedir(), '.gridlight', 'film-engine', 'data');
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
