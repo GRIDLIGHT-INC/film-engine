@@ -281,6 +281,24 @@ const server = http.createServer(async (req, res) => {
             return handleStoryboard(req, res, parts, query);
         }
 
+        // Route: /film/refsheets/:projectId/:filename — serve character reference images
+        if (parts[1] === 'refsheets' && parts[2] && parts[3]) {
+            const { serveFile } = require('./lib/file-storage');
+            return serveFile(res, parts[2], 'refsheets', parts[3]);
+        }
+
+        // Route: /film/loc-refs/:projectId/:filename — serve location reference images
+        if (parts[1] === 'loc-refs' && parts[2] && parts[3]) {
+            const { serveFile } = require('./lib/file-storage');
+            return serveFile(res, parts[2], 'loc-refs', parts[3]);
+        }
+
+        // Route: /film/prop-refs/:projectId/:filename — serve prop reference images
+        if (parts[1] === 'prop-refs' && parts[2] && parts[3]) {
+            const { serveFile } = require('./lib/file-storage');
+            return serveFile(res, parts[2], 'prop-refs', parts[3]);
+        }
+
         // Route: /film/projects/:id/breakdown[/stream]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'breakdown') {
             return await handleBreakdown(req, res, parts);

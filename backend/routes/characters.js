@@ -68,13 +68,18 @@ function listCharacters(req, res, projectId) {
         'SELECT * FROM film_characters WHERE project_id = ? ORDER BY name'
     ).all(projectId);
 
-    // Attach costume count and voice profile status
+    // Attach costume count, voice profile status, and reference image
     const costumeCount = db.prepare('SELECT COUNT(*) AS count FROM film_costumes WHERE character_id = ?');
     const voiceCheck = db.prepare('SELECT id FROM film_voice_profiles WHERE character_id = ? LIMIT 1');
+    const refsheetCheck = db.prepare(
+        "SELECT file_name, project_id FROM film_assets WHERE asset_type = 'reference_sheet' AND metadata LIKE ? ORDER BY created_at DESC LIMIT 1"
+    );
 
     for (const ch of rows) {
         ch.costume_count = costumeCount.get(ch.id).count;
         ch.has_voice_profile = !!voiceCheck.get(ch.id);
+        const refsheet = refsheetCheck.get(`%"character_id":"${ch.id}"%"view":"front"%`);
+        ch.reference_image_url = refsheet ? getFileUrl('refsheets', refsheet.project_id, refsheet.file_name) : null;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });

@@ -344,12 +344,12 @@ function handleStoryboard(req, res, urlParts, query) {
             const stream = urlParts[5] === 'stream';
             // Allow GET for SSE stream (EventSource only supports GET)
             if (stream && (req.method === 'GET' || req.method === 'POST')) {
-                return generateStoryboardStream(req, res, projectId);
+                return generateStoryboardStream(req, res, projectId, query);
             }
             if (req.method !== 'POST') {
                 return json(res, 405, { error: 'Method not allowed' });
             }
-            return generateStoryboard(req, res, projectId);
+            return generateStoryboard(req, res, projectId, query);
         }
 
         if (!sub) {
@@ -463,7 +463,7 @@ function getStoryboard(req, res, projectId, query) {
 
 // ── FILM-017: Generate Storyboard (Sync) ───────────────────────────
 
-async function generateStoryboard(req, res, projectId) {
+async function generateStoryboard(req, res, projectId, query) {
     const project = db.prepare('SELECT id, title, style_preset FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
@@ -509,12 +509,19 @@ async function generateStoryboard(req, res, projectId) {
         const matchedChars = matchCharacters(sceneCard.characters, characters);
         const matchedLocation = matchLocation(shot.location, locations);
 
+        // Reference image selection (IP-Adapter)
+        const useReferences = body.use_references === true || (query && query.use_references === 'true');
+        let refSelection = { ip_adapter_image: null, ip_adapter_weight: null, source: null };
+        if (useReferences) {
+            refSelection = selectReferenceImage(sceneCard, matchedChars, matchedLocation, projectId);
+        }
+
         // Style lock
         const styleLockEnabled = sceneCard.style_lock !== false;
         const styleParams = applyStyleLock(baseSeed, shotIndexInScene, {
             styleLock: styleLockEnabled,
-            consistencyWeight: body.consistency_weight,
-            ipAdapterImage: body.ip_adapter_image || null,
+            consistencyWeight: refSelection.ip_adapter_weight || body.consistency_weight,
+            ipAdapterImage: refSelection.ip_adapter_image || body.ip_adapter_image || null,
         });
 
         // Build prompt
@@ -597,7 +604,7 @@ async function generateStoryboard(req, res, projectId) {
 
 // ── FILM-017: Generate Storyboard (SSE Stream) ─────────────────────
 
-async function generateStoryboardStream(req, res, projectId) {
+async function generateStoryboardStream(req, res, projectId, query) {
     const project = db.prepare('SELECT id, title, style_preset FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
@@ -662,11 +669,18 @@ async function generateStoryboardStream(req, res, projectId) {
         const matchedChars = matchCharacters(sceneCard.characters, characters);
         const matchedLocation = matchLocation(shot.location, locations);
 
+        // Reference image selection (IP-Adapter)
+        const useReferences = body.use_references === true || (query && query.use_references === 'true');
+        let refSelection = { ip_adapter_image: null, ip_adapter_weight: null, source: null };
+        if (useReferences) {
+            refSelection = selectReferenceImage(sceneCard, matchedChars, matchedLocation, projectId);
+        }
+
         const styleLockEnabled = sceneCard.style_lock !== false;
         const styleParams = applyStyleLock(baseSeed, shotIndexInScene, {
             styleLock: styleLockEnabled,
-            consistencyWeight: body.consistency_weight,
-            ipAdapterImage: body.ip_adapter_image || null,
+            consistencyWeight: refSelection.ip_adapter_weight || body.consistency_weight,
+            ipAdapterImage: refSelection.ip_adapter_image || body.ip_adapter_image || null,
         });
 
         const { prompt, negative_prompt } = buildStoryboardPrompt(
@@ -680,6 +694,7 @@ async function generateStoryboardStream(req, res, projectId) {
             shot_code: shot.shot_code,
             scene_number: shot.scene_number,
             phase: 'generating',
+            reference_source: refSelection.source,
         });
 
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shot.shot_id);
@@ -896,6 +911,74 @@ function matchLocation(locationName, dbLocations) {
     return (dbLocations || []).find(
         l => l.name && l.name.toUpperCase() === locationName.toUpperCase()
     ) || null;
+}
+
+// ── Reference Image Selection for IP-Adapter ─────────────────────
+
+const LOCATION_PRIORITY_SHOTS = new Set(['wide', 'establishing', 'aerial', 'crane']);
+const CHARACTER_PRIORITY_SHOTS = new Set(['close-up', 'extreme-close-up', 'medium', 'over-the-shoulder', 'pov']);
+
+/**
+ * Find the latest reference asset for a character or location.
+ */
+function findLatestReferenceAsset(assetType, projectId, characterId, locationId) {
+    if (characterId) {
+        // Prefer front-view refsheet
+        const frontView = db.prepare(
+            "SELECT file_path, file_name, project_id FROM film_assets WHERE project_id = ? AND asset_type = ? AND metadata LIKE ? AND metadata LIKE ? ORDER BY created_at DESC LIMIT 1"
+        ).get(projectId, assetType, `%"character_id":"${characterId}"%`, `%"view":"front"%`);
+        if (frontView) return frontView;
+        // Fall back to any refsheet for this character
+        return db.prepare(
+            "SELECT file_path, file_name, project_id FROM film_assets WHERE project_id = ? AND asset_type = ? AND metadata LIKE ? ORDER BY created_at DESC LIMIT 1"
+        ).get(projectId, assetType, `%"character_id":"${characterId}"%`) || null;
+    }
+    if (locationId) {
+        return db.prepare(
+            "SELECT file_path, file_name, project_id FROM film_assets WHERE project_id = ? AND asset_type = 'reference_image' AND location_id = ? ORDER BY created_at DESC LIMIT 1"
+        ).get(projectId, locationId) || null;
+    }
+    return null;
+}
+
+/**
+ * Select the best reference image for a shot based on shot type and content.
+ * Gridlight only accepts ONE ip_adapter_image, so we must choose.
+ */
+function selectReferenceImage(sceneCard, matchedChars, matchedLocation, projectId) {
+    const shotType = sceneCard.camera && sceneCard.camera.shot_type;
+
+    // For location-focused shots, prefer location reference
+    if (LOCATION_PRIORITY_SHOTS.has(shotType) && matchedLocation) {
+        const locAsset = findLatestReferenceAsset('reference_image', projectId, null, matchedLocation.id);
+        if (locAsset) {
+            return { ip_adapter_image: locAsset.file_path, ip_adapter_weight: 0.6, source: 'location:' + matchedLocation.name };
+        }
+    }
+
+    // For character-focused shots, prefer primary character refsheet
+    if (CHARACTER_PRIORITY_SHOTS.has(shotType) && matchedChars.length > 0) {
+        const charAsset = findLatestReferenceAsset('reference_sheet', projectId, matchedChars[0].id, null);
+        if (charAsset) {
+            return { ip_adapter_image: charAsset.file_path, ip_adapter_weight: 0.7, source: 'character:' + matchedChars[0].name };
+        }
+    }
+
+    // Fallback: try any matched character, then location
+    for (const ch of matchedChars) {
+        const charAsset = findLatestReferenceAsset('reference_sheet', projectId, ch.id, null);
+        if (charAsset) {
+            return { ip_adapter_image: charAsset.file_path, ip_adapter_weight: 0.65, source: 'character:' + ch.name };
+        }
+    }
+    if (matchedLocation) {
+        const locAsset = findLatestReferenceAsset('reference_image', projectId, null, matchedLocation.id);
+        if (locAsset) {
+            return { ip_adapter_image: locAsset.file_path, ip_adapter_weight: 0.5, source: 'location:' + matchedLocation.name };
+        }
+    }
+
+    return { ip_adapter_image: null, ip_adapter_weight: null, source: null };
 }
 
 module.exports = { handleStoryboard };

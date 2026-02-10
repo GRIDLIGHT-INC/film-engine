@@ -3544,7 +3544,11 @@
         <div class="page" id="page-storyboard">
             <div class="flex-between mb-16">
                 <h2>Storyboard</h2>
-                <div>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                        <input type="checkbox" id="useReferencesToggle" style="cursor:pointer;">
+                        Use References
+                    </label>
                     <button class="btn btn-primary" onclick="generateAllStoryboards()">Generate All</button>
                 </div>
             </div>
@@ -10211,7 +10215,9 @@ ${fountainText.slice(0, 50000)}`;
                 el.innerHTML = state.characters.map(c => `
                     <div class="entity-card">
                         <div class="entity-card-header">
-                            <div class="entity-avatar">${esc(c.name.charAt(0))}</div>
+                            ${c.reference_image_url
+                                ? '<img src="' + API_BASE + c.reference_image_url + '" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML=\'<div class=entity-avatar>' + esc(c.name.charAt(0)) + '</div>\'">'
+                                : '<div class="entity-avatar">' + esc(c.name.charAt(0)) + '</div>'}
                             <div>
                                 <h3>${esc(c.name)}</h3>
                                 <p class="text-sm text-muted">${c.age_range ? esc(c.age_range) : ''}${c.gender ? ' &middot; ' + esc(c.gender) : ''}</p>
@@ -10224,6 +10230,7 @@ ${fountainText.slice(0, 50000)}`;
                             ${c.lora_id ? '<span class="tag">LoRA</span>' : ''}
                         </div>
                         <div class="card-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="generateCharacterImage('${c.id}')" title="Generate reference image">${c.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
                             <button class="btn btn-secondary btn-sm" onclick="editCharacter('${c.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="deleteCharacter('${c.id}')">Delete</button>
                         </div>
@@ -10294,6 +10301,19 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
+    async function generateCharacterImage(charId) {
+        if (!confirm('Generate reference image for this character? This calls the image generation service.')) return;
+        setStatus('Generating character reference image...');
+        try {
+            const result = await api('/characters/' + charId + '/refsheet/generate', {
+                method: 'POST',
+                body: JSON.stringify({ views: ['front'] })
+            });
+            setStatus('Character image generated');
+            loadCharacters();
+        } catch (err) { setStatus('Error generating image: ' + err.message); }
+    }
+
     // ══════════════════════════════════════════════════════════════
     // LOCATIONS
     // ══════════════════════════════════════════════════════════════
@@ -10308,6 +10328,9 @@ ${fountainText.slice(0, 50000)}`;
             } else {
                 el.innerHTML = state.locations.map(l => `
                     <div class="entity-card">
+                        ${l.reference_image_url
+                            ? '<img src="' + API_BASE + l.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;" onerror="this.style.display=\'none\'">'
+                            : ''}
                         <div class="entity-card-header">
                             <div class="entity-avatar" style="border-radius:8px;">&#128205;</div>
                             <div>
@@ -10321,6 +10344,7 @@ ${fountainText.slice(0, 50000)}`;
                             ${l.time_of_day_default ? '<span class="tag">' + esc(l.time_of_day_default) + '</span>' : ''}
                         </div>
                         <div class="card-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="generateLocationImage('${l.id}')" title="Generate reference image">${l.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
                             <button class="btn btn-secondary btn-sm" onclick="editLocation('${l.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="deleteLocation('${l.id}')">Delete</button>
                         </div>
@@ -10393,6 +10417,16 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
+    async function generateLocationImage(locId) {
+        if (!confirm('Generate reference image for this location?')) return;
+        setStatus('Generating location reference image...');
+        try {
+            const result = await api('/locations/' + locId + '/image/generate', { method: 'POST' });
+            setStatus('Location image generated');
+            loadLocations();
+        } catch (err) { setStatus('Error generating image: ' + err.message); }
+    }
+
     // ══════════════════════════════════════════════════════════════
     // PROPS
     // ══════════════════════════════════════════════════════════════
@@ -10415,6 +10449,9 @@ ${fountainText.slice(0, 50000)}`;
             } else {
                 el.innerHTML = filtered.map(p => `
                     <div class="entity-card">
+                        ${p.reference_image_url
+                            ? '<img src="' + API_BASE + p.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;" onerror="this.style.display=\'none\'">'
+                            : ''}
                         <div class="entity-card-header">
                             <div class="entity-avatar" style="border-radius:8px;font-size:14px;">&#127917;</div>
                             <div>
@@ -10424,6 +10461,7 @@ ${fountainText.slice(0, 50000)}`;
                         </div>
                         <p>${esc(p.description || 'No description')}</p>
                         <div class="card-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="generatePropImage('${p.id}')" title="Generate reference image">${p.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
                             <button class="btn btn-secondary btn-sm" onclick="editProp('${p.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="deleteProp('${p.id}')">Delete</button>
                         </div>
@@ -10470,6 +10508,16 @@ ${fountainText.slice(0, 50000)}`;
             loadProps();
             setStatus('Prop deleted');
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function generatePropImage(propId) {
+        if (!confirm('Generate reference image for this prop?')) return;
+        setStatus('Generating prop reference image...');
+        try {
+            const result = await api('/props/' + propId + '/image/generate', { method: 'POST' });
+            setStatus('Prop image generated');
+            loadProps();
+        } catch (err) { setStatus('Error generating image: ' + err.message); }
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -12541,8 +12589,12 @@ ${fountainText.slice(0, 50000)}`;
 
         let totalShots = 1;
 
+        const useRefs = document.getElementById('useReferencesToggle').checked;
+        const storyboardUrl = '/projects/' + state.currentProject.id + '/storyboard/generate/stream'
+            + (useRefs ? '?use_references=true' : '');
+
         streamSSE(
-            '/projects/' + state.currentProject.id + '/storyboard/generate/stream',
+            storyboardUrl,
             (ev) => {
                 if (ev.type === 'status' && ev.total_shots) {
                     totalShots = ev.total_shots;

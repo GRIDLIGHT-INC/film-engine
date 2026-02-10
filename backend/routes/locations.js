@@ -1,13 +1,20 @@
 /**
- * Location CRUD + props
+ * Location CRUD + props + reference image generation
  * POST/GET /film/projects/:id/locations
  * GET/PUT/DELETE /film/locations/:id
+ * POST /film/locations/:id/image/generate  — Generate location reference image
+ * GET  /film/locations/:id/image           — Get location image status
  * POST/GET /film/projects/:id/props
  * GET/PUT/DELETE /film/props/:id
+ * POST /film/props/:id/image/generate      — Generate prop reference image
+ * GET  /film/props/:id/image               — Get prop image status
  */
 const { db, generateId } = require('../db/database');
+const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
+const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const IMAGE_ENDPOINT = '/image';
 
 function handleLocations(req, res, urlParts, query) {
     // /film/projects/:id/locations
@@ -26,6 +33,14 @@ function handleLocations(req, res, urlParts, query) {
         if (req.method === 'POST') return createProp(req, res, projectId);
     }
 
+    // /film/locations/:id/image[/generate]
+    if (urlParts[1] === 'locations' && urlParts[2] && urlParts[3] === 'image') {
+        const locId = urlParts[2];
+        if (!UUID_RE.test(locId)) return badReq(res, 'Invalid location ID');
+        if (urlParts[4] === 'generate' && req.method === 'POST') return generateLocationImage(req, res, locId);
+        if (req.method === 'GET') return getLocationImageStatus(req, res, locId);
+    }
+
     // /film/locations/:id
     if (urlParts[1] === 'locations' && urlParts[2]) {
         const locId = urlParts[2];
@@ -33,6 +48,14 @@ function handleLocations(req, res, urlParts, query) {
         if (req.method === 'GET') return getLocation(req, res, locId);
         if (req.method === 'PUT') return updateLocation(req, res, locId);
         if (req.method === 'DELETE') return deleteLocation(req, res, locId);
+    }
+
+    // /film/props/:id/image[/generate]
+    if (urlParts[1] === 'props' && urlParts[2] && urlParts[3] === 'image') {
+        const propId = urlParts[2];
+        if (!UUID_RE.test(propId)) return badReq(res, 'Invalid prop ID');
+        if (urlParts[4] === 'generate' && req.method === 'POST') return generatePropImage(req, res, propId);
+        if (req.method === 'GET') return getPropImageStatus(req, res, propId);
     }
 
     // /film/props/:id
@@ -58,10 +81,15 @@ function badReq(res, msg) {
 function listLocations(req, res, projectId) {
     const rows = db.prepare('SELECT * FROM film_locations WHERE project_id = ? ORDER BY name').all(projectId);
 
-    // Attach scene count per location
+    // Attach scene count and reference image per location
+    const refImageQuery = db.prepare(
+        "SELECT file_name, project_id FROM film_assets WHERE asset_type = 'reference_image' AND location_id = ? ORDER BY created_at DESC LIMIT 1"
+    );
     for (const loc of rows) {
         const count = db.prepare("SELECT COUNT(*) AS count FROM film_scenes WHERE project_id = ? AND location = ?").get(projectId, loc.name);
         loc.scene_count = count.count;
+        const refAsset = refImageQuery.get(loc.id);
+        loc.reference_image_url = refAsset ? getFileUrl('loc-refs', refAsset.project_id, refAsset.file_name) : null;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -268,6 +296,16 @@ function deleteLocation(req, res, locId) {
 
 function listProps(req, res, projectId) {
     const rows = db.prepare('SELECT * FROM film_props WHERE project_id = ? ORDER BY name').all(projectId);
+
+    // Attach reference image per prop
+    const refImageQuery = db.prepare(
+        "SELECT file_name, project_id FROM film_assets WHERE asset_type = 'reference_image' AND metadata LIKE ? ORDER BY created_at DESC LIMIT 1"
+    );
+    for (const prop of rows) {
+        const refAsset = refImageQuery.get(`%"prop_id":"${prop.id}"%`);
+        prop.reference_image_url = refAsset ? getFileUrl('prop-refs', refAsset.project_id, refAsset.file_name) : null;
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ props: rows }));
 }
@@ -357,6 +395,229 @@ function deleteProp(req, res, propId) {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ deleted: true }));
+}
+
+// --- Location Image Generation ---
+
+function buildLocationPrompt(location) {
+    const parts = ['detailed environment concept art'];
+    if (location.reference_prompt) parts.push(location.reference_prompt);
+    if (location.description) parts.push(location.description.slice(0, 500));
+    if (location.lighting_default && location.lighting_default !== 'natural') parts.push(location.lighting_default + ' lighting');
+    if (location.atmosphere_notes) parts.push(location.atmosphere_notes.slice(0, 300));
+    if (location.time_of_day_default) parts.push(location.time_of_day_default);
+    parts.push('masterpiece, high quality, cinematic');
+    return parts.join(', ');
+}
+
+async function generateLocationImage(req, res, locId) {
+    const loc = db.prepare('SELECT * FROM film_locations WHERE id = ?').get(locId);
+    if (!loc) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Location not found' }));
+    }
+
+    const seed = (req.body && req.body.seed) || null;
+    const model = (req.body && req.body.model) || 'sdxl';
+
+    const jobId = generateId();
+    db.prepare(
+        `INSERT INTO film_location_image_jobs (id, project_id, location_id, status, model, seed)
+         VALUES (?, ?, ?, 'processing', ?, ?)`
+    ).run(jobId, loc.project_id, locId, model, seed);
+
+    const prompt = buildLocationPrompt(loc);
+    const negativePrompt = 'blurry, low quality, distorted, text, watermark, people, characters';
+
+    const payload = {
+        prompt,
+        negative_prompt: negativePrompt,
+        model,
+        width: 1024,
+        height: 1024,
+        steps: 30,
+        guidance_scale: 7.5,
+        seed,
+    };
+
+    try {
+        const result = await callGridlight(IMAGE_ENDPOINT, payload);
+        if (!result.ok) {
+            db.prepare('UPDATE film_location_image_jobs SET status = ?, error_message = ? WHERE id = ?')
+                .run('failed', result.error, jobId);
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Image generation failed', details: result.error }));
+        }
+
+        const safeName = loc.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const filename = `${safeName}.png`;
+        let filePath = '';
+
+        if (Buffer.isBuffer(result.data)) {
+            filePath = saveFile(loc.project_id, 'loc-refs', filename, result.data);
+        } else if (result.data && result.data.image_url) {
+            // Gridlight returned a URL — fetch the image
+            const imgRes = await fetch(result.data.image_url);
+            if (imgRes.ok) {
+                filePath = saveFile(loc.project_id, 'loc-refs', filename, Buffer.from(await imgRes.arrayBuffer()));
+            } else {
+                filePath = result.data.image_url;
+            }
+        }
+
+        const assetId = generateId();
+        db.prepare(
+            `INSERT OR REPLACE INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, location_id, version, metadata)
+             VALUES (?, ?, 'reference_image', ?, ?, 'png', 'image/png', ?, 1, ?)`
+        ).run(assetId, loc.project_id, filePath, filename, locId, JSON.stringify({ location_id: locId }));
+
+        db.prepare('UPDATE film_location_image_jobs SET status = ?, output_path = ? WHERE id = ?')
+            .run('complete', filePath, jobId);
+
+        const imageUrl = getFileUrl('loc-refs', loc.project_id, filename);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            location_id: locId, location_name: loc.name, job_id: jobId,
+            status: 'complete', image_url: imageUrl,
+        }));
+    } catch (err) {
+        if (err.message && err.message.includes('ECONNREFUSED')) {
+            db.prepare('UPDATE film_location_image_jobs SET status = ?, error_message = ? WHERE id = ?')
+                .run('failed', 'Image generation service unavailable', jobId);
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify(serviceUnavailableError(IMAGE_ENDPOINT, 'image generation')));
+        }
+        db.prepare('UPDATE film_location_image_jobs SET status = ?, error_message = ? WHERE id = ?')
+            .run('failed', err.message, jobId);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Image generation failed', details: err.message }));
+    }
+}
+
+function getLocationImageStatus(req, res, locId) {
+    const jobs = db.prepare('SELECT * FROM film_location_image_jobs WHERE location_id = ? ORDER BY created_at DESC').all(locId);
+    const assets = db.prepare(
+        "SELECT * FROM film_assets WHERE asset_type = 'reference_image' AND location_id = ? ORDER BY created_at DESC"
+    ).all(locId);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        location_id: locId, jobs,
+        images: assets.map(a => ({
+            asset_id: a.id, file_name: a.file_name,
+            image_url: a.file_name ? getFileUrl('loc-refs', a.project_id, a.file_name) : null,
+        })),
+    }));
+}
+
+// --- Prop Image Generation ---
+
+function buildPropPrompt(prop) {
+    const parts = ['product photography, isolated object, clean background'];
+    if (prop.visual_prompt) parts.push(prop.visual_prompt);
+    if (prop.description) parts.push(prop.description.slice(0, 500));
+    if (prop.category && prop.category !== 'generic') parts.push(prop.category);
+    parts.push('masterpiece, high quality, detailed');
+    return parts.join(', ');
+}
+
+async function generatePropImage(req, res, propId) {
+    const prop = db.prepare('SELECT * FROM film_props WHERE id = ?').get(propId);
+    if (!prop) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Prop not found' }));
+    }
+
+    const seed = (req.body && req.body.seed) || null;
+    const model = (req.body && req.body.model) || 'sdxl';
+
+    const jobId = generateId();
+    db.prepare(
+        `INSERT INTO film_prop_image_jobs (id, project_id, prop_id, status, model, seed)
+         VALUES (?, ?, ?, 'processing', ?, ?)`
+    ).run(jobId, prop.project_id, propId, model, seed);
+
+    const prompt = buildPropPrompt(prop);
+    const negativePrompt = 'blurry, low quality, distorted, text, watermark, multiple objects, cluttered background';
+
+    const payload = {
+        prompt,
+        negative_prompt: negativePrompt,
+        model,
+        width: 1024,
+        height: 1024,
+        steps: 30,
+        guidance_scale: 7.5,
+        seed,
+    };
+
+    try {
+        const result = await callGridlight(IMAGE_ENDPOINT, payload);
+        if (!result.ok) {
+            db.prepare('UPDATE film_prop_image_jobs SET status = ?, error_message = ? WHERE id = ?')
+                .run('failed', result.error, jobId);
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Image generation failed', details: result.error }));
+        }
+
+        const safeName = prop.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const filename = `${safeName}.png`;
+        let filePath = '';
+
+        if (Buffer.isBuffer(result.data)) {
+            filePath = saveFile(prop.project_id, 'prop-refs', filename, result.data);
+        } else if (result.data && result.data.image_url) {
+            const imgRes = await fetch(result.data.image_url);
+            if (imgRes.ok) {
+                filePath = saveFile(prop.project_id, 'prop-refs', filename, Buffer.from(await imgRes.arrayBuffer()));
+            } else {
+                filePath = result.data.image_url;
+            }
+        }
+
+        const assetId = generateId();
+        db.prepare(
+            `INSERT OR REPLACE INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, version, metadata)
+             VALUES (?, ?, 'reference_image', ?, ?, 'png', 'image/png', 1, ?)`
+        ).run(assetId, prop.project_id, filePath, filename, JSON.stringify({ prop_id: propId }));
+
+        db.prepare('UPDATE film_prop_image_jobs SET status = ?, output_path = ? WHERE id = ?')
+            .run('complete', filePath, jobId);
+
+        const imageUrl = getFileUrl('prop-refs', prop.project_id, filename);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            prop_id: propId, prop_name: prop.name, job_id: jobId,
+            status: 'complete', image_url: imageUrl,
+        }));
+    } catch (err) {
+        if (err.message && err.message.includes('ECONNREFUSED')) {
+            db.prepare('UPDATE film_prop_image_jobs SET status = ?, error_message = ? WHERE id = ?')
+                .run('failed', 'Image generation service unavailable', jobId);
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify(serviceUnavailableError(IMAGE_ENDPOINT, 'image generation')));
+        }
+        db.prepare('UPDATE film_prop_image_jobs SET status = ?, error_message = ? WHERE id = ?')
+            .run('failed', err.message, jobId);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Image generation failed', details: err.message }));
+    }
+}
+
+function getPropImageStatus(req, res, propId) {
+    const jobs = db.prepare('SELECT * FROM film_prop_image_jobs WHERE prop_id = ? ORDER BY created_at DESC').all(propId);
+    const assets = db.prepare(
+        "SELECT * FROM film_assets WHERE asset_type = 'reference_image' AND metadata LIKE ? ORDER BY created_at DESC"
+    ).all(`%"prop_id":"${propId}"%`);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        prop_id: propId, jobs,
+        images: assets.map(a => ({
+            asset_id: a.id, file_name: a.file_name,
+            image_url: a.file_name ? getFileUrl('prop-refs', a.project_id, a.file_name) : null,
+        })),
+    }));
 }
 
 module.exports = { handleLocations };
