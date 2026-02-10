@@ -2517,6 +2517,55 @@
             overflow-y: auto;
         }
 
+        /* AI typing indicator — animated dots */
+        .ai-typing-indicator {
+            align-self: flex-start;
+            background: var(--gl-bg-header);
+            border-radius: 12px;
+            border-bottom-left-radius: 4px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .ai-typing-indicator span {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--gl-text-muted);
+            animation: ai-dot-bounce 1.4s ease-in-out infinite;
+        }
+        .ai-typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .ai-typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes ai-dot-bounce {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-6px); opacity: 1; }
+        }
+        /* Live streaming message */
+        .ai-chat-message.assistant.streaming {
+            white-space: pre-wrap;
+        }
+        /* Copy / Insert action bar on all assistant messages */
+        .ai-msg-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        .ai-msg-actions button {
+            font-size: 10px;
+            padding: 3px 8px;
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: 4px;
+            background: var(--gl-bg-surface);
+            color: var(--gl-text-primary);
+            cursor: pointer;
+        }
+        .ai-msg-actions button:hover {
+            background: var(--gl-bg-header);
+        }
+
         /* Import Section */
         .screenplay-import-section {
             margin-top: 16px;
@@ -8629,10 +8678,10 @@
                 `;
             }
 
-            // FILM-113: Different action buttons for valid Fountain content
+            // Action buttons for assistant messages
             let actionButtons = '';
-            if (isScreenplay) {
-                if (msg.isValidFountain) {
+            if (msg.role === 'assistant') {
+                if (isScreenplay && msg.isValidFountain) {
                     actionButtons = `
                         <div class="ai-action-buttons" style="display:flex;gap:6px;flex-wrap:wrap;">
                             <button class="insert-btn" onclick="insertAIContentAtCursor(${i})">Insert at Cursor</button>
@@ -8640,14 +8689,24 @@
                             <button class="insert-btn" style="background:var(--gl-warning);" onclick="replaceCurrentScene(${i})">Replace Scene</button>
                         </div>
                     `;
-                } else {
+                } else if (isScreenplay) {
                     actionButtons = `<button class="insert-btn" onclick="insertAIContent(${i})">Insert into Editor</button>`;
                 }
             }
+
+            // Copy + Insert at Cursor bar on all assistant messages
+            const msgActions = msg.role === 'assistant' ? `
+                <div class="ai-msg-actions">
+                    <button onclick="copyAIMessage(${i})">Copy</button>
+                    <button onclick="insertAITextAtCursor(${i})">Insert at Cursor</button>
+                </div>
+            ` : '';
+
             return `
                 <div class="ai-chat-message ${msg.role}">
                     ${escapeHtml(msg.content)}
                     ${isScreenplay ? `<div class="screenplay-preview">${msg.screenplayHtml || ''}</div>${actionButtons}` : ''}
+                    ${msgActions}
                 </div>
             `;
         }).join('');
@@ -8662,6 +8721,126 @@
             sendAIMessage();
         }
     }
+
+    // ── Streaming helpers ──────────────────────────────────────────
+
+    /**
+     * POST-based SSE reader. Sends a POST request and reads the SSE stream.
+     * Parses named events (event: + data:) and calls callbacks.
+     */
+    async function streamPostSSE(url, body, callbacks) {
+        const cb = callbacks || {};
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || `HTTP ${res.status}`);
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEvent = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (line.startsWith('event: ')) {
+                    currentEvent = line.slice(7).trim();
+                    continue;
+                }
+                if (!line.startsWith('data: ')) continue;
+                const dataStr = line.slice(6).trim();
+                if (!dataStr || dataStr === '[DONE]') continue;
+                try {
+                    const data = JSON.parse(dataStr);
+                    if (currentEvent === 'chunk' && cb.onChunk) {
+                        cb.onChunk(data.text || '');
+                    } else if (currentEvent === 'done' && cb.onDone) {
+                        cb.onDone(data);
+                    } else if (currentEvent === 'error' && cb.onError) {
+                        cb.onError(data.message || 'Unknown error');
+                    } else if (currentEvent === 'status' && cb.onStatus) {
+                        cb.onStatus(data);
+                    }
+                } catch (_) { /* skip unparseable */ }
+                currentEvent = '';
+            }
+        }
+    }
+
+    /** Show animated typing dots in the chat messages area */
+    function showTypingIndicator() {
+        const container = document.getElementById('aiChatMessages');
+        if (!container) return;
+        // Remove existing indicator if any
+        removeTypingIndicator();
+        const indicator = document.createElement('div');
+        indicator.className = 'ai-typing-indicator';
+        indicator.id = 'aiTypingIndicator';
+        indicator.innerHTML = '<span></span><span></span><span></span>';
+        container.appendChild(indicator);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    /** Remove the typing indicator */
+    function removeTypingIndicator() {
+        const el = document.getElementById('aiTypingIndicator');
+        if (el) el.remove();
+    }
+
+    /** Copy AI message content to clipboard */
+    function copyAIMessage(index) {
+        const msg = (state.aiChat || [])[index];
+        if (!msg) return;
+        const text = msg.rawContent || msg.content || '';
+        navigator.clipboard.writeText(text).then(() => {
+            setStatus('Copied to clipboard');
+        });
+    }
+
+    /** Insert plain text AI content at cursor position */
+    function insertAITextAtCursor(index) {
+        const msg = (state.aiChat || [])[index];
+        if (!msg) return;
+        const text = msg.rawContent || msg.content || '';
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        // If the message contains Fountain-like content, use Fountain insert
+        if (msg.hasScreenplay || msg.isValidFountain) {
+            insertAIContentAtCursor(index);
+            return;
+        }
+
+        // Otherwise insert as plain text into editor
+        const block = getCurrentBlock();
+        if (block) {
+            const newDiv = document.createElement('div');
+            newDiv.dataset.elementType = 'action';
+            newDiv.className = 'element-action';
+            newDiv.textContent = text;
+            block.after(newDiv);
+        } else {
+            const newDiv = document.createElement('div');
+            newDiv.dataset.elementType = 'action';
+            newDiv.className = 'element-action';
+            newDiv.textContent = text;
+            editor.appendChild(newDiv);
+        }
+        editorDirty = true;
+        triggerAutoSave();
+        setStatus('AI content inserted');
+    }
+
+    // ── AI Chat: streaming send ────────────────────────────────────
 
     async function sendAIMessage() {
         const input = document.getElementById('aiChatInput');
@@ -8680,18 +8859,18 @@
         sendBtn.disabled = true;
         sendBtn.textContent = 'Sending...';
 
-        // Render user message immediately
+        // Render user message immediately then show typing dots
         renderAIChatMessages();
+        showTypingIndicator();
 
         try {
-            // FILM-112: Call the screenplay-ai endpoint with project context
             if (!state.currentProject) {
                 throw new Error('No project selected');
             }
 
             // Build conversation history for context
             const conversationHistory = (state.aiChat || [])
-                .slice(-10) // Last 10 messages
+                .slice(-10)
                 .filter(m => m.role === 'user' || m.role === 'assistant')
                 .map(m => ({ role: m.role, content: m.content }));
 
@@ -8707,35 +8886,65 @@
                 }
             }
 
-            // FILM-115: Get current scene context for context-aware conversation (if enabled)
+            // FILM-115: Get current scene context
             const includeSceneContext = document.getElementById('aiIncludeSceneContext')?.checked ?? true;
             const currentSceneFountain = includeSceneContext ? getCurrentSceneFountain() : '';
 
-            // Call AI API via backend
-            const response = await api(`/projects/${state.currentProject.id}/screenplay-ai`, {
-                method: 'POST',
-                body: JSON.stringify({
+            // Stream AI response via SSE
+            const container = document.getElementById('aiChatMessages');
+            let accumulated = '';
+            let liveBubble = null;
+
+            await streamPostSSE(
+                API() + `/projects/${state.currentProject.id}/screenplay-ai/stream`,
+                {
                     mode: mode,
                     message: message,
                     conversation_history: conversationHistory.slice(0, -1),
                     original_content: originalContent,
-                    current_scene_fountain: currentSceneFountain // FILM-115
-                })
-            });
+                    current_scene_fountain: currentSceneFountain
+                },
+                {
+                    onChunk: (text) => {
+                        // First chunk: remove dots, create live bubble
+                        if (!liveBubble) {
+                            removeTypingIndicator();
+                            liveBubble = document.createElement('div');
+                            liveBubble.className = 'ai-chat-message assistant streaming';
+                            container.appendChild(liveBubble);
+                        }
+                        accumulated += text;
+                        liveBubble.textContent = accumulated;
+                        container.scrollTop = container.scrollHeight;
+                    },
+                    onDone: () => {
+                        removeTypingIndicator();
+                    },
+                    onError: (msg) => {
+                        removeTypingIndicator();
+                        if (!accumulated) {
+                            accumulated = `Sorry, I encountered an error: ${msg}`;
+                        }
+                    }
+                }
+            );
 
-            // FILM-113: Check if response contains valid screenplay content
-            const hasScreenplay = response.is_valid_fountain || /^(INT\.|EXT\.|\.|\@|>)/m.test(response.content);
-            const screenplayHtml = hasScreenplay ? parseFountainToHTML(response.content) : '';
+            // Remove the live bubble — we'll re-render via renderAIChatMessages
+            if (liveBubble) liveBubble.remove();
+
+            // Finalize: add to chat state with full metadata
+            const content = accumulated || '(No response received)';
+            const hasScreenplay = /^(INT\.|EXT\.|\.|\@|>)/m.test(content);
+            const screenplayHtml = hasScreenplay ? parseFountainToHTML(content) : '';
 
             state.aiChat.push({
                 role: 'assistant',
-                content: response.content,
+                content: content,
                 hasScreenplay: hasScreenplay,
                 screenplayHtml: screenplayHtml,
-                rawContent: response.content,
+                rawContent: content,
                 mode: mode,
-                isValidFountain: response.is_valid_fountain || false,
-                // FILM-114: Store original content and selected blocks for rewrite mode
+                isValidFountain: hasScreenplay,
                 originalContent: originalContent,
                 selectedBlocks: selectedBlocks
             });
@@ -8744,7 +8953,7 @@
             renderAIChatMessages();
 
         } catch (error) {
-            // Add error message
+            removeTypingIndicator();
             state.aiChat.push({
                 role: 'assistant',
                 content: `Sorry, I encountered an error: ${error.message}. The AI endpoint may not be configured yet.`
@@ -9628,25 +9837,14 @@
 
         // Open AI chat if not open
         const panel = document.getElementById('aiChatPanel');
-        if (!panel.classList.contains('open')) {
+        if (!panel.classList.contains('visible')) {
             toggleAIChat();
         }
 
-        // Scroll to bottom
-        const messages = document.getElementById('aiChatMessages');
-        messages.scrollTop = messages.scrollHeight;
+        // Show typing dots
+        showTypingIndicator();
 
-        try {
-            if (!state.currentProject) {
-                throw new Error('No project selected');
-            }
-
-            // Send analysis request to AI endpoint
-            const response = await api(`/projects/${state.currentProject.id}/screenplay-ai`, {
-                method: 'POST',
-                body: JSON.stringify({
-                    mode: 'brainstorm',
-                    message: `Please analyze this screenplay and provide a comprehensive assessment including:
+        const analysisMessage = `Please analyze this screenplay and provide a comprehensive assessment including:
 
 1. **Pacing Assessment** - Is the story moving at an appropriate pace? Are there slow sections or rushed moments?
 2. **Dialogue-to-Action Ratio** - Is there a good balance between dialogue and visual storytelling?
@@ -9657,15 +9855,51 @@
 
 Here is the full screenplay:
 
-${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
-                    conversation_history: []
-                })
-            });
+${fountainText.slice(0, 50000)}`;
 
-            // Add AI response as structured analysis
+        try {
+            if (!state.currentProject) {
+                throw new Error('No project selected');
+            }
+
+            // Stream analysis response
+            const container = document.getElementById('aiChatMessages');
+            let accumulated = '';
+            let liveBubble = null;
+
+            await streamPostSSE(
+                API() + `/projects/${state.currentProject.id}/screenplay-ai/stream`,
+                {
+                    mode: 'brainstorm',
+                    message: analysisMessage,
+                    conversation_history: []
+                },
+                {
+                    onChunk: (text) => {
+                        if (!liveBubble) {
+                            removeTypingIndicator();
+                            liveBubble = document.createElement('div');
+                            liveBubble.className = 'ai-chat-message assistant streaming';
+                            container.appendChild(liveBubble);
+                        }
+                        accumulated += text;
+                        liveBubble.textContent = accumulated;
+                        container.scrollTop = container.scrollHeight;
+                    },
+                    onDone: () => { removeTypingIndicator(); },
+                    onError: (msg) => {
+                        removeTypingIndicator();
+                        if (!accumulated) accumulated = `Analysis failed: ${msg}`;
+                    }
+                }
+            );
+
+            if (liveBubble) liveBubble.remove();
+
             state.aiChat.push({
                 role: 'assistant',
-                content: response.content,
+                content: accumulated || '(No response received)',
+                rawContent: accumulated || '',
                 isAnalysis: true
             });
 
@@ -9673,6 +9907,7 @@ ${fountainText.slice(0, 50000)}`, // Limit to ~50k chars
             renderAIChatMessages();
 
         } catch (error) {
+            removeTypingIndicator();
             state.aiChat.push({
                 role: 'assistant',
                 content: `Analysis failed: ${error.message}. The AI endpoint may not be configured.`
