@@ -100,12 +100,12 @@ async function callImageGen(prompt, negativePrompt, seed, options) {
 
     const contentType = response.headers.get('content-type') || '';
 
-    // API returns JSON with url field (full URL or path or filename)
+    // API returns JSON with image_urls array (or url/image_url fallback)
     if (contentType.includes('application/json')) {
         const data = await response.json();
-        const imageUrl = data.url || data.image_url || data.filename;
+        const imageUrl = (data.image_urls && data.image_urls[0]) || data.url || data.image_url || data.filename;
         if (!imageUrl) {
-            throw new Error('ImageGen returned JSON but no url field');
+            throw new Error('ImageGen returned JSON but no image_urls field');
         }
         // Resolve to a fetchable URL
         let fetchUrl;
@@ -170,7 +170,8 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
     const contentType = response.headers.get('content-type') || '';
 
     // Handle SSE streaming response
-    // Gridlight sends named events: event: progress, event: image, event: done
+    // Gridlight SSE: data: {"step":N,"total_steps":M} for progress,
+    // data: {"status":"success","image_urls":[...],"seed":N,...} for result, data: [DONE] at end
     if (contentType.includes('text/event-stream')) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -186,12 +187,7 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
             const lines = buffer.split('\n');
             buffer = lines.pop();
 
-            let currentEvent = '';
             for (const line of lines) {
-                if (line.startsWith('event: ')) {
-                    currentEvent = line.slice(7).trim();
-                    continue;
-                }
                 if (!line.startsWith('data: ')) continue;
                 const dataStr = line.slice(6).trim();
                 if (!dataStr || dataStr === '[DONE]') continue;
@@ -199,31 +195,32 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
                 try {
                     const data = JSON.parse(dataStr);
 
-                    if (currentEvent === 'progress') {
-                        // Gridlight progress: { step, total_steps, percentage }
+                    if (data.step !== undefined && data.total_steps !== undefined) {
+                        // Progress update: { step, total_steps }
                         if (onProgress) onProgress({
                             type: 'progress',
                             step: data.step || 0,
                             total_steps: data.total_steps || payload.steps,
                         });
-                    } else if (currentEvent === 'image') {
-                        // Gridlight image event: { url, generated_at }
-                        imageUrl = data.url || data.image_url;
-                    } else if (currentEvent === 'done') {
-                        // Gridlight done event: { status, url, seed }
-                        if (!imageUrl) imageUrl = data.url || data.image_url;
+                    } else if (data.image_urls && data.image_urls.length > 0) {
+                        // Final result: { status, image_urls, seed, model_used, generation_time_ms }
+                        imageUrl = data.image_urls[0];
                         metadata = {
                             seed: data.seed,
-                            model: data.model,
+                            model: data.model_used || data.model,
                             generation_time_ms: data.generation_time_ms,
                         };
-                    } else if (currentEvent === 'error') {
-                        throw new Error(data.message || data.error || 'Image generation failed');
+                    } else if (data.url || data.image_url) {
+                        // Fallback: single url field
+                        if (!imageUrl) imageUrl = data.url || data.image_url;
+                        if (data.seed) metadata.seed = data.seed;
+                        if (data.generation_time_ms) metadata.generation_time_ms = data.generation_time_ms;
+                    } else if (data.error || data.message) {
+                        throw new Error(data.error || data.message || 'Image generation failed');
                     }
                 } catch (parseErr) {
                     if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
                 }
-                currentEvent = '';
             }
         }
 
@@ -243,8 +240,8 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
     // Handle JSON response (non-streaming fallback)
     if (contentType.includes('application/json')) {
         const data = await response.json();
-        const imageUrl = data.url || data.image_url || data.filename;
-        if (!imageUrl) throw new Error('No url in image response');
+        const imageUrl = (data.image_urls && data.image_urls[0]) || data.url || data.image_url || data.filename;
+        if (!imageUrl) throw new Error('No image_urls in image response');
 
         const imgRes = await fetch(resolveImageUrl(imageUrl));
         if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`);

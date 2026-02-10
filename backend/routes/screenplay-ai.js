@@ -407,7 +407,7 @@ async function processScreenplayAIStream(req, res, projectId) {
         // Handle streaming response
         const contentType = aiRes.headers.get('content-type') || '';
         if (contentType.includes('text/event-stream')) {
-            // Parse Gridlight SSE: event: token/done, data: {content/answer}
+            // Gridlight SSE format: data: {"token": "word"} per chunk, data: [DONE] at end
             const reader = aiRes.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
@@ -420,22 +420,18 @@ async function processScreenplayAIStream(req, res, projectId) {
                 const lines = buffer.split('\n');
                 buffer = lines.pop();
 
-                let currentEvent = '';
                 for (const line of lines) {
-                    if (line.startsWith('event: ')) {
-                        currentEvent = line.slice(7).trim();
-                    } else if (line.startsWith('data: ')) {
-                        const dataStr = line.slice(6).trim();
-                        if (!dataStr || dataStr === '[DONE]') continue;
-                        try {
-                            const data = JSON.parse(dataStr);
-                            if (currentEvent === 'token' && data.content) {
-                                sendEvent('chunk', { text: data.content });
-                            } else if (currentEvent === 'done' && data.answer) {
-                                sendEvent('chunk', { text: data.answer });
-                            }
-                        } catch (_) { /* skip unparseable */ }
-                    }
+                    if (!line.startsWith('data: ')) continue;
+                    const dataStr = line.slice(6).trim();
+                    if (!dataStr || dataStr === '[DONE]') continue;
+                    try {
+                        const data = JSON.parse(dataStr);
+                        if (data.token) {
+                            sendEvent('chunk', { text: data.token });
+                        } else if (data.answer) {
+                            sendEvent('chunk', { text: data.answer });
+                        }
+                    } catch (_) { /* skip unparseable */ }
                 }
             }
         } else {

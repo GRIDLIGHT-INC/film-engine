@@ -247,7 +247,7 @@ async function breakdownStream(req, res, projectId) {
         // Handle response — may be SSE stream or JSON
         const contentType = aiRes.headers.get('content-type') || '';
         if (contentType.includes('text/event-stream')) {
-            // Gateway returns SSE — extract answer from token/done events
+            // Gridlight SSE format: data: {"token": "word"} per chunk, data: [DONE] at end
             let accumulated = '';
             const reader = aiRes.body.getReader();
             const decoder = new TextDecoder();
@@ -261,23 +261,19 @@ async function breakdownStream(req, res, projectId) {
                 const lines = buffer.split('\n');
                 buffer = lines.pop();
 
-                let currentEvent = '';
                 for (const line of lines) {
-                    if (line.startsWith('event: ')) {
-                        currentEvent = line.slice(7).trim();
-                    } else if (line.startsWith('data: ')) {
-                        const dataStr = line.slice(6).trim();
-                        if (!dataStr || dataStr === '[DONE]') continue;
-                        try {
-                            const data = JSON.parse(dataStr);
-                            if (currentEvent === 'token' && data.content) {
-                                accumulated += data.content;
-                                sendEvent('chunk', { text: data.content });
-                            } else if (currentEvent === 'done' && data.answer) {
-                                accumulated = data.answer;
-                            }
-                        } catch (_) { /* skip unparseable */ }
-                    }
+                    if (!line.startsWith('data: ')) continue;
+                    const dataStr = line.slice(6).trim();
+                    if (!dataStr || dataStr === '[DONE]') continue;
+                    try {
+                        const data = JSON.parse(dataStr);
+                        if (data.token) {
+                            accumulated += data.token;
+                            sendEvent('chunk', { text: data.token });
+                        } else if (data.answer) {
+                            accumulated = data.answer;
+                        }
+                    } catch (_) { /* skip unparseable */ }
                 }
             }
 

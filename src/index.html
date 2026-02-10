@@ -3248,9 +3248,7 @@
                         <div class="toolbar-divider"></div>
                         <span id="saveStatusIndicator" class="save-status saved">Saved</span>
                         <div class="toolbar-divider"></div>
-                        <button class="toolbar-btn" id="commentsToggle" onclick="toggleComments()" data-tooltip="Toggle inline comment annotations on the screenplay">Comments</button>
                         <button class="toolbar-btn" id="aiChatToggle" onclick="toggleAIChat()" data-tooltip="Open AI writing assistant for brainstorming and rewriting (Ctrl+Shift+A)">AI Chat</button>
-                        <button class="toolbar-btn" onclick="openAIGenerateModal()" data-tooltip="Use AI to generate content for the current screenplay element" style="background:var(--gl-brand-pink);color:white;">✨ Generate</button>
                         <button class="toolbar-btn" onclick="openTitlePageModal()" data-tooltip="Edit screenplay title page metadata (title, author, draft date)">Title Page</button>
                         <!-- FILM-130: Export Dropdown -->
                         <div class="export-dropdown" id="exportDropdown">
@@ -4468,37 +4466,6 @@
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="resetImportModal()">Import Another</button>
                 <button class="btn btn-secondary" onclick="closeModal('importScriptModal')">Close</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- AI Generate Modal -->
-    <div class="modal-overlay" id="aiGenerateModal">
-        <div class="modal modal-md">
-            <div class="modal-header">
-                <h3>AI Generate</h3>
-                <button class="modal-close" onclick="closeModal('aiGenerateModal')">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>Current Element Type</label>
-                    <div id="aiGenCurrentType" style="font-weight:600;color:var(--gl-brand-pink);text-transform:uppercase;margin-bottom:12px;"></div>
-                </div>
-                <div class="form-group">
-                    <label>What should I generate?</label>
-                    <div id="aiGenPromptHint" class="text-sm text-muted mb-8"></div>
-                    <textarea id="aiGenPrompt" class="form-control" rows="4" placeholder="Describe what you want..."></textarea>
-                </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="aiGenUseContext" checked>
-                        Include surrounding screenplay context
-                    </label>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-primary" onclick="executeAIGenerate()" id="aiGenSubmitBtn">Generate</button>
-                <button class="btn btn-secondary" onclick="closeModal('aiGenerateModal')">Cancel</button>
             </div>
         </div>
     </div>
