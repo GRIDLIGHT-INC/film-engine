@@ -161,7 +161,7 @@ async function generateLipsyncStream(req, res, shotId) {
     });
     if (res.socket) res.socket.setTimeout(0);
 
-    const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
     sendEvent({ type: 'status', phase: 'starting', shot_id: shotId });
 
     const payload = {

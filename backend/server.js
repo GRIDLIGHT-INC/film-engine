@@ -741,6 +741,15 @@ const server = http.createServer(async (req, res) => {
 
     } catch (err) {
         console.error('Request error:', err);
+        // If a handler already flushed headers (e.g. an SSE stream) we cannot
+        // send a 500 status — writeHead would throw ERR_HTTP_HEADERS_SENT and
+        // leave the socket hung open. Just close the response instead.
+        if (res.headersSent || res.writableEnded) {
+            if (!res.writableEnded) {
+                try { res.end(); } catch (_) { /* socket already gone */ }
+            }
+            return;
+        }
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Internal server error' }));
     }

@@ -387,8 +387,17 @@ function serveStoryboardImage(res, projectId, filename) {
     if (!/^[\w.-]+$/.test(filename)) {
         return json(res, 400, { error: 'Invalid filename' });
     }
+    // Validate projectId shape so it can't be used to escape the data dir.
+    if (!UUID_RE.test(projectId)) {
+        return json(res, 400, { error: 'Invalid project ID' });
+    }
 
     const filePath = path.join(DATA_DIR, 'storyboards', projectId, filename);
+    // Defense-in-depth: ensure the resolved path stays inside DATA_DIR.
+    const baseDir = path.resolve(DATA_DIR);
+    if (!path.resolve(filePath).startsWith(baseDir + path.sep)) {
+        return json(res, 400, { error: 'Invalid file path' });
+    }
     if (!fs.existsSync(filePath)) {
         return json(res, 404, { error: 'Image not found' });
     }
@@ -632,7 +641,12 @@ async function generateStoryboardStream(req, res, projectId, query) {
     // Disable socket timeout for long-running generation
     if (res.socket) res.socket.setTimeout(0);
 
+    // Stop generating for the rest of the project if the client disconnects.
+    let clientGone = false;
+    res.on('close', () => { clientGone = true; });
+
     const sendEvent = (data) => {
+        if (res.writableEnded) return;
         res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
 
@@ -647,6 +661,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
     let shotIndexInScene = 0;
 
     for (let i = 0; i < shots.length; i++) {
+        if (clientGone || res.writableEnded) break; // client disconnected — abort remaining shots
         const shot = shots[i];
 
         if (shot.scene_id !== currentSceneId) {

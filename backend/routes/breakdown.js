@@ -217,7 +217,11 @@ async function breakdownStream(req, res, projectId) {
         'Access-Control-Allow-Origin': '*'
     });
 
+    let clientGone = false;
+    res.on('close', () => { clientGone = true; });
+
     const sendEvent = (event, data) => {
+        if (res.writableEnded) return;
         res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
@@ -257,6 +261,7 @@ async function breakdownStream(req, res, projectId) {
             let currentEvent = '';
 
             while (true) {
+                if (clientGone || res.writableEnded) { reader.cancel().catch(() => {}); break; }
                 const { done, value } = await reader.read();
                 if (done) break;
 

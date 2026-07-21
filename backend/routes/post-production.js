@@ -257,7 +257,10 @@ async function batchPostStream(req, res, projectId) {
     });
     if (res.socket) res.socket.setTimeout(0);
 
-    const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    let clientGone = false;
+    res.on('close', () => { clientGone = true; });
+
+    const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
 
     const shots = db.prepare(
         `SELECT s.id AS shot_id, s.shot_code FROM film_shots s
@@ -269,6 +272,7 @@ async function batchPostStream(req, res, projectId) {
     let completed = 0, failed = 0;
 
     for (const shot of shots) {
+        if (clientGone || res.writableEnded) break; // client disconnected — stop firing post jobs
         const videoAsset = findLatestVideo(shot.shot_id);
         if (!videoAsset) continue;
 

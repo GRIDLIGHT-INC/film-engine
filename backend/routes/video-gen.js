@@ -186,7 +186,7 @@ async function generateVideoStream(req, res, shotId) {
     });
     if (res.socket) res.socket.setTimeout(0);
 
-    const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
     sendEvent({ type: 'status', phase: 'starting', shot_id: shotId, shot_code: shot.shot_code });
 
     const jobId = generateId();
@@ -240,7 +240,10 @@ async function batchVideoStream(req, res, projectId) {
     });
     if (res.socket) res.socket.setTimeout(0);
 
-    const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    let clientGone = false;
+    res.on('close', () => { clientGone = true; });
+
+    const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
 
     const shots = db.prepare(
         `SELECT s.id AS shot_id, s.shot_code FROM film_shots s
@@ -252,6 +255,7 @@ async function batchVideoStream(req, res, projectId) {
     let completed = 0, failed = 0;
 
     for (const shot of shots) {
+        if (clientGone || res.writableEnded) break; // client disconnected — stop firing video jobs
         const ctx = loadShotContext(shot.shot_id);
         if (!ctx) { failed++; continue; }
 

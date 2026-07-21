@@ -180,7 +180,7 @@ async function generateMusicStream(req, res, sceneId) {
     });
     if (res.socket) res.socket.setTimeout(0);
 
-    const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
     sendEvent({ type: 'status', phase: 'starting', scene_id: sceneId, mood: payload.mood });
 
     const jobId = generateId();
@@ -344,7 +344,10 @@ async function batchMusicStream(req, res, projectId) {
     });
     if (res.socket) res.socket.setTimeout(0);
 
-    const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    let clientGone = false;
+    res.on('close', () => { clientGone = true; });
+
+    const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
 
     const scenes = db.prepare('SELECT * FROM film_scenes WHERE project_id = ? ORDER BY scene_number').all(projectId);
     sendEvent({ type: 'status', phase: 'starting', total_scenes: scenes.length, project_id: projectId });
@@ -352,6 +355,7 @@ async function batchMusicStream(req, res, projectId) {
     let completed = 0, failed = 0;
 
     for (const scene of scenes) {
+        if (clientGone || res.writableEnded) break; // client disconnected — stop remaining scenes
         // Music score
         sendEvent({ type: 'scene_start', scene_id: scene.id, scene_number: scene.scene_number, phase: 'music' });
         let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_time LIMIT 1').get(scene.id);
@@ -379,6 +383,7 @@ async function batchMusicStream(req, res, projectId) {
         }
 
         // Ambient
+        if (clientGone || res.writableEnded) break; // client left mid-scene — skip ambient
         const location = scene.location_id ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id) : null;
         const ambientPayload = buildAmbientPrompt(scene, location);
 

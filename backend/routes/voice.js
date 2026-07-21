@@ -170,7 +170,10 @@ async function generateVoiceStream(req, res, shotId) {
     });
     if (res.socket) res.socket.setTimeout(0);
 
-    const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    let clientGone = false;
+    res.on('close', () => { clientGone = true; });
+
+    const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
     sendEvent({ type: 'status', phase: 'starting', total_lines: dialogueLines.length, shot_id: shotId });
 
     const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(scene.project_id);
@@ -182,6 +185,7 @@ async function generateVoiceStream(req, res, shotId) {
     let completed = 0, failed = 0;
 
     for (let i = 0; i < dialogueLines.length; i++) {
+        if (clientGone || res.writableEnded) break; // client disconnected — stop firing voice jobs
         const line = dialogueLines[i];
         const character = characters.find(c => c.name && c.name.toUpperCase() === line.character.toUpperCase());
         const voiceProfile = character ? voiceProfiles.find(vp => vp.character_id === character.id) : null;
@@ -229,7 +233,10 @@ async function batchVoiceStream(req, res, projectId) {
     });
     if (res.socket) res.socket.setTimeout(0);
 
-    const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    let clientGone = false;
+    res.on('close', () => { clientGone = true; });
+
+    const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
 
     const shots = db.prepare(
         `SELECT s.id AS shot_id, s.shot_code, s.scene_card_yaml, s.scene_id, sc.project_id
@@ -247,6 +254,7 @@ async function batchVoiceStream(req, res, projectId) {
     sendEvent({ type: 'status', phase: 'starting', total_shots: shots.length, project_id: projectId });
 
     for (const shot of shots) {
+        if (clientGone || res.writableEnded) break; // client disconnected — stop remaining shots
         let sceneCard = {};
         try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
         const dialogueLines = extractDialogue(sceneCard);
@@ -255,6 +263,7 @@ async function batchVoiceStream(req, res, projectId) {
         sendEvent({ type: 'shot_start', shot_id: shot.shot_id, shot_code: shot.shot_code, dialogue_lines: dialogueLines.length });
 
         for (const line of dialogueLines) {
+            if (clientGone || res.writableEnded) break;
             const character = characters.find(c => c.name && c.name.toUpperCase() === line.character.toUpperCase());
             const voiceProfile = character ? voiceProfiles.find(vp => vp.character_id === character.id) : null;
             const payload = buildVoicePayload(line, voiceProfile, character);

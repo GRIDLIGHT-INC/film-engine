@@ -245,11 +245,18 @@ async function relayGridlightSSE(endpoint, payload, res, callbacks) {
 
     const body = { ...payload, stream: true };
 
+    // Abort the upstream generation if the client disconnects, so we don't
+    // keep a GPU job (and this reader loop) running against a dead socket.
+    const controller = new AbortController();
+    const onClose = () => controller.abort();
+    if (res && typeof res.on === 'function') res.on('close', onClose);
+
     try {
         const response = await fetch(url, {
             method: 'POST',
             headers,
             body: JSON.stringify(body),
+            signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -265,6 +272,7 @@ async function relayGridlightSSE(endpoint, payload, res, callbacks) {
         let buffer = '';
 
         while (true) {
+            if (res && res.writableEnded) break; // client gone — stop relaying
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -280,8 +288,8 @@ async function relayGridlightSSE(endpoint, payload, res, callbacks) {
                 try {
                     const data = JSON.parse(dataStr);
 
-                    // Relay to client
-                    res.write(`data: ${JSON.stringify(data)}\n\n`);
+                    // Relay to client (guard against writing to a closed socket)
+                    if (!res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`);
 
                     // Call appropriate callback (Gridlight uses data.event, fallback to data.type)
                     const eventType = data.event || data.type;
@@ -293,8 +301,9 @@ async function relayGridlightSSE(endpoint, payload, res, callbacks) {
                     } else if (eventType === 'progress') {
                         if (cb.onProgress) cb.onProgress(data);
                     }
-                } catch (_) {
+                } catch (parseErr) {
                     // Skip unparseable lines
+                    console.error(`[gridlight-client] skipped unparseable SSE line from ${endpoint}:`, parseErr.message);
                 }
             }
         }
@@ -302,6 +311,11 @@ async function relayGridlightSSE(endpoint, payload, res, callbacks) {
         return { ok: true, finalData };
 
     } catch (err) {
+        // A client disconnect triggers controller.abort() → AbortError; treat as
+        // a benign cancellation rather than a service failure.
+        if (err.name === 'AbortError') {
+            return { ok: false, finalData: null, error: 'client_disconnected', aborted: true };
+        }
         const isConnRefused = err.code === 'ECONNREFUSED' || err.cause?.code === 'ECONNREFUSED';
         const error = isConnRefused
             ? `service_unavailable: Cannot connect to ${url}. Ensure the service is running.`
@@ -309,6 +323,8 @@ async function relayGridlightSSE(endpoint, payload, res, callbacks) {
 
         if (cb.onError) cb.onError({ error });
         return { ok: false, finalData: null, error };
+    } finally {
+        if (res && typeof res.removeListener === 'function') res.removeListener('close', onClose);
     }
 }
 

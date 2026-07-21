@@ -216,7 +216,10 @@ async function runShotPipelineStream(req, res, shotId) {
     });
     if (res.socket) res.socket.setTimeout(0);
 
-    const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    let clientGone = false;
+    res.on('close', () => { clientGone = true; });
+
+    const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
 
     const runId = generateId();
     db.prepare(
@@ -234,9 +237,13 @@ async function runShotPipelineStream(req, res, shotId) {
     for (let i = 0; i < plan.length; i++) {
         const step = plan[i];
         const pipeState = activePipelines.get(runId);
-        if (!pipeState || pipeState.status === 'cancelled') {
-            sendEvent({ type: 'cancelled', run_id: runId });
-            break;
+        // Treat a client disconnect like a cancellation so we stop firing GPU steps.
+        if (clientGone || res.writableEnded || !pipeState || pipeState.status === 'cancelled') {
+            if (!clientGone) sendEvent({ type: 'cancelled', run_id: runId });
+            db.prepare('UPDATE film_pipeline_runs SET status = ? WHERE id = ?').run('cancelled', runId);
+            activePipelines.delete(runId);
+            if (!res.writableEnded) { try { res.end(); } catch (_) {} }
+            return;
         }
 
         sendEvent({ type: 'step_start', step_id: step.id, step_name: step.name, step_index: i, total_steps: plan.length });
