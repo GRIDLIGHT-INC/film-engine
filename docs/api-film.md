@@ -1590,3 +1590,52 @@ POST /film/scenes/:id/qa/run
 ```
 POST /film/shots/:id/qa/run
 ```
+
+## 3D Asset Generation
+
+Proxies Gridlight `/3d` endpoints to turn characters and props into 3D models.
+Jobs are tracked in `film_3d_jobs`; outputs are stored at
+`data/3d/{project_id}/{name}.glb` and registered in `film_assets` as
+`asset_type='other'` with `metadata.kind` (`model_3d` / `model_rigged` /
+`model_animated`). Generation verbs are rate-limited in the `generation` bucket.
+
+### Generate from Character / Prop (text → mesh)
+
+```
+POST /film/characters/:id/model/generate[/stream]
+POST /film/props/:id/model/generate[/stream]
+```
+
+Body (all optional): `{ format, quality, model, seed, target_polycount, texture_resolution, symmetry, pbr }`.
+Returns `{ job_id, status: "complete", asset_id, model_url, format }` — or `202`
+`{ job_id, upstream_job_id, status: "generating", poll }` when the service
+defers to an async job. The `/stream` variant emits SSE `status` → `complete`
+→ `done` events (aborts if the client disconnects).
+
+### Generate from Reference Image (image → mesh)
+
+```
+POST /film/characters/:id/model/from-image[/stream]
+POST /film/props/:id/model/from-image[/stream]
+```
+
+Uses `init_image` from the body, else the subject's newest reference
+image/sheet on disk. Returns `400` if no reference image is available.
+
+### Mesh Operations
+
+```
+POST /film/models/:assetId/rig          # { skeleton, model }
+POST /film/models/:assetId/retexture    # { prompt, texture_resolution, model }
+POST /film/models/:assetId/animate      # { animation, loop, fps, model }
+GET  /film/models/:assetId/animations   # → { animations: [...] }
+```
+
+### Batch, Status & Serving
+
+```
+POST /film/projects/:id/models/batch[/stream]   # all characters + props
+GET  /film/projects/:id/models                  # jobs + registered models
+GET  /film/models/job/:jobId                     # single job status (+ model_url)
+GET  /film/3d/:projectId/:filename               # serve .glb/.gltf/.fbx/.obj/.usdz
+```

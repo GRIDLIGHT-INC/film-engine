@@ -665,32 +665,56 @@ Serve a generated audio file.
 
 ## 7. 3D Generation
 
-> **Branch:** feature/3d-generation (planned, not yet implemented)
+> **Branch:** feature/3d-generation (available on Gridlight dev). Film Engine
+> consumes these via `backend/lib/gridlight-client.js` (`THREED_ENDPOINTS`) and
+> `backend/routes/threed.js`. See also the "3D Asset Generation" concept in
+> `CLAUDE.md` and the design/rollout plans under `docs/plans/`.
 
-### POST /3d/generate *(planned)*
+### POST /3d/generate
 
-Generate 3D models from text or image prompts.
+Generate a 3D model from a text prompt.
 
 ```json
 {
-    "prompt": "A medieval castle with stone walls",
-    "image_base64": "<optional base64 reference image>",
-    "pipeline": "triposr",
+    "prompt": "rugged bounty hunter, full 3D model, clean topology, game-ready",
+    "negative_prompt": "low quality, distorted geometry, holes, non-manifold",
     "format": "glb",
     "quality": "standard",
-    "auto_rig": false,
-    "seed": 42,
-    "domain": "assets",
-    "stream": true
+    "model": "hunyuan3d",
+    "seed": -1,
+    "target_polycount": 30000,
+    "texture_resolution": 1024,
+    "symmetry": true,
+    "pbr": true,
+    "stream": false
 }
 ```
 
-### GET /3d/job/:job_id *(planned)*
-### GET /3d/job/:job_id/stream *(planned)*
-### GET /3d/assets/:asset_id *(planned)*
-### GET /3d/assets *(planned)*
-### POST /3d/from-image *(planned)*
-### POST /3d/batch *(planned)*
+**Response shapes Film Engine handles** (any one is accepted):
+- **Inline binary** — `Content-Type: model/gltf-binary` (or `application/octet-stream`); the body is the mesh. Saved to `data/3d/{project_id}/{name}.glb`.
+- **`{ "model_url": "…" }`** (JSON) — a remote URL to the mesh.
+- **`{ "job_id": "…" }`** (JSON) — async handoff; Film Engine returns `202` and exposes `GET /film/models/job/:jobId` for polling.
+
+When `stream: true`, the service returns an SSE stream of `data: {…}` events; a `complete` event (via `event`/`type`) carries `model_url` or the mesh reference.
+
+### POST /3d/from-image
+Image → mesh. Payload: `{ init_image: <base64|url>, format, quality, model, seed, remove_background, texture_resolution }`.
+
+### POST /3d/rig
+Auto-rig an existing mesh. Payload: `{ asset, skeleton, model }`.
+
+### POST /3d/retexture
+Regenerate textures. Payload: `{ asset, prompt, texture_resolution, model }`.
+
+### POST /3d/animate
+Apply an animation clip to a rigged mesh. Payload: `{ asset, animation, loop, fps, model }`.
+
+### POST /3d/animations
+List available animation clips for a mesh. Payload: `{ asset }` → `{ animations: [...] }`.
+
+### POST /3d/batch · GET /3d/job/:job_id · GET /3d/job/:job_id/stream · GET /3d/assets[/:asset_id]
+Batch generation, async job status/stream, and asset listing. Film Engine
+orchestrates batch generation itself (`POST /film/projects/:id/models/batch[/stream]`).
 
 ---
 

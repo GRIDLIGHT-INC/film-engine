@@ -3156,6 +3156,9 @@
                 <button class="nav-item" data-page="assets" onclick="navigateTo('assets')" data-tooltip="Registry of all generated and imported media files" data-tooltip-pos="right">
                     <span class="nav-icon">&#128230;</span> Assets
                 </button>
+                <button class="nav-item" data-page="threed" onclick="navigateTo('threed')" data-tooltip="Generate 3D models for characters and props via Gridlight" data-tooltip-pos="right">
+                    <span class="nav-icon">&#129513;</span> 3D Models
+                </button>
                 <button class="nav-item" data-page="musiccues" onclick="navigateTo('musiccues')" data-tooltip="Score, SFX, and ambient audio cues tied to scenes" data-tooltip-pos="right">
                     <span class="nav-icon">&#127925;</span> Music Cues
                 </button>
@@ -3815,6 +3818,26 @@
                 <!-- Budget Breakdown -->
                 <div id="budgetEstimateBreakdown"></div>
             </div>
+        </div>
+
+        <!-- ── 3D MODELS ──────────────────────────────────────────── -->
+        <div class="page" id="page-threed">
+            <div class="flex-between mb-16">
+                <h2>3D Models</h2>
+                <button class="btn btn-primary" onclick="generateAllModels()">Generate All Models</button>
+            </div>
+            <div id="threedProgress" style="display:none;" class="mb-16">
+                <div class="text-sm text-muted mb-8" id="threedProgressLabel">Starting...</div>
+                <div style="background:var(--gl-bg-surface);border-radius:var(--gl-radius-md);height:10px;overflow:hidden;">
+                    <div id="threedProgressBar" style="height:100%;width:0%;background:var(--gl-accent,#6366f1);transition:width .2s;"></div>
+                </div>
+            </div>
+
+            <h3 class="mb-8" style="font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">Subjects</h3>
+            <div class="entity-grid mb-16" id="threedSubjects" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr));"></div>
+
+            <h3 class="mb-8" style="font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">Generated Models</h3>
+            <div class="entity-grid" id="threedModels" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr));"></div>
         </div>
 
         <!-- ── 16b. PIPELINE ──────────────────────────────────────── -->
@@ -4739,6 +4762,7 @@
             acts: loadActs,
             continuity: loadContinuity,
             budget: loadBudget,
+            threed: loadThreeD,
         };
         if (loaders[page]) loaders[page]();
     }
@@ -12531,6 +12555,157 @@ ${fountainText.slice(0, 50000)}`;
         };
         es.onerror = () => { es.close(); onError?.(); };
         return es;
+    }
+
+    // POST-based SSE (EventSource is GET-only). Streams `data: {json}\n\n` events.
+    async function streamSSEPost(path, body, onEvent, onDone, onError) {
+        try {
+            const res = await fetch(API() + path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body || {}),
+            });
+            if (!res.ok || !res.body) { onError?.(new Error('HTTP ' + res.status)); return; }
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                const chunks = buf.split('\n\n');
+                buf = chunks.pop();
+                for (const chunk of chunks) {
+                    const line = chunk.split('\n').find(l => l.startsWith('data:'));
+                    if (!line) continue;
+                    let data; try { data = JSON.parse(line.slice(5).trim()); } catch { continue; }
+                    if (data.type === 'done' || data.done) onDone?.(data);
+                    else onEvent?.(data);
+                }
+            }
+            onDone?.({ type: 'done' });
+        } catch (err) { onError?.(err); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // 3D MODELS
+    // ══════════════════════════════════════════════════════════════
+    async function loadThreeD() {
+        if (!state.currentProject) return;
+        setStatus('Loading 3D models...');
+        const pid = state.currentProject.id;
+        try {
+            const [chars, props, models] = await Promise.all([
+                api('/projects/' + pid + '/characters').catch(() => ({ characters: [] })),
+                api('/projects/' + pid + '/props').catch(() => ({ props: [] })),
+                api('/projects/' + pid + '/models').catch(() => ({ models: [], jobs: [] })),
+            ]);
+            const characters = chars.characters || chars || [];
+            const propList = props.props || props || [];
+
+            const subjEl = document.getElementById('threedSubjects');
+            const subjects = [
+                ...characters.map(c => ({ kind: 'character', id: c.id, name: c.name })),
+                ...propList.map(p => ({ kind: 'prop', id: p.id, name: p.name })),
+            ];
+            subjEl.innerHTML = subjects.length ? subjects.map(s => `
+                <div class="entity-card">
+                    <div class="entity-card-header">
+                        <div class="entity-avatar" style="background:var(--gl-bg-elevated);">${s.kind === 'prop' ? '&#127917;' : '&#128100;'}</div>
+                        <div>
+                            <h3 style="font-size:13px;">${esc(s.name || 'Untitled')}</h3>
+                            <p class="text-sm text-muted">${esc(s.kind)}</p>
+                        </div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <button class="btn btn-primary btn-sm" onclick="generateModelFor('${s.kind}','${s.id}', this)">Generate 3D</button>
+                    </div>
+                </div>`).join('')
+                : '<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#129513;</div><h3>No characters or props</h3><p>Add characters or props first, then generate 3D models.</p></div>';
+
+            const modelList = models.models || [];
+            const modEl = document.getElementById('threedModels');
+            modEl.innerHTML = modelList.length ? modelList.map(m => `
+                <div class="entity-card">
+                    <div class="entity-card-header">
+                        <div class="entity-avatar" style="background:var(--gl-bg-elevated);">&#129513;</div>
+                        <div>
+                            <h3 style="font-size:13px;">${esc(m.file_name || 'model')}</h3>
+                            <p class="text-sm text-muted">${esc((m.metadata && m.metadata.kind) || 'model_3d')}</p>
+                        </div>
+                    </div>
+                    <div class="tag-row" style="margin-top:8px;">
+                        <span class="tag">${esc(m.format || 'glb')}</span>
+                    </div>
+                    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+                        ${m.model_url ? '<a class="btn btn-secondary btn-sm" href="' + API_BASE + esc(m.model_url) + '" target="_blank" rel="noopener">Download</a>' : ''}
+                        <button class="btn btn-secondary btn-sm" onclick="rigModel('${m.asset_id}', this)">Rig</button>
+                    </div>
+                </div>`).join('')
+                : '<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#129513;</div><h3>No models yet</h3><p>Generate 3D models from your characters and props.</p></div>';
+
+            setStatus(modelList.length + ' 3D model(s)');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function generateModelFor(kind, id, btn) {
+        const path = '/' + (kind === 'prop' ? 'props' : 'characters') + '/' + id + '/model/generate';
+        if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+        setStatus('Generating 3D model...');
+        try {
+            const res = await api(path, { method: 'POST', body: JSON.stringify({}) });
+            setStatus(res.status === 'generating' ? '3D job queued' : '3D model generated');
+            loadThreeD();
+        } catch (err) {
+            setStatus('Error: ' + err.message);
+            if (btn) { btn.disabled = false; btn.textContent = 'Generate 3D'; }
+        }
+    }
+
+    async function rigModel(assetId, btn) {
+        if (btn) { btn.disabled = true; btn.textContent = 'Rigging...'; }
+        setStatus('Rigging model...');
+        try {
+            await api('/models/' + assetId + '/rig', { method: 'POST', body: JSON.stringify({}) });
+            setStatus('Model rigged');
+            loadThreeD();
+        } catch (err) {
+            setStatus('Error: ' + err.message);
+            if (btn) { btn.disabled = false; btn.textContent = 'Rig'; }
+        }
+    }
+
+    function generateAllModels() {
+        if (!state.currentProject) return;
+        const prog = document.getElementById('threedProgress');
+        const bar = document.getElementById('threedProgressBar');
+        const lbl = document.getElementById('threedProgressLabel');
+        prog.style.display = 'block';
+        bar.style.width = '0%';
+        lbl.textContent = 'Starting 3D generation...';
+        let total = 1, done = 0;
+
+        streamSSEPost(
+            '/projects/' + state.currentProject.id + '/models/batch/stream',
+            {},
+            (ev) => {
+                if (ev.type === 'status' && ev.total_subjects) { total = ev.total_subjects || 1; }
+                else if (ev.type === 'subject_start') { lbl.textContent = 'Generating ' + (ev.name || ev.id || '...'); }
+                else if (ev.type === 'subject_complete' || ev.type === 'subject_failed') {
+                    done++;
+                    const p = Math.round((done / total) * 100);
+                    bar.style.width = p + '%';
+                    lbl.textContent = done + '/' + total + ' processed';
+                }
+            },
+            () => {
+                lbl.textContent = 'Done';
+                setStatus('3D batch complete');
+                setTimeout(() => { prog.style.display = 'none'; }, 1500);
+                loadThreeD();
+            },
+            (err) => { setStatus('Error: ' + (err ? err.message : 'stream failed')); prog.style.display = 'none'; }
+        );
     }
 
     // ══════════════════════════════════════════════════════════════

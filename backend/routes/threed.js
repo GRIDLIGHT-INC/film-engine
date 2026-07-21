@@ -220,7 +220,9 @@ async function generateFromImage(req, res, kind, subjectId, stream) {
                AND asset_type IN ('reference_image','character_sheet','reference_sheet','storyboard')
              ORDER BY created_at DESC LIMIT 1`
         ).get(projectId, kind === 'character' ? subjectId : '', `${safeName(subject.name)}%`);
-        if (refAsset && refAsset.file_name) {
+        // Defense-in-depth: only read a DB-sourced file_name that is a plain
+        // basename (no separators / traversal) before touching the disk.
+        if (refAsset && refAsset.file_name && /^[\w.-]+$/.test(refAsset.file_name)) {
             // Try known image subdirs.
             for (const dir of ['refsheets', 'loc-refs', 'prop-refs', 'storyboards']) {
                 const p = getFilePath(projectId, dir, refAsset.file_name);
