@@ -93,6 +93,7 @@ const { handleLipsync } = require('./routes/lipsync');
 const { handleMusicGen } = require('./routes/music-gen');
 const { handlePostProduction } = require('./routes/post-production');
 const { handlePipeline } = require('./routes/pipeline');
+const { handleThreeD } = require('./routes/threed');
 const { handleQA } = require('./routes/qa');
 const { handleProjectBundle } = require('./routes/project-bundle');
 const { handleContinuity } = require('./routes/continuity');
@@ -156,6 +157,7 @@ const GENERATION_ROUTES = new Set([
     'breakdown', 'storyboard', 'voice', 'video', 'lipsync',
     'music', 'pipeline', 'screenplay-ai', 'text-to-screenplay',
     'post', 'qa',
+    'model', 'models', 'rig', 'retexture', 'animate',
 ]);
 
 // Strip prototype pollution keys (__proto__, constructor, prototype) recursively
@@ -504,6 +506,11 @@ const server = http.createServer(async (req, res) => {
             return handleQA(req, res, parts, query);
         }
 
+        // Route: /film/projects/:id/models[/batch[/stream]] — 3D asset generation
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'models') {
+            return await handleThreeD(req, res, parts, query);
+        }
+
         // Route: /film/projects/demo — create demo project
         if (parts[1] === 'projects' && parts[2] === 'demo') {
             return handleDemoProject(req, res);
@@ -532,6 +539,16 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/music/:projectId/:filename — serve music files
         if (parts[1] === 'music' && parts[2] && parts[3]) {
             return handleMusicGen(req, res, parts, query);
+        }
+
+        // Route: /film/3d/:projectId/:filename — serve 3D model files
+        if (parts[1] === '3d' && parts[2] && parts[3]) {
+            return await handleThreeD(req, res, parts, query);
+        }
+
+        // Route: /film/models/:assetId/{rig|retexture|animate|animations} and /film/models/job/:jobId
+        if (parts[1] === 'models' && parts[2]) {
+            return await handleThreeD(req, res, parts, query);
         }
 
         // Route: /film/pipeline/:id[/pause|resume|cancel]
@@ -629,6 +646,11 @@ const server = http.createServer(async (req, res) => {
             return handleBudgetEstimate(req, res, parts, query);
         }
 
+        // Route: /film/characters/:id/model[/generate|from-image[/stream]] — 3D generation
+        if (parts[1] === 'characters' && parts[2] && parts[3] === 'model') {
+            return await handleThreeD(req, res, parts, query);
+        }
+
         // Route: /film/characters/:id[/voice|/costumes]
         if (parts[1] === 'characters') {
             return handleCharacters(req, res, parts, query);
@@ -642,6 +664,11 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/locations/:id
         if (parts[1] === 'locations') {
             return handleLocations(req, res, parts, query);
+        }
+
+        // Route: /film/props/:id/model[/generate|from-image[/stream]] — 3D generation
+        if (parts[1] === 'props' && parts[2] && parts[3] === 'model') {
+            return await handleThreeD(req, res, parts, query);
         }
 
         // Route: /film/props/:id

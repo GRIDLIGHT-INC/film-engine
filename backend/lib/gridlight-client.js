@@ -22,6 +22,23 @@ const MAX_QUEUE_SIZE = parseInt(process.env.GRIDLIGHT_MAX_QUEUE || '50', 10);
 const RETRY_ON_429_DELAY = parseInt(process.env.GRIDLIGHT_429_RETRY_MS || '5000', 10);
 const MAX_429_RETRIES = parseInt(process.env.GRIDLIGHT_429_MAX_RETRIES || '3', 10);
 
+// Gridlight 3D generation endpoints (dev branch: feature/3d-generation).
+// Centralized here because the 3D family has more members than other domains.
+const THREED_ENDPOINTS = {
+    generate: '/3d/generate',
+    fromImage: '/3d/from-image',
+    batch: '/3d/batch',
+    job: (jobId) => `/3d/job/${jobId}`,
+    jobStream: (jobId) => `/3d/job/${jobId}/stream`,
+    assets: '/3d/assets',
+    asset: (assetId) => `/3d/assets/${assetId}`,
+    rig: '/3d/rig',
+    retexture: '/3d/retexture',
+    animate: '/3d/animate',
+    animations: '/3d/animations',
+    queue: '/3d/queue',
+};
+
 // Per-endpoint semaphore state
 const _queues = {};          // endpoint → { active: number, waiting: Array<{resolve, reject}> }
 
@@ -383,4 +400,5 @@ module.exports = {
     GRIDLIGHT_API_KEY,
     MAX_CONCURRENT,
     MAX_QUEUE_SIZE,
+    THREED_ENDPOINTS,
 };

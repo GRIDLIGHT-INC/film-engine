@@ -187,6 +187,11 @@ All routes prefixed with `/film`:
 | Music Rights | `GET /projects/:id/music-rights`, `PUT /music-cues/:id/rights` |
 | Backups | `GET/POST /projects/:id/backups`, `GET/DELETE /backups/:id` |
 | Backups | `GET /backups/:id/download`, `POST /backups/:id/restore` |
+| 3D | `POST /characters/:id/model/generate[/stream]`, `POST /characters/:id/model/from-image[/stream]` |
+| 3D | `POST /props/:id/model/generate[/stream]`, `POST /props/:id/model/from-image[/stream]` |
+| 3D | `POST /models/:assetId/[rig\|retexture\|animate]`, `GET /models/:assetId/animations` |
+| 3D | `POST /projects/:id/models/batch[/stream]`, `GET /projects/:id/models`, `GET /models/job/:jobId` |
+| 3D | `GET /3d/:projectId/:filename` (serve .glb/.gltf/.fbx/.obj/.usdz) |
 
 Full API documentation: [`docs/api-film.md`](docs/api-film.md)
 
@@ -256,6 +261,9 @@ Optimizes pipeline execution by grouping steps by GPU model to minimize VRAM swa
 ### ProRes/DNxHR Encoding
 Professional codec encoding via `POST /postprocess`. Supports ProRes 422 Proxy/LT/Standard/HQ and DNxHR LB/SQ/HQ. Per-shot and batch project encoding with asset registration.
 
+### 3D Asset Generation
+Proxies Gridlight `/3d` endpoints to turn characters and props into 3D models. Pure payload builders in `lib/threed-prompt.js` (text→mesh, image→mesh, rig, retexture, animate); route orchestration in `routes/threed.js`. Jobs tracked in `film_3d_jobs`; outputs stored at `data/3d/{project_id}/{name}.glb` and registered in `film_assets` as `asset_type='other'` with `metadata.kind` (`model_3d`/`model_rigged`/`model_animated`) — the `film_assets.asset_type` CHECK could not be widened in place (SQLite can't ALTER a CHECK and the migration runner can't disable FK enforcement inside its transaction), so `film_3d_jobs` is the typed source of truth. Supports per-subject + batch generation with SSE streaming (client-disconnect guarded) and an async job-handoff path (`GET /film/models/job/:jobId`) for slow mesh generation.
+
 ### Project Bundle (Export/Import)
 Export entire projects as `.tar.gz` archives containing all database rows + asset files (storyboards, audio, video, music, reference sheets). Import on another machine creates new UUIDs for all entities with full foreign key remapping. Bundle format: `manifest.json` + asset subdirectories. Useful for sharing projects, backups, or migrating between machines.
 
@@ -306,6 +314,7 @@ SQLite via `better-sqlite3`. Schema auto-migrates on startup (39 migrations).
 - `film_marketing_assets` — Poster, key art, banner, social card assets
 - `film_cost_entries` — Budget & cost tracking
 - `film_backups` — Project backup metadata
+- `film_3d_jobs` — 3D asset generation jobs (text→mesh, image→mesh, rig, retexture, animate)
 
 ## Epic Status
 
