@@ -1,7 +1,8 @@
 # Multi-Provider AI Film Pipeline — Integration Plan
 
 **Authors:** Claude (codebase audit + architecture) & codex (provider/API research) — NeonCore confer task.
-**Goal:** Make Film Engine a fully operational, provider-pluggable pipeline: write a screenplay → generate images, video, music, SFX, dialogue → hand off to Premiere/final — using best-in-class pro providers (ChatGPT/gpt-image for images, Artlist for licensed music/SFX/footage, plus generative alternatives), not just Gridlight.
+**Status:** FINAL — agreed by Claude + codex. Scope confirmed by user: Phase 1+2+3 now, Artlist (catalog + MCP) as Phase 4.
+**Goal:** Make Film Engine a fully operational, provider-pluggable pipeline: write a screenplay → generate images, video, music, SFX, dialogue → hand off to Premiere/final — using best-in-class pro providers (ChatGPT/gpt-image for images, Artlist for both licensed music/SFX/footage **and** generative image/video via its MCP, ElevenLabs for dialogue, plus alternatives), not just Gridlight.
 
 ---
 
@@ -72,8 +73,8 @@ The `McpClientAdapter` is a **GeneratorAdapter whose transport is MCP** rather t
 ### 3.2 Interface (backend/lib/providers/*)
 ```js
 // Common
-{ id, kind: 'generator'|'source', capabilities: ['image'|'video'|'music'|'voice'|'sfx'|'stock'],
-  auth: {type:'key'|'oauth'}, capabilities(), health(), estimateCost?(payload),
+{ id, kind: 'generator'|'source'|'mcp', capabilities: ['image'|'video'|'music'|'voice'|'sfx'|'stock'],
+  auth: {type:'key'|'oauth'}, health(), estimateCost?(payload),
   validateProjectPolicy(payload, projectSettings) }   // gate rights/territory/budget before spend
 
 // GeneratorAdapter — normalizes provider-specific request/response into our shape,
@@ -109,7 +110,7 @@ Artlist is **both** a licensed catalog *and* a generative aggregator — wire bo
 
 **Integration reality (be honest):** the Artlist MCP is designed for MCP *clients* (Claude desktop/browser today; ChatGPT/Cursor "next"). For Film Engine's backend to drive it autonomously it must act as an **MCP client** to the remote server over Streamable-HTTP with **OAuth** — the authorization is interactive (user approves once in a browser), so we run the OAuth flow once, store the refresh token server-side, and the backend reuses it. This is more involved than an API key and warrants a short spike. Two things to verify during the spike: (1) whether the MCP exposes **music/voiceover** tools (the launch emphasizes image+video; music+voiceover exist in the AI Toolkit web product) and (2) exact tool schemas + async/polling behavior for long video jobs. Near-term, this same MCP can be connected to *this* Claude environment as a custom connector to drive Artlist generation during authoring/testing while the backend adapter is built.
 
-### 3.8 Secrets & safety
+### 3.7 Secrets & safety
 Per-provider API keys/OAuth secrets live **server-side only** (env / secure store), never in the SPA — consistent with the existing security posture (SPA never holds `GRIDLIGHT_API_KEY`). Project settings pick the provider per domain, but the frontend never sees provider credentials. Add per-provider budget caps (repo already tracks cost per generation), enforced via `validateProjectPolicy()` before spend.
 
 ---
