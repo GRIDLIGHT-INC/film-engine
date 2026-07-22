@@ -12,10 +12,11 @@
 
 const fs = require('fs');
 const { db, generateId } = require('../db/database');
-const { callGridlight, relayGridlightSSE, serviceUnavailableError } = require('../lib/gridlight-client');
+const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, getFilePath, ensureDir, serveFile } = require('../lib/file-storage');
 const { buildVideoPayload } = require('../lib/video-prompt');
 const { needsStitching, planClips, buildStitchPayload, calculateTransitions } = require('../lib/video-stitcher');
+const { resolve } = require('../lib/providers');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VIDEO_ENDPOINT = '/video';
@@ -24,6 +25,20 @@ const STITCH_ENDPOINT = '/video/stitch';
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
+}
+
+function parseProjectConfig(projectId) {
+    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
+    if (!row) return {};
+    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
+}
+
+function resultModel(result, payload) {
+    return (result && result.provider_model) || (payload && payload.model) || '';
+}
+
+function resultJobId(result) {
+    return (result && result.provider_job_id) || '';
 }
 
 // -- Route Handler -------------------------------------------------------
@@ -107,6 +122,7 @@ async function generateVideo(req, res, shotId) {
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
 
     const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
+    const videoProvider = resolve('video', parseProjectConfig(scene.project_id));
 
     const stylePreset = project ? project.style_preset : null;
     const payload = buildVideoPayload(sceneCard, characters, location, stylePreset, {
@@ -125,11 +141,11 @@ async function generateVideo(req, res, shotId) {
         JSON.stringify(payload.camera_control));
 
     try {
-        const result = await callGridlight(VIDEO_ENDPOINT, payload);
+        const result = await videoProvider.generate('video', payload, { timeout: 300000 });
 
         if (!result.ok) {
             db.prepare('UPDATE film_video_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
-            if (result.status === 503) return json(res, 503, serviceUnavailableError(VIDEO_ENDPOINT, 'video'));
+            if (videoProvider.id === 'gridlight' && result.status === 503) return json(res, 503, serviceUnavailableError(VIDEO_ENDPOINT, 'video'));
             return json(res, result.status || 500, { error: result.error });
         }
 
@@ -147,9 +163,16 @@ async function generateVideo(req, res, shotId) {
 
         const assetId = generateId();
         db.prepare(
-            `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, duration_ms, version)
-             VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 'video/mp4', ?, 1)`
-        ).run(assetId, scene.project_id, shotId, filePath, filename, durationMs);
+            `INSERT INTO film_assets (
+                id, project_id, shot_id, asset_type, file_path, file_name,
+                format, mime_type, duration_ms, version,
+                provider, provider_model, provider_job_id, license_source, license_status
+             )
+             VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 'video/mp4', ?, 1, ?, ?, ?, 'generated', 'generated')`
+        ).run(
+            assetId, scene.project_id, shotId, filePath, filename, durationMs,
+            videoProvider.id, resultModel(result, payload), resultJobId(result)
+        );
 
         db.prepare(
             `INSERT INTO render_ledger (id, shot_id, version, step, model_id, prompt, seed, sampler, steps, guidance, mode)
@@ -165,7 +188,7 @@ async function generateVideo(req, res, shotId) {
         });
     } catch (err) {
         db.prepare('UPDATE film_video_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
-        if (err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(VIDEO_ENDPOINT, 'video'));
+        if (videoProvider.id === 'gridlight' && err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(VIDEO_ENDPOINT, 'video'));
         json(res, 500, { error: err.message });
     }
 }
@@ -177,6 +200,7 @@ async function generateVideoStream(req, res, shotId) {
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
 
     const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
+    const videoProvider = resolve('video', parseProjectConfig(scene.project_id));
     const stylePreset = project ? project.style_preset : null;
     const payload = buildVideoPayload(sceneCard, characters, location, stylePreset, { init_image: initImage });
 
@@ -195,16 +219,22 @@ async function generateVideoStream(req, res, shotId) {
     ).run(jobId, scene.project_id, shotId, payload.prompt, payload.model);
 
     try {
-        const { ok, finalData, error } = await relayGridlightSSE(VIDEO_ENDPOINT, payload, res, {
+        const { ok, finalData, error } = await videoProvider.generateStream('video', payload, res, {
             onComplete: (data) => {
                 const filename = `${shot.shot_code}.mp4`;
                 ensureDir(scene.project_id, 'video');
 
                 const assetId = generateId();
                 db.prepare(
-                    `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, format, mime_type, version)
-                     VALUES (?, ?, ?, 'video_raw', ?, 'mp4', 'video/mp4', 1)`
-                ).run(assetId, scene.project_id, shotId, filename);
+                    `INSERT INTO film_assets (
+                        id, project_id, shot_id, asset_type, file_name, format, mime_type, version,
+                        provider, provider_model, provider_job_id, license_source, license_status
+                     )
+                     VALUES (?, ?, ?, 'video_raw', ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+                ).run(
+                    assetId, scene.project_id, shotId, filename,
+                    videoProvider.id, resultModel(data, payload), resultJobId(data)
+                );
 
                 db.prepare('UPDATE film_video_jobs SET status = ?, output_path = ? WHERE id = ?')
                     .run('complete', data.video_url || filename, jobId);
@@ -233,6 +263,7 @@ async function generateVideoStream(req, res, shotId) {
 async function batchVideoStream(req, res, projectId) {
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
+    const videoProvider = resolve('video', parseProjectConfig(projectId));
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',
@@ -266,18 +297,26 @@ async function batchVideoStream(req, res, projectId) {
         });
 
         try {
-            const result = await callGridlight(VIDEO_ENDPOINT, payload);
+            const result = await videoProvider.generate('video', payload, { timeout: 300000 });
             if (!result.ok) throw new Error(result.error);
 
             const filename = `${shot.shot_code}.mp4`;
             ensureDir(projectId, 'video');
-            if (Buffer.isBuffer(result.data)) saveFile(projectId, 'video', filename, result.data);
+            let filePath = filename;
+            if (Buffer.isBuffer(result.data)) filePath = saveFile(projectId, 'video', filename, result.data);
 
             const assetId = generateId();
             db.prepare(
-                `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, format, mime_type, version)
-                 VALUES (?, ?, ?, 'video_raw', ?, 'mp4', 'video/mp4', 1)`
-            ).run(assetId, projectId, shot.shot_id, filename);
+                `INSERT INTO film_assets (
+                    id, project_id, shot_id, asset_type, file_path, file_name,
+                    format, mime_type, version,
+                    provider, provider_model, provider_job_id, license_source, license_status
+                 )
+                 VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+            ).run(
+                assetId, projectId, shot.shot_id, filePath, filename,
+                videoProvider.id, resultModel(result, payload), resultJobId(result)
+            );
 
             sendEvent({ type: 'shot_complete', shot_code: shot.shot_code, video_url: getFileUrl('video', projectId, filename) });
             completed++;
@@ -321,6 +360,8 @@ function getVideoStatus(req, res, shotId) {
             asset_id: a.id, file_name: a.file_name,
             video_url: a.file_name ? getFileUrl('video', a.project_id, a.file_name) : null,
             duration_ms: a.duration_ms,
+            provider: a.provider, provider_model: a.provider_model, provider_job_id: a.provider_job_id,
+            license_source: a.license_source, license_status: a.license_status,
         })),
     });
 }
