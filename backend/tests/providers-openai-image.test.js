@@ -5,6 +5,9 @@
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { adapter, buildImageRequest } = require('../lib/providers/openai-image');
 
 describe('openai-image: buildImageRequest (pure)', () => {
@@ -23,6 +26,19 @@ describe('openai-image: buildImageRequest (pure)', () => {
         const r = buildImageRequest({ prompt: 'a castle', negative_prompt: 'blurry' });
         assert.match(r.body.prompt, /a castle/);
         assert.match(r.body.prompt, /Avoid: blurry/);
+    });
+
+    it('uses the image edit endpoint when local consistency references are available', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openai-ref-'));
+        const refPath = path.join(dir, 'ref.png');
+        fs.writeFileSync(refPath, Buffer.from('PNG'));
+        const r = buildImageRequest({
+            prompt: 'same character',
+            reference_images: [{ file_path: refPath }],
+        });
+        assert.match(r.url, /\/images\/edits$/);
+        assert.ok(r.form);
+        assert.equal(r.referenceCount, 1);
     });
 });
 
@@ -81,6 +97,19 @@ describe('openai-image adapter (mock server)', () => {
         assert.equal(lastRequestBody.model, 'gpt-image-1');
         assert.equal(lastRequestBody.size, '1024x1024');
         assert.match(lastRequestBody.prompt, /neon city/);
+    });
+
+    it('generates with local consistency references via multipart edit request', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openai-ref-gen-'));
+        const refPath = path.join(dir, 'ref.png');
+        fs.writeFileSync(refPath, Buffer.from('PNG'));
+        const r = await adapter.generate('image', {
+            prompt: 'a locked character',
+            reference_images: [{ file_path: refPath }],
+        });
+        assert.equal(r.ok, true);
+        assert.ok(Buffer.isBuffer(r.data));
+        assert.equal(r.meta.reference_count, 1);
     });
 
     it('rejects an unsupported capability', async () => {

@@ -171,13 +171,20 @@ describe('providers/artlist-mcp adapter', () => {
         });
 
         it('generates an image via tools/call and returns bytes + provenance', async () => {
-            const r = await adapter.generate('image', { prompt: 'a neon alley' });
+            lastCall = null;
+            const r = await adapter.generate('image', {
+                prompt: 'a neon alley',
+                reference_images: [{ file_path: 'https://cdn.example/ref.png', role: 'canonical', weight: 0.8, subject_name: 'Mara' }],
+                input_refs: ['asset-1'],
+            });
             assert.equal(r.ok, true);
             assert.ok(Buffer.isBuffer(r.data));
             assert.equal(r.data.toString(), 'MCP-PNG');
             assert.equal(r.provider, 'artlist-mcp');
             assert.equal(r.provider_model, 'generate_image');
             assert.equal(r.meta.license_source, 'generated');
+            assert.deepEqual(lastCall.arguments.reference_images, [{ url: 'https://cdn.example/ref.png', role: 'canonical', weight: 0.8, subject: 'Mara' }]);
+            assert.deepEqual(lastCall.arguments.input_refs, ['asset-1']);
         });
 
         it('generates voice via tools/call using dialogue text without image dimensions', async () => {

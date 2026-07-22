@@ -220,6 +220,15 @@ const adapter = {
             prompt,
             ...(payload && payload.model ? { model: payload.model } : {}),
             ...(payload && payload.width && payload.height ? { width: payload.width, height: payload.height } : {}),
+            ...(payload && Array.isArray(payload.reference_images) && payload.reference_images.length ? {
+                reference_images: payload.reference_images.map(ref => ({
+                    url: ref.file_path || ref.file_name || ref.url || '',
+                    role: ref.role || 'canonical',
+                    weight: ref.weight || 0.7,
+                    subject: ref.subject_name || '',
+                })).filter(ref => ref.url),
+            } : {}),
+            ...(payload && Array.isArray(payload.input_refs) && payload.input_refs.length ? { input_refs: payload.input_refs } : {}),
         };
         const call = await mcpCall('tools/call', { name: toolName, arguments: args }, { url: mcpUrl(), token, timeout: opts && opts.timeout });
         if (!call.ok) return call;

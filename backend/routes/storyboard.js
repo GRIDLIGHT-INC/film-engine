@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const { db, generateId } = require('../db/database');
 const { buildStoryboardPrompt, applyStyleLock } = require('../lib/storyboard-prompt');
 const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
+const { buildShotReferencePayload } = require('../lib/consistency-context');
 
 const os = require('os');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -81,6 +82,12 @@ async function callImageGen(prompt, negativePrompt, seed, options) {
     if (opts.ip_adapter_image) {
         payload.ip_adapter_image = opts.ip_adapter_image;
         payload.ip_adapter_weight = opts.ip_adapter_weight || 0.7;
+    }
+    if (Array.isArray(opts.reference_images) && opts.reference_images.length > 0) {
+        payload.reference_images = opts.reference_images;
+    }
+    if (Array.isArray(opts.input_refs) && opts.input_refs.length > 0) {
+        payload.input_refs = opts.input_refs;
     }
 
     const headers = { 'Content-Type': 'application/json' };
@@ -150,6 +157,12 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
     if (opts.ip_adapter_image) {
         payload.ip_adapter_image = opts.ip_adapter_image;
         payload.ip_adapter_weight = opts.ip_adapter_weight || 0.7;
+    }
+    if (Array.isArray(opts.reference_images) && opts.reference_images.length > 0) {
+        payload.reference_images = opts.reference_images;
+    }
+    if (Array.isArray(opts.input_refs) && opts.input_refs.length > 0) {
+        payload.input_refs = opts.input_refs;
     }
 
     const headers = { 'Content-Type': 'application/json' };
@@ -306,7 +319,8 @@ function logToRenderLedger(shotId, params) {
 /**
  * Register or update a storyboard asset in film_assets.
  */
-function registerStoryboardAsset(projectId, shotId, filePath, fileName) {
+function registerStoryboardAsset(projectId, shotId, filePath, fileName, options) {
+    const opts = options || {};
     // Check for existing storyboard asset for this shot
     const existing = db.prepare(
         'SELECT id, version FROM film_assets WHERE shot_id = ? AND asset_type = \'storyboard\' ORDER BY version DESC LIMIT 1'
@@ -317,9 +331,9 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName) {
 
     db.prepare(`
         INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name,
-            format, mime_type, width, height, version)
-        VALUES (?, ?, ?, 'storyboard', ?, ?, 'png', 'image/png', 1024, 1024, ?)
-    `).run(id, projectId, shotId, filePath, fileName, version);
+            format, mime_type, width, height, version, input_refs)
+        VALUES (?, ?, ?, 'storyboard', ?, ?, 'png', 'image/png', 1024, 1024, ?, ?)
+    `).run(id, projectId, shotId, filePath, fileName, version, JSON.stringify(opts.input_refs || []));
 
     return { id, version };
 }
@@ -518,6 +532,7 @@ async function generateStoryboard(req, res, projectId, query) {
         // Match characters and location
         const matchedChars = matchCharacters(sceneCard.characters, characters);
         const matchedLocation = matchLocation(shot.location, locations);
+        const consistencyContext = buildShotReferencePayload(shot, { ...shot, id: shot.scene_id, project_id: projectId, location: shot.location }, project);
 
         // Reference image selection (IP-Adapter)
         const useReferences = body.use_references === true || (query && query.use_references === 'true');
@@ -525,18 +540,25 @@ async function generateStoryboard(req, res, projectId, query) {
         if (useReferences) {
             refSelection = selectReferenceImage(sceneCard, matchedChars, matchedLocation, projectId);
         }
+        const consistencyPrimary = consistencyContext.references && consistencyContext.references[0];
 
         // Style lock
         const styleLockEnabled = sceneCard.style_lock !== false;
         const styleParams = applyStyleLock(baseSeed, shotIndexInScene, {
             styleLock: styleLockEnabled,
             consistencyWeight: refSelection.ip_adapter_weight || body.consistency_weight,
-            ipAdapterImage: refSelection.ip_adapter_image || body.ip_adapter_image || null,
+            ipAdapterImage: refSelection.ip_adapter_image || (consistencyPrimary && (consistencyPrimary.file_path || consistencyPrimary.file_name)) || body.ip_adapter_image || null,
         });
+        if (styleParams.ip_adapter_image && !styleParams.ip_adapter_weight && consistencyPrimary) {
+            styleParams.ip_adapter_weight = consistencyPrimary.weight || 0.7;
+        }
 
         // Build prompt
         const { prompt, negative_prompt } = buildStoryboardPrompt(
-            sceneCard, matchedChars, matchedLocation, project.style_preset
+            sceneCard, matchedChars, matchedLocation, project.style_preset, {
+                prompt_additions: consistencyContext.prompt_additions,
+                negative_additions: consistencyContext.negative_additions,
+            }
         );
 
         // Update shot status
@@ -546,6 +568,8 @@ async function generateStoryboard(req, res, projectId, query) {
             const imageBuffer = await callImageGen(prompt, negative_prompt, styleParams.seed, {
                 ip_adapter_image: styleParams.ip_adapter_image,
                 ip_adapter_weight: styleParams.ip_adapter_weight,
+                reference_images: consistencyContext.references,
+                input_refs: consistencyContext.input_refs,
             });
 
             // Save image to disk
@@ -553,7 +577,9 @@ async function generateStoryboard(req, res, projectId, query) {
             fs.writeFileSync(imgPath, imageBuffer);
 
             // Register asset
-            registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`);
+            registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`, {
+                input_refs: consistencyContext.input_refs,
+            });
 
             // Log to render ledger
             logToRenderLedger(shot.shot_id, {
@@ -684,6 +710,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
 
         const matchedChars = matchCharacters(sceneCard.characters, characters);
         const matchedLocation = matchLocation(shot.location, locations);
+        const consistencyContext = buildShotReferencePayload(shot, { ...shot, id: shot.scene_id, project_id: projectId, location: shot.location }, project);
 
         // Reference image selection (IP-Adapter)
         const useReferences = body.use_references === true || (query && query.use_references === 'true');
@@ -691,16 +718,23 @@ async function generateStoryboardStream(req, res, projectId, query) {
         if (useReferences) {
             refSelection = selectReferenceImage(sceneCard, matchedChars, matchedLocation, projectId);
         }
+        const consistencyPrimary = consistencyContext.references && consistencyContext.references[0];
 
         const styleLockEnabled = sceneCard.style_lock !== false;
         const styleParams = applyStyleLock(baseSeed, shotIndexInScene, {
             styleLock: styleLockEnabled,
             consistencyWeight: refSelection.ip_adapter_weight || body.consistency_weight,
-            ipAdapterImage: refSelection.ip_adapter_image || body.ip_adapter_image || null,
+            ipAdapterImage: refSelection.ip_adapter_image || (consistencyPrimary && (consistencyPrimary.file_path || consistencyPrimary.file_name)) || body.ip_adapter_image || null,
         });
+        if (styleParams.ip_adapter_image && !styleParams.ip_adapter_weight && consistencyPrimary) {
+            styleParams.ip_adapter_weight = consistencyPrimary.weight || 0.7;
+        }
 
         const { prompt, negative_prompt } = buildStoryboardPrompt(
-            sceneCard, matchedChars, matchedLocation, project.style_preset
+            sceneCard, matchedChars, matchedLocation, project.style_preset, {
+                prompt_additions: consistencyContext.prompt_additions,
+                negative_additions: consistencyContext.negative_additions,
+            }
         );
 
         sendEvent({
@@ -710,8 +744,9 @@ async function generateStoryboardStream(req, res, projectId, query) {
             shot_code: shot.shot_code,
             scene_number: shot.scene_number,
             phase: 'generating',
-            reference_source: refSelection.source,
-        });
+                    reference_source: refSelection.source,
+                    consistency_refs: consistencyContext.input_refs,
+                });
 
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shot.shot_id);
 
@@ -721,6 +756,8 @@ async function generateStoryboardStream(req, res, projectId, query) {
                 {
                     ip_adapter_image: styleParams.ip_adapter_image,
                     ip_adapter_weight: styleParams.ip_adapter_weight,
+                    reference_images: consistencyContext.references,
+                    input_refs: consistencyContext.input_refs,
                 },
                 (progressData) => {
                     // Relay per-image generation progress to the client
@@ -738,7 +775,9 @@ async function generateStoryboardStream(req, res, projectId, query) {
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
             fs.writeFileSync(imgPath, imageBuffer);
 
-            registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`);
+            registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`, {
+                input_refs: consistencyContext.input_refs,
+            });
 
             const actualSeed = (metadata && metadata.seed) || styleParams.seed;
             logToRenderLedger(shot.shot_id, {
@@ -835,6 +874,7 @@ async function regenerateShot(req, res, shotId) {
     }
 
     const body = req.body || {};
+    const consistencyContext = buildShotReferencePayload(shot, scene, project);
 
     // Build or use override prompt
     let prompt, negative_prompt;
@@ -856,13 +896,17 @@ async function regenerateShot(req, res, shotId) {
 
         const result = buildStoryboardPrompt(
             sceneCard, matchedChars, matchedLocation,
-            body.style_override || project.style_preset
+            body.style_override || project.style_preset,
+            {
+                prompt_additions: consistencyContext.prompt_additions,
+                negative_additions: consistencyContext.negative_additions,
+            }
         );
         prompt = result.prompt;
         negative_prompt = result.negative_prompt;
     }
 
-    const seed = body.seed || crypto.randomInt(0, 2 ** 31);
+    const seed = body.seed || consistencyContext.locked_seed || crypto.randomInt(0, 2 ** 31);
 
     // Update status
     db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shotId);
@@ -870,12 +914,20 @@ async function regenerateShot(req, res, shotId) {
     try {
         ensureStoryboardDir(project.id);
 
-        const imageBuffer = await callImageGen(prompt, negative_prompt, seed);
+        const primaryRef = consistencyContext.references && consistencyContext.references[0];
+        const imageBuffer = await callImageGen(prompt, negative_prompt, seed, {
+            ip_adapter_image: primaryRef && (primaryRef.file_path || primaryRef.file_name),
+            ip_adapter_weight: primaryRef && primaryRef.weight,
+            reference_images: consistencyContext.references,
+            input_refs: consistencyContext.input_refs,
+        });
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         fs.writeFileSync(imgPath, imageBuffer);
 
-        registerStoryboardAsset(project.id, shotId, imgPath, `${shot.shot_code}.png`);
+        registerStoryboardAsset(project.id, shotId, imgPath, `${shot.shot_code}.png`, {
+            input_refs: consistencyContext.input_refs,
+        });
 
         logToRenderLedger(shotId, {
             seed,

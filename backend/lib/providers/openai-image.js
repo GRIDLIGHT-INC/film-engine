@@ -10,6 +10,7 @@
  */
 
 const { getCredential } = require('./credentials');
+const fs = require('fs');
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_MODEL = 'gpt-image-1';
@@ -65,11 +66,41 @@ function buildImageRequest(payload) {
     const quality = VALID_QUALITY.includes(p.quality) ? p.quality : 'high';
     const model = p.openai_model || (String(p.model || '').startsWith('gpt-image') ? p.model : DEFAULT_MODEL);
 
+    const refs = Array.isArray(p.reference_images) ? p.reference_images : [];
+    const localRefs = refs
+        .map(ref => ref && ref.file_path)
+        .filter(filePath => filePath && fs.existsSync(filePath))
+        .slice(0, 8);
+
+    if (localRefs.length > 0) {
+        const form = new FormData();
+        form.append('model', model);
+        form.append('prompt', prompt);
+        form.append('size', size);
+        form.append('quality', quality);
+        form.append('n', '1');
+        for (const filePath of localRefs) {
+            const bytes = fs.readFileSync(filePath);
+            const mime = filePath.toLowerCase().endsWith('.webp') ? 'image/webp'
+                : filePath.toLowerCase().endsWith('.jpg') || filePath.toLowerCase().endsWith('.jpeg') ? 'image/jpeg'
+                    : 'image/png';
+            form.append('image[]', new Blob([bytes], { type: mime }), filePath.split(/[\\/]/).pop() || 'reference.png');
+        }
+        return {
+            url: `${baseUrl}/images/edits`,
+            form,
+            model,
+            size,
+            referenceCount: localRefs.length,
+        };
+    }
+
     return {
         url: `${baseUrl}/images/generations`,
         body: { model, prompt, size, quality, n: 1 },
         model,
         size,
+        referenceCount: 0,
     };
 }
 
@@ -82,10 +113,10 @@ async function callOpenAI(request, apiKey, opts) {
         const response = await fetch(request.url, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`,
+                ...(request.form ? {} : { 'Content-Type': 'application/json' }),
             },
-            body: JSON.stringify(request.body),
+            body: request.form || JSON.stringify(request.body),
             signal: controller.signal,
         });
 
@@ -116,7 +147,7 @@ async function callOpenAI(request, apiKey, opts) {
             provider: 'openai',
             provider_model: request.model,
             provider_job_id: (json && json.id) || '',
-            meta: { size: request.size, format: 'png', revised_prompt: item.revised_prompt || '' },
+            meta: { size: request.size, format: 'png', revised_prompt: item.revised_prompt || '', reference_count: request.referenceCount || 0 },
         };
     } catch (err) {
         clearTimeout(timer);
@@ -149,7 +180,8 @@ const adapter = {
         if (!apiKey) return missingKey();
 
         const request = buildImageRequest(payload || {});
-        if (!request.body.prompt) return { ok: false, status: 400, error: 'openai: prompt is required' };
+        const promptText = request.form ? request.form.get('prompt') : (request.body && request.body.prompt);
+        if (!promptText) return { ok: false, status: 400, error: 'openai: prompt is required' };
         return callOpenAI(request, apiKey, opts);
     },
 };

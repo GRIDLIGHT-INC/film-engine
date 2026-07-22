@@ -17,6 +17,7 @@ const { saveFile, getFileUrl, getFilePath, ensureDir, serveFile } = require('../
 const { buildVideoPayload } = require('../lib/video-prompt');
 const { needsStitching, planClips, buildStitchPayload, calculateTransitions } = require('../lib/video-stitcher');
 const { resolve } = require('../lib/providers');
+const { buildShotReferencePayload } = require('../lib/consistency-context');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VIDEO_ENDPOINT = '/video';
@@ -123,12 +124,17 @@ async function generateVideo(req, res, shotId) {
 
     const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
     const videoProvider = resolve('video', parseProjectConfig(scene.project_id));
+    const consistencyContext = buildShotReferencePayload(shot, scene, project);
 
     const stylePreset = project ? project.style_preset : null;
     const payload = buildVideoPayload(sceneCard, characters, location, stylePreset, {
         init_image: initImage,
-        seed: req.body && req.body.seed ? req.body.seed : null,
+        seed: req.body && req.body.seed ? req.body.seed : consistencyContext.locked_seed,
         model: req.body && req.body.model ? req.body.model : undefined,
+        prompt_additions: consistencyContext.prompt_additions,
+        negative_additions: consistencyContext.negative_additions,
+        reference_images: consistencyContext.references,
+        input_refs: consistencyContext.input_refs,
     });
 
     const jobId = generateId();
@@ -166,12 +172,12 @@ async function generateVideo(req, res, shotId) {
             `INSERT INTO film_assets (
                 id, project_id, shot_id, asset_type, file_path, file_name,
                 format, mime_type, duration_ms, version,
-                provider, provider_model, provider_job_id, license_source, license_status
+                provider, provider_model, provider_job_id, license_source, license_status, input_refs
              )
-             VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 'video/mp4', ?, 1, ?, ?, ?, 'generated', 'generated')`
+             VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 'video/mp4', ?, 1, ?, ?, ?, 'generated', 'generated', ?)`
         ).run(
             assetId, scene.project_id, shotId, filePath, filename, durationMs,
-            videoProvider.id, resultModel(result, payload), resultJobId(result)
+            videoProvider.id, resultModel(result, payload), resultJobId(result), JSON.stringify(consistencyContext.input_refs || [])
         );
 
         db.prepare(
@@ -201,8 +207,16 @@ async function generateVideoStream(req, res, shotId) {
 
     const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
     const videoProvider = resolve('video', parseProjectConfig(scene.project_id));
+    const consistencyContext = buildShotReferencePayload(shot, scene, project);
     const stylePreset = project ? project.style_preset : null;
-    const payload = buildVideoPayload(sceneCard, characters, location, stylePreset, { init_image: initImage });
+    const payload = buildVideoPayload(sceneCard, characters, location, stylePreset, {
+        init_image: initImage,
+        seed: consistencyContext.locked_seed,
+        prompt_additions: consistencyContext.prompt_additions,
+        negative_additions: consistencyContext.negative_additions,
+        reference_images: consistencyContext.references,
+        input_refs: consistencyContext.input_refs,
+    });
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',
@@ -228,12 +242,12 @@ async function generateVideoStream(req, res, shotId) {
                 db.prepare(
                     `INSERT INTO film_assets (
                         id, project_id, shot_id, asset_type, file_name, format, mime_type, version,
-                        provider, provider_model, provider_job_id, license_source, license_status
+                        provider, provider_model, provider_job_id, license_source, license_status, input_refs
                      )
-                     VALUES (?, ?, ?, 'video_raw', ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+                     VALUES (?, ?, ?, 'video_raw', ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated', ?)`
                 ).run(
                     assetId, scene.project_id, shotId, filename,
-                    videoProvider.id, resultModel(data, payload), resultJobId(data)
+                    videoProvider.id, resultModel(data, payload), resultJobId(data), JSON.stringify(consistencyContext.input_refs || [])
                 );
 
                 db.prepare('UPDATE film_video_jobs SET status = ?, output_path = ? WHERE id = ?')
@@ -291,9 +305,15 @@ async function batchVideoStream(req, res, projectId) {
         if (!ctx) { failed++; continue; }
 
         sendEvent({ type: 'shot_start', shot_id: shot.shot_id, shot_code: shot.shot_code });
+        const consistencyContext = buildShotReferencePayload(ctx.shot, ctx.scene, project);
 
         const payload = buildVideoPayload(ctx.sceneCard, ctx.characters, ctx.location, project.style_preset, {
             init_image: ctx.initImage,
+            seed: consistencyContext.locked_seed,
+            prompt_additions: consistencyContext.prompt_additions,
+            negative_additions: consistencyContext.negative_additions,
+            reference_images: consistencyContext.references,
+            input_refs: consistencyContext.input_refs,
         });
 
         try {
@@ -310,12 +330,12 @@ async function batchVideoStream(req, res, projectId) {
                 `INSERT INTO film_assets (
                     id, project_id, shot_id, asset_type, file_path, file_name,
                     format, mime_type, version,
-                    provider, provider_model, provider_job_id, license_source, license_status
+                    provider, provider_model, provider_job_id, license_source, license_status, input_refs
                  )
-                 VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+                 VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated', ?)`
             ).run(
                 assetId, projectId, shot.shot_id, filePath, filename,
-                videoProvider.id, resultModel(result, payload), resultJobId(result)
+                videoProvider.id, resultModel(result, payload), resultJobId(result), JSON.stringify(consistencyContext.input_refs || [])
             );
 
             sendEvent({ type: 'shot_complete', shot_code: shot.shot_code, video_url: getFileUrl('video', projectId, filename) });

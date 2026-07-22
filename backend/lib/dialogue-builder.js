@@ -51,11 +51,19 @@ function buildVoicePayload(dialogueLine, voiceProfile, character) {
     };
 
     if (voiceProfile) {
+        let voiceParams = {};
+        try { voiceParams = JSON.parse(voiceProfile.voice_params || '{}'); } catch (_) { voiceParams = {}; }
         if (voiceProfile.voice_id) payload.voice_id = voiceProfile.voice_id;
+        if (!payload.voice_id && voiceParams.voice_id) payload.voice_id = voiceParams.voice_id;
         if (voiceProfile.speaker_embedding) payload.speaker_embedding = voiceProfile.speaker_embedding;
         if (voiceProfile.model) payload.model = voiceProfile.model;
+        if (voiceProfile.tts_model) payload.model = voiceProfile.tts_model;
+        if (voiceParams.model) payload.model = voiceParams.model;
         if (voiceProfile.language) payload.language = voiceProfile.language;
         if (voiceProfile.speed) payload.speed = voiceProfile.speed;
+        if (voiceParams.speed) payload.speed = voiceParams.speed;
+        if (voiceParams.stability) payload.stability = voiceParams.stability;
+        if (voiceParams.similarity_boost) payload.similarity_boost = voiceParams.similarity_boost;
     }
 
     if (character && character.name) {

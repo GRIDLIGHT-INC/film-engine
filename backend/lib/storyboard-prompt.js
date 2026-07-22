@@ -120,7 +120,8 @@ const DEFAULT_NEGATIVE_PROMPT = 'blurry, low quality, distorted, deformed, ugly,
  * @param {string} [stylePreset] - Style preset name (cinematic, noir, etc.)
  * @returns {{ prompt: string, negative_prompt: string }}
  */
-function buildStoryboardPrompt(sceneCard, characters, location, stylePreset) {
+function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, options) {
+    const opts = options || {};
     const parts = [];
     const loraParts = [];
 
@@ -203,7 +204,14 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset) {
         if (sceneCard.style.film_grain) parts.push(`${sceneCard.style.film_grain} film grain`);
     }
 
-    // 10. Quality tags
+    // 10. Locked consistency profile prompt contracts
+    if (Array.isArray(opts.prompt_additions)) {
+        for (const addition of opts.prompt_additions) {
+            if (addition) parts.push(addition);
+        }
+    }
+
+    // 11. Quality tags
     parts.push('masterpiece, high quality');
 
     // Assemble prompt
@@ -217,6 +225,11 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset) {
     }
     if (sceneCard.generation && sceneCard.generation.negative_prompt) {
         negParts.push(sceneCard.generation.negative_prompt);
+    }
+    if (Array.isArray(opts.negative_additions)) {
+        for (const addition of opts.negative_additions) {
+            if (addition) negParts.push(addition);
+        }
     }
     const negative_prompt = negParts.join(', ');
 

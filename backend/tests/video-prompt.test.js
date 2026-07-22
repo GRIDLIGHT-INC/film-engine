@@ -117,5 +117,18 @@ describe('video-prompt', () => {
             const payload = buildVideoPayload(minCard, [], null, null, { init_image: 'base64data' });
             assert.equal(payload.init_image, 'base64data');
         });
+
+        it('carries consistency references and prompt contracts', () => {
+            const payload = buildVideoPayload(minCard, [], null, null, {
+                prompt_additions: ['locked face and wardrobe'],
+                negative_additions: ['different actor'],
+                reference_images: [{ asset_id: 'asset-1', file_path: '/ref.png', weight: 0.8 }],
+                input_refs: ['asset-1'],
+            });
+            assert.match(payload.prompt, /locked face and wardrobe/);
+            assert.match(payload.negative_prompt, /different actor/);
+            assert.deepEqual(payload.reference_images, [{ asset_id: 'asset-1', file_path: '/ref.png', weight: 0.8 }]);
+            assert.deepEqual(payload.input_refs, ['asset-1']);
+        });
     });
 });

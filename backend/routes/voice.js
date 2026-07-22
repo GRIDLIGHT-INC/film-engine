@@ -16,6 +16,7 @@ const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir, serveFile } = require('../lib/file-storage');
 const { extractDialogue, buildVoicePayload, dialogueFilename } = require('../lib/dialogue-builder');
 const { resolve } = require('../lib/providers');
+const { buildShotReferencePayload, applyConsistencyToVoicePayload } = require('../lib/consistency-context');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VOICE_ENDPOINT = '/voice';
@@ -115,6 +116,7 @@ async function generateVoice(req, res, shotId) {
         'SELECT * FROM film_voice_profiles WHERE character_id IN (SELECT id FROM film_characters WHERE project_id = ?)'
     ).all(scene.project_id);
     const voiceProvider = resolve('voice', parseProjectConfig(scene.project_id));
+    const consistencyContext = buildShotReferencePayload(shot, scene, { id: scene.project_id });
 
     ensureDir(scene.project_id, 'audio');
     const results = [];
@@ -122,7 +124,11 @@ async function generateVoice(req, res, shotId) {
     for (const line of dialogueLines) {
         const character = characters.find(c => c.name && c.name.toUpperCase() === line.character.toUpperCase());
         const voiceProfile = character ? voiceProfiles.find(vp => vp.character_id === character.id) : null;
-        const payload = buildVoicePayload(line, voiceProfile, character);
+        const payload = applyConsistencyToVoicePayload(
+            buildVoicePayload(line, voiceProfile, character),
+            consistencyContext,
+            line.character
+        );
         const jobId = generateId();
 
         db.prepare(
@@ -221,6 +227,7 @@ async function generateVoiceStream(req, res, shotId) {
         'SELECT * FROM film_voice_profiles WHERE character_id IN (SELECT id FROM film_characters WHERE project_id = ?)'
     ).all(scene.project_id);
     const voiceProvider = resolve('voice', parseProjectConfig(scene.project_id));
+    const consistencyContext = buildShotReferencePayload(shot, scene, { id: scene.project_id });
     ensureDir(scene.project_id, 'audio');
 
     let completed = 0, failed = 0;
@@ -230,7 +237,11 @@ async function generateVoiceStream(req, res, shotId) {
         const line = dialogueLines[i];
         const character = characters.find(c => c.name && c.name.toUpperCase() === line.character.toUpperCase());
         const voiceProfile = character ? voiceProfiles.find(vp => vp.character_id === character.id) : null;
-        const payload = buildVoicePayload(line, voiceProfile, character);
+        const payload = applyConsistencyToVoicePayload(
+            buildVoicePayload(line, voiceProfile, character),
+            consistencyContext,
+            line.character
+        );
 
         sendEvent({ type: 'progress', line_index: i, total_lines: dialogueLines.length, character: line.character, phase: 'generating' });
 
@@ -317,7 +328,17 @@ async function batchVoiceStream(req, res, projectId) {
             if (clientGone || res.writableEnded) break;
             const character = characters.find(c => c.name && c.name.toUpperCase() === line.character.toUpperCase());
             const voiceProfile = character ? voiceProfiles.find(vp => vp.character_id === character.id) : null;
-            const payload = buildVoicePayload(line, voiceProfile, character);
+            const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
+            const consistencyContext = buildShotReferencePayload(
+                { id: shot.shot_id, scene_id: shot.scene_id, scene_card_yaml: shot.scene_card_yaml },
+                scene,
+                project
+            );
+            const payload = applyConsistencyToVoicePayload(
+                buildVoicePayload(line, voiceProfile, character),
+                consistencyContext,
+                line.character
+            );
 
             try {
                 const result = await voiceProvider.generate('voice', payload, { timeout: 300000 });

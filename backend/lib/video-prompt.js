@@ -53,10 +53,14 @@ const DEFAULT_GUIDANCE = 7.5;
  * @param {string} [stylePreset] - Style preset name
  * @returns {{ prompt: string, negative_prompt: string, camera_control: object }}
  */
-function buildVideoPrompt(sceneCard, characters, location, stylePreset) {
+function buildVideoPrompt(sceneCard, characters, location, stylePreset, options) {
+    const opts = options || {};
     // Reuse storyboard prompt for text prompt
     const { prompt, negative_prompt } = buildStoryboardPrompt(
-        sceneCard, characters, location, stylePreset
+        sceneCard, characters, location, stylePreset, {
+            prompt_additions: opts.prompt_additions,
+            negative_additions: opts.negative_additions,
+        }
     );
 
     // Map camera movement
@@ -103,7 +107,7 @@ function calculateVideoParams(sceneCard) {
 function buildVideoPayload(sceneCard, characters, location, stylePreset, options) {
     const opts = options || {};
     const { prompt, negative_prompt, camera_control } = buildVideoPrompt(
-        sceneCard, characters, location, stylePreset
+        sceneCard, characters, location, stylePreset, opts
     );
     const params = calculateVideoParams(sceneCard);
 
@@ -132,6 +136,14 @@ function buildVideoPayload(sceneCard, characters, location, stylePreset, options
 
     if (opts.init_image) {
         payload.init_image = opts.init_image;
+    }
+
+    if (Array.isArray(opts.reference_images) && opts.reference_images.length > 0) {
+        payload.reference_images = opts.reference_images;
+    }
+
+    if (Array.isArray(opts.input_refs) && opts.input_refs.length > 0) {
+        payload.input_refs = opts.input_refs;
     }
 
     // Include LoRA IDs from characters
