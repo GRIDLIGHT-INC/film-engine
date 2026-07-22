@@ -216,11 +216,24 @@ async function connectProvider(req, res, provider) {
         let clientSecret = existing.client_secret || '';
         if (!clientId) {
             if (!meta.registration_endpoint) {
-                return json(res, 400, { error: 'Provider requires manual client registration (no dynamic registration endpoint discovered).' });
+                return json(res, 400, { error: 'No dynamic registration endpoint. Paste an existing OAuth Client ID in Settings to connect.' });
             }
-            const reg = await oauth.registerClient(meta.registration_endpoint, redirectUri, 'Film Engine');
-            clientId = reg.client_id;
-            clientSecret = reg.client_secret || '';
+            try {
+                const reg = await oauth.registerClient(meta.registration_endpoint, redirectUri, 'Film Engine');
+                clientId = reg.client_id;
+                clientSecret = reg.client_secret || '';
+                // Persist the registered client immediately so we reuse it next
+                // time instead of creating another entity.
+                saveMeta(provider, { ...existing, client_id: clientId, client_secret: clientSecret });
+            } catch (regErr) {
+                if (/too_many_entities|reached the limit|\b403\b/.test(regErr.message)) {
+                    return json(res, 409, {
+                        error: 'Artlist reached its limit of OAuth clients for your account. Fix: remove old/unused connected apps in your Artlist account settings, then retry — or paste an existing Artlist OAuth Client ID in Settings to skip auto-registration.',
+                        code: 'too_many_entities',
+                    });
+                }
+                throw regErr;
+            }
         }
 
         const { verifier, challenge, state } = oauth.makePkce();

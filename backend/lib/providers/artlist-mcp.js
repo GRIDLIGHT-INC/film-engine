@@ -121,8 +121,14 @@ const adapter = {
     capabilities: ['image', 'video'],
 
     connection: {
-        instructions: 'Requires a paid Artlist plan with AI credits. Click "Connect Artlist" and sign in with your Artlist account (Google/email) — no API key needed. Generation is billed via your Artlist AI credits.',
+        instructions: 'Requires a paid Artlist plan with AI credits. Click "Connect Artlist" and sign in — no API key needed. If connect fails with "too many entities", your Artlist account hit its OAuth-client limit: remove old connected apps in your Artlist account, or paste an existing client below to skip auto-registration.',
         oauth: { connectPath: '/providers/artlist-mcp/connect', mcpUrl: DEFAULT_MCP_URL },
+        // Optional: reuse an existing Artlist OAuth client instead of dynamic
+        // registration (avoids the per-tenant client-entity limit).
+        fields: [
+            { key: 'client_id', label: 'OAuth Client ID (optional — skips auto-registration)', type: 'text', required: false },
+            { key: 'client_secret', label: 'OAuth Client Secret (optional)', type: 'password', required: false },
+        ],
     },
 
     supports,

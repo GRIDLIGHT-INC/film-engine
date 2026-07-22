@@ -10991,12 +10991,25 @@ ${fountainText.slice(0, 50000)}`;
                 if (conn && conn.oauth) {
                     const connected = c.connected;
                     const status = connected ? '<span class="tag" style="background:var(--gl-success,#166534);">connected</span>' : '<span class="tag">not connected</span>';
+                    // Optional: existing-OAuth-client fields (to skip dynamic registration).
+                    const optFields = (Array.isArray(conn.fields) && conn.fields.length) ? `
+                        <details style="margin-top:8px;">
+                            <summary class="text-sm text-muted" style="cursor:pointer;">Advanced: use an existing OAuth client</summary>
+                            <div style="margin-top:6px;">
+                                ${conn.fields.map(f => {
+                                    const isSet = c.fields && c.fields[f.key];
+                                    return '<div style="margin-bottom:6px;"><label class="text-sm">' + esc(f.label || f.key) + (isSet ? ' <span class="tag" style="background:var(--gl-success,#166534);">set</span>' : '') + '</label><input type="' + (f.type === 'password' ? 'password' : 'text') + '" id="provfield-' + esc(p.id) + '-' + esc(f.key) + '" placeholder="' + (isSet ? '•••••• (leave blank to keep)' : '') + '" style="width:100%;"></div>';
+                                }).join('')}
+                                <button class="btn btn-secondary btn-sm" onclick="saveProviderFields('${esc(p.id)}')">Save client</button>
+                            </div>
+                        </details>` : '';
                     return `<div class="form-group" style="border:1px solid var(--gl-border-subtle);border-radius:8px;padding:10px;">
                         <label>${esc(p.label)} ${status}</label>${instr}
                         <div style="display:flex;gap:6px;">
                             <button class="btn btn-primary btn-sm" onclick="connectProviderOAuth('${esc(p.id)}')">${connected ? 'Reconnect' : 'Connect ' + esc(p.label.split(' ')[0])}</button>
                             ${connected ? '<button class="btn btn-danger btn-sm" onclick="disconnectProvider(\'' + esc(p.id) + '\')">Disconnect</button>' : ''}
                         </div>
+                        ${optFields}
                     </div>`;
                 }
 
