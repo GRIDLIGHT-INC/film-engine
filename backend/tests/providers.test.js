@@ -57,11 +57,12 @@ describe('providers/registry resolve', () => {
         }
     });
 
-    it('honors a per-project provider choice', () => {
-        // openai isn't registered yet in Phase 1, so resolveId returns the id but
-        // resolve() falls back to gridlight (never breaks generation).
-        assert.equal(providers.resolveId('image', { image: 'openai' }), 'openai');
-        assert.equal(providers.resolve('image', { image: 'openai' }).id, 'gridlight');
+    it('honors a per-project provider choice for a registered provider', () => {
+        // Register a throwaway adapter so the test doesn't depend on which
+        // optional providers (openai/elevenlabs/…) happen to be present.
+        providers.register({ id: '__test_img__', kind: 'generator', capabilities: ['image'], supports: (c) => c === 'image' });
+        assert.equal(providers.resolveId('image', { image: '__test_img__' }), '__test_img__');
+        assert.equal(providers.resolve('image', { image: '__test_img__' }).id, '__test_img__');
     });
 
     it('falls back to gridlight for an unknown configured provider', () => {

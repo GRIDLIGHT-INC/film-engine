@@ -10,11 +10,18 @@
  * GET  /film/props/:id/image               — Get prop image status
  */
 const { db, generateId } = require('../db/database');
-const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
+const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
+const { resolve } = require('../lib/providers');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IMAGE_ENDPOINT = '/image';
+
+function parseProjectConfig(projectId) {
+    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
+    if (!row) return {};
+    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
+}
 
 function handleLocations(req, res, urlParts, query) {
     // /film/projects/:id/locations
@@ -441,7 +448,7 @@ async function generateLocationImage(req, res, locId) {
     };
 
     try {
-        const result = await callGridlight(IMAGE_ENDPOINT, payload);
+        const result = await resolve('image', parseProjectConfig(loc.project_id)).generate('image', payload, { timeout: 300000 });
         if (!result.ok) {
             db.prepare('UPDATE film_location_image_jobs SET status = ?, error_message = ? WHERE id = ?')
                 .run('failed', result.error, jobId);
@@ -456,7 +463,7 @@ async function generateLocationImage(req, res, locId) {
         if (Buffer.isBuffer(result.data)) {
             filePath = saveFile(loc.project_id, 'loc-refs', filename, result.data);
         } else if (result.data && result.data.image_url) {
-            // Gridlight returned a URL — fetch the image
+            // Provider returned a URL — fetch the image bytes into film_assets.
             const imgRes = await fetch(result.data.image_url);
             if (imgRes.ok) {
                 filePath = saveFile(loc.project_id, 'loc-refs', filename, Buffer.from(await imgRes.arrayBuffer()));
@@ -467,9 +474,15 @@ async function generateLocationImage(req, res, locId) {
 
         const assetId = generateId();
         db.prepare(
-            `INSERT OR REPLACE INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, location_id, version, metadata)
-             VALUES (?, ?, 'reference_image', ?, ?, 'png', 'image/png', ?, 1, ?)`
-        ).run(assetId, loc.project_id, filePath, filename, locId, JSON.stringify({ location_id: locId }));
+            `INSERT OR REPLACE INTO film_assets (
+                id, project_id, asset_type, file_path, file_name, format, mime_type, location_id, version, metadata,
+                provider, provider_model, provider_job_id, license_source, license_status
+             )
+             VALUES (?, ?, 'reference_image', ?, ?, 'png', 'image/png', ?, 1, ?, ?, ?, ?, 'generated', 'generated')`
+        ).run(
+            assetId, loc.project_id, filePath, filename, locId, JSON.stringify({ location_id: locId }),
+            result.provider || '', result.provider_model || '', result.provider_job_id || ''
+        );
 
         db.prepare('UPDATE film_location_image_jobs SET status = ?, output_path = ? WHERE id = ?')
             .run('complete', filePath, jobId);
@@ -552,7 +565,7 @@ async function generatePropImage(req, res, propId) {
     };
 
     try {
-        const result = await callGridlight(IMAGE_ENDPOINT, payload);
+        const result = await resolve('image', parseProjectConfig(prop.project_id)).generate('image', payload, { timeout: 300000 });
         if (!result.ok) {
             db.prepare('UPDATE film_prop_image_jobs SET status = ?, error_message = ? WHERE id = ?')
                 .run('failed', result.error, jobId);
@@ -577,9 +590,15 @@ async function generatePropImage(req, res, propId) {
 
         const assetId = generateId();
         db.prepare(
-            `INSERT OR REPLACE INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, version, metadata)
-             VALUES (?, ?, 'reference_image', ?, ?, 'png', 'image/png', 1, ?)`
-        ).run(assetId, prop.project_id, filePath, filename, JSON.stringify({ prop_id: propId }));
+            `INSERT OR REPLACE INTO film_assets (
+                id, project_id, asset_type, file_path, file_name, format, mime_type, version, metadata,
+                provider, provider_model, provider_job_id, license_source, license_status
+             )
+             VALUES (?, ?, 'reference_image', ?, ?, 'png', 'image/png', 1, ?, ?, ?, ?, 'generated', 'generated')`
+        ).run(
+            assetId, prop.project_id, filePath, filename, JSON.stringify({ prop_id: propId }),
+            result.provider || '', result.provider_model || '', result.provider_job_id || ''
+        );
 
         db.prepare('UPDATE film_prop_image_jobs SET status = ?, output_path = ? WHERE id = ?')
             .run('complete', filePath, jobId);

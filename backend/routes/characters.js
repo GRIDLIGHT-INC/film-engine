@@ -8,11 +8,18 @@
  * GET  /film/characters/:id/refsheet              — FILM-014: Get reference sheet status
  */
 const { db, generateId } = require('../db/database');
-const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
+const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
+const { resolve } = require('../lib/providers');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IMAGE_ENDPOINT = '/image';
+
+function parseProjectConfig(projectId) {
+    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
+    if (!row) return {};
+    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
+}
 
 function handleCharacters(req, res, urlParts, query) {
     // /film/projects/:id/characters — parts: ['film', 'projects', id, 'characters']
@@ -72,7 +79,7 @@ function listCharacters(req, res, projectId) {
     const costumeCount = db.prepare('SELECT COUNT(*) AS count FROM film_costumes WHERE character_id = ?');
     const voiceCheck = db.prepare('SELECT id FROM film_voice_profiles WHERE character_id = ? LIMIT 1');
     const refsheetCheck = db.prepare(
-        "SELECT file_name, project_id FROM film_assets WHERE asset_type = 'reference_sheet' AND metadata LIKE ? ORDER BY created_at DESC LIMIT 1"
+        "SELECT file_name, project_id FROM film_assets WHERE asset_type = 'character_sheet' AND metadata LIKE ? ORDER BY created_at DESC LIMIT 1"
     );
 
     for (const ch of rows) {
@@ -429,6 +436,9 @@ async function generateRefSheet(req, res, charId) {
     const results = [];
     ensureDir(ch.project_id, 'refsheets');
 
+    // Resolve the image provider for this project (gridlight default → OpenAI/etc when configured).
+    const imageProvider = resolve('image', parseProjectConfig(ch.project_id));
+
     for (const view of views) {
         const prompt = buildRefSheetPrompt(ch, view);
         const negativePrompt = 'blurry, low quality, distorted, multiple characters, background clutter';
@@ -445,7 +455,7 @@ async function generateRefSheet(req, res, charId) {
         };
 
         try {
-            const result = await callGridlight(IMAGE_ENDPOINT, payload);
+            const result = await imageProvider.generate('image', payload, { timeout: 300000 });
             if (!result.ok) {
                 results.push({ view, status: 'failed', error: result.error });
                 continue;
@@ -463,9 +473,15 @@ async function generateRefSheet(req, res, charId) {
 
             const assetId = generateId();
             db.prepare(
-                `INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, version, metadata)
-                 VALUES (?, ?, 'reference_sheet', ?, ?, 'png', 'image/png', 1, ?)`
-            ).run(assetId, ch.project_id, filePath, filename, JSON.stringify({ character_id: charId, view }));
+                `INSERT INTO film_assets (
+                    id, project_id, asset_type, file_path, file_name, format, mime_type, version, metadata,
+                    provider, provider_model, provider_job_id, license_source, license_status
+                 )
+                 VALUES (?, ?, 'character_sheet', ?, ?, 'png', 'image/png', 1, ?, ?, ?, ?, 'generated', 'generated')`
+            ).run(
+                assetId, ch.project_id, filePath, filename, JSON.stringify({ character_id: charId, view }),
+                result.provider || imageProvider.id, result.provider_model || '', result.provider_job_id || ''
+            );
 
             results.push({ view, status: 'complete', image_url: getFileUrl('refsheets', ch.project_id, filename) });
         } catch (err) {
