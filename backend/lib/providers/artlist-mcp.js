@@ -121,7 +121,7 @@ const adapter = {
     capabilities: ['image', 'video'],
 
     connection: {
-        instructions: 'Requires a paid Artlist plan with AI credits. Click "Connect Artlist" and sign in — no API key needed. If connect fails with "too many entities", your Artlist account hit its OAuth-client limit: remove old connected apps in your Artlist account, or paste an existing client below to skip auto-registration.',
+        instructions: 'Requires a paid Artlist plan with AI credits. Click "Connect Artlist" and sign in — no API key needed. If connect fails with "too many entities", Artlist has capped OAuth-client registration for your account (no self-serve cleanup is documented): either paste an existing OAuth client below to skip registration, or ask Artlist support to reset the dynamic client-registration limit.',
         oauth: { connectPath: '/providers/artlist-mcp/connect', mcpUrl: DEFAULT_MCP_URL },
         // Optional: reuse an existing Artlist OAuth client instead of dynamic
         // registration (avoids the per-tenant client-entity limit).

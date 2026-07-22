@@ -228,7 +228,7 @@ async function connectProvider(req, res, provider) {
             } catch (regErr) {
                 if (/too_many_entities|reached the limit|\b403\b/.test(regErr.message)) {
                     return json(res, 409, {
-                        error: 'Artlist reached its limit of OAuth clients for your account. Fix: remove old/unused connected apps in your Artlist account settings, then retry — or paste an existing Artlist OAuth Client ID in Settings to skip auto-registration.',
+                        error: 'Artlist accepted OAuth discovery, but dynamic client registration is capped for your Artlist account (too_many_entities). Artlist does not currently document a way to delete old OAuth clients in-app. Options: (1) paste an existing Artlist OAuth Client ID/Secret under "Advanced" to skip registration, or (2) contact Artlist support and ask them to reset/raise the dynamic client-registration limit for auth.artlist.io/oidc/register.',
                         code: 'too_many_entities',
                     });
                 }
