@@ -4009,6 +4009,19 @@
                     <button class="btn btn-primary" onclick="saveTechnicalSettings()">Save Technical Settings</button>
                 </div>
             </div>
+
+            <!-- AI Providers (Phase 1: multi-provider layer) -->
+            <div class="card mt-16" style="max-width:560px;" id="settingsProvidersCard">
+                <h3 class="mb-8">AI Providers</h3>
+                <p class="text-sm text-muted mb-16">Choose which service generates each type of content, and store API keys. Keys are kept on the server and never sent back to the browser.</p>
+                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">API Keys</h4>
+                <div id="providerCredentials" class="mb-16"></div>
+                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">Provider per capability <span class="text-sm" style="text-transform:none;letter-spacing:0;">(this project)</span></h4>
+                <div id="providerCapabilityMap"></div>
+                <div class="btn-row" style="margin-top:16px;">
+                    <button class="btn btn-primary" onclick="saveProviderConfig()">Save Providers</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -10943,6 +10956,88 @@ ${fountainText.slice(0, 50000)}`;
             pc.classList.add('hidden');
         }
         loadTechnicalSettings();
+        loadProviders();
+    }
+
+    // ── AI Providers (multi-provider layer) ─────────────────────────
+    let _providerCatalog = null;
+    async function loadProviders() {
+        const credEl = document.getElementById('providerCredentials');
+        const mapEl = document.getElementById('providerCapabilityMap');
+        if (!credEl || !mapEl) return;
+        try {
+            const catalog = await api('/providers');
+            _providerCatalog = catalog;
+
+            // API-key rows for providers that need one.
+            const keyed = (catalog.providers || []).filter(p => p.requiresKey);
+            credEl.innerHTML = keyed.length ? keyed.map(p => {
+                const c = p.credentials || { set: false };
+                const status = c.set ? '<span class="tag" style="background:var(--gl-success,#166534);">set ••••' + esc(c.last4 || '') + '</span>' : '<span class="tag">not set</span>';
+                return `<div class="form-group">
+                    <label>${esc(p.label)} ${status}</label>
+                    <div style="display:flex;gap:6px;">
+                        <input type="password" id="provkey-${esc(p.id)}" placeholder="Enter API key" style="flex:1;">
+                        <button class="btn btn-secondary btn-sm" onclick="saveProviderKey('${esc(p.id)}')">Save</button>
+                        ${c.set ? '<button class="btn btn-danger btn-sm" onclick="clearProviderKey(\'' + esc(p.id) + '\')">Clear</button>' : ''}
+                    </div>
+                </div>`;
+            }).join('') : '<p class="text-sm text-muted">No key-based providers yet. (Gridlight uses a server-side env key.)</p>';
+
+            // Per-capability provider selectors (needs a current project).
+            if (!state.currentProject) {
+                mapEl.innerHTML = '<p class="text-sm text-muted">Open a project to choose providers per capability.</p>';
+                return;
+            }
+            const proj = await api('/projects/' + state.currentProject.id + '/providers');
+            const caps = proj.capabilities || [];
+            const supportsCap = (cap) => (catalog.providers || []).filter(p => (p.capabilities || []).includes(cap));
+            mapEl.innerHTML = caps.map(cap => {
+                const opts = supportsCap(cap);
+                if (opts.length === 0) return '';
+                const current = (proj.config && proj.config[cap]) || proj.effective[cap] || '';
+                return `<div class="form-group" style="display:flex;align-items:center;gap:10px;">
+                    <label style="flex:0 0 90px;margin:0;text-transform:capitalize;">${esc(cap)}</label>
+                    <select id="provcap-${esc(cap)}" style="flex:1;">
+                        ${opts.map(o => '<option value="' + esc(o.id) + '"' + (o.id === current ? ' selected' : '') + '>' + esc(o.label) + '</option>').join('')}
+                    </select>
+                </div>`;
+            }).join('');
+        } catch (err) { credEl.innerHTML = '<p class="text-sm text-muted">Providers unavailable: ' + esc(err.message) + '</p>'; }
+    }
+
+    async function saveProviderKey(providerId) {
+        const input = document.getElementById('provkey-' + providerId);
+        const key = input ? input.value.trim() : '';
+        if (!key) { setStatus('Enter an API key first'); return; }
+        try {
+            await api('/providers/' + providerId + '/credentials', { method: 'PUT', body: JSON.stringify({ api_key: key }) });
+            setStatus(providerId + ' key saved');
+            loadProviders();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function clearProviderKey(providerId) {
+        try {
+            await api('/providers/' + providerId + '/credentials', { method: 'DELETE' });
+            setStatus(providerId + ' key cleared');
+            loadProviders();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function saveProviderConfig() {
+        if (!state.currentProject) { setStatus('Open a project first'); return; }
+        const caps = (_providerCatalog && _providerCatalog.capabilities) || [];
+        const config = {};
+        caps.forEach(cap => {
+            const sel = document.getElementById('provcap-' + cap);
+            if (sel && sel.value) config[cap] = sel.value;
+        });
+        try {
+            await api('/projects/' + state.currentProject.id + '/providers', { method: 'PUT', body: JSON.stringify({ config }) });
+            setStatus('Provider settings saved');
+            loadProviders();
+        } catch (err) { setStatus('Error: ' + err.message); }
     }
 
     function saveSettings() {

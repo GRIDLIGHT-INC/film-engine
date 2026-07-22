@@ -94,6 +94,7 @@ const { handleMusicGen } = require('./routes/music-gen');
 const { handlePostProduction } = require('./routes/post-production');
 const { handlePipeline } = require('./routes/pipeline');
 const { handleThreeD } = require('./routes/threed');
+const { handleProviders } = require('./routes/providers');
 const { handleQA } = require('./routes/qa');
 const { handleProjectBundle } = require('./routes/project-bundle');
 const { handleContinuity } = require('./routes/continuity');
@@ -509,6 +510,16 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/projects/:id/models[/batch[/stream]] — 3D asset generation
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'models') {
             return await handleThreeD(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/providers — per-project provider selection
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'providers') {
+            return handleProviders(req, res, parts, query);
+        }
+
+        // Route: /film/providers[/:provider/credentials] — provider catalog + credentials
+        if (parts[1] === 'providers') {
+            return handleProviders(req, res, parts, query);
         }
 
         // Route: /film/projects/demo — create demo project
