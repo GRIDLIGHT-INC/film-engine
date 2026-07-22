@@ -142,6 +142,38 @@ describe('Consistency Profiles API', () => {
         assert.equal(res.status, 404);
     });
 
+    it('rejects a canonical asset from another project (project isolation)', async () => {
+        const p2 = await request('/film/projects', { method: 'POST', body: { title: 'Other Project', logline: 'y' } });
+        const a2 = await request(`/film/projects/${p2.data.id}/assets`, {
+            method: 'POST', body: { asset_type: 'character_sheet', file_path: '/tmp/other.png', file_name: 'other.png' },
+        });
+        const res = await request(`/film/projects/${projectId}/consistency/profiles`, {
+            method: 'POST', body: { profile_type: 'character', subject_name: 'Cross', canonical_asset_id: a2.data.id },
+        });
+        assert.equal(res.status, 400, 'must not accept an asset from a different project');
+    });
+
+    it('locks a voice profile that carries a voice id', async () => {
+        const create = await request(`/film/projects/${projectId}/consistency/profiles`, {
+            method: 'POST', body: { profile_type: 'voice', subject_id: 'char-1', subject_name: 'Jax', settings: { voice_profile_id: 'vp-1' } },
+        });
+        assert.equal(create.status, 201);
+        const lock = await request(`/film/consistency/profiles/${create.data.id}/lock`, { method: 'POST', body: {} });
+        assert.equal(lock.status, 200);
+        assert.equal(lock.data.status, 'locked');
+        await request(`/film/consistency/profiles/${create.data.id}`, { method: 'DELETE' });
+    });
+
+    it('refuses to lock a voice profile with no voice id/profile', async () => {
+        const create = await request(`/film/projects/${projectId}/consistency/profiles`, {
+            method: 'POST', body: { profile_type: 'voice', subject_id: 'char-2', subject_name: 'Vex' },
+        });
+        const lock = await request(`/film/consistency/profiles/${create.data.id}/lock`, { method: 'POST', body: {} });
+        assert.equal(lock.status, 400);
+        assert.match(lock.data.error, /voice/i);
+        await request(`/film/consistency/profiles/${create.data.id}`, { method: 'DELETE' });
+    });
+
     it('deletes a profile', async () => {
         const res = await request(`/film/consistency/profiles/${profileId}`, { method: 'DELETE' });
         assert.equal(res.status, 200);

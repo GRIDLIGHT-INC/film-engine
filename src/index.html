@@ -13853,8 +13853,22 @@ ${fountainText.slice(0, 50000)}`;
                 <div class="flex-between"><strong style="font-size:13px;">${esc(s.name)}</strong>${status}</div>
                 ${thumb ? '<img src="' + API_BASE + esc(thumb) + '" style="width:100%;border-radius:6px;margin-top:8px;max-height:200px;object-fit:cover;" onerror="this.style.display=\'none\'">' : '<p class="text-sm text-muted" style="margin-top:8px;">No reference image yet — generate a reference sheet (Characters/Locations page) to explore, then lock one here.</p>'}
                 <div style="margin-top:8px;">${action}</div>
+                ${type === 'character' ? renderVoiceRow(s, profBySubject['voice:' + s.id]) : ''}
             </div>`;
         }).join('');
+    }
+
+    function renderVoiceRow(char, voiceProf) {
+        const locked = voiceProf && voiceProf.status === 'locked';
+        const hasVoice = !!char.voice_profile_id;
+        const badge = locked ? '<span class="tag" style="background:var(--gl-success,#166534);">&#128274; voice</span>'
+            : hasVoice ? '<span class="tag">voice not locked</span>' : '<span class="tag">no voice profile</span>';
+        const btn = locked
+            ? '<button class="btn btn-secondary btn-sm" onclick="unlockConsistency(\'' + voiceProf.id + '\')">Unlock</button>'
+            : hasVoice
+                ? '<button class="btn btn-secondary btn-sm" onclick="lockVoice(\'' + char.id + '\')">Lock voice</button>'
+                : '<button class="btn btn-secondary btn-sm" disabled title="Set a voice profile on the character first">Lock voice</button>';
+        return '<div style="margin-top:6px;border-top:1px solid var(--gl-border-subtle);padding-top:6px;display:flex;justify-content:space-between;align-items:center;"><span class="text-sm">Voice ' + badge + '</span>' + btn + '</div>';
     }
 
     function renderConsistencyAudit(audit) {
@@ -13871,16 +13885,40 @@ ${fountainText.slice(0, 50000)}`;
 
     async function lockConsistency(type, subjectId, assetId) {
         const list = type === 'character' ? _consistencyData.characters : _consistencyData.locations;
-        const subj = (list || []).find(x => x.id === subjectId);
-        const name = subj ? subj.name : subjectId;
+        const subj = (list || []).find(x => x.id === subjectId) || {};
+        const name = subj.name || subjectId;
+        // Prefill the prompt contract from the subject's own descriptive fields so
+        // a locked profile carries BOTH the image anchor and the text contract.
+        const promptContract = type === 'character'
+            ? (subj.appearance_prompt || subj.description || '')
+            : (subj.reference_prompt || subj.description || '');
         try {
             const prof = await api('/projects/' + state.currentProject.id + '/consistency/profiles', {
-                method: 'POST', body: JSON.stringify({ profile_type: type, subject_id: subjectId, subject_name: name, canonical_asset_id: assetId }),
+                method: 'POST', body: JSON.stringify({ profile_type: type, subject_id: subjectId, subject_name: name, canonical_asset_id: assetId, prompt_contract: promptContract }),
             });
+            // Ensure the contract is applied even if the profile already existed.
+            if (promptContract && !prof.prompt_contract) {
+                await api('/consistency/profiles/' + prof.id, { method: 'PUT', body: JSON.stringify({ prompt_contract: promptContract, canonical_asset_id: assetId }) });
+            }
             await api('/consistency/profiles/' + prof.id + '/lock', { method: 'POST', body: '{}' });
             setStatus(name + ' locked for production');
             loadConsistency();
         } catch (err) { setStatus('Lock error: ' + err.message); }
+    }
+
+    // Lock a character's voice (snapshot their voice profile into a 'voice' consistency profile).
+    async function lockVoice(subjectId) {
+        const subj = (_consistencyData.characters || []).find(x => x.id === subjectId) || {};
+        if (!subj.voice_profile_id) { setStatus('No voice profile — set one on the character first'); return; }
+        try {
+            const prof = await api('/projects/' + state.currentProject.id + '/consistency/profiles', {
+                method: 'POST',
+                body: JSON.stringify({ profile_type: 'voice', subject_id: subjectId, subject_name: subj.name || subjectId, settings: { voice_profile_id: subj.voice_profile_id } }),
+            });
+            await api('/consistency/profiles/' + prof.id + '/lock', { method: 'POST', body: '{}' });
+            setStatus((subj.name || 'Character') + ' voice locked');
+            loadConsistency();
+        } catch (err) { setStatus('Voice lock error: ' + err.message); }
     }
 
     async function unlockConsistency(profileId) {

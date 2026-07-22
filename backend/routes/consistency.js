@@ -103,8 +103,8 @@ function createProfile(req, res, projectId) {
     if (!PROFILE_TYPES.includes(b.profile_type)) {
         return json(res, 400, { error: `profile_type must be one of: ${PROFILE_TYPES.join(', ')}` });
     }
-    if (b.canonical_asset_id && !db.prepare('SELECT id FROM film_assets WHERE id = ?').get(b.canonical_asset_id)) {
-        return json(res, 400, { error: 'canonical_asset_id does not reference a known asset' });
+    if (b.canonical_asset_id && !db.prepare('SELECT id FROM film_assets WHERE id = ? AND project_id = ?').get(b.canonical_asset_id, projectId)) {
+        return json(res, 400, { error: 'canonical_asset_id must reference an asset in this project' });
     }
     // One profile per (project, type, subject) — reuse if it exists.
     if (b.subject_id) {
@@ -140,12 +140,12 @@ function getProfile(res, id, status) {
 const UPDATABLE = ['subject_name', 'canonical_asset_id', 'prompt_contract', 'negative_contract', 'provider', 'provider_model', 'locked_seed', 'reference_weight', 'required_roles', 'settings', 'notes'];
 
 function updateProfile(req, res, id) {
-    const profile = db.prepare('SELECT id FROM film_consistency_profiles WHERE id = ?').get(id);
+    const profile = db.prepare('SELECT id, project_id FROM film_consistency_profiles WHERE id = ?').get(id);
     if (!profile) return json(res, 404, { error: 'Profile not found' });
 
     const b = req.body || {};
-    if (b.canonical_asset_id && !db.prepare('SELECT id FROM film_assets WHERE id = ?').get(b.canonical_asset_id)) {
-        return json(res, 400, { error: 'canonical_asset_id does not reference a known asset' });
+    if (b.canonical_asset_id && !db.prepare('SELECT id FROM film_assets WHERE id = ? AND project_id = ?').get(b.canonical_asset_id, profile.project_id)) {
+        return json(res, 400, { error: 'canonical_asset_id must reference an asset in this project' });
     }
     const sets = [], vals = [];
     for (const k of UPDATABLE) {
@@ -164,9 +164,17 @@ function updateProfile(req, res, id) {
 function setStatus(res, id, status) {
     const profile = profileWithRefs(id);
     if (!profile) return json(res, 404, { error: 'Profile not found' });
-    // Locking requires a canonical reference so production has something to inject.
-    if (status === 'locked' && !profile.canonical_asset_id && !(profile.refs || []).some(r => r.ref_role === 'canonical')) {
-        return json(res, 400, { error: 'Cannot lock: set a canonical reference asset first.' });
+    // Locking requires the profile carry something to inject: voice profiles need
+    // a voice id; visual profiles need a canonical reference asset.
+    if (status === 'locked') {
+        if (profile.profile_type === 'voice') {
+            let s = {}; try { s = JSON.parse(profile.settings || '{}'); } catch (_) {}
+            if (!s.voice_profile_id && !s.voice_id) {
+                return json(res, 400, { error: 'Cannot lock voice: no voice profile or voice_id set.' });
+            }
+        } else if (!profile.canonical_asset_id && !(profile.refs || []).some(r => r.ref_role === 'canonical')) {
+            return json(res, 400, { error: 'Cannot lock: set a canonical reference asset first.' });
+        }
     }
     db.prepare("UPDATE film_consistency_profiles SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, id);
     return getProfile(res, id);
@@ -185,8 +193,8 @@ function addRef(req, res, profileId) {
     if (!profile) return json(res, 404, { error: 'Profile not found' });
     const b = req.body || {};
     if (!b.asset_id) return json(res, 400, { error: 'asset_id is required' });
-    if (!db.prepare('SELECT id FROM film_assets WHERE id = ?').get(b.asset_id)) {
-        return json(res, 400, { error: 'asset_id does not reference a known asset' });
+    if (!db.prepare('SELECT id FROM film_assets WHERE id = ? AND project_id = ?').get(b.asset_id, profile.project_id)) {
+        return json(res, 400, { error: 'asset_id must reference an asset in this project' });
     }
 
     const id = generateId();

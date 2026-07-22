@@ -42,7 +42,7 @@ async function waitForServer(n = 40) {
 }
 
 describe('Pipeline consistency readiness', () => {
-    let projectId, shotId, mockPort;
+    let projectId, shotId, sceneId, mockPort;
 
     before(async () => {
         fs.mkdirSync(TEST_DIR, { recursive: true });
@@ -68,7 +68,7 @@ describe('Pipeline consistency readiness', () => {
         await request(`/film/projects/${projectId}/characters`, { method: 'POST', body: { name: 'Jax', appearance_prompt: 'bounty hunter' } });
         await request(`/film/projects/${projectId}/script`, { method: 'POST', body: { content: 'Title: R\n\nINT. OFFICE - DAY\n\nJax stands.\n', format: 'fountain' } });
         const scenes = await request(`/film/projects/${projectId}/scenes`);
-        const sceneId = (scenes.data.scenes || [])[0].id;
+        sceneId = (scenes.data.scenes || [])[0].id;
         const shots = await request('/film/shots', {
             method: 'POST',
             body: { scene_id: sceneId, cards: [{ shot_code: '1A', camera: { shot_type: 'medium' }, characters: [{ name: 'Jax' }] }] },
@@ -102,5 +102,23 @@ describe('Pipeline consistency readiness', () => {
         assert.equal(res.status, 200);
         assert.equal(res.data.ready, false);
         assert.ok(res.data.missing.length >= 1);
+    });
+
+    it('strict SCENE run 409s when a contained shot is not ready', async () => {
+        const res = await request(`/film/scenes/${sceneId}/pipeline/run`, { method: 'POST', body: { strict: true } });
+        assert.equal(res.status, 409);
+        assert.equal(res.data.readiness.ready, false);
+    });
+
+    it('strict PROJECT run 409s when any shot is not ready', async () => {
+        const res = await request(`/film/projects/${projectId}/pipeline/run`, { method: 'POST', body: { strict: true } });
+        assert.equal(res.status, 409);
+        assert.equal(res.data.readiness.ready, false);
+    });
+
+    it('non-strict scene run proceeds (202) with readiness', async () => {
+        const res = await request(`/film/scenes/${sceneId}/pipeline/run`, { method: 'POST', body: {} });
+        assert.equal(res.status, 202);
+        assert.ok(res.data.readiness);
     });
 });

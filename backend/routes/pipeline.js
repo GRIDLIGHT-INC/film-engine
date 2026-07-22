@@ -15,7 +15,7 @@
 const { db, generateId } = require('../db/database');
 const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
 const { resolveGenerator } = require('../lib/providers');
-const { auditShotReadiness } = require('../lib/consistency-context');
+const { auditShotReadiness, auditProjectReadiness } = require('../lib/consistency-context');
 const { ensureDir, saveFile, getFileUrl } = require('../lib/file-storage');
 const { PIPELINE_STEPS, buildStepPlan, autoSkipSteps, retryDelay, MAX_RETRIES } = require('../lib/pipeline-engine');
 const { buildSchedule, suggestResidency, MODEL_PROFILES } = require('../lib/scheduling-engine');
@@ -318,6 +318,16 @@ async function runScenePipeline(req, res, sceneId) {
 
     const shots = db.prepare('SELECT * FROM film_shots WHERE scene_id = ? ORDER BY shot_code').all(sceneId);
 
+    // Consistency readiness across the scene's shots (strict blocks the whole scene).
+    const shotReadiness = shots.map(s => {
+        try { return { shot_id: s.id, shot_code: s.shot_code, ...auditShotReadiness(s, scene, null) }; }
+        catch (_) { return { shot_id: s.id, shot_code: s.shot_code, ready: true, missing: [], warnings: [] }; }
+    });
+    const sceneReadiness = { ready: shotReadiness.every(r => r.ready), shots: shotReadiness, missing: shotReadiness.flatMap(r => r.missing || []) };
+    if (!!(req.body && req.body.strict) && !sceneReadiness.ready) {
+        return json(res, 409, { error: 'Consistency check blocked the scene run (strict mode).', readiness: sceneReadiness });
+    }
+
     const runId = generateId();
     db.prepare(
         `INSERT INTO film_pipeline_runs (id, project_id, scene_id, run_type, status, total_steps, progress_pct)
@@ -328,6 +338,7 @@ async function runScenePipeline(req, res, sceneId) {
         run_id: runId, scene_id: sceneId, status: 'running',
         total_shots: shots.length,
         shots: shots.map(s => ({ shot_id: s.id, shot_code: s.shot_code })),
+        readiness: sceneReadiness,
         hint: 'Scene pipeline is running. Check status at GET /film/pipeline/' + runId,
     });
 }
@@ -343,6 +354,13 @@ async function runProjectPipeline(req, res, projectId) {
         'SELECT COUNT(*) as count FROM film_shots s JOIN film_scenes sc ON s.scene_id = sc.id WHERE sc.project_id = ?'
     ).get(projectId).count;
 
+    // Consistency readiness across the whole project (strict blocks the run).
+    let readiness = { ready: true, shots: [], missing: [] };
+    try { readiness = auditProjectReadiness(projectId); } catch (_) {}
+    if (!!(req.body && req.body.strict) && !readiness.ready) {
+        return json(res, 409, { error: 'Consistency check blocked the project run (strict mode).', readiness });
+    }
+
     const runId = generateId();
     db.prepare(
         `INSERT INTO film_pipeline_runs (id, project_id, run_type, status, total_steps, progress_pct)
@@ -352,6 +370,7 @@ async function runProjectPipeline(req, res, projectId) {
     json(res, 202, {
         run_id: runId, project_id: projectId, status: 'running',
         total_scenes: scenes.length, total_shots: totalShots,
+        readiness,
         hint: 'Project pipeline is running. Check status at GET /film/pipeline/' + runId,
     });
 }
