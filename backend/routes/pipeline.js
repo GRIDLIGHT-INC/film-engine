@@ -15,6 +15,7 @@
 const { db, generateId } = require('../db/database');
 const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
 const { resolveGenerator } = require('../lib/providers');
+const { auditShotReadiness } = require('../lib/consistency-context');
 const { ensureDir, saveFile, getFileUrl } = require('../lib/file-storage');
 const { PIPELINE_STEPS, buildStepPlan, autoSkipSteps, retryDelay, MAX_RETRIES } = require('../lib/pipeline-engine');
 const { buildSchedule, suggestResidency, MODEL_PROFILES } = require('../lib/scheduling-engine');
@@ -144,6 +145,14 @@ async function runShotPipeline(req, res, shotId) {
     let sceneCard = {};
     try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
 
+    // Consistency readiness gate: warn always; block only when strict is requested.
+    let readiness = { ready: true, missing: [], warnings: [] };
+    try { readiness = auditShotReadiness(shot, scene, project); } catch (_) {}
+    const strict = !!(req.body && req.body.strict);
+    if (strict && !readiness.ready) {
+        return json(res, 409, { error: 'Consistency check blocked the run (strict mode).', readiness });
+    }
+
     const skipSteps = autoSkipSteps(sceneCard, req.body);
     const plan = buildStepPlan({ skip_steps: skipSteps, ...(req.body || {}) });
 
@@ -203,6 +212,7 @@ async function runShotPipeline(req, res, shotId) {
         run_id: runId, shot_id: shotId, status: finalStatus,
         steps_completed: completedSteps, steps_failed: failedSteps,
         total_steps: plan.length, progress_pct: 100,
+        readiness,
     });
 }
 
@@ -220,6 +230,13 @@ async function runShotPipelineStream(req, res, shotId) {
     let sceneCard = {};
     try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
 
+    // Consistency readiness gate (strict blocks before the stream even opens).
+    let readiness = { ready: true, missing: [], warnings: [] };
+    try { readiness = auditShotReadiness(shot, scene, project); } catch (_) {}
+    if (!!(req.body && req.body.strict) && !readiness.ready) {
+        return json(res, 409, { error: 'Consistency check blocked the run (strict mode).', readiness });
+    }
+
     const skipSteps = autoSkipSteps(sceneCard, req.body);
     const plan = buildStepPlan({ skip_steps: skipSteps, ...(req.body || {}) });
 
@@ -233,6 +250,9 @@ async function runShotPipelineStream(req, res, shotId) {
     res.on('close', () => { clientGone = true; });
 
     const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
+
+    // Surface readiness warnings up front so the UI can show them.
+    sendEvent({ type: 'readiness', ready: readiness.ready, missing: readiness.missing || [], warnings: readiness.warnings || [] });
 
     const runId = generateId();
     db.prepare(

@@ -95,6 +95,7 @@ const { handlePostProduction } = require('./routes/post-production');
 const { handlePipeline } = require('./routes/pipeline');
 const { handleThreeD } = require('./routes/threed');
 const { handleProviders } = require('./routes/providers');
+const { handleConsistency } = require('./routes/consistency');
 const { handleQA } = require('./routes/qa');
 const { handleProjectBundle } = require('./routes/project-bundle');
 const { handleContinuity } = require('./routes/continuity');
@@ -520,6 +521,19 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/providers[/:provider/credentials] — provider catalog + credentials
         if (parts[1] === 'providers') {
             return handleProviders(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/consistency[/profiles|/audit] — consistency profiles
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'consistency') {
+            return handleConsistency(req, res, parts, query);
+        }
+
+        // Route: /film/consistency/... and /film/shots/:id/consistency/audit
+        if (parts[1] === 'consistency') {
+            return handleConsistency(req, res, parts, query);
+        }
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'consistency') {
+            return handleConsistency(req, res, parts, query);
         }
 
         // Route: /film/projects/demo — create demo project

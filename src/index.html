@@ -3196,6 +3196,9 @@
                 <button class="nav-item" data-page="continuity" onclick="navigateTo('continuity')" data-tooltip="Reference board for visual, wardrobe, prop, and lighting consistency" data-tooltip-pos="right">
                     <span class="nav-icon">&#128247;</span> Continuity
                 </button>
+                <button class="nav-item" data-page="consistency" onclick="navigateTo('consistency')" data-tooltip="Lock canonical identity (reference, seed, voice) so shots stay consistent" data-tooltip-pos="right">
+                    <span class="nav-icon">&#128274;</span> Consistency
+                </button>
                 <button class="nav-item" data-page="budget" onclick="navigateTo('budget')" data-tooltip="Cost tracking per render and API call with forecasting" data-tooltip-pos="right">
                     <span class="nav-icon">&#128176;</span> Budget
                 </button>
@@ -3779,6 +3782,24 @@
                 </div>
             </div>
             <div class="entity-grid" id="continuityGrid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));"></div>
+        </div>
+
+        <!-- ── CONSISTENCY STUDIO ─────────────────────────────── -->
+        <div class="page" id="page-consistency">
+            <div class="flex-between mb-16">
+                <h2>Consistency Studio</h2>
+                <button class="btn btn-secondary" onclick="loadConsistency()">Refresh</button>
+            </div>
+            <p class="text-sm text-muted mb-8">Explore freely when creating. <strong>Lock</strong> one canonical reference per character/location so storyboards &amp; videos stay consistent. Locked references are injected into production generation.</p>
+            <div id="consistencyReadiness" class="mb-16"></div>
+            <div class="tab-bar mb-16" id="consistencyTabs">
+                <button class="tab-btn active" data-ctab="characters" onclick="switchConsistencyTab('characters')">Characters</button>
+                <button class="tab-btn" data-ctab="locations" onclick="switchConsistencyTab('locations')">Locations</button>
+                <button class="tab-btn" data-ctab="audit" onclick="switchConsistencyTab('audit')">Shot Audit</button>
+            </div>
+            <div id="consistencyCharacters" class="consistency-tab entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));"></div>
+            <div id="consistencyLocations" class="consistency-tab entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));display:none;"></div>
+            <div id="consistencyAudit" class="consistency-tab" style="display:none;"></div>
         </div>
 
         <!-- ── BUDGET DASHBOARD (FILM-164) ────────────────────── -->
@@ -4835,6 +4856,7 @@
             settings: loadSettings,
             acts: loadActs,
             continuity: loadContinuity,
+            consistency: loadConsistency,
             budget: loadBudget,
             threed: loadThreeD,
             videoshots: loadVideoShots,
@@ -13761,6 +13783,111 @@ ${fountainText.slice(0, 50000)}`;
             }
             setStatus(scope + ' pipeline complete');
             loadPipeline();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // CONSISTENCY STUDIO (Explore → Lock → Verify)
+    // ══════════════════════════════════════════════════════════════
+    let _consistencyData = { characters: [], locations: [] };
+    function _cParse(s) { try { return JSON.parse(s || '{}'); } catch (_) { return {}; } }
+
+    function switchConsistencyTab(tab) {
+        document.querySelectorAll('#consistencyTabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.ctab === tab));
+        document.getElementById('consistencyCharacters').style.display = tab === 'characters' ? 'grid' : 'none';
+        document.getElementById('consistencyLocations').style.display = tab === 'locations' ? 'grid' : 'none';
+        document.getElementById('consistencyAudit').style.display = tab === 'audit' ? 'block' : 'none';
+    }
+
+    async function loadConsistency() {
+        if (!state.currentProject) return;
+        const pid = state.currentProject.id;
+        setStatus('Loading consistency...');
+        try {
+            const [charsD, locsD, profD, assetsD, auditD] = await Promise.all([
+                api('/projects/' + pid + '/characters').catch(() => ({ characters: [] })),
+                api('/projects/' + pid + '/locations').catch(() => ({ locations: [] })),
+                api('/projects/' + pid + '/consistency/profiles').catch(() => ({ profiles: [] })),
+                api('/projects/' + pid + '/assets').catch(() => ({ assets: [] })),
+                api('/projects/' + pid + '/consistency/audit').catch(() => ({ ready: true, shots: [] })),
+            ]);
+            _consistencyData = { characters: charsD.characters || [], locations: locsD.locations || [] };
+            const profiles = profD.profiles || [];
+            const assets = assetsD.assets || [];
+            const profBySubject = {}; profiles.forEach(p => { profBySubject[p.profile_type + ':' + p.subject_id] = p; });
+            const IMG_TYPES = ['character_sheet', 'reference_sheet', 'reference_image', 'storyboard'];
+            const refAssetFor = (field, id) => assets.find(a => IMG_TYPES.includes(a.asset_type) && (a[field] === id || _cParse(a.metadata)[field] === id));
+
+            // Readiness banner
+            const lockedCount = profiles.filter(p => p.status === 'locked').length;
+            const shotsReady = (auditD.shots || []).filter(s => s.ready).length;
+            document.getElementById('consistencyReadiness').innerHTML = `<div class="card" style="border-left:4px solid ${auditD.ready ? 'var(--gl-success,#22c55e)' : 'var(--gl-warning,#f59e0b)'};">
+                <strong>${auditD.ready ? '✓ Consistency ready' : '⚠ Consistency incomplete'}</strong>
+                <span class="text-sm text-muted"> — ${lockedCount} profile(s) locked${(auditD.shots && auditD.shots.length) ? ', ' + shotsReady + '/' + auditD.shots.length + ' shots ready' : ''}.</span>
+                ${(auditD.warnings && auditD.warnings.length) ? '<div class="text-sm text-muted" style="margin-top:6px;">' + auditD.warnings.map(esc).join(' · ') + '</div>' : ''}
+            </div>`;
+
+            renderConsistencySubjects('consistencyCharacters', 'character', _consistencyData.characters, 'character_id', profBySubject, refAssetFor);
+            renderConsistencySubjects('consistencyLocations', 'location', _consistencyData.locations, 'location_id', profBySubject, refAssetFor);
+            renderConsistencyAudit(auditD);
+            setStatus('Consistency: ' + lockedCount + ' locked');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function renderConsistencySubjects(elId, type, subjects, idField, profBySubject, refAssetFor) {
+        const el = document.getElementById(elId);
+        if (!subjects.length) { el.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#128274;</div><h3>No ' + type + 's</h3><p>Create ' + type + 's first, then lock a canonical reference.</p></div>'; return; }
+        el.innerHTML = subjects.map(s => {
+            const prof = profBySubject[type + ':' + s.id];
+            const refAsset = refAssetFor(idField, s.id);
+            const thumb = s.reference_image_url;
+            const locked = prof && prof.status === 'locked';
+            const status = locked ? '<span class="tag" style="background:var(--gl-success,#166534);">&#128274; locked</span>'
+                : prof ? '<span class="tag">draft</span>' : '<span class="tag">not locked</span>';
+            const action = locked
+                ? '<button class="btn btn-secondary btn-sm" onclick="unlockConsistency(\'' + prof.id + '\')">Unlock</button>'
+                : refAsset
+                    ? '<button class="btn btn-primary btn-sm" onclick="lockConsistency(\'' + type + '\',\'' + s.id + '\',\'' + refAsset.id + '\')">Lock for production</button>'
+                    : '<button class="btn btn-secondary btn-sm" disabled title="Generate a reference image/sheet first">Lock (needs reference)</button>';
+            return `<div class="entity-card">
+                <div class="flex-between"><strong style="font-size:13px;">${esc(s.name)}</strong>${status}</div>
+                ${thumb ? '<img src="' + API_BASE + esc(thumb) + '" style="width:100%;border-radius:6px;margin-top:8px;max-height:200px;object-fit:cover;" onerror="this.style.display=\'none\'">' : '<p class="text-sm text-muted" style="margin-top:8px;">No reference image yet — generate a reference sheet (Characters/Locations page) to explore, then lock one here.</p>'}
+                <div style="margin-top:8px;">${action}</div>
+            </div>`;
+        }).join('');
+    }
+
+    function renderConsistencyAudit(audit) {
+        const el = document.getElementById('consistencyAudit');
+        const shots = audit.shots || [];
+        if (!shots.length) { el.innerHTML = '<p class="text-sm text-muted">No shots to audit yet.</p>'; return; }
+        el.innerHTML = '<table class="render-table"><tr><th>Shot</th><th>Ready</th><th>Missing / Warnings</th></tr>' +
+            shots.map(s => `<tr>
+                <td>${esc(s.shot_code || s.shot_id)}</td>
+                <td>${s.ready ? '<span class="tag" style="background:var(--gl-success,#166534);">ready</span>' : '<span class="tag" style="background:var(--gl-danger,#7f1d1d);">not ready</span>'}</td>
+                <td class="text-sm">${[...(s.missing || []), ...(s.warnings || [])].map(esc).join(', ') || '—'}</td>
+            </tr>`).join('') + '</table>';
+    }
+
+    async function lockConsistency(type, subjectId, assetId) {
+        const list = type === 'character' ? _consistencyData.characters : _consistencyData.locations;
+        const subj = (list || []).find(x => x.id === subjectId);
+        const name = subj ? subj.name : subjectId;
+        try {
+            const prof = await api('/projects/' + state.currentProject.id + '/consistency/profiles', {
+                method: 'POST', body: JSON.stringify({ profile_type: type, subject_id: subjectId, subject_name: name, canonical_asset_id: assetId }),
+            });
+            await api('/consistency/profiles/' + prof.id + '/lock', { method: 'POST', body: '{}' });
+            setStatus(name + ' locked for production');
+            loadConsistency();
+        } catch (err) { setStatus('Lock error: ' + err.message); }
+    }
+
+    async function unlockConsistency(profileId) {
+        try {
+            await api('/consistency/profiles/' + profileId + '/unlock', { method: 'POST', body: '{}' });
+            setStatus('Unlocked');
+            loadConsistency();
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
