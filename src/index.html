@@ -3893,8 +3893,19 @@
         <!-- ── 16b. PIPELINE ──────────────────────────────────────── -->
         <div class="page" id="page-pipeline">
             <div class="flex-between mb-16">
-                <h2>Pipeline Monitor</h2>
+                <h2>Pipeline</h2>
                 <button class="btn btn-secondary" onclick="loadPipeline()">Refresh</button>
+            </div>
+            <div class="card mb-16">
+                <h3 class="mb-8">Run scene → final</h3>
+                <p class="text-sm text-muted mb-8" id="pipelineProviders"></p>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <select id="pipelineShotSelect" style="min-width:240px;"></select>
+                    <button class="btn btn-primary" onclick="runPipelineLive()">Run shot (live)</button>
+                    <button class="btn btn-secondary" onclick="runPipelineScope('scene')">Run scene</button>
+                    <button class="btn btn-secondary" onclick="runPipelineScope('project')">Run project</button>
+                </div>
+                <div id="pipelineLive" style="margin-top:14px;"></div>
             </div>
             <div id="pipelineActive" class="mb-16"></div>
             <h3 class="mb-8">Recent Runs</h3>
@@ -13627,7 +13638,7 @@ ${fountainText.slice(0, 50000)}`;
             // Load recent renders across all shots
             const sbData = await api('/projects/' + state.currentProject.id + '/status-board');
             const allShots = [];
-            (sbData.scenes || []).forEach(s => (s.shots || []).forEach(sh => allShots.push({ ...sh, scene_number: s.scene_number })));
+            (sbData.scenes || []).forEach(s => (s.shots || []).forEach(sh => allShots.push({ ...sh, scene_number: s.scene_number, scene_id: s.id })));
 
             // Show active (generating) shots
             const active = allShots.filter(s => s.status === 'generating');
@@ -13663,7 +13674,93 @@ ${fountainText.slice(0, 50000)}`;
                     </tr>`).join('')}
                 </table>`;
             }
+            // Populate the run-scope shot selector.
+            const sel = document.getElementById('pipelineShotSelect');
+            if (sel) {
+                sel.innerHTML = allShots.length
+                    ? allShots.map(s => `<option value="${esc(s.id)}" data-scene="${esc(s.scene_id || '')}">Sc${s.scene_number} / ${esc(s.shot_code)}</option>`).join('')
+                    : '<option value="">No shots — create shots first</option>';
+            }
+            // Show the providers each step will use (from per-project config).
+            try {
+                const prov = await api('/projects/' + state.currentProject.id + '/providers');
+                const e = prov.effective || {};
+                const provLine = document.getElementById('pipelineProviders');
+                if (provLine) provLine.innerHTML = 'Providers → image: <strong>' + esc(e.image || 'gridlight') + '</strong>, video: <strong>' + esc(e.video || 'gridlight') + '</strong>, voice: <strong>' + esc(e.voice || 'gridlight') + '</strong>, music: <strong>' + esc(e.music || 'gridlight') + '</strong> · <a style="cursor:pointer;color:var(--gl-accent,#818cf8);" onclick="navigateTo(\'settings\')">change</a>';
+            } catch (_) {}
+
             setStatus(allShots.length + ' shot(s) in pipeline');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ── Live pipeline run (scene → final) ───────────────────────────
+    const PIPE_STEP_ICONS = { pending: '&#9675;', running: '&#9679;', complete: '&#10003;', failed: '&#10007;' };
+    function renderPipelineSteps(steps, stateMap) {
+        return '<div style="display:flex;flex-direction:column;gap:4px;">' + steps.map(st => {
+            const s = stateMap[st.id] || 'pending';
+            const color = s === 'complete' ? 'var(--gl-success,#22c55e)' : s === 'failed' ? 'var(--gl-danger,#ef4444)' : s === 'running' ? 'var(--gl-accent,#818cf8)' : 'var(--gl-text-muted)';
+            return `<div style="display:flex;align-items:center;gap:8px;font-size:13px;">
+                <span style="color:${color};width:16px;text-align:center;">${PIPE_STEP_ICONS[s] || '&#9675;'}</span>
+                <span style="color:${s === 'pending' ? 'var(--gl-text-muted)' : 'var(--gl-text-primary)'};">${esc(st.name || st.id)}</span>
+                ${s === 'running' ? '<span class="text-sm text-muted">…</span>' : ''}
+            </div>`;
+        }).join('') + '</div>';
+    }
+
+    function runPipelineLive() {
+        const sel = document.getElementById('pipelineShotSelect');
+        const shotId = sel && sel.value;
+        if (!shotId) { setStatus('Pick a shot first'); return; }
+        const label = sel.options[sel.selectedIndex].textContent;
+        const live = document.getElementById('pipelineLive');
+        let steps = [];
+        const stateMap = {};
+        live.innerHTML = '<div class="text-sm text-muted">Starting ' + esc(label) + '…</div>';
+
+        streamSSEPost('/shots/' + shotId + '/pipeline/run/stream', {},
+            (ev) => {
+                if (ev.type === 'status' && Array.isArray(ev.steps)) {
+                    steps = ev.steps;
+                    steps.forEach(st => stateMap[st.id] = 'pending');
+                    live.innerHTML = '<strong style="font-size:13px;">' + esc(label) + '</strong>' + renderPipelineSteps(steps, stateMap);
+                } else if (ev.type === 'step_start') {
+                    stateMap[ev.step_id] = 'running';
+                    live.innerHTML = '<strong style="font-size:13px;">' + esc(label) + '</strong>' + renderPipelineSteps(steps, stateMap);
+                } else if (ev.type === 'step_complete') {
+                    stateMap[ev.step_id] = 'complete';
+                    live.innerHTML = '<strong style="font-size:13px;">' + esc(label) + '</strong>' + renderPipelineSteps(steps, stateMap);
+                } else if (ev.type === 'step_failed') {
+                    stateMap[ev.step_id] = 'failed';
+                    live.innerHTML = '<strong style="font-size:13px;">' + esc(label) + '</strong>' + renderPipelineSteps(steps, stateMap);
+                } else if (ev.type === 'cancelled') {
+                    live.innerHTML += '<div class="text-sm text-muted" style="margin-top:6px;">Cancelled.</div>';
+                }
+            },
+            (done) => {
+                const failed = steps.filter(st => stateMap[st.id] === 'failed').length;
+                live.innerHTML += '<div style="margin-top:8px;color:' + (failed ? 'var(--gl-danger,#ef4444)' : 'var(--gl-success,#22c55e)') + ';font-size:13px;">' + (failed ? failed + ' step(s) failed' : 'Pipeline complete →  ready to assemble / Export') + '</div>';
+                setStatus('Pipeline finished');
+                loadPipeline();
+            },
+            (err) => { live.innerHTML += '<div class="text-sm" style="color:var(--gl-danger,#ef4444);margin-top:6px;">Error: ' + esc(err ? err.message : 'stream failed') + '</div>'; }
+        );
+    }
+
+    async function runPipelineScope(scope) {
+        const sel = document.getElementById('pipelineShotSelect');
+        const opt = sel && sel.options[sel.selectedIndex];
+        try {
+            if (scope === 'scene') {
+                const sceneId = opt && opt.getAttribute('data-scene');
+                if (!sceneId) { setStatus('Pick a shot to identify its scene'); return; }
+                setStatus('Running scene pipeline…');
+                await api('/scenes/' + sceneId + '/pipeline/run', { method: 'POST', body: JSON.stringify({}) });
+            } else {
+                setStatus('Running project pipeline…');
+                await api('/projects/' + state.currentProject.id + '/pipeline/run', { method: 'POST', body: JSON.stringify({}) });
+            }
+            setStatus(scope + ' pipeline complete');
+            loadPipeline();
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
