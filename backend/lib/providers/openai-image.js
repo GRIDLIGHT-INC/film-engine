@@ -92,6 +92,7 @@ function buildImageRequest(payload) {
             model,
             size,
             referenceCount: localRefs.length,
+            referencePaths: localRefs,
         };
     }
 

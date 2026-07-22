@@ -58,6 +58,11 @@ Stores optional audit snapshots for UI/history. The main audit helpers are pure 
 - `buildShotReferencePayload(shot, scene, project)` -> locked profiles, canonical references, input asset IDs, prompt additions, negative additions, locked seed, and voice settings
 - `applyConsistencyToImagePayload(payload, context)` -> adds prompt/negative contracts, locked seed, `reference_images`, `input_refs`, and an IP-Adapter fallback
 - `applyConsistencyToVoicePayload(payload, context, characterName)` -> adds locked `voice_id` and voice settings
+- `recordConsistencyCheck(shot, scene, project, options)` -> writes a Verify-compatible row to `film_consistency_checks` using existing columns only.
+
+Reference payloads preserve a deterministic multi-reference order: character, location, prop, style; then subject name; then canonical/face/front/side/back/full_body/expression/wide/detail/color roles; then higher weight. `REF_ROLES` is exported from `consistency-context.js` so route validation, ordering, and Studio vocabulary share one source. Payloads also include `references_by_role` and `reference_groups` for Studio/adapter consumers that need role-level grouping while keeping the existing flat `references` and `input_refs` arrays.
+
+Readiness audits enforce `required_roles` for locked visual profiles. For example, a character profile requiring `front` and `side` references is not ready until both roles are attached. Conflicting locked seeds are guarded: if applicable profiles specify different seeds, generation payloads do not receive a locked seed and the audit returns a warning naming the conflict. If a caller omits a seed or passes the `-1` sentinel, the locked seed is applied; explicit seed `0` is preserved.
 
 ## Generation Integration
 
@@ -78,12 +83,37 @@ Voice generation:
 
 - Applies locked per-character voice settings by character name.
 - Supports both top-level voice profile fields and `voice_params` JSON.
+- Records Verify rows after dialogue audio assets are created.
 
 Provider adapters:
 
 - Gridlight receives canonical fields unchanged.
 - OpenAI uses `/images/edits` with local reference images when available; otherwise it preserves the existing text-to-image path.
 - Artlist MCP forwards `reference_images` and `input_refs` to tool arguments.
+- Multi-reference ordering is prepared in `buildShotReferencePayload` and preserved by OpenAI image edits and Artlist MCP tool arguments.
+
+Verify rows:
+
+`recordConsistencyCheck` is best-effort: generation stays successful if Verify persistence cannot write. On success, it writes `status`, `missing`, `warnings`, and `details` JSON in this shape:
+
+```json
+{
+  "subjects": [
+    {
+      "profile_id": "...",
+      "profile_type": "character",
+      "subject_name": "Mara",
+      "role": "canonical",
+      "score": 1,
+      "status": "ready",
+      "reference_asset_id": "...",
+      "output_asset_id": "..."
+    }
+  ],
+  "scorer": "stub",
+  "thresholds": { "ready": 0.85, "warning": 0.70 }
+}
+```
 
 ## Operating Rules
 

@@ -17,7 +17,7 @@ const { saveFile, getFileUrl, getFilePath, ensureDir, serveFile } = require('../
 const { buildVideoPayload } = require('../lib/video-prompt');
 const { needsStitching, planClips, buildStitchPayload, calculateTransitions } = require('../lib/video-stitcher');
 const { resolve } = require('../lib/providers');
-const { buildShotReferencePayload } = require('../lib/consistency-context');
+const { buildShotReferencePayload, recordConsistencyCheck } = require('../lib/consistency-context');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VIDEO_ENDPOINT = '/video';
@@ -179,6 +179,11 @@ async function generateVideo(req, res, shotId) {
             assetId, scene.project_id, shotId, filePath, filename, durationMs,
             videoProvider.id, resultModel(result, payload), resultJobId(result), JSON.stringify(consistencyContext.input_refs || [])
         );
+        recordConsistencyCheck(shot, scene, { id: scene.project_id }, {
+            context: consistencyContext,
+            output_asset_id: assetId,
+            scorer: 'stub',
+        });
 
         db.prepare(
             `INSERT INTO render_ledger (id, shot_id, version, step, model_id, prompt, seed, sampler, steps, guidance, mode)
@@ -249,6 +254,11 @@ async function generateVideoStream(req, res, shotId) {
                     assetId, scene.project_id, shotId, filename,
                     videoProvider.id, resultModel(data, payload), resultJobId(data), JSON.stringify(consistencyContext.input_refs || [])
                 );
+                recordConsistencyCheck(shot, scene, { id: scene.project_id }, {
+                    context: consistencyContext,
+                    output_asset_id: assetId,
+                    scorer: 'stub',
+                });
 
                 db.prepare('UPDATE film_video_jobs SET status = ?, output_path = ? WHERE id = ?')
                     .run('complete', data.video_url || filename, jobId);
@@ -336,6 +346,12 @@ async function batchVideoStream(req, res, projectId) {
             ).run(
                 assetId, projectId, shot.shot_id, filePath, filename,
                 videoProvider.id, resultModel(result, payload), resultJobId(result), JSON.stringify(consistencyContext.input_refs || [])
+            );
+            recordConsistencyCheck(
+                { ...shot, id: shot.shot_id },
+                { ...shot, id: shot.scene_id, project_id: projectId, location: shot.location },
+                project,
+                { context: consistencyContext, output_asset_id: assetId, scorer: 'stub' }
             );
 
             sendEvent({ type: 'shot_complete', shot_code: shot.shot_code, video_url: getFileUrl('video', projectId, filename) });

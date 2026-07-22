@@ -10,11 +10,13 @@ const { db, generateId } = require('../db/database');
 const { ensureSchema } = require('../db/schema');
 const { saveFile } = require('../lib/file-storage');
 const {
+    REF_ROLES,
     auditShotReadiness,
     auditProjectReadiness,
     buildShotReferencePayload,
     applyConsistencyToImagePayload,
     applyConsistencyToVoicePayload,
+    recordConsistencyCheck,
 } = require('../lib/consistency-context');
 
 function insertProject() {
@@ -95,6 +97,16 @@ function insertProfile(projectId, fields) {
         JSON.stringify(fields.required_roles || []), JSON.stringify(fields.settings || {}), fields.notes || ''
     );
     return db.prepare('SELECT * FROM film_consistency_profiles WHERE id = ?').get(id);
+}
+
+function insertConsistencyRef(projectId, profileId, assetId, fields = {}) {
+    const id = generateId();
+    db.prepare(
+        `INSERT INTO film_consistency_refs (id, project_id, profile_id, asset_id, ref_role, weight, is_required, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, projectId, profileId, assetId, fields.ref_role || 'canonical',
+        fields.weight === undefined ? 0.7 : fields.weight, fields.is_required ? 1 : 0, fields.notes || '');
+    return db.prepare('SELECT * FROM film_consistency_refs WHERE id = ?').get(id);
 }
 
 describe('consistency-context', () => {
@@ -280,5 +292,145 @@ describe('consistency-context', () => {
         const context = buildShotReferencePayload(shot, scene, project);
         assert.equal(context.references[0].file_path, storedPath);
         assert.equal(fs.existsSync(context.references[0].file_path), true);
+    });
+
+    it('records consistency check rows with Verify view details shape', () => {
+        const project = insertProject();
+        const character = insertCharacter(project.id, 'Rin');
+        const location = insertLocation(project.id, 'Vault');
+        const scene = insertScene(project.id, 'Vault');
+        const shot = insertShot(scene.id, { characters: ['Rin'], action: 'Rin enters the vault.' });
+        const charAsset = insertAsset(project.id, { character_id: character.id, file_path: '/refs/rin.png' });
+        const locAsset = insertAsset(project.id, { location_id: location.id, file_path: '/refs/vault.png' });
+        const outputAsset = insertAsset(project.id, { shot_id: shot.id, asset_type: 'storyboard', file_path: '/out/shot.png' });
+        insertProfile(project.id, { profile_type: 'character', subject_id: character.id, subject_name: character.name, canonical_asset_id: charAsset.id });
+        insertProfile(project.id, { profile_type: 'location', subject_id: location.id, subject_name: location.name, canonical_asset_id: locAsset.id });
+
+        const check = recordConsistencyCheck(shot, scene, project, { output_asset_id: outputAsset.id });
+        assert.equal(check.status, 'ready');
+        assert.equal(check.details.scorer, 'stub');
+        assert.deepEqual(check.details.thresholds, { ready: 0.85, warning: 0.70 });
+        assert.equal(check.details.subjects.length, 2);
+
+        const subject = check.details.subjects.find(s => s.profile_type === 'character');
+        assert.ok(subject.profile_id);
+        assert.equal(subject.subject_name, 'Rin');
+        assert.equal(subject.role, 'canonical');
+        assert.equal(subject.score, 1);
+        assert.equal(subject.status, 'ready');
+        assert.equal(subject.reference_asset_id, charAsset.id);
+        assert.equal(subject.output_asset_id, outputAsset.id);
+
+        const row = db.prepare('SELECT * FROM film_consistency_checks WHERE id = ?').get(check.id);
+        assert.equal(row.project_id, project.id);
+        assert.equal(row.shot_id, shot.id);
+        assert.equal(row.scene_id, scene.id);
+        assert.equal(row.status, 'ready');
+        assert.deepEqual(JSON.parse(row.missing), []);
+        assert.deepEqual(JSON.parse(row.warnings), []);
+        assert.equal(JSON.parse(row.details).subjects[0].output_asset_id, outputAsset.id);
+    });
+
+    it('groups and orders multi-role references deterministically', () => {
+        const project = insertProject();
+        const character = insertCharacter(project.id, 'Tala');
+        const scene = insertScene(project.id, '');
+        const shot = insertShot(scene.id, { characters: ['Tala'] });
+        const canonical = insertAsset(project.id, { character_id: character.id, file_path: '/refs/tala-canon.png' });
+        const face = insertAsset(project.id, { character_id: character.id, file_path: '/refs/tala-face.png' });
+        const side = insertAsset(project.id, { character_id: character.id, file_path: '/refs/tala-side.png' });
+        const front = insertAsset(project.id, { character_id: character.id, file_path: '/refs/tala-front.png' });
+        const fullBody = insertAsset(project.id, { character_id: character.id, file_path: '/refs/tala-full.png' });
+        const expression = insertAsset(project.id, { character_id: character.id, file_path: '/refs/tala-expression.png' });
+        const profile = insertProfile(project.id, {
+            profile_type: 'character',
+            subject_id: character.id,
+            subject_name: character.name,
+            canonical_asset_id: canonical.id,
+            required_roles: ['front', 'side'],
+        });
+        insertConsistencyRef(project.id, profile.id, side.id, { ref_role: 'side', weight: 0.9 });
+        insertConsistencyRef(project.id, profile.id, front.id, { ref_role: 'front', weight: 0.6 });
+        insertConsistencyRef(project.id, profile.id, fullBody.id, { ref_role: 'full_body', weight: 0.9 });
+        insertConsistencyRef(project.id, profile.id, face.id, { ref_role: 'face', weight: 0.5 });
+        insertConsistencyRef(project.id, profile.id, expression.id, { ref_role: 'expression', weight: 0.9 });
+
+        const context = buildShotReferencePayload(shot, scene, project);
+        assert.deepEqual(context.references.map(r => r.role), ['canonical', 'face', 'front', 'side', 'full_body', 'expression']);
+        assert.deepEqual(context.input_refs, [canonical.id, face.id, front.id, side.id, fullBody.id, expression.id]);
+        assert.deepEqual(Object.keys(context.references_by_role).sort(), ['canonical', 'expression', 'face', 'front', 'full_body', 'side']);
+        assert.equal(context.reference_groups.length, 1);
+        assert.deepEqual(context.reference_groups[0].required_roles, ['front', 'side']);
+        assert.equal(context.reference_groups[0].references_by_role.face[0].asset_id, face.id);
+        assert.equal(context.reference_groups[0].references_by_role.front[0].asset_id, front.id);
+    });
+
+    it('exports the unified reference-role vocabulary in priority order', () => {
+        assert.deepEqual(REF_ROLES, ['canonical', 'face', 'front', 'side', 'back', 'full_body', 'expression', 'wide', 'detail', 'color']);
+    });
+
+    it('audits missing required reference roles', () => {
+        const project = insertProject();
+        const character = insertCharacter(project.id, 'Koa');
+        const scene = insertScene(project.id, '');
+        const shot = insertShot(scene.id, { characters: ['Koa'] });
+        const canonical = insertAsset(project.id, { character_id: character.id });
+        insertProfile(project.id, {
+            profile_type: 'character',
+            subject_id: character.id,
+            subject_name: character.name,
+            canonical_asset_id: canonical.id,
+            required_roles: ['front', 'side'],
+        });
+
+        const audit = auditShotReadiness(shot, scene, project);
+        assert.equal(audit.ready, false);
+        assert.ok(audit.missing.some(m => m.includes('front')));
+        assert.ok(audit.missing.some(m => m.includes('side')));
+    });
+
+    it('guards against conflicting locked seeds', () => {
+        const project = insertProject();
+        const character = insertCharacter(project.id, 'Mika');
+        const location = insertLocation(project.id, 'Garden');
+        const scene = insertScene(project.id, 'Garden');
+        const shot = insertShot(scene.id, { characters: ['Mika'] });
+        insertProfile(project.id, {
+            profile_type: 'character',
+            subject_id: character.id,
+            subject_name: character.name,
+            canonical_asset_id: insertAsset(project.id, { character_id: character.id }).id,
+            locked_seed: 111,
+        });
+        insertProfile(project.id, {
+            profile_type: 'location',
+            subject_id: location.id,
+            subject_name: location.name,
+            canonical_asset_id: insertAsset(project.id, { location_id: location.id }).id,
+            locked_seed: 222,
+        });
+
+        const context = buildShotReferencePayload(shot, scene, project);
+        assert.equal(context.locked_seed, null);
+        assert.equal(context.seed_conflict, true);
+        assert.ok(context.seed_warnings[0].includes('111'));
+        assert.ok(context.seed_warnings[0].includes('222'));
+        const payload = applyConsistencyToImagePayload({ prompt: 'base' }, context);
+        assert.equal('seed' in payload, false);
+        const audit = auditShotReadiness(shot, scene, project);
+        assert.ok(audit.warnings.some(w => w.includes('Conflicting locked seeds')));
+    });
+
+    it('applies locked seed for unset and -1 sentinel seeds but preserves explicit 0', () => {
+        const context = { locked_seed: 777, references: [] };
+        assert.equal(applyConsistencyToImagePayload({ prompt: 'base' }, context).seed, 777);
+        assert.equal(applyConsistencyToImagePayload({ prompt: 'base', seed: -1 }, context).seed, 777);
+        assert.equal(applyConsistencyToImagePayload({ prompt: 'base', seed: '-1' }, context).seed, 777);
+        assert.equal(applyConsistencyToImagePayload({ prompt: 'base', seed: 0 }, context).seed, 0);
+    });
+
+    it('treats consistency check recording as best-effort when context is missing', () => {
+        const result = recordConsistencyCheck('missing-shot', null, null, {});
+        assert.equal(result, null);
     });
 });

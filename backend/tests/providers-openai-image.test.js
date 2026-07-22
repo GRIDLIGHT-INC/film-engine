@@ -40,6 +40,25 @@ describe('openai-image: buildImageRequest (pure)', () => {
         assert.ok(r.form);
         assert.equal(r.referenceCount, 1);
     });
+
+    it('preserves sorted multi-reference order for image edits', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openai-refs-'));
+        const canonical = path.join(dir, 'canonical.png');
+        const front = path.join(dir, 'front.png');
+        const side = path.join(dir, 'side.png');
+        fs.writeFileSync(canonical, Buffer.from('PNG'));
+        fs.writeFileSync(front, Buffer.from('PNG'));
+        fs.writeFileSync(side, Buffer.from('PNG'));
+        const r = buildImageRequest({
+            prompt: 'same character',
+            reference_images: [
+                { file_path: canonical, role: 'canonical' },
+                { file_path: front, role: 'front' },
+                { file_path: side, role: 'side' },
+            ],
+        });
+        assert.deepEqual(r.referencePaths, [canonical, front, side]);
+    });
 });
 
 describe('openai-image adapter (mock server)', () => {

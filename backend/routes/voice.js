@@ -16,7 +16,7 @@ const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir, serveFile } = require('../lib/file-storage');
 const { extractDialogue, buildVoicePayload, dialogueFilename } = require('../lib/dialogue-builder');
 const { resolve } = require('../lib/providers');
-const { buildShotReferencePayload, applyConsistencyToVoicePayload } = require('../lib/consistency-context');
+const { buildShotReferencePayload, applyConsistencyToVoicePayload, recordConsistencyCheck } = require('../lib/consistency-context');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VOICE_ENDPOINT = '/voice';
@@ -168,6 +168,11 @@ async function generateVoice(req, res, shotId) {
                 filePath, filename, formatForResult(result), mimeForResult(result), durationMs,
                 voiceProvider.id, result.provider_model || payload.model || '', result.provider_job_id || '', hashPrompt(payload.text || line.line)
             );
+            recordConsistencyCheck(shot, scene, { id: scene.project_id }, {
+                context: consistencyContext,
+                output_asset_id: assetId,
+                scorer: 'stub',
+            });
 
             db.prepare(
                 `INSERT INTO render_ledger (id, shot_id, version, step, model_id, prompt, mode)
@@ -268,6 +273,11 @@ async function generateVoiceStream(req, res, shotId) {
                 filePath, filename, formatForResult(result), mimeForResult(result),
                 voiceProvider.id, result.provider_model || payload.model || '', result.provider_job_id || '', hashPrompt(payload.text || line.line)
             );
+            recordConsistencyCheck(shot, scene, { id: scene.project_id }, {
+                context: consistencyContext,
+                output_asset_id: assetId,
+                scorer: 'stub',
+            });
 
             sendEvent({ type: 'progress', line_index: i, total_lines: dialogueLines.length, character: line.character, phase: 'complete', audio_url: getFileUrl('audio', scene.project_id, filename) });
             completed++;
@@ -360,6 +370,12 @@ async function batchVoiceStream(req, res, projectId) {
                     assetId, projectId, shot.shot_id, character ? character.id : null,
                     filePath, filename, formatForResult(result), mimeForResult(result),
                     voiceProvider.id, result.provider_model || payload.model || '', result.provider_job_id || '', hashPrompt(payload.text || line.line)
+                );
+                recordConsistencyCheck(
+                    { ...shot, id: shot.shot_id },
+                    { ...shot, id: shot.scene_id, project_id: projectId, location: shot.location },
+                    { id: projectId },
+                    { context: consistencyContext, output_asset_id: assetId, scorer: 'stub' }
                 );
 
                 sendEvent({ type: 'line_complete', shot_code: shot.shot_code, character: line.character, audio_url: getFileUrl('audio', projectId, filename) });

@@ -16,7 +16,7 @@ const crypto = require('crypto');
 const { db, generateId } = require('../db/database');
 const { buildStoryboardPrompt, applyStyleLock } = require('../lib/storyboard-prompt');
 const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
-const { buildShotReferencePayload, applyConsistencyToImagePayload } = require('../lib/consistency-context');
+const { buildShotReferencePayload, applyConsistencyToImagePayload, recordConsistencyCheck } = require('../lib/consistency-context');
 
 const os = require('os');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -574,9 +574,15 @@ async function generateStoryboard(req, res, projectId, query) {
             fs.writeFileSync(imgPath, imageBuffer);
 
             // Register asset
-            registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`, {
+            const asset = registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`, {
                 input_refs: consistencyContext.input_refs,
             });
+            recordConsistencyCheck(
+                { ...shot, id: shot.shot_id },
+                { ...shot, id: shot.scene_id, project_id: projectId, location: shot.location },
+                project,
+                { context: consistencyContext, output_asset_id: asset.id, scorer: 'stub' }
+            );
 
             // Log to render ledger
             logToRenderLedger(shot.shot_id, {
@@ -769,9 +775,15 @@ async function generateStoryboardStream(req, res, projectId, query) {
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
             fs.writeFileSync(imgPath, imageBuffer);
 
-            registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`, {
+            const asset = registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`, {
                 input_refs: consistencyContext.input_refs,
             });
+            recordConsistencyCheck(
+                { ...shot, id: shot.shot_id },
+                { ...shot, id: shot.scene_id, project_id: projectId, location: shot.location },
+                project,
+                { context: consistencyContext, output_asset_id: asset.id, scorer: 'stub' }
+            );
 
             const actualSeed = (metadata && metadata.seed) || styleParams.seed;
             logToRenderLedger(shot.shot_id, {
@@ -917,9 +929,10 @@ async function regenerateShot(req, res, shotId) {
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         fs.writeFileSync(imgPath, imageBuffer);
 
-        registerStoryboardAsset(project.id, shotId, imgPath, `${shot.shot_code}.png`, {
+        const asset = registerStoryboardAsset(project.id, shotId, imgPath, `${shot.shot_code}.png`, {
             input_refs: consistencyContext.input_refs,
         });
+        recordConsistencyCheck(shot, scene, project, { context: consistencyContext, output_asset_id: asset.id, scorer: 'stub' });
 
         logToRenderLedger(shotId, {
             seed: imagePayload.seed,

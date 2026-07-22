@@ -7,10 +7,16 @@
  */
 
 const fs = require('fs');
-const { db } = require('../db/database');
+const { db, generateId } = require('../db/database');
 const { getFilePath } = require('./file-storage');
 
 const VISUAL_TYPES = new Set(['character', 'location', 'prop', 'style']);
+const PROFILE_ORDER = { character: 0, location: 1, prop: 2, style: 3, voice: 4 };
+const REF_ROLES = ['canonical', 'face', 'front', 'side', 'back', 'full_body', 'expression', 'wide', 'detail', 'color'];
+const ROLE_ORDER = REF_ROLES.reduce((acc, role, idx) => {
+    acc[role] = idx;
+    return acc;
+}, {});
 
 function parseJson(value, fallback) {
     if (value === undefined || value === null || value === '') return fallback;
@@ -19,6 +25,14 @@ function parseJson(value, fallback) {
 
 function normalizeName(value) {
     return String(value || '').trim().toUpperCase();
+}
+
+function roleRank(role) {
+    return ROLE_ORDER[String(role || '').toLowerCase()] ?? 50;
+}
+
+function profileRank(type) {
+    return PROFILE_ORDER[String(type || '').toLowerCase()] ?? 50;
 }
 
 function loadAsset(assetId) {
@@ -227,6 +241,73 @@ function referencesForProfile(profile) {
     return refs;
 }
 
+function sortReferences(refs) {
+    return [...(refs || [])].sort((a, b) => {
+        const profileDelta = profileRank(a.profile_type) - profileRank(b.profile_type);
+        if (profileDelta) return profileDelta;
+        const subjectDelta = String(a.subject_name || '').localeCompare(String(b.subject_name || ''));
+        if (subjectDelta) return subjectDelta;
+        const roleDelta = roleRank(a.role) - roleRank(b.role);
+        if (roleDelta) return roleDelta;
+        const weightDelta = Number(b.weight || 0) - Number(a.weight || 0);
+        if (weightDelta) return weightDelta;
+        return String(a.asset_id || '').localeCompare(String(b.asset_id || ''));
+    });
+}
+
+function groupReferencesByRole(refs) {
+    const grouped = {};
+    for (const ref of refs || []) {
+        const role = ref.role || 'canonical';
+        if (!grouped[role]) grouped[role] = [];
+        grouped[role].push(ref);
+    }
+    return grouped;
+}
+
+function referenceGroupsForProfiles(profiles) {
+    return (profiles || [])
+        .filter(profile => VISUAL_TYPES.has(profile.profile_type))
+        .map(profile => {
+            const refs = sortReferences(referencesForProfile(profile).filter(ref => ref.file_path || ref.file_name));
+            return {
+                profile_id: profile.id,
+                profile_type: profile.profile_type,
+                subject_id: profile.subject_id,
+                subject_name: profile.subject_name,
+                required_roles: profile.required_roles || [],
+                references: refs,
+                references_by_role: groupReferencesByRole(refs),
+            };
+        });
+}
+
+function requiredRoleMessages(profiles) {
+    const messages = [];
+    for (const profile of profiles || []) {
+        if (!VISUAL_TYPES.has(profile.profile_type)) continue;
+        const required = Array.isArray(profile.required_roles) ? profile.required_roles : [];
+        if (required.length === 0) continue;
+        const roles = new Set(referencesForProfile(profile).map(ref => ref.role || 'canonical'));
+        for (const role of required) {
+            if (!roles.has(role)) {
+                messages.push(`${profile.profile_type} "${profile.subject_name || profile.subject_id}" locked profile is missing required "${role}" reference.`);
+            }
+        }
+    }
+    return messages;
+}
+
+function normalizeSeed(seed) {
+    if (seed === null || seed === undefined || seed === '') return null;
+    const n = Number(seed);
+    return Number.isFinite(n) ? n : null;
+}
+
+function shouldUseLockedSeed(seed) {
+    return seed === undefined || seed === null || seed === '' || seed === -1 || seed === '-1';
+}
+
 function buildPromptContract(profiles) {
     const promptParts = [];
     const negativeParts = [];
@@ -234,12 +315,19 @@ function buildPromptContract(profiles) {
     for (const profile of profiles) {
         if (profile.prompt_contract) promptParts.push(profile.prompt_contract);
         if (profile.negative_contract) negativeParts.push(profile.negative_contract);
-        if (profile.locked_seed !== null && profile.locked_seed !== undefined) seeds.push(Number(profile.locked_seed));
+        const seed = normalizeSeed(profile.locked_seed);
+        if (seed !== null) seeds.push({ profile, seed });
     }
+    const uniqueSeeds = Array.from(new Set(seeds.map(s => s.seed)));
+    const seedWarnings = uniqueSeeds.length > 1 ? [
+        `Conflicting locked seeds across consistency profiles: ${seeds.map(s => `${s.profile.profile_type}:${s.profile.subject_name || s.profile.subject_id}=${s.seed}`).join(', ')}.`,
+    ] : [];
     return {
         prompt_additions: Array.from(new Set(promptParts.filter(Boolean))),
         negative_additions: Array.from(new Set(negativeParts.filter(Boolean))),
-        locked_seed: seeds.length ? seeds[0] : null,
+        locked_seed: uniqueSeeds.length === 1 ? uniqueSeeds[0] : null,
+        seed_warnings: seedWarnings,
+        seed_conflict: uniqueSeeds.length > 1,
     };
 }
 
@@ -288,10 +376,11 @@ function buildShotReferencePayload(shotInput, sceneInput, projectInput) {
         dedupedProfiles.push(profile);
     }
 
-    const references = dedupedProfiles
+    const referenceGroups = referenceGroupsForProfiles(dedupedProfiles);
+    const references = sortReferences(dedupedProfiles
         .filter(p => VISUAL_TYPES.has(p.profile_type))
         .flatMap(referencesForProfile)
-        .filter(ref => ref.file_path || ref.file_name);
+        .filter(ref => ref.file_path || ref.file_name));
     const inputRefs = Array.from(new Set(references.map(r => r.asset_id).filter(Boolean)));
     const promptContract = buildPromptContract(dedupedProfiles);
     const voiceProfiles = dedupedProfiles.filter(p => p.profile_type === 'voice');
@@ -311,10 +400,14 @@ function buildShotReferencePayload(shotInput, sceneInput, projectInput) {
     return {
         profiles: dedupedProfiles,
         references,
+        references_by_role: groupReferencesByRole(references),
+        reference_groups: referenceGroups,
         input_refs: inputRefs,
         prompt_additions: promptContract.prompt_additions,
         negative_additions: promptContract.negative_additions,
         locked_seed: promptContract.locked_seed,
+        seed_conflict: promptContract.seed_conflict,
+        seed_warnings: promptContract.seed_warnings,
         voice: { by_character: voiceByCharacter },
     };
 }
@@ -379,6 +472,10 @@ function auditShotReadiness(shotInput, sceneInput, projectInput) {
         }
     }
 
+    const context = buildShotReferencePayload(shot, scene, project);
+    missing.push(...requiredRoleMessages(context.profiles));
+    warnings.push(...(context.seed_warnings || []));
+
     return { ready: missing.length === 0, missing, warnings };
 }
 
@@ -416,7 +513,7 @@ function applyConsistencyToImagePayload(payload, context) {
     if (ctx.negative_additions && ctx.negative_additions.length) {
         p.negative_prompt = [p.negative_prompt, ...ctx.negative_additions].filter(Boolean).join(', ');
     }
-    if (!p.seed && ctx.locked_seed !== null && ctx.locked_seed !== undefined) p.seed = ctx.locked_seed;
+    if (shouldUseLockedSeed(p.seed) && ctx.locked_seed !== null && ctx.locked_seed !== undefined) p.seed = ctx.locked_seed;
     if (ctx.references && ctx.references.length) {
         p.reference_images = ctx.references;
         p.input_refs = ctx.input_refs || [];
@@ -446,7 +543,115 @@ function applyConsistencyToVoicePayload(payload, context, characterName) {
     return p;
 }
 
+function statusForScore(score, thresholds) {
+    if (score >= thresholds.ready) return 'ready';
+    if (score >= thresholds.warning) return 'warning';
+    return 'blocked';
+}
+
+function worstStatus(statuses) {
+    if (statuses.includes('blocked')) return 'blocked';
+    if (statuses.includes('warning')) return 'warning';
+    return 'ready';
+}
+
+function buildCheckSubjects(context, options) {
+    const ctx = context || {};
+    const opts = options || {};
+    const thresholds = opts.thresholds || { ready: 0.85, warning: 0.70 };
+    const scoreByProfile = opts.score_by_profile_id || {};
+    const explicitSubjects = Array.isArray(opts.subjects) ? opts.subjects : null;
+    if (explicitSubjects) {
+        return explicitSubjects.map(subject => {
+            const score = typeof subject.score === 'number' ? subject.score : 1;
+            return {
+                profile_id: subject.profile_id || '',
+                profile_type: subject.profile_type || '',
+                subject_name: subject.subject_name || '',
+                role: subject.role || '',
+                score,
+                status: subject.status || statusForScore(score, thresholds),
+                reference_asset_id: subject.reference_asset_id || '',
+                output_asset_id: subject.output_asset_id || opts.output_asset_id || '',
+            };
+        });
+    }
+
+    return (ctx.profiles || []).map(profile => {
+        const refs = referencesForProfile(profile);
+        const primaryRef = refs.find(ref => ref.role === 'canonical') || refs[0] || {};
+        const score = typeof scoreByProfile[profile.id] === 'number'
+            ? scoreByProfile[profile.id]
+            : (typeof opts.default_score === 'number' ? opts.default_score : 1);
+        return {
+            profile_id: profile.id,
+            profile_type: profile.profile_type,
+            subject_name: profile.subject_name || '',
+            role: primaryRef.role || 'canonical',
+            score,
+            status: statusForScore(score, thresholds),
+            reference_asset_id: primaryRef.asset_id || profile.canonical_asset_id || '',
+            output_asset_id: opts.output_asset_id || '',
+        };
+    });
+}
+
+function recordConsistencyCheck(shotInput, sceneInput, projectInput, options) {
+    try {
+        const shot = getShot(shotInput);
+        const scene = getScene(sceneInput || (shot && shot.scene_id));
+        const project = getProject(projectInput || (scene && scene.project_id));
+        if (!shot || !scene || !project) return null;
+
+        const opts = options || {};
+        const thresholds = opts.thresholds || { ready: 0.85, warning: 0.70 };
+        const context = opts.context || buildShotReferencePayload(shot, scene, project);
+        const readiness = opts.readiness || auditShotReadiness(shot, scene, project);
+        const subjects = buildCheckSubjects(context, { ...opts, thresholds });
+        const subjectStatus = worstStatus(subjects.map(subject => subject.status));
+        const status = opts.status || worstStatus([
+            readiness.missing && readiness.missing.length ? 'blocked' : 'ready',
+            readiness.warnings && readiness.warnings.length ? 'warning' : 'ready',
+            subjectStatus,
+        ]);
+        const details = {
+            subjects,
+            scorer: opts.scorer || 'stub',
+            thresholds,
+            ...(opts.details && typeof opts.details === 'object' ? opts.details : {}),
+        };
+        const id = generateId();
+        db.prepare(
+            `INSERT INTO film_consistency_checks
+                (id, project_id, shot_id, scene_id, status, missing, warnings, details)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+            id,
+            project.id,
+            shot.id,
+            scene.id,
+            status,
+            JSON.stringify(readiness.missing || []),
+            JSON.stringify(readiness.warnings || []),
+            JSON.stringify(details)
+        );
+        return {
+            id,
+            project_id: project.id,
+            shot_id: shot.id,
+            scene_id: scene.id,
+            status,
+            missing: readiness.missing || [],
+            warnings: readiness.warnings || [],
+            details,
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
 module.exports = {
+    REF_ROLES,
     parseJson,
     cardPropNames,
     getLockedProfiles,
@@ -456,4 +661,5 @@ module.exports = {
     auditProjectReadiness,
     applyConsistencyToImagePayload,
     applyConsistencyToVoicePayload,
+    recordConsistencyCheck,
 };

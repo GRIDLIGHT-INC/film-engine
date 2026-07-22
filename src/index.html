@@ -3797,11 +3797,13 @@
                 <button class="tab-btn" data-ctab="locations" onclick="switchConsistencyTab('locations')">Locations</button>
                 <button class="tab-btn" data-ctab="props" onclick="switchConsistencyTab('props')">Props</button>
                 <button class="tab-btn" data-ctab="audit" onclick="switchConsistencyTab('audit')">Shot Audit</button>
+                <button class="tab-btn" data-ctab="verify" onclick="switchConsistencyTab('verify')">Verify</button>
             </div>
             <div id="consistencyCharacters" class="consistency-tab entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));"></div>
             <div id="consistencyLocations" class="consistency-tab entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));display:none;"></div>
             <div id="consistencyProps" class="consistency-tab entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));display:none;"></div>
             <div id="consistencyAudit" class="consistency-tab" style="display:none;"></div>
+            <div id="consistencyVerify" class="consistency-tab" style="display:none;"></div>
         </div>
 
         <!-- ── BUDGET DASHBOARD (FILM-164) ────────────────────── -->
@@ -3922,11 +3924,15 @@
             <div class="card mb-16">
                 <h3 class="mb-8">Run scene → final</h3>
                 <p class="text-sm text-muted mb-8" id="pipelineProviders"></p>
+                <div id="pipelineReadiness" class="mb-8"></div>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                     <select id="pipelineShotSelect" style="min-width:240px;"></select>
                     <button class="btn btn-primary" onclick="runPipelineLive()">Run shot (live)</button>
                     <button class="btn btn-secondary" onclick="runPipelineScope('scene')">Run scene</button>
                     <button class="btn btn-secondary" onclick="runPipelineScope('project')">Run project</button>
+                    <label class="text-sm" style="display:flex;align-items:center;gap:4px;cursor:pointer;" title="Refuse to run any shot whose in-frame subjects are not locked for consistency">
+                        <input type="checkbox" id="pipelineStrict"> Strict consistency
+                    </label>
                 </div>
                 <div id="pipelineLive" style="margin-top:14px;"></div>
             </div>
@@ -12842,7 +12848,12 @@ ${fountainText.slice(0, 50000)}`;
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body || {}),
             });
-            if (!res.ok || !res.body) { onError?.(new Error('HTTP ' + res.status)); return; }
+            if (!res.ok || !res.body) {
+                let detail = 'HTTP ' + res.status;
+                try { const j = await res.json(); if (j && j.error) detail = j.error; } catch (_) {}
+                const e = new Error(detail); e.status = res.status;
+                onError?.(e); return;
+            }
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
             let buf = '';
@@ -13659,10 +13670,17 @@ ${fountainText.slice(0, 50000)}`;
         if (!state.currentProject) return;
         setStatus('Loading pipeline...');
         try {
-            // Load recent renders across all shots
-            const sbData = await api('/projects/' + state.currentProject.id + '/status-board');
+            // Load recent renders across all shots + consistency readiness.
+            const [sbData, auditD] = await Promise.all([
+                api('/projects/' + state.currentProject.id + '/status-board'),
+                api('/projects/' + state.currentProject.id + '/consistency/audit').catch(() => ({ ready: true, shots: [] })),
+            ]);
             const allShots = [];
             (sbData.scenes || []).forEach(s => (s.shots || []).forEach(sh => allShots.push({ ...sh, scene_number: s.scene_number, scene_id: s.id })));
+            // shot_id -> readiness (from the same gate the pipeline enforces).
+            const readyByShot = {};
+            (auditD.shots || []).forEach(s => { readyByShot[s.shot_id] = s; });
+            renderPipelineReadiness(auditD);
 
             // Show active (generating) shots
             const active = allShots.filter(s => s.status === 'generating');
@@ -13702,7 +13720,11 @@ ${fountainText.slice(0, 50000)}`;
             const sel = document.getElementById('pipelineShotSelect');
             if (sel) {
                 sel.innerHTML = allShots.length
-                    ? allShots.map(s => `<option value="${esc(s.id)}" data-scene="${esc(s.scene_id || '')}">Sc${s.scene_number} / ${esc(s.shot_code)}</option>`).join('')
+                    ? allShots.map(s => {
+                        const r = readyByShot[s.id];
+                        const mark = r && r.ready === false ? '⚠ ' : '';
+                        return `<option value="${esc(s.id)}" data-scene="${esc(s.scene_id || '')}" data-ready="${r ? (r.ready ? '1' : '0') : ''}">${mark}Sc${s.scene_number} / ${esc(s.shot_code)}</option>`;
+                    }).join('')
                     : '<option value="">No shots — create shots first</option>';
             }
             // Show the providers each step will use (from per-project config).
@@ -13715,6 +13737,30 @@ ${fountainText.slice(0, 50000)}`;
 
             setStatus(allShots.length + ' shot(s) in pipeline');
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // Surface consistency readiness on the Pipeline page — the same gate the
+    // backend enforces (strict mode blocks a run whose in-frame subjects aren't
+    // locked). Shows what's blocking BEFORE a run is started.
+    function renderPipelineReadiness(audit) {
+        const el = document.getElementById('pipelineReadiness');
+        if (!el) return;
+        const shots = (audit && audit.shots) || [];
+        if (!shots.length) { el.innerHTML = ''; return; }
+        const ready = shots.filter(s => s.ready).length;
+        const blocked = shots.filter(s => !s.ready);
+        const allReady = blocked.length === 0;
+        const color = allReady ? 'var(--gl-success,#22c55e)' : 'var(--gl-warning,#f59e0b)';
+        let html = `<div class="card" style="border-left:4px solid ${color};padding:8px 12px;">
+            <strong>${allReady ? '✓ Consistency ready' : '⚠ ' + blocked.length + ' shot(s) not locked'}</strong>
+            <span class="text-sm text-muted"> — ${ready}/${shots.length} shots ready.${allReady ? '' : ' Strict mode will block these.'}</span>`;
+        if (blocked.length) {
+            html += '<div class="text-sm text-muted" style="margin-top:6px;">' + blocked.slice(0, 6).map(s =>
+                esc(s.shot_code || (s.shot_id || '').slice(0, 8)) + ': ' + esc((s.missing || []).join('; ') || 'not ready')
+            ).join('<br>') + (blocked.length > 6 ? '<br>…and ' + (blocked.length - 6) + ' more' : '') + '</div>';
+        }
+        html += '</div>';
+        el.innerHTML = html;
     }
 
     // ── Live pipeline run (scene → final) ───────────────────────────
@@ -13736,14 +13782,29 @@ ${fountainText.slice(0, 50000)}`;
         const shotId = sel && sel.value;
         if (!shotId) { setStatus('Pick a shot first'); return; }
         const label = sel.options[sel.selectedIndex].textContent;
+        const strict = !!(document.getElementById('pipelineStrict') || {}).checked;
         const live = document.getElementById('pipelineLive');
+        // Pre-flight: give instant feedback if strict mode will block this shot
+        // (the backend re-checks authoritatively when the run starts).
+        const selReady = sel.options[sel.selectedIndex].getAttribute('data-ready');
+        if (strict && selReady === '0') {
+            live.innerHTML = '<div class="card" style="border-left:4px solid var(--gl-danger,#ef4444);padding:8px 12px;"><strong>⛔ Strict consistency: shot not locked</strong><div class="text-sm text-muted" style="margin-top:4px;">Lock its in-frame subjects in the Consistency Studio, or uncheck Strict consistency to run anyway.</div></div>';
+            setStatus('Blocked by strict consistency');
+            return;
+        }
         let steps = [];
         const stateMap = {};
         live.innerHTML = '<div class="text-sm text-muted">Starting ' + esc(label) + '…</div>';
 
-        streamSSEPost('/shots/' + shotId + '/pipeline/run/stream', {},
+        streamSSEPost('/shots/' + shotId + '/pipeline/run/stream', { strict },
             (ev) => {
-                if (ev.type === 'status' && Array.isArray(ev.steps)) {
+                if (ev.type === 'readiness') {
+                    const bad = [...(ev.missing || []), ...(ev.warnings || [])];
+                    if (!ev.ready || bad.length) {
+                        const c = ev.ready ? 'var(--gl-warning,#f59e0b)' : 'var(--gl-danger,#ef4444)';
+                        live.innerHTML = '<div class="card" style="border-left:4px solid ' + c + ';padding:8px 12px;margin-bottom:8px;"><strong>' + (ev.ready ? '⚠ Consistency warnings' : '⛔ Consistency not ready') + '</strong><div class="text-sm text-muted" style="margin-top:4px;">' + bad.map(esc).join('<br>') + '</div></div>' + '<div class="text-sm text-muted">Running ' + esc(label) + '…</div>';
+                    }
+                } else if (ev.type === 'status' && Array.isArray(ev.steps)) {
                     steps = ev.steps;
                     steps.forEach(st => stateMap[st.id] = 'pending');
                     live.innerHTML = '<strong style="font-size:13px;">' + esc(label) + '</strong>' + renderPipelineSteps(steps, stateMap);
@@ -13773,15 +13834,17 @@ ${fountainText.slice(0, 50000)}`;
     async function runPipelineScope(scope) {
         const sel = document.getElementById('pipelineShotSelect');
         const opt = sel && sel.options[sel.selectedIndex];
+        const strict = !!(document.getElementById('pipelineStrict') || {}).checked;
+        const body = JSON.stringify({ strict });
         try {
             if (scope === 'scene') {
                 const sceneId = opt && opt.getAttribute('data-scene');
                 if (!sceneId) { setStatus('Pick a shot to identify its scene'); return; }
                 setStatus('Running scene pipeline…');
-                await api('/scenes/' + sceneId + '/pipeline/run', { method: 'POST', body: JSON.stringify({}) });
+                await api('/scenes/' + sceneId + '/pipeline/run', { method: 'POST', body });
             } else {
                 setStatus('Running project pipeline…');
-                await api('/projects/' + state.currentProject.id + '/pipeline/run', { method: 'POST', body: JSON.stringify({}) });
+                await api('/projects/' + state.currentProject.id + '/pipeline/run', { method: 'POST', body });
             }
             setStatus(scope + ' pipeline complete');
             loadPipeline();
@@ -13792,6 +13855,12 @@ ${fountainText.slice(0, 50000)}`;
     // CONSISTENCY STUDIO (Explore → Lock → Verify)
     // ══════════════════════════════════════════════════════════════
     let _consistencyData = { characters: [], locations: [], props: [] };
+    let _consistencyProfiles = {};   // profile.id -> profile (with .refs)
+    let _consistencyAssets = [];     // project assets (for the ref picker)
+    // Fallback vocab; overridden at runtime by the API's ref_roles (single source
+    // of truth lives in backend consistency-context.js). Order = truncation priority.
+    let _consistencyRefRoles = ['canonical', 'face', 'front', 'side', 'back', 'full_body', 'expression', 'wide', 'detail', 'color'];
+    const CONSISTENCY_IMG_TYPES = ['character_sheet', 'reference_sheet', 'reference_image', 'storyboard', 'keyframe'];
     function _cParse(s) { try { return JSON.parse(s || '{}'); } catch (_) { return {}; } }
 
     function switchConsistencyTab(tab) {
@@ -13800,6 +13869,8 @@ ${fountainText.slice(0, 50000)}`;
         document.getElementById('consistencyLocations').style.display = tab === 'locations' ? 'grid' : 'none';
         document.getElementById('consistencyProps').style.display = tab === 'props' ? 'grid' : 'none';
         document.getElementById('consistencyAudit').style.display = tab === 'audit' ? 'block' : 'none';
+        document.getElementById('consistencyVerify').style.display = tab === 'verify' ? 'block' : 'none';
+        if (tab === 'verify') loadConsistencyVerify();
     }
 
     async function loadConsistency() {
@@ -13818,8 +13889,11 @@ ${fountainText.slice(0, 50000)}`;
             _consistencyData = { characters: charsD.characters || [], locations: locsD.locations || [], props: propsD.props || [] };
             const profiles = profD.profiles || [];
             const assets = assetsD.assets || [];
+            _consistencyAssets = assets;
+            _consistencyProfiles = {}; profiles.forEach(p => { _consistencyProfiles[p.id] = p; });
+            if (Array.isArray(profD.ref_roles) && profD.ref_roles.length) _consistencyRefRoles = profD.ref_roles;
             const profBySubject = {}; profiles.forEach(p => { profBySubject[p.profile_type + ':' + p.subject_id] = p; });
-            const IMG_TYPES = ['character_sheet', 'reference_sheet', 'reference_image', 'storyboard'];
+            const IMG_TYPES = CONSISTENCY_IMG_TYPES;
             const refAssetFor = (field, id) => assets.find(a => IMG_TYPES.includes(a.asset_type) && (a[field] === id || _cParse(a.metadata)[field] === id));
 
             // Readiness banner
@@ -13858,6 +13932,7 @@ ${fountainText.slice(0, 50000)}`;
                 <div class="flex-between"><strong style="font-size:13px;">${esc(s.name)}</strong>${status}</div>
                 ${thumb ? '<img src="' + API_BASE + esc(thumb) + '" style="width:100%;border-radius:6px;margin-top:8px;max-height:200px;object-fit:cover;" onerror="this.style.display=\'none\'">' : '<p class="text-sm text-muted" style="margin-top:8px;">No reference image yet — generate a reference image on the ' + (type === 'character' ? 'Characters' : type === 'prop' ? 'Props' : 'Locations') + ' page to explore, then lock one here.</p>'}
                 <div style="margin-top:8px;">${action}</div>
+                ${renderRefManager(prof, type, s)}
                 ${type === 'character' ? renderVoiceRow(s, profBySubject['voice:' + s.id]) : ''}
             </div>`;
         }).join('');
@@ -13874,6 +13949,134 @@ ${fountainText.slice(0, 50000)}`;
                 ? '<button class="btn btn-secondary btn-sm" onclick="lockVoice(\'' + char.id + '\')">Lock voice</button>'
                 : '<button class="btn btn-secondary btn-sm" disabled title="Set a voice profile on the character first">Lock voice</button>';
         return '<div style="margin-top:6px;border-top:1px solid var(--gl-border-subtle);padding-top:6px;display:flex;justify-content:space-between;align-items:center;"><span class="text-sm">Voice ' + badge + '</span>' + btn + '</div>';
+    }
+
+    // Multi-reference role management. A profile can hold several role-tagged
+    // references (front / side / back / expression / face / full_body) beyond the
+    // single canonical image — the largest per-shot consistency gain, and the
+    // reference set the generator side passes through as image[] / input_refs.
+    // Voice profiles have no visual references, so this is skipped for them.
+    function renderRefManager(prof, type, subject) {
+        if (type === 'voice') return '';
+        if (!prof) {
+            return '<div style="margin-top:8px;border-top:1px solid var(--gl-border-subtle);padding-top:8px;">'
+                + '<button class="btn btn-secondary btn-sm" onclick="startProfileForRefs(\'' + type + '\',\'' + subject.id + '\')">+ Add reference roles</button>'
+                + '<div class="text-sm text-muted" style="margin-top:4px;">Attach front / side / back / expression / face references for stronger consistency.</div></div>';
+        }
+        const refs = Array.isArray(prof.refs) ? prof.refs : [];
+        const requiredRoles = parseJsonArray(prof.required_roles);
+        // Image assets available for this subject (matched by id field or metadata).
+        const idField = type === 'character' ? 'character_id' : type === 'location' ? 'location_id' : 'prop_id';
+        const candidates = _consistencyAssets.filter(a => CONSISTENCY_IMG_TYPES.includes(a.asset_type)
+            && (a[idField] === subject.id || _cParse(a.metadata)[idField] === subject.id));
+        const usedAssetIds = new Set(refs.map(r => r.asset_id));
+        const options = candidates.filter(a => !usedAssetIds.has(a.id))
+            .map(a => '<option value="' + a.id + '">' + esc(a.file_name || a.asset_type || a.id) + '</option>').join('');
+
+        const roleChips = _consistencyRefRoles.map(role => {
+            const on = requiredRoles.includes(role);
+            return '<button class="tag" style="cursor:pointer;border:1px solid var(--gl-border-subtle);'
+                + (on ? 'background:var(--gl-accent,#2563eb);color:#fff;' : 'opacity:0.6;')
+                + '" title="Toggle whether this role is required" onclick="toggleRequiredRole(\'' + prof.id + '\',\'' + role + '\')">' + role + '</button>';
+        }).join(' ');
+
+        const refRows = refs.length ? refs.map(r => {
+            const missing = !r.asset_id;
+            const badge = '<span class="tag" style="background:var(--gl-accent-dim,#1e3a5f);">' + esc(r.ref_role) + '</span>';
+            const reqStar = r.is_required ? ' <span title="required" style="color:var(--gl-warning,#f59e0b);">★</span>' : '';
+            const name = missing ? '<span class="text-muted">(asset removed)</span>' : esc(r.asset_file_name || r.asset_id);
+            return '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:3px 0;">'
+                + '<span class="text-sm">' + badge + reqStar + ' ' + name + ' <span class="text-muted">w' + (r.weight != null ? r.weight : '0.7') + '</span></span>'
+                + '<button class="btn btn-secondary btn-sm" onclick="removeProfileRef(\'' + r.id + '\')">Remove</button></div>';
+        }).join('') : '<div class="text-sm text-muted">Only the canonical reference so far.</div>';
+
+        const addForm = options
+            ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;align-items:center;">'
+                + '<select id="refAsset_' + prof.id + '" class="input input-sm" style="flex:1;min-width:120px;">' + options + '</select>'
+                + '<select id="refRole_' + prof.id + '" class="input input-sm" style="width:110px;">'
+                + _consistencyRefRoles.map(r => '<option value="' + r + '"' + (r === 'front' ? ' selected' : '') + '>' + r + '</option>').join('') + '</select>'
+                + '<input id="refWeight_' + prof.id + '" class="input input-sm" style="width:64px;" type="number" step="0.05" min="0" max="1" value="0.7" title="reference weight">'
+                + '<button class="btn btn-primary btn-sm" onclick="addProfileRef(\'' + prof.id + '\')">Add</button></div>'
+            : '<div class="text-sm text-muted" style="margin-top:6px;">Generate more reference images for this ' + type + ' to attach additional roles.</div>';
+
+        const wt = prof.reference_weight != null ? prof.reference_weight : 0.7;
+        const weightRow = '<div style="margin-top:8px;display:flex;align-items:center;gap:6px;">'
+            + '<span class="text-sm text-muted">Default reference weight:</span>'
+            + '<input id="profWeight_' + prof.id + '" class="input input-sm" style="width:72px;" type="number" step="0.05" min="0" max="1" value="' + wt + '" title="Primary IP-Adapter / reference weight for this subject">'
+            + '<button class="btn btn-secondary btn-sm" onclick="setProfileWeight(\'' + prof.id + '\')">Save</button></div>';
+
+        return '<details class="ref-manager" style="margin-top:8px;border-top:1px solid var(--gl-border-subtle);padding-top:8px;">'
+            + '<summary style="cursor:pointer;font-size:12px;">References (' + refs.length + ') &middot; weight ' + wt + ' &middot; required roles</summary>'
+            + '<div style="margin-top:6px;"><div class="text-sm text-muted" style="margin-bottom:4px;">Required roles (click to toggle):</div>'
+            + '<div style="display:flex;flex-wrap:wrap;gap:4px;">' + roleChips + '</div>'
+            + weightRow
+            + '<div style="margin-top:8px;">' + refRows + '</div>'
+            + addForm + '</div></details>';
+    }
+
+    // Create a draft profile so references can be attached before locking.
+    // Name is looked up from state (never passed through the inline handler) so a
+    // subject name containing a quote can't break or inject into the onclick.
+    async function startProfileForRefs(type, subjectId) {
+        const list = type === 'character' ? _consistencyData.characters
+            : type === 'prop' ? _consistencyData.props
+            : _consistencyData.locations;
+        const subj = (list || []).find(x => x.id === subjectId) || {};
+        const name = subj.name || subjectId;
+        try {
+            await api('/projects/' + state.currentProject.id + '/consistency/profiles', {
+                method: 'POST', body: JSON.stringify({ profile_type: type, subject_id: subjectId, subject_name: name }),
+            });
+            setStatus('Draft profile ready — attach references');
+            loadConsistency();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function addProfileRef(profileId) {
+        const asset = document.getElementById('refAsset_' + profileId);
+        const role = document.getElementById('refRole_' + profileId);
+        const weightEl = document.getElementById('refWeight_' + profileId);
+        if (!asset || !asset.value) { setStatus('Pick a reference asset first'); return; }
+        const weight = parseFloat(weightEl && weightEl.value);
+        try {
+            await api('/consistency/profiles/' + profileId + '/refs', {
+                method: 'POST',
+                body: JSON.stringify({ asset_id: asset.value, ref_role: role ? role.value : 'front', weight: Number.isFinite(weight) ? weight : 0.7 }),
+            });
+            setStatus('Reference added');
+            loadConsistency();
+        } catch (err) { setStatus('Add reference error: ' + err.message); }
+    }
+
+    async function removeProfileRef(refId) {
+        try {
+            await api('/consistency/refs/' + refId, { method: 'DELETE' });
+            setStatus('Reference removed');
+            loadConsistency();
+        } catch (err) { setStatus('Remove error: ' + err.message); }
+    }
+
+    async function setProfileWeight(profileId) {
+        const el = document.getElementById('profWeight_' + profileId);
+        const w = parseFloat(el && el.value);
+        if (!Number.isFinite(w) || w < 0 || w > 1) { setStatus('Weight must be 0–1'); return; }
+        try {
+            await api('/consistency/profiles/' + profileId, { method: 'PUT', body: JSON.stringify({ reference_weight: w }) });
+            setStatus('Reference weight saved');
+            loadConsistency();
+        } catch (err) { setStatus('Update error: ' + err.message); }
+    }
+
+    async function toggleRequiredRole(profileId, role) {
+        const prof = _consistencyProfiles[profileId];
+        if (!prof) return;
+        const roles = parseJsonArray(prof.required_roles);
+        const next = roles.includes(role) ? roles.filter(r => r !== role) : roles.concat(role);
+        try {
+            await api('/consistency/profiles/' + profileId, { method: 'PUT', body: JSON.stringify({ required_roles: next }) });
+            prof.required_roles = next; // optimistic
+            loadConsistency();
+        } catch (err) { setStatus('Update error: ' + err.message); }
     }
 
     function renderConsistencyAudit(audit) {
@@ -13934,6 +14137,74 @@ ${fountainText.slice(0, 50000)}`;
             setStatus('Unlocked');
             loadConsistency();
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ── Verify view ────────────────────────────────────────────────
+    // Reads persisted consistency checks (the "Verify" corner of
+    // Explore→Lock→Generate→Verify). The generator side scores generated
+    // output against locked references and writes rows; this view surfaces them.
+    const VERIFY_STATUS_COLOR = { ready: 'var(--gl-success,#166534)', warning: 'var(--gl-warning,#92400e)', blocked: 'var(--gl-danger,#7f1d1d)' };
+
+    async function loadConsistencyVerify() {
+        const el = document.getElementById('consistencyVerify');
+        if (!state.currentProject) { el.innerHTML = '<p class="text-sm text-muted">No project selected.</p>'; return; }
+        el.innerHTML = '<p class="text-sm text-muted">Loading verification history…</p>';
+        try {
+            const data = await api('/projects/' + state.currentProject.id + '/consistency/checks?limit=100');
+            renderConsistencyVerify(data);
+        } catch (err) {
+            el.innerHTML = '<p class="text-sm text-muted">Could not load verification checks: ' + esc(err.message) + '</p>';
+        }
+    }
+
+    function renderConsistencyVerify(data) {
+        const el = document.getElementById('consistencyVerify');
+        const checks = (data && data.checks) || [];
+        const counts = (data && data.counts) || {};
+        if (!checks.length) {
+            el.innerHTML = '<div class="empty-state"><div class="icon">&#128269;</div><h3>No verification runs yet</h3>'
+                + '<p>Verify measures whether generated output came back on-model. Once a shot is generated with locked references, its output is scored against the canonical reference and recorded here — flagging anything that drifted.</p></div>';
+            return;
+        }
+        const shotName = id => {
+            const s = (state.shots || []).find(x => x.id === id);
+            return s ? (s.shot_code || s.name || id) : (id ? id.slice(0, 8) : '—');
+        };
+        const summary = '<div class="card" style="margin-bottom:12px;display:flex;gap:16px;align-items:center;">'
+            + '<strong>Verification</strong>'
+            + '<span class="tag" style="background:' + VERIFY_STATUS_COLOR.ready + ';">' + (counts.ready || 0) + ' ready</span>'
+            + '<span class="tag" style="background:' + VERIFY_STATUS_COLOR.warning + ';">' + (counts.warning || 0) + ' warning</span>'
+            + '<span class="tag" style="background:' + VERIFY_STATUS_COLOR.blocked + ';">' + (counts.blocked || 0) + ' blocked</span>'
+            + '<span class="text-sm text-muted">' + checks.length + ' recent check(s)</span></div>';
+
+        const rows = checks.map(c => {
+            const details = c.details || {};
+            const subjects = Array.isArray(details.subjects) ? details.subjects : [];
+            const scorer = details.scorer ? '<span class="text-muted"> · ' + esc(details.scorer) + '</span>' : '';
+            const subjHtml = subjects.length ? subjects.map(renderVerifySubject).join('') : '<span class="text-sm text-muted">No per-subject scores.</span>';
+            const notes = [...(c.missing || []), ...(c.warnings || [])];
+            const notesHtml = notes.length ? '<div class="text-sm text-muted" style="margin-top:4px;">' + notes.map(esc).join(' · ') + '</div>' : '';
+            return '<tr><td>' + esc(shotName(c.shot_id)) + '</td>'
+                + '<td><span class="tag" style="background:' + (VERIFY_STATUS_COLOR[c.status] || '#555') + ';">' + esc(c.status) + '</span>' + scorer + '</td>'
+                + '<td>' + subjHtml + notesHtml + '</td>'
+                + '<td class="text-sm text-muted">' + esc((c.created_at || '').replace('T', ' ').slice(0, 16)) + '</td></tr>';
+        }).join('');
+
+        el.innerHTML = summary + '<table class="render-table"><tr><th>Shot</th><th>Status</th><th>Subjects / notes</th><th>When</th></tr>' + rows + '</table>';
+    }
+
+    function renderVerifySubject(s) {
+        const name = esc(s.subject_name || s.subject || s.profile_id || 'subject');
+        const role = s.role ? ' <span class="text-muted">(' + esc(s.role) + ')</span>' : '';
+        const score = typeof s.score === 'number' ? s.score : null;
+        const st = s.status || (score == null ? '' : score >= 0.85 ? 'ready' : score >= 0.70 ? 'warning' : 'blocked');
+        const color = VERIFY_STATUS_COLOR[st] || '#888';
+        const pct = score == null ? 0 : Math.max(0, Math.min(100, Math.round(score * 100)));
+        const bar = score == null ? '<span class="text-muted">no score</span>'
+            : '<span style="display:inline-block;width:80px;height:8px;border-radius:4px;background:var(--gl-border-subtle,#333);vertical-align:middle;overflow:hidden;">'
+                + '<span style="display:block;height:100%;width:' + pct + '%;background:' + color + ';"></span></span>'
+                + ' <span class="text-sm">' + pct + '%</span>';
+        return '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;"><span class="text-sm" style="min-width:120px;">' + name + role + '</span>' + bar + '</div>';
     }
 
     // ══════════════════════════════════════════════════════════════
