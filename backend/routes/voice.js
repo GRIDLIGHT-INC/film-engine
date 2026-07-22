@@ -10,10 +10,12 @@
  * GET  /film/audio/:projectId/:filename         - Serve audio files
  */
 
+const crypto = require('crypto');
 const { db, generateId } = require('../db/database');
-const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
+const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir, serveFile } = require('../lib/file-storage');
 const { extractDialogue, buildVoicePayload, dialogueFilename } = require('../lib/dialogue-builder');
+const { resolve } = require('../lib/providers');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VOICE_ENDPOINT = '/voice';
@@ -21,6 +23,35 @@ const VOICE_ENDPOINT = '/voice';
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
+}
+
+function parseProjectConfig(projectId) {
+    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
+    if (!row) return {};
+    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
+}
+
+function hashPrompt(text) {
+    return crypto.createHash('sha256').update(String(text || '')).digest('hex');
+}
+
+function filenameForResult(baseFilename, result) {
+    const format = result && result.meta && result.meta.format ? result.meta.format : '';
+    if (format === 'mp3') return baseFilename.replace(/\.[^.]+$/, '.mp3');
+    if (format === 'wav') return baseFilename.replace(/\.[^.]+$/, '.wav');
+    return baseFilename;
+}
+
+function mimeForResult(result) {
+    return (result && result.contentType) || (result && result.meta && result.meta.format === 'mp3' ? 'audio/mpeg' : 'audio/wav');
+}
+
+function formatForResult(result) {
+    const format = result && result.meta && result.meta.format ? result.meta.format : '';
+    if (format) return format;
+    const contentType = result && result.contentType ? result.contentType : '';
+    if (contentType.includes('mpeg') || contentType.includes('mp3')) return 'mp3';
+    return 'wav';
 }
 
 // -- Route Handler -------------------------------------------------------
@@ -83,6 +114,7 @@ async function generateVoice(req, res, shotId) {
     const voiceProfiles = db.prepare(
         'SELECT * FROM film_voice_profiles WHERE character_id IN (SELECT id FROM film_characters WHERE project_id = ?)'
     ).all(scene.project_id);
+    const voiceProvider = resolve('voice', parseProjectConfig(scene.project_id));
 
     ensureDir(scene.project_id, 'audio');
     const results = [];
@@ -99,7 +131,7 @@ async function generateVoice(req, res, shotId) {
         ).run(jobId, scene.project_id, shotId, character ? character.id : null, line.line, line.emotion, voiceProfile ? voiceProfile.id : null);
 
         try {
-            const result = await callGridlight(VOICE_ENDPOINT, payload);
+            const result = await voiceProvider.generate('voice', payload, { timeout: 300000 });
 
             if (!result.ok) {
                 db.prepare('UPDATE film_voice_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
@@ -107,7 +139,7 @@ async function generateVoice(req, res, shotId) {
                 continue;
             }
 
-            const filename = dialogueFilename(shot.shot_code, line.character, line.index);
+            const filename = filenameForResult(dialogueFilename(shot.shot_code, line.character, line.index), result);
             let filePath = '', durationMs = 0;
 
             if (Buffer.isBuffer(result.data)) {
@@ -119,9 +151,17 @@ async function generateVoice(req, res, shotId) {
 
             const assetId = generateId();
             db.prepare(
-                `INSERT INTO film_assets (id, project_id, shot_id, character_id, asset_type, file_path, file_name, format, mime_type, duration_ms, version)
-                 VALUES (?, ?, ?, ?, 'audio_dialogue', ?, ?, 'wav', 'audio/wav', ?, 1)`
-            ).run(assetId, scene.project_id, shotId, character ? character.id : null, filePath, filename, durationMs);
+                `INSERT INTO film_assets (
+                    id, project_id, shot_id, character_id, asset_type, file_path, file_name,
+                    format, mime_type, duration_ms, version,
+                    provider, provider_model, provider_job_id, license_source, license_status, prompt_hash
+                 )
+                 VALUES (?, ?, ?, ?, 'audio_dialogue', ?, ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated', ?)`
+            ).run(
+                assetId, scene.project_id, shotId, character ? character.id : null,
+                filePath, filename, formatForResult(result), mimeForResult(result), durationMs,
+                voiceProvider.id, result.provider_model || payload.model || '', result.provider_job_id || '', hashPrompt(payload.text || line.line)
+            );
 
             db.prepare(
                 `INSERT INTO render_ledger (id, shot_id, version, step, model_id, prompt, mode)
@@ -137,7 +177,7 @@ async function generateVoice(req, res, shotId) {
             });
         } catch (err) {
             db.prepare('UPDATE film_voice_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
-            if (err.message.includes('ECONNREFUSED')) {
+            if (voiceProvider.id === 'gridlight' && err.message.includes('ECONNREFUSED')) {
                 return json(res, 503, serviceUnavailableError(VOICE_ENDPOINT, 'voice'));
             }
             results.push({ character: line.character, line: line.line, status: 'failed', error: err.message });
@@ -180,6 +220,7 @@ async function generateVoiceStream(req, res, shotId) {
     const voiceProfiles = db.prepare(
         'SELECT * FROM film_voice_profiles WHERE character_id IN (SELECT id FROM film_characters WHERE project_id = ?)'
     ).all(scene.project_id);
+    const voiceProvider = resolve('voice', parseProjectConfig(scene.project_id));
     ensureDir(scene.project_id, 'audio');
 
     let completed = 0, failed = 0;
@@ -194,19 +235,28 @@ async function generateVoiceStream(req, res, shotId) {
         sendEvent({ type: 'progress', line_index: i, total_lines: dialogueLines.length, character: line.character, phase: 'generating' });
 
         try {
-            const result = await callGridlight(VOICE_ENDPOINT, payload);
+            const result = await voiceProvider.generate('voice', payload, { timeout: 300000 });
             if (!result.ok) throw new Error(result.error);
 
-            const filename = dialogueFilename(shot.shot_code, line.character, line.index);
+            const filename = filenameForResult(dialogueFilename(shot.shot_code, line.character, line.index), result);
+            let filePath = filename;
             if (Buffer.isBuffer(result.data)) {
-                saveFile(scene.project_id, 'audio', filename, result.data);
+                filePath = saveFile(scene.project_id, 'audio', filename, result.data);
             }
 
             const assetId = generateId();
             db.prepare(
-                `INSERT INTO film_assets (id, project_id, shot_id, character_id, asset_type, file_path, file_name, format, mime_type, version)
-                 VALUES (?, ?, ?, ?, 'audio_dialogue', ?, ?, 'wav', 'audio/wav', 1)`
-            ).run(assetId, scene.project_id, shotId, character ? character.id : null, filename, filename);
+                `INSERT INTO film_assets (
+                    id, project_id, shot_id, character_id, asset_type, file_path, file_name,
+                    format, mime_type, version,
+                    provider, provider_model, provider_job_id, license_source, license_status, prompt_hash
+                 )
+                 VALUES (?, ?, ?, ?, 'audio_dialogue', ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated', ?)`
+            ).run(
+                assetId, scene.project_id, shotId, character ? character.id : null,
+                filePath, filename, formatForResult(result), mimeForResult(result),
+                voiceProvider.id, result.provider_model || payload.model || '', result.provider_job_id || '', hashPrompt(payload.text || line.line)
+            );
 
             sendEvent({ type: 'progress', line_index: i, total_lines: dialogueLines.length, character: line.character, phase: 'complete', audio_url: getFileUrl('audio', scene.project_id, filename) });
             completed++;
@@ -248,6 +298,7 @@ async function batchVoiceStream(req, res, projectId) {
     const voiceProfiles = db.prepare(
         'SELECT * FROM film_voice_profiles WHERE character_id IN (SELECT id FROM film_characters WHERE project_id = ?)'
     ).all(projectId);
+    const voiceProvider = resolve('voice', parseProjectConfig(projectId));
     ensureDir(projectId, 'audio');
 
     let totalCompleted = 0, totalFailed = 0;
@@ -269,17 +320,26 @@ async function batchVoiceStream(req, res, projectId) {
             const payload = buildVoicePayload(line, voiceProfile, character);
 
             try {
-                const result = await callGridlight(VOICE_ENDPOINT, payload);
+                const result = await voiceProvider.generate('voice', payload, { timeout: 300000 });
                 if (!result.ok) throw new Error(result.error);
 
-                const filename = dialogueFilename(shot.shot_code, line.character, line.index);
-                if (Buffer.isBuffer(result.data)) saveFile(projectId, 'audio', filename, result.data);
+                const filename = filenameForResult(dialogueFilename(shot.shot_code, line.character, line.index), result);
+                let filePath = filename;
+                if (Buffer.isBuffer(result.data)) filePath = saveFile(projectId, 'audio', filename, result.data);
 
                 const assetId = generateId();
                 db.prepare(
-                    `INSERT INTO film_assets (id, project_id, shot_id, character_id, asset_type, file_name, format, mime_type, version)
-                     VALUES (?, ?, ?, ?, 'audio_dialogue', ?, 'wav', 'audio/wav', 1)`
-                ).run(assetId, projectId, shot.shot_id, character ? character.id : null, filename);
+                    `INSERT INTO film_assets (
+                        id, project_id, shot_id, character_id, asset_type, file_path, file_name,
+                        format, mime_type, version,
+                        provider, provider_model, provider_job_id, license_source, license_status, prompt_hash
+                     )
+                     VALUES (?, ?, ?, ?, 'audio_dialogue', ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated', ?)`
+                ).run(
+                    assetId, projectId, shot.shot_id, character ? character.id : null,
+                    filePath, filename, formatForResult(result), mimeForResult(result),
+                    voiceProvider.id, result.provider_model || payload.model || '', result.provider_job_id || '', hashPrompt(payload.text || line.line)
+                );
 
                 sendEvent({ type: 'line_complete', shot_code: shot.shot_code, character: line.character, audio_url: getFileUrl('audio', projectId, filename) });
                 totalCompleted++;
@@ -329,6 +389,8 @@ function getVoiceStatus(req, res, shotId) {
             asset_id: a.id, file_name: a.file_name,
             audio_url: a.file_name ? getFileUrl('audio', a.project_id, a.file_name) : null,
             duration_ms: a.duration_ms, character_id: a.character_id,
+            provider: a.provider, provider_model: a.provider_model, provider_job_id: a.provider_job_id,
+            license_source: a.license_source, license_status: a.license_status, prompt_hash: a.prompt_hash,
         })),
     });
 }
