@@ -106,7 +106,7 @@ async function generateMusic(req, res, sceneId) {
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
 
     // Find music cues for this scene, or create from request body
-    let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_time LIMIT 1').get(sceneId);
+    let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(sceneId);
     if (!musicCue && req.body) {
         musicCue = { mood: req.body.mood, genre: req.body.genre, description: req.body.description };
     }
@@ -145,11 +145,8 @@ async function generateMusic(req, res, sceneId) {
              VALUES (?, ?, ?, 'audio_music', ?, ?, 'wav', 'audio/wav', ?, 1)`
         ).run(assetId, scene.project_id, sceneId, filePath, filename, payload.duration_s * 1000);
 
-        db.prepare(
-            `INSERT INTO render_ledger (id, shot_id, version, step, model_id, prompt, seed, mode)
-             VALUES (?, ?, 1, 'music', ?, ?, ?, 'creative')`
-        ).run(generateId(), sceneId, payload.model, payload.prompt, payload.seed);
-
+        // Note: scene-level music is not a shot render, and render_ledger.shot_id
+        // is NOT NULL + FK to film_shots — so we track it in film_music_jobs only.
         db.prepare('UPDATE film_music_jobs SET status = ?, output_path = ? WHERE id = ?').run('complete', filePath, jobId);
 
         json(res, 200, {
@@ -171,7 +168,7 @@ async function generateMusicStream(req, res, sceneId) {
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
-    let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_time LIMIT 1').get(sceneId);
+    let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(sceneId);
     const payload = buildMusicPrompt(musicCue, scene, project);
 
     res.writeHead(200, {
@@ -358,7 +355,7 @@ async function batchMusicStream(req, res, projectId) {
         if (clientGone || res.writableEnded) break; // client disconnected — stop remaining scenes
         // Music score
         sendEvent({ type: 'scene_start', scene_id: scene.id, scene_number: scene.scene_number, phase: 'music' });
-        let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_time LIMIT 1').get(scene.id);
+        let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(scene.id);
         const musicPayload = buildMusicPrompt(musicCue, scene, project);
 
         try {
