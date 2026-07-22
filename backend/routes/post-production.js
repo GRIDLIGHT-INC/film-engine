@@ -12,8 +12,9 @@
  */
 
 const { db, generateId } = require('../db/database');
-const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
+const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
+const { resolve, get } = require('../lib/providers');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const POST_ENDPOINT = '/postprocess';
@@ -21,6 +22,26 @@ const POST_ENDPOINT = '/postprocess';
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
+}
+
+function parseProjectConfig(projectId) {
+    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
+    if (!row) return {};
+    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
+}
+
+function resolveGenerator(capability, projectConfig) {
+    const adapter = resolve(capability, projectConfig);
+    if (adapter && typeof adapter.generate === 'function') return adapter;
+    return get('gridlight');
+}
+
+function resultModel(result, payload) {
+    return (result && result.provider_model) || (payload && payload.model) || '';
+}
+
+function resultJobId(result) {
+    return (result && result.provider_job_id) || '';
 }
 
 // -- Route Handler -------------------------------------------------------
@@ -120,6 +141,7 @@ async function runPostStep(req, res, shotId, jobType) {
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
+    const postProvider = resolveGenerator('post', parseProjectConfig(scene.project_id));
 
     const videoAsset = findLatestVideo(shotId);
     if (!videoAsset) return json(res, 400, { error: 'No video asset found. Generate video first.' });
@@ -139,11 +161,11 @@ async function runPostStep(req, res, shotId, jobType) {
     ).run(jobId, scene.project_id, shotId, videoAsset.id, jobType, colorPresetId, payload.model || '', JSON.stringify(payload));
 
     try {
-        const result = await callGridlight(POST_ENDPOINT, payload);
+        const result = await postProvider.generate('post', payload, { timeout: 300000 });
 
         if (!result.ok) {
             db.prepare('UPDATE film_post_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
-            if (result.status === 503) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
+            if (postProvider.id === 'gridlight' && result.status === 503) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
             return json(res, result.status || 500, { error: result.error });
         }
 
@@ -160,9 +182,16 @@ async function runPostStep(req, res, shotId, jobType) {
 
         const assetId = generateId();
         db.prepare(
-            `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, version)
-             VALUES (?, ?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1)`
-        ).run(assetId, scene.project_id, shotId, filePath, filename);
+            `INSERT INTO film_assets (
+                id, project_id, shot_id, asset_type, file_path, file_name,
+                format, mime_type, version,
+                provider, provider_model, provider_job_id, license_source, license_status
+             )
+             VALUES (?, ?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+        ).run(
+            assetId, scene.project_id, shotId, filePath, filename,
+            postProvider.id, resultModel(result, payload), resultJobId(result)
+        );
 
         db.prepare(
             `INSERT INTO render_ledger (id, shot_id, version, step, model_id, prompt, mode)
@@ -177,7 +206,7 @@ async function runPostStep(req, res, shotId, jobType) {
         });
     } catch (err) {
         db.prepare('UPDATE film_post_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
-        if (err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
+        if (postProvider.id === 'gridlight' && err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
         json(res, 500, { error: err.message });
     }
 }
@@ -190,6 +219,7 @@ async function runComposite(req, res, shotId) {
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
+    const postProvider = resolveGenerator('post', parseProjectConfig(scene.project_id));
 
     let videoAsset = findLatestVideo(shotId);
     if (!videoAsset) return json(res, 400, { error: 'No video asset found.' });
@@ -207,7 +237,7 @@ async function runComposite(req, res, shotId) {
         ).run(jobId, scene.project_id, shotId, videoAsset.id, step, payload.model || '');
 
         try {
-            const result = await callGridlight(POST_ENDPOINT, payload);
+            const result = await postProvider.generate('post', payload, { timeout: 300000 });
             if (!result.ok) {
                 db.prepare('UPDATE film_post_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
                 results.push({ step, status: 'failed', error: result.error });
@@ -224,9 +254,16 @@ async function runComposite(req, res, shotId) {
 
             const assetId = generateId();
             db.prepare(
-                `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, version)
-                 VALUES (?, ?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1)`
-            ).run(assetId, scene.project_id, shotId, filePath, filename);
+                `INSERT INTO film_assets (
+                    id, project_id, shot_id, asset_type, file_path, file_name,
+                    format, mime_type, version,
+                    provider, provider_model, provider_job_id, license_source, license_status
+                 )
+                 VALUES (?, ?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+            ).run(
+                assetId, scene.project_id, shotId, filePath, filename,
+                postProvider.id, resultModel(result, payload), resultJobId(result)
+            );
 
             db.prepare('UPDATE film_post_jobs SET status = ?, output_path = ? WHERE id = ?').run('complete', filePath, jobId);
 
@@ -236,7 +273,7 @@ async function runComposite(req, res, shotId) {
         } catch (err) {
             db.prepare('UPDATE film_post_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
             if (err.message.includes('ECONNREFUSED')) {
-                return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
+                if (postProvider.id === 'gridlight') return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
             }
             results.push({ step, status: 'failed', error: err.message });
         }
@@ -250,6 +287,7 @@ async function runComposite(req, res, shotId) {
 async function batchPostStream(req, res, projectId) {
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
+    const postProvider = resolveGenerator('post', parseProjectConfig(projectId));
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',
@@ -281,7 +319,7 @@ async function batchPostStream(req, res, projectId) {
         const payload = buildPostPayload('upscale', videoAsset, projectId);
 
         try {
-            const result = await callGridlight(POST_ENDPOINT, payload);
+            const result = await postProvider.generate('post', payload, { timeout: 300000 });
             if (!result.ok) throw new Error(result.error);
 
             const filename = `${shot.shot_code}_final.mp4`;
@@ -290,9 +328,15 @@ async function batchPostStream(req, res, projectId) {
 
             const assetId = generateId();
             db.prepare(
-                `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, format, mime_type, version)
-                 VALUES (?, ?, ?, 'video_final', ?, 'mp4', 'video/mp4', 1)`
-            ).run(assetId, projectId, shot.shot_id, filename);
+                `INSERT INTO film_assets (
+                    id, project_id, shot_id, asset_type, file_name, format, mime_type, version,
+                    provider, provider_model, provider_job_id, license_source, license_status
+                 )
+                 VALUES (?, ?, ?, 'video_final', ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+            ).run(
+                assetId, projectId, shot.shot_id, filename,
+                postProvider.id, resultModel(result, payload), resultJobId(result)
+            );
 
             sendEvent({ type: 'shot_complete', shot_code: shot.shot_code, video_url: getFileUrl('video', projectId, filename) });
             completed++;
@@ -363,6 +407,7 @@ async function colorMatchShot(req, res, shotId) {
     if (!shot) return json(res, 404, { error: 'Shot not found' });
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    const postProvider = resolveGenerator('post', parseProjectConfig(scene.project_id));
     const videoAsset = findLatestVideo(shotId);
     if (!videoAsset) return json(res, 400, { error: 'No video asset found.' });
 
@@ -398,11 +443,11 @@ async function colorMatchShot(req, res, shotId) {
     ).run(jobId, scene.project_id, shotId, videoAsset.id, JSON.stringify(payload));
 
     try {
-        const result = await callGridlight(POST_ENDPOINT, payload);
+        const result = await postProvider.generate('post', payload, { timeout: 300000 });
 
         if (!result.ok) {
             db.prepare('UPDATE film_post_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
-            if (result.status === 503) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
+            if (postProvider.id === 'gridlight' && result.status === 503) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
             return json(res, result.status || 500, { error: result.error });
         }
 
@@ -415,9 +460,16 @@ async function colorMatchShot(req, res, shotId) {
 
         const assetId = generateId();
         db.prepare(
-            `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, version)
-             VALUES (?, ?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1)`
-        ).run(assetId, scene.project_id, shotId, filePath, filename);
+            `INSERT INTO film_assets (
+                id, project_id, shot_id, asset_type, file_path, file_name,
+                format, mime_type, version,
+                provider, provider_model, provider_job_id, license_source, license_status
+             )
+             VALUES (?, ?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+        ).run(
+            assetId, scene.project_id, shotId, filePath, filename,
+            postProvider.id, resultModel(result, payload), resultJobId(result)
+        );
 
         db.prepare('UPDATE film_post_jobs SET status = ?, output_path = ? WHERE id = ?').run('complete', filePath, jobId);
 
@@ -428,7 +480,7 @@ async function colorMatchShot(req, res, shotId) {
         });
     } catch (err) {
         db.prepare('UPDATE film_post_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
-        if (err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
+        if (postProvider.id === 'gridlight' && err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
         json(res, 500, { error: err.message });
     }
 }
@@ -488,6 +540,7 @@ async function encodeShot(req, res, shotId) {
     if (!shot) return json(res, 404, { error: 'Shot not found' });
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    const postProvider = resolveGenerator('post', parseProjectConfig(scene.project_id));
     const videoAsset = findLatestVideo(shotId);
     if (!videoAsset) return json(res, 400, { error: 'No video asset found.' });
 
@@ -517,11 +570,11 @@ async function encodeShot(req, res, shotId) {
     ).run(jobId, scene.project_id, shotId, videoAsset.id, codec, JSON.stringify(payload));
 
     try {
-        const result = await callGridlight(POST_ENDPOINT, payload);
+        const result = await postProvider.generate('post', payload, { timeout: 300000 });
 
         if (!result.ok) {
             db.prepare('UPDATE film_post_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
-            if (result.status === 503) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
+            if (postProvider.id === 'gridlight' && result.status === 503) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
             return json(res, result.status || 500, { error: result.error });
         }
 
@@ -534,9 +587,16 @@ async function encodeShot(req, res, shotId) {
 
         const assetId = generateId();
         db.prepare(
-            `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, version)
-             VALUES (?, ?, ?, 'video_encoded', ?, ?, ?, ?, 1)`
-        ).run(assetId, scene.project_id, shotId, filePath, filename, codecInfo.extension, codecInfo.mime);
+            `INSERT INTO film_assets (
+                id, project_id, shot_id, asset_type, file_path, file_name,
+                format, mime_type, version,
+                provider, provider_model, provider_job_id, license_source, license_status
+             )
+             VALUES (?, ?, ?, 'video_encoded', ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated')`
+        ).run(
+            assetId, scene.project_id, shotId, filePath, filename, codecInfo.extension, codecInfo.mime,
+            postProvider.id, resultModel(result, payload), resultJobId(result)
+        );
 
         db.prepare('UPDATE film_post_jobs SET status = ?, output_path = ? WHERE id = ?').run('complete', filePath, jobId);
 
@@ -547,7 +607,7 @@ async function encodeShot(req, res, shotId) {
         });
     } catch (err) {
         db.prepare('UPDATE film_post_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
-        if (err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
+        if (postProvider.id === 'gridlight' && err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(POST_ENDPOINT, 'post-production'));
         json(res, 500, { error: err.message });
     }
 }

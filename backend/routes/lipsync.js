@@ -9,9 +9,10 @@
  */
 
 const { db, generateId } = require('../db/database');
-const { callGridlight, relayGridlightSSE, serviceUnavailableError } = require('../lib/gridlight-client');
+const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, getFilePath, ensureDir } = require('../lib/file-storage');
 const { buildVisemeTrack, mergeVisemesWithAudio, buildVisemePayload } = require('../lib/viseme-builder');
+const { resolve, get } = require('../lib/providers');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LIPSYNC_ENDPOINT = '/lipsync';
@@ -19,6 +20,32 @@ const LIPSYNC_ENDPOINT = '/lipsync';
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
+}
+
+function parseProjectConfig(projectId) {
+    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
+    if (!row) return {};
+    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
+}
+
+function resolveGenerator(capability, projectConfig) {
+    const adapter = resolve(capability, projectConfig);
+    if (adapter && typeof adapter.generate === 'function') return adapter;
+    return get('gridlight');
+}
+
+function resolveStreamGenerator(capability, projectConfig) {
+    const adapter = resolveGenerator(capability, projectConfig);
+    if (adapter && typeof adapter.generateStream === 'function') return adapter;
+    return get('gridlight');
+}
+
+function resultModel(result, payload) {
+    return (result && result.provider_model) || (payload && payload.model) || '';
+}
+
+function resultJobId(result) {
+    return (result && result.provider_job_id) || '';
 }
 
 // -- Route Handler -------------------------------------------------------
@@ -77,6 +104,7 @@ async function generateLipsync(req, res, shotId) {
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
+    const lipsyncProvider = resolveGenerator('lipsync', parseProjectConfig(scene.project_id));
 
     const { videoAsset, audioAsset } = findShotAssets(shotId);
     if (!videoAsset) return json(res, 400, { error: 'No video asset found for this shot. Generate video first.' });
@@ -98,11 +126,11 @@ async function generateLipsync(req, res, shotId) {
     ).run(jobId, scene.project_id, shotId, videoAsset.id, audioAsset.id, payload.model, payload.quality);
 
     try {
-        const result = await callGridlight(LIPSYNC_ENDPOINT, payload);
+        const result = await lipsyncProvider.generate('lipsync', payload, { timeout: 300000 });
 
         if (!result.ok) {
             db.prepare('UPDATE film_lipsync_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
-            if (result.status === 503) return json(res, 503, serviceUnavailableError(LIPSYNC_ENDPOINT, 'lipsync'));
+            if (lipsyncProvider.id === 'gridlight' && result.status === 503) return json(res, 503, serviceUnavailableError(LIPSYNC_ENDPOINT, 'lipsync'));
             return json(res, result.status || 500, { error: result.error });
         }
 
@@ -118,9 +146,16 @@ async function generateLipsync(req, res, shotId) {
 
         const assetId = generateId();
         db.prepare(
-            `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, version)
-             VALUES (?, ?, ?, 'video_synced', ?, ?, 'mp4', 'video/mp4', 1)`
-        ).run(assetId, scene.project_id, shotId, filePath, filename);
+            `INSERT INTO film_assets (
+                id, project_id, shot_id, asset_type, file_path, file_name,
+                format, mime_type, version,
+                provider, provider_model, provider_job_id, license_source, license_status
+             )
+             VALUES (?, ?, ?, 'video_synced', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+        ).run(
+            assetId, scene.project_id, shotId, filePath, filename,
+            lipsyncProvider.id, resultModel(result, payload), resultJobId(result)
+        );
 
         db.prepare(
             `INSERT INTO render_ledger (id, shot_id, version, step, model_id, prompt, mode)
@@ -136,7 +171,7 @@ async function generateLipsync(req, res, shotId) {
         });
     } catch (err) {
         db.prepare('UPDATE film_lipsync_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
-        if (err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(LIPSYNC_ENDPOINT, 'lipsync'));
+        if (lipsyncProvider.id === 'gridlight' && err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(LIPSYNC_ENDPOINT, 'lipsync'));
         json(res, 500, { error: err.message });
     }
 }
@@ -149,6 +184,7 @@ async function generateLipsyncStream(req, res, shotId) {
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
+    const lipsyncProvider = resolveStreamGenerator('lipsync', parseProjectConfig(scene.project_id));
 
     const { videoAsset, audioAsset } = findShotAssets(shotId);
     if (!videoAsset || !audioAsset) {
@@ -177,16 +213,22 @@ async function generateLipsyncStream(req, res, shotId) {
     ).run(jobId, scene.project_id, shotId, videoAsset.id, audioAsset.id, payload.model);
 
     try {
-        const { ok, error } = await relayGridlightSSE(LIPSYNC_ENDPOINT, payload, res, {
+        const { ok, error } = await lipsyncProvider.generateStream('lipsync', payload, res, {
             onComplete: (data) => {
                 const filename = `${shot.shot_code}_synced.mp4`;
                 ensureDir(scene.project_id, 'video');
 
                 const assetId = generateId();
                 db.prepare(
-                    `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, format, mime_type, version)
-                     VALUES (?, ?, ?, 'video_synced', ?, 'mp4', 'video/mp4', 1)`
-                ).run(assetId, scene.project_id, shotId, filename);
+                    `INSERT INTO film_assets (
+                        id, project_id, shot_id, asset_type, file_name, format, mime_type, version,
+                        provider, provider_model, provider_job_id, license_source, license_status
+                     )
+                     VALUES (?, ?, ?, 'video_synced', ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+                ).run(
+                    assetId, scene.project_id, shotId, filename,
+                    lipsyncProvider.id, resultModel(data, payload), resultJobId(data)
+                );
 
                 db.prepare('UPDATE film_lipsync_jobs SET status = ? WHERE id = ?').run('complete', jobId);
             },
@@ -317,6 +359,7 @@ async function visemeGuidedSync(req, res, shotId) {
     if (!shot) return json(res, 404, { error: 'Shot not found' });
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    const lipsyncProvider = resolveGenerator('lipsync', parseProjectConfig(scene.project_id));
 
     // Get viseme tracks for this shot
     const visemeTracks = db.prepare('SELECT * FROM film_viseme_tracks WHERE shot_id = ? ORDER BY created_at DESC').all(shotId);
@@ -365,11 +408,11 @@ async function visemeGuidedSync(req, res, shotId) {
     ).run(jobId, scene.project_id, shotId, videoAsset.id, audioAsset.id, payload.model);
 
     try {
-        const result = await callGridlight(LIPSYNC_ENDPOINT, payload);
+        const result = await lipsyncProvider.generate('lipsync', payload, { timeout: 300000 });
 
         if (!result.ok) {
             db.prepare('UPDATE film_lipsync_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
-            if (result.status === 503) return json(res, 503, serviceUnavailableError(LIPSYNC_ENDPOINT, 'lipsync'));
+            if (lipsyncProvider.id === 'gridlight' && result.status === 503) return json(res, 503, serviceUnavailableError(LIPSYNC_ENDPOINT, 'lipsync'));
             return json(res, result.status || 500, { error: result.error });
         }
 
@@ -385,9 +428,16 @@ async function visemeGuidedSync(req, res, shotId) {
 
         const assetId = generateId();
         db.prepare(
-            `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, version)
-             VALUES (?, ?, ?, 'video_synced', ?, ?, 'mp4', 'video/mp4', 1)`
-        ).run(assetId, scene.project_id, shotId, filePath, filename);
+            `INSERT INTO film_assets (
+                id, project_id, shot_id, asset_type, file_path, file_name,
+                format, mime_type, version,
+                provider, provider_model, provider_job_id, license_source, license_status
+             )
+             VALUES (?, ?, ?, 'video_synced', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+        ).run(
+            assetId, scene.project_id, shotId, filePath, filename,
+            lipsyncProvider.id, resultModel(result, payload), resultJobId(result)
+        );
 
         db.prepare('UPDATE film_lipsync_jobs SET status = ?, output_path = ? WHERE id = ?').run('complete', filePath, jobId);
 
@@ -398,7 +448,7 @@ async function visemeGuidedSync(req, res, shotId) {
         });
     } catch (err) {
         db.prepare('UPDATE film_lipsync_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
-        if (err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(LIPSYNC_ENDPOINT, 'lipsync'));
+        if (lipsyncProvider.id === 'gridlight' && err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(LIPSYNC_ENDPOINT, 'lipsync'));
         json(res, 500, { error: err.message });
     }
 }
