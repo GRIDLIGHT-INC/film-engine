@@ -16,7 +16,7 @@ const crypto = require('crypto');
 const { db, generateId } = require('../db/database');
 const { buildStoryboardPrompt, applyStyleLock } = require('../lib/storyboard-prompt');
 const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
-const { buildShotReferencePayload } = require('../lib/consistency-context');
+const { buildShotReferencePayload, applyConsistencyToImagePayload } = require('../lib/consistency-context');
 
 const os = require('os');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -554,23 +554,20 @@ async function generateStoryboard(req, res, projectId, query) {
         }
 
         // Build prompt
-        const { prompt, negative_prompt } = buildStoryboardPrompt(
-            sceneCard, matchedChars, matchedLocation, project.style_preset, {
-                prompt_additions: consistencyContext.prompt_additions,
-                negative_additions: consistencyContext.negative_additions,
-            }
-        );
+        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset);
 
         // Update shot status
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shot.shot_id);
 
         try {
-            const imageBuffer = await callImageGen(prompt, negative_prompt, styleParams.seed, {
+            const imagePayload = applyConsistencyToImagePayload({
+                prompt: basePrompt.prompt,
+                negative_prompt: basePrompt.negative_prompt,
+                seed: styleParams.seed,
                 ip_adapter_image: styleParams.ip_adapter_image,
                 ip_adapter_weight: styleParams.ip_adapter_weight,
-                reference_images: consistencyContext.references,
-                input_refs: consistencyContext.input_refs,
-            });
+            }, consistencyContext);
+            const imageBuffer = await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload);
 
             // Save image to disk
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
@@ -584,8 +581,8 @@ async function generateStoryboard(req, res, projectId, query) {
             // Log to render ledger
             logToRenderLedger(shot.shot_id, {
                 seed: styleParams.seed,
-                prompt,
-                negative_prompt,
+                prompt: imagePayload.prompt,
+                negative_prompt: imagePayload.negative_prompt,
                 camera_params: sceneCard.camera,
                 lighting_params: sceneCard.lighting,
                 output_path: imgPath,
@@ -730,12 +727,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
             styleParams.ip_adapter_weight = consistencyPrimary.weight || 0.7;
         }
 
-        const { prompt, negative_prompt } = buildStoryboardPrompt(
-            sceneCard, matchedChars, matchedLocation, project.style_preset, {
-                prompt_additions: consistencyContext.prompt_additions,
-                negative_additions: consistencyContext.negative_additions,
-            }
-        );
+        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset);
 
         sendEvent({
             type: 'progress',
@@ -751,14 +743,16 @@ async function generateStoryboardStream(req, res, projectId, query) {
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shot.shot_id);
 
         try {
+            const imagePayload = applyConsistencyToImagePayload({
+                prompt: basePrompt.prompt,
+                negative_prompt: basePrompt.negative_prompt,
+                seed: styleParams.seed,
+                ip_adapter_image: styleParams.ip_adapter_image,
+                ip_adapter_weight: styleParams.ip_adapter_weight,
+            }, consistencyContext);
             const { buffer: imageBuffer, metadata } = await callImageGenStream(
-                prompt, negative_prompt, styleParams.seed,
-                {
-                    ip_adapter_image: styleParams.ip_adapter_image,
-                    ip_adapter_weight: styleParams.ip_adapter_weight,
-                    reference_images: consistencyContext.references,
-                    input_refs: consistencyContext.input_refs,
-                },
+                imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
+                imagePayload,
                 (progressData) => {
                     // Relay per-image generation progress to the client
                     sendEvent({
@@ -782,8 +776,8 @@ async function generateStoryboardStream(req, res, projectId, query) {
             const actualSeed = (metadata && metadata.seed) || styleParams.seed;
             logToRenderLedger(shot.shot_id, {
                 seed: actualSeed,
-                prompt,
-                negative_prompt,
+                prompt: imagePayload.prompt,
+                negative_prompt: imagePayload.negative_prompt,
                 camera_params: sceneCard.camera,
                 lighting_params: sceneCard.lighting,
                 output_path: imgPath,
@@ -896,11 +890,7 @@ async function regenerateShot(req, res, shotId) {
 
         const result = buildStoryboardPrompt(
             sceneCard, matchedChars, matchedLocation,
-            body.style_override || project.style_preset,
-            {
-                prompt_additions: consistencyContext.prompt_additions,
-                negative_additions: consistencyContext.negative_additions,
-            }
+            body.style_override || project.style_preset
         );
         prompt = result.prompt;
         negative_prompt = result.negative_prompt;
@@ -915,12 +905,14 @@ async function regenerateShot(req, res, shotId) {
         ensureStoryboardDir(project.id);
 
         const primaryRef = consistencyContext.references && consistencyContext.references[0];
-        const imageBuffer = await callImageGen(prompt, negative_prompt, seed, {
+        const imagePayload = applyConsistencyToImagePayload({
+            prompt,
+            negative_prompt,
+            seed,
             ip_adapter_image: primaryRef && (primaryRef.file_path || primaryRef.file_name),
             ip_adapter_weight: primaryRef && primaryRef.weight,
-            reference_images: consistencyContext.references,
-            input_refs: consistencyContext.input_refs,
-        });
+        }, consistencyContext);
+        const imageBuffer = await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload);
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         fs.writeFileSync(imgPath, imageBuffer);
@@ -930,9 +922,9 @@ async function regenerateShot(req, res, shotId) {
         });
 
         logToRenderLedger(shotId, {
-            seed,
-            prompt,
-            negative_prompt,
+            seed: imagePayload.seed,
+            prompt: imagePayload.prompt,
+            negative_prompt: imagePayload.negative_prompt,
             output_path: imgPath,
             mode: body.mode || 'creative',
         });
@@ -944,8 +936,8 @@ async function regenerateShot(req, res, shotId) {
             shot_code: shot.shot_code,
             status: 'complete',
             image_url: storyboardImageUrl(project.id, shot.shot_code),
-            seed,
-            prompt,
+            seed: imagePayload.seed,
+            prompt: imagePayload.prompt,
         });
 
     } catch (err) {

@@ -6,7 +6,9 @@
  * payloads that routes/adapters can map to their own input fields.
  */
 
+const fs = require('fs');
 const { db } = require('../db/database');
+const { getFilePath } = require('./file-storage');
 
 const VISUAL_TYPES = new Set(['character', 'location', 'prop', 'style']);
 
@@ -24,11 +26,42 @@ function loadAsset(assetId) {
     return db.prepare('SELECT * FROM film_assets WHERE id = ?').get(assetId) || null;
 }
 
+function parseAssetMetadata(asset) {
+    return parseJson(asset && asset.metadata, {});
+}
+
+function referenceSubdirs(asset) {
+    const metadata = parseAssetMetadata(asset);
+    if (asset.asset_type === 'storyboard' || asset.asset_type === 'keyframe') return ['storyboards'];
+    if (asset.asset_type === 'character_sheet' || asset.asset_type === 'reference_sheet') return ['refsheets'];
+    if (asset.asset_type === 'reference_image') {
+        if (metadata.prop_id) return ['prop-refs', 'loc-refs', 'refsheets', 'storyboards'];
+        if (asset.location_id || metadata.location_id) return ['loc-refs', 'prop-refs', 'refsheets', 'storyboards'];
+        if (asset.character_id || metadata.character_id) return ['refsheets', 'loc-refs', 'prop-refs', 'storyboards'];
+        return ['refsheets', 'loc-refs', 'prop-refs', 'storyboards'];
+    }
+    return ['storyboards', 'refsheets', 'loc-refs', 'prop-refs'];
+}
+
+function resolveAssetPath(asset) {
+    if (!asset) return '';
+    const current = asset.file_path || '';
+    if (/^https?:\/\//i.test(current)) return current;
+    if (current && fs.existsSync(current)) return current;
+    if (!asset.file_name || !asset.project_id) return current;
+    for (const subdir of referenceSubdirs(asset)) {
+        const candidate = getFilePath(asset.project_id, subdir, asset.file_name);
+        if (fs.existsSync(candidate)) return candidate;
+    }
+    return current;
+}
+
 function assetRef(asset) {
     if (!asset) return null;
     return {
         asset_id: asset.id,
-        file_path: asset.file_path || '',
+        project_id: asset.project_id || '',
+        file_path: resolveAssetPath(asset),
         file_name: asset.file_name || '',
         mime_type: asset.mime_type || '',
         format: asset.format || '',
@@ -40,7 +73,8 @@ function profileToContext(profile) {
     if (!profile) return null;
     const canonicalAsset = loadAsset(profile.canonical_asset_id);
     const refs = db.prepare(
-        `SELECT r.*, a.file_path, a.file_name, a.mime_type, a.format, a.asset_type
+        `SELECT r.*, a.project_id AS asset_project_id, a.character_id, a.location_id,
+                a.file_path, a.file_name, a.mime_type, a.format, a.asset_type, a.metadata AS asset_metadata
          FROM film_consistency_refs r
          LEFT JOIN film_assets a ON a.id = r.asset_id
          WHERE r.profile_id = ?
@@ -61,11 +95,15 @@ function profileToContext(profile) {
             notes: r.notes || '',
             asset: assetRef(r.asset_id ? {
                 id: r.asset_id,
+                project_id: r.asset_project_id,
+                character_id: r.character_id,
+                location_id: r.location_id,
                 file_path: r.file_path,
                 file_name: r.file_name,
                 mime_type: r.mime_type,
                 format: r.format,
                 asset_type: r.asset_type,
+                metadata: r.asset_metadata,
             } : null),
         })),
     };
@@ -134,6 +172,14 @@ function cardCharacterNames(sceneCard) {
     return Array.from(new Set(names.map(String)));
 }
 
+function cardPropNames(sceneCard) {
+    const props = sceneCard && Array.isArray(sceneCard.props) ? sceneCard.props : [];
+    return Array.from(new Set(props.map(prop => {
+        if (typeof prop === 'string') return prop;
+        return prop && (prop.name || prop.prop || prop.label);
+    }).filter(Boolean).map(String)));
+}
+
 function findProjectCharacter(projectId, name) {
     if (!name) return null;
     return db.prepare('SELECT * FROM film_characters WHERE project_id = ? AND UPPER(name) = ?')
@@ -143,6 +189,12 @@ function findProjectCharacter(projectId, name) {
 function findProjectLocation(projectId, name) {
     if (!name) return null;
     return db.prepare('SELECT * FROM film_locations WHERE project_id = ? AND UPPER(name) = ?')
+        .get(projectId, normalizeName(name)) || null;
+}
+
+function findProjectProp(projectId, name) {
+    if (!name) return null;
+    return db.prepare('SELECT * FROM film_props WHERE project_id = ? AND UPPER(name) = ?')
         .get(projectId, normalizeName(name)) || null;
 }
 
@@ -212,6 +264,12 @@ function buildShotReferencePayload(shotInput, sceneInput, projectInput) {
 
         const voiceProfile = getLockedProfileForSubject(project.id, 'voice', character || name);
         if (voiceProfile) profiles.push(voiceProfile);
+    }
+
+    for (const name of cardPropNames(sceneCard)) {
+        const prop = findProjectProp(project.id, name);
+        const profile = getLockedProfileForSubject(project.id, 'prop', prop || name);
+        if (profile) profiles.push(profile);
     }
 
     const locationName = scene.location || sceneCard.location || shot.location;
@@ -307,6 +365,20 @@ function auditShotReadiness(shotInput, sceneInput, projectInput) {
         }
     }
 
+    for (const name of cardPropNames(sceneCard)) {
+        const prop = findProjectProp(project.id, name);
+        if (!prop) {
+            warnings.push(`Prop "${name}" is referenced by the shot but is not in the prop registry.`);
+            continue;
+        }
+        const profile = getLockedProfileForSubject(project.id, 'prop', prop);
+        if (!profile) {
+            missing.push(`Prop "${prop.name}" has no locked consistency profile.`);
+        } else if (!profile.canonical_asset) {
+            missing.push(`Prop "${prop.name}" locked profile has no canonical asset.`);
+        }
+    }
+
     return { ready: missing.length === 0, missing, warnings };
 }
 
@@ -376,6 +448,7 @@ function applyConsistencyToVoicePayload(payload, context, characterName) {
 
 module.exports = {
     parseJson,
+    cardPropNames,
     getLockedProfiles,
     getLockedProfileForSubject,
     buildShotReferencePayload,

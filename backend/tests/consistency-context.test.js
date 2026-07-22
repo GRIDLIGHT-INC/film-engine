@@ -1,7 +1,14 @@
 const { describe, it, before } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR || path.join(os.tmpdir(), 'film-engine-consistency-context');
+
 const { db, generateId } = require('../db/database');
 const { ensureSchema } = require('../db/schema');
+const { saveFile } = require('../lib/file-storage');
 const {
     auditShotReadiness,
     auditProjectReadiness,
@@ -46,6 +53,14 @@ function insertLocation(projectId, name) {
         'INSERT INTO film_locations (id, project_id, name, description) VALUES (?, ?, ?, ?)'
     ).run(id, projectId, name, `${name} production design`);
     return db.prepare('SELECT * FROM film_locations WHERE id = ?').get(id);
+}
+
+function insertProp(projectId, name) {
+    const id = generateId();
+    db.prepare(
+        'INSERT INTO film_props (id, project_id, name, description, visual_prompt) VALUES (?, ?, ?, ?, ?)'
+    ).run(id, projectId, name, `${name} practical details`, `${name} exact silhouette`);
+    return db.prepare('SELECT * FROM film_props WHERE id = ?').get(id);
 }
 
 function insertAsset(projectId, fields) {
@@ -199,5 +214,71 @@ describe('consistency-context', () => {
         assert.equal(audit.ready, true);
         assert.equal(audit.shots.length, 1);
         assert.deepEqual(audit.missing, []);
+    });
+
+    it('includes locked prop profiles in shot references and readiness', () => {
+        const project = insertProject();
+        const character = insertCharacter(project.id, 'Vera');
+        const location = insertLocation(project.id, 'Hangar');
+        const prop = insertProp(project.id, 'Compass');
+        const scene = insertScene(project.id, 'Hangar');
+        const shot = insertShot(scene.id, {
+            characters: ['Vera'],
+            props: [{ name: 'Compass' }],
+            action: 'Vera raises the compass.',
+        });
+        const charAsset = insertAsset(project.id, { character_id: character.id });
+        const locAsset = insertAsset(project.id, { location_id: location.id });
+        const propAsset = insertAsset(project.id, { metadata: { prop_id: prop.id }, file_path: '/refs/compass.png' });
+        insertProfile(project.id, { profile_type: 'character', subject_id: character.id, subject_name: character.name, canonical_asset_id: charAsset.id });
+        insertProfile(project.id, { profile_type: 'location', subject_id: location.id, subject_name: location.name, canonical_asset_id: locAsset.id });
+        insertProfile(project.id, {
+            profile_type: 'prop',
+            subject_id: prop.id,
+            subject_name: prop.name,
+            canonical_asset_id: propAsset.id,
+            prompt_contract: 'Compass always has a cracked brass case and blue needle',
+        });
+
+        const audit = auditShotReadiness(shot, scene, project);
+        assert.equal(audit.ready, true);
+        const context = buildShotReferencePayload(shot, scene, project);
+        assert.ok(context.input_refs.includes(propAsset.id));
+        assert.ok(context.prompt_additions.some(p => p.includes('cracked brass')));
+        assert.ok(context.references.some(r => r.profile_type === 'prop' && r.subject_name === 'Compass'));
+    });
+
+    it('flags registry props that have no locked profile', () => {
+        const project = insertProject();
+        const character = insertCharacter(project.id, 'Ivo');
+        const location = insertLocation(project.id, 'Garage');
+        insertProp(project.id, 'Keycard');
+        const scene = insertScene(project.id, 'Garage');
+        const shot = insertShot(scene.id, { characters: ['Ivo'], props: ['Keycard'] });
+        insertProfile(project.id, { profile_type: 'character', subject_id: character.id, subject_name: character.name, canonical_asset_id: insertAsset(project.id, { character_id: character.id }).id });
+        insertProfile(project.id, { profile_type: 'location', subject_id: location.id, subject_name: location.name, canonical_asset_id: insertAsset(project.id, { location_id: location.id }).id });
+
+        const audit = auditShotReadiness(shot, scene, project);
+        assert.equal(audit.ready, false);
+        assert.ok(audit.missing.some(m => m.includes('Keycard')));
+    });
+
+    it('resolves stored reference files when asset file_path is only a served path', () => {
+        const project = insertProject();
+        const prop = insertProp(project.id, 'Beacon');
+        const scene = insertScene(project.id, '');
+        const filename = `beacon-${generateId()}.png`;
+        const storedPath = saveFile(project.id, 'prop-refs', filename, Buffer.from('png'));
+        const shot = insertShot(scene.id, { props: ['Beacon'] });
+        const propAsset = insertAsset(project.id, {
+            metadata: { prop_id: prop.id },
+            file_path: `/film/prop-refs/${project.id}/${filename}`,
+            file_name: filename,
+        });
+        insertProfile(project.id, { profile_type: 'prop', subject_id: prop.id, subject_name: prop.name, canonical_asset_id: propAsset.id });
+
+        const context = buildShotReferencePayload(shot, scene, project);
+        assert.equal(context.references[0].file_path, storedPath);
+        assert.equal(fs.existsSync(context.references[0].file_path), true);
     });
 });
