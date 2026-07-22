@@ -134,6 +134,11 @@ const adapter = {
     requiresKey: true,
     capabilities: ['image'],
 
+    connection: {
+        instructions: 'OpenAI has no OAuth for API access — paste an API key. Click "Get your key" to open the OpenAI keys page, create a key, and paste it here.',
+        helpUrl: 'https://platform.openai.com/api-keys',
+    },
+
     supports,
 
     async generate(capability, payload, opts) {

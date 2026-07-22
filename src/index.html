@@ -11018,10 +11018,13 @@ ${fountainText.slice(0, 50000)}`;
 
                 // 3) Single API-key providers (OpenAI, ElevenLabs).
                 const status = c.set ? '<span class="tag" style="background:var(--gl-success,#166534);">set ••••' + esc(c.last4 || '') + '</span>' : '<span class="tag">not set</span>';
+                const helpUrl = conn && conn.helpUrl;
+                const getKeyBtn = helpUrl ? '<a class="btn btn-secondary btn-sm" href="' + esc(helpUrl) + '" target="_blank" rel="noopener" title="Opens the provider\'s key page">Get key &#8599;</a>' : '';
                 return `<div class="form-group">
                     <label>${esc(p.label)} ${status}</label>${instr}
                     <div style="display:flex;gap:6px;">
                         <input type="password" id="provkey-${esc(p.id)}" placeholder="Enter API key" style="flex:1;">
+                        ${getKeyBtn}
                         <button class="btn btn-secondary btn-sm" onclick="saveProviderKey('${esc(p.id)}')">Save</button>
                         ${c.set ? '<button class="btn btn-danger btn-sm" onclick="clearProviderKey(\'' + esc(p.id) + '\')">Clear</button>' : ''}
                     </div>
