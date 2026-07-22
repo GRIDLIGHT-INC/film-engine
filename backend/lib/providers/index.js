@@ -27,7 +27,7 @@ function register(adapter) {
 // file exporting `.adapter` (e.g. providers/openai-image.js → module.exports.adapter),
 // so adding a provider never requires editing this file — keeps parallel work
 // conflict-free. Support files are skipped.
-const _SKIP = new Set(['base.js', 'index.js', 'credentials.js']);
+const _SKIP = new Set(['base.js', 'index.js', 'credentials.js', 'oauth.js']);
 function _autoload() {
     let files = [];
     try { files = fs.readdirSync(__dirname); } catch (_) { return; }

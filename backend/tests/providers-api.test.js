@@ -126,4 +126,31 @@ describe('Provider Settings API', () => {
         const res = await request('/film/projects/11111111-1111-4111-8111-111111111111/providers');
         assert.equal(res.status, 404);
     });
+
+    it('exposes connection specs in the catalog (Artlist MCP oauth + catalog fields)', async () => {
+        const res = await request('/film/providers');
+        const mcp = res.data.providers.find(p => p.id === 'artlist-mcp');
+        const cat = res.data.providers.find(p => p.id === 'artlist-catalog');
+        assert.ok(mcp && mcp.connection && mcp.connection.oauth, 'artlist-mcp exposes oauth connection');
+        assert.equal(mcp.connection.oauth.connectPath, '/providers/artlist-mcp/connect');
+        assert.ok(cat && cat.connection && Array.isArray(cat.connection.fields), 'artlist-catalog exposes fields');
+        assert.ok(cat.connection.fields.some(f => f.key === 'client_id'));
+    });
+
+    it('stores multi-field credentials in meta and reports masked field status', async () => {
+        const res = await request('/film/providers/artlist-catalog/credentials', {
+            method: 'PUT', body: { fields: { client_id: 'CID-123', client_secret: 'SECRET-xyz' } },
+        });
+        assert.equal(res.status, 200);
+        assert.equal(res.data.credentials.fields.client_id, true);
+        assert.equal(res.data.credentials.fields.client_secret, true);
+        // Never echo raw values.
+        assert.ok(!res.raw.includes('SECRET-xyz'));
+        assert.ok(!res.raw.includes('CID-123'));
+    });
+
+    it('rejects OAuth connect for a provider without oauth', async () => {
+        const res = await request('/film/providers/openai/connect');
+        assert.equal(res.status, 400);
+    });
 });

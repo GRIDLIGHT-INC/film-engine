@@ -10969,20 +10969,53 @@ ${fountainText.slice(0, 50000)}`;
             const catalog = await api('/providers');
             _providerCatalog = catalog;
 
-            // API-key rows for providers that need one.
-            const keyed = (catalog.providers || []).filter(p => p.requiresKey);
-            credEl.innerHTML = keyed.length ? keyed.map(p => {
-                const c = p.credentials || { set: false };
+            // Connection rows: providers that need a key, OAuth connect, or config fields.
+            const needsSetup = (catalog.providers || []).filter(p => p.requiresKey || p.connection);
+            credEl.innerHTML = needsSetup.length ? needsSetup.map(p => {
+                const c = p.credentials || { set: false, fields: {} };
+                const conn = p.connection || null;
+                const instr = conn && conn.instructions ? '<p class="text-sm text-muted" style="margin:4px 0 8px;">' + esc(conn.instructions) + '</p>' : '';
+
+                // 1) OAuth "Connect" providers (e.g. Artlist MCP).
+                if (conn && conn.oauth) {
+                    const connected = c.connected;
+                    const status = connected ? '<span class="tag" style="background:var(--gl-success,#166534);">connected</span>' : '<span class="tag">not connected</span>';
+                    return `<div class="form-group" style="border:1px solid var(--gl-border-subtle);border-radius:8px;padding:10px;">
+                        <label>${esc(p.label)} ${status}</label>${instr}
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn btn-primary btn-sm" onclick="connectProviderOAuth('${esc(p.id)}')">${connected ? 'Reconnect' : 'Connect ' + esc(p.label.split(' ')[0])}</button>
+                            ${connected ? '<button class="btn btn-danger btn-sm" onclick="disconnectProvider(\'' + esc(p.id) + '\')">Disconnect</button>' : ''}
+                        </div>
+                    </div>`;
+                }
+
+                // 2) Multi-field providers (e.g. Artlist catalog: client_id/secret).
+                if (conn && Array.isArray(conn.fields) && conn.fields.length) {
+                    const fieldsHtml = conn.fields.map(f => {
+                        const isSet = c.fields && c.fields[f.key];
+                        const badge = isSet ? ' <span class="tag" style="background:var(--gl-success,#166534);">set</span>' : '';
+                        return `<div style="margin-bottom:6px;">
+                            <label class="text-sm">${esc(f.label || f.key)}${badge}</label>
+                            <input type="${f.type === 'password' ? 'password' : 'text'}" id="provfield-${esc(p.id)}-${esc(f.key)}" placeholder="${isSet ? '•••••• (leave blank to keep)' : esc(f.placeholder || '')}" style="width:100%;">
+                        </div>`;
+                    }).join('');
+                    return `<div class="form-group" style="border:1px solid var(--gl-border-subtle);border-radius:8px;padding:10px;">
+                        <label>${esc(p.label)}</label>${instr}${fieldsHtml}
+                        <button class="btn btn-secondary btn-sm" onclick="saveProviderFields('${esc(p.id)}')">Save</button>
+                    </div>`;
+                }
+
+                // 3) Single API-key providers (OpenAI, ElevenLabs).
                 const status = c.set ? '<span class="tag" style="background:var(--gl-success,#166534);">set ••••' + esc(c.last4 || '') + '</span>' : '<span class="tag">not set</span>';
                 return `<div class="form-group">
-                    <label>${esc(p.label)} ${status}</label>
+                    <label>${esc(p.label)} ${status}</label>${instr}
                     <div style="display:flex;gap:6px;">
                         <input type="password" id="provkey-${esc(p.id)}" placeholder="Enter API key" style="flex:1;">
                         <button class="btn btn-secondary btn-sm" onclick="saveProviderKey('${esc(p.id)}')">Save</button>
                         ${c.set ? '<button class="btn btn-danger btn-sm" onclick="clearProviderKey(\'' + esc(p.id) + '\')">Clear</button>' : ''}
                     </div>
                 </div>`;
-            }).join('') : '<p class="text-sm text-muted">No key-based providers yet. (Gridlight uses a server-side env key.)</p>';
+            }).join('') : '<p class="text-sm text-muted">No providers require setup. (Gridlight uses a server-side env key.)</p>';
 
             // Per-capability provider selectors (needs a current project).
             if (!state.currentProject) {
@@ -11013,6 +11046,52 @@ ${fountainText.slice(0, 50000)}`;
         try {
             await api('/providers/' + providerId + '/credentials', { method: 'PUT', body: JSON.stringify({ api_key: key }) });
             setStatus(providerId + ' key saved');
+            loadProviders();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // Save multi-field connection credentials (e.g. Artlist catalog client_id/secret).
+    async function saveProviderFields(providerId) {
+        const prov = (_providerCatalog && _providerCatalog.providers || []).find(p => p.id === providerId);
+        const fieldDefs = (prov && prov.connection && prov.connection.fields) || [];
+        const fields = {};
+        fieldDefs.forEach(f => {
+            const el = document.getElementById('provfield-' + providerId + '-' + f.key);
+            if (el && el.value.trim()) fields[f.key] = el.value.trim();
+        });
+        if (Object.keys(fields).length === 0) { setStatus('Nothing to save'); return; }
+        try {
+            await api('/providers/' + providerId + '/credentials', { method: 'PUT', body: JSON.stringify({ fields }) });
+            setStatus(providerId + ' settings saved');
+            loadProviders();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // OAuth connect (e.g. Artlist MCP): open the authorize URL in a popup and
+    // refresh once the backend callback posts back.
+    async function connectProviderOAuth(providerId) {
+        try {
+            setStatus('Connecting ' + providerId + '…');
+            const res = await api('/providers/' + providerId + '/connect');
+            if (!res.authorize_url) { setStatus('Connect failed: no authorize URL'); return; }
+            const popup = window.open(res.authorize_url, 'provider-oauth', 'width=520,height=680');
+            const onMsg = (ev) => {
+                if (ev.data && ev.data.type === 'provider-oauth') {
+                    window.removeEventListener('message', onMsg);
+                    setStatus(ev.data.ok ? providerId + ' connected' : providerId + ' connect failed');
+                    setTimeout(loadProviders, 500);
+                }
+            };
+            window.addEventListener('message', onMsg);
+            // Fallback: poll for popup close, then refresh.
+            const iv = setInterval(() => { if (popup && popup.closed) { clearInterval(iv); loadProviders(); } }, 1500);
+        } catch (err) { setStatus('Connect error: ' + err.message); }
+    }
+
+    async function disconnectProvider(providerId) {
+        try {
+            await api('/providers/' + providerId + '/disconnect', { method: 'POST', body: JSON.stringify({}) });
+            setStatus(providerId + ' disconnected');
             loadProviders();
         } catch (err) { setStatus('Error: ' + err.message); }
     }
