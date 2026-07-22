@@ -3795,10 +3795,12 @@
             <div class="tab-bar mb-16" id="consistencyTabs">
                 <button class="tab-btn active" data-ctab="characters" onclick="switchConsistencyTab('characters')">Characters</button>
                 <button class="tab-btn" data-ctab="locations" onclick="switchConsistencyTab('locations')">Locations</button>
+                <button class="tab-btn" data-ctab="props" onclick="switchConsistencyTab('props')">Props</button>
                 <button class="tab-btn" data-ctab="audit" onclick="switchConsistencyTab('audit')">Shot Audit</button>
             </div>
             <div id="consistencyCharacters" class="consistency-tab entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));"></div>
             <div id="consistencyLocations" class="consistency-tab entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));display:none;"></div>
+            <div id="consistencyProps" class="consistency-tab entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));display:none;"></div>
             <div id="consistencyAudit" class="consistency-tab" style="display:none;"></div>
         </div>
 
@@ -13789,13 +13791,14 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // CONSISTENCY STUDIO (Explore → Lock → Verify)
     // ══════════════════════════════════════════════════════════════
-    let _consistencyData = { characters: [], locations: [] };
+    let _consistencyData = { characters: [], locations: [], props: [] };
     function _cParse(s) { try { return JSON.parse(s || '{}'); } catch (_) { return {}; } }
 
     function switchConsistencyTab(tab) {
         document.querySelectorAll('#consistencyTabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.ctab === tab));
         document.getElementById('consistencyCharacters').style.display = tab === 'characters' ? 'grid' : 'none';
         document.getElementById('consistencyLocations').style.display = tab === 'locations' ? 'grid' : 'none';
+        document.getElementById('consistencyProps').style.display = tab === 'props' ? 'grid' : 'none';
         document.getElementById('consistencyAudit').style.display = tab === 'audit' ? 'block' : 'none';
     }
 
@@ -13804,14 +13807,15 @@ ${fountainText.slice(0, 50000)}`;
         const pid = state.currentProject.id;
         setStatus('Loading consistency...');
         try {
-            const [charsD, locsD, profD, assetsD, auditD] = await Promise.all([
+            const [charsD, locsD, propsD, profD, assetsD, auditD] = await Promise.all([
                 api('/projects/' + pid + '/characters').catch(() => ({ characters: [] })),
                 api('/projects/' + pid + '/locations').catch(() => ({ locations: [] })),
+                api('/projects/' + pid + '/props').catch(() => ({ props: [] })),
                 api('/projects/' + pid + '/consistency/profiles').catch(() => ({ profiles: [] })),
                 api('/projects/' + pid + '/assets').catch(() => ({ assets: [] })),
                 api('/projects/' + pid + '/consistency/audit').catch(() => ({ ready: true, shots: [] })),
             ]);
-            _consistencyData = { characters: charsD.characters || [], locations: locsD.locations || [] };
+            _consistencyData = { characters: charsD.characters || [], locations: locsD.locations || [], props: propsD.props || [] };
             const profiles = profD.profiles || [];
             const assets = assetsD.assets || [];
             const profBySubject = {}; profiles.forEach(p => { profBySubject[p.profile_type + ':' + p.subject_id] = p; });
@@ -13829,6 +13833,7 @@ ${fountainText.slice(0, 50000)}`;
 
             renderConsistencySubjects('consistencyCharacters', 'character', _consistencyData.characters, 'character_id', profBySubject, refAssetFor);
             renderConsistencySubjects('consistencyLocations', 'location', _consistencyData.locations, 'location_id', profBySubject, refAssetFor);
+            renderConsistencySubjects('consistencyProps', 'prop', _consistencyData.props, 'prop_id', profBySubject, refAssetFor);
             renderConsistencyAudit(auditD);
             setStatus('Consistency: ' + lockedCount + ' locked');
         } catch (err) { setStatus('Error: ' + err.message); }
@@ -13851,7 +13856,7 @@ ${fountainText.slice(0, 50000)}`;
                     : '<button class="btn btn-secondary btn-sm" disabled title="Generate a reference image/sheet first">Lock (needs reference)</button>';
             return `<div class="entity-card">
                 <div class="flex-between"><strong style="font-size:13px;">${esc(s.name)}</strong>${status}</div>
-                ${thumb ? '<img src="' + API_BASE + esc(thumb) + '" style="width:100%;border-radius:6px;margin-top:8px;max-height:200px;object-fit:cover;" onerror="this.style.display=\'none\'">' : '<p class="text-sm text-muted" style="margin-top:8px;">No reference image yet — generate a reference sheet (Characters/Locations page) to explore, then lock one here.</p>'}
+                ${thumb ? '<img src="' + API_BASE + esc(thumb) + '" style="width:100%;border-radius:6px;margin-top:8px;max-height:200px;object-fit:cover;" onerror="this.style.display=\'none\'">' : '<p class="text-sm text-muted" style="margin-top:8px;">No reference image yet — generate a reference image on the ' + (type === 'character' ? 'Characters' : type === 'prop' ? 'Props' : 'Locations') + ' page to explore, then lock one here.</p>'}
                 <div style="margin-top:8px;">${action}</div>
                 ${type === 'character' ? renderVoiceRow(s, profBySubject['voice:' + s.id]) : ''}
             </div>`;
@@ -13884,13 +13889,15 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     async function lockConsistency(type, subjectId, assetId) {
-        const list = type === 'character' ? _consistencyData.characters : _consistencyData.locations;
+        const list = type === 'character' ? _consistencyData.characters
+            : type === 'prop' ? _consistencyData.props
+            : _consistencyData.locations;
         const subj = (list || []).find(x => x.id === subjectId) || {};
         const name = subj.name || subjectId;
         // Prefill the prompt contract from the subject's own descriptive fields so
         // a locked profile carries BOTH the image anchor and the text contract.
-        const promptContract = type === 'character'
-            ? (subj.appearance_prompt || subj.description || '')
+        const promptContract = type === 'character' ? (subj.appearance_prompt || subj.description || '')
+            : type === 'prop' ? (subj.visual_prompt || subj.description || '')
             : (subj.reference_prompt || subj.description || '');
         try {
             const prof = await api('/projects/' + state.currentProject.id + '/consistency/profiles', {
