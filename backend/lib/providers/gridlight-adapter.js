@@ -57,4 +57,4 @@ const gridlightAdapter = {
     },
 };
 
-module.exports = { gridlightAdapter, endpointFor, ENDPOINTS };
+module.exports = { adapter: gridlightAdapter, gridlightAdapter, endpointFor, ENDPOINTS };

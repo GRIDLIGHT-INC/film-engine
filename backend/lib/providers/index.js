@@ -9,6 +9,8 @@
  * elevenlabs / artlist adapters, and a project can opt into them per capability.
  */
 
+const fs = require('fs');
+const path = require('path');
 const { CAPABILITIES, DEFAULT_PROVIDER, isCapability } = require('./base');
 const { gridlightAdapter } = require('./gridlight-adapter');
 
@@ -19,6 +21,26 @@ function register(adapter) {
     if (!adapter || !adapter.id) throw new Error('provider adapter must have an id');
     _registry.set(adapter.id, adapter);
     return adapter;
+}
+
+// Auto-load any adapter module in this directory. Each new provider is a single
+// file exporting `.adapter` (e.g. providers/openai-image.js → module.exports.adapter),
+// so adding a provider never requires editing this file — keeps parallel work
+// conflict-free. Support files are skipped.
+const _SKIP = new Set(['base.js', 'index.js', 'credentials.js']);
+function _autoload() {
+    let files = [];
+    try { files = fs.readdirSync(__dirname); } catch (_) { return; }
+    for (const file of files) {
+        if (!file.endsWith('.js') || _SKIP.has(file)) continue;
+        try {
+            const mod = require(path.join(__dirname, file));
+            const adapter = mod && mod.adapter;
+            if (adapter && adapter.id && !_registry.has(adapter.id)) register(adapter);
+        } catch (err) {
+            console.error(`[providers] failed to load adapter ${file}:`, err.message);
+        }
+    }
 }
 
 function get(id) {
@@ -62,7 +84,8 @@ function resolve(capability, projectConfig) {
     return get(DEFAULT_PROVIDER) || gridlightAdapter;
 }
 
-// Register the default provider.
+// Register the default provider, then auto-load any additional adapters.
 register(gridlightAdapter);
+_autoload();
 
 module.exports = { register, get, list, resolve, resolveId, CAPABILITIES };
