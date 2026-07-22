@@ -3173,6 +3173,9 @@
                 <button class="nav-item" data-page="videoshots" onclick="navigateTo('videoshots')" data-tooltip="Generate video clips per shot and hand off to Premiere Pro" data-tooltip-pos="right">
                     <span class="nav-icon">&#127909;</span> Video Shots
                 </button>
+                <button class="nav-item" data-page="music" onclick="navigateTo('music')" data-tooltip="Generate score, ambient, and SFX per scene" data-tooltip-pos="right">
+                    <span class="nav-icon">&#127925;</span> Music &amp; Sound
+                </button>
                 <button class="nav-item" data-page="musiccues" onclick="navigateTo('musiccues')" data-tooltip="Score, SFX, and ambient audio cues tied to scenes" data-tooltip-pos="right">
                     <span class="nav-icon">&#127925;</span> Music Cues
                 </button>
@@ -3870,6 +3873,21 @@
                 </div>
             </div>
             <div class="entity-grid" id="videoshotsGrid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
+        </div>
+
+        <!-- ── MUSIC & SOUND ──────────────────────────────────────── -->
+        <div class="page" id="page-music">
+            <div class="flex-between mb-16">
+                <h2>Music &amp; Sound</h2>
+                <button class="btn btn-primary" onclick="generateAllMusic()">Generate All (score + ambient)</button>
+            </div>
+            <div id="musicProgress" style="display:none;" class="mb-16">
+                <div class="text-sm text-muted mb-8" id="musicProgressLabel">Starting...</div>
+                <div style="background:var(--gl-bg-surface);border-radius:var(--gl-radius-md);height:10px;overflow:hidden;">
+                    <div id="musicProgressBar" style="height:100%;width:0%;background:var(--gl-accent,#6366f1);transition:width .2s;"></div>
+                </div>
+            </div>
+            <div class="entity-grid" id="musicGrid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));"></div>
         </div>
 
         <!-- ── 16b. PIPELINE ──────────────────────────────────────── -->
@@ -4809,6 +4827,7 @@
             budget: loadBudget,
             threed: loadThreeD,
             videoshots: loadVideoShots,
+            music: loadMusic,
         };
         if (loaders[page]) loaders[page]();
     }
@@ -13015,14 +13034,14 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
-    // Per-shot pro actions (backends already exist).
-    async function _shotAction(shotId, btn, label, path, running) {
+    // Generic per-entity action (backends already exist). `reload` refreshes the page.
+    async function _shotAction(shotId, btn, label, path, running, reload) {
         if (btn) { btn.disabled = true; btn.textContent = running; }
         setStatus(running + '…');
         try {
             await api(path, { method: 'POST', body: JSON.stringify({}) });
             setStatus(label + ' complete');
-            loadVideoShots();
+            (reload || loadVideoShots)();
         } catch (err) {
             setStatus(label + ' error: ' + err.message);
             if (btn) { btn.disabled = false; btn.textContent = label; }
@@ -13031,6 +13050,99 @@ ${fountainText.slice(0, 50000)}`;
     function lipsyncShot(shotId, btn) { _shotAction(shotId, btn, 'Lip-sync', '/shots/' + shotId + '/lipsync/generate', 'Lip-syncing'); }
     function postShot(shotId, btn) { _shotAction(shotId, btn, 'Upscale', '/shots/' + shotId + '/post/upscale', 'Upscaling'); }
     function stitchShot(shotId, btn) { _shotAction(shotId, btn, 'Stitch', '/shots/' + shotId + '/video/stitch', 'Stitching'); }
+
+    // ══════════════════════════════════════════════════════════════
+    // MUSIC & SOUND
+    // ══════════════════════════════════════════════════════════════
+    async function loadMusic() {
+        if (!state.currentProject) return;
+        setStatus('Loading music...');
+        const pid = state.currentProject.id;
+        try {
+            const [sceneData, jobData, provData] = await Promise.all([
+                api('/projects/' + pid + '/scenes').catch(() => ({ scenes: [] })),
+                api('/projects/' + pid + '/music/jobs').catch(() => ({ jobs: [] })),
+                api('/projects/' + pid + '/providers').catch(() => ({ effective: {} })),
+            ]);
+            const scenes = sceneData.scenes || [];
+            // Latest job per (scene, gen_type).
+            const jobKey = {};
+            (jobData.jobs || []).forEach(j => { const k = j.scene_id + ':' + j.gen_type; if (!jobKey[k]) jobKey[k] = j; });
+            const musicProvider = (provData.effective && provData.effective.music) || 'gridlight';
+            const ambientProvider = (provData.effective && provData.effective.ambient) || 'gridlight';
+
+            const grid = document.getElementById('musicGrid');
+            const banner = `<div style="grid-column:1/-1;background:var(--gl-bg-surface);border:1px solid var(--gl-border-subtle);border-radius:8px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;">
+                <span class="text-sm text-muted">Score: <strong style="color:var(--gl-text-primary);">${esc(musicProvider)}</strong> &middot; Ambient: <strong style="color:var(--gl-text-primary);">${esc(ambientProvider)}</strong></span>
+                <a class="text-sm" style="cursor:pointer;color:var(--gl-accent,#818cf8);" onclick="navigateTo('settings')">Change in Settings →</a>
+            </div>`;
+
+            if (scenes.length === 0) {
+                grid.innerHTML = banner + '<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#127925;</div><h3>No scenes</h3><p>Extract scenes from your screenplay first, then generate score and ambient audio.</p></div>';
+                setStatus('No scenes');
+                return;
+            }
+
+            const audioRow = (label, sc, kind, provider) => {
+                const job = jobKey[sc.id + ':' + kind];
+                const done = job && job.status === 'complete';
+                const failed = job && job.status === 'failed';
+                const url = API_BASE + '/film/music/' + pid + '/' + encodeURIComponent(sc.scene_number) + '_' + kind + '.wav';
+                const badge = done ? '<span class="tag" style="background:var(--gl-success,#166534);">ready</span>'
+                    : failed ? '<span class="tag" style="background:var(--gl-danger,#7f1d1d);">failed</span>'
+                    : (job && job.status === 'generating') ? '<span class="tag">generating</span>' : '';
+                const gen = kind === 'score' ? "generateScoreFor('" + sc.id + "', this)" : "generateAmbientFor('" + sc.id + "', this)";
+                return `<div style="margin-top:8px;">
+                    <div class="flex-between"><span class="text-sm">${label} ${badge}</span>
+                        <button class="btn btn-secondary btn-sm" onclick="${gen}">${done ? 'Regen' : 'Generate'}</button></div>
+                    ${done ? '<audio src="' + url + '" controls preload="none" style="width:100%;margin-top:6px;" onerror="this.style.display=\'none\'"></audio>' : ''}
+                </div>`;
+            };
+
+            grid.innerHTML = banner + scenes.map(sc => `
+                <div class="entity-card">
+                    <div class="flex-between">
+                        <strong style="font-size:13px;">Scene ${esc(String(sc.scene_number))}</strong>
+                        <span class="text-sm text-muted">${esc(sc.location || '')}${sc.time_of_day ? ' &middot; ' + esc(sc.time_of_day) : ''}</span>
+                    </div>
+                    ${audioRow('Score', sc, 'score', musicProvider)}
+                    ${audioRow('Ambient', sc, 'ambient', ambientProvider)}
+                </div>`).join('');
+
+            const readyCount = scenes.filter(sc => jobKey[sc.id + ':score'] && jobKey[sc.id + ':score'].status === 'complete').length;
+            setStatus(scenes.length + ' scene(s), ' + readyCount + ' scored');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function generateScoreFor(sceneId, btn) { _shotAction(sceneId, btn, 'Generate', '/scenes/' + sceneId + '/music/generate', 'Scoring', loadMusic); }
+    function generateAmbientFor(sceneId, btn) { _shotAction(sceneId, btn, 'Generate', '/scenes/' + sceneId + '/ambient/generate', 'Generating ambient', loadMusic); }
+
+    function generateAllMusic() {
+        if (!state.currentProject) return;
+        const prog = document.getElementById('musicProgress');
+        const bar = document.getElementById('musicProgressBar');
+        const lbl = document.getElementById('musicProgressLabel');
+        prog.style.display = 'block';
+        bar.style.width = '0%';
+        lbl.textContent = 'Starting music generation...';
+        let total = 1, done = 0;
+
+        streamSSEPost(
+            '/projects/' + state.currentProject.id + '/music/batch/stream',
+            {},
+            (ev) => {
+                if (ev.type === 'status' && ev.total_scenes) { total = ev.total_scenes || 1; }
+                else if (ev.type === 'scene_start') { lbl.textContent = 'Scene ' + (ev.scene_number || ''); }
+                else if (ev.type === 'music_complete' || ev.type === 'music_failed') {
+                    done++;
+                    bar.style.width = Math.round((done / total) * 100) + '%';
+                    lbl.textContent = done + '/' + total + ' scenes processed';
+                }
+            },
+            () => { lbl.textContent = 'Done'; setStatus('Music batch complete'); setTimeout(() => { prog.style.display = 'none'; }, 1500); loadMusic(); },
+            (err) => { setStatus('Error: ' + (err ? err.message : 'stream failed')); prog.style.display = 'none'; }
+        );
+    }
 
     function generateAllVideos() {
         if (!state.currentProject) return;
