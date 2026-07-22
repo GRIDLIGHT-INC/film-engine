@@ -14,6 +14,7 @@
 
 const { db, generateId } = require('../db/database');
 const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
+const { resolveGenerator } = require('../lib/providers');
 const { ensureDir, saveFile, getFileUrl } = require('../lib/file-storage');
 const { PIPELINE_STEPS, buildStepPlan, autoSkipSteps, retryDelay, MAX_RETRIES } = require('../lib/pipeline-engine');
 const { buildSchedule, suggestResidency, MODEL_PROFILES } = require('../lib/scheduling-engine');
@@ -94,23 +95,35 @@ const STEP_ENDPOINTS = {
     assembly: null, // handled locally
 };
 
-async function executeStep(stepId, shot, scene, project) {
-    const endpoint = STEP_ENDPOINTS[stepId];
+// Pipeline step → generation capability. Each step resolves the project's
+// configured provider for that capability (Gridlight by default), so the whole
+// orchestrated run is provider-aware end-to-end.
+const STEP_CAPABILITY = {
+    keyframe: 'image', video: 'video', voice: 'voice', lipsync: 'lipsync',
+    music: 'music', sfx: 'sfx', ambient: 'ambient', post: 'post',
+};
 
-    // Assembly is handled differently (NLE export, not an external call)
+async function executeStep(stepId, shot, scene, project) {
+    // Assembly is handled locally (NLE export), not an external generation call.
     if (stepId === 'assembly') {
         return { ok: true, message: 'Assembly step: use export endpoints to finalize' };
     }
 
-    if (!endpoint) {
-        return { ok: false, error: `Unknown step endpoint for ${stepId}` };
+    const capability = STEP_CAPABILITY[stepId];
+    if (!capability) {
+        return { ok: false, error: `Unknown pipeline step '${stepId}'` };
     }
 
-    // Build a minimal payload per step
+    let config = {};
+    try { config = JSON.parse((project && project.provider_config) || '{}'); } catch (_) { config = {}; }
+
+    // Build a minimal payload per step.
     const payload = { shot_id: shot.id, scene_id: scene.id, project_id: scene.project_id, step: stepId };
 
     try {
-        const result = await callGridlight(endpoint, payload);
+        // resolveGenerator guarantees a real generator even if a source provider
+        // (e.g. Artlist catalog) is configured for this capability.
+        const result = await resolveGenerator(capability, config).generate(capability, payload);
         return result;
     } catch (err) {
         return { ok: false, error: err.message };

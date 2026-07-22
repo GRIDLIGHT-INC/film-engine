@@ -84,8 +84,20 @@ function resolve(capability, projectConfig) {
     return get(DEFAULT_PROVIDER) || gridlightAdapter;
 }
 
+/**
+ * Like resolve(), but guarantees a GENERATOR: if the configured provider for a
+ * capability is a source/library adapter (no generate(), e.g. Artlist catalog)
+ * or otherwise can't generate, fall back to the default generator so a bad
+ * per-capability choice can never crash generation.
+ */
+function resolveGenerator(capability, projectConfig) {
+    const adapter = resolve(capability, projectConfig);
+    if (adapter && typeof adapter.generate === 'function') return adapter;
+    return get(DEFAULT_PROVIDER) || gridlightAdapter;
+}
+
 // Register the default provider, then auto-load any additional adapters.
 register(gridlightAdapter);
 _autoload();
 
-module.exports = { register, get, list, resolve, resolveId, CAPABILITIES };
+module.exports = { register, get, list, resolve, resolveId, resolveGenerator, CAPABILITIES };
