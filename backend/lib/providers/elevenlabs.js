@@ -152,6 +152,10 @@ const adapter = {
     label: 'ElevenLabs',
     requiresKey: true,
     capabilities: ['voice', 'sfx'],
+    connection: {
+        instructions: 'ElevenLabs has no OAuth for API access — paste an API key. Click "Get your key" to open your ElevenLabs API keys page.',
+        helpUrl: 'https://elevenlabs.io/app/settings/api-keys',
+    },
 
     supports,
 
