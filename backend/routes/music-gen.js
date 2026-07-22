@@ -12,10 +12,11 @@
  */
 
 const { db, generateId } = require('../db/database');
-const { callGridlight, relayGridlightSSE, serviceUnavailableError } = require('../lib/gridlight-client');
+const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir, serveFile } = require('../lib/file-storage');
 const { buildMusicPrompt, buildSFXPrompts, buildAmbientPrompt } = require('../lib/music-prompt');
 const { buildMixPayload, calculateDucking, buildStemExport, generateSRT } = require('../lib/audio-mixer');
+const { resolve, get } = require('../lib/providers');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MUSIC_ENDPOINT = '/music';
@@ -24,6 +25,44 @@ const MIX_ENDPOINT = '/audio/mix';
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
+}
+
+function parseProjectConfig(projectId) {
+    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
+    if (!row) return {};
+    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
+}
+
+function resultModel(result, payload) {
+    return (result && result.provider_model) || (payload && payload.model) || '';
+}
+
+function resultJobId(result) {
+    return (result && result.provider_job_id) || '';
+}
+
+function resolveGenerator(capability, projectConfig) {
+    const adapter = resolve(capability, projectConfig);
+    if (adapter && typeof adapter.generate === 'function') return adapter;
+    return get('gridlight');
+}
+
+function formatForResult(result) {
+    const format = result && result.meta && result.meta.format ? result.meta.format : '';
+    if (format) return format;
+    const contentType = result && result.contentType ? result.contentType : '';
+    if (contentType.includes('mpeg') || contentType.includes('mp3')) return 'mp3';
+    return 'wav';
+}
+
+function mimeForResult(result) {
+    return (result && result.contentType) || (formatForResult(result) === 'mp3' ? 'audio/mpeg' : 'audio/wav');
+}
+
+function filenameForResult(baseFilename, result) {
+    const format = formatForResult(result);
+    if (format === 'mp3') return baseFilename.replace(/\.[^.]+$/, '.mp3');
+    return baseFilename.replace(/\.[^.]+$/, '.wav');
 }
 
 // -- Route Handler -------------------------------------------------------
@@ -104,6 +143,7 @@ async function generateMusic(req, res, sceneId) {
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
+    const musicProvider = resolveGenerator('music', parseProjectConfig(scene.project_id));
 
     // Find music cues for this scene, or create from request body
     let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(sceneId);
@@ -121,15 +161,15 @@ async function generateMusic(req, res, sceneId) {
         payload.prompt, payload.model, payload.duration_s * 1000, payload.tempo_bpm);
 
     try {
-        const result = await callGridlight(MUSIC_ENDPOINT, payload);
+        const result = await musicProvider.generate('music', payload, { timeout: 300000 });
 
         if (!result.ok) {
             db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
-            if (result.status === 503) return json(res, 503, serviceUnavailableError(MUSIC_ENDPOINT, 'music'));
+            if (musicProvider.id === 'gridlight' && result.status === 503) return json(res, 503, serviceUnavailableError(MUSIC_ENDPOINT, 'music'));
             return json(res, result.status || 500, { error: result.error });
         }
 
-        const filename = `${scene.scene_number || sceneId}_score.wav`;
+        const filename = filenameForResult(`${scene.scene_number || sceneId}_score.wav`, result);
         ensureDir(scene.project_id, 'music');
         let filePath = '';
 
@@ -141,9 +181,16 @@ async function generateMusic(req, res, sceneId) {
 
         const assetId = generateId();
         db.prepare(
-            `INSERT INTO film_assets (id, project_id, scene_id, asset_type, file_path, file_name, format, mime_type, duration_ms, version)
-             VALUES (?, ?, ?, 'audio_music', ?, ?, 'wav', 'audio/wav', ?, 1)`
-        ).run(assetId, scene.project_id, sceneId, filePath, filename, payload.duration_s * 1000);
+            `INSERT INTO film_assets (
+                id, project_id, scene_id, asset_type, file_path, file_name,
+                format, mime_type, duration_ms, version,
+                provider, provider_model, provider_job_id, license_source, license_status
+             )
+             VALUES (?, ?, ?, 'audio_music', ?, ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated')`
+        ).run(
+            assetId, scene.project_id, sceneId, filePath, filename, formatForResult(result), mimeForResult(result), payload.duration_s * 1000,
+            musicProvider.id, resultModel(result, payload), resultJobId(result)
+        );
 
         // Note: scene-level music is not a shot render, and render_ledger.shot_id
         // is NOT NULL + FK to film_shots — so we track it in film_music_jobs only.
@@ -156,7 +203,7 @@ async function generateMusic(req, res, sceneId) {
         });
     } catch (err) {
         db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
-        if (err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(MUSIC_ENDPOINT, 'music'));
+        if (musicProvider.id === 'gridlight' && err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(MUSIC_ENDPOINT, 'music'));
         json(res, 500, { error: err.message });
     }
 }
@@ -168,6 +215,7 @@ async function generateMusicStream(req, res, sceneId) {
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
+    const musicProvider = resolveGenerator('music', parseProjectConfig(scene.project_id));
     let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(sceneId);
     const payload = buildMusicPrompt(musicCue, scene, project);
 
@@ -187,16 +235,22 @@ async function generateMusicStream(req, res, sceneId) {
     ).run(jobId, scene.project_id, sceneId, payload.prompt, payload.model);
 
     try {
-        const { ok, error } = await relayGridlightSSE(MUSIC_ENDPOINT, payload, res, {
+        const { ok, error } = await musicProvider.generateStream('music', payload, res, {
             onComplete: (data) => {
-                const filename = `${scene.scene_number || sceneId}_score.wav`;
+                const filename = filenameForResult(`${scene.scene_number || sceneId}_score.wav`, data);
                 ensureDir(scene.project_id, 'music');
 
                 const assetId = generateId();
                 db.prepare(
-                    `INSERT INTO film_assets (id, project_id, scene_id, asset_type, file_name, format, mime_type, version)
-                     VALUES (?, ?, ?, 'audio_music', ?, 'wav', 'audio/wav', 1)`
-                ).run(assetId, scene.project_id, sceneId, filename);
+                    `INSERT INTO film_assets (
+                        id, project_id, scene_id, asset_type, file_name, format, mime_type, version,
+                        provider, provider_model, provider_job_id, license_source, license_status
+                     )
+                     VALUES (?, ?, ?, 'audio_music', ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated')`
+                ).run(
+                    assetId, scene.project_id, sceneId, filename, formatForResult(data), mimeForResult(data),
+                    musicProvider.id, resultModel(data, payload), resultJobId(data)
+                );
 
                 db.prepare('UPDATE film_music_jobs SET status = ? WHERE id = ?').run('complete', jobId);
             },
@@ -223,6 +277,7 @@ async function generateSFX(req, res, shotId) {
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
+    const sfxProvider = resolveGenerator('sfx', parseProjectConfig(scene.project_id));
 
     let sceneCard = {};
     try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
@@ -245,14 +300,14 @@ async function generateSFX(req, res, shotId) {
         ).run(jobId, scene.project_id, shotId, payload.prompt, payload.model, payload.duration_s * 1000);
 
         try {
-            const result = await callGridlight(MUSIC_ENDPOINT, payload);
+            const result = await sfxProvider.generate('sfx', payload, { timeout: 300000 });
             if (!result.ok) {
                 db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
                 results.push({ index: i, status: 'failed', error: result.error });
                 continue;
             }
 
-            const filename = `${shot.shot_code}_sfx_${i}.wav`;
+            const filename = filenameForResult(`${shot.shot_code}_sfx_${i}.wav`, result);
             let filePath = '';
             if (Buffer.isBuffer(result.data)) {
                 filePath = saveFile(scene.project_id, 'music', filename, result.data);
@@ -260,9 +315,16 @@ async function generateSFX(req, res, shotId) {
 
             const assetId = generateId();
             db.prepare(
-                `INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, version)
-                 VALUES (?, ?, ?, 'audio_sfx', ?, ?, 'wav', 'audio/wav', 1)`
-            ).run(assetId, scene.project_id, shotId, filePath, filename);
+                `INSERT INTO film_assets (
+                    id, project_id, shot_id, asset_type, file_path, file_name,
+                    format, mime_type, version,
+                    provider, provider_model, provider_job_id, license_source, license_status
+                 )
+                 VALUES (?, ?, ?, 'audio_sfx', ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated')`
+            ).run(
+                assetId, scene.project_id, shotId, filePath, filename, formatForResult(result), mimeForResult(result),
+                sfxProvider.id, resultModel(result, payload), resultJobId(result)
+            );
 
             db.prepare('UPDATE film_music_jobs SET status = ?, output_path = ? WHERE id = ?').run('complete', filePath, jobId);
             results.push({ index: i, status: 'complete', sfx_url: getFileUrl('music', scene.project_id, filename) });
@@ -284,6 +346,7 @@ async function generateAmbient(req, res, sceneId) {
     const location = scene.location_id
         ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id)
         : null;
+    const ambientProvider = resolveGenerator('ambient', parseProjectConfig(scene.project_id));
 
     const payload = buildAmbientPrompt(scene, location);
 
@@ -294,15 +357,15 @@ async function generateAmbient(req, res, sceneId) {
     ).run(jobId, scene.project_id, sceneId, payload.prompt, payload.model, payload.duration_s * 1000);
 
     try {
-        const result = await callGridlight(MUSIC_ENDPOINT, payload);
+        const result = await ambientProvider.generate('ambient', payload, { timeout: 300000 });
 
         if (!result.ok) {
             db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
-            if (result.status === 503) return json(res, 503, serviceUnavailableError(MUSIC_ENDPOINT, 'music'));
+            if (ambientProvider.id === 'gridlight' && result.status === 503) return json(res, 503, serviceUnavailableError(MUSIC_ENDPOINT, 'music'));
             return json(res, result.status || 500, { error: result.error });
         }
 
-        const filename = `${scene.scene_number || sceneId}_ambient.wav`;
+        const filename = filenameForResult(`${scene.scene_number || sceneId}_ambient.wav`, result);
         ensureDir(scene.project_id, 'music');
         let filePath = '';
 
@@ -312,9 +375,16 @@ async function generateAmbient(req, res, sceneId) {
 
         const assetId = generateId();
         db.prepare(
-            `INSERT INTO film_assets (id, project_id, scene_id, asset_type, file_path, file_name, format, mime_type, duration_ms, version)
-             VALUES (?, ?, ?, 'audio_ambient', ?, ?, 'wav', 'audio/wav', ?, 1)`
-        ).run(assetId, scene.project_id, sceneId, filePath, filename, payload.duration_s * 1000);
+            `INSERT INTO film_assets (
+                id, project_id, scene_id, asset_type, file_path, file_name,
+                format, mime_type, duration_ms, version,
+                provider, provider_model, provider_job_id, license_source, license_status
+             )
+             VALUES (?, ?, ?, 'audio_ambient', ?, ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated')`
+        ).run(
+            assetId, scene.project_id, sceneId, filePath, filename, formatForResult(result), mimeForResult(result), payload.duration_s * 1000,
+            ambientProvider.id, resultModel(result, payload), resultJobId(result)
+        );
 
         db.prepare('UPDATE film_music_jobs SET status = ?, output_path = ? WHERE id = ?').run('complete', filePath, jobId);
 
@@ -324,7 +394,7 @@ async function generateAmbient(req, res, sceneId) {
         });
     } catch (err) {
         db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
-        if (err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(MUSIC_ENDPOINT, 'music'));
+        if (ambientProvider.id === 'gridlight' && err.message.includes('ECONNREFUSED')) return json(res, 503, serviceUnavailableError(MUSIC_ENDPOINT, 'music'));
         json(res, 500, { error: err.message });
     }
 }
@@ -334,6 +404,9 @@ async function generateAmbient(req, res, sceneId) {
 async function batchMusicStream(req, res, projectId) {
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
+    const providerConfig = parseProjectConfig(projectId);
+    const musicProvider = resolveGenerator('music', providerConfig);
+    const ambientProvider = resolveGenerator('ambient', providerConfig);
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',
@@ -359,18 +432,26 @@ async function batchMusicStream(req, res, projectId) {
         const musicPayload = buildMusicPrompt(musicCue, scene, project);
 
         try {
-            const result = await callGridlight(MUSIC_ENDPOINT, musicPayload);
+            const result = await musicProvider.generate('music', musicPayload, { timeout: 300000 });
             if (!result.ok) throw new Error(result.error);
 
-            const filename = `${scene.scene_number || scene.id}_score.wav`;
+            const filename = filenameForResult(`${scene.scene_number || scene.id}_score.wav`, result);
             ensureDir(projectId, 'music');
-            if (Buffer.isBuffer(result.data)) saveFile(projectId, 'music', filename, result.data);
+            let filePath = filename;
+            if (Buffer.isBuffer(result.data)) filePath = saveFile(projectId, 'music', filename, result.data);
 
             const assetId = generateId();
             db.prepare(
-                `INSERT INTO film_assets (id, project_id, scene_id, asset_type, file_name, format, mime_type, version)
-                 VALUES (?, ?, ?, 'audio_music', ?, 'wav', 'audio/wav', 1)`
-            ).run(assetId, projectId, scene.id, filename);
+                `INSERT INTO film_assets (
+                    id, project_id, scene_id, asset_type, file_path, file_name,
+                    format, mime_type, version,
+                    provider, provider_model, provider_job_id, license_source, license_status
+                 )
+                 VALUES (?, ?, ?, 'audio_music', ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated')`
+            ).run(
+                assetId, projectId, scene.id, filePath, filename, formatForResult(result), mimeForResult(result),
+                musicProvider.id, resultModel(result, musicPayload), resultJobId(result)
+            );
 
             sendEvent({ type: 'music_complete', scene_number: scene.scene_number, music_url: getFileUrl('music', projectId, filename) });
             completed++;
@@ -385,17 +466,25 @@ async function batchMusicStream(req, res, projectId) {
         const ambientPayload = buildAmbientPrompt(scene, location);
 
         try {
-            const result = await callGridlight(MUSIC_ENDPOINT, ambientPayload);
+            const result = await ambientProvider.generate('ambient', ambientPayload, { timeout: 300000 });
             if (!result.ok) throw new Error(result.error);
 
-            const filename = `${scene.scene_number || scene.id}_ambient.wav`;
-            if (Buffer.isBuffer(result.data)) saveFile(projectId, 'music', filename, result.data);
+            const filename = filenameForResult(`${scene.scene_number || scene.id}_ambient.wav`, result);
+            let filePath = filename;
+            if (Buffer.isBuffer(result.data)) filePath = saveFile(projectId, 'music', filename, result.data);
 
             const assetId = generateId();
             db.prepare(
-                `INSERT INTO film_assets (id, project_id, scene_id, asset_type, file_name, format, mime_type, version)
-                 VALUES (?, ?, ?, 'audio_ambient', ?, 'wav', 'audio/wav', 1)`
-            ).run(assetId, projectId, scene.id, filename);
+                `INSERT INTO film_assets (
+                    id, project_id, scene_id, asset_type, file_path, file_name,
+                    format, mime_type, version,
+                    provider, provider_model, provider_job_id, license_source, license_status
+                 )
+                 VALUES (?, ?, ?, 'audio_ambient', ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated')`
+            ).run(
+                assetId, projectId, scene.id, filePath, filename, formatForResult(result), mimeForResult(result),
+                ambientProvider.id, resultModel(result, ambientPayload), resultJobId(result)
+            );
 
             sendEvent({ type: 'ambient_complete', scene_number: scene.scene_number });
             completed++;
