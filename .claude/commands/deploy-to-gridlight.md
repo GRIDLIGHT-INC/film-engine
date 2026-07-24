@@ -1,26 +1,24 @@
 ---
 name: deploy-to-gridlight
-description: Build and copy this app into the Gridlight desktop repo's apps/ folder for testing
+description: Build and copy this app into the Gridlight desktop app's installed apps folder for testing
 ---
 
 # Deploy to Gridlight
 
-Copy the current app into the Gridlight desktop repo so it can be tested in the Tauri app.
+Copy the current app into the Gridlight desktop installed apps folder so it can be tested in the Tauri app.
 
 ## Steps
 
 1. **Identify the app and target**
 
-Detect the current app directory name and locate the Gridlight repo:
+Detect the current app directory name and target the Gridlight Application Support folder:
 ```bash
 APP_NAME=$(basename "$PWD")
-GRIDLIGHT_APPS="$(dirname "$PWD")/gridlight/apps"
+GRIDLIGHT_APPS="$HOME/Library/Application Support/Gridlight/apps"
 echo "App: $APP_NAME"
 echo "Target: $GRIDLIGHT_APPS/$APP_NAME"
-ls "$GRIDLIGHT_APPS" 2>/dev/null || echo "ERROR: gridlight/apps/ not found"
+ls "$GRIDLIGHT_APPS" 2>/dev/null || echo "WARNING: apps folder does not exist yet, will be created"
 ```
-
-If `gridlight/apps/` is not found at the sibling path, ask me for the correct path before proceeding.
 
 2. **Build the app**
 
