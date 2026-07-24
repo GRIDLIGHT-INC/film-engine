@@ -99,7 +99,7 @@ Commit `24adb67` added `backend/lib/provider-media.js` and routed provider-retur
 Two additional bugs were found and fixed in that same commit:
 
 - `locations.js` handled `image_url`, but documented Gridlight `/image` returns `image_urls`, so location/prop reference image paths could be stored empty.
-- `characters.js` refsheet generation inserted a `render_ledger` row with unsupported `step='refsheet'` and a character id in `shot_id`, causing a CHECK/FK failure that could crash the server. The fix removed that duplicate ledger write and relies on `film_refsheet_jobs`.
+- `characters.js` refsheet generation inserted a `render_ledger` row with unsupported `step='refsheet'` and a character id in `shot_id`, which crashed the server process on every refsheet request when verified against the pre-fix code. The fix removed that duplicate ledger write and relies on `film_refsheet_jobs`.
 
 The remaining known instance of this provider URL pattern is `threed.js` model URL handling, which was deliberately left for a separate pass because it has async job-handoff behavior.
 

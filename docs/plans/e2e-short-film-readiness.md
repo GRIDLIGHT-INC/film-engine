@@ -125,7 +125,7 @@ The through-line before `24adb67`: generation returned success while media was n
 
 The original NLE and generation tests did not catch this. NLE fixtures used absolute paths and only asserted that `<pathurl>file:///` exists. `backend/tests/video-gen.test.js:72-73` mocked Gridlight as `Content-Type: video/mp4` binary and `FAKE-MP4-DATA`, then asserted the generated Film Engine file served successfully. Real documented Gridlight generation returns JSON, so those tests validated the branch that did not run for the default provider shape. Commit `24adb67` added JSON URL mock coverage and asserts local file persistence plus non-404 playback.
 
-The same fix also caught two consistency-reference issues. `locations.js` looked for `image_url`, but documented Gridlight `/image` returns `image_urls`, so location/prop reference image paths could be stored empty. `characters.js` refsheet generation inserted a `render_ledger` row with unsupported `step='refsheet'` and a character id in `shot_id`, causing CHECK/FK failures that could crash the server. Both were fixed in `24adb67`. This is the same schema-enum fragility family as the FDX `asset_type` failure.
+The same fix also caught two consistency-reference issues. `locations.js` looked for `image_url`, but documented Gridlight `/image` returns `image_urls`, so location/prop reference image paths could be stored empty. `characters.js` refsheet generation inserted a `render_ledger` row with unsupported `step='refsheet'` and a character id in `shot_id`, which crashed the server process on every refsheet request when verified against the pre-fix code. Both were fixed in `24adb67`. This is the same schema-enum fragility family as the FDX `asset_type` failure.
 
 ### F4: Pipeline "Assembly" Is Not Assembly
 
