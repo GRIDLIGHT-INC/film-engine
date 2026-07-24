@@ -8,15 +8,15 @@ Question: could a creator start today with a novel scene, convert it into a scre
 
 **No, not end to end today with the user's own material.**
 
-The user can convert a scene to a screenplay and extract scenes offline. With the Gridlight gateway running, they can likely generate shots, storyboards, and media. Without Gridlight, there is no path from their screenplay to shots in the UI, though they **can** load the bundled demo project and exercise the downstream pipeline against prebuilt scenes/shots.
+The user can convert a scene to a screenplay and extract scenes offline. With the Gridlight gateway running, they can likely generate shots and storyboards. But the video/audio generation routes do not download documented Gridlight URL responses into Film Engine storage, so generated videos, music, and likely voice audio do not become reliable local assets. Without Gridlight, there is no path from their screenplay to shots in the UI, though they **can** load the bundled demo project and exercise the downstream pipeline against prebuilt scenes/shots.
 
 But the full creator promise fails at both ends:
 
 1. **Front of pipeline:** without Gridlight, there is no manual shot-creation UI for the user's own screenplay. The user can get a screenplay and scenes, but cannot create shots from that story in the app.
-2. **Back of pipeline:** even after media exists, the Premiere/FCPXML handoff writes invalid or unrelinkable media paths. A structurally valid XML can still open with every clip offline.
+2. **Back of pipeline:** for documented Gridlight responses, video/audio routes store remote URLs or filename-only paths instead of local files. In-app playback links can 404, project bundles have no generated media to copy, and Premiere/FCPXML writes invalid or absent media references.
 3. **Status layer:** `/film/providers` reports Gridlight as `connected:true` even when the gateway is down, so the app tells the user they are ready when the workflow cannot run.
 
-So the honest answer is: **yes for evaluating the engine with the bundled demo or a supervised Gridlight-backed run; no for reliably making a same-day short film from the user's own novel scene and finishing it in Premiere.**
+So the honest answer is: **yes for evaluating the engine with the bundled demo or a supervised Gridlight-backed run; no for reliably making a same-day short film from the user's own novel scene and finishing it in Premiere.** Storyboards are the one generated asset class verified to land correctly because `storyboard.js` fetches the returned image URL and saves the bytes.
 
 ## Evidence Base
 
@@ -29,7 +29,7 @@ node --test tests/video-gen.test.js tests/providers-elevenlabs.test.js tests/mus
 224 passing, 0 failing
 ```
 
-Claude then live-tested Codex's central Premiere-path finding against the scratch project and reproduced it.
+Claude then live-tested Codex's central Premiere-path finding against the scratch project and reproduced it. After Manny clarified that Gridlight is local and easy to run, Claude also tested Film Engine against a mock gateway shaped like `GRIDLIGHT_API_REFERENCE.md`: generation endpoints returned JSON URLs, not binary. That stronger test showed video and music return success while writing no local media files; voice follows the same code path but was not measured because the demo shot used in that run had no dialogue.
 
 ## Readiness Matrix
 
@@ -41,10 +41,10 @@ Claude then live-tested Codex's central Premiere-path finding against the scratc
 | Scenes -> shots | API exists | No manual Add Shot UI for the user's own script; only AI breakdown UI | Gridlight-only for user content | Yes if breakdown works | BLOCKED in UI without Gridlight |
 | Character/location registry | Yes | Yes, manual | Image refs can use provider registry | Not auto-populated from script | WORKS-WITH-MANUAL-STEPS |
 | Storyboards | Route exists | Yes | Gridlight-only; bypasses image provider registry | Yes to video stage if shots exist | NEEDS-SERVICE |
-| Video clips | Yes | Yes: Video Shots page | Provider registry via `resolve('video')` | Partial: lipsync/post are manual | NEEDS-CREDENTIALS / MANUAL |
-| Dialogue voice | Yes | Partial project-level UX | Provider registry via `resolve('voice')` | Partial: lipsync must be invoked | NEEDS-CREDENTIALS / MANUAL |
+| Video clips | Route returns success with Gridlight JSON URL responses | Yes: Video Shots page | Provider registry via `resolve('video')` | Broken locally: URL response is not downloaded; app can return `/film/video/...` links that 404 | BLOCKED for reliable local asset |
+| Dialogue voice | Route exists; same JSON URL storage pattern as video/music | Partial project-level UX | Provider registry via `resolve('voice')` | Likely broken locally for Gridlight URL responses; not live-measured in final mock run because demo shot had no dialogue | NEEDS-VERIFY / LIKELY BLOCKED |
 | Lip-sync | Yes | Per-shot action | Provider registry via `resolve('lipsync')` | Partial: post/export can find synced video | WORKS-WITH-MANUAL-STEPS |
-| Music score / ambient | Yes | Yes for score+ambient | Provider registry via `resolve('music')` / ambient | Partial: scene-level audio not placed in NLE timeline | PARTIAL |
+| Music score / ambient | Route returns success with Gridlight JSON URL responses | Yes for score+ambient | Provider registry via `resolve('music')` / ambient | Broken locally: URL response is not downloaded; scene-level audio also not placed in NLE timeline | BLOCKED for reliable local asset |
 | SFX | Yes | No clear main UI pass | Provider registry via `resolve('sfx')` | Partial: per-shot only | WORKS-WITH-MANUAL-STEPS |
 | Post/upscale/color | Yes | Partial: per-shot Upscale | Provider registry via `resolve('post')` | Partial | WORKS-WITH-MANUAL-STEPS |
 | Pipeline runner | Yes | Yes: "Run scene -> final" | Provider registry, but generic payloads | No: assembly is only a marker | PARTIAL / RISKY |
@@ -73,9 +73,27 @@ The UI has screenplay, scenes, shotboard, storyboard, and pipeline pages, but no
 
 That means a fresh install with no Gridlight can create projects, scripts, and scenes, but cannot produce the shots required by storyboards, video, voice, QA, or NLE export for that user's story. One offline exception matters: **Load Demo Project** (`src/index.html:4919` -> `POST /film/projects/demo` -> `backend/routes/demo-project.js:554`) inserts 14 shots directly with no AI, so the downstream pipeline can be exercised and evaluated offline. It just does not turn the user's novel excerpt into shots.
 
-### F3: Premiere Handoff Is Broken
+### F3: Gridlight Media Persistence And Premiere Handoff Are Broken
 
-NLE export emits raw `asset.file_path` into XML. Live reproduction produced:
+`callGridlight()` parses `application/json` responses into objects and only returns a `Buffer` for non-JSON responses (`backend/lib/gridlight-client.js:199-206`). `GRIDLIGHT_API_REFERENCE.md` documents generation endpoints as JSON URL responses: `/image` returns `image_urls`, `/video` returns `video_url`, and `/music` returns `audio_url`; the binary endpoints are the later serving URLs.
+
+Storyboard generation handles that correctly: `backend/routes/storyboard.js:111-131` fetches the returned image URL and saves the bytes. Video, music, and voice do not. They only call `saveFile()` when `Buffer.isBuffer(result.data)` is true, which is not the documented Gridlight generation shape.
+
+Measured against a documented-shape mock Gridlight gateway:
+
+```text
+storyboards/  1 file on disk   file_path=/abs/path/SC01-SH01.png
+video/        0 files          file_path=http://localhost:8080/videos/vid_abc123.mp4
+music/        0 files          file_path=http://localhost:8080/music/audio_abc123.wav
+```
+
+`POST /shots/:id/video/generate` still returned `status:"complete"` and a Film Engine URL such as `/film/video/<project>/SC01-SH01.mp4`, but `GET` on that URL returned 404 because the file was never written.
+
+Voice was not measured in that mock run because the demo shot had no dialogue, but `backend/routes/voice.js:151-154` has the identical JSON-URL storage pattern.
+
+This was tested against the documented Gridlight contract, not Manny's exact local build. If a local Gridlight endpoint returns inline binary for a specific generation call, that endpoint would take the working Buffer branch; a quick run against the real service can settle which endpoints behave that way.
+
+NLE export then emits raw `asset.file_path` into XML. Live reproduction produced:
 
 ```xml
 <pathurl>file:///1A.mp4</pathurl>
@@ -94,12 +112,14 @@ The root causes are in generation and export:
 
 - `backend/routes/video-gen.js:335` uses `let filePath = filename` in the batch path, which backs the primary **Generate All Videos** UI.
 - `backend/routes/video-gen.js:160-165` stores remote `result.data.video_url` directly for single-shot generation.
+- `backend/routes/music-gen.js:176-179` stores remote `result.data.audio_url` directly for single-scene music, and `:440-441` leaves batch music as filename-only unless a Buffer arrives.
+- `backend/routes/voice.js:151-154` stores remote `result.data.audio_url` directly for single-shot voice, and `:358-359` leaves batch voice as filename-only unless a Buffer arrives.
 - `backend/routes/video-gen.js:497-499` can leave stitched video `filePath` empty.
 - `backend/lib/nle-export.js:342` and `:520` emit `file_path` raw with no fallback or validation.
 
-The through-line: XML export emits whatever is in `file_path`, or nothing when no asset exists. It is correct only by accident, when the asset happens to have been saved to a real absolute path, and it never fails loudly.
+The through-line: generation returns success while media is not local, and XML export emits whatever is in `file_path`, or nothing when no asset exists. It is correct only by accident, when the asset happens to have been saved to a real absolute path, and it never fails loudly.
 
-The current NLE tests do not catch this because fixtures use absolute paths and only assert that `<pathurl>file:///` exists.
+The current NLE and generation tests do not catch this. NLE fixtures use absolute paths and only assert that `<pathurl>file:///` exists. `backend/tests/video-gen.test.js:72-73` mocks Gridlight as `Content-Type: video/mp4` binary and `FAKE-MP4-DATA`, then asserts the generated Film Engine file serves successfully. Real documented Gridlight generation returns JSON, so those tests validate the branch that does not run for the default provider shape.
 
 ### F4: Pipeline "Assembly" Is Not Assembly
 
@@ -130,7 +150,7 @@ The foundation is real:
 - Project creation, script versioning, Fountain parsing, scene extraction, and screenplay statistics work offline.
 - The prose conversion UI is purpose-built and supports chunking, context overlap, progress, and ETA.
 - The built-in **Load Demo Project** path works offline and creates a populated project with 7 scenes, 14 shots, 4 characters, 4 locations, 8 props, 3 acts, and 5 milestones. This is the best current way to evaluate the downstream pipeline without Gridlight, but it is not a path from the user's own story to shots.
-- The backend has standalone routes for video, voice, lipsync, music, SFX, ambient, post, subtitles, QA, NLE export, and project bundles.
+- The backend has standalone routes for video, voice, lipsync, music, SFX, ambient, post, subtitles, QA, NLE export, and project bundles, but video/music/voice persistence is broken for documented Gridlight URL responses.
 - Focused backend tests for the picture-to-Premiere half pass against mocks.
 - FCPXML, EDL, and Premiere endpoints return 200 on a real project, but only EDL verified as usable because it carries edit structure without depending on broken media paths.
 - The **EDL export is usable today** for edit structure. On the demo project it produced correct title, non-drop-frame mode, event timecodes, clip names, and scene comments. EDL does not carry media paths like XML, so it sidesteps the broken pathurl class and can be used to conform media manually in Premiere.
@@ -153,11 +173,11 @@ The foundation is real:
 
 If you start today on a clean machine and expect the Film Engine itself to carry you from your novel excerpt to a Premiere-ready edit package, **no**.
 
-If you load the bundled demo project, you can inspect and exercise much of the downstream workflow today without Gridlight. If you start Gridlight, know which routes/UI steps to use, and accept manual intervention, you can produce much of the material for your own story. But you should expect to babysit the pipeline, manually recover from missing shot UI paths, and repair the final Premiere handoff. The thing that would fail at the worst moment is the edit package: it can generate XML, but the XML can point at unusable media paths or no media paths.
+If you load the bundled demo project, you can inspect and exercise much of the downstream workflow today without Gridlight. If you start Gridlight, know which routes/UI steps to use, and accept manual intervention, you can produce screenplay structure and storyboards for your own story. But video/audio generation is not currently producing local Film Engine media files from documented Gridlight URL responses. The thing that would fail at the worst moment is not only the edit package: in-app playback and project bundle export can also fail because the media file was never written locally.
 
 The practical same-day workaround is **EDL, not Premiere XML**. Use EDL to get the cut structure into Premiere, then conform/relink media manually. That is not the promised end-to-end workflow, but it is the one export path that verified cleanly today.
 
-The shortest credible path to "yes" is not a new generation model. It is reliability work around orchestration and handoff: truthful provider status, manual shot creation, real pipeline assembly, and a Premiere package that proves every referenced file exists before download.
+The shortest credible path to "yes" is not a new generation model. It is reliability work around asset persistence, orchestration, and handoff: download provider-returned media URLs into Film Engine storage, return URLs only for files that exist, add truthful provider status, manual shot creation, real pipeline assembly, and a Premiere package that proves every referenced file exists before download.
 
 ## Source Slice Reports
 
