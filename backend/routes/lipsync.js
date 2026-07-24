@@ -11,6 +11,7 @@
 const { db, generateId } = require('../db/database');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, getFilePath, ensureDir } = require('../lib/file-storage');
+const { persistProviderMedia } = require('../lib/provider-media');
 const { buildVisemeTrack, mergeVisemesWithAudio, buildVisemePayload } = require('../lib/viseme-builder');
 const { resolve, get } = require('../lib/providers');
 
@@ -136,13 +137,7 @@ async function generateLipsync(req, res, shotId) {
 
         const filename = `${shot.shot_code}_synced.mp4`;
         ensureDir(scene.project_id, 'video');
-        let filePath = '';
-
-        if (Buffer.isBuffer(result.data)) {
-            filePath = saveFile(scene.project_id, 'video', filename, result.data);
-        } else if (result.data && result.data.video_url) {
-            filePath = result.data.video_url;
-        }
+        const filePath = await persistProviderMedia(scene.project_id, 'video', filename, result.data, { serveDir: 'videos' });
 
         const assetId = generateId();
         db.prepare(
@@ -418,13 +413,7 @@ async function visemeGuidedSync(req, res, shotId) {
 
         const filename = `${shot.shot_code}_viseme_synced.mp4`;
         ensureDir(scene.project_id, 'video');
-        let filePath = '';
-
-        if (Buffer.isBuffer(result.data)) {
-            filePath = saveFile(scene.project_id, 'video', filename, result.data);
-        } else if (result.data && result.data.video_url) {
-            filePath = result.data.video_url;
-        }
+        const filePath = await persistProviderMedia(scene.project_id, 'video', filename, result.data, { serveDir: 'videos' });
 
         const assetId = generateId();
         db.prepare(

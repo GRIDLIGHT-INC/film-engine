@@ -14,6 +14,7 @@ const crypto = require('crypto');
 const { db, generateId } = require('../db/database');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir, serveFile } = require('../lib/file-storage');
+const { persistProviderMedia } = require('../lib/provider-media');
 const { extractDialogue, buildVoicePayload, dialogueFilename } = require('../lib/dialogue-builder');
 const { resolve } = require('../lib/providers');
 const { buildShotReferencePayload, applyConsistencyToVoicePayload, recordConsistencyCheck } = require('../lib/consistency-context');
@@ -146,13 +147,16 @@ async function generateVoice(req, res, shotId) {
             }
 
             const filename = filenameForResult(dialogueFilename(shot.shot_code, line.character, line.index), result);
-            let filePath = '', durationMs = 0;
+            let filePath, durationMs = 0;
 
-            if (Buffer.isBuffer(result.data)) {
-                filePath = saveFile(scene.project_id, 'audio', filename, result.data);
-            } else if (result.data && result.data.audio_url) {
-                filePath = result.data.audio_url;
-                durationMs = result.data.duration_ms || 0;
+            if (!Buffer.isBuffer(result.data) && result.data) durationMs = result.data.duration_ms || 0;
+            try {
+                filePath = await persistProviderMedia(scene.project_id, 'audio', filename, result.data, { serveDir: 'music' });
+            } catch (err) {
+                const storeError = `audio generated but could not be stored: ${err.message}`;
+                db.prepare('UPDATE film_voice_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', storeError, jobId);
+                results.push({ character: line.character, line: line.line, status: 'failed', error: storeError });
+                continue;
             }
 
             const assetId = generateId();
@@ -255,10 +259,7 @@ async function generateVoiceStream(req, res, shotId) {
             if (!result.ok) throw new Error(result.error);
 
             const filename = filenameForResult(dialogueFilename(shot.shot_code, line.character, line.index), result);
-            let filePath = filename;
-            if (Buffer.isBuffer(result.data)) {
-                filePath = saveFile(scene.project_id, 'audio', filename, result.data);
-            }
+            const filePath = await persistProviderMedia(scene.project_id, 'audio', filename, result.data, { serveDir: 'music' });
 
             const assetId = generateId();
             db.prepare(
@@ -355,8 +356,7 @@ async function batchVoiceStream(req, res, projectId) {
                 if (!result.ok) throw new Error(result.error);
 
                 const filename = filenameForResult(dialogueFilename(shot.shot_code, line.character, line.index), result);
-                let filePath = filename;
-                if (Buffer.isBuffer(result.data)) filePath = saveFile(projectId, 'audio', filename, result.data);
+                const filePath = await persistProviderMedia(projectId, 'audio', filename, result.data, { serveDir: 'music' });
 
                 const assetId = generateId();
                 db.prepare(

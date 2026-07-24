@@ -18,7 +18,7 @@ const TEST_DIR = path.join(os.tmpdir(), 'film-engine-video-' + crypto.randomUUID
 const TEST_PORT = 15100 + Math.floor(Math.random() * 800);
 const BASE_URL = `http://localhost:${TEST_PORT}`;
 
-let mockMode = 'binary'; // 'binary' | 'error500'
+let mockMode = 'binary'; // 'binary' | 'json' | 'jsonBadUrl' | 'error500'
 let serverProcess;
 let mockGridlight;
 
@@ -58,6 +58,16 @@ describe('Video Generation Integration (mock Gridlight)', () => {
         fs.mkdirSync(TEST_DIR, { recursive: true });
 
         mockGridlight = http.createServer((req, res) => {
+            // Serving endpoint — the real gateway returns binary here even though
+            // its generation endpoints answer with JSON URLs.
+            if (req.method === 'GET') {
+                if (req.url.startsWith('/videos/')) {
+                    res.writeHead(200, { 'Content-Type': 'video/mp4' });
+                    return res.end(Buffer.from('FAKE-MP4-DATA'));
+                }
+                res.writeHead(404, { 'Content-Type': 'text/plain' });
+                return res.end('not found');
+            }
             let raw = '';
             req.on('data', c => raw += c);
             req.on('end', () => {
@@ -66,8 +76,18 @@ describe('Video Generation Integration (mock Gridlight)', () => {
                 if (reqBody.stream === true) {
                     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
                     res.write('data: ' + JSON.stringify({ event: 'progress', pct: 50 }) + '\n\n');
-                    res.write('data: ' + JSON.stringify({ event: 'complete', video_url: 'http://cdn.example/x.mp4' }) + '\n\n');
+                    res.write('data: ' + JSON.stringify({ event: 'complete', video_url: `http://${req.headers.host}/videos/vid_abc123.mp4` }) + '\n\n');
                     return res.end();
+                }
+                // Documented Gridlight shape: application/json carrying a URL, NOT
+                // inline binary. Exercising only the binary branch is what let the
+                // "generated media never lands on disk" bug ship green.
+                if (mockMode === 'json' || mockMode === 'jsonBadUrl') {
+                    const videoUrl = mockMode === 'jsonBadUrl'
+                        ? `http://${req.headers.host}/missing/nope.mp4`
+                        : `http://${req.headers.host}/videos/vid_abc123.mp4`;
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ status: 'success', video_url: videoUrl, seed: 42, model_used: 'ltx-2' }));
                 }
                 res.writeHead(200, { 'Content-Type': 'video/mp4' });
                 return res.end(Buffer.from('FAKE-MP4-DATA'));
@@ -135,7 +155,50 @@ describe('Video Generation Integration (mock Gridlight)', () => {
         assert.ok(jobs.some(j => j.status === 'complete'), 'expected a completed video job');
     });
 
+    // Gridlight's POST /video answers application/json with a video_url; only the
+    // GET /videos/:file serving endpoint returns bytes. The route must download
+    // that URL, or film_assets.file_path holds a remote URL, the media never
+    // lands locally, and NLE export emits file:///http://host/... to Premiere.
+    it('downloads media to local storage when the provider returns a JSON URL', async () => {
+        mockMode = 'json';
+        const res = await request(`/film/shots/${shotId}/video/generate`, { method: 'POST', body: {} });
+        assert.equal(res.status, 200);
+        assert.equal(res.data.status, 'complete');
+
+        const assets = await request(`/film/projects/${projectId}/assets`);
+        const video = (assets.data.assets || []).filter(a => a.asset_type === 'video_raw').pop();
+        assert.ok(video, 'expected a video_raw asset');
+        assert.ok(
+            path.isAbsolute(video.file_path),
+            `file_path must be a local absolute path, got ${JSON.stringify(video.file_path)}`
+        );
+        assert.ok(!/^https?:\/\//i.test(video.file_path), 'file_path must not be a remote URL');
+        assert.ok(fs.existsSync(video.file_path), `no file on disk at ${video.file_path}`);
+        assert.match(fs.readFileSync(video.file_path, 'utf8'), /FAKE-MP4-DATA/);
+    });
+
+    it('serves the downloaded media back over the API (no 404)', async () => {
+        mockMode = 'json';
+        // Clear anything an earlier binary-mode test left behind, so passing here
+        // proves THIS generation wrote the file rather than inheriting it.
+        const stale = path.join(TEST_DIR, 'video', projectId, '1A.mp4');
+        try { fs.rmSync(stale, { force: true }); } catch { /* ignore */ }
+
+        const gen = await request(`/film/shots/${shotId}/video/generate`, { method: 'POST', body: {} });
+        const served = await request(gen.data.video_url);
+        assert.equal(served.status, 200, 'the URL the API hands back must not 404');
+        assert.match(served.raw, /FAKE-MP4-DATA/);
+    });
+
+    it('fails loudly when generated media cannot be stored', async () => {
+        mockMode = 'jsonBadUrl';
+        const res = await request(`/film/shots/${shotId}/video/generate`, { method: 'POST', body: {} });
+        assert.equal(res.status, 502, 'unstorable media must not report success');
+        assert.match(res.data.error, /could not be stored/i);
+    });
+
     it('serves the generated .mp4 with a video mime type', async () => {
+        mockMode = 'binary';
         const gen = await request(`/film/shots/${shotId}/video/generate`, { method: 'POST', body: {} });
         const served = await request(gen.data.video_url);
         assert.equal(served.status, 200);

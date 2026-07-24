@@ -227,6 +227,24 @@ function escapeXml(str) {
         .replace(/'/g, '&apos;');
 }
 
+/**
+ * Build a file:// URL an NLE can relink from a stored asset path.
+ *
+ * Assets hold absolute POSIX paths, so interpolating into `file:///${path}`
+ * yields `file:////abs/path` — four slashes, an empty authority plus a
+ * double-slashed path that editors don't reliably resolve. Join once, and pass
+ * through anything that is already a URL rather than prefixing it.
+ *
+ * @param {string} filePath
+ * @returns {string} file URL, or '' when there is no path to reference
+ */
+function toFileUrl(filePath) {
+    if (!filePath) return '';
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(filePath)) return filePath; // already a URL
+    const withLeadingSlash = filePath.startsWith('/') ? filePath : `/${filePath}`;
+    return `file://${withLeadingSlash}`;
+}
+
 // ── EDL (CMX 3600) ──────────────────────────────────────────────────
 
 /**
@@ -339,7 +357,7 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
             const refId = `a${assetIndex++}`;
             assetIdMap[`${shot.id}_video`] = refId;
             const durFrames = msToFrames(videoAsset.duration_ms || shot.duration_ms || 0, fps);
-            xml += `    <asset id="${refId}" name="${escapeXml(videoAsset.file_name || shot.shot_code)}" src="${escapeXml(videoAsset.file_path)}" start="0/1s" duration="${durFrames * frameDurNum}/${frameDurDen}s" format="r1"/>\n`;
+            xml += `    <asset id="${refId}" name="${escapeXml(videoAsset.file_name || shot.shot_code)}" src="${escapeXml(toFileUrl(videoAsset.file_path))}" start="0/1s" duration="${durFrames * frameDurNum}/${frameDurDen}s" format="r1"/>\n`;
         }
 
         for (const audioType of ['audio_dialogue', 'audio_music', 'audio_sfx', 'audio_ambient']) {
@@ -348,7 +366,7 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
                 const refId = `a${assetIndex++}`;
                 assetIdMap[`${shot.id}_${audioType}`] = refId;
                 const durFrames = msToFrames(audioAsset.duration_ms || shot.duration_ms || 0, fps);
-                xml += `    <asset id="${refId}" name="${escapeXml(audioAsset.file_name || audioType)}" src="${escapeXml(audioAsset.file_path)}" start="0/1s" duration="${durFrames * frameDurNum}/${frameDurDen}s"/>\n`;
+                xml += `    <asset id="${refId}" name="${escapeXml(audioAsset.file_name || audioType)}" src="${escapeXml(toFileUrl(audioAsset.file_path))}" start="0/1s" duration="${durFrames * frameDurNum}/${frameDurDen}s"/>\n`;
             }
         }
     }
@@ -517,7 +535,7 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
         if (videoAsset) {
             xml += `            <file id="file-${fileIndex}">\n`;
             xml += `              <name>${escapeXml(videoAsset.file_name || shot.shot_code)}</name>\n`;
-            xml += `              <pathurl>file:///${escapeXml(videoAsset.file_path)}</pathurl>\n`;
+            xml += `              <pathurl>${escapeXml(toFileUrl(videoAsset.file_path))}</pathurl>\n`;
             xml += `              <duration>${durFrames}</duration>\n`;
             xml += `              <rate>\n`;
             xml += `                <timebase>${timebase}</timebase>\n`;
@@ -585,7 +603,7 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
                 xml += `            <out>${durFrames}</out>\n`;
                 xml += `            <file>\n`;
                 xml += `              <name>${escapeXml(audioAsset.file_name || audioTrack.label)}</name>\n`;
-                xml += `              <pathurl>file:///${escapeXml(audioAsset.file_path)}</pathurl>\n`;
+                xml += `              <pathurl>${escapeXml(toFileUrl(audioAsset.file_path))}</pathurl>\n`;
                 xml += `            </file>\n`;
                 xml += `          </clipitem>\n`;
             }

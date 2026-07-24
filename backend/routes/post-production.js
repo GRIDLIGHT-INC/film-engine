@@ -14,6 +14,7 @@
 const { db, generateId } = require('../db/database');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
+const { persistProviderMedia } = require('../lib/provider-media');
 const { resolve, get } = require('../lib/providers');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -172,13 +173,7 @@ async function runPostStep(req, res, shotId, jobType) {
         const suffix = jobType === 'upscale' ? '_upscaled' : jobType === 'face_restore' ? '_facefix' : '_graded';
         const filename = `${shot.shot_code}${suffix}.mp4`;
         ensureDir(scene.project_id, 'video');
-        let filePath = '';
-
-        if (Buffer.isBuffer(result.data)) {
-            filePath = saveFile(scene.project_id, 'video', filename, result.data);
-        } else if (result.data && result.data.video_url) {
-            filePath = result.data.video_url;
-        }
+        const filePath = await persistProviderMedia(scene.project_id, 'video', filename, result.data, { serveDir: 'videos' });
 
         const assetId = generateId();
         db.prepare(
@@ -246,11 +241,7 @@ async function runComposite(req, res, shotId) {
 
             const filename = `${shot.shot_code}_final.mp4`;
             ensureDir(scene.project_id, 'video');
-            let filePath = '';
-
-            if (Buffer.isBuffer(result.data)) {
-                filePath = saveFile(scene.project_id, 'video', filename, result.data);
-            }
+            const filePath = await persistProviderMedia(scene.project_id, 'video', filename, result.data, { serveDir: 'videos' });
 
             const assetId = generateId();
             db.prepare(
@@ -324,17 +315,17 @@ async function batchPostStream(req, res, projectId) {
 
             const filename = `${shot.shot_code}_final.mp4`;
             ensureDir(projectId, 'video');
-            if (Buffer.isBuffer(result.data)) saveFile(projectId, 'video', filename, result.data);
+            const filePath = await persistProviderMedia(projectId, 'video', filename, result.data, { serveDir: 'videos' });
 
             const assetId = generateId();
             db.prepare(
                 `INSERT INTO film_assets (
-                    id, project_id, shot_id, asset_type, file_name, format, mime_type, version,
+                    id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, version,
                     provider, provider_model, provider_job_id, license_source, license_status
                  )
-                 VALUES (?, ?, ?, 'video_final', ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+                 VALUES (?, ?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
             ).run(
-                assetId, projectId, shot.shot_id, filename,
+                assetId, projectId, shot.shot_id, filePath, filename,
                 postProvider.id, resultModel(result, payload), resultJobId(result)
             );
 
@@ -453,10 +444,7 @@ async function colorMatchShot(req, res, shotId) {
 
         const filename = `${shot.shot_code}_matched.mp4`;
         ensureDir(scene.project_id, 'video');
-        let filePath = '';
-        if (Buffer.isBuffer(result.data)) {
-            filePath = saveFile(scene.project_id, 'video', filename, result.data);
-        }
+        const filePath = await persistProviderMedia(scene.project_id, 'video', filename, result.data, { serveDir: 'videos' });
 
         const assetId = generateId();
         db.prepare(
@@ -580,10 +568,7 @@ async function encodeShot(req, res, shotId) {
 
         const filename = `${shot.shot_code}_${codec}.${codecInfo.extension}`;
         ensureDir(scene.project_id, 'video');
-        let filePath = '';
-        if (Buffer.isBuffer(result.data)) {
-            filePath = saveFile(scene.project_id, 'video', filename, result.data);
-        }
+        const filePath = await persistProviderMedia(scene.project_id, 'video', filename, result.data, { serveDir: 'videos' });
 
         const assetId = generateId();
         db.prepare(

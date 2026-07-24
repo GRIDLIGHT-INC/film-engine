@@ -14,6 +14,7 @@
 const { db, generateId } = require('../db/database');
 const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir, serveFile } = require('../lib/file-storage');
+const { persistProviderMedia } = require('../lib/provider-media');
 const { buildMusicPrompt, buildSFXPrompts, buildAmbientPrompt } = require('../lib/music-prompt');
 const { buildMixPayload, calculateDucking, buildStemExport, generateSRT } = require('../lib/audio-mixer');
 const { resolve, get } = require('../lib/providers');
@@ -171,12 +172,13 @@ async function generateMusic(req, res, sceneId) {
 
         const filename = filenameForResult(`${scene.scene_number || sceneId}_score.wav`, result);
         ensureDir(scene.project_id, 'music');
-        let filePath = '';
 
-        if (Buffer.isBuffer(result.data)) {
-            filePath = saveFile(scene.project_id, 'music', filename, result.data);
-        } else if (result.data && result.data.audio_url) {
-            filePath = result.data.audio_url;
+        let filePath;
+        try {
+            filePath = await persistProviderMedia(scene.project_id, 'music', filename, result.data, { serveDir: 'music' });
+        } catch (err) {
+            db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
+            return json(res, 502, { error: `music generated but could not be stored: ${err.message}` });
         }
 
         const assetId = generateId();
@@ -235,12 +237,18 @@ async function generateMusicStream(req, res, sceneId) {
     ).run(jobId, scene.project_id, sceneId, payload.prompt, payload.model);
 
     try {
+        // The SSE relay calls onComplete synchronously, so the download happens
+        // after the stream resolves; otherwise the asset keeps an empty
+        // file_path and never reaches the timeline as real media.
+        let streamedAsset = null;
+
         const { ok, error } = await musicProvider.generateStream('music', payload, res, {
             onComplete: (data) => {
                 const filename = filenameForResult(`${scene.scene_number || sceneId}_score.wav`, data);
                 ensureDir(scene.project_id, 'music');
 
                 const assetId = generateId();
+                streamedAsset = { assetId, filename, data };
                 db.prepare(
                     `INSERT INTO film_assets (
                         id, project_id, scene_id, asset_type, file_name, format, mime_type, version,
@@ -260,7 +268,21 @@ async function generateMusicStream(req, res, sceneId) {
             },
         });
 
-        if (!ok) sendEvent({ type: 'error', error: error || 'Music generation failed' });
+        if (!ok) {
+            sendEvent({ type: 'error', error: error || 'Music generation failed' });
+        } else if (streamedAsset) {
+            try {
+                const filePath = await persistProviderMedia(
+                    scene.project_id, 'music', streamedAsset.filename, streamedAsset.data, { serveDir: 'music' }
+                );
+                db.prepare('UPDATE film_assets SET file_path = ? WHERE id = ?').run(filePath, streamedAsset.assetId);
+            } catch (err) {
+                db.prepare('DELETE FROM film_assets WHERE id = ?').run(streamedAsset.assetId);
+                db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?')
+                    .run('failed', `media not stored: ${err.message}`, jobId);
+                sendEvent({ type: 'error', error: `music generated but could not be stored: ${err.message}` });
+            }
+        }
     } catch (err) {
         sendEvent({ type: 'error', error: err.message });
     }
@@ -308,9 +330,12 @@ async function generateSFX(req, res, shotId) {
             }
 
             const filename = filenameForResult(`${shot.shot_code}_sfx_${i}.wav`, result);
-            let filePath = '';
-            if (Buffer.isBuffer(result.data)) {
-                filePath = saveFile(scene.project_id, 'music', filename, result.data);
+            let filePath;
+            try {
+                filePath = await persistProviderMedia(scene.project_id, 'music', filename, result.data, { serveDir: 'music' });
+            } catch (err) {
+                results.push({ index: i, status: 'failed', error: `sfx generated but could not be stored: ${err.message}` });
+                continue;
             }
 
             const assetId = generateId();
@@ -367,10 +392,13 @@ async function generateAmbient(req, res, sceneId) {
 
         const filename = filenameForResult(`${scene.scene_number || sceneId}_ambient.wav`, result);
         ensureDir(scene.project_id, 'music');
-        let filePath = '';
 
-        if (Buffer.isBuffer(result.data)) {
-            filePath = saveFile(scene.project_id, 'music', filename, result.data);
+        let filePath;
+        try {
+            filePath = await persistProviderMedia(scene.project_id, 'music', filename, result.data, { serveDir: 'music' });
+        } catch (err) {
+            db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
+            return json(res, 502, { error: `ambient generated but could not be stored: ${err.message}` });
         }
 
         const assetId = generateId();
@@ -437,8 +465,7 @@ async function batchMusicStream(req, res, projectId) {
 
             const filename = filenameForResult(`${scene.scene_number || scene.id}_score.wav`, result);
             ensureDir(projectId, 'music');
-            let filePath = filename;
-            if (Buffer.isBuffer(result.data)) filePath = saveFile(projectId, 'music', filename, result.data);
+            const filePath = await persistProviderMedia(projectId, 'music', filename, result.data, { serveDir: 'music' });
 
             const assetId = generateId();
             db.prepare(
@@ -470,8 +497,7 @@ async function batchMusicStream(req, res, projectId) {
             if (!result.ok) throw new Error(result.error);
 
             const filename = filenameForResult(`${scene.scene_number || scene.id}_ambient.wav`, result);
-            let filePath = filename;
-            if (Buffer.isBuffer(result.data)) filePath = saveFile(projectId, 'music', filename, result.data);
+            const filePath = await persistProviderMedia(projectId, 'music', filename, result.data, { serveDir: 'music' });
 
             const assetId = generateId();
             db.prepare(
@@ -623,9 +649,13 @@ async function mixShotAudio(req, res, shotId) {
 
         const filename = `${shot.shot_code}_mix.wav`;
         ensureDir(scene.project_id, 'music');
-        let filePath = '';
-        if (Buffer.isBuffer(result.data)) {
-            filePath = saveFile(scene.project_id, 'music', filename, result.data);
+
+        let filePath;
+        try {
+            filePath = await persistProviderMedia(scene.project_id, 'music', filename, result.data, { serveDir: 'music' });
+        } catch (err) {
+            db.prepare('UPDATE film_audio_mix_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
+            return json(res, 502, { error: `audio mix generated but could not be stored: ${err.message}` });
         }
 
         const assetId = generateId();

@@ -12,6 +12,7 @@
 const { db, generateId } = require('../db/database');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
+const { persistProviderMedia } = require('../lib/provider-media');
 const { resolve } = require('../lib/providers');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -458,18 +459,12 @@ async function generateLocationImage(req, res, locId) {
 
         const safeName = loc.name.replace(/[^a-zA-Z0-9_-]/g, '_');
         const filename = `${safeName}.png`;
-        let filePath = '';
-
-        if (Buffer.isBuffer(result.data)) {
-            filePath = saveFile(loc.project_id, 'loc-refs', filename, result.data);
-        } else if (result.data && result.data.image_url) {
-            // Provider returned a URL — fetch the image bytes into film_assets.
-            const imgRes = await fetch(result.data.image_url);
-            if (imgRes.ok) {
-                filePath = saveFile(loc.project_id, 'loc-refs', filename, Buffer.from(await imgRes.arrayBuffer()));
-            } else {
-                filePath = result.data.image_url;
-            }
+        let filePath;
+        try {
+            filePath = await persistProviderMedia(loc.project_id, 'loc-refs', filename, result.data, { serveDir: 'images' });
+        } catch (err) {
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Reference image generated but could not be stored', details: err.message }));
         }
 
         const assetId = generateId();
@@ -575,17 +570,12 @@ async function generatePropImage(req, res, propId) {
 
         const safeName = prop.name.replace(/[^a-zA-Z0-9_-]/g, '_');
         const filename = `${safeName}.png`;
-        let filePath = '';
-
-        if (Buffer.isBuffer(result.data)) {
-            filePath = saveFile(prop.project_id, 'prop-refs', filename, result.data);
-        } else if (result.data && result.data.image_url) {
-            const imgRes = await fetch(result.data.image_url);
-            if (imgRes.ok) {
-                filePath = saveFile(prop.project_id, 'prop-refs', filename, Buffer.from(await imgRes.arrayBuffer()));
-            } else {
-                filePath = result.data.image_url;
-            }
+        let filePath;
+        try {
+            filePath = await persistProviderMedia(prop.project_id, 'prop-refs', filename, result.data, { serveDir: 'images' });
+        } catch (err) {
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Reference image generated but could not be stored', details: err.message }));
         }
 
         const assetId = generateId();

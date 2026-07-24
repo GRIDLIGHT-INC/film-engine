@@ -10,6 +10,7 @@
 const { db, generateId } = require('../db/database');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
+const { persistProviderMedia } = require('../lib/provider-media');
 const { resolve } = require('../lib/providers');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -463,12 +464,12 @@ async function generateRefSheet(req, res, charId) {
 
             const safeName = ch.name.replace(/[^a-zA-Z0-9_-]/g, '_');
             const filename = `${safeName}_${view}.png`;
-            let filePath = '';
-
-            if (Buffer.isBuffer(result.data)) {
-                filePath = saveFile(ch.project_id, 'refsheets', filename, result.data);
-            } else if (result.data && result.data.image_url) {
-                filePath = result.data.image_url;
+            let filePath;
+            try {
+                filePath = await persistProviderMedia(ch.project_id, 'refsheets', filename, result.data, { serveDir: 'images' });
+            } catch (err) {
+                results.push({ view, status: 'failed', error: `reference image generated but could not be stored: ${err.message}` });
+                continue;
             }
 
             const assetId = generateId();
@@ -500,10 +501,13 @@ async function generateRefSheet(req, res, charId) {
     db.prepare('UPDATE film_refsheet_jobs SET status = ?, output_paths = ? WHERE id = ?')
         .run(status, JSON.stringify(results), jobId);
 
-    db.prepare(
-        `INSERT INTO render_ledger (id, shot_id, version, step, model_id, prompt, mode)
-         VALUES (?, ?, 1, 'refsheet', ?, ?, 'creative')`
-    ).run(generateId(), charId, model, `Reference sheet for ${ch.name}`);
+    // No render_ledger row here. That table is keyed to a shot — shot_id is a
+    // NOT NULL FK to film_shots and step is CHECK-constrained to the nine
+    // pipeline steps — so a character reference sheet fits neither column.
+    // Writing one threw SQLITE_CONSTRAINT_CHECK from an async handler, which
+    // took the whole server process down on every refsheet request.
+    // film_refsheet_jobs (updated above) is the source of truth for this job,
+    // the same way film_3d_jobs is for 3D assets.
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({

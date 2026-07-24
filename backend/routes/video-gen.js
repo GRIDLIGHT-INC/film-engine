@@ -14,6 +14,7 @@ const fs = require('fs');
 const { db, generateId } = require('../db/database');
 const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, getFilePath, ensureDir, serveFile } = require('../lib/file-storage');
+const { persistProviderMedia } = require('../lib/provider-media');
 const { buildVideoPayload } = require('../lib/video-prompt');
 const { needsStitching, planClips, buildStitchPayload, calculateTransitions } = require('../lib/video-stitcher');
 const { resolve } = require('../lib/providers');
@@ -157,12 +158,13 @@ async function generateVideo(req, res, shotId) {
 
         const filename = `${shot.shot_code}.mp4`;
         ensureDir(scene.project_id, 'video');
-        let filePath = '';
 
-        if (Buffer.isBuffer(result.data)) {
-            filePath = saveFile(scene.project_id, 'video', filename, result.data);
-        } else if (result.data && result.data.video_url) {
-            filePath = result.data.video_url;
+        let filePath;
+        try {
+            filePath = await persistProviderMedia(scene.project_id, 'video', filename, result.data, { serveDir: 'videos' });
+        } catch (err) {
+            db.prepare('UPDATE film_video_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
+            return json(res, 502, { error: `video generated but could not be stored: ${err.message}` });
         }
 
         const durationMs = payload.duration_s * 1000;
@@ -238,12 +240,19 @@ async function generateVideoStream(req, res, shotId) {
     ).run(jobId, scene.project_id, shotId, payload.prompt, payload.model);
 
     try {
+        // onComplete is invoked synchronously by the SSE relay, so the media
+        // download can't happen inside it. Capture what we inserted and persist
+        // once the stream resolves — otherwise the asset keeps an empty
+        // file_path and the clip reaches Premiere with no media reference.
+        let streamedAsset = null;
+
         const { ok, finalData, error } = await videoProvider.generateStream('video', payload, res, {
             onComplete: (data) => {
                 const filename = `${shot.shot_code}.mp4`;
                 ensureDir(scene.project_id, 'video');
 
                 const assetId = generateId();
+                streamedAsset = { assetId, filename, data };
                 db.prepare(
                     `INSERT INTO film_assets (
                         id, project_id, shot_id, asset_type, file_name, format, mime_type, version,
@@ -272,6 +281,18 @@ async function generateVideoStream(req, res, shotId) {
         if (!ok) {
             sendEvent({ type: 'error', error: error || 'Video generation failed' });
             db.prepare('UPDATE film_video_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', error, jobId);
+        } else if (streamedAsset) {
+            try {
+                const filePath = await persistProviderMedia(
+                    scene.project_id, 'video', streamedAsset.filename, streamedAsset.data, { serveDir: 'videos' }
+                );
+                db.prepare('UPDATE film_assets SET file_path = ? WHERE id = ?').run(filePath, streamedAsset.assetId);
+            } catch (err) {
+                db.prepare('DELETE FROM film_assets WHERE id = ?').run(streamedAsset.assetId);
+                db.prepare('UPDATE film_video_jobs SET status = ?, error_message = ? WHERE id = ?')
+                    .run('failed', `media not stored: ${err.message}`, jobId);
+                sendEvent({ type: 'error', error: `video generated but could not be stored: ${err.message}` });
+            }
         }
     } catch (err) {
         sendEvent({ type: 'error', error: err.message });
@@ -332,8 +353,7 @@ async function batchVideoStream(req, res, projectId) {
 
             const filename = `${shot.shot_code}.mp4`;
             ensureDir(projectId, 'video');
-            let filePath = filename;
-            if (Buffer.isBuffer(result.data)) filePath = saveFile(projectId, 'video', filename, result.data);
+            const filePath = await persistProviderMedia(projectId, 'video', filename, result.data, { serveDir: 'videos' });
 
             const assetId = generateId();
             db.prepare(
@@ -460,9 +480,7 @@ async function stitchVideo(req, res, shotId) {
             }
 
             const filename = `${shot.shot_code}_clip_${clip.index}.mp4`;
-            if (Buffer.isBuffer(result.data)) {
-                saveFile(scene.project_id, 'video', filename, result.data);
-            }
+            await persistProviderMedia(scene.project_id, 'video', filename, result.data, { serveDir: 'videos' });
             clip.clip_url = getFileUrl('video', scene.project_id, filename);
             clipResults.push({ index: clip.index, status: 'complete', clip_url: clip.clip_url });
         } catch (err) {
@@ -494,10 +512,8 @@ async function stitchVideo(req, res, shotId) {
         const stitchResult = await callGridlight(STITCH_ENDPOINT, stitchPayload);
 
         const filename = `${shot.shot_code}_stitched.mp4`;
-        let filePath = '';
-        if (stitchResult.ok && Buffer.isBuffer(stitchResult.data)) {
-            filePath = saveFile(scene.project_id, 'video', filename, stitchResult.data);
-        }
+        if (!stitchResult.ok) throw new Error(stitchResult.error || 'stitch failed');
+        const filePath = await persistProviderMedia(scene.project_id, 'video', filename, stitchResult.data, { serveDir: 'videos' });
 
         const assetId = generateId();
         db.prepare(
