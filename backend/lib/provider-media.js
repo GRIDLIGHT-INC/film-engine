@@ -25,7 +25,7 @@ const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('./gridlight-client');
 const { saveFile } = require('./file-storage');
 
 // Single-value URL fields, most specific first.
-const URL_FIELDS = ['video_url', 'audio_url', 'image_url', 'file_url', 'output_url', 'url'];
+const URL_FIELDS = ['video_url', 'audio_url', 'image_url', 'model_url', 'file_url', 'output_url', 'url'];
 // Array forms (Gridlight's /image returns image_urls).
 const URL_ARRAY_FIELDS = ['image_urls', 'video_urls', 'audio_urls'];
 

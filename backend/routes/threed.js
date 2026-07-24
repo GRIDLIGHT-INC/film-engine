@@ -22,6 +22,7 @@ const fs = require('fs');
 const { db, generateId } = require('../db/database');
 const { callGridlight, relayGridlightSSE, serviceUnavailableError, THREED_ENDPOINTS } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, getFilePath, ensureDir, serveFile } = require('../lib/file-storage');
+const { persistProviderMedia } = require('../lib/provider-media');
 const {
     normalizeSubject,
     build3DPayload,
@@ -114,21 +115,23 @@ function loadSubject(kind, id) {
 }
 
 /**
- * Persist a completed model: write the binary (if returned inline), register a
+ * Persist a completed model: write the mesh to local storage, register a
  * film_assets row (asset_type='other', metadata.kind discriminator), and link
  * it back to the job.
- * @returns {{assetId:string, filePath:string, modelUrl:string, filename:string}}
+ *
+ * The service may answer inline binary or `{ model_url }`. Storing the URL
+ * left no mesh on disk, so `GET /film/3d/...` 404'd and bundles had nothing to
+ * copy; persistProviderMedia downloads it. It throws when the mesh can't be
+ * stored — every caller is inside a try/catch that marks the job failed, which
+ * is the right outcome rather than recording a model that isn't there.
+ *
+ * @returns {Promise<{assetId:string, filePath:string, modelUrl:string, filename:string}>}
  */
-function registerModel(projectId, subject, kind, format, data, jobId, metaKind) {
+async function registerModel(projectId, subject, kind, format, data, jobId, metaKind) {
     const filename = `${safeName(subject.name)}.${format}`;
     ensureDir(projectId, SUBDIR);
 
-    let filePath = '';
-    if (Buffer.isBuffer(data)) {
-        filePath = saveFile(projectId, SUBDIR, filename, data);
-    } else if (data && (data.model_url || data.url)) {
-        filePath = data.model_url || data.url;
-    }
+    const filePath = await persistProviderMedia(projectId, SUBDIR, filename, data);
 
     const assetId = generateId();
     const metadata = {
@@ -278,7 +281,7 @@ async function runGenerateSync(res, endpoint, payload, ctx) {
             });
         }
 
-        const reg = registerModel(ctx.projectId, ctx.subject, ctx.kind, ctx.format, result.data, ctx.jobId, ctx.metaKind);
+        const reg = await registerModel(ctx.projectId, ctx.subject, ctx.kind, ctx.format, result.data, ctx.jobId, ctx.metaKind);
         db.prepare('UPDATE film_3d_jobs SET status = ? WHERE id = ?').run('complete', ctx.jobId);
 
         return json(res, 200, {
@@ -306,12 +309,16 @@ async function runGenerateStream(res, endpoint, payload, ctx) {
     sendEvent({ type: 'status', phase: 'starting', job_id: ctx.jobId, subject_id: ctx.subject.id });
 
     try {
+        // The SSE relay invokes onComplete synchronously, so the mesh download
+        // can't happen inside it. Capture the payload and persist once the
+        // stream resolves — the response is still open, so the complete event
+        // is emitted in the same order the client expects.
+        let completedData = null;
+
         const { ok, error } = await relayGridlightSSE(endpoint, payload, res, {
             onComplete: (data) => {
                 if (clientGone) return;
-                const reg = registerModel(ctx.projectId, ctx.subject, ctx.kind, ctx.format, data, ctx.jobId, ctx.metaKind);
-                db.prepare('UPDATE film_3d_jobs SET status = ? WHERE id = ?').run('complete', ctx.jobId);
-                sendEvent({ type: 'complete', asset_id: reg.assetId, model_url: reg.modelUrl, format: ctx.format });
+                completedData = data;
             },
             onError: (data) => {
                 db.prepare('UPDATE film_3d_jobs SET status = ?, error_message = ? WHERE id = ?')
@@ -322,6 +329,16 @@ async function runGenerateStream(res, endpoint, payload, ctx) {
         if (!ok && !clientGone) {
             sendEvent({ type: 'error', error: error || '3D generation failed' });
             db.prepare('UPDATE film_3d_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', error || 'failed', ctx.jobId);
+        } else if (completedData && !clientGone) {
+            try {
+                const reg = await registerModel(ctx.projectId, ctx.subject, ctx.kind, ctx.format, completedData, ctx.jobId, ctx.metaKind);
+                db.prepare('UPDATE film_3d_jobs SET status = ? WHERE id = ?').run('complete', ctx.jobId);
+                sendEvent({ type: 'complete', asset_id: reg.assetId, model_url: reg.modelUrl, format: ctx.format });
+            } catch (err) {
+                db.prepare('UPDATE film_3d_jobs SET status = ?, error_message = ? WHERE id = ?')
+                    .run('failed', `mesh not stored: ${err.message}`, ctx.jobId);
+                sendEvent({ type: 'error', error: `3D model generated but could not be stored: ${err.message}` });
+            }
         }
     } catch (err) {
         sendEvent({ type: 'error', error: err.message });
@@ -376,7 +393,7 @@ async function meshOp(req, res, assetId, op) {
         }
 
         const subject = { id: asset.character_id, name: (asset.file_name || 'model').replace(/\.[^.]+$/, '') + `_${genType}` };
-        const reg = registerModel(asset.project_id, subject, meta.subject_kind || 'character', format, result.data, jobId, metaKind);
+        const reg = await registerModel(asset.project_id, subject, meta.subject_kind || 'character', format, result.data, jobId, metaKind);
         db.prepare('UPDATE film_3d_jobs SET status = ? WHERE id = ?').run('complete', jobId);
 
         return json(res, 200, {
@@ -472,7 +489,7 @@ async function batchModelsStream(req, res, projectId) {
             const result = await callGridlight(THREED_ENDPOINTS.generate, payload);
             if (!result.ok) throw new Error(result.error);
 
-            const reg = registerModel(projectId, subject, s.kind, format, result.data, jobId, 'model_3d');
+            const reg = await registerModel(projectId, subject, s.kind, format, result.data, jobId, 'model_3d');
             db.prepare('UPDATE film_3d_jobs SET status = ? WHERE id = ?').run('complete', jobId);
             sendEvent({ type: 'subject_complete', kind: s.kind, id: s.id, asset_id: reg.assetId, model_url: reg.modelUrl });
             completed++;

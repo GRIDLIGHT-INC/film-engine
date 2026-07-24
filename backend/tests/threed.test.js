@@ -64,6 +64,13 @@ describe('3D Integration (mock Gridlight)', () => {
 
         // ── In-process mock Gridlight gateway ──────────────────────────
         mockGridlight = http.createServer((req, res) => {
+            // Serving endpoint for meshes the generation calls point at. The real
+            // gateway returns bytes here; a model_url response is only useful if
+            // Film Engine downloads it.
+            if (req.method === 'GET' && (req.url || '').startsWith('/models/')) {
+                res.writeHead(200, { 'Content-Type': 'model/gltf-binary' });
+                return res.end(Buffer.from('glTF-FAKE-BINARY-DATA'));
+            }
             let raw = '';
             req.on('data', c => raw += c);
             req.on('end', () => {
@@ -83,7 +90,7 @@ describe('3D Integration (mock Gridlight)', () => {
                 if (reqBody.stream === true) {
                     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
                     res.write('data: ' + JSON.stringify({ event: 'progress', pct: 50 }) + '\n\n');
-                    res.write('data: ' + JSON.stringify({ event: 'complete', model_url: 'http://cdn.example/x.glb' }) + '\n\n');
+                    res.write('data: ' + JSON.stringify({ event: 'complete', model_url: `http://${req.headers.host}/models/x.glb` }) + '\n\n');
                     return res.end();
                 }
                 if (mockMode === 'job') {
@@ -92,7 +99,7 @@ describe('3D Integration (mock Gridlight)', () => {
                 }
                 if (mockMode === 'url') {
                     res.writeHead(200, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ model_url: 'http://cdn.example/x.glb' }));
+                    return res.end(JSON.stringify({ model_url: `http://${req.headers.host}/models/x.glb` }));
                 }
                 // default: inline binary mesh
                 res.writeHead(200, { 'Content-Type': 'model/gltf-binary' });
@@ -193,12 +200,29 @@ describe('3D Integration (mock Gridlight)', () => {
     });
 
     // ── model_url response ────────────────────────────────────────────
-    it('accepts a model_url JSON response', async () => {
+    // A model_url response must be downloaded, not just recorded — otherwise the
+    // mesh lives only on the gateway, /film/3d/... 404s, and bundles have
+    // nothing to copy.
+    it('downloads the mesh when the service returns a model_url', async () => {
         mockMode = 'url';
+        // Clear the mesh an earlier binary-mode test wrote for this same
+        // character/filename, so passing here proves THIS run downloaded it
+        // rather than inheriting a stale file.
+        const stale = path.join(TEST_DIR, '3d', projectId, 'Jax.glb');
+        try { fs.rmSync(stale, { force: true }); } catch { /* ignore */ }
+
         const res = await request(`/film/characters/${characterId}/model/generate`, { method: 'POST', body: {} });
         assert.equal(res.status, 200);
         assert.equal(res.data.status, 'complete');
         assert.ok(res.data.asset_id);
+
+        const served = await request(res.data.model_url);
+        assert.equal(served.status, 200, 'the model_url handed back must not 404');
+        assert.match(served.raw, /glTF-FAKE-BINARY-DATA/);
+
+        const list = await request(`/film/projects/${projectId}/models`);
+        const asset = list.data.models.find(m => m.asset_id === res.data.asset_id);
+        assert.ok(asset, 'expected the model asset to be listed');
     });
 
     // ── Upstream error handling ───────────────────────────────────────
