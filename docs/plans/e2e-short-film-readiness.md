@@ -31,7 +31,7 @@ node --test tests/video-gen.test.js tests/providers-elevenlabs.test.js tests/mus
 
 Claude then live-tested Codex's central Premiere-path finding against the scratch project and reproduced it. After Manny clarified that Gridlight is local and easy to run, Claude also tested Film Engine against a mock gateway shaped like `GRIDLIGHT_API_REFERENCE.md`: generation endpoints returned JSON URLs, not binary. That stronger test showed video and music return success while writing no local media files; voice followed the same code path but was not measured because the demo shot used in that run had no dialogue.
 
-Post-audit update: commit `24adb67` fixed that media persistence class across `video-gen`, `voice`, `music-gen`, `lipsync`, `post-production`, `characters`, and `locations`, added shared `backend/lib/provider-media.js`, normalized NLE file URLs in `backend/lib/nle-export.js`, and added regression coverage in `backend/tests/video-gen.test.js`. Claude verified the full chain against the documented-shape gateway: `video_raw`, `video_final`, `audio_music`, storyboards, character sheets, and reference images landed on disk with absolute paths; `/film/video/...` playback returned 200; Premiere XML `<pathurl>file:///private/.../SC01-SH01.mp4</pathurl>` resolved to an existing file. Full suite after the fix: 669 passing, 0 failing.
+Post-audit update: commit `24adb67` fixed that media persistence class across `video-gen`, `voice`, `music-gen`, `lipsync`, `post-production`, `characters`, and `locations`, added shared `backend/lib/provider-media.js`, normalized NLE file URLs in `backend/lib/nle-export.js`, and added regression coverage in `backend/tests/video-gen.test.js`. Claude verified the full chain against the documented-shape gateway: `video_raw`, `video_final`, `audio_music`, storyboards, character sheets, and reference images landed on disk with absolute paths; `/film/video/...` playback returned 200; Premiere XML `<pathurl>file:///private/.../SC01-SH01.mp4</pathurl>` resolved to an existing file. Commit `83ff9c7` then closed the remaining provider URL instance in `threed.js`: documented `{ model_url }` responses now persist meshes locally, and `/film/3d/...` playback verified 200. Full suite after both fixes: 669 passing, 0 failing.
 
 ## Readiness Matrix
 
@@ -156,7 +156,7 @@ The foundation is real:
 - Project creation, script versioning, Fountain parsing, scene extraction, and screenplay statistics work offline.
 - The prose conversion UI is purpose-built and supports chunking, context overlap, progress, and ETA.
 - The built-in **Load Demo Project** path works offline and creates a populated project with 7 scenes, 14 shots, 4 characters, 4 locations, 8 props, 3 acts, and 5 milestones. This is the best current way to evaluate the downstream pipeline without Gridlight, but it is not a path from the user's own story to shots.
-- The backend has standalone routes for video, voice, lipsync, music, SFX, ambient, post, subtitles, QA, NLE export, and project bundles. After `24adb67`, documented Gridlight URL responses persist locally for the main timeline media path.
+- The backend has standalone routes for video, voice, lipsync, music, SFX, ambient, post, 3D, subtitles, QA, NLE export, and project bundles. After `24adb67` and `83ff9c7`, documented Gridlight URL responses persist locally across the known media/model routes.
 - Focused backend tests for the picture-to-Premiere half pass against mocks.
 - FCPXML, EDL, and Premiere endpoints return 200 on a real project, but only EDL verified as usable because it carries edit structure without depending on broken media paths.
 - The **EDL export is usable today** for edit structure. On the demo project it produced correct title, non-drop-frame mode, event timecodes, clip names, and scene comments. EDL does not carry media paths like XML, so it sidesteps the broken pathurl class and can be used to conform media manually in Premiere.
@@ -174,7 +174,6 @@ The foundation is real:
 9. **Project-wide guided flow** for voice, lipsync, post, SFX, QA, and export preflight.
 10. **FDX/SRT export fixes** so advertised delivery buttons actually work.
 11. **Silent data-loss fixes** for script format handling and scene-card unknown keys.
-12. **Remaining provider URL audit** for `threed.js`, which still has model URL handling that was not changed in `24adb67`.
 
 ## Practical Answer For Manny
 

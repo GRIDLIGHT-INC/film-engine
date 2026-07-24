@@ -94,14 +94,14 @@ The Premiere XML export can therefore be structurally valid but editorially unus
 
 The through-line before `24adb67` was that generation could return success while media was not local, and XML export emitted whatever was in `file_path`, or nothing when no asset existed. It was correct only by accident, when the asset happened to have been saved to a real absolute path, and it never failed loudly.
 
-Commit `24adb67` added `backend/lib/provider-media.js` and routed provider-returned media through it across `video-gen`, `voice`, `music-gen`, `lipsync`, `post-production`, `characters`, and `locations`. It also fixed NLE URL formatting in `backend/lib/nle-export.js`, including the four-slash `file:////private/...` shape that surfaced once `file_path` became a real absolute POSIX path, and changed FCPXML from bare paths to file URLs.
+Commit `24adb67` added `backend/lib/provider-media.js` and routed provider-returned media through it across `video-gen`, `voice`, `music-gen`, `lipsync`, `post-production`, `characters`, and `locations`. It also fixed NLE URL formatting in `backend/lib/nle-export.js`, including the four-slash `file:////private/...` shape that surfaced once `file_path` became a real absolute POSIX path, and changed FCPXML from bare paths to file URLs. Commit `83ff9c7` then closed the remaining known provider URL instance in `threed.js`: documented `{ model_url }` responses now persist meshes locally through the same helper, and `/film/3d/...` playback verified 200.
 
 Two additional bugs were found and fixed in that same commit:
 
 - `locations.js` handled `image_url`, but documented Gridlight `/image` returns `image_urls`, so location/prop reference image paths could be stored empty.
 - `characters.js` refsheet generation inserted a `render_ledger` row with unsupported `step='refsheet'` and a character id in `shot_id`, which crashed the server process on every refsheet request when verified against the pre-fix code. The fix removed that duplicate ledger write and relies on `film_refsheet_jobs`.
 
-The remaining known instance of this provider URL pattern is `threed.js` model URL handling, which was deliberately left for a separate pass because it has async job-handoff behavior.
+The async 3D job-handoff branch remains separate and untouched; the documented `{ model_url }` response path is now covered.
 
 Scene-level audio is also underrepresented in NLE exports. FCPXML/Premiere XML group assets by `shot_id`, but music and ambient generation stores those assets with `scene_id`; those scene-level score/ambient files are not placed as timeline audio lanes unless separately attached to shots.
 
@@ -140,7 +140,6 @@ Post-fix verification for `24adb67`: full suite 669 passing, 0 failing. The new 
 8. **Subtitle export mismatch**: Export page calls `/export/srt`, but `backend/routes/nle-export.js` supports `fcpxml`, `edl`, `premiere`, and `fdx`; SRT lives in subtitles/music routes.
 9. **FDX export 500s**: the route registers unsupported `asset_type='fdx'` and trips the `film_assets` CHECK constraint.
 10. **QA is not a hard gate**: QA exists but does not block export or warn at the Send to Premiere button.
-11. **Remaining provider URL audit**: `threed.js` still has model URL handling that was not changed in `24adb67`.
 
 ## Shortest Path To Turn This Into A Real Same-Day Workflow
 
