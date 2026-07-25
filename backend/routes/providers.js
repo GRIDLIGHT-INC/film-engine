@@ -78,6 +78,7 @@ function handleProviders(req, res, urlParts, query) {
             if (sub === 'connect' && req.method === 'GET') return connectProvider(req, res, provider);
             if (sub === 'callback' && req.method === 'GET') return oauthCallback(req, res, provider, query);
             if (sub === 'disconnect' && req.method === 'POST') return disconnectProvider(res, provider);
+            if (sub === 'release-client' && req.method === 'POST') return releaseRegisteredClient(res, provider);
             if (sub === 'search' && req.method === 'GET') return sourceSearch(res, provider, query);
             if (sub === 'license' && req.method === 'POST') return sourceLicense(req, res, provider);
             return json(res, 405, { error: 'Method not allowed' });
@@ -223,12 +224,21 @@ async function connectProvider(req, res, provider) {
                 clientId = reg.client_id;
                 clientSecret = reg.client_secret || '';
                 // Persist the registered client immediately so we reuse it next
-                // time instead of creating another entity.
-                saveMeta(provider, { ...existing, client_id: clientId, client_secret: clientSecret });
+                // time instead of creating another entity — and keep the RFC
+                // 7592 management credentials, which are the only way to delete
+                // this client later and free the slot it occupies. Without them
+                // a capped account has no self-serve path back.
+                saveMeta(provider, {
+                    ...existing,
+                    client_id: clientId,
+                    client_secret: clientSecret,
+                    registration_access_token: reg.registration_access_token || '',
+                    registration_client_uri: reg.registration_client_uri || '',
+                });
             } catch (regErr) {
                 if (/too_many_entities|reached the limit|\b403\b/.test(regErr.message)) {
                     return json(res, 409, {
-                        error: 'Artlist accepted OAuth discovery, but dynamic client registration is capped for your Artlist account (too_many_entities). Artlist does not currently document a way to delete old OAuth clients in-app. Options: (1) paste an existing Artlist OAuth Client ID/Secret under "Advanced" to skip registration, or (2) contact Artlist support and ask them to reset/raise the dynamic client-registration limit for auth.artlist.io/oidc/register.',
+                        error: 'Artlist accepted OAuth discovery, but dynamic client registration is capped for your account (too_many_entities). Options, in order of least effort: (1) if Film Engine registered a client here before, use "Release registered client" to delete it and free a slot, then reconnect; (2) paste an existing Artlist OAuth Client ID/Secret under "Advanced" to skip registration entirely; (3) ask Artlist to reset the client-registration limit for auth.artlist.io/oidc/register. Note that clients registered before Film Engine started storing management tokens cannot be released automatically.',
                         code: 'too_many_entities',
                     });
                 }
@@ -301,6 +311,48 @@ async function oauthCallback(req, res, provider, query) {
 function disconnectProvider(res, provider) {
     db.prepare('DELETE FROM film_provider_credentials WHERE provider = ?').run(provider);
     return json(res, 200, { provider, credentials: credStatus(provider) });
+}
+
+/**
+ * Release the OAuth client Film Engine registered with this provider.
+ *
+ * Distinct from disconnect: disconnect forgets our copy of the credentials,
+ * which leaves the client still registered on the provider's side, still
+ * consuming one of the account's limited slots. This deletes it there too.
+ *
+ * That distinction is the whole point — an account can hit a registration cap
+ * purely from repeated connect attempts, with no way to see or clear the
+ * clients piling up.
+ */
+async function releaseRegisteredClient(res, provider) {
+    const meta = getMeta(provider);
+    if (!meta.client_id) {
+        return json(res, 400, { error: 'No registered client is stored for this provider.' });
+    }
+    if (!meta.registration_client_uri || !meta.registration_access_token) {
+        // Clients registered before we started keeping management tokens are
+        // unreachable. Say so plainly instead of pretending to release them.
+        return json(res, 409, {
+            error: 'This client was registered before Film Engine stored management tokens, so it cannot be deleted remotely. Paste an existing OAuth client under Advanced, or ask the provider to reset your registration limit.',
+            client_id: meta.client_id,
+        });
+    }
+
+    const result = await oauth.deregisterClient(meta.registration_client_uri, meta.registration_access_token);
+    if (!result.ok) {
+        return json(res, 502, { error: result.error, client_id: meta.client_id });
+    }
+
+    // Drop our copy only after the provider confirmed — otherwise a failed
+    // delete would leave an orphaned client we can no longer address.
+    const { client_id, client_secret, registration_access_token, registration_client_uri, ...rest } = meta;
+    saveMeta(provider, rest);
+
+    return json(res, 200, {
+        provider,
+        released: true,
+        message: 'Registered client deleted at the provider. A registration slot is now free — try connecting again.',
+    });
 }
 
 // -- Source adapters (search/license — e.g. Artlist catalog) --------------

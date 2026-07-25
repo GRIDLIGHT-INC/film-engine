@@ -74,7 +74,16 @@ async function discover(mcpUrl) {
     return meta;
 }
 
-/** RFC 7591 dynamic client registration (if supported). Returns { client_id, client_secret? }. */
+/**
+ * RFC 7591 dynamic client registration (if supported).
+ * Returns { client_id, client_secret?, registration_access_token?, registration_client_uri? }.
+ *
+ * The last two are what RFC 7592 needs to read or DELETE the client later.
+ * Providers cap how many clients an account may register — Artlist rejects
+ * further attempts with `too_many_entities` and offers no in-app cleanup — so
+ * keeping these is the difference between being able to release a slot and
+ * having to ask the provider to reset the account.
+ */
 async function registerClient(registrationEndpoint, redirectUri, clientName) {
     const body = {
         client_name: clientName || 'Film Engine',
@@ -88,6 +97,34 @@ async function registerClient(registrationEndpoint, redirectUri, clientName) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
+}
+
+/**
+ * RFC 7592 client deregistration. Releases the slot the client occupies.
+ *
+ * Returns { ok } on success. Providers may answer 204, 200, or 404 (already
+ * gone) — all count as released. Anything else is surfaced so the caller can
+ * tell the user what happened rather than silently believing it worked.
+ */
+async function deregisterClient(registrationClientUri, registrationAccessToken) {
+    if (!registrationClientUri || !registrationAccessToken) {
+        return { ok: false, error: 'No stored client-management credentials — this client cannot be deleted remotely.' };
+    }
+    let response;
+    try {
+        response = await fetch(registrationClientUri, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${registrationAccessToken}` },
+        });
+    } catch (err) {
+        return { ok: false, error: `Deregistration request failed: ${err.message}` };
+    }
+    if (response.status === 204 || response.status === 200 || response.status === 404) {
+        return { ok: true, status: response.status };
+    }
+    let detail = '';
+    try { detail = (await response.text()).slice(0, 300); } catch (_) { /* body optional */ }
+    return { ok: false, status: response.status, error: `Provider refused deregistration (${response.status})${detail ? ': ' + detail : ''}` };
 }
 
 /** Build the authorize URL the user opens in the browser. */
@@ -133,4 +170,4 @@ async function refreshToken(meta, { clientId, clientSecret, refresh_token }) {
     });
 }
 
-module.exports = { makePkce, discover, registerClient, buildAuthorizeUrl, exchangeCode, refreshToken, base64url, originOf };
+module.exports = { makePkce, discover, registerClient, deregisterClient, buildAuthorizeUrl, exchangeCode, refreshToken, base64url, originOf };
