@@ -3102,6 +3102,198 @@
             vertical-align: middle;
             margin-left: 4px;
         }
+
+        /* Production Guide */
+        .guide-btn {
+            margin: 8px 12px 10px;
+            justify-content: center;
+        }
+        .page-help-btn {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            justify-content: center;
+            border-radius: 50%;
+            font-weight: 700;
+        }
+        .guide-modal {
+            max-width: 1040px;
+        }
+        .guide-toolbar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .guide-search {
+            flex: 1 1 280px;
+        }
+        .guide-tabs {
+            display: flex;
+            gap: 4px;
+            background: var(--gl-bg-surface);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
+            padding: 4px;
+        }
+        .guide-tab {
+            padding: 7px 12px;
+            border: none;
+            background: transparent;
+            color: var(--gl-text-muted);
+            border-radius: var(--gl-radius-md);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        .guide-tab.active {
+            background: rgba(233,30,99,0.18);
+            color: var(--gl-text-primary);
+        }
+        .guide-layout {
+            display: grid;
+            grid-template-columns: 220px minmax(0, 1fr);
+            gap: 16px;
+        }
+        .guide-index {
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
+            overflow: hidden;
+            max-height: 58vh;
+            overflow-y: auto;
+        }
+        .guide-index button {
+            display: block;
+            width: 100%;
+            border: 0;
+            background: transparent;
+            color: var(--gl-text-muted);
+            text-align: left;
+            padding: 9px 12px;
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--gl-border-subtle);
+        }
+        .guide-index button:hover,
+        .guide-index button.active {
+            color: var(--gl-text-primary);
+            background: rgba(255,255,255,0.05);
+        }
+        .guide-content {
+            max-height: 58vh;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .guide-section-card {
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
+            padding: 16px;
+            margin-bottom: 12px;
+            background: rgba(255,255,255,0.025);
+        }
+        .guide-section-card h4 {
+            font-size: 15px;
+            margin-bottom: 8px;
+        }
+        .guide-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .guide-meta {
+            background: rgba(255,255,255,0.035);
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-md);
+            padding: 10px;
+            min-height: 78px;
+        }
+        .guide-meta-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--gl-text-muted);
+            margin-bottom: 5px;
+            font-weight: 700;
+        }
+        .guide-note {
+            margin-top: 12px;
+            border: 1px solid rgba(245,158,11,0.28);
+            background: rgba(245,158,11,0.08);
+            color: #fbbf24;
+            border-radius: var(--gl-radius-md);
+            padding: 10px 12px;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+        .guide-next-link {
+            border: 0;
+            background: none;
+            color: var(--gl-brand-pink);
+            padding: 0;
+            font: inherit;
+            cursor: pointer;
+            text-align: left;
+        }
+        .guide-group-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--gl-text-muted);
+            font-weight: 700;
+            margin: 16px 0 8px;
+        }
+        .guide-gap-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+        }
+        .guide-gap-card {
+            border: 1px solid var(--gl-border-subtle);
+            border-radius: var(--gl-radius-lg);
+            padding: 12px;
+            background: rgba(255,255,255,0.025);
+        }
+        .guide-gap-card strong {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+        .guide-gap-card .badge {
+            margin-bottom: 8px;
+            display: inline-block;
+        }
+        .onboarding-stepper {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 14px;
+        }
+        .onboarding-dot {
+            height: 4px;
+            flex: 1;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.12);
+        }
+        .onboarding-dot.active {
+            background: var(--gl-brand-pink);
+        }
+        .onboarding-actions {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 18px;
+        }
+        @media (max-width: 820px) {
+            .guide-layout,
+            .guide-meta-grid {
+                grid-template-columns: 1fr;
+            }
+            .guide-index,
+            .guide-content {
+                max-height: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -3113,6 +3305,7 @@
             <h1>Film Engine</h1>
             <p>AI Production Pipeline</p>
             <button class="glossary-btn" onclick="showModal('glossaryModal')">&#128218; Glossary</button>
+            <button class="btn btn-secondary btn-sm guide-btn" onclick="openProductionGuide()">? Production Guide</button>
         </div>
 
         <!-- State 1: Project List Mode -->
@@ -3211,6 +3404,10 @@
                 </button>
                 <button class="nav-item" data-page="settings" onclick="navigateTo('settings')" data-tooltip="Resolution, frame rate, aspect ratio, color space, and delivery presets" data-tooltip-pos="right">
                     <span class="nav-icon">&#9881;</span> Settings
+                </button>
+                <div class="sidebar-divider"></div>
+                <button class="nav-item" onclick="openProductionGuide()" data-tooltip="Open the full project guide and professional readiness checklist" data-tooltip-pos="right">
+                    <span class="nav-icon">?</span> Guide
                 </button>
             </div>
         </div>
@@ -4753,6 +4950,48 @@
         </div>
     </div>
 
+    <!-- Production Guide Modal -->
+    <div class="modal-overlay" id="productionGuideModal">
+        <div class="modal guide-modal">
+            <div class="modal-header">
+                <h3>Production Guide</h3>
+                <button class="modal-close" onclick="closeProductionGuide()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="productionGuideIntro"></div>
+                <div class="guide-toolbar">
+                    <input type="text" class="guide-search" id="productionGuideSearch" placeholder="Search sections, workflow, prerequisites..." oninput="renderProductionGuide()">
+                    <div class="guide-tabs">
+                        <button class="guide-tab active" data-guide-tab="sections" onclick="setGuideTab('sections')">Sections</button>
+                        <button class="guide-tab" data-guide-tab="readiness" onclick="setGuideTab('readiness')">Readiness</button>
+                    </div>
+                </div>
+                <div id="productionGuideBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- First-open Onboarding Modal -->
+    <div class="modal-overlay" id="projectOnboardingModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Project Guide</h3>
+                <button class="modal-close" onclick="dismissProjectOnboarding()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="onboarding-stepper" id="onboardingStepper"></div>
+                <div id="onboardingContent"></div>
+                <div class="onboarding-actions">
+                    <button class="btn btn-secondary" onclick="dismissProjectOnboarding()">Skip</button>
+                    <div class="btn-row">
+                        <button class="btn btn-secondary" onclick="previousOnboardingStep()">Back</button>
+                        <button class="btn btn-primary" id="onboardingNextBtn" onclick="nextOnboardingStep()">Next</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ════════════════════════════════════════════════════════════
          JAVASCRIPT
          ════════════════════════════════════════════════════════════ -->
@@ -4782,6 +5021,669 @@
         assetFilter: '',
         propFilter: '',
     };
+
+    const GUIDE_PAGE_ORDER = [
+        'dashboard', 'screenplay', 'scenes', 'shotboard', 'storyboard', 'acts',
+        'characters', 'locations', 'props', 'assets', 'threed', 'videoshots',
+        'music', 'musiccues', 'colorgrading', 'milestones', 'notes', 'renderhistory',
+        'continuity', 'consistency', 'budget', 'exportpage', 'pipeline', 'settings',
+    ];
+
+    const SECTION_GUIDE = {
+
+      // ── Production ────────────────────────────────────────────────────────────
+      dashboard: {
+        title: 'Dashboard', icon: '&#128202;', group: 'Production', stage: 'orient', order: 1,
+        tooltip: 'Project overview: shot progress, status board, and jump-off points',
+        purpose: 'Your production at a glance. Shows how many shots exist, how far each has moved through the pipeline, and what is blocking the finish.',
+        does: [
+          'Shot progress by production stage',
+          'Status board grouped by scene',
+          'Current production status in the project state machine',
+          'Quick navigation into whatever needs attention'
+        ],
+        needs: ['A project. Everything else fills in as you work.'],
+        next: ['screenplay', 'shotboard'],
+        pro: 'StudioBinder / Yamdu project dashboard'
+      },
+
+      screenplay: {
+        title: 'Screenplay', icon: '&#128221;', group: 'Production', stage: 'story', order: 2,
+        tooltip: 'Write or import your script in Fountain, with an AI writing assistant',
+        purpose: 'Where the film starts. A full screenplay editor using Fountain — the plain-text industry format — with import from Final Draft and AI assistance for brainstorming, drafting, and rewriting.',
+        does: [
+          'Write in industry-standard screenplay format with live element styling',
+          'Import Final Draft (.fdx) or paste prose and convert it to a screenplay',
+          'AI assistant in brainstorm / write / rewrite / convert modes',
+          'Version history, revision tracking, and inline comments',
+          'Export to Fountain, FDX, plain text, or PDF'
+        ],
+        needs: ['Nothing. This is the front door — start here on a new project.'],
+        next: ['scenes', 'acts'],
+        pro: 'Final Draft / Celtx / WriterDuet'
+      },
+
+      scenes: {
+        title: 'Scenes', icon: '&#127916;', group: 'Production', stage: 'story', order: 3,
+        tooltip: 'Scenes parsed out of your screenplay, with INT/EXT, location, and time of day',
+        purpose: 'The bridge from script to production. Every INT./EXT. slugline in your screenplay becomes a scene record that the rest of the app hangs work off.',
+        does: [
+          'Auto-extracted scene list from the current screenplay version',
+          'Interior/exterior, location, and time-of-day per scene',
+          'The anchor that shots, music cues, and ambient audio attach to'
+        ],
+        needs: ['A screenplay with properly formatted scene headings (INT./EXT.).'],
+        next: ['shotboard', 'acts'],
+        pro: 'Script breakdown in StudioBinder / Movie Magic'
+      },
+
+      shotboard: {
+        title: 'Shot Board', icon: '&#127919;', group: 'Production', stage: 'plan', order: 4,
+        tooltip: 'Kanban board of every shot, organized by scene, each with a scene card',
+        purpose: 'Your shot list. Break each scene into the individual shots you will actually generate, and describe each one with a scene card — the structured YAML that drives every downstream AI generation.',
+        does: [
+          'Create and order shots within each scene',
+          'Write scene cards: camera, lens, movement, lighting, characters, style',
+          'Drag to reorder; set per-shot in/out transitions',
+          'Track each shot through its production stage'
+        ],
+        needs: ['Scenes extracted from your screenplay.'],
+        next: ['storyboard', 'consistency'],
+        pro: 'StudioBinder shot lists / ShotGrid shot tracking',
+        note: 'The scene card is the most important thing you write in this app. Every image, video, and audio prompt downstream is built from it — vague cards produce vague films.'
+      },
+
+      storyboard: {
+        title: 'Storyboard', icon: '&#128444;', group: 'Production', stage: 'previs', order: 5,
+        tooltip: 'AI-generated keyframes for each shot — your visual proof before video',
+        purpose: 'Turns scene cards into actual images. Each shot gets a keyframe that both stands in as your storyboard and becomes the first frame the video generator works from.',
+        does: [
+          'Generate keyframes per shot, per scene, or across the whole project',
+          'Style presets (cinematic, noir, anime, documentary, horror, fantasy)',
+          'Style lock — deterministic seed variation so a scene stays visually coherent',
+          'Regenerate any single shot without disturbing the rest'
+        ],
+        needs: ['Shots with scene cards. Locked character identities give far better results.'],
+        next: ['videoshots', 'continuity'],
+        pro: 'Storyboard Pro / Boords / previs department',
+        note: 'Cheap to iterate here, expensive to fix later. Get the keyframe right before you spend on video.'
+      },
+
+      acts: {
+        title: 'Acts', icon: '&#127917;', group: 'Production', stage: 'story', order: 6,
+        tooltip: 'Group scenes into acts and sequences to see your narrative structure',
+        purpose: 'Structural view of the film. Assign scenes to acts or sequences so you can see pacing and shape rather than a flat list of slugs.',
+        does: [
+          'Create acts and sequences',
+          'Drag scenes between acts; keep an unassigned pool',
+          'Read your structure as a whole'
+        ],
+        needs: ['Scenes.'],
+        next: ['shotboard', 'milestones'],
+        pro: 'Save the Cat / Story structure boards in Celtx'
+      },
+
+      // ── Elements ──────────────────────────────────────────────────────────────
+      characters: {
+        title: 'Characters', icon: '&#128100;', group: 'Elements', stage: 'design', order: 7,
+        tooltip: 'Your cast: appearance prompts, identity tokens, voices, and reference sheets',
+        purpose: 'Virtual casting. Each character carries the appearance description, identity tokens, and voice profile that keep them recognizably the same person in every shot.',
+        does: [
+          'Appearance prompts plus LoRA / textual-inversion tokens',
+          'Voice profiles for dialogue generation',
+          'Costumes per character',
+          'Generate front/side/back reference sheets',
+          'Generate a 3D model of the character'
+        ],
+        needs: ['Character names, which the screenplay suggests automatically.'],
+        next: ['consistency', 'storyboard'],
+        pro: 'Casting + costume department; character bibles',
+        note: 'This replaces casting. A character here is a reusable identity, not a role to be filled — and identity drift between shots is the single most common failure in AI film. Lock it in Consistency.'
+      },
+
+      locations: {
+        title: 'Locations', icon: '&#128205;', group: 'Elements', stage: 'design', order: 8,
+        tooltip: 'Environment look-development: reference images and lighting defaults per place',
+        purpose: 'Every recurring place in your film, with the visual description and lighting defaults that make it look like the same place each time you return to it.',
+        does: [
+          'Visual descriptions and reference images per location',
+          'Lighting defaults that flow into scene cards',
+          'Reuse across every scene set there'
+        ],
+        needs: ['Locations, which your scene headings suggest automatically.'],
+        next: ['consistency', 'storyboard'],
+        pro: 'Location scouting + art department reference',
+        note: 'Nothing is scouted or permitted here. A location is a look you are locking so the same room does not change shape between scenes.'
+      },
+
+      props: {
+        title: 'Props', icon: '&#127917;', group: 'Elements', stage: 'design', order: 9,
+        tooltip: 'Objects that must stay consistent across shots, with scene assignments',
+        purpose: 'The objects that carry story weight and therefore have to look identical every time they appear.',
+        does: [
+          'Prop descriptions with scene assignments',
+          'Reference images for visual continuity',
+          'Generate a 3D model of a prop'
+        ],
+        needs: ['Scenes, so props can be assigned where they appear.'],
+        next: ['threed', 'continuity'],
+        pro: 'Props department / art department breakdown',
+        note: 'No prop is sourced or built. This is a continuity register: if the gun in scene 4 must be the gun in scene 12, it goes here.'
+      },
+
+      // ── Media ─────────────────────────────────────────────────────────────────
+      assets: {
+        title: 'Assets', icon: '&#128230;', group: 'Media', stage: 'produce', order: 10,
+        tooltip: 'Registry of every media file this project has generated or imported',
+        purpose: 'The media library. Every keyframe, video clip, audio file, model, and export lands here with its type and metadata, so nothing generated is ever lost track of.',
+        does: [
+          'Browse all generated and imported media',
+          'See what each file is attached to',
+          'Track exports alongside source media'
+        ],
+        needs: ['Any generation step. It fills automatically.'],
+        next: ['videoshots', 'exportpage'],
+        pro: 'Media asset management (MAM) / ftrack asset tracking'
+      },
+
+      threed: {
+        title: '3D Models', icon: '&#129513;', group: 'Media', stage: 'design', order: 11,
+        tooltip: 'Generate 3D meshes for characters and props — text-to-mesh or image-to-mesh',
+        purpose: 'Turns characters and props into actual 3D geometry, for when a flat reference image is not enough to hold a shape steady across angles.',
+        does: [
+          'Text-to-mesh and image-to-mesh generation',
+          'Rig, retexture, and animate generated models',
+          'Batch generation across the project',
+          'Serve .glb / .gltf / .fbx / .obj / .usdz'
+        ],
+        needs: ['A character or prop to model from.'],
+        next: ['storyboard', 'assets'],
+        pro: 'Maya / Blender asset pipeline'
+      },
+
+      videoshots: {
+        title: 'Video Shots', icon: '&#127909;', group: 'Media', stage: 'produce', order: 12,
+        tooltip: 'Generate the actual moving footage per shot, then hand off to your editor',
+        purpose: 'Where your film becomes moving pictures. Each shot generates video from its keyframe and scene card, with camera movement mapped from what you wrote.',
+        does: [
+          'Generate video per shot or in batch, with live progress',
+          'Camera movement control across 18 movement types',
+          'Uses the storyboard keyframe as the starting frame',
+          'Long shots split into sub-clips and stitched back together'
+        ],
+        needs: ['Shots with keyframes. Generate storyboards first.'],
+        next: ['music', 'colorgrading'],
+        pro: 'Principal photography',
+        note: 'This is your shoot day. It is also the most expensive step — check the keyframe and lock identity before you run a batch.'
+      },
+
+      music: {
+        title: 'Music & Sound', icon: '&#127925;', group: 'Media', stage: 'produce', order: 13,
+        tooltip: 'Generate score, ambient beds, and sound effects per scene or shot',
+        purpose: 'The audio half of the film. Generates original score, location ambience, and spot effects from what each scene is doing emotionally and where it takes place.',
+        does: [
+          'Score generation driven by scene mood',
+          'Ambient beds derived from location and time of day',
+          'Sound effects per shot',
+          'Batch generation, then mix with ducking and loudness normalization'
+        ],
+        needs: ['Scenes. Shots for SFX.'],
+        next: ['musiccues', 'exportpage'],
+        pro: 'Composer + sound design + re-recording mixer'
+      },
+
+      musiccues: {
+        title: 'Music Cues', icon: '&#127925;', group: 'Media', stage: 'produce', order: 14,
+        tooltip: 'The cue sheet: every score, SFX, and ambient cue tied to its scene',
+        purpose: 'Your cue sheet. Tracks each piece of audio against the scene it plays under, including rights status for anything you did not generate.',
+        does: [
+          'List score, SFX, and ambient cues by scene',
+          'Record music rights and licensing status',
+          'Produce the cue list distribution asks for'
+        ],
+        needs: ['Generated or imported audio.'],
+        next: ['exportpage'],
+        pro: 'Music cue sheets / music supervision'
+      },
+
+      colorgrading: {
+        title: 'Color Grading', icon: '&#127912;', group: 'Media', stage: 'post', order: 15,
+        tooltip: 'LUT presets and color correction, plus shot-to-shot color matching',
+        purpose: 'The final look. Apply LUT presets and correction to shots, and match color across shots so a scene reads as one continuous piece of film.',
+        does: [
+          'LUT presets and color correction parameters',
+          'Color match across shots in a scene or the whole project',
+          'Runs alongside upscaling and face restoration in post'
+        ],
+        needs: ['Generated video.'],
+        next: ['exportpage', 'pipeline'],
+        pro: 'DaVinci Resolve color suite'
+      },
+
+      // ── Workflow ──────────────────────────────────────────────────────────────
+      milestones: {
+        title: 'Milestones', icon: '&#128203;', group: 'Workflow', stage: 'manage', order: 16,
+        tooltip: 'Production timeline with target and completion dates',
+        purpose: 'Dates and deadlines. Track the beats of the production — picture lock, sound lock, delivery — against target dates.',
+        does: ['Create milestones with target dates', 'Mark completion', 'See the timeline against today'],
+        needs: ['A project.'],
+        next: ['dashboard'],
+        pro: 'Production schedule / stripboard'
+      },
+
+      notes: {
+        title: 'Notes & Reviews', icon: '&#128221;', group: 'Workflow', stage: 'review', order: 17,
+        tooltip: 'Direction notes, revision requests, and the shot approval workflow',
+        purpose: 'The feedback loop. Leave direction on a shot, request revisions, and approve or reject work — so a shot has a defensible status rather than a vibe.',
+        does: [
+          'Direction, revision, and approval notes per shot',
+          'Approve or send a shot back for revision',
+          'Review history per shot'
+        ],
+        needs: ['Shots, ideally with generated media to react to.'],
+        next: ['shotboard', 'renderhistory'],
+        pro: 'Frame.io / ftrack review + dailies notes'
+      },
+
+      renderhistory: {
+        title: 'Render History', icon: '&#128260;', group: 'Workflow', stage: 'review', order: 18,
+        tooltip: 'Every render, with the full parameters needed to reproduce it exactly',
+        purpose: 'Reproducibility. Captures seed, sampler, steps, guidance, model hashes, LoRAs, and controlnets for every render — so a result you liked can be recreated exactly, or varied deliberately.',
+        does: [
+          'Full parameter capture per render',
+          'Locked mode for exact recreation, creative mode for variation',
+          'Version history with A/B comparison between takes',
+          'Re-render from any historical parameter set'
+        ],
+        needs: ['Any generation step.'],
+        next: ['notes', 'consistency'],
+        pro: 'VFX submission history / render farm logs',
+        note: 'This is your negative. Without it, a shot you loved and regenerated is simply gone.'
+      },
+
+      continuity: {
+        title: 'Continuity', icon: '&#128247;', group: 'Workflow', stage: 'review', order: 19,
+        tooltip: 'Reference board for visual, wardrobe, prop, and lighting continuity',
+        purpose: 'The continuity board. Pin reference images by type so you can eyeball whether wardrobe, props, and lighting actually hold across shots.',
+        does: [
+          'Reference board grouped by type: visual, wardrobe, prop, lighting',
+          'Filter and tag references',
+          'Automated continuity checks for lighting and character presence'
+        ],
+        needs: ['Generated media to compare.'],
+        next: ['consistency', 'notes'],
+        pro: 'Script supervisor / continuity photos'
+      },
+
+      consistency: {
+        title: 'Consistency', icon: '&#128274;', group: 'Workflow', stage: 'design', order: 20,
+        tooltip: 'Lock canonical identity — reference, seed, voice — so subjects never drift',
+        purpose: 'The fix for the hardest problem in AI film. Create a locked identity profile for each character, location, or prop and every generation is forced to honor it.',
+        does: [
+          'Identity profiles with canonical reference images, seed, and voice',
+          'Lock and unlock profiles',
+          'Readiness audit per shot and per project — what is not yet locked',
+          'Attach reference assets to a profile'
+        ],
+        needs: ['Characters, locations, or props to lock.'],
+        next: ['storyboard', 'videoshots'],
+        pro: 'No traditional equivalent — this is AI-native',
+        note: 'Do this BEFORE you generate at volume. Locking identity after a batch means regenerating the batch.'
+      },
+
+      budget: {
+        title: 'Budget', icon: '&#128176;', group: 'Workflow', stage: 'manage', order: 21,
+        tooltip: 'Cost per render and API call, against your limit, with forecasting',
+        purpose: 'What the film is costing. Every generation has a real API cost; this tracks spend against a limit and forecasts the finish so compute does not surprise you.',
+        does: [
+          'Spend vs limit, with a cost breakdown',
+          'Forecast to completion',
+          'Full cost ledger per render and API call',
+          'Up-front budget estimation before you start generating'
+        ],
+        needs: ['A project. Costs accrue as you generate.'],
+        next: ['dashboard'],
+        pro: 'Movie Magic Budgeting',
+        note: 'In AI film the budget is compute, not crew. The line items are tokens, seconds of video, and GPU minutes.'
+      },
+
+      // ── Delivery ──────────────────────────────────────────────────────────────
+      exportpage: {
+        title: 'Export', icon: '&#128228;', group: 'Delivery', stage: 'deliver', order: 22,
+        tooltip: 'Hand off to Premiere, Final Cut, or Resolve — FCPXML, EDL, XML, FDX',
+        purpose: 'The handoff. Builds an editable timeline your NLE understands, so the film finishes in a professional editor rather than inside this app.',
+        does: [
+          'FCPXML 1.11 for Final Cut Pro',
+          'CMX 3600 EDL with drop-frame timecode',
+          'Premiere Pro / Resolve XML',
+          'FDX screenplay export',
+          'Subtitle export as SRT or VTT, plus audio deliverables and stems'
+        ],
+        needs: ['Shots in order, ideally with generated video and audio.'],
+        next: ['settings'],
+        pro: 'Conform / turnover to editorial'
+      },
+
+      pipeline: {
+        title: 'Pipeline', icon: '&#9881;', group: 'Delivery', stage: 'produce', order: 23,
+        tooltip: 'Run the whole 9-step production chain automatically, per shot or project-wide',
+        purpose: 'Automation. Runs keyframe → video → voice → lipsync → music → SFX → ambient → post → assembly in dependency order, so you are not clicking through nine screens per shot.',
+        does: [
+          'Run the full chain for a shot, a scene, or the project',
+          'Skips steps that do not apply, such as voice on a shot with no dialogue',
+          'Retries failures with backoff; pause, resume, or cancel a run',
+          'Smart scheduling that groups steps by model to reduce GPU swapping'
+        ],
+        needs: ['Shots with scene cards. Lock identities first, and check your budget.'],
+        next: ['dashboard', 'exportpage'],
+        pro: 'Render farm / pipeline orchestration (Deadline, ftrack)',
+        note: 'The fastest way to spend money in this app. Run one shot end to end and look at it before you run the project.'
+      },
+
+      settings: {
+        title: 'Settings', icon: '&#9881;', group: 'Delivery', stage: 'orient', order: 24,
+        tooltip: 'Resolution, frame rate, aspect ratio, color space, and delivery presets',
+        purpose: 'The technical spec of your film. Set this early — resolution, frame rate, and aspect ratio flow into every generation and export downstream.',
+        does: [
+          'Resolution, frame rate, aspect ratio, and color space',
+          'Delivery presets: theatrical DCP, IMAX, streaming HD/4K, social, broadcast',
+          'Aspect ratio preview',
+          'Provider selection per capability'
+        ],
+        needs: ['Nothing. Set this first, before you generate anything.'],
+        next: ['screenplay'],
+        pro: 'Delivery specification / DIT setup',
+        note: 'Changing frame rate or aspect ratio after generating means regenerating. Decide up front.'
+      }
+    };
+
+    // ── Tour ordering ────────────────────────────────────────────────────────────
+    // The first-open tour should NOT walk all 24 in nav order — that is a slog.
+    // Walk the spine of an actual production, then point at the rest from the Guide.
+    const TOUR_SEQUENCE = [
+      'settings',     // spec first — expensive to change later
+      'screenplay',   // write it
+      'scenes',       // parse it
+      'characters',   // cast it
+      'consistency',  // lock it  ← the AI-native step people skip and regret
+      'shotboard',    // plan it
+      'storyboard',   // see it
+      'videoshots',   // shoot it
+      'music',        // score it
+      'pipeline',     // automate it
+      'budget',       // watch the spend
+      'exportpage'    // hand off
+    ];
+
+    // Completeness invariant — every nav page must be documented.
+    function auditSectionGuide() {
+      const navPages = [...document.querySelectorAll('#sidebarProjectNav .nav-item[data-page]')]
+        .map(el => el.dataset.page);
+      const missing = navPages.filter(p => !SECTION_GUIDE[p]);
+      const orphaned = Object.keys(SECTION_GUIDE).filter(k => !navPages.includes(k));
+      return { missing, orphaned, ok: !missing.length && !orphaned.length };
+    }
+
+    // Generate nav tooltips from the registry so copy can never drift.
+    function applyGuideTooltips() {
+      document.querySelectorAll('#sidebarProjectNav .nav-item[data-page]').forEach(el => {
+        const entry = SECTION_GUIDE[el.dataset.page];
+        if (entry) el.setAttribute('data-tooltip', entry.tooltip);
+      });
+    }
+
+
+        const PROFESSIONAL_READINESS_GAPS = [
+            {
+                status: 'urgent',
+                rank: 4,
+                title: 'AI provenance and disclosure metadata',
+                summary: 'EU AI Act Article 50 transparency duties apply from 2 August 2026. Film Engine does not write C2PA Content Credentials or other machine-detectable AI-origin metadata yet.',
+            },
+            {
+                status: 'strong',
+                rank: null,
+                title: 'AI-native controls ahead of traditional tools',
+                summary: 'Render ledger provenance, identity locking, locked/creative reproducibility modes, compute budgeting, and NLE handoff are stronger than many classic planning tools.',
+            },
+            {
+                status: 'partial',
+                rank: 1,
+                title: 'Unified generation operations',
+                summary: 'Jobs are tracked per media type, but there is no cross-type queue or render-farm monitor showing what is running, blocked, queued, or spending now.',
+            },
+            {
+                status: 'missing',
+                rank: 2,
+                title: 'Timecoded review and in-app timeline',
+                summary: 'Notes attach to shots, not exact frames or timecodes, and there is no in-app playback timeline for watching the assembled film before NLE export.',
+            },
+            {
+                status: 'partial',
+                rank: 3,
+                title: 'Take and select management',
+                summary: 'Shot versions and A/B history exist, but there is no editorial concept of circled takes, selects, alternates, or rejected takes.',
+            },
+            {
+                status: 'partial',
+                rank: 5,
+                title: 'Generation run sheets',
+                summary: 'Call sheets are vestigial in an actorless production. Repurpose them as per-scene run sheets: outputs, models, dependencies, estimated cost, and expected duration.',
+            },
+            {
+                status: 'missing',
+                rank: 6,
+                title: 'Multi-user collaboration',
+                summary: 'The app has notes and reviews, but not accounts, roles, assignments, permissions, simultaneous collaborators, or client-review delivery.',
+            },
+        ];
+
+        const ONBOARDING_PAGES = TOUR_SEQUENCE;
+    let guideTab = 'sections';
+    let guideFocusPage = null;
+    let onboardingIndex = 0;
+
+    function getNavGuideEntries() {
+        return GUIDE_PAGE_ORDER.map(page => {
+            const guide = SECTION_GUIDE[page];
+            const nav = document.querySelector(`#sidebarProjectNav .nav-item[data-page="${page}"]`);
+            const rawTitle = nav
+                ? Array.from(nav.childNodes).filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join(' ').replace(/\s+/g, ' ').trim()
+                : page;
+            const purpose = (guide && guide.purpose) || (nav && nav.dataset.tooltip) || 'Production workspace section.';
+            return {
+                page,
+                title: (guide && guide.title) || rawTitle,
+                icon: guide && guide.icon,
+                group: (guide && guide.group) || 'Production',
+                stage: (guide && guide.stage) || 'workflow',
+                order: (guide && guide.order) || GUIDE_PAGE_ORDER.indexOf(page) + 1,
+                tooltip: (guide && guide.tooltip) || purpose,
+                purpose,
+                does: (guide && guide.does) || [purpose],
+                needs: (guide && guide.needs) || ['Open a project first.'],
+                next: (guide && guide.next) || [],
+                pro: (guide && guide.pro) || 'Production management reference',
+                note: guide && guide.note,
+            };
+        });
+    }
+
+    function validateSectionGuide() {
+        const audit = auditSectionGuide();
+        if (!audit.ok) console.warn('SECTION_GUIDE audit:', audit);
+    }
+
+    function applySectionGuideTooltips() {
+        applyGuideTooltips();
+    }
+
+    function enhancePageGuideButtons() {
+        getNavGuideEntries().forEach(entry => {
+            const page = document.getElementById('page-' + entry.page);
+            if (!page || page.querySelector('.page-help-btn')) return;
+            const heading = page.querySelector('.page-header h2, .flex-between h2');
+            if (!heading) return;
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-secondary btn-sm page-help-btn';
+            btn.type = 'button';
+            btn.textContent = '?';
+            btn.dataset.tooltip = 'Open guide for ' + entry.title;
+            btn.dataset.tooltipPos = 'bottom';
+            btn.onclick = () => openProductionGuide(entry.page);
+            heading.insertAdjacentElement('afterend', btn);
+        });
+    }
+
+    function initProductionGuide() {
+        validateSectionGuide();
+        applySectionGuideTooltips();
+        enhancePageGuideButtons();
+    }
+
+    function setGuideTab(tab) {
+        guideTab = tab;
+        document.querySelectorAll('.guide-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.guideTab === tab));
+        renderProductionGuide();
+    }
+
+    function openProductionGuide(page) {
+        guideFocusPage = page || state.currentPage || 'dashboard';
+        const search = document.getElementById('productionGuideSearch');
+        if (search) search.value = '';
+        showModal('productionGuideModal');
+        renderProductionGuide();
+        setTimeout(() => {
+            const active = document.getElementById('guide-section-' + guideFocusPage);
+            if (active) active.scrollIntoView({ block: 'nearest' });
+        }, 50);
+    }
+
+    function closeProductionGuide() {
+        closeModal('productionGuideModal');
+    }
+
+    function renderGuideList(items) {
+        const list = Array.isArray(items) ? items : [items].filter(Boolean);
+        return '<ul style="margin:0;padding-left:16px;">' + list.map(item => `<li>${esc(item)}</li>`).join('') + '</ul>';
+    }
+
+    function renderGuideNextLinks(keys) {
+        if (!Array.isArray(keys) || keys.length === 0) return '<span class="text-muted">No required next section.</span>';
+        return keys.map(key => {
+            const entry = SECTION_GUIDE[key];
+            const label = entry ? entry.title : key;
+            return `<button class="guide-next-link" onclick="navigateTo('${esc(key)}'); closeProductionGuide();">${esc(label)}</button>`;
+        }).join('<span class="text-muted">, </span>');
+    }
+
+    function renderProductionGuide() {
+        const intro = document.getElementById('productionGuideIntro');
+        const body = document.getElementById('productionGuideBody');
+        const query = (document.getElementById('productionGuideSearch')?.value || '').toLowerCase().trim();
+        if (!intro || !body) return;
+
+        intro.innerHTML = '<p class="text-sm text-muted mb-16">This guide maps Film Engine sections to a fully digital AI movie workflow. The full professional gap audit is tracked in docs/plans/ai-film-production-gap-audit.md.</p>';
+
+        if (guideTab === 'readiness') {
+            const filtered = PROFESSIONAL_READINESS_GAPS.filter(g => !query || (g.title + ' ' + g.summary + ' ' + g.status).toLowerCase().includes(query));
+            body.innerHTML = '<div class="guide-gap-grid">' + filtered.map(g => `
+                <div class="guide-gap-card">
+                    <span class="badge ${g.status === 'urgent' || g.status === 'missing' ? 'failed' : g.status === 'partial' ? 'in_progress' : 'completed'}">${esc(g.status)}</span>
+                    ${g.rank ? `<span class="badge" style="margin-left:4px;">#${g.rank}</span>` : ''}
+                    <strong>${esc(g.title)}</strong>
+                    <p class="text-sm text-muted">${esc(g.summary)}</p>
+                </div>
+            `).join('') + '</div>';
+            return;
+        }
+
+        const entries = getNavGuideEntries().filter(entry => {
+            const haystack = [entry.title, entry.group, entry.stage, entry.purpose, entry.does.join(' '), entry.needs.join(' '), entry.next.join(' '), entry.pro, entry.note || ''].join(' ').toLowerCase();
+            return !query || haystack.includes(query);
+        });
+        const groups = ['Production', 'Elements', 'Media', 'Workflow', 'Delivery'];
+        const index = groups.map(group => {
+            const groupEntries = entries.filter(entry => entry.group === group).sort((a, b) => a.order - b.order);
+            if (!groupEntries.length) return '';
+            return '<div class="guide-group-title">' + esc(group) + '</div>' + groupEntries.map(entry => `<button class="${entry.page === guideFocusPage ? 'active' : ''}" onclick="openProductionGuide('${entry.page}')">${esc(entry.title)}</button>`).join('');
+        }).join('');
+        const cards = groups.map(group => {
+            const groupEntries = entries.filter(entry => entry.group === group).sort((a, b) => a.order - b.order);
+            if (!groupEntries.length) return '';
+            return '<div class="guide-group-title">' + esc(group) + '</div>' + groupEntries.map(entry => `
+                <section class="guide-section-card" id="guide-section-${entry.page}">
+                    <h4>${entry.icon || ''} ${esc(entry.title)}</h4>
+                    <p class="text-sm text-muted">${esc(entry.purpose)}</p>
+                    ${entry.note ? `<div class="guide-note">${esc(entry.note)}</div>` : ''}
+                    <div class="guide-meta-grid">
+                        <div class="guide-meta"><div class="guide-meta-label">What It Does</div><div class="text-sm">${renderGuideList(entry.does)}</div></div>
+                        <div class="guide-meta"><div class="guide-meta-label">Workflow Stage</div><div class="text-sm">${esc(entry.stage)}</div></div>
+                        <div class="guide-meta"><div class="guide-meta-label">Needs First</div><div class="text-sm">${renderGuideList(entry.needs)}</div></div>
+                        <div class="guide-meta"><div class="guide-meta-label">Next Step</div><div class="text-sm">${renderGuideNextLinks(entry.next)}</div></div>
+                        <div class="guide-meta"><div class="guide-meta-label">Professional Equivalent</div><div class="text-sm">${esc(entry.pro)}</div></div>
+                    </div>
+                </section>
+            `).join('');
+        }).join('');
+        body.innerHTML = `<div class="guide-layout"><div class="guide-index">${index}</div><div class="guide-content">${cards || '<div class="glossary-empty">No sections match this search.</div>'}</div></div>`;
+    }
+
+    function onboardingStorageKey(projectId) {
+        return 'film_project_guide_seen_' + projectId;
+    }
+
+    function maybeShowProjectOnboarding() {
+        if (!state.currentProject) return;
+        const key = onboardingStorageKey(state.currentProject.id);
+        if (localStorage.getItem(key) === '1') return;
+        onboardingIndex = 0;
+        showModal('projectOnboardingModal');
+        renderProjectOnboarding();
+    }
+
+    function renderProjectOnboarding() {
+        const steps = ONBOARDING_PAGES.map(page => getNavGuideEntries().find(entry => entry.page === page)).filter(Boolean);
+        const step = steps[onboardingIndex] || steps[0];
+        const dots = document.getElementById('onboardingStepper');
+        const content = document.getElementById('onboardingContent');
+        const next = document.getElementById('onboardingNextBtn');
+        if (!dots || !content || !next || !step) return;
+        dots.innerHTML = steps.map((_, i) => `<span class="onboarding-dot ${i === onboardingIndex ? 'active' : ''}"></span>`).join('');
+        content.innerHTML = `
+            <div class="guide-section-card" style="margin-bottom:0;">
+                <div class="section-label">Step ${onboardingIndex + 1} of ${steps.length}</div>
+                <h4>${esc(step.title)}</h4>
+                <p class="text-sm text-muted mb-8">${esc(step.purpose)}</p>
+                <div class="guide-meta-grid">
+                    <div class="guide-meta"><div class="guide-meta-label">What It Does</div><div class="text-sm">${renderGuideList(step.does)}</div></div>
+                    <div class="guide-meta"><div class="guide-meta-label">Next</div><div class="text-sm">${renderGuideNextLinks(step.next)}</div></div>
+                </div>
+                ${step.note ? `<div class="guide-note">${esc(step.note)}</div>` : ''}
+            </div>
+        `;
+        next.textContent = onboardingIndex >= steps.length - 1 ? 'Finish' : 'Next';
+    }
+
+    function nextOnboardingStep() {
+        if (onboardingIndex >= ONBOARDING_PAGES.length - 1) {
+            dismissProjectOnboarding();
+            openProductionGuide();
+            return;
+        }
+        onboardingIndex += 1;
+        renderProjectOnboarding();
+    }
+
+    function previousOnboardingStep() {
+        onboardingIndex = Math.max(0, onboardingIndex - 1);
+        renderProjectOnboarding();
+    }
+
+    function dismissProjectOnboarding() {
+        if (state.currentProject) localStorage.setItem(onboardingStorageKey(state.currentProject.id), '1');
+        closeModal('projectOnboardingModal');
+    }
 
     // ══════════════════════════════════════════════════════════════
     // API HELPERS
@@ -4881,6 +5783,7 @@
             document.getElementById('navProjectName').textContent = p.title;
             setStatusDot(p.status);
             navigateTo('dashboard');
+            setTimeout(maybeShowProjectOnboarding, 250);
         }).catch(err => setStatus('Error: ' + err.message));
     }
 
@@ -12019,6 +12922,14 @@ ${fountainText.slice(0, 50000)}`;
         if (e.key === 'Escape') {
             document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
         }
+        if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            const tag = (e.target && e.target.tagName || '').toLowerCase();
+            const isTyping = tag === 'input' || tag === 'textarea' || e.target?.isContentEditable;
+            if (!isTyping) {
+                e.preventDefault();
+                openProductionGuide();
+            }
+        }
     });
 
     // ══════════════════════════════════════════════════════════════
@@ -14375,6 +15286,7 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // INIT
     // ══════════════════════════════════════════════════════════════
+    initProductionGuide();
     checkHealth();
     loadProjects();
     </script>
