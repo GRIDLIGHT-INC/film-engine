@@ -82,6 +82,10 @@ const { handleNotes } = require('./routes/notes');
 const { handleAssets } = require('./routes/assets');
 const { handleDashboard } = require('./routes/dashboard');
 const { handleRenderLedger } = require('./routes/render-ledger');
+// ==== CLAUDE:START editorial (gaps 3/4/5) ====
+const { handleTimeline } = require('./routes/timeline');
+const { handleTakes } = require('./routes/takes');
+// ==== CLAUDE:END ====
 const { handleProductionStatus } = require('./routes/production-status');
 const { handleCallSheets } = require('./routes/call-sheets');
 const { handleTextConvert } = require('./routes/text-convert');
@@ -545,6 +549,38 @@ const server = http.createServer(async (req, res) => {
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'settings' && parts[4] === 'preset') {
             return handleProjectSettingsPreset(req, res, parts);
         }
+
+        // ==== CLAUDE:START editorial routes (gaps 3/4/5/7d) ====
+        // MUST stay above the /film/projects and /film/shots catch-alls below —
+        // those match on parts[1] alone and would swallow these sub-paths.
+        // None of these collide with an existing route.
+
+        // Gap 3: /film/projects/:id/timeline[/notes]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'timeline') {
+            return handleTimeline(req, res, parts, query);
+        }
+
+        // Gap 5: /film/projects/:id/selects
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'selects') {
+            return handleTakes(req, res, parts, query);
+        }
+
+        // Gap 5: /film/shots/:id/takes
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'takes') {
+            return handleTakes(req, res, parts, query);
+        }
+
+        // Gap 5: /film/versions/:id/select
+        if (parts[1] === 'versions' && parts[2] && parts[3] === 'select') {
+            return handleTakes(req, res, parts, query);
+        }
+
+        // Gap 7d: /film/shots/:id/prompt-history, /film/shots/:id/prompt-diff
+        if (parts[1] === 'shots' && parts[2] &&
+            (parts[3] === 'prompt-history' || parts[3] === 'prompt-diff')) {
+            return handleRenderLedger(req, res, parts, query);
+        }
+        // ==== CLAUDE:END ====
 
         // Route: /film/projects[/:id]
         if (parts[1] === 'projects') {

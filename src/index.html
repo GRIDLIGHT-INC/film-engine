@@ -3308,6 +3308,108 @@
                 max-height: none;
             }
         }
+
+        /* ==== CLAUDE:START editorial styles (gaps 3/4/5/7d) ==== */
+        .pb-stage {
+            /* Cap the height: at full window width a 16:9 stage is ~730px tall
+               and pushes the transport and note form below the fold, which
+               makes the player look broken until you scroll. */
+            position: relative; width: 100%; aspect-ratio: 16 / 9;
+            max-height: 52vh; margin: 0 auto;
+            background: #000; border: 1px solid var(--gl-border);
+            border-radius: 6px; overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .pb-video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+        .pb-still {
+            width: 100%; height: 100%;
+            background-size: contain; background-repeat: no-repeat; background-position: center;
+        }
+        .pb-gap {
+            position: absolute; inset: 0; display: flex;
+            align-items: center; justify-content: center; text-align: center;
+            background: repeating-linear-gradient(45deg, #14141a, #14141a 10px, #1b1b22 10px, #1b1b22 20px);
+        }
+        .pb-gap-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+
+        .pb-scrub-wrap { margin-top: 12px; }
+        .pb-scrub {
+            position: relative; height: 30px; cursor: pointer;
+            background: var(--gl-bg-elevated, #16161c);
+            border: 1px solid var(--gl-border); border-radius: 4px; overflow: hidden;
+        }
+        .pb-scrub-fill {
+            position: absolute; left: 0; top: 0; bottom: 0; width: 0;
+            background: rgba(90, 140, 255, 0.25); pointer-events: none;
+        }
+        .pb-shot-ticks, .pb-note-markers { position: absolute; inset: 0; pointer-events: none; }
+        .pb-shot-tick {
+            position: absolute; top: 0; bottom: 0; width: 1px;
+            background: var(--gl-border);
+        }
+        .pb-note-marker {
+            position: absolute; top: 3px; width: 3px; height: 12px;
+            border-radius: 2px; background: #f5a524; pointer-events: auto; cursor: pointer;
+        }
+        .pb-note-marker.critical, .pb-note-marker.high { background: #f5595a; }
+        .pb-playhead {
+            position: absolute; top: 0; bottom: 0; width: 2px;
+            background: #fff; pointer-events: none;
+        }
+        .pb-transport { display: flex; gap: 6px; }
+        .pb-timecode { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+        .pb-columns, .sel-columns {
+            display: grid; grid-template-columns: minmax(220px, 1fr) 2fr;
+            gap: 16px; margin-top: 16px;
+        }
+        @media (max-width: 900px) {
+            .pb-columns, .sel-columns { grid-template-columns: 1fr; }
+        }
+        .pb-playlist, .pb-note-list, .sel-shot-list, .sel-take-list {
+            max-height: 340px; overflow-y: auto;
+            border: 1px solid var(--gl-border); border-radius: 4px;
+        }
+        .pb-playlist-item, .sel-shot-item {
+            padding: 8px 10px; cursor: pointer; font-size: 12px;
+            border-bottom: 1px solid var(--gl-border);
+            display: flex; justify-content: space-between; gap: 8px;
+        }
+        .pb-playlist-item:hover, .sel-shot-item:hover { background: rgba(255,255,255,0.03); }
+        .pb-playlist-item.active, .sel-shot-item.active { background: rgba(90,140,255,0.15); }
+        .pb-playlist-item.missing { opacity: 0.55; }
+        .pb-note-box, .sel-diff-box {
+            border: 1px solid var(--gl-border); border-radius: 4px; padding: 12px;
+        }
+        .pb-note-item {
+            padding: 8px 10px; border-bottom: 1px solid var(--gl-border);
+            font-size: 12px; cursor: pointer;
+        }
+        .pb-note-item:hover { background: rgba(255,255,255,0.03); }
+        .pb-note-tc {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            color: var(--gl-text-muted); margin-right: 6px;
+        }
+
+        .sel-coverage-bar {
+            height: 8px; border-radius: 4px; overflow: hidden;
+            background: var(--gl-bg-elevated, #16161c); border: 1px solid var(--gl-border);
+        }
+        .sel-coverage-fill { height: 100%; width: 0; background: #3fb950; }
+        .sel-take-item {
+            padding: 10px; border-bottom: 1px solid var(--gl-border);
+            display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        }
+        .sel-take-item.is-select { background: rgba(63,185,80,0.10); }
+        .sel-take-meta { font-size: 11px; color: var(--gl-text-muted); }
+        .sel-circle-btn { flex-shrink: 0; }
+
+        .diff-token { padding: 1px 2px; border-radius: 2px; }
+        .diff-token.add { background: rgba(63,185,80,0.25); }
+        .diff-token.remove { background: rgba(245,89,90,0.25); text-decoration: line-through; }
+        .diff-summary { font-size: 12px; margin-bottom: 8px; }
+        .diff-params { font-size: 11px; margin-top: 8px; }
+        /* ==== CLAUDE:END ==== */
     </style>
 </head>
 <body>
@@ -3400,6 +3502,14 @@
                 <button class="nav-item" data-page="renderhistory" onclick="navigateTo('renderhistory')" data-tooltip="Full parameter history of every render for reproducibility" data-tooltip-pos="right">
                     <span class="nav-icon">&#128260;</span> Render History
                 </button>
+                <!-- ==== CLAUDE:START editorial nav (gaps 3/4/5) ==== -->
+                <button class="nav-item" data-page="playback" onclick="navigateTo('playback')" data-tooltip="Watch the assembled cut and leave notes at an exact moment" data-tooltip-pos="right">
+                    <span class="nav-icon">&#9654;</span> Playback
+                </button>
+                <button class="nav-item" data-page="selects" onclick="navigateTo('selects')" data-tooltip="Circled takes per shot and the selects reel" data-tooltip-pos="right">
+                    <span class="nav-icon">&#11088;</span> Selects
+                </button>
+                <!-- ==== CLAUDE:END ==== -->
                 <button class="nav-item" data-page="continuity" onclick="navigateTo('continuity')" data-tooltip="Reference board for visual, wardrobe, prop, and lighting consistency" data-tooltip-pos="right">
                     <span class="nav-icon">&#128247;</span> Continuity
                 </button>
@@ -3873,6 +3983,134 @@
         </div>
 
         <!-- ── 14. NOTES & REVIEWS ──────────────────────────────── -->
+        <!-- ==== CLAUDE:START editorial pages (gaps 3/4/5/7d) ==== -->
+
+        <!-- Gap 3 + 4: watch the assembled cut, note an exact moment -->
+        <div class="page" id="page-playback">
+            <div class="page-header"><h2>Playback</h2></div>
+            <div class="flex-between mb-16">
+                <div class="text-sm text-muted" id="playbackSummary">Loading timeline…</div>
+                <button class="btn btn-secondary btn-sm" onclick="loadPlayback()">Refresh</button>
+            </div>
+
+            <div id="playbackEmpty" class="glossary-empty hidden">
+                No shots yet. Create shots on the Shot Board, then generate video —
+                the assembled cut appears here.
+            </div>
+
+            <div id="playbackMain" class="hidden">
+                <div class="pb-stage">
+                    <video id="pbVideo" class="pb-video" preload="metadata" playsinline></video>
+                    <div id="pbStill" class="pb-still hidden"></div>
+                    <div id="pbGap" class="pb-gap hidden">
+                        <div>
+                            <div class="pb-gap-title">No picture for this shot</div>
+                            <div class="text-sm text-muted" id="pbGapDetail"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scrub bar across the WHOLE cut, with note markers -->
+                <div class="pb-scrub-wrap">
+                    <div class="pb-scrub" id="pbScrub" onclick="pbSeekFromClick(event)">
+                        <div class="pb-scrub-fill" id="pbScrubFill"></div>
+                        <div class="pb-shot-ticks" id="pbShotTicks"></div>
+                        <div class="pb-note-markers" id="pbNoteMarkers"></div>
+                    </div>
+                    <div class="flex-between mt-8">
+                        <div class="pb-transport">
+                            <button class="btn btn-secondary btn-sm" onclick="pbTogglePlay()" id="pbPlayBtn">Play</button>
+                            <button class="btn btn-secondary btn-sm" onclick="pbStep(-1)" title="Previous shot">&#9664;&#9664;</button>
+                            <button class="btn btn-secondary btn-sm" onclick="pbStep(1)" title="Next shot">&#9654;&#9654;</button>
+                        </div>
+                        <div class="pb-timecode">
+                            <span id="pbTimecode">00:00:00:00</span>
+                            <span class="text-muted"> / </span>
+                            <span id="pbTotalTimecode" class="text-muted">00:00:00:00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pb-columns">
+                    <div>
+                        <div class="section-label">Shot list</div>
+                        <div id="pbPlaylist" class="pb-playlist"></div>
+                    </div>
+                    <div>
+                        <!-- Gap 4: the note is pinned to wherever the playhead is -->
+                        <div class="section-label">Note at this moment</div>
+                        <div class="pb-note-box">
+                            <div class="text-sm mb-8">
+                                Pinning to <strong id="pbNoteTarget">—</strong>
+                            </div>
+                            <select id="pbNoteType" class="mb-8">
+                                <option value="general">General</option>
+                                <option value="direction">Direction</option>
+                                <option value="revision">Revision</option>
+                                <option value="camera">Camera</option>
+                                <option value="lighting">Lighting</option>
+                                <option value="performance">Performance</option>
+                                <option value="continuity">Continuity</option>
+                                <option value="vfx">VFX</option>
+                                <option value="color">Color</option>
+                                <option value="audio">Audio</option>
+                            </select>
+                            <textarea id="pbNoteText" rows="3" placeholder="What is wrong at this frame?"></textarea>
+                            <button class="btn btn-primary btn-sm mt-8" onclick="pbAddNote()">Add note here</button>
+                            <div id="pbNoteStatus" class="text-sm text-muted mt-8"></div>
+                        </div>
+
+                        <div class="section-label mt-16">Timecoded notes</div>
+                        <div id="pbNoteList" class="pb-note-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gap 5 + 7d: circled takes, selects reel, prompt comparison -->
+        <div class="page" id="page-selects">
+            <div class="page-header"><h2>Selects</h2></div>
+            <div class="flex-between mb-16">
+                <div class="text-sm text-muted" id="selectsSummary">Loading…</div>
+                <button class="btn btn-secondary btn-sm" onclick="loadSelects()">Refresh</button>
+            </div>
+
+            <div id="selectsEmpty" class="glossary-empty hidden">
+                No shots yet. Once you generate renders, every render becomes a take
+                you can circle here.
+            </div>
+
+            <div id="selectsMain" class="hidden">
+                <div class="sel-coverage-bar" title="Shots with a circled take">
+                    <div class="sel-coverage-fill" id="selCoverageFill"></div>
+                </div>
+                <div class="text-sm text-muted mb-16" id="selCoverageLabel"></div>
+
+                <div class="sel-columns">
+                    <div>
+                        <div class="section-label">Shots</div>
+                        <div id="selShotList" class="sel-shot-list"></div>
+                    </div>
+                    <div>
+                        <div class="section-label">Takes for <span id="selCurrentShot">—</span></div>
+                        <div id="selTakeList" class="sel-take-list"></div>
+
+                        <!-- Gap 7d -->
+                        <div class="section-label mt-16">Compare prompts</div>
+                        <div class="sel-diff-box">
+                            <div class="flex-between mb-8">
+                                <select id="selDiffA" style="width:48%;"></select>
+                                <select id="selDiffB" style="width:48%;"></select>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" onclick="selRunDiff()">Diff these takes</button>
+                            <div id="selDiffResult" class="mt-8"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- ==== CLAUDE:END ==== -->
+
         <div class="page" id="page-notes">
             <div class="page-header"><h2>Notes & Reviews</h2></div>
             <div class="flex-between mb-16">
@@ -5856,6 +6094,10 @@
             threed: loadThreeD,
             videoshots: loadVideoShots,
             music: loadMusic,
+            // ==== CLAUDE:START loaders (gaps 3/4/5/7d) ====
+            playback: loadPlayback,
+            selects: loadSelects,
+            // ==== CLAUDE:END ====
         };
         if (loaders[page]) loaders[page]();
     }
@@ -15208,6 +15450,468 @@ ${fountainText.slice(0, 50000)}`;
                 + ' <span class="text-sm">' + pct + '%</span>';
         return '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;"><span class="text-sm" style="min-width:120px;">' + name + role + '</span>' + bar + '</div>';
     }
+
+    // ==== CLAUDE:START editorial JS (gaps 3/4/5/7d) ====
+    // Gap 3: in-app playback. Gap 4: notes pinned to a moment.
+    // Gap 5: circled takes + selects reel. Gap 7d: prompt diff between takes.
+
+    const pb = {
+        timeline: null,
+        notes: [],
+        index: 0,        // which shot is on screen
+        playing: false,
+        raf: null,
+        // Position within the CURRENT shot, ms. The absolute timeline position
+        // is this plus the current entry's start_ms — kept separate because the
+        // <video> element only ever knows about one clip at a time.
+        localMs: 0,
+    };
+
+    async function loadPlayback() {
+        if (!state.currentProject) return;
+        const summary = document.getElementById('playbackSummary');
+        try {
+            const [timeline, noteData] = await Promise.all([
+                api(`/projects/${state.currentProject.id}/timeline`),
+                api(`/projects/${state.currentProject.id}/timeline/notes`),
+            ]);
+            pb.timeline = timeline;
+            pb.notes = noteData.notes || [];
+
+            const hasShots = timeline.entries.length > 0;
+            document.getElementById('playbackEmpty').classList.toggle('hidden', hasShots);
+            document.getElementById('playbackMain').classList.toggle('hidden', !hasShots);
+            if (!hasShots) { summary.textContent = 'No shots in this project yet.'; return; }
+
+            renderPlaybackSummary();
+            document.getElementById('pbTotalTimecode').textContent = timeline.total_timecode;
+
+            pb.index = 0; pb.localMs = 0;
+            renderPlaylist();
+            renderScrub();
+            renderNoteList();
+            loadShotIntoStage(0);
+        } catch (err) {
+            summary.textContent = 'Error: ' + err.message;
+        }
+    }
+
+    // Lead with what is actually watchable — a player that says "18 shots"
+    // while 6 are blank is lying by omission. Re-rendered whenever the note
+    // count changes, so the header can't go stale after adding one.
+    function renderPlaybackSummary() {
+        const summary = document.getElementById('playbackSummary');
+        if (!summary || !pb.timeline) return;
+        const t = pb.timeline;
+        summary.textContent =
+            `${t.playable_count} of ${t.shot_count} shots playable · `
+            + `${t.total_timecode} total · ${pb.notes.length} timecoded note`
+            + (pb.notes.length === 1 ? '' : 's');
+    }
+
+    function pbEntry() {
+        return pb.timeline && pb.timeline.entries[pb.index] || null;
+    }
+
+    function pbAbsoluteMs() {
+        const e = pbEntry();
+        return e ? e.start_ms + Math.min(pb.localMs, e.duration_ms) : 0;
+    }
+
+    function loadShotIntoStage(index) {
+        if (!pb.timeline || !pb.timeline.entries[index]) return;
+        pb.index = index;
+        pb.localMs = 0;
+
+        const entry = pb.timeline.entries[index];
+        const video = document.getElementById('pbVideo');
+        const still = document.getElementById('pbStill');
+        const gap = document.getElementById('pbGap');
+
+        video.classList.add('hidden');
+        still.classList.add('hidden');
+        gap.classList.add('hidden');
+
+        if (entry.kind === 'video' && entry.video) {
+            video.classList.remove('hidden');
+            video.src = mediaUrl(entry.video.path);
+            video.load();
+            if (pb.playing) video.play().catch(() => {});
+        } else if (entry.kind === 'still' && entry.still) {
+            // A shot with only a keyframe still occupies its slot — it holds on
+            // the still for its duration rather than being skipped.
+            still.classList.remove('hidden');
+            still.style.backgroundImage = `url("${mediaUrl(entry.still.path)}")`;
+        } else {
+            gap.classList.remove('hidden');
+            document.getElementById('pbGapDetail').textContent =
+                `${entry.shot_code} has no keyframe or video yet.`;
+        }
+
+        renderPlaylist();
+        updatePlayhead();
+    }
+
+    /**
+     * Map a stored file path to something the browser can request. The backend
+     * serves generated media under /film/video, /film/storyboards etc.; absolute
+     * disk paths are not fetchable, so fall back to the basename route.
+     */
+    function mediaUrl(path) {
+        if (!path) return '';
+        if (/^https?:\/\//.test(path)) return path;
+        // API_BASE is the bare origin; API() already appends /film. Media routes
+        // carry their own /film prefix, so build these off API_BASE or the path
+        // doubles to /film/film/... — exactly how this broke the first time, and
+        // it 404s silently behind a generic "Not found".
+        if (path.startsWith('/film/')) return API_BASE + path;
+        const pid = state.currentProject && state.currentProject.id;
+        const file = String(path).split('/').pop();
+        if (!pid || !file) return path;
+        if (/\.(png|jpg|jpeg|webp)$/i.test(file)) return `${API_BASE}/film/storyboards/${pid}/${file}`;
+        return `${API_BASE}/film/video/${pid}/${file}`;
+    }
+
+    function renderPlaylist() {
+        const el = document.getElementById('pbPlaylist');
+        if (!el || !pb.timeline) return;
+        el.innerHTML = pb.timeline.entries.map(e => `
+            <div class="pb-playlist-item ${e.index === pb.index ? 'active' : ''} ${e.missing ? 'missing' : ''}"
+                 onclick="pbGoTo(${e.index})">
+                <span>${esc(e.shot_code || '(untitled)')}</span>
+                <span class="text-muted">${e.missing ? 'no picture' : e.start_timecode}</span>
+            </div>
+        `).join('');
+    }
+
+    function renderScrub() {
+        if (!pb.timeline || !pb.timeline.total_duration_ms) return;
+        const total = pb.timeline.total_duration_ms;
+
+        document.getElementById('pbShotTicks').innerHTML = pb.timeline.entries
+            .filter(e => e.index > 0)
+            .map(e => `<div class="pb-shot-tick" style="left:${(e.start_ms / total) * 100}%"></div>`)
+            .join('');
+
+        document.getElementById('pbNoteMarkers').innerHTML = pb.notes.map(n => `
+            <div class="pb-note-marker ${esc(n.priority || '')}"
+                 style="left:${(n.absolute_ms / total) * 100}%"
+                 title="${esc(n.content)}"
+                 onclick="event.stopPropagation(); pbSeekAbsolute(${n.absolute_ms})"></div>
+        `).join('') + '<div class="pb-playhead" id="pbPlayhead" style="left:0"></div>';
+    }
+
+    function updatePlayhead() {
+        if (!pb.timeline || !pb.timeline.total_duration_ms) return;
+        const abs = pbAbsoluteMs();
+        const pct = (abs / pb.timeline.total_duration_ms) * 100;
+        const head = document.getElementById('pbPlayhead');
+        const fill = document.getElementById('pbScrubFill');
+        if (head) head.style.left = pct + '%';
+        if (fill) fill.style.width = pct + '%';
+        document.getElementById('pbTimecode').textContent = msToTc(abs, pb.timeline.fps);
+
+        const entry = pbEntry();
+        document.getElementById('pbNoteTarget').textContent = entry
+            ? `${entry.shot_code} @ ${msToTc(pb.localMs, pb.timeline.fps)}`
+            : '—';
+    }
+
+    /** Mirror of the server's msToTimecode so the readout matches exactly. */
+    function msToTc(ms, fps) {
+        const rate = fps > 0 ? fps : 24;
+        const t = Math.max(0, Math.round(ms || 0));
+        const p = n => String(n).padStart(2, '0');
+        return `${p(Math.floor(t / 3600000))}:${p(Math.floor((t % 3600000) / 60000))}`
+             + `:${p(Math.floor((t % 60000) / 1000))}:${p(Math.floor(((t % 1000) / 1000) * rate))}`;
+    }
+
+    function pbGoTo(index) {
+        loadShotIntoStage(index);
+    }
+
+    function pbStep(delta) {
+        if (!pb.timeline) return;
+        const next = pb.index + delta;
+        if (next >= 0 && next < pb.timeline.entries.length) loadShotIntoStage(next);
+    }
+
+    function pbTogglePlay() {
+        pb.playing = !pb.playing;
+        document.getElementById('pbPlayBtn').textContent = pb.playing ? 'Pause' : 'Play';
+        const video = document.getElementById('pbVideo');
+        const entry = pbEntry();
+
+        if (pb.playing) {
+            if (entry && entry.kind === 'video') video.play().catch(() => {});
+            pbTick();
+        } else {
+            video.pause();
+            if (pb.raf) { cancelAnimationFrame(pb.raf); pb.raf = null; }
+        }
+    }
+
+    /**
+     * Drive the playhead. Shots that are video follow the <video> clock; stills
+     * and gaps are advanced on wall time so the cut keeps moving through a shot
+     * with no footage rather than stalling on it.
+     */
+    let pbLastFrame = 0;
+    function pbTick(ts) {
+        if (!pb.playing) return;
+        const entry = pbEntry();
+        if (!entry) { pb.playing = false; return; }
+
+        const video = document.getElementById('pbVideo');
+        if (entry.kind === 'video' && !video.paused && video.duration) {
+            pb.localMs = video.currentTime * 1000;
+        } else if (ts && pbLastFrame) {
+            pb.localMs += ts - pbLastFrame;
+        }
+        pbLastFrame = ts || 0;
+
+        if (pb.localMs >= entry.duration_ms) {
+            if (pb.index + 1 < pb.timeline.entries.length) {
+                loadShotIntoStage(pb.index + 1);
+                const nextEntry = pbEntry();
+                if (pb.playing && nextEntry && nextEntry.kind === 'video') {
+                    document.getElementById('pbVideo').play().catch(() => {});
+                }
+            } else {
+                pb.playing = false;
+                document.getElementById('pbPlayBtn').textContent = 'Play';
+                return;
+            }
+        }
+
+        updatePlayhead();
+        pb.raf = requestAnimationFrame(pbTick);
+    }
+
+    function pbSeekFromClick(event) {
+        if (!pb.timeline || !pb.timeline.total_duration_ms) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+        pbSeekAbsolute(ratio * pb.timeline.total_duration_ms);
+    }
+
+    function pbSeekAbsolute(absoluteMs) {
+        if (!pb.timeline) return;
+        const entry = pb.timeline.entries.find(e => absoluteMs >= e.start_ms && absoluteMs < e.end_ms)
+            || pb.timeline.entries[pb.timeline.entries.length - 1];
+        if (!entry) return;
+
+        if (entry.index !== pb.index) loadShotIntoStage(entry.index);
+        pb.localMs = Math.max(0, absoluteMs - entry.start_ms);
+
+        const video = document.getElementById('pbVideo');
+        if (entry.kind === 'video' && video.readyState > 0) {
+            video.currentTime = pb.localMs / 1000;
+        }
+        updatePlayhead();
+    }
+
+    // ── Gap 4: create a note pinned to the current playhead ──
+    async function pbAddNote() {
+        const entry = pbEntry();
+        const statusEl = document.getElementById('pbNoteStatus');
+        const text = document.getElementById('pbNoteText').value.trim();
+
+        if (!entry) { statusEl.textContent = 'No shot selected.'; return; }
+        if (!text) { statusEl.textContent = 'Write the note first.'; return; }
+
+        try {
+            await api(`/shots/${entry.shot_id}/notes`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    content: text,
+                    note_type: document.getElementById('pbNoteType').value,
+                    // Shot-relative, floored to a whole ms — the server rejects
+                    // fractional values rather than silently truncating them.
+                    timecode_ms: Math.floor(pb.localMs),
+                }),
+            });
+            document.getElementById('pbNoteText').value = '';
+            statusEl.textContent = `Noted at ${entry.shot_code} ${msToTc(pb.localMs, pb.timeline.fps)}`;
+
+            const noteData = await api(`/projects/${state.currentProject.id}/timeline/notes`);
+            pb.notes = noteData.notes || [];
+            renderScrub();
+            renderNoteList();
+            renderPlaybackSummary();
+            updatePlayhead();
+        } catch (err) {
+            statusEl.textContent = 'Error: ' + err.message;
+        }
+    }
+
+    function renderNoteList() {
+        const el = document.getElementById('pbNoteList');
+        if (!el) return;
+        if (!pb.notes.length) {
+            el.innerHTML = '<div class="glossary-empty">No timecoded notes yet.</div>';
+            return;
+        }
+        el.innerHTML = pb.notes.map(n => `
+            <div class="pb-note-item" onclick="pbSeekAbsolute(${n.absolute_ms})">
+                <span class="pb-note-tc">${esc(n.absolute_timecode)}</span>
+                <strong>${esc(n.shot_code)}</strong>
+                <span class="text-muted"> · ${esc(n.note_type)}</span>
+                <div>${esc(n.content)}</div>
+            </div>
+        `).join('');
+    }
+
+    // ── Gap 5 + 7d: selects and prompt diff ──
+    const sel = { data: null, shotId: null, takes: [] };
+
+    async function loadSelects() {
+        if (!state.currentProject) return;
+        const summary = document.getElementById('selectsSummary');
+        try {
+            const data = await api(`/projects/${state.currentProject.id}/selects`);
+            sel.data = data;
+
+            const hasShots = data.shots_total > 0;
+            document.getElementById('selectsEmpty').classList.toggle('hidden', hasShots);
+            document.getElementById('selectsMain').classList.toggle('hidden', !hasShots);
+            if (!hasShots) { summary.textContent = 'No shots in this project yet.'; return; }
+
+            summary.textContent = `${data.count} of ${data.shots_total} shots have a circled take`;
+            document.getElementById('selCoverageFill').style.width = data.coverage + '%';
+            document.getElementById('selCoverageLabel').textContent = `${data.coverage}% of shots selected`;
+
+            renderSelShotList();
+            // Open on the first shot still needing a decision — that is the
+            // work, rather than the first shot in the film.
+            const firstPending = (data.shots_without_select.find(s => s.reason === 'not_circled')
+                || data.shots_without_select[0] || data.selects[0]);
+            if (firstPending) selOpenShot(firstPending.shot_id, firstPending.shot_code);
+        } catch (err) {
+            summary.textContent = 'Error: ' + err.message;
+        }
+    }
+
+    function renderSelShotList() {
+        const el = document.getElementById('selShotList');
+        if (!el || !sel.data) return;
+        const rows = [
+            ...sel.data.selects.map(s => ({
+                shot_id: s.shot_id, shot_code: s.shot_code,
+                label: `v${s.version} circled`, state: 'ok',
+            })),
+            ...sel.data.shots_without_select.map(s => ({
+                shot_id: s.shot_id, shot_code: s.shot_code,
+                label: s.reason === 'no_takes' ? 'no takes' : `${s.take_count} takes, none circled`,
+                state: s.reason,
+            })),
+        ];
+        el.innerHTML = rows.map(r => `
+            <div class="sel-shot-item ${r.shot_id === sel.shotId ? 'active' : ''}"
+                 onclick="selOpenShot('${r.shot_id}', ${JSON.stringify(r.shot_code)})">
+                <span>${esc(r.shot_code || '(untitled)')}</span>
+                <span class="text-muted">${esc(r.label)}</span>
+            </div>
+        `).join('');
+    }
+
+    async function selOpenShot(shotId, shotCode) {
+        sel.shotId = shotId;
+        document.getElementById('selCurrentShot').textContent = shotCode || '—';
+        renderSelShotList();
+        try {
+            const data = await api(`/shots/${shotId}/takes`);
+            sel.takes = data.takes || [];
+            renderTakeList();
+            renderDiffPickers();
+        } catch (err) {
+            document.getElementById('selTakeList').innerHTML =
+                `<div class="glossary-empty">Error: ${esc(err.message)}</div>`;
+        }
+    }
+
+    function renderTakeList() {
+        const el = document.getElementById('selTakeList');
+        if (!el) return;
+        if (!sel.takes.length) {
+            el.innerHTML = '<div class="glossary-empty">No takes yet. Generate a render for this shot.</div>';
+            return;
+        }
+        el.innerHTML = sel.takes.map(t => `
+            <div class="sel-take-item ${t.is_select ? 'is-select' : ''}">
+                <div>
+                    <strong>Take ${t.version}</strong>
+                    ${t.is_select ? ' <span class="badge completed">circled</span>' : ''}
+                    <div class="sel-take-meta">
+                        seed ${esc(String(t.seed ?? '—'))} · ${esc(t.model_id || 'unknown model')}
+                        ${t.select_note ? ' · ' + esc(t.select_note) : ''}
+                    </div>
+                    <div class="sel-take-meta">${esc((t.prompt || '').slice(0, 90))}</div>
+                </div>
+                <button class="btn btn-sm sel-circle-btn ${t.is_select ? 'btn-secondary' : 'btn-primary'}"
+                        onclick="selToggle('${t.id}', ${t.is_select ? 'true' : 'false'})">
+                    ${t.is_select ? 'Uncircle' : 'Circle'}
+                </button>
+            </div>
+        `).join('');
+    }
+
+    async function selToggle(versionId, isSelected) {
+        try {
+            await api(`/versions/${versionId}/select`, {
+                method: isSelected ? 'DELETE' : 'POST',
+                body: isSelected ? undefined : JSON.stringify({ note: '' }),
+            });
+            await selOpenShot(sel.shotId, document.getElementById('selCurrentShot').textContent);
+            await loadSelects();
+        } catch (err) {
+            alert('Could not update take: ' + err.message);
+        }
+    }
+
+    function renderDiffPickers() {
+        const withLedger = sel.takes.filter(t => t.render_ledger_id);
+        const options = withLedger
+            .map(t => `<option value="${t.render_ledger_id}">Take ${t.version}</option>`)
+            .join('');
+        const a = document.getElementById('selDiffA');
+        const b = document.getElementById('selDiffB');
+        a.innerHTML = options;
+        b.innerHTML = options;
+        // Default to comparing the two most recent takes, which is the common case.
+        if (withLedger.length > 1) { a.selectedIndex = 1; b.selectedIndex = 0; }
+        document.getElementById('selDiffResult').innerHTML = withLedger.length > 1
+            ? ''
+            : '<div class="text-sm text-muted">Need at least two takes to compare.</div>';
+    }
+
+    async function selRunDiff() {
+        const a = document.getElementById('selDiffA').value;
+        const b = document.getElementById('selDiffB').value;
+        const out = document.getElementById('selDiffResult');
+        if (!a || !b) { out.innerHTML = '<div class="text-sm text-muted">Pick two takes.</div>'; return; }
+        if (a === b) { out.innerHTML = '<div class="text-sm text-muted">Those are the same take.</div>'; return; }
+
+        try {
+            const d = await api(`/shots/${sel.shotId}/prompt-diff?a=${a}&b=${b}`);
+            const tokens = d.prompt.ops.map(op =>
+                op.op === 'equal'
+                    ? esc(op.token)
+                    : `<span class="diff-token ${op.op === 'add' ? 'add' : 'remove'}">${esc(op.token)}</span>`
+            ).join(' ');
+            const params = d.params.length
+                ? '<div class="diff-params">' + d.params.map(p =>
+                    `<div><strong>${esc(p.field)}</strong>: ${esc(String(p.before))} → ${esc(String(p.after))}</div>`
+                  ).join('') + '</div>'
+                : '';
+            out.innerHTML = `<div class="diff-summary"><strong>${esc(d.summary)}</strong>`
+                + ` <span class="text-muted">(${Math.round(d.prompt.similarity * 100)}% similar)</span></div>`
+                + `<div class="text-sm">${tokens}</div>${params}`;
+        } catch (err) {
+            out.innerHTML = `<div class="text-sm">Error: ${esc(err.message)}</div>`;
+        }
+    }
+    // ==== CLAUDE:END ====
 
     // ══════════════════════════════════════════════════════════════
     // UTILITIES

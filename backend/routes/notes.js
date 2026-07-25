@@ -50,6 +50,22 @@ function badReq(res, msg) {
     res.end(JSON.stringify({ error: msg }));
 }
 
+/**
+ * Gap 4: normalize an incoming timecode_ms.
+ *
+ * Returns null for absent/null (a shot-level note), an integer for a valid
+ * position, or the sentinel `false` for invalid input so the caller can reject
+ * it. Distinguishing "not supplied" from "supplied as garbage" matters —
+ * silently coercing a bad value to 0 would pin the note to the first frame,
+ * which looks like a working feature while being wrong.
+ */
+function parseTimecodeMs(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || Math.floor(n) !== n) return false;
+    return n;
+}
+
 function listShotNotes(req, res, shotId, query) {
     let sql = 'SELECT * FROM film_shot_notes WHERE shot_id = ?';
     const params = [shotId];
@@ -61,8 +77,16 @@ function listShotNotes(req, res, shotId, query) {
     if (query.unresolved === 'true') {
         sql += ' AND resolved = 0';
     }
+    // Gap 4: only notes pinned to a moment, for the player's marker track.
+    if (query.timecoded === 'true') {
+        sql += ' AND timecode_ms IS NOT NULL';
+    }
 
-    sql += ' ORDER BY created_at DESC';
+    // Timecoded notes are read in playback order — a marker track sorted by
+    // recency would be unusable. Shot-level notes keep newest-first.
+    sql += query.timecoded === 'true'
+        ? ' ORDER BY timecode_ms ASC'
+        : ' ORDER BY created_at DESC';
 
     const rows = db.prepare(sql).all(...params);
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -84,13 +108,18 @@ function createShotNote(req, res, shotId) {
     const noteType = VALID_NOTE_TYPES.includes(body.note_type) ? body.note_type : 'general';
     const priority = VALID_PRIORITIES.includes(body.priority) ? body.priority : 'normal';
 
+    // Gap 4: optional shot-relative position. Absent/null keeps the historical
+    // behaviour — a note about the shot as a whole.
+    const timecodeMs = parseTimecodeMs(body.timecode_ms);
+    if (timecodeMs === false) return badReq(res, 'timecode_ms must be a non-negative integer or null');
+
     const id = generateId();
     const now = new Date().toISOString();
 
     db.prepare(`
-        INSERT INTO film_shot_notes (id, shot_id, author, note_type, content, priority, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, shotId, (body.author || 'director').slice(0, 100), noteType, body.content.slice(0, 10000), priority, now);
+        INSERT INTO film_shot_notes (id, shot_id, author, note_type, content, priority, timecode_ms, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, shotId, (body.author || 'director').slice(0, 100), noteType, body.content.slice(0, 10000), priority, timecodeMs, now);
 
     const row = db.prepare('SELECT * FROM film_shot_notes WHERE id = ?').get(id);
     res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -157,6 +186,14 @@ function updateNote(req, res, noteId) {
         } else {
             fields.push('resolved_at = NULL');
         }
+    }
+    // Gap 4: re-pin a note to a different moment, or explicitly clear its
+    // position back to a shot-level note by sending null.
+    if (body.timecode_ms !== undefined) {
+        const timecodeMs = parseTimecodeMs(body.timecode_ms);
+        if (timecodeMs === false) return badReq(res, 'timecode_ms must be a non-negative integer or null');
+        fields.push('timecode_ms = ?');
+        values.push(timecodeMs);
     }
 
     if (fields.length === 0) return badReq(res, 'No valid fields to update');

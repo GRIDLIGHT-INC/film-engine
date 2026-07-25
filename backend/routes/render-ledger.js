@@ -14,6 +14,10 @@ const VALID_STEPS = [
     'music', 'sfx', 'ambient', 'post', 'assembly'
 ];
 
+// Gap 5: steps that produce something a director can watch and circle as a take.
+// Audio-only steps are logged in the ledger but are not takes of the shot.
+const TAKE_STEPS = ['keyframe', 'video', 'lipsync', 'post', 'assembly'];
+
 function handleRenderLedger(req, res, urlParts, query) {
     // All render ledger routes go through /film/shots/:id/...
     if (urlParts[1] !== 'shots' || !urlParts[2]) {
@@ -48,8 +52,109 @@ function handleRenderLedger(req, res, urlParts, query) {
     // POST /film/shots/:id/re-render — re-render from ledger
     if (sub === 're-render' && req.method === 'POST') return reRender(req, res, shotId);
 
+    // Gap 7d: GET /film/shots/:id/prompt-history — prompts across renders
+    if (sub === 'prompt-history' && req.method === 'GET') return getPromptHistory(req, res, shotId, query);
+
+    // Gap 7d: GET /film/shots/:id/prompt-diff?a=X&b=Y — token-level diff
+    if (sub === 'prompt-diff' && req.method === 'GET') return getPromptDiff(req, res, shotId, query);
+
     res.writeHead(405, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Method not allowed' }));
+}
+
+/**
+ * Gap 7d: the prompt as it evolved across renders.
+ *
+ * render_ledger already versions every parameter, but the prompt could only be
+ * read as opaque blocks. This returns them in order with a per-render flag for
+ * whether the prompt actually moved, so "which take changed the prompt" is
+ * answerable at a glance instead of by eye-diffing paragraphs.
+ */
+function getPromptHistory(req, res, shotId, query) {
+    const shot = db.prepare('SELECT id FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Shot not found' }));
+        return;
+    }
+
+    let sql = `
+        SELECT id, version, step, prompt, negative_prompt, seed, model_id,
+               sampler, steps, guidance, lora_ids, controlnets, model_hash, created_at
+        FROM render_ledger
+        WHERE shot_id = ?
+    `;
+    const params = [shotId];
+    if (query.step && VALID_STEPS.includes(query.step)) {
+        sql += ' AND step = ?';
+        params.push(query.step);
+    }
+    sql += ' ORDER BY created_at ASC, version ASC';
+
+    const rows = db.prepare(sql).all(...params);
+
+    // Mark where the prompt actually changed relative to the previous render of
+    // the same step. Comparing across steps would be meaningless — a video
+    // prompt is not a revision of a keyframe prompt.
+    const lastByStep = new Map();
+    const history = rows.map(row => {
+        const previous = lastByStep.get(row.step);
+        lastByStep.set(row.step, row.prompt);
+        return {
+            ...row,
+            prompt_changed: previous !== undefined && previous !== row.prompt,
+            is_first_of_step: previous === undefined,
+        };
+    });
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        history,
+        count: history.length,
+        changed_count: history.filter(h => h.prompt_changed).length,
+    }));
+}
+
+/**
+ * Gap 7d: token-level diff between two renders of the same shot.
+ *
+ * Both ledger IDs are verified to belong to this shot — otherwise the endpoint
+ * would happily diff a render from an unrelated project given a guessed ID.
+ */
+function getPromptDiff(req, res, shotId, query) {
+    if (!query.a || !query.b) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Both a and b render ledger IDs are required' }));
+        return;
+    }
+    if (!UUID_RE.test(query.a) || !UUID_RE.test(query.b)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid render ledger ID' }));
+        return;
+    }
+
+    const get = db.prepare('SELECT * FROM render_ledger WHERE id = ? AND shot_id = ?');
+    const a = get.get(query.a, shotId);
+    const b = get.get(query.b, shotId);
+
+    if (!a || !b) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Render not found for this shot' }));
+        return;
+    }
+
+    const { comparePrompts } = require('../lib/prompt-diff');
+    const comparison = comparePrompts(a, b);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        shot_id: shotId,
+        a: { id: a.id, version: a.version, step: a.step, created_at: a.created_at, prompt: a.prompt },
+        b: { id: b.id, version: b.version, step: b.step, created_at: b.created_at, prompt: b.prompt },
+        // Diffing across steps is almost always a mistake; flag rather than block.
+        cross_step: a.step !== b.step,
+        ...comparison,
+    }));
 }
 
 function logRender(req, res, shotId) {
@@ -105,6 +210,38 @@ function logRender(req, res, shotId) {
         JSON.stringify(body.extra_params || {}),
         now
     );
+
+    // Gap 5: a logged render IS a take, so materialize the version row here.
+    //
+    // film_shot_versions was created back in migration 012 and, until now,
+    // nothing in the codebase ever wrote to it — it was read by getShotVersions
+    // and by A/B compare, backed up, and bundled, but never populated. That made
+    // version history and A/B comparison permanently empty, and left selects with
+    // nothing to select from. This is the natural write point: every render
+    // produces a take, and the take carries its ledger row so the parameters
+    // that produced it are one join away.
+    //
+    // Only picture-producing steps become takes. Logging a music or ambient
+    // render as a "take of the shot" would pollute the take list with rows a
+    // director can't watch or circle.
+    if (TAKE_STEPS.includes(step) && !body.skip_version) {
+        const takeVer = db.prepare(
+            'SELECT COALESCE(MAX(version), 0) + 1 AS next FROM film_shot_versions WHERE shot_id = ?'
+        ).get(shotId);
+
+        db.prepare(`
+            INSERT INTO film_shot_versions
+                (id, shot_id, version, render_ledger_id, video_path, thumbnail_path, status, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            generateId(), shotId, takeVer.next, id,
+            (body.output_path || ''),
+            (body.thumbnail_path || ''),
+            'draft',
+            (body.editor_notes || '').slice(0, 5000),
+            now
+        );
+    }
 
     const row = db.prepare('SELECT * FROM render_ledger WHERE id = ?').get(id);
     res.writeHead(201, { 'Content-Type': 'application/json' });
