@@ -57,13 +57,69 @@ function list() {
  * @param {object} [projectConfig] - parsed film_projects.provider_config
  * @returns {string} provider id
  */
+/**
+ * Capabilities better served by a licensed catalog than by generation, when
+ * the user has that catalog connected. Ambient beds are the clear case: a
+ * licensed room tone or rain wash is more usable than a generated one, and
+ * rights are already cleared.
+ *
+ * Only applied when the preferred provider is actually configured — an
+ * install without Artlist credentials must keep generating as before rather
+ * than failing on a provider it cannot reach.
+ */
+const PREFERRED_WHEN_CONFIGURED = {
+    ambient: 'artlist-catalog',
+};
+
 function resolveId(capability, projectConfig) {
     const cfg = projectConfig || {};
+    // An explicit per-project choice always wins, including choosing Gridlight
+    // back over the preferred default.
     if (cfg[capability]) return cfg[capability];
     const envKey = `PROVIDER_${String(capability).toUpperCase()}`;
     if (process.env[envKey]) return process.env[envKey];
     if (process.env.PROVIDER_DEFAULT) return process.env.PROVIDER_DEFAULT;
+
+    const preferred = PREFERRED_WHEN_CONFIGURED[capability];
+    if (preferred && isProviderConfigured(preferred)) return preferred;
+
     return DEFAULT_PROVIDER;
+}
+
+/**
+ * True when the provider has usable credentials.
+ *
+ * Checks stored fields as well as an API key: field-based providers such as
+ * the Artlist catalog authenticate with a client id and secret and never set
+ * api_key, so an apiKey-only check would report them unconfigured no matter
+ * what the user had entered.
+ */
+function isProviderConfigured(id) {
+    const adapter = _registry.get(id);
+    if (!adapter) return false;
+
+    const needsFields = !!(adapter.connection && Array.isArray(adapter.connection.fields) && adapter.connection.fields.length);
+    if (!adapter.requiresKey && !needsFields) return true;   // e.g. gridlight
+
+    try {
+        const { getCredential } = require('./credentials');
+        const { apiKey, meta } = getCredential(id);
+        if (apiKey) return true;
+        if (needsFields) {
+            // Every REQUIRED field must be present — a client id without its
+            // secret cannot authenticate. Optional fields such as a base URL
+            // override must not make a valid configuration look incomplete.
+            const required = adapter.connection.fields.filter(f => typeof f === 'string' || f.required !== false);
+            if (!required.length) return false;
+            return required.every(f => {
+                const key = typeof f === 'string' ? f : f.key || f.name;
+                return key ? !!(meta && meta[key]) : false;
+            });
+        }
+        return false;
+    } catch (_) {
+        return false;
+    }
 }
 
 /**
@@ -100,4 +156,4 @@ function resolveGenerator(capability, projectConfig) {
 register(gridlightAdapter);
 _autoload();
 
-module.exports = { register, get, list, resolve, resolveId, resolveGenerator, CAPABILITIES };
+module.exports = { register, get, list, resolve, resolveId, resolveGenerator, isProviderConfigured, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };

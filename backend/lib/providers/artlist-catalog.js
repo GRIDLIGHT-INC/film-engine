@@ -209,7 +209,10 @@ const adapter = {
     kind: 'source',
     label: 'Artlist Catalog',
     requiresKey: false,
-    capabilities: ['music', 'sfx', 'stock'],
+    // Ambient beds are library audio in the same sense music and SFX are —
+    // a licensed room tone or rain wash beats a generated one, and the search
+    // and licensing path is identical.
+    capabilities: ['music', 'sfx', 'ambient', 'stock'],
     connection: {
         instructions: 'Requires Artlist Enterprise Catalog API credentials. This connects licensed catalog search/download, not the Artlist AI Toolkit MCP generator.',
         fields: [
