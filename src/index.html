@@ -266,6 +266,40 @@
             margin-left: 10px;
         }
         .collapse-all-btn:hover { color: var(--gl-text-primary); border-color: var(--gl-text-muted); }
+
+        /* ── Collapsible sidebar groups ──────────────────────────────
+           The project nav is 26 entries across five groups. Collapsing the
+           groups you are not working in shortens it to what matters. */
+        .nav-section.nav-collapsible {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            user-select: none;
+            transition: color 0.12s ease;
+        }
+        .nav-section.nav-collapsible:hover { color: var(--gl-text-primary); }
+        .nav-section.nav-collapsible::before {
+            content: '';
+            width: 0; height: 0;
+            flex-shrink: 0;
+            border-left: 4px solid currentColor;
+            border-top: 3px solid transparent;
+            border-bottom: 3px solid transparent;
+            transform: rotate(90deg);
+            transition: transform 0.15s ease;
+            opacity: 0.7;
+        }
+        .nav-section.nav-collapsible.collapsed::before { transform: rotate(0deg); }
+        /* Count of hidden items, so a collapsed group still says how much it holds. */
+        .nav-section-count {
+            margin-left: auto;
+            font-size: 9px;
+            opacity: 0.55;
+            letter-spacing: 0;
+        }
+        .nav-item.nav-hidden,
+        .sidebar-divider.nav-hidden { display: none !important; }
         .sidebar-header h1 {
             font-size: 16px; font-weight: 700;
             background: var(--gl-brand-gradient);
@@ -6286,6 +6320,82 @@
         renderProjectOnboarding();
     }
 
+    // ── Collapsible sidebar groups ───────────────────────────────────
+    // The project nav runs to 26 entries across Production / Elements /
+    // Media / Workflow / Delivery. Clicking a group heading hides its items
+    // so the sidebar shows only the areas in use. Persists per group.
+
+    function readCollapsedNav() {
+        try { return new Set(JSON.parse(localStorage.getItem('film_collapsed_nav') || '[]')); }
+        catch (e) { return new Set(); }
+    }
+
+    function writeCollapsedNav(set) {
+        try { localStorage.setItem('film_collapsed_nav', JSON.stringify([...set])); }
+        catch (e) { /* private mode */ }
+    }
+
+    /** Items belonging to a group: everything up to the next group heading. */
+    function navGroupMembers(heading) {
+        const members = [];
+        let el = heading.nextElementSibling;
+        while (el && !el.classList.contains('nav-section')) {
+            // Stop at the divider that precedes the next group, but keep
+            // trailing dividers hidden with the group so collapsing does not
+            // leave a stray rule floating in the sidebar.
+            members.push(el);
+            el = el.nextElementSibling;
+        }
+        return members;
+    }
+
+    function setNavGroupCollapsed(heading, collapsed) {
+        const members = navGroupMembers(heading);
+        members.forEach(el => el.classList.toggle('nav-hidden', collapsed));
+        heading.classList.toggle('collapsed', collapsed);
+
+        const set = readCollapsedNav();
+        const key = (heading.dataset.navGroup || '').toLowerCase();
+        collapsed ? set.add(key) : set.delete(key);
+        writeCollapsedNav(set);
+    }
+
+    function initCollapsibleNav() {
+        const collapsed = readCollapsedNav();
+
+        document.querySelectorAll('#sidebarProjectNav .nav-section').forEach(heading => {
+            if (heading.classList.contains('nav-collapsible')) return;   // already wired
+
+            const label = (heading.textContent || '').trim();
+            heading.dataset.navGroup = label;
+            heading.classList.add('nav-collapsible');
+
+            const items = navGroupMembers(heading).filter(el => el.classList.contains('nav-item'));
+            const count = document.createElement('span');
+            count.className = 'nav-section-count';
+            count.textContent = items.length;
+            heading.appendChild(count);
+
+            heading.addEventListener('click', () => {
+                setNavGroupCollapsed(heading, !heading.classList.contains('collapsed'));
+            });
+
+            if (collapsed.has(label.toLowerCase())) setNavGroupCollapsed(heading, true);
+        });
+    }
+
+    /**
+     * Never leave the page you are on hidden inside a collapsed group —
+     * navigating to a section should reveal it, not make it vanish.
+     */
+    function revealNavGroupFor(page) {
+        const item = document.querySelector(`#sidebarProjectNav .nav-item[data-page="${page}"]`);
+        if (!item || !item.classList.contains('nav-hidden')) return;
+        let el = item.previousElementSibling;
+        while (el && !el.classList.contains('nav-section')) el = el.previousElementSibling;
+        if (el) setNavGroupCollapsed(el, false);
+    }
+
     // ── Collapsible cards ────────────────────────────────────────────
     // Settings and several other pages stack tall cards, so working on one
     // section means scrolling past the rest. Any .card that opens with a
@@ -6497,6 +6607,7 @@
         // Several pages build their cards from data, so re-wire after the
         // loader has had a chance to render. Idempotent by design.
         setTimeout(initCollapsibleCards, 60);
+        revealNavGroupFor(page);
     }
 
     function openProject(id) {
@@ -16703,6 +16814,7 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     initProductionGuide();
     initCollapsibleCards();
+    initCollapsibleNav();
     checkHealth();
     loadProjects();
     </script>
