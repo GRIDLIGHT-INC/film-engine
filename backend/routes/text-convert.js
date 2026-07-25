@@ -2,10 +2,12 @@
  * FILM-117: Text-to-Screenplay Conversion
  * POST /film/projects/:id/text-to-screenplay — Convert prose to Fountain format
  * POST /film/projects/:id/text-to-screenplay/preview — Preview conversion without saving
+ * POST /film/projects/:id/text-to-screenplay/extract  — .docx upload -> plain text
  *
  * Converts prose/novel text into properly formatted Fountain screenplay.
  */
 const { db } = require('../db/database');
+const { extractDocxText } = require('../lib/docx-text');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_TEXT_LENGTH = 10000;
@@ -65,8 +67,61 @@ function handleTextConvert(req, res, urlParts) {
         return;
     }
 
+    // .docx -> text. Separate from conversion because extraction is local and
+    // instant, while conversion is a slow, paid LLM call — the user should see
+    // and be able to edit the extracted prose before spending anything on it.
+    if (subRoute === 'extract') return extractUploadedDocument(req, res);
+
     const isPreview = subRoute === 'preview';
     return processTextConversion(req, res, projectId, isPreview);
+}
+
+/**
+ * Extract plain text from an uploaded document.
+ *
+ * The body parser is JSON-only, so the file arrives base64-encoded rather than
+ * as a binary stream. Base64 inflates by roughly a third, which the 10MB body
+ * limit comfortably covers for a manuscript chapter.
+ */
+function extractUploadedDocument(req, res) {
+    const body = req.body || {};
+    const filename = String(body.filename || '').slice(0, 300);
+    const b64 = body.data_base64;
+
+    if (!b64 || typeof b64 !== 'string') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'data_base64 is required' }));
+        return;
+    }
+    if (filename && !/\.docx$/i.test(filename)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Only .docx files can be extracted. For .doc, .pages or PDF, save as .docx or plain text first.' }));
+        return;
+    }
+
+    let buffer;
+    try {
+        buffer = Buffer.from(b64, 'base64');
+    } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Upload was not valid base64' }));
+        return;
+    }
+
+    const result = extractDocxText(buffer);
+    if (!result.ok) {
+        res.writeHead(422, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: result.error }));
+        return;
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        filename,
+        text: result.text,
+        paragraphs: result.paragraphs,
+        characters: result.characters,
+    }));
 }
 
 async function processTextConversion(req, res, projectId, isPreview) {

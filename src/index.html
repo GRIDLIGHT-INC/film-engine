@@ -5196,8 +5196,8 @@
                         <div class="text-convert-input-row">
                             <textarea id="convertSourceText" rows="10" placeholder="Paste your prose text here...&#10;&#10;Chapter 1&#10;&#10;Sarah walked into the coffee shop, her hands shaking..."></textarea>
                             <div class="text-convert-upload">
-                                <input type="file" id="convertFileInput" accept=".txt" onchange="handleConvertFileUpload(event)">
-                                <label for="convertFileInput" class="btn btn-outline btn-sm">Upload .txt</label>
+                                <input type="file" id="convertFileInput" accept=".txt,.docx" onchange="handleConvertFileUpload(event)">
+                                <label for="convertFileInput" class="btn btn-outline btn-sm">Upload .txt or .docx</label>
                             </div>
                         </div>
                     </div>
@@ -13975,9 +13975,40 @@ ${fountainText.slice(0, 50000)}`;
         conversionResults = [];
     }
 
-    function handleConvertFileUpload(event) {
+    async function handleConvertFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
+
+        // .docx is a zip, so it cannot be read as text in the browser. Send it
+        // to the server, which extracts the prose and hands back plain text.
+        // Extraction is local and free; conversion is a paid LLM call, so the
+        // text lands in the editor first for review rather than going straight
+        // through.
+        if (/\.docx$/i.test(file.name)) {
+            setStatus('Extracting text from ' + file.name + '…');
+            try {
+                const buf = await file.arrayBuffer();
+                const bytes = new Uint8Array(buf);
+                // Chunked so a large manuscript does not blow the argument
+                // limit on String.fromCharCode.
+                let binary = '';
+                const CHUNK = 0x8000;
+                for (let i = 0; i < bytes.length; i += CHUNK) {
+                    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+                }
+                const res = await api('/projects/' + state.currentProject.id + '/text-to-screenplay/extract', {
+                    method: 'POST',
+                    body: JSON.stringify({ filename: file.name, data_base64: btoa(binary) }),
+                });
+                document.getElementById('convertSourceText').value = res.text;
+                setStatus('Extracted ' + res.characters.toLocaleString() + ' characters from ' + file.name);
+                detectChapters();
+                updateConversionEstimate();
+            } catch (err) {
+                setStatus('Could not read that document: ' + err.message);
+            }
+            return;
+        }
 
         const reader = new FileReader();
         reader.onload = (e) => {
