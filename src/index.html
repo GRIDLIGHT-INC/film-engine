@@ -211,6 +211,61 @@
             border-radius: 6px;
         }
         .brand-text { min-width: 0; }
+
+        /* ── Collapsible cards ──────────────────────────────────────
+           Any .card whose first child is a heading becomes collapsible, so
+           long pages (Settings especially) can be reduced to just the section
+           being worked on. State is per card and persists. */
+        .card > h3.card-toggle,
+        .card > h4.card-toggle {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            user-select: none;
+            transition: color 0.12s ease;
+        }
+        .card > h3.card-toggle:hover,
+        .card > h4.card-toggle:hover { color: var(--gl-brand-pink); }
+        .card-toggle::before {
+            content: '';
+            width: 0; height: 0;
+            flex-shrink: 0;
+            border-left: 5px solid currentColor;
+            border-top: 4px solid transparent;
+            border-bottom: 4px solid transparent;
+            transform: rotate(90deg);
+            transition: transform 0.15s ease;
+            opacity: 0.65;
+        }
+        .card.collapsed .card-toggle::before { transform: rotate(0deg); }
+        /* Hide everything except the heading itself. */
+        .card.collapsed > *:not(.card-toggle) { display: none !important; }
+        .card.collapsed { padding-bottom: 14px; }
+        .card-toggle-hint {
+            margin-left: auto;
+            font-size: 10px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: var(--gl-text-muted);
+            opacity: 0;
+            transition: opacity 0.12s ease;
+        }
+        .card-toggle:hover .card-toggle-hint { opacity: 1; }
+
+        /* Collapse-all control, added to any page with 2+ collapsible cards. */
+        .collapse-all-btn {
+            background: none;
+            border: 1px solid var(--gl-border);
+            color: var(--gl-text-muted);
+            border-radius: 5px;
+            font-size: 11px;
+            padding: 3px 9px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        .collapse-all-btn:hover { color: var(--gl-text-primary); border-color: var(--gl-text-muted); }
         .sidebar-header h1 {
             font-size: 16px; font-weight: 700;
             background: var(--gl-brand-gradient);
@@ -6231,6 +6286,94 @@
         renderProjectOnboarding();
     }
 
+    // ── Collapsible cards ────────────────────────────────────────────
+    // Settings and several other pages stack tall cards, so working on one
+    // section means scrolling past the rest. Any .card that opens with a
+    // heading becomes collapsible; state persists per card.
+
+    /** Stable key for a card: prefer its id, else page + heading text. */
+    function cardCollapseKey(card, heading) {
+        if (card.id) return 'card:' + card.id;
+        const page = (card.closest('.page') || {}).id || 'global';
+        return 'card:' + page + ':' + (heading.textContent || '').trim().slice(0, 40);
+    }
+
+    function readCollapsedSet() {
+        try { return new Set(JSON.parse(localStorage.getItem('film_collapsed_cards') || '[]')); }
+        catch (e) { return new Set(); }
+    }
+
+    function writeCollapsedSet(set) {
+        try { localStorage.setItem('film_collapsed_cards', JSON.stringify([...set])); }
+        catch (e) { /* private mode — collapsing still works, just won't persist */ }
+    }
+
+    function setCardCollapsed(card, heading, collapsed) {
+        card.classList.toggle('collapsed', collapsed);
+        const set = readCollapsedSet();
+        const key = cardCollapseKey(card, heading);
+        collapsed ? set.add(key) : set.delete(key);
+        writeCollapsedSet(set);
+    }
+
+    /**
+     * Wire up every collapsible card on the page.
+     *
+     * Idempotent — safe to call after any render, which matters because
+     * several pages rebuild their cards from data.
+     */
+    function initCollapsibleCards() {
+        const collapsed = readCollapsedSet();
+
+        document.querySelectorAll('.card').forEach(card => {
+            const heading = card.firstElementChild;
+            if (!heading || !/^H[34]$/.test(heading.tagName)) return;
+            if (heading.classList.contains('card-toggle')) return;   // already wired
+
+            heading.classList.add('card-toggle');
+            const hint = document.createElement('span');
+            hint.className = 'card-toggle-hint';
+            hint.textContent = 'toggle';
+            heading.appendChild(hint);
+
+            heading.addEventListener('click', () => {
+                setCardCollapsed(card, heading, !card.classList.contains('collapsed'));
+            });
+
+            if (collapsed.has(cardCollapseKey(card, heading))) card.classList.add('collapsed');
+        });
+
+        addCollapseAllControls();
+    }
+
+    /** A collapse/expand-all button next to the page title, where it helps. */
+    function addCollapseAllControls() {
+        document.querySelectorAll('.page').forEach(page => {
+            const cards = [...page.querySelectorAll('.card > .card-toggle')];
+            if (cards.length < 2) return;
+
+            const header = page.querySelector('.page-header');
+            if (!header || header.querySelector('.collapse-all-btn')) return;
+
+            const btn = document.createElement('button');
+            btn.className = 'collapse-all-btn';
+            btn.type = 'button';
+            const sync = () => {
+                const anyOpen = cards.some(h => !h.parentElement.classList.contains('collapsed'));
+                btn.textContent = anyOpen ? 'Collapse all' : 'Expand all';
+            };
+            btn.onclick = () => {
+                const anyOpen = cards.some(h => !h.parentElement.classList.contains('collapsed'));
+                cards.forEach(h => setCardCollapsed(h.parentElement, h, anyOpen));
+                sync();
+            };
+            sync();
+            header.appendChild(btn);
+            // Keep the label honest when cards are toggled individually.
+            cards.forEach(h => h.addEventListener('click', () => setTimeout(sync, 0)));
+        });
+    }
+
     /**
      * Flip the tour panel between the right and left edge.
      *
@@ -6351,6 +6494,9 @@
             // ==== CLAUDE:END ====
         };
         if (loaders[page]) loaders[page]();
+        // Several pages build their cards from data, so re-wire after the
+        // loader has had a chance to render. Idempotent by design.
+        setTimeout(initCollapsibleCards, 60);
     }
 
     function openProject(id) {
@@ -16556,6 +16702,7 @@ ${fountainText.slice(0, 50000)}`;
     // INIT
     // ══════════════════════════════════════════════════════════════
     initProductionGuide();
+    initCollapsibleCards();
     checkHealth();
     loadProjects();
     </script>
