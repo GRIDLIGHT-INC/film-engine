@@ -3298,6 +3298,72 @@
             gap: 8px;
             margin-top: 18px;
         }
+
+        /* ── Onboarding as a docked side panel, not a blocking modal ──
+           The tour navigates to the page it is describing, so it must not
+           cover that page. This overrides .modal-overlay's full-screen dim
+           and centring for this one dialog. */
+        .onboarding-dock {
+            background: none;
+            backdrop-filter: none;
+            /* Clicks fall through to the app; only the panel itself catches
+               them, so the user can keep working while the tour is open. */
+            pointer-events: none;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 0 20px;
+        }
+        .onboarding-dock.dock-left { justify-content: flex-start; }
+
+        .onboarding-panel {
+            pointer-events: auto;
+            width: 380px;
+            max-width: min(380px, calc(100vw - 40px));
+            max-height: min(560px, calc(100vh - 80px));
+            display: flex;
+            flex-direction: column;
+            /* Reads as floating above the app rather than as a page element. */
+            box-shadow: 0 18px 48px rgba(0,0,0,0.55);
+            border-color: var(--gl-border);
+        }
+        .onboarding-panel .modal-body {
+            overflow-y: auto;
+        }
+
+        .onboarding-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .onboarding-side-btn {
+            background: none;
+            border: none;
+            color: var(--gl-text-muted);
+            cursor: pointer;
+            font-size: 15px;
+            line-height: 1;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .onboarding-side-btn:hover {
+            color: var(--gl-text-primary);
+            background: rgba(255,255,255,0.06);
+        }
+
+        /* Narrow screens have no room beside the content, so fall back to a
+           bottom sheet rather than squeezing the panel over the page. */
+        @media (max-width: 900px) {
+            .onboarding-dock {
+                align-items: flex-end;
+                justify-content: center;
+                padding: 0 0 16px;
+            }
+            .onboarding-panel {
+                width: calc(100vw - 24px);
+                max-width: none;
+                max-height: 52vh;
+            }
+        }
         @media (max-width: 820px) {
             .guide-layout,
             .guide-meta-grid {
@@ -5354,11 +5420,20 @@
     </div>
 
     <!-- First-open Onboarding Modal -->
-    <div class="modal-overlay" id="projectOnboardingModal">
-        <div class="modal">
+    <!-- Docked to the right edge rather than centred over the page: the tour
+         navigates to each section as it describes it, so covering that section
+         with a full-screen modal defeated the point. Non-blocking — the page
+         behind stays visible and clickable. -->
+    <div class="modal-overlay onboarding-dock" id="projectOnboardingModal">
+        <div class="modal onboarding-panel">
             <div class="modal-header">
                 <h3>Project Guide</h3>
-                <button class="modal-close" onclick="dismissProjectOnboarding()">&times;</button>
+                <div class="onboarding-header-actions">
+                    <button class="onboarding-side-btn" id="onboardingSideBtn"
+                            onclick="toggleOnboardingSide()"
+                            title="Move to the other side">&#8646;</button>
+                    <button class="modal-close" onclick="dismissProjectOnboarding()">&times;</button>
+                </div>
             </div>
             <div class="modal-body">
                 <div class="onboarding-stepper" id="onboardingStepper"></div>
@@ -6081,6 +6156,7 @@
         onboardingIndex = options.restart || stored.dismissed ? 0 : Math.min(stored.index || 0, steps.length - 1);
         setOnboardingState({ dismissed: false, index: onboardingIndex });
         closeProductionGuide();
+        applyOnboardingSide();
         showModal('projectOnboardingModal');
         renderProjectOnboarding();
     }
@@ -6131,6 +6207,29 @@
     function previousOnboardingStep() {
         onboardingIndex = Math.max(0, onboardingIndex - 1);
         renderProjectOnboarding();
+    }
+
+    /**
+     * Flip the tour panel between the right and left edge.
+     *
+     * Right is the default because the nav lives on the left and the tour
+     * points at it. But some pages put their own controls on the right, so
+     * the panel needs an escape hatch rather than a fixed position the user
+     * cannot argue with. Remembered across sessions.
+     */
+    function toggleOnboardingSide() {
+        const dock = document.getElementById('projectOnboardingModal');
+        if (!dock) return;
+        const nowLeft = dock.classList.toggle('dock-left');
+        try { localStorage.setItem('film_guide_dock_side', nowLeft ? 'left' : 'right'); } catch (e) { /* private mode */ }
+    }
+
+    function applyOnboardingSide() {
+        const dock = document.getElementById('projectOnboardingModal');
+        if (!dock) return;
+        let side = 'right';
+        try { side = localStorage.getItem('film_guide_dock_side') || 'right'; } catch (e) { /* private mode */ }
+        dock.classList.toggle('dock-left', side === 'left');
     }
 
     function dismissProjectOnboarding() {
