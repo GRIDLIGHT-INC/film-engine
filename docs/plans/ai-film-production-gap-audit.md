@@ -97,9 +97,15 @@ For a production where every asset is a long-running async job, this is the scre
 
 Nothing in the codebase writes C2PA Content Credentials or any AI-disclosure metadata into generated media.
 
-**EU AI Act Article 50 transparency obligations take effect 2 August 2026** — eight days from this audit. Providers of systems generating synthetic audio, image, or video must mark outputs in a machine-detectable way as artificially generated. C2PA 2.1 (ratified 2025, now ISO/IEC 22144) is the de facto mechanism; the Code of Practice recommends pairing metadata with imperceptible watermarking.
+**EU AI Act Article 50 transparency obligations apply from 2 August 2026** — eight days from this audit. Article 50(2) of [Regulation (EU) 2024/1689](https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=OJ%3AL_202401689) requires providers of AI systems generating synthetic audio, image, video, or text to mark outputs in a machine-readable format detectable as artificially generated or manipulated. The Commission's [Code of Practice on Transparency of AI-Generated Content](https://digital-strategy.ec.europa.eu/en/policies/code-practice-ai-generated-content) addresses implementation.
 
-Any film this engine outputs for EU distribution is in scope. Full conformance is a multi-month effort (signing pipeline, X.509 certificates from a CA on the C2PA Trust List, manifest repository, watermarking), so the realistic near-term move is: record generation provenance we already have — model, provider, prompt, seed, timestamp — as embedded sidecar metadata on every output, and surface a disclosure statement in the export package. We already capture nearly all of it in `render_ledger`; it just never reaches the file.
+[C2PA Content Credentials](https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html) is the leading open mechanism — cryptographically signed manifests recording what produced an asset and what edited it.
+
+**Separate the two kinds of claim below.** The effective date and the text of the obligation are matters of law, sourced above and verifiable directly. Everything that follows is an engineering read of what conformance would take, not legal advice — scope for a specific film should be confirmed with counsel.
+
+Any film this engine outputs for EU distribution is plausibly in scope. Full C2PA conformance is a multi-month effort (signing pipeline, certificates, manifest handling, and likely watermarking alongside metadata, since metadata alone is strippable). The realistic near-term move is smaller and worth doing regardless: we already capture model, provider, prompt, seed, and timestamp in `render_ledger`, and none of it reaches the output file. Writing that provenance into embedded or sidecar metadata on every generated asset, plus a disclosure statement in the export package, is achievable now and is the foundation any later C2PA work would build on.
+
+*Standards versions move quickly here — C2PA is at 2.4 as of this audit. Verify the current version and any ISO alignment against [spec.c2pa.org](https://spec.c2pa.org/) before implementing rather than trusting this document.*
 
 ### 3. No in-app playback or timeline — high impact, high effort
 
@@ -127,18 +133,23 @@ Versions exist and can be A/B compared, but there is no "circle take" concept �
 
 ## Part 5 — Recommended Order of Work
 
+Same numbering as Part 4, so the ranks agree wherever they appear — here, in Part 4, and in the app's readiness view.
+
 1. **Unified job queue** — biggest daily-use gain per unit of effort.
 2. **Provenance metadata on outputs** — deadline-driven; partial credit is worth a lot here, and most of the data already exists in `render_ledger`.
-3. **In-app player + timecoded notes** — plan together; the notes change is trivial and near-worthless without the player.
-4. **Selects / circle takes** — small change, real workflow gain.
-5. **General rights register** — extend music rights rather than building new.
-6. **Relabel or repurpose call sheets** — cheap coherence fix.
+3. **In-app player** — the larger of the pair, and the one that unblocks the next item.
+4. **Timecoded notes** — trivial on its own (a nullable `timecode_ms` on `film_shot_notes`) but near-worthless before item 3. Sequence them together; ship 3 first.
+5. **Selects / circle takes** — small change, real workflow gain.
+6. **General rights register** — extend music rights rather than building new.
+7. **Smaller items** — including relabeling call sheets as generation run sheets, a cheap coherence fix. Multi-user collaboration sits here as correctly deferred, not as a ranked next step.
 
 ## Part 6 — Onboarding and the Always-Available Guide
 
 The second half of the request: a guide on first project open, and a full guide available at all times.
 
-Implemented this milestone as a single `SECTION_GUIDE` registry in `src/index.html`, keyed by the `data-page` values already on the 24 nav buttons. One registry is the source for all five surfaces — first-open tour, persistent searchable guide, per-page contextual help, nav tooltips, and generated user documentation — so the copy cannot drift between them.
+Implemented this milestone as a single `SECTION_GUIDE` registry in `src/index.html`, keyed by the `data-page` values already on the 24 nav buttons. One registry is the source for four surfaces — the first-open tour, the persistent searchable guide, per-page contextual help, and the nav tooltips — so the copy cannot drift between them.
+
+A fifth surface, generating `docs/user-guide.md` from the same registry, was designed but **not built**. The registry carries everything a generator would need; nothing consumes it that way yet. Treat it as available future work, not as shipped.
 
 Design decisions worth recording:
 
@@ -150,10 +161,19 @@ Design decisions worth recording:
 
 ## Sources
 
-- [Top 10 Best Film Production Management Software of 2026](https://wifitalents.com/best/film-production-management-software/)
-- [Top 10 Best Film Management Software of 2026](https://gitnux.org/best/film-management-software/)
-- [Top 10 Best Video Production Management Software of 2026](https://zipdo.co/best/video-production-management-software/)
-- [AI Content Provenance in Production: C2PA, Audit Trails, and the Compliance Deadline](https://tianpan.co/blog/2026-04-19-ai-content-provenance-c2pa)
-- [AI Disclosure Compliance 2026: C2PA & EU AI Act Guide](https://aivideobootcamp.com/blog/ai-disclosure-compliance-2026-c2pa-eu-ai-act/)
-- [C2PA Content Credentials: Cryptographic Provenance for AI-Generated Media in Production](https://www.systemshardening.com/articles/ai-landscape/c2pa-content-credentials/)
-- [What is C2PA? Content Provenance Explained (2026)](https://c2paviewer.com/articles/what-is-c2pa)
+**Primary — regulatory and standards.** Every legal claim in §4.2 rests on these; verify against them rather than against this document.
+
+- [Regulation (EU) 2024/1689 (the AI Act), consolidated text](https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=OJ%3AL_202401689) — Article 50 is the operative transparency provision
+- [Article 50, European Commission AI Act Service Desk](https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-50)
+- [Transparency obligations under Article 50 — Commission FAQ](https://digital-strategy.ec.europa.eu/en/faqs/transparency-obligations-under-article-50-ai-act)
+- [Code of Practice on Transparency of AI-Generated Content — European Commission](https://digital-strategy.ec.europa.eu/en/policies/code-practice-ai-generated-content)
+- [C2PA Technical Specification 2.4](https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html) and [C2PA specification index](https://spec.c2pa.org/)
+- [Content Credentials white paper — C2PA](https://c2pa.org/wp-content/uploads/sites/33/2025/10/content_credentials_wp_0925.pdf)
+
+**Secondary — market landscape.** Used only to confirm which tools are current in the production-management category (Part 1). No claim in this audit depends on them.
+
+- [Film production management software roundup, 2026](https://wifitalents.com/best/film-production-management-software/)
+- [Film management software roundup, 2026](https://gitnux.org/best/film-management-software/)
+- [Video production management software roundup, 2026](https://zipdo.co/best/video-production-management-software/)
+
+**Everything about Film Engine's own state** — route files, migrations, schema columns, endpoint counts — was verified directly against the repository at the commit this audit was written on, not taken from documentation.
