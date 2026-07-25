@@ -360,13 +360,23 @@ function compareVersions(req, res, shotId, query) {
         return;
     }
 
-    // Get render ledger entries for both versions
-    const renderA = db.prepare(
-        'SELECT * FROM render_ledger WHERE shot_id = ? AND version = ? ORDER BY created_at DESC LIMIT 1'
-    ).get(shotId, versionA);
-    const renderB = db.prepare(
-        'SELECT * FROM render_ledger WHERE shot_id = ? AND version = ? ORDER BY created_at DESC LIMIT 1'
-    ).get(shotId, versionB);
+    // Get render ledger entries for both versions.
+    //
+    // Join through film_shot_versions.render_ledger_id, NOT by numeric version.
+    // The two version numbers count different things: render_ledger.version is
+    // scoped per (shot_id, step), while film_shot_versions.version is a global
+    // per-shot take counter. So a shot with one keyframe render and one video
+    // render has ledger versions 1 and 1, but take versions 1 and 2 — matching
+    // on the number would pull the wrong ledger row for take 1 and find nothing
+    // for take 2. Each take already records exactly which render produced it.
+    //
+    // This was latent until takes began to be materialized: film_shot_versions
+    // was never populated, so this endpoint always 404'd at the check above and
+    // the mismatch never surfaced. Returning confidently wrong parameters is a
+    // worse failure than the 404 it replaced.
+    const ledgerById = db.prepare('SELECT * FROM render_ledger WHERE id = ? AND shot_id = ?');
+    const renderA = verA.render_ledger_id ? ledgerById.get(verA.render_ledger_id, shotId) : null;
+    const renderB = verB.render_ledger_id ? ledgerById.get(verB.render_ledger_id, shotId) : null;
 
     // Compute param diff between render entries
     const paramDiff = computeParamDiff(renderA, renderB);
