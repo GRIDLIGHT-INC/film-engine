@@ -16,7 +16,7 @@ const crypto = require('crypto');
 const { db, generateId } = require('../db/database');
 const { buildStoryboardPrompt, applyStyleLock } = require('../lib/storyboard-prompt');
 const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
-const { buildShotReferencePayload, applyConsistencyToImagePayload, recordConsistencyCheck } = require('../lib/consistency-context');
+const { buildShotReferencePayload, applyConsistencyToImagePayload, recordConsistencyCheck, auditProjectReadiness } = require('../lib/consistency-context');
 
 const os = require('os');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -498,6 +498,27 @@ async function generateStoryboard(req, res, projectId, query) {
         return json(res, 400, { error: 'No shots found for this project. Run screenplay breakdown first.' });
     }
 
+    // Consistency readiness gate.
+    //
+    // Storyboard generation already CONSUMES locked identities — it builds a
+    // reference payload and applies IP-adapter weights below. What it never did
+    // was say anything when nothing is locked, so a batch would generate
+    // silently and the same character would drift between shots. The keyframe
+    // becomes the first frame of the video, so that drift propagates.
+    //
+    // Matches the pipeline's behaviour deliberately: warn always, block only
+    // when strict is asked for. Rough keyframes before locking identity is a
+    // legitimate thing to want, so blocking by default would fight the user.
+    let readiness = { ready: true, missing: [], warnings: [] };
+    try { readiness = auditProjectReadiness(projectId); } catch (_) { /* never block on an audit failure */ }
+    const strict = !!((req.body && req.body.strict) || (query && query.strict === 'true'));
+    if (strict && !readiness.ready) {
+        return json(res, 409, {
+            error: 'Consistency check blocked storyboard generation (strict mode). Lock the listed subjects in Consistency first.',
+            readiness,
+        });
+    }
+
     // Load characters and locations for prompt building
     const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(projectId);
     const locations = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(projectId);
@@ -508,6 +529,9 @@ async function generateStoryboard(req, res, projectId, query) {
     const results = [];
     let shotsCompleted = 0;
     let shotsFailed = 0;
+    // Carried into the response so a non-strict run still tells the user what
+    // is unlocked, rather than only failing loudly in strict mode.
+    const consistencyWarning = readiness.ready ? null : readiness;
 
     // Track scenes for seed generation and status updates
     let currentSceneId = null;
@@ -638,6 +662,9 @@ async function generateStoryboard(req, res, projectId, query) {
         shots_completed: shotsCompleted,
         shots_failed: shotsFailed,
         frames: results,
+        // Null when everything in frame is locked. Present means the batch ran
+        // with unlocked subjects and those shots may not match each other.
+        consistency_warning: consistencyWarning,
     });
 }
 
