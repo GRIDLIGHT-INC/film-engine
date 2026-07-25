@@ -195,6 +195,22 @@
             padding: 20px;
             border-bottom: 1px solid var(--gl-border-subtle);
         }
+        /* Logo sits left of the wordmark. The image is high-resolution so it
+           stays crisp on retina; it is constrained here rather than resized on
+           disk so the same asset can be reused at larger sizes. */
+        .brand-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .brand-logo {
+            width: 28px;
+            height: 28px;
+            flex-shrink: 0;
+            object-fit: contain;
+            border-radius: 6px;
+        }
+        .brand-text { min-width: 0; }
         .sidebar-header h1 {
             font-size: 16px; font-weight: 700;
             background: var(--gl-brand-gradient);
@@ -3484,8 +3500,14 @@
          ════════════════════════════════════════════════════════════ -->
     <nav class="sidebar">
         <div class="sidebar-header">
-            <h1>Film Engine</h1>
-            <p>AI Production Pipeline</p>
+            <div class="brand-row">
+                <img class="brand-logo" src="assets/logo.png" alt="Gridlight"
+                     onerror="this.style.display='none'">
+                <div class="brand-text">
+                    <h1>Film Engine</h1>
+                    <p>AI Production Pipeline</p>
+                </div>
+            </div>
             <button class="glossary-btn" onclick="showModal('glossaryModal')">&#128218; Glossary</button>
             <button class="btn btn-secondary btn-sm guide-btn" onclick="openProductionGuide()">? Production Guide</button>
         </div>
