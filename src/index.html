@@ -3529,6 +3529,26 @@
                 <button class="nav-item" data-page="settings" onclick="navigateTo('settings')" data-tooltip="Resolution, frame rate, aspect ratio, color space, and delivery presets" data-tooltip-pos="right">
                     <span class="nav-icon">&#9881;</span> Settings
                 </button>
+                <!-- ==== CODEX:START ops-compliance-nav ==== -->
+                <button class="nav-item" data-page="jobsqueue" onclick="navigateTo('jobsqueue'); loadJobsQueuePage()" data-tooltip="Unified monitor for all active generation jobs" data-tooltip-pos="right">
+                    <span class="nav-icon">&#9201;</span> Job Queue
+                </button>
+                <button class="nav-item" data-page="provenance" onclick="navigateTo('provenance'); loadProvenancePage()" data-tooltip="AI disclosure sidecar and generation provenance manifest" data-tooltip-pos="right">
+                    <span class="nav-icon">&#128220;</span> Provenance
+                </button>
+                <button class="nav-item" data-page="rights" onclick="navigateTo('rights'); loadRightsPage()" data-tooltip="Synthetic performer, voice, model, music, and asset rights register" data-tooltip-pos="right">
+                    <span class="nav-icon">&#128272;</span> Rights
+                </button>
+                <button class="nav-item" data-page="colorpipeline" onclick="navigateTo('colorpipeline'); loadColorPipelinePage()" data-tooltip="ACES/CDL delivery color pipeline" data-tooltip-pos="right">
+                    <span class="nav-icon">&#127912;</span> Color Pipeline
+                </button>
+                <button class="nav-item" data-page="dubbing" onclick="navigateTo('dubbing'); loadDubbingPage()" data-tooltip="Localization and dubbing packages from subtitle cues" data-tooltip-pos="right">
+                    <span class="nav-icon">&#127908;</span> Dubbing
+                </button>
+                <button class="nav-item" data-page="broadcastqc" onclick="navigateTo('broadcastqc'); loadBroadcastQCPage()" data-tooltip="Delivery-readiness QC for masters, captions, rights, and provenance metadata" data-tooltip-pos="right">
+                    <span class="nav-icon">&#9989;</span> Delivery QC
+                </button>
+                <!-- ==== CODEX:END ==== -->
                 <div class="sidebar-divider"></div>
                 <button class="nav-item" onclick="openProductionGuide()" data-tooltip="Open the full project guide and professional readiness checklist" data-tooltip-pos="right">
                     <span class="nav-icon">?</span> Guide
@@ -4541,6 +4561,116 @@
                 </div>
             </div>
         </div>
+
+        <!-- ==== CODEX:START ops-compliance-pages ==== -->
+        <div class="page" id="page-jobsqueue">
+            <div class="flex-between mb-16">
+                <h2>Job Queue</h2>
+                <button class="btn btn-secondary" onclick="loadJobsQueuePage()">Refresh</button>
+            </div>
+            <div id="jobsQueueSummary" class="mb-16"></div>
+            <div id="jobsQueueList"></div>
+        </div>
+
+        <div class="page" id="page-provenance">
+            <div class="flex-between mb-16">
+                <h2>Provenance</h2>
+                <div class="btn-row">
+                    <button class="btn btn-secondary" onclick="loadProvenancePage()">Refresh</button>
+                    <button class="btn btn-primary" onclick="exportProvenanceSidecar()">Export Sidecar</button>
+                </div>
+            </div>
+            <div id="provenanceBody"></div>
+        </div>
+
+        <div class="page" id="page-rights">
+            <div class="flex-between mb-16">
+                <h2>Rights Register</h2>
+                <div class="btn-row">
+                    <button class="btn btn-secondary" onclick="loadRightsPage()">Refresh</button>
+                    <button class="btn btn-primary" onclick="createRightsRecord()">Add Record</button>
+                </div>
+            </div>
+            <div class="card mb-16">
+                <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
+                    <input id="rightsSubject" placeholder="Subject">
+                    <select id="rightsEntityType">
+                        <option value="character">Character</option>
+                        <option value="voice">Voice</option>
+                        <option value="model">Model</option>
+                        <option value="music">Music</option>
+                        <option value="asset">Asset</option>
+                        <option value="output">Output</option>
+                    </select>
+                    <select id="rightsType">
+                        <option value="commercial_use">Commercial use</option>
+                        <option value="likeness">Likeness</option>
+                        <option value="voice_clone">Voice clone</option>
+                        <option value="model_license">Model license</option>
+                        <option value="music_license">Music license</option>
+                    </select>
+                    <select id="rightsStatus">
+                        <option value="unknown">Unknown</option>
+                        <option value="cleared">Cleared</option>
+                        <option value="restricted">Restricted</option>
+                        <option value="expired">Expired</option>
+                        <option value="blocked">Blocked</option>
+                    </select>
+                </div>
+            </div>
+            <div id="rightsBody"></div>
+        </div>
+
+        <div class="page" id="page-colorpipeline">
+            <div class="flex-between mb-16">
+                <h2>Color Pipeline</h2>
+                <button class="btn btn-primary" onclick="saveColorPipeline()">Save</button>
+            </div>
+            <div class="card" style="max-width:760px;">
+                <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;">
+                    <div class="form-group"><label>ACES Version</label><input id="colorAcesVersion" value="ACES 1.3"></div>
+                    <div class="form-group"><label>Working Space</label><input id="colorWorkingSpace" value="ACEScct"></div>
+                    <div class="form-group"><label>Input Transform</label><input id="colorInputTransform" placeholder="Input transform"></div>
+                    <div class="form-group"><label>Output Transform</label><input id="colorOutputTransform" value="Rec.709"></div>
+                    <div class="form-group"><label>Target Color Space</label><input id="colorTargetSpace" value="Rec.709"></div>
+                    <div class="form-group"><label>Target Nits</label><input id="colorTargetNits" type="number" value="100"></div>
+                    <div class="form-group"><label>CDL Slope</label><input id="colorCdlSlope" value="1,1,1"></div>
+                    <div class="form-group"><label>CDL Offset</label><input id="colorCdlOffset" value="0,0,0"></div>
+                    <div class="form-group"><label>CDL Power</label><input id="colorCdlPower" value="1,1,1"></div>
+                    <div class="form-group"><label>CDL Saturation</label><input id="colorCdlSaturation" type="number" step="0.01" value="1"></div>
+                </div>
+                <div class="form-group"><label>Notes</label><textarea id="colorNotes" rows="3"></textarea></div>
+            </div>
+            <div id="colorPipelineStatus" class="mt-16"></div>
+        </div>
+
+        <div class="page" id="page-dubbing">
+            <div class="flex-between mb-16">
+                <h2>Dubbing</h2>
+                <button class="btn btn-secondary" onclick="loadDubbingPage()">Refresh</button>
+            </div>
+            <div class="card mb-16">
+                <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;align-items:end;">
+                    <div class="form-group"><label>Source</label><input id="dubbingSourceLang" value="en"></div>
+                    <div class="form-group"><label>Target</label><input id="dubbingTargetLang" placeholder="es"></div>
+                    <div class="form-group"><label>Strategy</label><select id="dubbingStrategy"><option value="preserve_character">Preserve character</option><option value="new_cast">New cast</option><option value="subtitles_only">Subtitles only</option></select></div>
+                    <button class="btn btn-primary" onclick="createDubbingPackage()">Create Package</button>
+                </div>
+            </div>
+            <div id="dubbingBody"></div>
+        </div>
+
+        <div class="page" id="page-broadcastqc">
+            <div class="flex-between mb-16">
+                <h2>Delivery QC</h2>
+                <div class="btn-row">
+                    <button class="btn btn-secondary" onclick="loadBroadcastQCPage()">Refresh</button>
+                    <button class="btn btn-primary" onclick="runBroadcastQC()">Run Readiness QC</button>
+                </div>
+            </div>
+            <div id="broadcastQcBody"></div>
+        </div>
+        <!-- ==== CODEX:END ==== -->
     </div>
 
     <!-- ════════════════════════════════════════════════════════════
@@ -16077,6 +16207,229 @@ ${fountainText.slice(0, 50000)}`;
             setTimeout(() => document.getElementById('glossarySearch').focus(), 50);
         }
     };
+
+    // ==== CODEX:START ops-compliance-ui ====
+    function requireCurrentProjectForOps() {
+        if (state.currentProject && state.currentProject.id) return state.currentProject.id;
+        setStatus('Open a project first');
+        return null;
+    }
+
+    function codexStatusBadge(status) {
+        const color = status === 'pass' || status === 'complete' || status === 'cleared' ? '#16a34a'
+            : status === 'fail' || status === 'failed' || status === 'blocked' ? '#dc2626'
+            : '#f59e0b';
+        return `<span style="display:inline-block;padding:2px 7px;border-radius:999px;background:${color}22;color:${color};font-size:11px;font-weight:700;">${esc(status || 'unknown')}</span>`;
+    }
+
+    async function loadJobsQueuePage() {
+        const pid = requireCurrentProjectForOps();
+        if (!pid) return;
+        const summaryEl = document.getElementById('jobsQueueSummary');
+        const listEl = document.getElementById('jobsQueueList');
+        summaryEl.innerHTML = '<div class="card">Loading queue...</div>';
+        try {
+            const data = await api(`/projects/${pid}/jobs`);
+            const s = data.summary || {};
+            summaryEl.innerHTML = `<div class="stat-grid">
+                <div class="stat-card"><div class="stat-value">${data.total || 0}</div><div class="stat-label">Total jobs</div></div>
+                <div class="stat-card"><div class="stat-value">${s.active || 0}</div><div class="stat-label">Active</div></div>
+                <div class="stat-card"><div class="stat-value">${s.failed || 0}</div><div class="stat-label">Failed</div></div>
+                <div class="stat-card"><div class="stat-value">${s.complete || 0}</div><div class="stat-label">Complete</div></div>
+            </div>`;
+            listEl.innerHTML = data.jobs.length ? data.jobs.map(job => `<div class="card mb-8">
+                <div class="flex-between">
+                    <div><strong>${esc(job.job_type)}</strong> <span class="text-sm text-muted">${esc(job.id)}</span></div>
+                    ${codexStatusBadge(job.status)}
+                </div>
+                <p class="text-sm text-muted">${esc(job.prompt || job.model || 'No prompt/model recorded')}</p>
+                ${job.error_message ? `<p class="text-sm" style="color:#dc2626;">${esc(job.error_message)}</p>` : ''}
+            </div>`).join('') : '<div class="card"><p class="text-muted">No generation jobs for this project yet.</p></div>';
+        } catch (err) {
+            summaryEl.innerHTML = `<div class="card"><p style="color:#dc2626;">${esc(err.message)}</p></div>`;
+            listEl.innerHTML = '';
+        }
+    }
+
+    async function loadProvenancePage() {
+        const pid = requireCurrentProjectForOps();
+        if (!pid) return;
+        const el = document.getElementById('provenanceBody');
+        el.innerHTML = '<div class="card">Loading provenance...</div>';
+        try {
+            const data = await api(`/projects/${pid}/provenance`);
+            const m = data.manifest || {};
+            el.innerHTML = `<div class="card mb-16">
+                <h3 class="mb-8">AI Disclosure</h3>
+                <p class="text-sm">${esc(data.disclosure || '')}</p>
+                <p class="text-sm" style="color:#f59e0b;margin-top:8px;">Sidecar only. This is not C2PA certificate signing or trust-list conformance.</p>
+            </div>
+            <div class="stat-grid">
+                <div class="stat-card"><div class="stat-value">${m.counts?.assets || 0}</div><div class="stat-label">Assets</div></div>
+                <div class="stat-card"><div class="stat-value">${m.counts?.render_ledger_entries || 0}</div><div class="stat-label">Ledger rows</div></div>
+                <div class="stat-card"><div class="stat-value">${m.counts?.rights_records || 0}</div><div class="stat-label">Rights records</div></div>
+            </div>
+            <div class="card mt-16"><pre style="white-space:pre-wrap;max-height:320px;overflow:auto;">${esc(JSON.stringify({ format: m.format, sha256: m.sha256, c2pa: m.c2pa }, null, 2))}</pre></div>`;
+        } catch (err) {
+            el.innerHTML = `<div class="card"><p style="color:#dc2626;">${esc(err.message)}</p></div>`;
+        }
+    }
+
+    async function exportProvenanceSidecar() {
+        const pid = requireCurrentProjectForOps();
+        if (!pid) return;
+        try {
+            const data = await api(`/projects/${pid}/provenance/export`, { method: 'POST', body: '{}' });
+            setStatus(`Provenance sidecar exported: ${data.sidecar_path}`);
+            loadProvenancePage();
+        } catch (err) {
+            setStatus(err.message);
+        }
+    }
+
+    async function loadRightsPage() {
+        const pid = requireCurrentProjectForOps();
+        if (!pid) return;
+        const el = document.getElementById('rightsBody');
+        el.innerHTML = '<div class="card">Loading rights...</div>';
+        try {
+            const data = await api(`/projects/${pid}/rights`);
+            el.innerHTML = data.rights.length ? data.rights.map(row => `<div class="card mb-8">
+                <div class="flex-between"><strong>${esc(row.subject)}</strong>${codexStatusBadge(row.status)}</div>
+                <p class="text-sm text-muted">${esc(row.entity_type)} / ${esc(row.rights_type)} · ${esc(row.territory || 'worldwide')}</p>
+                ${row.restrictions ? `<p class="text-sm">${esc(row.restrictions)}</p>` : ''}
+            </div>`).join('') : '<div class="card"><p class="text-muted">No rights records yet.</p></div>';
+        } catch (err) {
+            el.innerHTML = `<div class="card"><p style="color:#dc2626;">${esc(err.message)}</p></div>`;
+        }
+    }
+
+    async function createRightsRecord() {
+        const pid = requireCurrentProjectForOps();
+        if (!pid) return;
+        const subject = document.getElementById('rightsSubject').value.trim();
+        if (!subject) return setStatus('Rights subject is required');
+        await api(`/projects/${pid}/rights`, {
+            method: 'POST',
+            body: JSON.stringify({
+                subject,
+                entity_type: document.getElementById('rightsEntityType').value,
+                rights_type: document.getElementById('rightsType').value,
+                status: document.getElementById('rightsStatus').value,
+            }),
+        });
+        document.getElementById('rightsSubject').value = '';
+        loadRightsPage();
+    }
+
+    function parseTripletInput(id, fallback) {
+        const parts = document.getElementById(id).value.split(',').map(v => Number(v.trim()));
+        return parts.length === 3 && parts.every(Number.isFinite) ? parts : fallback;
+    }
+
+    async function loadColorPipelinePage() {
+        const pid = requireCurrentProjectForOps();
+        if (!pid) return;
+        try {
+            const data = await api(`/projects/${pid}/post/color-pipeline`);
+            const p = data.pipeline || {};
+            document.getElementById('colorAcesVersion').value = p.aces_version || 'ACES 1.3';
+            document.getElementById('colorWorkingSpace').value = p.working_space || 'ACEScct';
+            document.getElementById('colorInputTransform').value = p.input_transform || '';
+            document.getElementById('colorOutputTransform').value = p.output_transform || 'Rec.709';
+            document.getElementById('colorTargetSpace').value = p.target_color_space || 'Rec.709';
+            document.getElementById('colorTargetNits').value = p.target_nits || 100;
+            document.getElementById('colorCdlSlope').value = JSON.parse(p.cdl_slope || '[1,1,1]').join(',');
+            document.getElementById('colorCdlOffset').value = JSON.parse(p.cdl_offset || '[0,0,0]').join(',');
+            document.getElementById('colorCdlPower').value = JSON.parse(p.cdl_power || '[1,1,1]').join(',');
+            document.getElementById('colorCdlSaturation').value = p.cdl_saturation || 1;
+            document.getElementById('colorNotes').value = p.notes || '';
+            document.getElementById('colorPipelineStatus').innerHTML = '<div class="card">Color pipeline loaded.</div>';
+        } catch (err) {
+            document.getElementById('colorPipelineStatus').innerHTML = `<div class="card"><p style="color:#dc2626;">${esc(err.message)}</p></div>`;
+        }
+    }
+
+    async function saveColorPipeline() {
+        const pid = requireCurrentProjectForOps();
+        if (!pid) return;
+        await api(`/projects/${pid}/post/color-pipeline`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                aces_version: document.getElementById('colorAcesVersion').value,
+                working_space: document.getElementById('colorWorkingSpace').value,
+                input_transform: document.getElementById('colorInputTransform').value,
+                output_transform: document.getElementById('colorOutputTransform').value,
+                target_color_space: document.getElementById('colorTargetSpace').value,
+                target_nits: Number(document.getElementById('colorTargetNits').value) || 100,
+                cdl_slope: parseTripletInput('colorCdlSlope', [1, 1, 1]),
+                cdl_offset: parseTripletInput('colorCdlOffset', [0, 0, 0]),
+                cdl_power: parseTripletInput('colorCdlPower', [1, 1, 1]),
+                cdl_saturation: Number(document.getElementById('colorCdlSaturation').value) || 1,
+                notes: document.getElementById('colorNotes').value,
+            }),
+        });
+        setStatus('Color pipeline saved');
+        loadColorPipelinePage();
+    }
+
+    async function loadDubbingPage() {
+        const pid = requireCurrentProjectForOps();
+        if (!pid) return;
+        const el = document.getElementById('dubbingBody');
+        el.innerHTML = '<div class="card">Loading dubbing packages...</div>';
+        try {
+            const data = await api(`/projects/${pid}/subtitles/dubbing`);
+            el.innerHTML = data.jobs.length ? data.jobs.map(job => `<div class="card mb-8">
+                <div class="flex-between"><strong>${esc(job.source_language)} to ${esc(job.target_language)}</strong>${codexStatusBadge(job.status)}</div>
+                <p class="text-sm text-muted">${job.cue_count || 0} cue(s) · ${esc(job.voice_strategy)}</p>
+            </div>`).join('') : '<div class="card"><p class="text-muted">No dubbing packages yet.</p></div>';
+        } catch (err) {
+            el.innerHTML = `<div class="card"><p style="color:#dc2626;">${esc(err.message)}</p></div>`;
+        }
+    }
+
+    async function createDubbingPackage() {
+        const pid = requireCurrentProjectForOps();
+        if (!pid) return;
+        const target = document.getElementById('dubbingTargetLang').value.trim();
+        if (!target) return setStatus('Target language is required');
+        await api(`/projects/${pid}/subtitles/dubbing`, {
+            method: 'POST',
+            body: JSON.stringify({
+                source_language: document.getElementById('dubbingSourceLang').value || 'en',
+                target_language: target,
+                voice_strategy: document.getElementById('dubbingStrategy').value,
+            }),
+        });
+        loadDubbingPage();
+    }
+
+    async function loadBroadcastQCPage() {
+        const pid = requireCurrentProjectForOps();
+        if (!pid) return;
+        const el = document.getElementById('broadcastQcBody');
+        el.innerHTML = '<div class="card">Loading QC reports...</div>';
+        try {
+            const data = await api(`/projects/${pid}/qa/broadcast`);
+            el.innerHTML = data.reports.length ? data.reports.map(report => `<div class="card mb-12">
+                <div class="flex-between"><strong>${esc(report.target_spec)}</strong>${codexStatusBadge(report.status)}</div>
+                <p class="text-sm text-muted">${esc(report.summary || '')}</p>
+                <p class="text-sm text-muted">Metadata readiness only. Run external waveform, loudness, gamut, caption-file, and bitstream QC before broadcast delivery.</p>
+                ${(report.checks || []).map(check => `<div class="text-sm">${codexStatusBadge(check.status)} ${esc(check.label)} — ${esc(check.detail)}</div>`).join('')}
+            </div>`).join('') : '<div class="card"><p class="text-muted">No broadcast QC reports yet.</p></div>';
+        } catch (err) {
+            el.innerHTML = `<div class="card"><p style="color:#dc2626;">${esc(err.message)}</p></div>`;
+        }
+    }
+
+    async function runBroadcastQC() {
+        const pid = requireCurrentProjectForOps();
+        if (!pid) return;
+        await api(`/projects/${pid}/qa/broadcast`, { method: 'POST', body: JSON.stringify({ target_spec: 'streaming_rec709' }) });
+        loadBroadcastQCPage();
+    }
+    // ==== CODEX:END ====
 
     // ══════════════════════════════════════════════════════════════
     // INIT

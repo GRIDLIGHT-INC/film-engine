@@ -28,6 +28,8 @@ function handleQA(req, res, urlParts, query) {
 
         const sub = urlParts[4];
         if (sub === 'run' && req.method === 'POST') return runProjectQAEndpoint(req, res, projectId);
+        if (sub === 'broadcast' && req.method === 'GET') return listBroadcastQC(req, res, projectId);
+        if (sub === 'broadcast' && req.method === 'POST') return runBroadcastQC(req, res, projectId);
         if (sub === 'latest' && req.method === 'GET') return getLatestQA(req, res, projectId);
         if (sub === 'continuity' && req.method === 'GET') return getContinuity(req, res, projectId);
         if (sub === 'rubric' && req.method === 'GET') return getRubric(req, res);
@@ -109,6 +111,100 @@ function listQARuns(req, res, projectId, query) {
 
     const runs = db.prepare(sql).all(...params);
     json(res, 200, { project_id: projectId, total: runs.length, runs });
+}
+
+// -- Broadcast QC --
+
+function listBroadcastQC(req, res, projectId) {
+    const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) return json(res, 404, { error: 'Project not found' });
+    const reports = db.prepare('SELECT * FROM film_broadcast_qc_reports WHERE project_id = ? ORDER BY created_at DESC').all(projectId)
+        .map(row => ({ ...row, checks: parseJSON(row.checks_json, []) }));
+    json(res, 200, { project_id: projectId, total: reports.length, reports });
+}
+
+function runBroadcastQC(req, res, projectId) {
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) return json(res, 404, { error: 'Project not found' });
+
+    const targetSpec = (req.body && req.body.target_spec ? String(req.body.target_spec) : 'streaming_rec709').slice(0, 100);
+    const checks = buildBroadcastChecks(projectId, project);
+    const status = checks.some(check => check.status === 'fail')
+        ? 'fail'
+        : checks.some(check => check.status === 'warning')
+            ? 'warning'
+            : 'pass';
+    const summary = `${checks.filter(c => c.status === 'pass').length}/${checks.length} delivery-readiness checks passed`;
+    const id = generateId();
+
+    db.prepare(`
+        INSERT INTO film_broadcast_qc_reports (id, project_id, status, target_spec, checks_json, summary)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, projectId, status, targetSpec, JSON.stringify(checks), summary);
+
+    json(res, 200, {
+        id,
+        project_id: projectId,
+        status,
+        target_spec: targetSpec,
+        qc_scope: 'metadata_readiness',
+        scope_note: 'Checks delivery readiness records in Film Engine. It does not perform waveform, loudness, gamut, caption-file validation, or bitstream analysis.',
+        summary,
+        checks,
+    });
+}
+
+function buildBroadcastChecks(projectId, project) {
+    const videoCount = db.prepare("SELECT COUNT(*) AS count FROM film_assets WHERE project_id = ? AND asset_type IN ('video_final', 'video_synced')").get(projectId).count || 0;
+    const audioCount = db.prepare("SELECT COUNT(*) AS count FROM film_assets WHERE project_id = ? AND asset_type IN ('audio_mix', 'audio_dialogue', 'audio_music')").get(projectId).count || 0;
+    const subtitleLanguages = db.prepare('SELECT language, COUNT(*) AS count FROM film_subtitles WHERE project_id = ? GROUP BY language').all(projectId);
+    const colorPipeline = db.prepare('SELECT * FROM film_color_pipelines WHERE project_id = ?').get(projectId);
+    const provenanceRows = db.prepare('SELECT COUNT(*) AS count FROM film_provenance_manifests WHERE project_id = ?').get(projectId).count || 0;
+    const blockedRights = db.prepare("SELECT COUNT(*) AS count FROM film_rights WHERE project_id = ? AND status IN ('blocked', 'expired', 'restricted', 'unknown')").get(projectId).count || 0;
+
+    return [
+        {
+            key: 'video_master',
+            label: 'Final video master registered',
+            status: videoCount > 0 ? 'pass' : 'fail',
+            detail: videoCount > 0 ? `${videoCount} final/synced video asset(s)` : 'No final or synced video asset is registered.',
+        },
+        {
+            key: 'audio_master',
+            label: 'Audio deliverable registered',
+            status: audioCount > 0 ? 'pass' : 'warning',
+            detail: audioCount > 0 ? `${audioCount} audio asset(s) registered; run external loudness/waveform QC before broadcast delivery.` : 'No dialogue, music, or mix asset is registered.',
+        },
+        {
+            key: 'captions',
+            label: 'Caption/subtitle language coverage',
+            status: subtitleLanguages.length > 0 ? 'pass' : 'warning',
+            detail: subtitleLanguages.length ? `${subtitleLanguages.map(r => `${r.language}:${r.count}`).join(', ')}; export files still need platform syntax validation.` : 'No subtitle cues are registered.',
+        },
+        {
+            key: 'color_pipeline',
+            label: 'ACES/CDL delivery color pipeline',
+            status: colorPipeline ? 'pass' : 'warning',
+            detail: colorPipeline ? `${colorPipeline.aces_version} ${colorPipeline.working_space} to ${colorPipeline.target_color_space}` : `No ACES/CDL pipeline is registered; project color space is ${project.color_space || 'unspecified'}.`,
+        },
+        {
+            key: 'provenance_disclosure',
+            label: 'AI provenance sidecar generated',
+            status: provenanceRows > 0 ? 'pass' : 'fail',
+            detail: provenanceRows > 0 ? `${provenanceRows} provenance sidecar record(s)` : 'Generate the project provenance sidecar before delivery.',
+        },
+        {
+            key: 'rights_clearance',
+            label: 'Rights register clear for delivery',
+            status: blockedRights === 0 ? 'pass' : 'fail',
+            detail: blockedRights === 0 ? 'No unresolved rights records.' : `${blockedRights} rights record(s) are blocked, expired, restricted, or unknown.`,
+        },
+    ];
+}
+
+function parseJSON(value, fallback) {
+    if (!value) return fallback;
+    try { return JSON.parse(value); } catch (_) { return fallback; }
 }
 
 // -- Scene QA --

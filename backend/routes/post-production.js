@@ -66,12 +66,14 @@ function handlePostProduction(req, res, urlParts, query) {
         return json(res, 405, { error: 'Method not allowed' });
     }
 
-    // /film/projects/:id/post[/batch[/stream]|/color-match|/encode]
+    // /film/projects/:id/post[/batch[/stream]|/color-match|/encode|/color-pipeline]
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'post') {
         const projectId = urlParts[2];
         if (!UUID_RE.test(projectId)) return json(res, 400, { error: 'Invalid project ID' });
 
         const sub = urlParts[4];
+        if (sub === 'color-pipeline' && req.method === 'GET') return getColorPipeline(req, res, projectId);
+        if (sub === 'color-pipeline' && req.method === 'PUT') return upsertColorPipeline(req, res, projectId);
         if (sub === 'color-match' && req.method === 'POST') return colorMatchProject(req, res, projectId);
         if (sub === 'encode' && req.method === 'POST') return encodeProject(req, res, projectId);
         if (sub === 'batch' && req.method === 'POST') {
@@ -83,6 +85,105 @@ function handlePostProduction(req, res, urlParts, query) {
     }
 
     json(res, 404, { error: 'Not found' });
+}
+
+// -- ACES/CDL Color Pipeline ---------------------------------------------
+
+function getColorPipeline(req, res, projectId) {
+    const project = db.prepare('SELECT id, title, color_space FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) return json(res, 404, { error: 'Project not found' });
+
+    let row = db.prepare('SELECT * FROM film_color_pipelines WHERE project_id = ?').get(projectId);
+    if (!row) {
+        row = {
+            project_id: projectId,
+            name: 'Primary delivery color pipeline',
+            aces_version: 'ACES 1.3',
+            input_transform: '',
+            working_space: 'ACEScct',
+            output_transform: project.color_space || 'Rec.709',
+            target_color_space: project.color_space || 'Rec.709',
+            target_nits: 100,
+            cdl_slope: '[1,1,1]',
+            cdl_offset: '[0,0,0]',
+            cdl_power: '[1,1,1]',
+            cdl_saturation: 1.0,
+            lut_asset_id: null,
+            notes: '',
+        };
+    }
+
+    json(res, 200, { project_id: projectId, pipeline: row });
+}
+
+function upsertColorPipeline(req, res, projectId) {
+    const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) return json(res, 404, { error: 'Project not found' });
+
+    const body = req.body || {};
+    const existing = db.prepare('SELECT id FROM film_color_pipelines WHERE project_id = ?').get(projectId);
+    const id = existing ? existing.id : generateId();
+    const now = new Date().toISOString();
+    const values = {
+        name: (body.name || 'Primary delivery color pipeline').slice(0, 200),
+        aces_version: (body.aces_version || 'ACES 1.3').slice(0, 50),
+        input_transform: (body.input_transform || '').slice(0, 200),
+        working_space: (body.working_space || 'ACEScct').slice(0, 100),
+        output_transform: (body.output_transform || 'Rec.709').slice(0, 200),
+        target_color_space: (body.target_color_space || 'Rec.709').slice(0, 100),
+        target_nits: Number(body.target_nits) || 100,
+        cdl_slope: JSON.stringify(Array.isArray(body.cdl_slope) ? body.cdl_slope.slice(0, 3).map(Number) : [1, 1, 1]),
+        cdl_offset: JSON.stringify(Array.isArray(body.cdl_offset) ? body.cdl_offset.slice(0, 3).map(Number) : [0, 0, 0]),
+        cdl_power: JSON.stringify(Array.isArray(body.cdl_power) ? body.cdl_power.slice(0, 3).map(Number) : [1, 1, 1]),
+        cdl_saturation: Number(body.cdl_saturation) || 1.0,
+        lut_asset_id: body.lut_asset_id && UUID_RE.test(body.lut_asset_id) ? body.lut_asset_id : null,
+        notes: (body.notes || '').slice(0, 2000),
+    };
+
+    db.prepare(`
+        INSERT INTO film_color_pipelines (
+            id, project_id, name, aces_version, input_transform, working_space,
+            output_transform, target_color_space, target_nits, cdl_slope,
+            cdl_offset, cdl_power, cdl_saturation, lut_asset_id, notes,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(project_id) DO UPDATE SET
+            name = excluded.name,
+            aces_version = excluded.aces_version,
+            input_transform = excluded.input_transform,
+            working_space = excluded.working_space,
+            output_transform = excluded.output_transform,
+            target_color_space = excluded.target_color_space,
+            target_nits = excluded.target_nits,
+            cdl_slope = excluded.cdl_slope,
+            cdl_offset = excluded.cdl_offset,
+            cdl_power = excluded.cdl_power,
+            cdl_saturation = excluded.cdl_saturation,
+            lut_asset_id = excluded.lut_asset_id,
+            notes = excluded.notes,
+            updated_at = excluded.updated_at
+    `).run(
+        id,
+        projectId,
+        values.name,
+        values.aces_version,
+        values.input_transform,
+        values.working_space,
+        values.output_transform,
+        values.target_color_space,
+        values.target_nits,
+        values.cdl_slope,
+        values.cdl_offset,
+        values.cdl_power,
+        values.cdl_saturation,
+        values.lut_asset_id,
+        values.notes,
+        now,
+        now
+    );
+
+    const row = db.prepare('SELECT * FROM film_color_pipelines WHERE project_id = ?').get(projectId);
+    json(res, existing ? 200 : 201, { project_id: projectId, pipeline: row });
 }
 
 // -- Helpers -------------------------------------------------------------

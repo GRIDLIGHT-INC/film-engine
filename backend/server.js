@@ -109,6 +109,9 @@ const { handleBudget } = require('./routes/budget');
 const { handleBudgetEstimate } = require('./routes/budget-estimate');
 const { handleBackups } = require('./routes/backups');
 const { handleDemoProject } = require('./routes/demo-project');
+// ==== CODEX:START ops-compliance-routes ====
+const { handleJobs } = require('./routes/jobs');
+// ==== CODEX:END ====
 
 const PORT = process.env.PORT || 3100;
 
@@ -391,6 +394,33 @@ const server = http.createServer(async (req, res) => {
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'assets') {
             return handleAssets(req, res, parts, query);
         }
+
+        // ==== CODEX:START ops-compliance-routes ====
+        // Route: /film/projects/:id/jobs[/summary]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'jobs') {
+            return handleJobs(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/rights
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'rights') {
+            return handleAssets(req, res, parts, query);
+        }
+
+        // Route: /film/rights/:id
+        if (parts[1] === 'rights' && parts[2]) {
+            return handleAssets(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/provenance[/export]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'provenance') {
+            return handleAssets(req, res, parts, query);
+        }
+
+        // Route: /film/assets/:id/provenance
+        if (parts[1] === 'assets' && parts[2] && parts[3] === 'provenance') {
+            return handleAssets(req, res, parts, query);
+        }
+        // ==== CODEX:END ====
 
         // Route: /film/projects/:id/music-cues
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'music-cues') {
