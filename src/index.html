@@ -3111,10 +3111,12 @@
         .page-help-btn {
             width: 28px;
             height: 28px;
+            margin-left: 8px;
             padding: 0;
             justify-content: center;
             border-radius: 50%;
             font-weight: 700;
+            vertical-align: middle;
         }
         .guide-modal {
             max-width: 1040px;
@@ -3127,6 +3129,18 @@
         }
         .guide-search {
             flex: 1 1 280px;
+        }
+        .guide-intro-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .guide-intro-row p {
+            flex: 1 1 320px;
+            margin: 0;
         }
         .guide-tabs {
             display: flex;
@@ -5433,52 +5447,64 @@
     }
 
 
-        const PROFESSIONAL_READINESS_GAPS = [
-            {
-                status: 'urgent',
-                rank: 4,
-                title: 'AI provenance and disclosure metadata',
-                summary: 'EU AI Act Article 50 transparency duties apply from 2 August 2026. Film Engine does not write C2PA Content Credentials or other machine-detectable AI-origin metadata yet.',
-            },
-            {
-                status: 'strong',
-                rank: null,
-                title: 'AI-native controls ahead of traditional tools',
-                summary: 'Render ledger provenance, identity locking, locked/creative reproducibility modes, compute budgeting, and NLE handoff are stronger than many classic planning tools.',
-            },
-            {
-                status: 'partial',
-                rank: 1,
-                title: 'Unified generation operations',
-                summary: 'Jobs are tracked per media type, but there is no cross-type queue or render-farm monitor showing what is running, blocked, queued, or spending now.',
-            },
-            {
-                status: 'missing',
-                rank: 2,
-                title: 'Timecoded review and in-app timeline',
-                summary: 'Notes attach to shots, not exact frames or timecodes, and there is no in-app playback timeline for watching the assembled film before NLE export.',
-            },
-            {
-                status: 'partial',
-                rank: 3,
-                title: 'Take and select management',
-                summary: 'Shot versions and A/B history exist, but there is no editorial concept of circled takes, selects, alternates, or rejected takes.',
-            },
-            {
-                status: 'partial',
-                rank: 5,
-                title: 'Generation run sheets',
-                summary: 'Call sheets are vestigial in an actorless production. Repurpose them as per-scene run sheets: outputs, models, dependencies, estimated cost, and expected duration.',
-            },
-            {
-                status: 'missing',
-                rank: 6,
-                title: 'Multi-user collaboration',
-                summary: 'The app has notes and reviews, but not accounts, roles, assignments, permissions, simultaneous collaborators, or client-review delivery.',
-            },
-        ];
+    const PROFESSIONAL_READINESS_GAPS = [
+        {
+            status: 'urgent',
+            rank: 2,
+            title: 'AI provenance and disclosure metadata',
+            summary: 'EU AI Act Article 50 transparency duties apply from 2 August 2026. Film Engine does not write C2PA Content Credentials or other machine-detectable AI-origin metadata yet.',
+        },
+        {
+            status: 'partial',
+            rank: 1,
+            title: 'Unified generation operations',
+            summary: 'Jobs are tracked per media type, but there is no cross-type queue or render-farm monitor showing what is running, blocked, queued, or spending now.',
+        },
+        {
+            status: 'missing',
+            rank: 3,
+            title: 'In-app playback and timeline',
+            summary: 'There is no player, scrubbing, or sequence playback in the app. The only way to see the cut today is to export to an NLE.',
+        },
+        {
+            status: 'partial',
+            rank: 4,
+            title: 'Timecoded review',
+            summary: 'Notes attach to shots, not exact frames or timecodes. Frame-level feedback such as “the hand is wrong at 0:03” cannot be expressed yet.',
+        },
+        {
+            status: 'partial',
+            rank: 5,
+            title: 'Take and select management',
+            summary: 'Shot versions and A/B history exist, but there is no editorial concept of circled takes, selects, alternates, or rejected takes.',
+        },
+        {
+            status: 'missing',
+            rank: 6,
+            title: 'Synthetic performer and model rights',
+            summary: 'Music rights exist, but there is no general register for character likeness, cloned-voice consent, source-model licenses, or commercial-use constraints.',
+        },
+        {
+            status: 'partial',
+            rank: null,
+            title: 'Generation run sheets',
+            summary: 'Call sheets are vestigial in an actorless production. Repurpose them as per-scene run sheets: outputs, models, dependencies, estimated cost, and expected duration.',
+        },
+        {
+            status: 'missing',
+            rank: null,
+            title: 'Multi-user collaboration',
+            summary: 'The app has notes and reviews, but not accounts, roles, assignments, permissions, simultaneous collaborators, or client-review delivery.',
+        },
+        {
+            status: 'strong',
+            rank: null,
+            title: 'AI-native controls ahead of traditional tools',
+            summary: 'Render ledger provenance, identity locking, locked/creative reproducibility modes, compute budgeting, and NLE handoff are stronger than many classic planning tools.',
+        },
+    ];
 
-        const ONBOARDING_PAGES = TOUR_SEQUENCE;
+    const ONBOARDING_PAGES = TOUR_SEQUENCE;
     let guideTab = 'sections';
     let guideFocusPage = null;
     let onboardingIndex = 0;
@@ -5531,7 +5557,7 @@
             btn.dataset.tooltip = 'Open guide for ' + entry.title;
             btn.dataset.tooltipPos = 'bottom';
             btn.onclick = () => openProductionGuide(entry.page);
-            heading.insertAdjacentElement('afterend', btn);
+            heading.insertAdjacentElement('beforeend', btn);
         });
     }
 
@@ -5573,7 +5599,7 @@
         return keys.map(key => {
             const entry = SECTION_GUIDE[key];
             const label = entry ? entry.title : key;
-            return `<button class="guide-next-link" onclick="navigateTo('${esc(key)}'); closeProductionGuide();">${esc(label)}</button>`;
+            return `<button class="guide-next-link" onclick='navigateTo(${JSON.stringify(key)}); closeProductionGuide();'>${esc(label)}</button>`;
         }).join('<span class="text-muted">, </span>');
     }
 
@@ -5583,10 +5609,32 @@
         const query = (document.getElementById('productionGuideSearch')?.value || '').toLowerCase().trim();
         if (!intro || !body) return;
 
-        intro.innerHTML = '<p class="text-sm text-muted mb-16">This guide maps Film Engine sections to a fully digital AI movie workflow. The full professional gap audit is tracked in docs/plans/ai-film-production-gap-audit.md.</p>';
+        const tourState = getOnboardingState();
+        const tourLabel = !state.currentProject
+            ? 'Open a project'
+            : !tourState.dismissed && tourState.index > 0
+                ? 'Resume Tour'
+                : tourState.dismissed
+                    ? 'Restart Tour'
+                    : 'Start Tour';
+        intro.innerHTML = `
+            <div class="guide-intro-row">
+                <p class="text-sm text-muted">This guide maps Film Engine sections to a fully digital AI movie workflow. The full professional gap audit is tracked in docs/plans/ai-film-production-gap-audit.md.</p>
+                <button class="btn btn-secondary btn-sm" onclick="startProjectOnboarding()" ${state.currentProject ? '' : 'disabled'}>${esc(tourLabel)}</button>
+            </div>
+        `;
 
         if (guideTab === 'readiness') {
-            const filtered = PROFESSIONAL_READINESS_GAPS.filter(g => !query || (g.title + ' ' + g.summary + ' ' + g.status).toLowerCase().includes(query));
+            const filtered = PROFESSIONAL_READINESS_GAPS
+                .filter(g => !query || (g.title + ' ' + g.summary + ' ' + g.status).toLowerCase().includes(query))
+                .sort((a, b) => {
+                    if (a.rank && b.rank) return a.rank - b.rank;
+                    if (a.rank) return -1;
+                    if (b.rank) return 1;
+                    if (a.status === 'strong') return -1;
+                    if (b.status === 'strong') return 1;
+                    return 0;
+                });
             body.innerHTML = '<div class="guide-gap-grid">' + filtered.map(g => `
                 <div class="guide-gap-card">
                     <span class="badge ${g.status === 'urgent' || g.status === 'missing' ? 'failed' : g.status === 'partial' ? 'in_progress' : 'completed'}">${esc(g.status)}</span>
@@ -5633,22 +5681,58 @@
         return 'film_project_guide_seen_' + projectId;
     }
 
-    function maybeShowProjectOnboarding() {
+    function getOnboardingSteps() {
+        const entries = getNavGuideEntries();
+        return ONBOARDING_PAGES.map(page => entries.find(entry => entry.page === page)).filter(Boolean);
+    }
+
+    function getOnboardingState() {
+        if (!state.currentProject) return { dismissed: true, index: 0 };
+        try {
+            const stored = JSON.parse(localStorage.getItem(onboardingStorageKey(state.currentProject.id)) || '{}');
+            return {
+                dismissed: stored.dismissed === true,
+                index: Number.isInteger(stored.index) ? Math.max(0, stored.index) : 0,
+            };
+        } catch (_) {
+            return { dismissed: localStorage.getItem(onboardingStorageKey(state.currentProject.id)) === '1', index: 0 };
+        }
+    }
+
+    function setOnboardingState(update) {
         if (!state.currentProject) return;
-        const key = onboardingStorageKey(state.currentProject.id);
-        if (localStorage.getItem(key) === '1') return;
-        onboardingIndex = 0;
+        const current = getOnboardingState();
+        localStorage.setItem(onboardingStorageKey(state.currentProject.id), JSON.stringify({ ...current, ...update }));
+    }
+
+    function startProjectOnboarding(options = {}) {
+        if (!state.currentProject) return;
+        const steps = getOnboardingSteps();
+        if (!steps.length) return;
+        const stored = getOnboardingState();
+        onboardingIndex = options.restart || stored.dismissed ? 0 : Math.min(stored.index || 0, steps.length - 1);
+        setOnboardingState({ dismissed: false, index: onboardingIndex });
+        closeProductionGuide();
         showModal('projectOnboardingModal');
         renderProjectOnboarding();
     }
 
+    function maybeShowProjectOnboarding() {
+        const stored = getOnboardingState();
+        if (stored.dismissed) return;
+        startProjectOnboarding();
+    }
+
     function renderProjectOnboarding() {
-        const steps = ONBOARDING_PAGES.map(page => getNavGuideEntries().find(entry => entry.page === page)).filter(Boolean);
+        const steps = getOnboardingSteps();
+        onboardingIndex = Math.min(onboardingIndex, Math.max(0, steps.length - 1));
         const step = steps[onboardingIndex] || steps[0];
         const dots = document.getElementById('onboardingStepper');
         const content = document.getElementById('onboardingContent');
         const next = document.getElementById('onboardingNextBtn');
         if (!dots || !content || !next || !step) return;
+        if (step.page && state.currentPage !== step.page) navigateTo(step.page);
+        setOnboardingState({ dismissed: false, index: onboardingIndex });
         dots.innerHTML = steps.map((_, i) => `<span class="onboarding-dot ${i === onboardingIndex ? 'active' : ''}"></span>`).join('');
         content.innerHTML = `
             <div class="guide-section-card" style="margin-bottom:0;">
@@ -5666,7 +5750,8 @@
     }
 
     function nextOnboardingStep() {
-        if (onboardingIndex >= ONBOARDING_PAGES.length - 1) {
+        const steps = getOnboardingSteps();
+        if (onboardingIndex >= steps.length - 1) {
             dismissProjectOnboarding();
             openProductionGuide();
             return;
@@ -5681,7 +5766,7 @@
     }
 
     function dismissProjectOnboarding() {
-        if (state.currentProject) localStorage.setItem(onboardingStorageKey(state.currentProject.id), '1');
+        if (state.currentProject) setOnboardingState({ dismissed: true, index: onboardingIndex });
         closeModal('projectOnboardingModal');
     }
 
@@ -12920,7 +13005,13 @@ ${fountainText.slice(0, 50000)}`;
     // Close on Escape
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') {
-            document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+            const onboarding = document.getElementById('projectOnboardingModal');
+            if (onboarding && onboarding.classList.contains('open')) {
+                dismissProjectOnboarding();
+            }
+            document.querySelectorAll('.modal-overlay.open').forEach(m => {
+                if (m.id !== 'projectOnboardingModal') m.classList.remove('open');
+            });
         }
         if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
             const tag = (e.target && e.target.tagName || '').toLowerCase();
