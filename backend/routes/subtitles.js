@@ -36,6 +36,14 @@ function handleSubtitles(req, res, urlParts, query) {
         if (req.method === 'POST') return convertFormat(req, res);
     }
 
+    // /film/projects/:id/subtitles/dubbing — localized dubbing packages from subtitle cues
+    if (urlParts[1] === 'projects' && urlParts[3] === 'subtitles' && urlParts[4] === 'dubbing') {
+        const projectId = urlParts[2];
+        if (!UUID_RE.test(projectId)) return badReq(res, 'Invalid project ID');
+        if (req.method === 'GET') return listDubbingJobs(req, res, projectId);
+        if (req.method === 'POST') return createDubbingPackage(req, res, projectId);
+    }
+
     // /film/projects/:id/subtitles — ['film', 'projects', id, 'subtitles']
     if (urlParts[1] === 'projects' && urlParts[3] === 'subtitles' && !urlParts[4]) {
         const projectId = urlParts[2];
@@ -59,6 +67,11 @@ function handleSubtitles(req, res, urlParts, query) {
 function badReq(res, msg) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: msg }));
+}
+
+function json(res, status, data) {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
 }
 
 // --- List subtitles ---
@@ -198,6 +211,87 @@ function listLanguages(req, res, projectId) {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ languages: rows }));
+}
+
+// --- Dubbing / Localization Packages ---
+
+function listDubbingJobs(req, res, projectId) {
+    const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) return json(res, 404, { error: 'Project not found' });
+
+    const jobs = db.prepare('SELECT * FROM film_dubbing_jobs WHERE project_id = ? ORDER BY created_at DESC').all(projectId)
+        .map(row => ({ ...row, package: parseJSON(row.package_json, {}) }));
+    json(res, 200, { project_id: projectId, total: jobs.length, jobs });
+}
+
+function createDubbingPackage(req, res, projectId) {
+    const project = db.prepare('SELECT id, title FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) return json(res, 404, { error: 'Project not found' });
+
+    const body = req.body || {};
+    const sourceLanguage = String(body.source_language || 'en').slice(0, 10);
+    const targetLanguage = String(body.target_language || '').slice(0, 10);
+    if (!targetLanguage) return badReq(res, 'target_language is required');
+
+    const voiceStrategy = ['preserve_character', 'new_cast', 'subtitles_only'].includes(body.voice_strategy)
+        ? body.voice_strategy
+        : 'preserve_character';
+    const provider = (body.provider || '').slice(0, 100);
+
+    const cues = db.prepare(
+        'SELECT id, shot_id, language, start_ms, end_ms, text, speaker FROM film_subtitles WHERE project_id = ? AND language = ? ORDER BY start_ms'
+    ).all(projectId, sourceLanguage);
+
+    const packageJson = {
+        project_id: projectId,
+        project_title: project.title,
+        source_language: sourceLanguage,
+        target_language: targetLanguage,
+        voice_strategy: voiceStrategy,
+        provider,
+        generated_at: new Date().toISOString(),
+        cues: cues.map(cue => ({
+            subtitle_id: cue.id,
+            shot_id: cue.shot_id,
+            start_ms: cue.start_ms,
+            end_ms: cue.end_ms,
+            source_text: cue.text,
+            target_text: '',
+            speaker: cue.speaker || '',
+            voice_profile_id: null,
+            status: voiceStrategy === 'subtitles_only' ? 'subtitle_only' : 'ready_for_voice_generation',
+        })),
+    };
+
+    const id = generateId();
+    const now = new Date().toISOString();
+    const status = cues.length ? 'queued' : 'planned';
+    db.prepare(`
+        INSERT INTO film_dubbing_jobs (
+            id, project_id, source_language, target_language, status, voice_strategy,
+            provider, cue_count, package_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+        id,
+        projectId,
+        sourceLanguage,
+        targetLanguage,
+        status,
+        voiceStrategy,
+        provider,
+        cues.length,
+        JSON.stringify(packageJson),
+        now,
+        now
+    );
+
+    const row = db.prepare('SELECT * FROM film_dubbing_jobs WHERE id = ?').get(id);
+    json(res, 201, { ...row, package: packageJson });
+}
+
+function parseJSON(value, fallback) {
+    if (!value) return fallback;
+    try { return JSON.parse(value); } catch (_) { return fallback; }
 }
 
 // --- Update subtitle cue ---

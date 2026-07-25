@@ -11,6 +11,7 @@
  *   video/<file>               — Video files
  *   music/<file>               — Music/SFX/ambient files
  *   refsheets/<file>           — Character reference sheets
+ *   provenance/<file>          — AI provenance/disclosure sidecars
  */
 
 const { db, generateId } = require('../db/database');
@@ -23,7 +24,7 @@ const crypto = require('crypto');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Asset subdirectories to include in bundle
-const ASSET_SUBDIRS = ['storyboards', 'audio', 'video', 'music', 'refsheets'];
+const ASSET_SUBDIRS = ['storyboards', 'audio', 'video', 'music', 'refsheets', 'provenance'];
 
 // Tables to export, in dependency order (parents before children)
 const EXPORT_TABLES = [
@@ -42,6 +43,11 @@ const EXPORT_TABLES = [
     { table: 'film_assets', key: 'id', filter: 'project_id = ?' },
     { table: 'film_music_cues', key: 'id', filter: 'project_id = ?' },
     { table: 'film_color_presets', key: 'id', filter: 'project_id = ?' },
+    { table: 'film_rights', key: 'id', filter: 'project_id = ?' },
+    { table: 'film_provenance_manifests', key: 'id', filter: 'project_id = ?' },
+    { table: 'film_color_pipelines', key: 'id', filter: 'project_id = ?' },
+    { table: 'film_dubbing_jobs', key: 'id', filter: 'project_id = ?' },
+    { table: 'film_broadcast_qc_reports', key: 'id', filter: 'project_id = ?' },
     { table: 'film_script_elements', key: 'id', filter: 'script_id IN (SELECT id FROM film_scripts WHERE project_id = ?)' },
     { table: 'render_ledger', key: 'id', filter: 'shot_id IN (SELECT id FROM film_shots WHERE scene_id IN (SELECT id FROM film_scenes WHERE project_id = ?))' },
     { table: 'film_screenplay_comments', key: 'id', filter: 'script_id IN (SELECT id FROM film_scripts WHERE project_id = ?)' },
@@ -63,6 +69,11 @@ const FK_REMAP = {
     film_assets: { project_id: 'film_projects', shot_id: 'film_shots' },
     film_music_cues: { project_id: 'film_projects' },
     film_color_presets: { project_id: 'film_projects' },
+    film_rights: { project_id: 'film_projects' },
+    film_provenance_manifests: { project_id: 'film_projects', asset_id: 'film_assets' },
+    film_color_pipelines: { project_id: 'film_projects', lut_asset_id: 'film_assets' },
+    film_dubbing_jobs: { project_id: 'film_projects', output_asset_id: 'film_assets' },
+    film_broadcast_qc_reports: { project_id: 'film_projects' },
     film_script_elements: { script_id: 'film_scripts' },
     render_ledger: { shot_id: 'film_shots' },
     film_screenplay_comments: { script_id: 'film_scripts' },

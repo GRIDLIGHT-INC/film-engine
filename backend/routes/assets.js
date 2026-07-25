@@ -6,6 +6,7 @@
  * POST/GET /film/projects/:id/color-presets
  */
 const { db, generateId } = require('../db/database');
+const { buildProjectManifest, buildAssetManifest, writeProjectSidecar, DISCLOSURE_TEXT } = require('../lib/provenance');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -31,7 +32,7 @@ function handleAssets(req, res, urlParts, query) {
     }
 
     // /film/assets/:id
-    if (urlParts[1] === 'assets' && urlParts[2]) {
+    if (urlParts[1] === 'assets' && urlParts[2] && !urlParts[3]) {
         const assetId = urlParts[2];
         if (!UUID_RE.test(assetId)) return badReq(res, 'Invalid asset ID');
         if (req.method === 'GET') return getAsset(req, res, assetId);
@@ -51,6 +52,37 @@ function handleAssets(req, res, urlParts, query) {
         const projectId = urlParts[2];
         if (!UUID_RE.test(projectId)) return badReq(res, 'Invalid project ID');
         return getMusicRightsSummary(req, res, projectId);
+    }
+
+    // /film/projects/:id/rights
+    if (urlParts[1] === 'projects' && urlParts[3] === 'rights') {
+        const projectId = urlParts[2];
+        if (!UUID_RE.test(projectId)) return badReq(res, 'Invalid project ID');
+        if (req.method === 'GET') return listRights(req, res, projectId, query);
+        if (req.method === 'POST') return createRight(req, res, projectId);
+    }
+
+    // /film/rights/:id
+    if (urlParts[1] === 'rights' && urlParts[2]) {
+        const rightId = urlParts[2];
+        if (!UUID_RE.test(rightId)) return badReq(res, 'Invalid rights ID');
+        if (req.method === 'PUT') return updateRight(req, res, rightId);
+        if (req.method === 'DELETE') return deleteRight(req, res, rightId);
+    }
+
+    // /film/projects/:id/provenance[/export]
+    if (urlParts[1] === 'projects' && urlParts[3] === 'provenance') {
+        const projectId = urlParts[2];
+        if (!UUID_RE.test(projectId)) return badReq(res, 'Invalid project ID');
+        if (!urlParts[4] && req.method === 'GET') return getProjectProvenance(req, res, projectId);
+        if (urlParts[4] === 'export' && req.method === 'POST') return exportProjectProvenance(req, res, projectId);
+    }
+
+    // /film/assets/:id/provenance
+    if (urlParts[1] === 'assets' && urlParts[2] && urlParts[3] === 'provenance' && req.method === 'GET') {
+        const assetId = urlParts[2];
+        if (!UUID_RE.test(assetId)) return badReq(res, 'Invalid asset ID');
+        return getAssetProvenance(req, res, assetId);
     }
 
     // /film/music-cues/:id/rights — update license fields
@@ -75,6 +107,20 @@ function handleAssets(req, res, urlParts, query) {
 function badReq(res, msg) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: msg }));
+}
+
+function json(res, status, data) {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+}
+
+function requireProject(res, projectId) {
+    const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) {
+        json(res, 404, { error: 'Project not found' });
+        return null;
+    }
+    return project;
 }
 
 // --- Assets ---
@@ -308,6 +354,173 @@ function updateMusicRights(req, res, cueId) {
     const row = db.prepare('SELECT * FROM film_music_cues WHERE id = ?').get(cueId);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(row));
+}
+
+// --- General Rights Register ---
+
+const VALID_RIGHT_ENTITY_TYPES = ['character', 'voice', 'model', 'source', 'music', 'asset', 'output', 'dataset', 'other'];
+const VALID_RIGHT_TYPES = ['commercial_use', 'likeness', 'voice_clone', 'model_license', 'music_license', 'dataset_license', 'release', 'other'];
+const VALID_RIGHT_STATUSES = ['unknown', 'cleared', 'restricted', 'expired', 'blocked'];
+
+function listRights(req, res, projectId, query) {
+    if (!requireProject(res, projectId)) return;
+    const params = [projectId];
+    let sql = 'SELECT * FROM film_rights WHERE project_id = ?';
+    if (query.entity_type && VALID_RIGHT_ENTITY_TYPES.includes(query.entity_type)) {
+        sql += ' AND entity_type = ?';
+        params.push(query.entity_type);
+    }
+    if (query.status && VALID_RIGHT_STATUSES.includes(query.status)) {
+        sql += ' AND status = ?';
+        params.push(query.status);
+    }
+    sql += ' ORDER BY CASE status WHEN \'blocked\' THEN 0 WHEN \'restricted\' THEN 1 WHEN \'expired\' THEN 2 WHEN \'unknown\' THEN 3 ELSE 4 END, updated_at DESC';
+
+    const rights = db.prepare(sql).all(...params);
+    const by_status = {};
+    for (const row of rights) by_status[row.status] = (by_status[row.status] || 0) + 1;
+    json(res, 200, {
+        project_id: projectId,
+        total: rights.length,
+        by_status,
+        needs_attention: rights.filter(row => row.status !== 'cleared'),
+        rights,
+    });
+}
+
+function createRight(req, res, projectId) {
+    if (!requireProject(res, projectId)) return;
+    const body = req.body || {};
+    if (!body.subject || !String(body.subject).trim()) return badReq(res, 'subject is required');
+
+    const id = generateId();
+    const now = new Date().toISOString();
+    db.prepare(`
+        INSERT INTO film_rights (
+            id, project_id, entity_type, entity_id, subject, rights_type, status,
+            owner, source, license_url, consent_reference, territory, expires_on,
+            restrictions, notes, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+        id,
+        projectId,
+        VALID_RIGHT_ENTITY_TYPES.includes(body.entity_type) ? body.entity_type : 'asset',
+        body.entity_id ? String(body.entity_id).slice(0, 100) : '',
+        String(body.subject).trim().slice(0, 500),
+        VALID_RIGHT_TYPES.includes(body.rights_type) ? body.rights_type : 'commercial_use',
+        VALID_RIGHT_STATUSES.includes(body.status) ? body.status : 'unknown',
+        (body.owner || '').slice(0, 500),
+        (body.source || '').slice(0, 500),
+        (body.license_url || '').slice(0, 1000),
+        (body.consent_reference || '').slice(0, 1000),
+        (body.territory || 'worldwide').slice(0, 200),
+        (body.expires_on || '').slice(0, 50),
+        (body.restrictions || '').slice(0, 2000),
+        (body.notes || '').slice(0, 2000),
+        now,
+        now
+    );
+
+    const row = db.prepare('SELECT * FROM film_rights WHERE id = ?').get(id);
+    json(res, 201, row);
+}
+
+function updateRight(req, res, rightId) {
+    const body = req.body || {};
+    const fields = [];
+    const values = [];
+    const add = (column, value) => { fields.push(`${column} = ?`); values.push(value); };
+
+    if (body.entity_type !== undefined) {
+        if (!VALID_RIGHT_ENTITY_TYPES.includes(body.entity_type)) return badReq(res, 'Invalid entity_type');
+        add('entity_type', body.entity_type);
+    }
+    if (body.entity_id !== undefined) add('entity_id', body.entity_id ? String(body.entity_id).slice(0, 100) : '');
+    if (body.subject !== undefined) add('subject', String(body.subject).trim().slice(0, 500));
+    if (body.rights_type !== undefined) {
+        if (!VALID_RIGHT_TYPES.includes(body.rights_type)) return badReq(res, 'Invalid rights_type');
+        add('rights_type', body.rights_type);
+    }
+    if (body.status !== undefined) {
+        if (!VALID_RIGHT_STATUSES.includes(body.status)) return badReq(res, 'Invalid status');
+        add('status', body.status);
+    }
+    if (body.owner !== undefined) add('owner', (body.owner || '').slice(0, 500));
+    if (body.source !== undefined) add('source', (body.source || '').slice(0, 500));
+    if (body.license_url !== undefined) add('license_url', (body.license_url || '').slice(0, 1000));
+    if (body.consent_reference !== undefined) add('consent_reference', (body.consent_reference || '').slice(0, 1000));
+    if (body.territory !== undefined) add('territory', (body.territory || 'worldwide').slice(0, 200));
+    if (body.expires_on !== undefined) add('expires_on', (body.expires_on || '').slice(0, 50));
+    if (body.restrictions !== undefined) add('restrictions', (body.restrictions || '').slice(0, 2000));
+    if (body.notes !== undefined) add('notes', (body.notes || '').slice(0, 2000));
+    if (!fields.length) return badReq(res, 'No valid fields to update');
+
+    add('updated_at', new Date().toISOString());
+    values.push(rightId);
+    const result = db.prepare(`UPDATE film_rights SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    if (result.changes === 0) return json(res, 404, { error: 'Rights record not found' });
+    json(res, 200, db.prepare('SELECT * FROM film_rights WHERE id = ?').get(rightId));
+}
+
+function deleteRight(req, res, rightId) {
+    const result = db.prepare('DELETE FROM film_rights WHERE id = ?').run(rightId);
+    if (result.changes === 0) return json(res, 404, { error: 'Rights record not found' });
+    json(res, 200, { deleted: true });
+}
+
+// --- AI Provenance / Disclosure ---
+
+function getProjectProvenance(req, res, projectId) {
+    if (!requireProject(res, projectId)) return;
+    const manifest = buildProjectManifest(db, projectId);
+    json(res, 200, {
+        project_id: projectId,
+        disclosure: DISCLOSURE_TEXT,
+        c2pa_status: 'sidecar_only_not_signed',
+        manifest,
+    });
+}
+
+function getAssetProvenance(req, res, assetId) {
+    const manifest = buildAssetManifest(db, assetId);
+    if (!manifest) return json(res, 404, { error: 'Asset not found' });
+    json(res, 200, {
+        asset_id: assetId,
+        disclosure: DISCLOSURE_TEXT,
+        c2pa_status: 'sidecar_only_not_signed',
+        manifest,
+    });
+}
+
+function exportProjectProvenance(req, res, projectId) {
+    if (!requireProject(res, projectId)) return;
+    const written = writeProjectSidecar(db, projectId);
+    if (!written) return json(res, 404, { error: 'Project not found' });
+
+    const id = generateId();
+    const now = new Date().toISOString();
+    db.prepare(`
+        INSERT INTO film_provenance_manifests (
+            id, project_id, manifest_type, disclosure, c2pa_status,
+            manifest_json, sidecar_path, created_at, updated_at
+        ) VALUES (?, ?, 'project', ?, 'sidecar_only', ?, ?, ?, ?)
+    `).run(
+        id,
+        projectId,
+        DISCLOSURE_TEXT,
+        JSON.stringify(written.manifest),
+        written.relative_path,
+        now,
+        now
+    );
+
+    json(res, 201, {
+        id,
+        project_id: projectId,
+        sidecar_path: written.relative_path,
+        c2pa_status: 'sidecar_only_not_signed',
+        manifest: written.manifest,
+    });
 }
 
 // --- Color Presets ---
