@@ -7,7 +7,8 @@
 const { db } = require('../db/database');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const VALID_STATUSES = new Set(['pending', 'queued', 'generating', 'processing', 'complete', 'failed', 'cancelled', 'planned']);
+const ACTIVE_STATUSES = new Set(['pending', 'queued', 'generating', 'processing', 'running', 'planned']);
+const VALID_STATUSES = new Set([...ACTIVE_STATUSES, 'paused', 'complete', 'failed', 'cancelled']);
 
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -35,6 +36,7 @@ function handleJobs(req, res, urlParts, query) {
 
 function normalizeStatus(status) {
     if (status === 'generating') return 'processing';
+    if (status === 'running') return 'processing';
     return status || 'unknown';
 }
 
@@ -61,7 +63,7 @@ function listJobs(res, projectId, query) {
     const jobs = db.prepare(sql).all(...params).map(row => ({
         ...row,
         normalized_status: normalizeStatus(row.status),
-        is_active: ['pending', 'queued', 'generating', 'processing'].includes(row.status),
+        is_active: ACTIVE_STATUSES.has(row.status),
     }));
 
     json(res, 200, {
@@ -93,7 +95,7 @@ function summarize(jobs) {
         by_type[job.job_type] = (by_type[job.job_type] || 0) + 1;
     }
     return {
-        active: jobs.filter(job => ['pending', 'queued', 'generating', 'processing'].includes(job.status)).length,
+        active: jobs.filter(job => ACTIVE_STATUSES.has(job.status)).length,
         failed: jobs.filter(job => job.status === 'failed').length,
         complete: jobs.filter(job => job.status === 'complete').length,
         by_status,

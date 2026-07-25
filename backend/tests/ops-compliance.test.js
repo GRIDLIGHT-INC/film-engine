@@ -16,6 +16,7 @@ const { handlePostProduction } = require('../routes/post-production');
 const { handleSubtitles } = require('../routes/subtitles');
 const { handleQA } = require('../routes/qa');
 const { EXPORT_TABLES, ASSET_SUBDIRS } = require('../lib/project-bundle');
+const { buildProjectManifest } = require('../lib/provenance');
 
 ensureSchema();
 
@@ -50,14 +51,23 @@ describe('ops/compliance gap closures', () => {
     let projectId;
     let sceneId;
     let shotId;
+    let characterId;
+    let locationId;
+    let propId;
 
     before(() => {
         projectId = generateId();
         sceneId = generateId();
         shotId = generateId();
+        characterId = generateId();
+        locationId = generateId();
+        propId = generateId();
         db.prepare('INSERT INTO film_projects (id, title, status) VALUES (?, ?, ?)').run(projectId, 'Ops Compliance', 'post-production');
         db.prepare('INSERT INTO film_scenes (id, project_id, scene_number, location, time_of_day) VALUES (?, ?, ?, ?, ?)').run(sceneId, projectId, 1, 'LAB', 'NIGHT');
         db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, duration_ms, status) VALUES (?, ?, ?, ?, ?)').run(shotId, sceneId, '1A', 5000, 'complete');
+        db.prepare('INSERT INTO film_characters (id, project_id, name) VALUES (?, ?, ?)').run(characterId, projectId, 'Nova');
+        db.prepare('INSERT INTO film_locations (id, project_id, name) VALUES (?, ?, ?)').run(locationId, projectId, 'Lab');
+        db.prepare('INSERT INTO film_props (id, project_id, name) VALUES (?, ?, ?)').run(propId, projectId, 'Console');
     });
 
     after(() => {
@@ -88,6 +98,60 @@ describe('ops/compliance gap closures', () => {
         assert.equal(res.data.summary.complete, 1);
     });
 
+    it('includes all generation and orchestration job sources in the unified queue', () => {
+        db.prepare(`
+            INSERT INTO film_pipeline_runs (id, project_id, shot_id, scene_id, run_type, status, current_step, started_at, completed_at)
+            VALUES (?, ?, ?, ?, 'shot', 'running', 'video', datetime('now', '-2 seconds'), NULL)
+        `).run(generateId(), projectId, shotId, sceneId);
+        db.prepare(`
+            INSERT INTO film_voice_jobs (id, project_id, shot_id, status, dialogue_text, model_used)
+            VALUES (?, ?, ?, 'pending', 'Line', 'voice-model')
+        `).run(generateId(), projectId, shotId);
+        db.prepare(`
+            INSERT INTO film_lipsync_jobs (id, project_id, shot_id, status, model)
+            VALUES (?, ?, ?, 'processing', 'wav2lip')
+        `).run(generateId(), projectId, shotId);
+        db.prepare(`
+            INSERT INTO film_post_jobs (id, project_id, shot_id, status, job_type, model)
+            VALUES (?, ?, ?, 'failed', 'color_grade', 'post-model')
+        `).run(generateId(), projectId, shotId);
+        db.prepare(`
+            INSERT INTO film_3d_jobs (id, project_id, character_id, subject_kind, gen_type, status, model)
+            VALUES (?, ?, ?, 'character', 'generate', 'cancelled', 'hunyuan3d')
+        `).run(generateId(), projectId, characterId);
+        db.prepare(`
+            INSERT INTO film_refsheet_jobs (id, project_id, character_id, status, model)
+            VALUES (?, ?, ?, 'complete', 'sdxl')
+        `).run(generateId(), projectId, characterId);
+        db.prepare(`
+            INSERT INTO film_stitch_jobs (id, project_id, shot_id, status, transition_type, total_duration_ms)
+            VALUES (?, ?, ?, 'complete', 'cross-dissolve', 5000)
+        `).run(generateId(), projectId, shotId);
+        db.prepare(`
+            INSERT INTO film_audio_mix_jobs (id, project_id, shot_id, scene_id, status, duration_ms)
+            VALUES (?, ?, ?, ?, 'pending', 5000)
+        `).run(generateId(), projectId, shotId, sceneId);
+        db.prepare(`
+            INSERT INTO film_location_image_jobs (id, project_id, location_id, status, model)
+            VALUES (?, ?, ?, 'complete', 'sdxl')
+        `).run(generateId(), projectId, locationId);
+        db.prepare(`
+            INSERT INTO film_prop_image_jobs (id, project_id, prop_id, status, model)
+            VALUES (?, ?, ?, 'complete', 'sdxl')
+        `).run(generateId(), projectId, propId);
+
+        const res = invoke(handleJobs, { parts: ['film', 'projects', projectId, 'jobs'] });
+        assert.equal(res.status, 200);
+        for (const type of [
+            'video', 'voice', 'music:score', 'lipsync', 'post:color_grade', '3d:generate',
+            'pipeline:shot', 'refsheet', 'stitch', 'audio_mix', 'location_image', 'prop_image',
+        ]) {
+            assert.ok(res.data.summary.by_type[type] >= 1, `missing ${type}`);
+        }
+        assert.ok(res.data.jobs.some(job => job.job_type === 'pipeline:shot' && job.normalized_status === 'processing'));
+        assert.ok(res.data.jobs.some(job => job.job_type === 'stitch' && job.duration_ms === 5000));
+    });
+
     it('creates general rights records and exposes them in provenance', () => {
         const right = invoke(handleAssets, {
             method: 'POST',
@@ -111,6 +175,25 @@ describe('ops/compliance gap closures', () => {
         assert.equal(provenance.status, 200);
         assert.equal(provenance.data.c2pa_status, 'sidecar_only_not_signed');
         assert.equal(provenance.data.manifest.counts.rights_records, 1);
+        assert.equal(provenance.data.manifest.complete, true);
+    });
+
+    it('marks provenance manifests incomplete when a query fails', () => {
+        const fakeDb = {
+            prepare(sql) {
+                if (sql.includes('FROM film_projects')) {
+                    return { get: () => ({ id: projectId, title: 'Mock' }) };
+                }
+                if (sql.includes('FROM film_rights')) {
+                    throw new Error('no such table: film_rights');
+                }
+                return { all: () => [] };
+            },
+        };
+        const manifest = buildProjectManifest(fakeDb, projectId);
+        assert.equal(manifest.complete, false);
+        assert.ok(manifest.errors.some(err => err.includes('film_rights')));
+        assert.match(manifest.warning, /incomplete/);
     });
 
     it('writes a project provenance sidecar record', () => {
@@ -159,7 +242,7 @@ describe('ops/compliance gap closures', () => {
         assert.equal(dub.data.package.cues[0].source_text, 'Hello world');
     });
 
-    it('persists broadcast QC reports', () => {
+    it('persists delivery-readiness QC reports without implying signal analysis', () => {
         db.prepare(`
             INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name)
             VALUES (?, ?, ?, 'video_final', '/video/final.mp4', 'final.mp4')
@@ -167,6 +250,9 @@ describe('ops/compliance gap closures', () => {
 
         const run = invoke(handleQA, { method: 'POST', parts: ['film', 'projects', projectId, 'qa', 'broadcast'], body: {} });
         assert.equal(run.status, 200);
+        assert.equal(run.data.qc_scope, 'metadata_readiness');
+        assert.match(run.data.scope_note, /does not perform waveform/);
+        assert.match(run.data.summary, /delivery-readiness/);
         assert.ok(['pass', 'warning', 'fail'].includes(run.data.status));
         assert.ok(run.data.checks.some(check => check.key === 'provenance_disclosure'));
 

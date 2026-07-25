@@ -134,7 +134,7 @@ function runBroadcastQC(req, res, projectId) {
         : checks.some(check => check.status === 'warning')
             ? 'warning'
             : 'pass';
-    const summary = `${checks.filter(c => c.status === 'pass').length}/${checks.length} broadcast checks passed`;
+    const summary = `${checks.filter(c => c.status === 'pass').length}/${checks.length} delivery-readiness checks passed`;
     const id = generateId();
 
     db.prepare(`
@@ -142,7 +142,16 @@ function runBroadcastQC(req, res, projectId) {
         VALUES (?, ?, ?, ?, ?, ?)
     `).run(id, projectId, status, targetSpec, JSON.stringify(checks), summary);
 
-    json(res, 200, { id, project_id: projectId, status, target_spec: targetSpec, summary, checks });
+    json(res, 200, {
+        id,
+        project_id: projectId,
+        status,
+        target_spec: targetSpec,
+        qc_scope: 'metadata_readiness',
+        scope_note: 'Checks delivery readiness records in Film Engine. It does not perform waveform, loudness, gamut, caption-file validation, or bitstream analysis.',
+        summary,
+        checks,
+    });
 }
 
 function buildBroadcastChecks(projectId, project) {
@@ -164,13 +173,13 @@ function buildBroadcastChecks(projectId, project) {
             key: 'audio_master',
             label: 'Audio deliverable registered',
             status: audioCount > 0 ? 'pass' : 'warning',
-            detail: audioCount > 0 ? `${audioCount} audio asset(s)` : 'No dialogue, music, or mix asset is registered.',
+            detail: audioCount > 0 ? `${audioCount} audio asset(s) registered; run external loudness/waveform QC before broadcast delivery.` : 'No dialogue, music, or mix asset is registered.',
         },
         {
             key: 'captions',
             label: 'Caption/subtitle language coverage',
             status: subtitleLanguages.length > 0 ? 'pass' : 'warning',
-            detail: subtitleLanguages.length ? subtitleLanguages.map(r => `${r.language}:${r.count}`).join(', ') : 'No subtitle cues are registered.',
+            detail: subtitleLanguages.length ? `${subtitleLanguages.map(r => `${r.language}:${r.count}`).join(', ')}; export files still need platform syntax validation.` : 'No subtitle cues are registered.',
         },
         {
             key: 'color_pipeline',

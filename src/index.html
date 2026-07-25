@@ -3435,8 +3435,8 @@
                 <button class="nav-item" data-page="dubbing" onclick="navigateTo('dubbing'); loadDubbingPage()" data-tooltip="Localization and dubbing packages from subtitle cues" data-tooltip-pos="right">
                     <span class="nav-icon">&#127908;</span> Dubbing
                 </button>
-                <button class="nav-item" data-page="broadcastqc" onclick="navigateTo('broadcastqc'); loadBroadcastQCPage()" data-tooltip="Broadcast delivery QC checks for masters, captions, rights, and provenance" data-tooltip-pos="right">
-                    <span class="nav-icon">&#9989;</span> Broadcast QC
+                <button class="nav-item" data-page="broadcastqc" onclick="navigateTo('broadcastqc'); loadBroadcastQCPage()" data-tooltip="Delivery-readiness QC for masters, captions, rights, and provenance metadata" data-tooltip-pos="right">
+                    <span class="nav-icon">&#9989;</span> Delivery QC
                 </button>
                 <!-- ==== CODEX:END ==== -->
                 <div class="sidebar-divider"></div>
@@ -4424,10 +4424,10 @@
 
         <div class="page" id="page-broadcastqc">
             <div class="flex-between mb-16">
-                <h2>Broadcast QC</h2>
+                <h2>Delivery QC</h2>
                 <div class="btn-row">
                     <button class="btn btn-secondary" onclick="loadBroadcastQCPage()">Refresh</button>
-                    <button class="btn btn-primary" onclick="runBroadcastQC()">Run QC</button>
+                    <button class="btn btn-primary" onclick="runBroadcastQC()">Run Readiness QC</button>
                 </div>
             </div>
             <div id="broadcastQcBody"></div>
@@ -15711,6 +15711,7 @@ ${fountainText.slice(0, 50000)}`;
             el.innerHTML = data.reports.length ? data.reports.map(report => `<div class="card mb-12">
                 <div class="flex-between"><strong>${esc(report.target_spec)}</strong>${codexStatusBadge(report.status)}</div>
                 <p class="text-sm text-muted">${esc(report.summary || '')}</p>
+                <p class="text-sm text-muted">Metadata readiness only. Run external waveform, loudness, gamut, caption-file, and bitstream QC before broadcast delivery.</p>
                 ${(report.checks || []).map(check => `<div class="text-sm">${codexStatusBadge(check.status)} ${esc(check.label)} — ${esc(check.detail)}</div>`).join('')}
             </div>`).join('') : '<div class="card"><p class="text-muted">No broadcast QC reports yet.</p></div>';
         } catch (err) {

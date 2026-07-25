@@ -18,10 +18,12 @@ function projectExists(db, projectId) {
     return db.prepare('SELECT id, title, genre, status, created_at, updated_at FROM film_projects WHERE id = ?').get(projectId);
 }
 
-function listRows(db, table, filter, projectId) {
+function listRows(db, manifest, table, filter, params) {
     try {
-        return db.prepare(`SELECT * FROM ${table} WHERE ${filter}`).all(projectId);
-    } catch (_) {
+        return db.prepare(`SELECT * FROM ${table} WHERE ${filter}`).all(...params);
+    } catch (err) {
+        manifest.complete = false;
+        manifest.errors.push(`${table}: ${err.message}`);
         return [];
     }
 }
@@ -30,16 +32,31 @@ function buildProjectManifest(db, projectId) {
     const project = projectExists(db, projectId);
     if (!project) return null;
 
-    const assets = listRows(db, 'film_assets', 'project_id = ?', projectId).map(asset => ({
+    const manifest = {
+        format: 'film-engine-ai-provenance-sidecar',
+        version: 1,
+        generated_at: new Date().toISOString(),
+        complete: true,
+        errors: [],
+        disclosure: DISCLOSURE_TEXT,
+        c2pa: {
+            status: 'not_signed',
+            note: 'Sidecar disclosure only; no C2PA certificate signing or trust-list conformance is performed.',
+        },
+        project,
+    };
+
+    const assets = listRows(db, manifest, 'film_assets', 'project_id = ?', [projectId]).map(asset => ({
         ...asset,
         metadata: parseJSON(asset.metadata, {}),
         input_refs: parseJSON(asset.input_refs, []),
     }));
     const renderLedger = listRows(
         db,
+        manifest,
         'render_ledger',
         'shot_id IN (SELECT id FROM film_shots WHERE scene_id IN (SELECT id FROM film_scenes WHERE project_id = ?))',
-        projectId
+        [projectId]
     ).map(row => ({
         ...row,
         lora_ids: parseJSON(row.lora_ids, []),
@@ -48,18 +65,9 @@ function buildProjectManifest(db, projectId) {
         lighting_params: parseJSON(row.lighting_params, {}),
         extra_params: parseJSON(row.extra_params, {}),
     }));
-    const rights = listRows(db, 'film_rights', 'project_id = ?', projectId);
+    const rights = listRows(db, manifest, 'film_rights', 'project_id = ?', [projectId]);
 
-    const manifest = {
-        format: 'film-engine-ai-provenance-sidecar',
-        version: 1,
-        generated_at: new Date().toISOString(),
-        disclosure: DISCLOSURE_TEXT,
-        c2pa: {
-            status: 'not_signed',
-            note: 'Sidecar disclosure only; no C2PA certificate signing or trust-list conformance is performed.',
-        },
-        project,
+    Object.assign(manifest, {
         counts: {
             assets: assets.length,
             render_ledger_entries: renderLedger.length,
@@ -68,8 +76,14 @@ function buildProjectManifest(db, projectId) {
         assets,
         render_ledger: renderLedger,
         rights,
-    };
-    manifest.sha256 = hashObject({ ...manifest, sha256: undefined });
+    });
+    if (!manifest.complete) {
+        manifest.warning = 'One or more provenance queries failed; this sidecar is incomplete and must not be treated as a full clearance/disclosure record.';
+    }
+    manifest.sha256 = hashObject({
+        ...manifest,
+        sha256: undefined,
+    });
     return manifest;
 }
 
@@ -77,22 +91,12 @@ function buildAssetManifest(db, assetId) {
     const asset = db.prepare('SELECT * FROM film_assets WHERE id = ?').get(assetId);
     if (!asset) return null;
     const project = projectExists(db, asset.project_id);
-    const ledgerRows = asset.shot_id
-        ? db.prepare('SELECT * FROM render_ledger WHERE shot_id = ? ORDER BY created_at DESC').all(asset.shot_id)
-        : [];
-    let rights = [];
-    try {
-        rights = db.prepare(
-            'SELECT * FROM film_rights WHERE project_id = ? AND (entity_id = ? OR entity_id = ? OR entity_id = \'\')'
-        ).all(asset.project_id, asset.id, asset.shot_id || '');
-    } catch (_) {
-        rights = [];
-    }
-
     const manifest = {
         format: 'film-engine-ai-provenance-sidecar',
         version: 1,
         generated_at: new Date().toISOString(),
+        complete: true,
+        errors: [],
         disclosure: DISCLOSURE_TEXT,
         c2pa: {
             status: 'not_signed',
@@ -104,9 +108,24 @@ function buildAssetManifest(db, assetId) {
             metadata: parseJSON(asset.metadata, {}),
             input_refs: parseJSON(asset.input_refs, []),
         },
-        render_ledger: ledgerRows,
-        rights,
     };
+
+    const ledgerRows = asset.shot_id
+        ? listRows(db, manifest, 'render_ledger', 'shot_id = ? ORDER BY created_at DESC', [asset.shot_id])
+        : [];
+    const rights = listRows(
+        db,
+        manifest,
+        'film_rights',
+        'project_id = ? AND (entity_id = ? OR entity_id = ? OR entity_id = \'\')',
+        [asset.project_id, asset.id, asset.shot_id || '']
+    );
+
+    manifest.render_ledger = ledgerRows;
+    manifest.rights = rights;
+    if (!manifest.complete) {
+        manifest.warning = 'One or more provenance queries failed; this sidecar is incomplete and must not be treated as a full clearance/disclosure record.';
+    }
     manifest.sha256 = hashObject({ ...manifest, sha256: undefined });
     return manifest;
 }
