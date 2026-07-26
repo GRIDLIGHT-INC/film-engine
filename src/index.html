@@ -3180,7 +3180,6 @@
             display: flex;
             align-items: center;
             gap: 4px;
-            margin-top: 8px;
         }
         .glossary-btn:hover {
             color: var(--gl-text-primary);
@@ -3264,8 +3263,17 @@
 
         /* Production Guide */
         .guide-btn {
-            margin: 8px 12px 10px;
             justify-content: center;
+        }
+        /* The two header actions sit on one row. They wrap rather than
+           overflow, since the sidebar is a fixed width and either label can
+           grow with translation. */
+        .sidebar-header-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            margin-top: 10px;
         }
         .page-help-btn {
             width: 28px;
@@ -3651,8 +3659,10 @@
                     <p>AI Production Pipeline</p>
                 </div>
             </div>
-            <button class="glossary-btn" onclick="showModal('glossaryModal')">&#128218; Glossary</button>
-            <button class="btn btn-secondary btn-sm guide-btn" onclick="openProductionGuide()">? Production Guide</button>
+            <div class="sidebar-header-actions">
+                <button class="glossary-btn" onclick="showModal('glossaryModal')">&#128218; Glossary</button>
+                <button class="btn btn-secondary btn-sm guide-btn" onclick="openProductionGuide()">Production Guide</button>
+            </div>
         </div>
 
         <!-- State 1: Project List Mode -->
@@ -6908,7 +6918,7 @@
         },
         // Patterns for auto-detection
         patterns: {
-            sceneHeading: /^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i,
+            sceneHeading: /^[^\w\s.]*(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i,
             transition: /^[A-Z][A-Z\s]+:$/,
             forcedSceneHeading: /^\./,
             forcedCharacter: /^@/,
@@ -7411,7 +7421,7 @@
             }
 
             // Scene heading
-            if (/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || trimmed.startsWith('.')) {
+            if (/^[^\w\s.]*(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || trimmed.startsWith('.')) {
                 let headingText = trimmed.startsWith('.') ? trimmed.slice(1) : trimmed;
                 // FILM-107: Extract scene number from #N# format
                 let sceneNum = '';
@@ -7538,6 +7548,7 @@
         if (autoDetectTimer) clearTimeout(autoDetectTimer);
         autoDetectTimer = setTimeout(() => {
             autoDetectElementType();
+            triggerAutocomplete();
         }, AUTO_DETECT_DELAY);
 
         // FILM-103: Trigger autocomplete for character/location
@@ -7922,8 +7933,8 @@
             return;
         }
 
-        const elementType = block.dataset.elementType || 'action';
         const text = block.innerText.trim();
+        const elementType = block.dataset.suggestedType || block.dataset.elementType || 'action';
 
         // Character autocomplete
         if (elementType === 'character' && text.length >= 1) {
@@ -8001,13 +8012,12 @@
 
     // Extract location part from scene heading (after INT./EXT.)
     function extractLocationFromSceneHeading(text) {
-        const match = text.match(/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]+(.*)$/i);
+        const match = text.match(/^[^\w\s.]*(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]+(.*)$/i);
         if (match) {
-            // Get location before any time of day indicator
             let location = match[2];
-            const dashIndex = location.lastIndexOf(' - ');
-            if (dashIndex > 0) {
-                location = location.substring(0, dashIndex);
+            const timeMatch = location.match(/^(.*?)\s*[-–—]\s*(DAY|NIGHT|MORNING|AFTERNOON|EVENING|DUSK|DAWN|LATER|EARLIER|CONTINUOUS|SAME|MOMENTS LATER|THE NEXT DAY|SUNRISE|SUNSET)$/i);
+            if (timeMatch) {
+                location = timeMatch[1];
             }
             return location.trim();
         }
@@ -8144,10 +8154,10 @@
         } else if (autocompleteType === 'location') {
             // Replace location part in scene heading
             const text = block.innerText.trim();
-            const match = text.match(/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]+/i);
+            const match = text.match(/^([^\w\s.]*)(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]+/i);
             if (match) {
                 // Check if there was a time of day
-                const timeMatch = text.match(/\s+-\s+(DAY|NIGHT|MORNING|EVENING|LATER|CONTINUOUS|SAME)$/i);
+                const timeMatch = text.match(/\s+-\s+(DAY|NIGHT|MORNING|AFTERNOON|EVENING|DUSK|DAWN|LATER|EARLIER|CONTINUOUS|SAME|MOMENTS LATER|THE NEXT DAY|SUNRISE|SUNSET)$/i);
                 const newText = match[0] + item.text + (timeMatch ? timeMatch[0] : '');
                 block.innerText = newText;
                 setCursorToEnd(block);
@@ -8166,9 +8176,9 @@
             setCursorToEnd(block);
         } else if (type === 'location') {
             const text = block.innerText.trim();
-            const match = text.match(/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]+/i);
+            const match = text.match(/^([^\w\s.]*)(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]+/i);
             if (match) {
-                const timeMatch = text.match(/\s+-\s+(DAY|NIGHT|MORNING|EVENING|LATER|CONTINUOUS|SAME)$/i);
+                const timeMatch = text.match(/\s+-\s+(DAY|NIGHT|MORNING|AFTERNOON|EVENING|DUSK|DAWN|LATER|EARLIER|CONTINUOUS|SAME|MOMENTS LATER|THE NEXT DAY|SUNRISE|SUNSET)$/i);
                 block.innerText = match[0] + item.text + (timeMatch ? timeMatch[0] : '');
                 setCursorToEnd(block);
             }
