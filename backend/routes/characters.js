@@ -128,6 +128,26 @@ function createCharacter(req, res, projectId) {
         return badRequest(res, 'Character name is required');
     }
 
+    // Reject a duplicate name rather than silently creating a second record.
+    // Screenplays are edited and re-edited, and the same character comes back
+    // every pass — without this, each pass could add another copy, and every
+    // downstream reference (consistency profile, reference images, shots)
+    // would then be split across duplicates that look identical in the UI.
+    // Case- and whitespace-insensitive, because "MARIE" and "Marie " are the
+    // same place to everyone except a database.
+    const existing = db.prepare(
+        'SELECT * FROM film_characters WHERE project_id = ? AND UPPER(TRIM(name)) = UPPER(TRIM(?))'
+    ).get(projectId, body.name);
+    if (existing) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            error: 'Character "' + existing.name + '" already exists in this project.',
+            code: 'duplicate_name',
+            existing,
+        }));
+        return;
+    }
+
     const id = generateId();
     const now = new Date().toISOString();
 

@@ -8692,10 +8692,27 @@
                     if (selector) selector.value = emptyType;
                 }
             } else {
-                // Non-empty: create new block with auto-next type
-                const nextType = AUTO_FORMAT_RULES.nextType[finalType] || 'action';
-                const newBlock = createBlock('', nextType);
+                // Split at the caret rather than always appending.
+                //
+                // Enter used to create an empty block and move the cursor there
+                // regardless of caret position, so pressing it mid-paragraph
+                // left the text untouched and dumped you at the end — you could
+                // never break a line in the middle of a block.
+                const tail = extractTextAfterCaret(block);
+
+                // A mid-block split produces two of the same element: breaking
+                // an action paragraph gives two action paragraphs. Only a split
+                // at the very end advances to the next type, which is what
+                // "finished this line, now write the next thing" means.
+                const nextType = tail
+                    ? finalType
+                    : (AUTO_FORMAT_RULES.nextType[finalType] || 'action');
+
+                const newBlock = createBlock(tail || '', nextType);
                 block.parentNode.insertBefore(newBlock, block.nextSibling);
+                // setCursorToBlock collapses to the start, which is right for
+                // both cases: before the moved tail on a split, and in the
+                // empty block otherwise.
                 setCursorToBlock(newBlock);
                 // Update dropdown
                 const selector = document.getElementById('elementTypeSelector');
@@ -8703,6 +8720,34 @@
             }
             return;
         }
+    }
+
+    /**
+     * Remove and return the text after the caret in a block.
+     *
+     * Returns '' when the caret is at the end, which is the common case and
+     * keeps the "start a new element" behaviour intact. Reads the caret from
+     * the live selection, so it reflects where the user actually is rather
+     * than assuming the end of the block.
+     */
+    function extractTextAfterCaret(block) {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return '';
+
+        const range = sel.getRangeAt(0);
+        if (!block.contains(range.startContainer)) return '';
+
+        // Everything from the caret to the end of the block.
+        const tailRange = document.createRange();
+        tailRange.setStart(range.endContainer, range.endOffset);
+        tailRange.setEndAfter(block.lastChild || block);
+
+        const tail = tailRange.toString();
+        if (!tail.trim()) return '';
+
+        // Remove it from the original block, leaving the head behind.
+        tailRange.deleteContents();
+        return tail;
     }
 
     // Get context-aware Tab cycle based on current position
