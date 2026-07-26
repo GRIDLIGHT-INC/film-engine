@@ -1903,11 +1903,16 @@
 
         /* Screenplay Page */
         .screenplay-page {
-            width: 11.3in;
+            /* US Letter. The page was 11.3in wide, which left an 8.6in text
+               column instead of the 6.0in a screenplay actually has — so every
+               indent below was correct in absolute inches but landed in the
+               wrong place relative to the text block, and nothing lined up with
+               Final Draft. 8.5in page minus 1.5in left and 1in right = 6.0in. */
+            width: 8.5in;
             max-width: 100%;
             min-height: 11in;
             margin: 0 auto;
-            padding: 1in 1.2in 1in 1.5in;
+            padding: 1in 1in 1in 1.5in;
             font-family: 'Courier Prime', 'Courier New', Courier, monospace;
             font-size: 12pt;
             line-height: 1;
@@ -2084,18 +2089,22 @@
         .screenplay-page .sp-action {
             margin: 1em 0;
         }
+        /* Industry standard indents, measured from the left edge of the 6in
+           text column: character 2.2in, parenthetical 1.6in, dialogue 1.0in
+           with a 3.5in measure. */
         .screenplay-page .sp-character {
             text-transform: uppercase;
             margin-top: 1em;
             margin-left: 2.2in;
+            margin-right: 0;
         }
         .screenplay-page .sp-dialogue {
             margin-left: 1in;
-            margin-right: 1.5in;
+            margin-right: 1.5in;   /* 6.0 - 1.0 - 1.5 = 3.5in measure */
         }
         .screenplay-page .sp-parenthetical {
             margin-left: 1.6in;
-            margin-right: 2in;
+            margin-right: 1.9in;   /* slightly narrower than dialogue */
         }
         .screenplay-page .sp-transition {
             text-align: right;
@@ -6912,8 +6921,9 @@
         },
         // Context-aware Tab cycles
         tabCycles: {
-            'default': ['action', 'character', 'dialogue'],
-            'after-scene': ['action', 'character'],
+            // Tab walks the order a page is actually written in.
+            'default': ['scene-heading', 'action', 'character', 'dialogue'],
+            'after-scene': ['action', 'character', 'dialogue'],
             'in-dialogue': ['dialogue', 'parenthetical', 'character']
         },
         // Patterns for auto-detection
@@ -6930,6 +6940,25 @@
 
     // Alias for backwards compatibility
     const AUTO_NEXT_TYPE = AUTO_FORMAT_RULES.nextType;
+
+    /**
+     * Strip emphasis markers from a scene heading.
+     *
+     * A slugline is never bold or italic in Fountain — the app styles it. But
+     * pasted or converted text often arrives as **INT. KITCHEN - NIGHT**, and
+     * the heading pattern tolerates leading punctuation, so the markers were
+     * kept as literal characters and rendered on the page. Strip on the way in
+     * and on the way out, so a round trip cannot reintroduce them.
+     */
+    function stripEmphasisMarkers(text) {
+        if (!text) return '';
+        return String(text)
+            // Leading UI glyphs that previous saves welded onto the slugline
+            // (status icons, bullets) plus emphasis markers.
+            .replace(/^[\s*_\u23F1\u23F2\u2022\u25CF\u25CB\uFE0F]+/, '')
+            .replace(/[\s*_]+$/, '')
+            .trim();
+    }
 
     // Debounce timer for auto-detection
     let autoDetectTimer = null;
@@ -7422,7 +7451,7 @@
 
             // Scene heading
             if (/^[^\w\s.]*(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || trimmed.startsWith('.')) {
-                let headingText = trimmed.startsWith('.') ? trimmed.slice(1) : trimmed;
+                let headingText = stripEmphasisMarkers(trimmed.startsWith('.') ? trimmed.slice(1) : trimmed);
                 // FILM-107: Extract scene number from #N# format
                 let sceneNum = '';
                 const sceneNumMatch = headingText.match(/\s+#([^#]+)#\s*$/);
@@ -11276,15 +11305,19 @@
             if (!text) return;
 
             switch (elementType) {
-                case 'scene-heading':
-                    const hasPrefix = /^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(text);
-                    let headingLine = hasPrefix ? text.toUpperCase() : '.' + text.toUpperCase();
+                case 'scene-heading': {
+                    // The heading is styled bold by CSS; any bold run inside it
+                    // would come back as ** and be shown literally next reload.
+                    const headingText = stripEmphasisMarkers(text);
+                    const hasPrefix = /^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(headingText);
+                    let headingLine = hasPrefix ? headingText.toUpperCase() : '.' + headingText.toUpperCase();
                     const sceneNumber = el.dataset && el.dataset.sceneNumber;
                     if (sceneNumber) {
                         headingLine += ' #' + sceneNumber + '#';
                     }
                     lines.push('', headingLine);
                     break;
+                }
                 case 'character':
                     // FILM-109: Add ^ suffix for right-side dual dialogue character
                     if (isRightDualChar || el.dataset.dualRight) {
@@ -11380,8 +11413,15 @@
             if (node.nodeType === Node.TEXT_NODE) {
                 result += node.textContent;
             } else if (node.nodeType === Node.ELEMENT_NODE) {
-                // FILM-107: Skip scene number gutter elements
-                if (node.classList && node.classList.contains('scene-number-gutter')) {
+                // Skip UI chrome the editor injects into blocks. These are
+                // decorations, not screenplay text — the scene status icon was
+                // being serialized into headings, leaving a stray glyph glued
+                // to the slugline on every save.
+                if (node.classList && (
+                    node.classList.contains('scene-number-gutter') ||
+                    node.classList.contains('scene-status-icon') ||
+                    node.classList.contains('auto-detect-hint')
+                )) {
                     return;
                 }
                 const tag = node.tagName.toLowerCase();
