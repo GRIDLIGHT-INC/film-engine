@@ -267,6 +267,39 @@
         }
         .collapse-all-btn:hover { color: var(--gl-text-primary); border-color: var(--gl-text-muted); }
 
+        /* ── Scene deletion ───────────────────────────────────────── */
+        .scene-bulk-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+            border: 1px solid var(--gl-border);
+            border-radius: 6px;
+            background: rgba(245, 89, 90, 0.06);
+            font-size: 12px;
+        }
+        .scene-select { flex-shrink: 0; margin-right: 4px; cursor: pointer; }
+        .scene-delete-btn {
+            flex-shrink: 0;
+            width: 24px; height: 24px;
+            padding: 0;
+            line-height: 1;
+            font-size: 16px;
+            color: var(--gl-text-muted);
+            background: none;
+            border: 1px solid transparent;
+            /* Kept quiet until hovered — it sits on every row, and a row of red
+               X buttons reads as a warning rather than a list. */
+            opacity: 0;
+            transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+        }
+        .scene-row-header:hover .scene-delete-btn { opacity: 1; }
+        .scene-delete-btn:hover {
+            color: #f5595a;
+            border-color: rgba(245, 89, 90, 0.5);
+        }
+
         /* ── Collapsible sidebar groups ──────────────────────────────
            The project nav is 26 entries across five groups. Collapsing the
            groups you are not working in shortens it to what matters. */
@@ -4092,6 +4125,14 @@
                 <button class="btn btn-primary" onclick="breakdownAllScenes()" id="breakdownAllBtn" style="display:none;">
                     &#9881; Break Down All New Scenes
                 </button>
+            </div>
+            <!-- Appears only with a selection, so the destructive control is
+                 not sitting on screen during normal use. -->
+            <div id="sceneBulkBar" class="scene-bulk-bar hidden">
+                <span id="sceneBulkCount">0 selected</span>
+                <button class="btn btn-secondary btn-sm" onclick="selectAllScenes(true)">Select all</button>
+                <button class="btn btn-secondary btn-sm" onclick="selectAllScenes(false)">Clear</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteSelectedScenes()">Delete selected</button>
             </div>
             <div id="scenesList"></div>
         </div>
@@ -8047,7 +8088,7 @@
                  onmousedown="selectAutocompleteItem(${i})">
                 <span class="autocomplete-text">${escapeHtml(item.text)}</span>
                 ${item.description ? `<span class="autocomplete-desc">${escapeHtml(item.description)}</span>` : ''}
-                ${item.type === 'unrecognized' ? `<span class="autocomplete-action" onmousedown="event.stopPropagation(); createFromAutocomplete(${i})">+ Create</span>` : ''}
+                ${item.type === 'unrecognized' ? `<span class="autocomplete-action" onmousedown="event.preventDefault(); event.stopPropagation(); createFromAutocomplete(${i})">+ Create</span>` : ''}
             </div>
         `).join('');
 
@@ -8117,28 +8158,68 @@
         editorDirty = true;
     }
 
-    // Create new character/location from autocomplete
-    function createFromAutocomplete(index) {
-        const item = autocompleteItems[index];
-        if (!item || item.type !== 'unrecognized') return;
+    function applyAutocompleteItemToBlock(item, type, block) {
+        if (!block) return;
 
-        if (autocompleteType === 'character') {
-            // Open create character modal with prefilled name
-            showModal('newCharacterModal');
-            setTimeout(() => {
-                const nameInput = document.getElementById('newCharacterName');
-                if (nameInput) nameInput.value = item.text;
-            }, 100);
-        } else if (autocompleteType === 'location') {
-            // Open create location modal with prefilled name
-            showModal('newLocationModal');
-            setTimeout(() => {
-                const nameInput = document.getElementById('newLocationName');
-                if (nameInput) nameInput.value = item.text;
-            }, 100);
+        if (type === 'character') {
+            block.innerText = item.text;
+            setCursorToEnd(block);
+        } else if (type === 'location') {
+            const text = block.innerText.trim();
+            const match = text.match(/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]+/i);
+            if (match) {
+                const timeMatch = text.match(/\s+-\s+(DAY|NIGHT|MORNING|EVENING|LATER|CONTINUOUS|SAME)$/i);
+                block.innerText = match[0] + item.text + (timeMatch ? timeMatch[0] : '');
+                setCursorToEnd(block);
+            }
         }
 
-        hideAutocomplete();
+        editorDirty = true;
+    }
+
+    // Create new character/location from autocomplete
+    async function createFromAutocomplete(index) {
+        const item = autocompleteItems[index];
+        if (!item || item.type !== 'unrecognized') return;
+        if (!state.currentProject) {
+            setStatus('Select a project before creating screenplay entities');
+            return;
+        }
+
+        const type = autocompleteType;
+        const block = getCurrentBlock();
+        const name = item.text.trim();
+        if (!name) return;
+
+        try {
+            if (type === 'character') {
+                await api(`/projects/${state.currentProject.id}/characters`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        name,
+                        personality_notes: 'Created from screenplay autocomplete'
+                    })
+                });
+                await loadCharacters();
+                setStatus(`Character created: ${name}`);
+            } else if (type === 'location') {
+                await api(`/projects/${state.currentProject.id}/locations`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        name,
+                        description: 'Created from screenplay autocomplete'
+                    })
+                });
+                await loadLocations();
+                setStatus(`Location created: ${name}`);
+            }
+
+            applyAutocompleteItemToBlock(item, type, block);
+            hideAutocomplete();
+            checkScreenplaySuggestions();
+        } catch (err) {
+            setStatus('Error creating ' + type + ': ' + err.message);
+        }
     }
 
     // Move cursor to end of element
@@ -11906,6 +11987,72 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // SCENES
     // ══════════════════════════════════════════════════════════════
+    // ── Scene deletion ───────────────────────────────────────────────
+    // A bad paste can generate dozens of junk scenes, so this supports both
+    // removing one and clearing a selection.
+
+    function updateSceneSelection() {
+        const checked = [...document.querySelectorAll('.scene-select:checked')];
+        const bar = document.getElementById('sceneBulkBar');
+        const count = document.getElementById('sceneBulkCount');
+        if (!bar || !count) return;
+        bar.classList.toggle('hidden', checked.length === 0);
+        count.textContent = checked.length + ' selected';
+    }
+
+    function selectAllScenes(on) {
+        document.querySelectorAll('.scene-select').forEach(cb => { cb.checked = on; });
+        updateSceneSelection();
+    }
+
+    /**
+     * Delete one scene.
+     *
+     * Shots cascade with it, so the shot count goes in the prompt — "delete
+     * scene" reads much smaller than what it actually removes.
+     */
+    async function deleteScene(sceneId, shotCount, label) {
+        const shotWarning = shotCount > 0
+            ? '\n\nThis also deletes ' + shotCount + ' shot' + (shotCount === 1 ? '' : 's') + ' and their notes, versions and render history.'
+            : '';
+        if (!confirm('Delete scene "' + label + '"?' + shotWarning + '\n\nThis cannot be undone.')) return;
+
+        try {
+            const res = await api('/scenes/' + sceneId, { method: 'DELETE' });
+            setStatus('Deleted scene' + (res.shots ? ' and ' + res.shots + ' shot(s)' : ''));
+            loadScenes();
+        } catch (err) {
+            setStatus('Could not delete scene: ' + err.message);
+        }
+    }
+
+    async function deleteSelectedScenes() {
+        const ids = [...document.querySelectorAll('.scene-select:checked')].map(cb => cb.value);
+        if (!ids.length) return;
+
+        // Total the shots up front so the confirm states the real cost rather
+        // than just a scene count.
+        const shots = state.scenes
+            .filter(sc => ids.includes(sc.id))
+            .reduce((n, sc) => n + (sc.shot_count || 0), 0);
+        const shotWarning = shots > 0
+            ? '\n\nThis also deletes ' + shots + ' shot' + (shots === 1 ? '' : 's') + ' and their notes, versions and render history.'
+            : '';
+
+        if (!confirm('Delete ' + ids.length + ' scene' + (ids.length === 1 ? '' : 's') + '?' + shotWarning + '\n\nThis cannot be undone.')) return;
+
+        try {
+            const res = await api('/projects/' + state.currentProject.id + '/scenes/delete', {
+                method: 'POST',
+                body: JSON.stringify({ scene_ids: ids }),
+            });
+            setStatus('Deleted ' + res.deleted + ' scene(s)' + (res.shots_deleted ? ' and ' + res.shots_deleted + ' shot(s)' : ''));
+            loadScenes();
+        } catch (err) {
+            setStatus('Could not delete scenes: ' + err.message);
+        }
+    }
+
     async function loadScenes() {
         if (!state.currentProject) return;
         setStatus('Loading scenes...');
@@ -11913,6 +12060,10 @@ ${fountainText.slice(0, 50000)}`;
             const data = await api('/projects/' + state.currentProject.id + '/scenes');
             state.scenes = data.scenes || [];
             const el = document.getElementById('scenesList');
+            // The list is rebuilt below, so any previous selection is gone —
+            // clear the bar rather than leave it showing a stale count.
+            const bulkBar = document.getElementById('sceneBulkBar');
+            if (bulkBar) bulkBar.classList.add('hidden');
 
             // FILM-124: Show/hide "Break Down All" button based on written scenes
             const writtenScenes = state.scenes.filter(s => s.status === 'written');
@@ -11937,6 +12088,9 @@ ${fountainText.slice(0, 50000)}`;
                     return `
                     <div class="scene-row" id="scene-${s.id}">
                         <div class="scene-row-header" onclick="toggleScene('${s.id}')">
+                            <input type="checkbox" class="scene-select" value="${s.id}"
+                                   onclick="event.stopPropagation(); updateSceneSelection()"
+                                   title="Select for bulk delete">
                             <div class="scene-number">${s.scene_number}</div>
                             <div class="scene-info">
                                 <h4>${esc(s.int_ext || '')} ${esc(s.location || '')} ${s.time_of_day ? '- ' + esc(s.time_of_day) : ''}</h4>
@@ -11944,6 +12098,9 @@ ${fountainText.slice(0, 50000)}`;
                             </div>
                             ${breakdownBtn}
                             <span class="badge ${s.status}">${(s.status || '').replace(/_/g, ' ')}</span>
+                            <button class="btn btn-sm scene-delete-btn"
+                                    onclick="event.stopPropagation(); deleteScene('${s.id}', ${s.shot_count || 0}, ${JSON.stringify(String(s.location || 'this scene'))})"
+                                    title="Delete this scene">&times;</button>
                             <span class="scene-expand">&#9654;</span>
                         </div>
                         <div class="scene-shots" id="scene-shots-${s.id}"></div>
@@ -12874,15 +13031,34 @@ ${fountainText.slice(0, 50000)}`;
             const proj = await api('/projects/' + state.currentProject.id + '/providers');
             const caps = proj.capabilities || [];
             const supportsCap = (cap) => (catalog.providers || []).filter(p => (p.capabilities || []).includes(cap));
+            const capabilityLabels = {
+                llm: 'Text / LLM',
+                image: 'Images',
+                video: 'Video',
+                music: 'Music',
+                voice: 'Voice',
+                sfx: 'SFX',
+                ambient: 'Ambient',
+                lipsync: 'Lip-sync',
+                post: 'Post',
+                model3d: '3D Models',
+                stock: 'Stock'
+            };
+            const capabilityHelp = {
+                llm: 'Screenplay AI, breakdowns, and prose-to-screenplay conversion.'
+            };
             mapEl.innerHTML = caps.map(cap => {
                 const opts = supportsCap(cap);
                 if (opts.length === 0) return '';
                 const current = (proj.config && proj.config[cap]) || proj.effective[cap] || '';
                 return `<div class="form-group" style="display:flex;align-items:center;gap:10px;">
-                    <label style="flex:0 0 90px;margin:0;text-transform:capitalize;">${esc(cap)}</label>
-                    <select id="provcap-${esc(cap)}" style="flex:1;">
+                    <label style="flex:0 0 110px;margin:0;">${esc(capabilityLabels[cap] || cap)}</label>
+                    <div style="flex:1;">
+                    <select id="provcap-${esc(cap)}" style="width:100%;">
                         ${opts.map(o => '<option value="' + esc(o.id) + '"' + (o.id === current ? ' selected' : '') + '>' + esc(o.label) + '</option>').join('')}
                     </select>
+                    ${capabilityHelp[cap] ? '<div class="text-sm text-muted" style="margin-top:4px;">' + esc(capabilityHelp[cap]) + '</div>' : ''}
+                    </div>
                 </div>`;
             }).join('');
         } catch (err) { credEl.innerHTML = '<p class="text-sm text-muted">Providers unavailable: ' + esc(err.message) + '</p>'; }
@@ -13823,7 +13999,7 @@ ${fountainText.slice(0, 50000)}`;
     let conversionResults = [];
     let conversionCancelled = false;
     let currentAbortController = null;
-    const MAX_CHUNK_SIZE = 8000;
+    const MAX_CHUNK_SIZE = 7000;
     const CONTEXT_OVERLAP = 500;
 
     function openTextConvertModal() {
@@ -14022,7 +14198,8 @@ ${fountainText.slice(0, 50000)}`;
                     body: JSON.stringify({ filename: file.name, data_base64: btoa(binary) }),
                 });
                 document.getElementById('convertSourceText').value = res.text;
-                setStatus('Extracted ' + res.characters.toLocaleString() + ' characters from ' + file.name);
+                const parts = Array.isArray(res.files_read) && res.files_read.length ? ' from ' + res.files_read.length + ' Word part(s)' : '';
+                setStatus('Extracted ' + res.characters.toLocaleString() + ' characters' + parts + ' from ' + file.name);
                 detectChapters();
                 updateConversionEstimate();
             } catch (err) {
@@ -14218,62 +14395,90 @@ ${fountainText.slice(0, 50000)}`;
         estimateEl.textContent = `Full document: ${textLength.toLocaleString()} chars (~${chunkCount} chunk${chunkCount !== 1 ? 's' : ''}, ~${Math.ceil(estimatedSeconds / 60)} min)`;
     }
 
-    // FILM-119: Convert full document with chunking
-    async function convertFullDocument() {
-        const text = document.getElementById('convertSourceText').value.trim();
-        if (!text) {
-            alert('Please enter text first');
-            return;
+    function formatDuration(seconds) {
+        const s = Math.max(0, Math.round(seconds || 0));
+        if (s < 60) return s + 's';
+        const m = Math.floor(s / 60);
+        const rem = s % 60;
+        return rem ? `${m}m ${rem}s` : `${m}m`;
+    }
+
+    function setConversionProgress(done, total, label, startTime, detail) {
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        document.getElementById('convertProgressLabel').textContent = label || 'Converting...';
+        document.getElementById('convertProgressFill').style.width = `${pct}%`;
+        document.getElementById('convertProgressStatus').textContent = `${done} / ${total} chunks (${pct}%)`;
+        if (done > 0 && done < total) {
+            const elapsed = (Date.now() - startTime) / 1000;
+            const avg = elapsed / done;
+            document.getElementById('convertProgressETA').textContent =
+                `${formatDuration(elapsed)} elapsed · ${formatDuration(avg * (total - done))} remaining${detail ? ' · ' + detail : ''}`;
+        } else {
+            document.getElementById('convertProgressETA').textContent = detail || '';
         }
+    }
 
-        if (!state.currentProject) {
-            alert('Please select a project first');
-            return;
+    function buildConversionQueue(chapters) {
+        const queue = [];
+        chapters.forEach((chapter) => {
+            const chunks = chunkText(chapter.content);
+            chunks.forEach((chunk, index) => {
+                const label = chunks.length > 1
+                    ? `${chapter.title} (part ${index + 1}/${chunks.length})`
+                    : chapter.title;
+                queue.push({
+                    title: label,
+                    content: chunk.content,
+                    sourceTitle: chapter.title,
+                    sourceIndex: chapter.index,
+                    part: index + 1,
+                    parts: chunks.length
+                });
+            });
+        });
+        return queue;
+    }
+
+    async function readConversionResponse(response) {
+        let data = {};
+        try { data = await response.json(); } catch (_) {}
+        if (!response.ok) {
+            const msg = data.details || data.error || `HTTP ${response.status}`;
+            throw new Error(msg);
         }
+        return data;
+    }
 
-        const styleNotes = document.getElementById('convertStyleNotes').value.trim();
-        const chunks = chunkText(text);
-
-        // Show progress UI
+    async function runConversionQueue(queue, styleNotes) {
         document.getElementById('convertStep1').style.display = 'none';
         document.getElementById('convertStep2').style.display = 'block';
 
         conversionResults = [];
         conversionCancelled = false;
-        const total = chunks.length;
+        const total = queue.length;
         const startTime = Date.now();
         let previousContext = '';
+        let providerLabel = '';
 
-        for (let i = 0; i < chunks.length; i++) {
+        setConversionProgress(0, total, 'Preparing conversion...', startTime, `${total} chunk${total !== 1 ? 's' : ''} queued`);
+
+        for (let i = 0; i < queue.length; i++) {
             if (conversionCancelled) {
-                document.getElementById('convertProgressLabel').textContent = 'Cancelled';
+                setConversionProgress(i, total, 'Cancelled', startTime, providerLabel);
                 break;
             }
 
-            const chunk = chunks[i];
-
-            // Update progress
-            document.getElementById('convertProgressLabel').textContent = `Converting ${chunk.title}...`;
-            document.getElementById('convertProgressFill').style.width = `${((i) / total) * 100}%`;
-            document.getElementById('convertProgressStatus').textContent = `${i} / ${total} chunks`;
-
-            // Estimate remaining time
-            if (i > 0) {
-                const elapsed = (Date.now() - startTime) / 1000;
-                const avgPerChunk = elapsed / i;
-                const remaining = Math.ceil(avgPerChunk * (total - i));
-                document.getElementById('convertProgressETA').textContent = `~${remaining}s remaining`;
-            }
+            const chunk = queue[i];
+            const detail = `${chunk.content.length.toLocaleString()} chars${providerLabel ? ' · ' + providerLabel : ''}`;
+            setConversionProgress(i, total, `Converting ${chunk.title}`, startTime, detail);
 
             try {
-                // Include context overlap from previous chunk
                 let textToConvert = chunk.content;
                 if (previousContext) {
-                    textToConvert = `[CONTEXT FROM PREVIOUS SECTION:]\n${previousContext}\n\n[NEW SECTION TO CONVERT:]\n${chunk.content}`;
+                    textToConvert = `[CONTEXT FROM PREVIOUS SECTION - do not convert this again:]\n${previousContext}\n\n[NEW SECTION TO CONVERT:]\n${chunk.content}`;
                 }
 
                 currentAbortController = new AbortController();
-
                 const response = await fetch(`${API()}/projects/${state.currentProject.id}/text-to-screenplay/preview`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -14284,17 +14489,10 @@ ${fountainText.slice(0, 50000)}`;
                     }),
                     signal: currentAbortController.signal
                 });
+                const data = await readConversionResponse(response);
+                providerLabel = data.provider ? `provider: ${data.provider}` : providerLabel;
 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-
-                const data = await response.json();
-
-                // Store context overlap for next chunk
-                if (data.fountain_text) {
-                    previousContext = data.fountain_text.slice(-CONTEXT_OVERLAP);
-                }
+                if (data.fountain_text) previousContext = data.fountain_text.slice(-CONTEXT_OVERLAP);
 
                 conversionResults.push({
                     chapter: chunk,
@@ -14302,31 +14500,37 @@ ${fountainText.slice(0, 50000)}`;
                     fountain_text: data.fountain_text,
                     scenes_detected: data.scenes_detected || [],
                     characters_detected: data.characters_detected || [],
-                    validation: data.validation
+                    validation: data.validation,
+                    provider: data.provider || '',
+                    provider_model: data.provider_model || '',
+                    input_length: data.input_length || chunk.content.length,
+                    output_length: data.output_length || (data.fountain_text || '').length
                 });
             } catch (error) {
-                if (error.name === 'AbortError') {
-                    break;
-                }
-                conversionResults.push({
-                    chapter: chunk,
-                    success: false,
-                    error: error.message
-                });
+                if (error.name === 'AbortError') break;
+                conversionResults.push({ chapter: chunk, success: false, error: error.message });
+            } finally {
+                currentAbortController = null;
             }
 
-            currentAbortController = null;
+            setConversionProgress(i + 1, total, `Finished ${chunk.title}`, startTime, providerLabel);
         }
 
-        // Update final progress
         if (!conversionCancelled) {
-            document.getElementById('convertProgressFill').style.width = '100%';
-            document.getElementById('convertProgressStatus').textContent = `${total} / ${total} chunks - Complete!`;
-            document.getElementById('convertProgressETA').textContent = '';
+            const failed = conversionResults.filter(r => !r.success).length;
+            setConversionProgress(total, total, failed ? 'Finished with errors' : 'Conversion complete', startTime, failed ? `${failed} chunk${failed !== 1 ? 's' : ''} failed` : providerLabel);
         }
 
-        // Show results after brief delay
         setTimeout(showConversionResults, 500);
+    }
+
+    // FILM-119: Convert full document with chunking
+    async function convertFullDocument() {
+        const text = document.getElementById('convertSourceText').value.trim();
+        if (!text) { alert('Please enter text first'); return; }
+        if (!state.currentProject) { alert('Please select a project first'); return; }
+        const styleNotes = document.getElementById('convertStyleNotes').value.trim();
+        await runConversionQueue(buildConversionQueue([{ index: 0, title: 'Full Text', content: text }]), styleNotes);
     }
 
     // FILM-119: Cancel conversion
@@ -14350,113 +14554,7 @@ ${fountainText.slice(0, 50000)}`;
         }
 
         const styleNotes = document.getElementById('convertStyleNotes').value.trim();
-
-        // Show progress UI
-        document.getElementById('convertStep1').style.display = 'none';
-        document.getElementById('convertStep2').style.display = 'block';
-
-        conversionResults = [];
-        conversionCancelled = false;
-        const total = selectedChapters.length;
-        const startTime = Date.now();
-        let previousContext = '';
-
-        for (let i = 0; i < selectedChapters.length; i++) {
-            if (conversionCancelled) {
-                document.getElementById('convertProgressLabel').textContent = 'Cancelled';
-                break;
-            }
-
-            const chapter = selectedChapters[i];
-
-            // FILM-119: Chunk large chapters
-            const chunks = chapter.content.length > MAX_CHUNK_SIZE
-                ? chunkText(chapter.content)
-                : [{ title: chapter.title, content: chapter.content }];
-
-            for (let j = 0; j < chunks.length; j++) {
-                if (conversionCancelled) break;
-
-                const chunk = chunks[j];
-                const label = chunks.length > 1
-                    ? `${chapter.title} (part ${j + 1}/${chunks.length})`
-                    : chapter.title;
-
-                // Update progress
-                document.getElementById('convertProgressLabel').textContent = `Converting: ${label}`;
-                document.getElementById('convertProgressFill').style.width = `${((i + j / chunks.length) / total) * 100}%`;
-                document.getElementById('convertProgressStatus').textContent = `${i} / ${total} chapters`;
-
-                // Estimate remaining time
-                if (i > 0 || j > 0) {
-                    const elapsed = (Date.now() - startTime) / 1000;
-                    const progress = i + j / chunks.length;
-                    const avgPerUnit = elapsed / progress;
-                    const remaining = Math.ceil(avgPerUnit * (total - progress));
-                    document.getElementById('convertProgressETA').textContent = `~${remaining}s remaining`;
-                }
-
-                try {
-                    // Include context overlap from previous chunk
-                    let textToConvert = chunk.content;
-                    if (previousContext && j > 0) {
-                        textToConvert = `[CONTEXT:]\n${previousContext}\n\n[CONVERT:]\n${chunk.content}`;
-                    }
-
-                    currentAbortController = new AbortController();
-
-                    const response = await fetch(`${API()}/projects/${state.currentProject.id}/text-to-screenplay/preview`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            text: textToConvert,
-                            chapter_title: label,
-                            style_notes: styleNotes
-                        }),
-                        signal: currentAbortController.signal
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-
-                    const data = await response.json();
-
-                    // Store context overlap
-                    if (data.fountain_text) {
-                        previousContext = data.fountain_text.slice(-CONTEXT_OVERLAP);
-                    }
-
-                    conversionResults.push({
-                        chapter: { ...chapter, title: label },
-                        success: true,
-                        fountain_text: data.fountain_text,
-                        scenes_detected: data.scenes_detected || [],
-                        characters_detected: data.characters_detected || [],
-                        validation: data.validation
-                    });
-                } catch (error) {
-                    if (error.name === 'AbortError') break;
-                    conversionResults.push({
-                        chapter: { ...chapter, title: label },
-                        success: false,
-                        error: error.message
-                    });
-                }
-
-                currentAbortController = null;
-            }
-        }
-
-        // Update final progress
-        if (!conversionCancelled) {
-            document.getElementById('convertProgressFill').style.width = '100%';
-            document.getElementById('convertProgressStatus').textContent = `${total} / ${total} chapters - Complete!`;
-            document.getElementById('convertProgressETA').textContent = '';
-        }
-
-        // Show results after brief delay
-        setTimeout(showConversionResults, 500);
+        await runConversionQueue(buildConversionQueue(selectedChapters), styleNotes);
     }
 
     function showConversionResults() {
@@ -14490,12 +14588,14 @@ ${fountainText.slice(0, 50000)}`;
                 .flatMap(r => r.characters_detected)
         )];
 
-        let summaryHtml = `<strong>${successCount}</strong> chapter${successCount !== 1 ? 's' : ''} converted`;
+        const providersUsed = [...new Set(conversionResults.filter(r => r.success && r.provider).map(r => r.provider))];
+        let summaryHtml = `<strong>${successCount}</strong> chunk${successCount !== 1 ? 's' : ''} converted`;
         if (failCount > 0) {
             summaryHtml += ` | <span style="color: var(--gl-error);">${failCount} failed</span>`;
         }
         summaryHtml += ` | <strong>${allScenes.length}</strong> scenes detected`;
         summaryHtml += ` | <strong>${allCharacters.length}</strong> characters: ${allCharacters.slice(0, 5).join(', ')}${allCharacters.length > 5 ? '...' : ''}`;
+        if (providersUsed.length) summaryHtml += ` | provider: <strong>${providersUsed.join(', ')}</strong>`;
 
         document.getElementById('convertResultsSummary').innerHTML = summaryHtml;
     }
@@ -15558,7 +15658,7 @@ ${fountainText.slice(0, 50000)}`;
                 const prov = await api('/projects/' + state.currentProject.id + '/providers');
                 const e = prov.effective || {};
                 const provLine = document.getElementById('pipelineProviders');
-                if (provLine) provLine.innerHTML = 'Providers → image: <strong>' + esc(e.image || 'gridlight') + '</strong>, video: <strong>' + esc(e.video || 'gridlight') + '</strong>, voice: <strong>' + esc(e.voice || 'gridlight') + '</strong>, music: <strong>' + esc(e.music || 'gridlight') + '</strong> · <a style="cursor:pointer;color:var(--gl-accent,#818cf8);" onclick="navigateTo(\'settings\')">change</a>';
+                if (provLine) provLine.innerHTML = 'Providers → LLM: <strong>' + esc(e.llm || 'gridlight') + '</strong>, image: <strong>' + esc(e.image || 'gridlight') + '</strong>, video: <strong>' + esc(e.video || 'gridlight') + '</strong>, voice: <strong>' + esc(e.voice || 'gridlight') + '</strong>, music: <strong>' + esc(e.music || 'gridlight') + '</strong> · <a style="cursor:pointer;color:var(--gl-accent,#818cf8);" onclick="navigateTo(\'settings\')">change</a>';
             } catch (_) {}
 
             setStatus(allShots.length + ' shot(s) in pipeline');
