@@ -687,6 +687,27 @@
         .text-convert-upload input[type="file"] {
             display: none;
         }
+        /* The upload control is a <label> so it can drive the hidden file input,
+           but `.form-group label` styles every label as a small uppercase field
+           caption — which flattened this into text that did not read as
+           clickable. Restore button appearance explicitly. */
+        .text-convert-upload label.btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: none;
+            letter-spacing: 0;
+            color: var(--gl-text-primary);
+            margin-bottom: 0;
+            cursor: pointer;
+        }
+        .text-convert-upload label.btn::before {
+            content: '\2191';           /* upload arrow */
+            font-size: 13px;
+            line-height: 1;
+        }
         .chapters-list {
             max-height: 200px;
             overflow-y: auto;
@@ -5192,7 +5213,7 @@
                 <div id="convertStep1">
                     <div class="form-group">
                         <label>Source Text</label>
-                        <p class="text-sm text-muted mb-8">Paste prose/novel text or upload a .txt file. Chapters will be auto-detected.</p>
+                        <p class="text-sm text-muted mb-8">Paste prose/novel text, or upload a Word document (.docx) or plain text file (.txt). Chapters will be auto-detected.</p>
                         <div class="text-convert-input-row">
                             <textarea id="convertSourceText" rows="10" placeholder="Paste your prose text here...&#10;&#10;Chapter 1&#10;&#10;Sarah walked into the coffee shop, her hands shaking..."></textarea>
                             <div class="text-convert-upload">
