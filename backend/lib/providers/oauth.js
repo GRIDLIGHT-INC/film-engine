@@ -44,7 +44,7 @@ async function fetchJson(url, opts) {
  * Discover the authorization-server metadata for a given MCP server URL.
  * Tries protected-resource metadata first, then falls back to the origin's
  * well-known authorization-server metadata.
- * @returns {{ authorization_endpoint, token_endpoint, registration_endpoint? }}
+ * @returns {{ authorization_endpoint, token_endpoint, registration_endpoint?, resource?, resource_scopes_supported? }}
  */
 async function discover(mcpUrl) {
     const origin = originOf(mcpUrl);
@@ -52,8 +52,10 @@ async function discover(mcpUrl) {
 
     // 1) Protected-resource metadata → authorization server(s).
     let authServer = origin;
+    let protectedResource = null;
     try {
         const prm = await fetchJson(`${origin}/.well-known/oauth-protected-resource`);
+        protectedResource = prm || null;
         if (prm && Array.isArray(prm.authorization_servers) && prm.authorization_servers[0]) {
             authServer = prm.authorization_servers[0];
         }
@@ -71,7 +73,12 @@ async function discover(mcpUrl) {
     if (!meta || !meta.authorization_endpoint || !meta.token_endpoint) {
         throw new Error('oauth: authorization server metadata missing endpoints');
     }
-    return meta;
+    return {
+        ...meta,
+        resource: protectedResource && protectedResource.resource,
+        resource_name: protectedResource && protectedResource.resource_name,
+        resource_scopes_supported: protectedResource && protectedResource.scopes_supported,
+    };
 }
 
 /**
@@ -128,7 +135,7 @@ async function deregisterClient(registrationClientUri, registrationAccessToken) 
 }
 
 /** Build the authorize URL the user opens in the browser. */
-function buildAuthorizeUrl(meta, { clientId, redirectUri, challenge, state, scope }) {
+function buildAuthorizeUrl(meta, { clientId, redirectUri, challenge, state, scope, resource }) {
     const u = new URL(meta.authorization_endpoint);
     u.searchParams.set('response_type', 'code');
     u.searchParams.set('client_id', clientId);
@@ -137,17 +144,19 @@ function buildAuthorizeUrl(meta, { clientId, redirectUri, challenge, state, scop
     u.searchParams.set('code_challenge_method', 'S256');
     u.searchParams.set('state', state);
     if (scope) u.searchParams.set('scope', scope);
+    if (resource) u.searchParams.set('resource', resource);
     return u.toString();
 }
 
 /** Exchange an authorization code for tokens. */
-async function exchangeCode(meta, { code, clientId, clientSecret, redirectUri, verifier }) {
+async function exchangeCode(meta, { code, clientId, clientSecret, redirectUri, verifier, resource }) {
     const params = new URLSearchParams();
     params.set('grant_type', 'authorization_code');
     params.set('code', code);
     params.set('redirect_uri', redirectUri);
     params.set('client_id', clientId);
     params.set('code_verifier', verifier);
+    if (resource) params.set('resource', resource);
     if (clientSecret) params.set('client_secret', clientSecret);
     return fetchJson(meta.token_endpoint, {
         method: 'POST',

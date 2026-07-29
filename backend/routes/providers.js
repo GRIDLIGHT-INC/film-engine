@@ -247,8 +247,11 @@ async function connectProvider(req, res, provider) {
         }
 
         const { verifier, challenge, state } = oauth.makePkce();
-        const scope = Array.isArray(meta.scopes_supported) ? meta.scopes_supported.join(' ') : undefined;
-        const authorizeUrl = oauth.buildAuthorizeUrl(meta, { clientId, redirectUri, challenge, state, scope });
+        const scopes = Array.isArray(meta.resource_scopes_supported) && meta.resource_scopes_supported.length
+            ? meta.resource_scopes_supported
+            : meta.scopes_supported;
+        const scope = Array.isArray(scopes) ? scopes.filter(s => s === 'openid' || s === 'offline_access').join(' ') : undefined;
+        const authorizeUrl = oauth.buildAuthorizeUrl(meta, { clientId, redirectUri, challenge, state, scope, resource: meta.resource });
 
         saveMeta(provider, {
             ...existing,
@@ -258,6 +261,9 @@ async function connectProvider(req, res, provider) {
             client_secret: clientSecret,
             token_endpoint: meta.token_endpoint,
             authorization_endpoint: meta.authorization_endpoint,
+            resource: meta.resource || '',
+            resource_name: meta.resource_name || '',
+            scopes: scope || '',
             _pkce_verifier: verifier,
             _oauth_state: state,
             _redirect_uri: redirectUri,
@@ -280,7 +286,7 @@ async function oauthCallback(req, res, provider, query) {
     try {
         const tokens = await oauth.exchangeCode(
             { token_endpoint: m.token_endpoint },
-            { code, clientId: m.client_id, clientSecret: m.client_secret, redirectUri: m._redirect_uri, verifier: m._pkce_verifier }
+            { code, clientId: m.client_id, clientSecret: m.client_secret, redirectUri: m._redirect_uri, verifier: m._pkce_verifier, resource: m.resource }
         );
         const clean = {
             ...m,

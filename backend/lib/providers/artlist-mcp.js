@@ -1,5 +1,5 @@
 /**
- * Artlist MCP provider adapter (AI Toolkit — generative image + video + voice).
+ * Artlist MCP provider adapter (AI Toolkit — generative image + video).
  *
  * Artlist exposes its 100+ AI models (Sora 2 Pro, Kling, Veo, Seedance, Imagen,
  * FLUX, Nano Banana, ...) through a remote MCP server at https://mcp.artlist.io/mcp.
@@ -15,7 +15,7 @@
  *
  * Tool NAMES/argument shapes are discovered at connect time (stored in
  * credentials.meta.tools) and can be overridden per capability via
- * meta.image_tool / meta.video_tool / meta.voice_tool, since the live tool
+ * meta.image_tool / meta.video_tool, since the live tool
  * catalog is the source of truth once connected.
  */
 
@@ -29,7 +29,7 @@ function mcpUrl() {
 }
 
 function supports(capability) {
-    return capability === 'image' || capability === 'video' || capability === 'voice';
+    return capability === 'image' || capability === 'video';
 }
 
 /** One JSON-RPC call to the MCP server over Streamable-HTTP. */
@@ -42,6 +42,7 @@ async function mcpCall(method, params, { url, token, timeout } = {}) {
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json, text/event-stream',
+                'MCP-Protocol-Version': '2025-06-18',
                 ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
             },
             body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params: params || {} }),
@@ -82,17 +83,13 @@ async function listTools(token) {
 function pickTool(capability, meta) {
     if (capability === 'image' && meta && meta.image_tool) return meta.image_tool;
     if (capability === 'video' && meta && meta.video_tool) return meta.video_tool;
-    if (capability === 'voice' && meta && meta.voice_tool) return meta.voice_tool;
     // Heuristic over discovered tools.
     const tools = (meta && meta.tools) || [];
     const want = capability === 'video'
         ? /video|veo|kling|sora|seedance|ray/i
-        : capability === 'voice'
-            ? /voice|tts|speech|narrat|dub/i
-            : /image|imagen|flux|banana|photo|picture/i;
+        : /image|imagen|flux|banana|photo|picture/i;
     const hit = tools.find(t => want.test(t.name || ''));
     if (hit) return hit.name;
-    if (capability === 'voice') return null;
     return capability === 'video' ? 'generate_video' : 'generate_image';
 }
 
@@ -170,10 +167,10 @@ const adapter = {
     kind: 'mcp',
     label: 'Artlist (AI Toolkit / MCP)',
     requiresKey: false, // OAuth, not an API key
-    capabilities: ['image', 'video', 'voice'],
+    capabilities: ['image', 'video'],
 
     connection: {
-        instructions: 'Requires a paid Artlist plan with AI credits. Click "Connect Artlist" and sign in — no API key needed. Voice generation depends on your Artlist MCP account exposing a voiceover/TTS tool; if none is discovered, Film Engine will show a clear provider error instead of failing silently. If connect fails with "too many entities", Artlist has capped OAuth-client registration for your account (no self-serve cleanup is documented): either paste an existing OAuth client below to skip registration, or ask Artlist support to reset the dynamic client-registration limit.',
+        instructions: 'Requires an active Artlist plan with AI credits. Artlist documents this MCP as Claude-only beta today, with image/video generation only. Film Engine connects through the same OAuth MCP flow; if authorization fails, reconnect after releasing the registered client or contact Artlist to enable/reset MCP OAuth access for your account.',
         oauth: { connectPath: '/providers/artlist-mcp/connect', mcpUrl: DEFAULT_MCP_URL },
         // Optional: reuse an existing Artlist OAuth client instead of dynamic
         // registration (avoids the per-tenant client-entity limit).
@@ -205,18 +202,8 @@ const adapter = {
             };
         }
 
-        const prompt = capability === 'voice'
-            ? ((payload && (payload.text || payload.prompt)) || '')
-            : ((payload && payload.prompt) || '');
-        const args = capability === 'voice' ? {
-            text: prompt,
-            prompt,
-            ...(payload && payload.model ? { model: payload.model } : {}),
-            ...(payload && payload.voice_id ? { voice_id: payload.voice_id } : {}),
-            ...(payload && payload.voice ? { voice: payload.voice } : {}),
-            ...(payload && payload.emotion ? { emotion: payload.emotion } : {}),
-            ...(payload && payload.speed ? { speed: payload.speed } : {}),
-        } : {
+        const prompt = (payload && payload.prompt) || '';
+        const args = {
             prompt,
             ...(payload && payload.model ? { model: payload.model } : {}),
             ...(payload && payload.width && payload.height ? { width: payload.width, height: payload.height } : {}),
@@ -246,7 +233,7 @@ const adapter = {
             provider_job_id: '',
             meta: {
                 tool: toolName,
-                format: (norm.meta && norm.meta.format) || (capability === 'video' ? 'mp4' : capability === 'voice' ? 'wav' : 'png'),
+                format: (norm.meta && norm.meta.format) || (capability === 'video' ? 'mp4' : 'png'),
                 license_source: 'generated',
             },
         };

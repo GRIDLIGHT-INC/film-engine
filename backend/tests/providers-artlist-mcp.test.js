@@ -18,10 +18,10 @@ describe('providers/oauth helpers', () => {
         assert.equal(challenge, expected);
     });
 
-    it('buildAuthorizeUrl includes PKCE + client + redirect params', () => {
+    it('buildAuthorizeUrl includes PKCE + client + redirect + resource params', () => {
         const url = oauth.buildAuthorizeUrl(
             { authorization_endpoint: 'https://auth.example/authorize' },
-            { clientId: 'c1', redirectUri: 'http://localhost:3100/cb', challenge: 'ch', state: 'st', scope: 'a b' }
+            { clientId: 'c1', redirectUri: 'http://localhost:3100/cb', challenge: 'ch', state: 'st', scope: 'openid offline_access', resource: 'https://mcp.example/' }
         );
         const u = new URL(url);
         assert.equal(u.searchParams.get('response_type'), 'code');
@@ -29,6 +29,8 @@ describe('providers/oauth helpers', () => {
         assert.equal(u.searchParams.get('code_challenge'), 'ch');
         assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
         assert.equal(u.searchParams.get('state'), 'st');
+        assert.equal(u.searchParams.get('scope'), 'openid offline_access');
+        assert.equal(u.searchParams.get('resource'), 'https://mcp.example/');
     });
 
     describe('discover + exchangeCode (mock OAuth server)', () => {
@@ -37,7 +39,7 @@ describe('providers/oauth helpers', () => {
             server = http.createServer((req, res) => {
                 if (req.url.startsWith('/.well-known/oauth-protected-resource')) {
                     res.writeHead(200, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ authorization_servers: [origin] }));
+                    return res.end(JSON.stringify({ resource: `${origin}/mcp`, authorization_servers: [origin], scopes_supported: ['openid', 'offline_access'] }));
                 }
                 if (req.url.startsWith('/.well-known/oauth-authorization-server')) {
                     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -62,6 +64,8 @@ describe('providers/oauth helpers', () => {
             const meta = await oauth.discover(`${origin}/mcp`);
             assert.equal(meta.authorization_endpoint, `${origin}/authorize`);
             assert.equal(meta.token_endpoint, `${origin}/token`);
+            assert.equal(meta.resource, `${origin}/mcp`);
+            assert.deepEqual(meta.resource_scopes_supported, ['openid', 'offline_access']);
         });
 
         it('exchanges an auth code for tokens', async () => {
@@ -75,7 +79,7 @@ describe('providers/oauth helpers', () => {
 });
 
 describe('providers/artlist-mcp adapter', () => {
-    it('declares an OAuth connection spec and image+video+voice capabilities', () => {
+    it('declares an OAuth connection spec and image+video capabilities', () => {
         assert.equal(adapter.id, 'artlist-mcp');
         assert.equal(adapter.kind, 'mcp');
         assert.equal(adapter.requiresKey, false);
@@ -83,7 +87,7 @@ describe('providers/artlist-mcp adapter', () => {
         assert.equal(adapter.connection.oauth.connectPath, '/providers/artlist-mcp/connect');
         assert.equal(adapter.supports('image'), true);
         assert.equal(adapter.supports('video'), true);
-        assert.equal(adapter.supports('voice'), true);
+        assert.equal(adapter.supports('voice'), false);
         assert.equal(adapter.supports('music'), false);
     });
 
@@ -91,10 +95,7 @@ describe('providers/artlist-mcp adapter', () => {
         const meta = { tools: [{ name: 'nano_banana_image' }, { name: 'kling_video' }, { name: 'voiceover_tts' }] };
         assert.match(pickTool('image', meta), /image/);
         assert.match(pickTool('video', meta), /video/);
-        assert.match(pickTool('voice', meta), /tts/);
         assert.equal(pickTool('image', { image_tool: 'my_img' }), 'my_img');
-        assert.equal(pickTool('voice', { voice_tool: 'my_voice' }), 'my_voice');
-        assert.equal(pickTool('voice', { tools: [{ name: 'generate_image' }] }), null);
     });
 
     it('normalizeToolResult decodes an inline image block', async () => {
@@ -126,14 +127,14 @@ describe('providers/artlist-mcp adapter', () => {
         assert.equal(r.status, 401);
     });
 
-    it('returns a clear error when voice is selected without a discovered voice tool', async () => {
+    it('rejects unsupported voice capability', async () => {
         db.prepare(
             "INSERT INTO film_provider_credentials (provider, api_key, meta, updated_at) VALUES ('artlist-mcp','',?,datetime('now')) ON CONFLICT(provider) DO UPDATE SET meta=excluded.meta"
         ).run(JSON.stringify({ access_token: 'tok', tools: [{ name: 'generate_image' }] }));
         const r = await adapter.generate('voice', { text: 'Hello' });
         assert.equal(r.ok, false);
         assert.equal(r.status, 400);
-        assert.match(r.error, /no voiceover\/TTS tool/i);
+        assert.match(r.error, /unsupported capability/i);
         db.prepare('DELETE FROM film_provider_credentials WHERE provider = ?').run('artlist-mcp');
     });
 
@@ -147,10 +148,7 @@ describe('providers/artlist-mcp adapter', () => {
                     if (msg.method === 'tools/call') {
                         lastCall = msg.params;
                         res.writeHead(200, { 'Content-Type': 'application/json' });
-                        const isVoice = msg.params && msg.params.name === 'voiceover_tts';
-                        const content = isVoice
-                            ? [{ type: 'audio', data: Buffer.from('MCP-WAV').toString('base64'), mimeType: 'audio/wav' }]
-                            : [{ type: 'image', data: Buffer.from('MCP-PNG').toString('base64'), mimeType: 'image/png' }];
+                        const content = [{ type: 'image', data: Buffer.from('MCP-PNG').toString('base64'), mimeType: 'image/png' }];
                         return res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content } }));
                     }
                     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -162,7 +160,7 @@ describe('providers/artlist-mcp adapter', () => {
             process.env.ARTLIST_MCP_URL = url;
             db.prepare(
                 "INSERT INTO film_provider_credentials (provider, api_key, meta, updated_at) VALUES ('artlist-mcp','',?,datetime('now')) ON CONFLICT(provider) DO UPDATE SET meta=excluded.meta"
-            ).run(JSON.stringify({ access_token: 'tok', image_tool: 'generate_image', voice_tool: 'voiceover_tts' }));
+            ).run(JSON.stringify({ access_token: 'tok', image_tool: 'generate_image' }));
         });
         after(() => {
             server.close();
@@ -185,28 +183,6 @@ describe('providers/artlist-mcp adapter', () => {
             assert.equal(r.meta.license_source, 'generated');
             assert.deepEqual(lastCall.arguments.reference_images, [{ url: 'https://cdn.example/ref.png', role: 'canonical', weight: 0.8, subject: 'Mara' }]);
             assert.deepEqual(lastCall.arguments.input_refs, ['asset-1']);
-        });
-
-        it('generates voice via tools/call using dialogue text without image dimensions', async () => {
-            lastCall = null;
-            const r = await adapter.generate('voice', {
-                text: 'The city hums below us.',
-                prompt: 'ignore me',
-                width: 1024,
-                height: 1024,
-                voice_id: 'narrator',
-            });
-            assert.equal(r.ok, true);
-            assert.ok(Buffer.isBuffer(r.data));
-            assert.equal(r.data.toString(), 'MCP-WAV');
-            assert.equal(r.contentType, 'audio/wav');
-            assert.equal(r.meta.format, 'wav');
-            assert.equal(lastCall.name, 'voiceover_tts');
-            assert.equal(lastCall.arguments.text, 'The city hums below us.');
-            assert.equal(lastCall.arguments.prompt, 'The city hums below us.');
-            assert.equal(lastCall.arguments.voice_id, 'narrator');
-            assert.equal('width' in lastCall.arguments, false);
-            assert.equal('height' in lastCall.arguments, false);
         });
     });
 });
