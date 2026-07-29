@@ -93,6 +93,26 @@ describe('docx-text', () => {
             assert.equal(extractDocxText(buf).text, 'Body text.');
         });
 
+        test('includes standard supplemental text parts', () => {
+            const buf = buildDocx(doc(para('Body text.')), {
+                extraFiles: [
+                    { name: 'word/footnotes.xml', data: Buffer.from(doc(para('Footnote text.')), 'utf8') },
+                    { name: 'word/endnotes.xml', data: Buffer.from(doc(para('Endnote text.')), 'utf8') },
+                    { name: 'word/header1.xml', data: Buffer.from(doc(para('Header text.')), 'utf8') },
+                    { name: 'word/footer1.xml', data: Buffer.from(doc(para('Footer text.')), 'utf8') },
+                ],
+            });
+            const result = extractDocxText(buf);
+            assert.equal(result.ok, true);
+            assert.match(result.text, /Body text/);
+            assert.match(result.text, /Footnote text/);
+            assert.match(result.text, /Endnote text/);
+            assert.match(result.text, /Header text/);
+            assert.match(result.text, /Footer text/);
+            assert.ok(result.files_read.includes('word/document.xml'));
+            assert.ok(result.files_read.includes('word/footnotes.xml'));
+        });
+
         test('reports counts alongside the text', () => {
             const buf = buildDocx(doc(para('One.') + '<w:p/>' + para('Two.')));
             const result = extractDocxText(buf);

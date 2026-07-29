@@ -7,10 +7,10 @@
  * (better-sqlite3), and pulling in a document-conversion library to read one
  * XML file out of a zip would be the largest dependency in the tree.
  *
- * Scope is prose, which is all the screenplay converter needs. Images,
- * comments, footnotes, and revision marks are ignored rather than mangled;
- * tracked-change deletions are dropped so text the author removed does not
- * silently reappear in the screenplay.
+ * Scope is prose, which is all the screenplay converter needs. Images and
+ * comments are ignored rather than mangled; the main document, footnotes,
+ * endnotes, headers, and footers are read. Tracked-change deletions are dropped
+ * so text the author removed does not silently reappear in the screenplay.
  */
 
 const zlib = require('zlib');
@@ -21,6 +21,7 @@ const SIG_CENTRAL = 0x02014b50;    // central directory file header
 const SIG_LOCAL = 0x04034b50;      // local file header
 
 const DOCUMENT_PATH = 'word/document.xml';
+const EXTRA_TEXT_PART_RE = /^word\/(?:footnotes|endnotes|header\d+|footer\d+)\.xml$/;
 
 // A .docx that inflates far beyond this is either corrupt or hostile; refuse
 // rather than let a small upload expand until the process dies.
@@ -63,6 +64,28 @@ function findEntryOffset(buf, name) {
         pos += 46 + nameLen + extraLen + commentLen;
     }
     return -1;
+}
+
+function listEntryOffsets(buf, predicate) {
+    const eocd = findEndOfCentralDirectory(buf);
+    if (eocd < 0) return [];
+
+    const entryCount = buf.readUInt16LE(eocd + 10);
+    let pos = buf.readUInt32LE(eocd + 16);
+    const entries = [];
+
+    for (let i = 0; i < entryCount; i++) {
+        if (pos + 46 > buf.length || buf.readUInt32LE(pos) !== SIG_CENTRAL) return entries;
+        const nameLen = buf.readUInt16LE(pos + 28);
+        const extraLen = buf.readUInt16LE(pos + 30);
+        const commentLen = buf.readUInt16LE(pos + 32);
+        const localOffset = buf.readUInt32LE(pos + 42);
+        const entryName = buf.toString('utf8', pos + 46, pos + 46 + nameLen);
+
+        if (predicate(entryName)) entries.push({ name: entryName, offset: localOffset });
+        pos += 46 + nameLen + extraLen + commentLen;
+    }
+    return entries;
 }
 
 /** Read and decompress one entry, given its local-header offset. */
@@ -177,17 +200,35 @@ function extractDocxText(buffer) {
         };
     }
 
-    const offset = findEntryOffset(buffer, DOCUMENT_PATH);
-    if (offset < 0) {
+    const entries = listEntryOffsets(buffer, name => name === DOCUMENT_PATH || EXTRA_TEXT_PART_RE.test(name));
+    entries.sort((a, b) => {
+        if (a.name === DOCUMENT_PATH) return -1;
+        if (b.name === DOCUMENT_PATH) return 1;
+        return a.name.localeCompare(b.name);
+    });
+
+    if (!entries.some(e => e.name === DOCUMENT_PATH)) {
         return { ok: false, error: 'No document body found inside the .docx (word/document.xml is missing).' };
     }
 
-    const xml = readEntry(buffer, offset);
-    if (!xml) {
-        return { ok: false, error: 'The document body could not be decompressed. The file may be corrupt or password-protected.' };
+    const pieces = [];
+    const filesRead = [];
+    for (const entry of entries) {
+        const xml = readEntry(buffer, entry.offset);
+        if (!xml) {
+            if (entry.name === DOCUMENT_PATH) {
+                return { ok: false, error: 'The document body could not be decompressed. The file may be corrupt or password-protected.' };
+            }
+            continue;
+        }
+        const text = xmlToText(xml.toString('utf8'));
+        if (text) {
+            pieces.push(text);
+            filesRead.push(entry.name);
+        }
     }
 
-    const text = xmlToText(xml.toString('utf8'));
+    const text = pieces.join('\n\n').trim();
     if (!text) {
         return { ok: false, error: 'The document contains no readable text. Images and text boxes are not extracted.' };
     }
@@ -197,6 +238,7 @@ function extractDocxText(buffer) {
         text,
         paragraphs: text.split(/\n\s*\n/).filter(Boolean).length,
         characters: text.length,
+        files_read: filesRead,
     };
 }
 
@@ -206,5 +248,6 @@ module.exports = {
     xmlToText,
     decodeEntities,
     findEntryOffset,
+    listEntryOffsets,
     DOCUMENT_PATH,
 };
