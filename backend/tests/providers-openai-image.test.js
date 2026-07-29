@@ -8,6 +8,7 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { db } = require('../db/database');
 const { adapter, buildImageRequest } = require('../lib/providers/openai-image');
 
 describe('openai-image: buildImageRequest (pure)', () => {
@@ -76,6 +77,10 @@ describe('openai-image adapter (mock server)', () => {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
                     return res.end(JSON.stringify({ error: { message: 'bad prompt' } }));
                 }
+                if (req.url === '/v1/responses') {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ id: 'resp-123', output_text: 'INT. ROOM - DAY\n\nA scene begins.' }));
+                }
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ id: 'img-123', data: [{ b64_json: PNG_B64, revised_prompt: 'refined' }] }));
             });
@@ -99,7 +104,22 @@ describe('openai-image adapter (mock server)', () => {
         assert.equal(adapter.kind, 'generator');
         assert.equal(adapter.requiresKey, true);
         assert.equal(adapter.supports('image'), true);
+        assert.equal(adapter.supports('llm'), true);
         assert.equal(adapter.supports('video'), false);
+    });
+
+    it('generates LLM text through the Responses API', async () => {
+        const r = await adapter.generate('llm', {
+            question: 'Write a scene.',
+            conversation_history: [{ question: 'Genre?', answer: 'Noir.' }],
+        });
+        assert.equal(r.ok, true);
+        assert.equal(r.data.answer, 'INT. ROOM - DAY\n\nA scene begins.');
+        assert.equal(r.provider, 'openai');
+        assert.equal(r.provider_model, 'gpt-4.1');
+        assert.equal(r.provider_job_id, 'resp-123');
+        assert.equal(lastRequestBody.model, 'gpt-4.1');
+        assert.equal(lastRequestBody.input.at(-1).content, 'Write a scene.');
     });
 
     it('generates an image and returns decoded bytes + provenance', async () => {
@@ -152,10 +172,22 @@ describe('openai-image adapter (mock server)', () => {
     });
 
     it('returns 401 when no key is configured', async () => {
+        const saved = db.prepare('SELECT * FROM film_provider_credentials WHERE provider = ?').get('openai');
+        db.prepare('DELETE FROM film_provider_credentials WHERE provider = ?').run('openai');
         delete process.env.OPENAI_API_KEY;
-        const r = await adapter.generate('image', { prompt: 'x' });
-        assert.equal(r.ok, false);
-        assert.equal(r.status, 401);
-        process.env.OPENAI_API_KEY = 'sk-test-key';
+        try {
+            const r = await adapter.generate('image', { prompt: 'x' });
+            assert.equal(r.ok, false);
+            assert.equal(r.status, 401);
+        } finally {
+            process.env.OPENAI_API_KEY = 'sk-test-key';
+            if (saved) {
+                db.prepare(
+                    `INSERT INTO film_provider_credentials (provider, api_key, meta, updated_at)
+                     VALUES (?, ?, ?, ?)
+                     ON CONFLICT(provider) DO UPDATE SET api_key=excluded.api_key, meta=excluded.meta, updated_at=excluded.updated_at`
+                ).run(saved.provider, saved.api_key || '', saved.meta || '{}', saved.updated_at || new Date().toISOString());
+            }
+        }
     });
 });

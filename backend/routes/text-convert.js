@@ -8,9 +8,10 @@
  */
 const { db } = require('../db/database');
 const { extractDocxText } = require('../lib/docx-text');
+const { callProjectLLM } = require('../lib/llm-client');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const MAX_TEXT_LENGTH = 10000;
+const MAX_TEXT_LENGTH = 20000;
 
 const CONVERSION_SYSTEM_PROMPT = `You are a professional screenwriter converting prose/novel text into properly formatted Fountain screenplay format.
 
@@ -121,6 +122,7 @@ function extractUploadedDocument(req, res) {
         text: result.text,
         paragraphs: result.paragraphs,
         characters: result.characters,
+        files_read: result.files_read || [],
     }));
 }
 
@@ -150,7 +152,7 @@ async function processTextConversion(req, res, projectId, isPreview) {
 
     // Get project
     const project = db.prepare(`
-        SELECT title, genre FROM film_projects WHERE id = ?
+        SELECT title, genre, provider_config FROM film_projects WHERE id = ?
     `).get(projectId);
 
     if (!project) {
@@ -190,38 +192,24 @@ async function processTextConversion(req, res, projectId, isPreview) {
     }
     userMessage += text;
 
-    // Call AI gateway — Gridlight /chat/intelligent expects { question }
-    // Embed system prompt in the question since Gridlight has no system_prompt field
-    const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
+    // Embed system prompt in the question because Gridlight has no system_prompt
+    // field; OpenAI also receives this canonical LLM shape through the adapter.
     const fullQuestion = systemPrompt + '\n\n---\n\n' + userMessage;
 
-    const aiHeaders = { 'Content-Type': 'application/json' };
-    if (GRIDLIGHT_API_KEY) {
-        aiHeaders['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
-    }
-
     try {
-        const aiRes = await fetch(`${GRIDLIGHT_URL}/chat/intelligent`, {
-            method: 'POST',
-            headers: aiHeaders,
-            body: JSON.stringify({
-                question: fullQuestion,
-                stream: false
-            })
-        });
+        const aiResult = await callProjectLLM(project, { question: fullQuestion, stream: false }, { timeout: 300000 });
 
-        if (!aiRes.ok) {
-            const errText = await aiRes.text();
+        if (!aiResult.ok) {
             res.writeHead(502, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 error: 'AI service error',
-                details: errText
+                details: aiResult.error,
+                provider: aiResult.provider
             }));
             return;
         }
 
-        const aiData = await aiRes.json();
-        const fountainText = aiData.answer || '';
+        const fountainText = aiResult.answer || '';
 
         // Validate output
         const validation = validateFountainOutput(fountainText);
@@ -238,7 +226,9 @@ async function processTextConversion(req, res, projectId, isPreview) {
             preview: isPreview,
             chapter_title: chapter_title || null,
             input_length: text.length,
-            output_length: fountainText.length
+            output_length: fountainText.length,
+            provider: aiResult.provider,
+            provider_model: aiResult.provider_model || ''
         };
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -249,7 +239,7 @@ async function processTextConversion(req, res, projectId, isPreview) {
         res.end(JSON.stringify({
             error: 'AI gateway unavailable',
             details: err.message,
-            hint: 'Ensure the Gridlight gateway is running and GRIDLIGHT_URL is set.'
+            hint: 'Check the selected LLM provider in Settings and make sure its credentials/service are available.'
         }));
     }
 }

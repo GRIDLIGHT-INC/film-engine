@@ -32,7 +32,7 @@
  */
 
 // Capabilities the pipeline resolves a provider for.
-const CAPABILITIES = ['image', 'video', 'music', 'voice', 'sfx', 'ambient', 'lipsync', 'post', 'model3d', 'stock'];
+const CAPABILITIES = ['llm', 'image', 'video', 'music', 'voice', 'sfx', 'ambient', 'lipsync', 'post', 'model3d', 'stock'];
 
 // Default provider per capability when a project/env sets nothing. Gridlight is
 // the safe default so behavior is unchanged until a project opts into another.

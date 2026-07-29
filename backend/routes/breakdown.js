@@ -3,14 +3,14 @@
  * POST /film/projects/:id/breakdown — full AI breakdown via /chat/intelligent
  * POST /film/projects/:id/breakdown/stream — SSE streaming version
  *
- * Sends screenplay through Gridlight's Infer agent (intelligent chat)
+ * Sends screenplay through the selected LLM provider
  * to auto-generate scene cards with camera, lighting, character,
  * and dialogue suggestions. Optionally auto-saves shots to DB.
  */
 const { db, generateId } = require('../db/database');
 const { validateSceneCards } = require('../lib/scene-card-schema');
 const { parseFountain, ELEMENT_TYPES } = require('../lib/fountain-parser');
-const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
+const { callProjectLLM, streamProjectLLM } = require('../lib/llm-client');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -103,7 +103,7 @@ async function breakdownSync(req, res, projectId) {
     }
 
     // Gather project context for style hints
-    const project = db.prepare('SELECT title, genre, style_preset FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT title, genre, style_preset, provider_config FROM film_projects WHERE id = ?').get(projectId);
     let contextHint = '';
     if (project) {
         const hints = [];
@@ -112,38 +112,23 @@ async function breakdownSync(req, res, projectId) {
         if (hints.length) contextHint = `\n\nPROJECT CONTEXT: ${hints.join('. ')}.\n`;
     }
 
-    // Call Gridlight AI
-    const headers = { 'Content-Type': 'application/json' };
-    if (GRIDLIGHT_API_KEY) {
-        headers['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
-    }
-
     try {
-        // Gridlight /chat/intelligent expects { question, conversation_history: [{question,answer}] }
         const fullQuestion = BREAKDOWN_SYSTEM_PROMPT + contextHint + '\n\n---\n\nPlease break down the following screenplay:\n\n' + prompt + contextHint;
 
-        const aiRes = await fetch(`${GRIDLIGHT_URL}/chat/intelligent`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                question: fullQuestion,
-                stream: false
-            })
-        });
+        const aiResult = await callProjectLLM(project, { question: fullQuestion, stream: false });
 
-        if (!aiRes.ok) {
-            const errText = await aiRes.text();
+        if (!aiResult.ok) {
             res.writeHead(502, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 error: 'AI service error',
-                details: errText,
-                hint: `Gridlight AI returned ${aiRes.status}. Ensure the gateway is running at ${GRIDLIGHT_URL} and GRIDLIGHT_API_KEY is set.`
+                details: aiResult.error,
+                provider: aiResult.provider,
+                hint: 'Check the selected LLM provider in Settings and make sure its credentials/service are available.'
             }));
             return;
         }
 
-        const aiData = await aiRes.json();
-        const responseText = aiData.answer || aiData.response || aiData.message || '';
+        const responseText = aiResult.answer || '';
 
         // Parse AI response
         let result;
@@ -178,7 +163,7 @@ async function breakdownSync(req, res, projectId) {
         res.end(JSON.stringify({
             error: 'AI gateway unavailable',
             details: err.message,
-            hint: `Ensure the Gridlight gateway is running at ${GRIDLIGHT_URL} and GRIDLIGHT_API_KEY is set.`
+            hint: 'Check the selected LLM provider in Settings and make sure its credentials/service are available.'
         }));
     }
 }
@@ -195,18 +180,13 @@ async function breakdownStream(req, res, projectId) {
 
     const prompt = SCENE_BREAKDOWN_PROMPT + sceneTexts[0];
 
-    const project = db.prepare('SELECT title, genre, style_preset FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT title, genre, style_preset, provider_config FROM film_projects WHERE id = ?').get(projectId);
     let contextHint = '';
     if (project) {
         const hints = [];
         if (project.genre) hints.push(`Genre: ${project.genre}`);
         if (project.style_preset) hints.push(`Visual style: ${project.style_preset}`);
         if (hints.length) contextHint = `\n\nPROJECT CONTEXT: ${hints.join('. ')}.\n`;
-    }
-
-    const streamHeaders = { 'Content-Type': 'application/json' };
-    if (GRIDLIGHT_API_KEY) {
-        streamHeaders['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
     }
 
     // SSE headers
@@ -228,78 +208,19 @@ async function breakdownStream(req, res, projectId) {
     sendEvent('status', { phase: 'sending', message: 'Sending screenplay to AI...' });
 
     try {
-        // Gridlight /chat/intelligent expects { question, stream }
         const fullQuestion = BREAKDOWN_SYSTEM_PROMPT + contextHint + '\n\n---\n\nPlease break down the following screenplay:\n\n' + prompt + contextHint;
-
-        const aiRes = await fetch(`${GRIDLIGHT_URL}/chat/intelligent`, {
-            method: 'POST',
-            headers: streamHeaders,
-            body: JSON.stringify({
-                question: fullQuestion,
-                stream: true
-            })
-        });
-
-        if (!aiRes.ok) {
-            sendEvent('error', { message: 'AI service returned error', status: aiRes.status });
-            res.end();
-            return;
-        }
 
         sendEvent('status', { phase: 'generating', message: 'AI is generating scene cards...' });
 
-        // Handle response — may be SSE stream or JSON
-        const contentType = aiRes.headers.get('content-type') || '';
-        if (contentType.includes('text/event-stream')) {
-            // Gridlight /chat/intelligent SSE format:
-            //   event: token\ndata: {"delta":"word"}\n\n  — per token
-            //   event: final\ndata: {"answer":"full text"}\n\n  — final result
-            let accumulated = '';
-            const reader = aiRes.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let currentEvent = '';
-
-            while (true) {
-                if (clientGone || res.writableEnded) { reader.cancel().catch(() => {}); break; }
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop();
-
-                for (const line of lines) {
-                    if (line.startsWith('event: ')) {
-                        currentEvent = line.slice(7).trim();
-                        continue;
-                    }
-                    if (!line.startsWith('data: ')) continue;
-                    const dataStr = line.slice(6).trim();
-                    if (!dataStr || dataStr === '[DONE]') continue;
-                    try {
-                        const data = JSON.parse(dataStr);
-                        if (currentEvent === 'token' && data.delta) {
-                            accumulated += data.delta;
-                            sendEvent('chunk', { text: data.delta });
-                        } else if (currentEvent === 'final' && data.answer) {
-                            accumulated = data.answer;
-                        } else if (data.token) {
-                            accumulated += data.token;
-                            sendEvent('chunk', { text: data.token });
-                        } else if (data.answer) {
-                            accumulated = data.answer;
-                        }
-                    } catch (_) { /* skip unparseable */ }
-                    currentEvent = '';
-                }
-            }
-
+        let accumulated = '';
+        let parsedSent = false;
+        const parseAndSend = (answer) => {
+            if (parsedSent) return;
+            parsedSent = true;
             sendEvent('status', { phase: 'parsing', message: 'Parsing AI response...' });
-
-            const parsed = parseSingleSceneResponse(accumulated, sceneIds[0]);
+            const parsed = parseSingleSceneResponse(answer || accumulated, sceneIds[0]);
             if (parsed.parse_error) {
-                sendEvent('error', { message: parsed.parse_error, raw: accumulated.slice(0, 500) });
+                sendEvent('error', { message: parsed.parse_error, raw: (answer || accumulated).slice(0, 500) });
             } else {
                 if (body.auto_save === true) {
                     const saveResults = autoSaveShots([{ scene_id: sceneIds[0], cards: parsed.cards }]);
@@ -307,24 +228,18 @@ async function breakdownStream(req, res, projectId) {
                 }
                 sendEvent('result', parsed);
             }
-        } else {
-            // Non-streaming JSON response
-            const aiData = await aiRes.json();
-            const responseText = aiData.answer || aiData.response || aiData.message || '';
+        };
 
-            sendEvent('status', { phase: 'parsing', message: 'Parsing AI response...' });
-
-            const parsed = parseSingleSceneResponse(responseText, sceneIds[0]);
-            if (parsed.parse_error) {
-                sendEvent('error', { message: parsed.parse_error });
-            } else {
-                if (body.auto_save === true) {
-                    const saveResults = autoSaveShots([{ scene_id: sceneIds[0], cards: parsed.cards }]);
-                    sendEvent('saved', saveResults[0] || {});
-                }
-                sendEvent('result', parsed);
-            }
-        }
+        const result = await streamProjectLLM(project, { question: fullQuestion, stream: true }, res, {
+            onToken: (text) => {
+                accumulated += text;
+                sendEvent('chunk', { text });
+            },
+            onComplete: (data) => parseAndSend(data.answer || accumulated),
+            onError: (data) => sendEvent('error', { message: data.error || 'AI service returned error' }),
+        });
+        if (!result.ok && !result.aborted) sendEvent('error', { message: result.error || 'AI service returned error' });
+        if (result.ok && !parsedSent) parseAndSend(result.finalData && result.finalData.answer);
 
         sendEvent('done', { message: 'Breakdown complete' });
         res.end();

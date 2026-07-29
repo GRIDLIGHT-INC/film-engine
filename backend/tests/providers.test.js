@@ -11,6 +11,7 @@ const { gridlightAdapter, endpointFor, ENDPOINTS } = require('../lib/providers/g
 describe('providers/base', () => {
     it('exposes the capability list and gridlight default', () => {
         assert.ok(CAPABILITIES.includes('image'));
+        assert.ok(CAPABILITIES.includes('llm'));
         assert.ok(CAPABILITIES.includes('video'));
         assert.ok(CAPABILITIES.includes('voice'));
         assert.equal(DEFAULT_PROVIDER, 'gridlight');
@@ -20,6 +21,7 @@ describe('providers/base', () => {
 describe('providers/gridlight-adapter', () => {
     it('maps capabilities to the historical endpoint paths', () => {
         assert.equal(endpointFor('image'), '/image');
+        assert.equal(endpointFor('llm'), '/chat/intelligent');
         assert.equal(endpointFor('video'), '/video');
         assert.equal(endpointFor('music'), '/music');
         assert.equal(endpointFor('sfx'), '/music');
@@ -33,6 +35,7 @@ describe('providers/gridlight-adapter', () => {
 
     it('supports() reflects the endpoint map', () => {
         assert.equal(gridlightAdapter.supports('image'), true);
+        assert.equal(gridlightAdapter.supports('llm'), true);
         assert.equal(gridlightAdapter.supports('stock'), false);
     });
 

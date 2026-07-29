@@ -3,10 +3,10 @@
  * POST /film/projects/:id/screenplay-ai — AI chat for screenplay writing
  *
  * Supports modes: brainstorm, write-scene, rewrite, convert
- * Gathers project context and calls Gridlight's /chat/intelligent endpoint.
+ * Gathers project context and calls the selected LLM provider.
  */
 const { db } = require('../db/database');
-const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
+const { callProjectLLM, streamProjectLLM } = require('../lib/llm-client');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -156,7 +156,7 @@ async function processScreenplayAI(req, res, projectId) {
 
     // Get project context
     const project = db.prepare(`
-        SELECT title, genre, logline, style_preset
+        SELECT title, genre, logline, style_preset, provider_config
         FROM film_projects WHERE id = ?
     `).get(projectId);
 
@@ -247,39 +247,27 @@ async function processScreenplayAI(req, res, projectId) {
         }
     }
 
-    // Call AI gateway — Gridlight expects { question, conversation_history: [{question,answer}] }
-    // Embed system prompt as context in the question
     const fullQuestion = systemPrompt + '\n\n---\n\nUser request:\n' + message;
 
-    const aiHeaders = { 'Content-Type': 'application/json' };
-    if (GRIDLIGHT_API_KEY) {
-        aiHeaders['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
-    }
-
     try {
-        const aiRes = await fetch(`${GRIDLIGHT_URL}/chat/intelligent`, {
-            method: 'POST',
-            headers: aiHeaders,
-            body: JSON.stringify({
-                question: fullQuestion,
-                conversation_history: gridlightHistory.length > 0 ? gridlightHistory : undefined,
-                stream: false
-            })
+        const aiResult = await callProjectLLM(project, {
+            question: fullQuestion,
+            conversation_history: gridlightHistory.length > 0 ? gridlightHistory : undefined,
+            stream: false
         });
 
-        if (!aiRes.ok) {
-            const errText = await aiRes.text();
+        if (!aiResult.ok) {
             res.writeHead(502, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 error: 'AI service error',
-                details: errText,
+                details: aiResult.error,
+                provider: aiResult.provider,
                 mode
             }));
             return;
         }
 
-        const aiData = await aiRes.json();
-        const responseText = aiData.answer || aiData.response || aiData.message || '';
+        const responseText = aiResult.answer || '';
 
         // FILM-113: Validate Fountain content for write-scene mode
         let isValidFountain = false;
@@ -304,7 +292,9 @@ async function processScreenplayAI(req, res, projectId) {
             mode,
             project_id: projectId,
             is_valid_fountain: isValidFountain,
-            validation: fountainValidation
+            validation: fountainValidation,
+            provider: aiResult.provider,
+            provider_model: aiResult.provider_model || ''
         }));
 
     } catch (err) {
@@ -312,7 +302,7 @@ async function processScreenplayAI(req, res, projectId) {
         res.end(JSON.stringify({
             error: 'AI gateway unavailable',
             details: err.message,
-            hint: `Ensure the Gridlight gateway is running at ${GRIDLIGHT_URL} and GRIDLIGHT_API_KEY is set.`,
+            hint: 'Check the selected LLM provider in Settings and make sure its credentials/service are available.',
             mode
         }));
     }
@@ -336,7 +326,7 @@ async function processScreenplayAIStream(req, res, projectId) {
 
     // Get project context (simplified for streaming)
     const project = db.prepare(`
-        SELECT title, genre, logline
+        SELECT title, genre, logline, provider_config
         FROM film_projects WHERE id = ?
     `).get(projectId);
 
@@ -366,11 +356,6 @@ async function processScreenplayAIStream(req, res, projectId) {
     // Embed system prompt in question for Gridlight
     const fullQuestion = systemPrompt + '\n\n---\n\nUser request:\n' + message;
 
-    const streamHeaders = { 'Content-Type': 'application/json' };
-    if (GRIDLIGHT_API_KEY) {
-        streamHeaders['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
-    }
-
     // SSE headers
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -390,75 +375,29 @@ async function processScreenplayAIStream(req, res, projectId) {
     sendEvent('status', { phase: 'sending', message: 'Sending to AI...' });
 
     try {
-        const aiRes = await fetch(`${GRIDLIGHT_URL}/chat/intelligent`, {
-            method: 'POST',
-            headers: streamHeaders,
-            body: JSON.stringify({
-                question: fullQuestion,
-                conversation_history: gridlightHistory.length > 0 ? gridlightHistory : undefined,
-                stream: true
-            })
-        });
-
-        if (!aiRes.ok) {
-            sendEvent('error', { message: 'AI service returned error', status: aiRes.status });
-            res.end();
-            return;
-        }
-
         sendEvent('status', { phase: 'generating', message: 'AI is responding...' });
 
-        // Handle streaming response
-        const contentType = aiRes.headers.get('content-type') || '';
-        if (contentType.includes('text/event-stream')) {
-            // Gridlight /chat/intelligent SSE format:
-            //   event: token\ndata: {"delta":"word"}\n\n  — per token
-            //   event: final\ndata: {"answer":"full text"}\n\n  — final result
-            const reader = aiRes.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let currentEvent = '';
-
-            while (true) {
-                if (clientGone || res.writableEnded) { reader.cancel().catch(() => {}); break; }
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop();
-
-                for (const line of lines) {
-                    if (line.startsWith('event: ')) {
-                        currentEvent = line.slice(7).trim();
-                        continue;
-                    }
-                    if (!line.startsWith('data: ')) continue;
-                    const dataStr = line.slice(6).trim();
-                    if (!dataStr || dataStr === '[DONE]') continue;
-                    try {
-                        const data = JSON.parse(dataStr);
-                        if (currentEvent === 'token' && data.delta) {
-                            sendEvent('chunk', { text: data.delta });
-                        } else if (currentEvent === 'final' && data.answer) {
-                            sendEvent('chunk', { text: data.answer });
-                        } else if (data.token) {
-                            sendEvent('chunk', { text: data.token });
-                        } else if (data.answer) {
-                            sendEvent('chunk', { text: data.answer });
-                        }
-                    } catch (_) { /* skip unparseable */ }
-                    currentEvent = '';
+        let accumulated = '';
+        const result = await streamProjectLLM(project, {
+            question: fullQuestion,
+            conversation_history: gridlightHistory.length > 0 ? gridlightHistory : undefined,
+            stream: true
+        }, res, {
+            onToken: (text) => {
+                accumulated += text;
+                sendEvent('chunk', { text });
+            },
+            onComplete: (data) => {
+                if (!accumulated && data.answer) {
+                    accumulated = data.answer;
+                    sendEvent('chunk', { text: data.answer });
                 }
-            }
-        } else {
-            // Non-streaming JSON response
-            const aiData = await aiRes.json();
-            const responseText = aiData.answer || aiData.response || aiData.message || '';
-            sendEvent('chunk', { text: responseText });
-        }
+            },
+            onError: (data) => sendEvent('error', { message: data.error || 'AI service returned error' }),
+        });
+        if (!result.ok && !result.aborted) sendEvent('error', { message: result.error || 'AI service returned error' });
 
-        sendEvent('done', { message: 'Complete' });
+        sendEvent('done', { message: 'Complete', content: accumulated });
         res.end();
 
     } catch (err) {
