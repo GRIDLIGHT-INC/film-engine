@@ -13058,7 +13058,7 @@ ${fountainText.slice(0, 50000)}`;
                 const conn = p.connection || null;
                 const instr = conn && conn.instructions ? '<p class="text-sm text-muted" style="margin:4px 0 8px;">' + esc(conn.instructions) + '</p>' : '';
 
-                // 1) OAuth "Connect" providers (e.g. Artlist MCP).
+                // 1) OAuth "Connect" providers (any adapter declaring connection.oauth).
                 if (conn && conn.oauth) {
                     const connected = c.connected;
                     const status = connected ? '<span class="tag" style="background:var(--gl-success,#166534);">connected</span>' : '<span class="tag">not connected</span>';
@@ -13087,7 +13087,7 @@ ${fountainText.slice(0, 50000)}`;
                     </div>`;
                 }
 
-                // 2) Multi-field providers (e.g. Artlist catalog: client_id/secret).
+                // 2) Multi-field providers (adapters declaring connection.fields, e.g. client_id/secret).
                 if (conn && Array.isArray(conn.fields) && conn.fields.length) {
                     const fieldsHtml = conn.fields.map(f => {
                         const isSet = c.fields && c.fields[f.key];
@@ -13170,7 +13170,7 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
-    // Save multi-field connection credentials (e.g. Artlist catalog client_id/secret).
+    // Save multi-field connection credentials (adapters declaring connection.fields).
     async function saveProviderFields(providerId) {
         const prov = (_providerCatalog && _providerCatalog.providers || []).find(p => p.id === providerId);
         const fieldDefs = (prov && prov.connection && prov.connection.fields) || [];
@@ -13187,7 +13187,7 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
-    // OAuth connect (e.g. Artlist MCP): open the authorize URL in a popup and
+    // OAuth connect: open the authorize URL in a popup and
     // refresh once the backend callback posts back.
     async function connectProviderOAuth(providerId) {
         try {

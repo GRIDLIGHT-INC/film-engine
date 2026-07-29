@@ -8,7 +8,11 @@
  * code for tokens. Dependency-free (fetch only).
  *
  * NOTE: exact endpoints are DISCOVERED from the server at runtime, so this works
- * against any spec-compliant MCP server (e.g. Artlist's) without hardcoding URLs.
+ * against any spec-compliant MCP server without hardcoding URLs.
+ *
+ * No provider ships with Film Engine uses this today — Runway authenticates
+ * with an API key. It is kept as working, spec-compliant infrastructure for the
+ * next OAuth/MCP provider rather than deleted and rewritten later.
  */
 
 const crypto = require('crypto');
@@ -86,10 +90,10 @@ async function discover(mcpUrl) {
  * Returns { client_id, client_secret?, registration_access_token?, registration_client_uri? }.
  *
  * The last two are what RFC 7592 needs to read or DELETE the client later.
- * Providers cap how many clients an account may register — Artlist rejects
- * further attempts with `too_many_entities` and offers no in-app cleanup — so
- * keeping these is the difference between being able to release a slot and
- * having to ask the provider to reset the account.
+ * Providers cap how many clients an account may register — a common rejection
+ * is `too_many_entities`, with no in-app cleanup offered — so keeping these is
+ * the difference between being able to release a slot and having to ask the
+ * provider to reset the account.
  */
 async function registerClient(registrationEndpoint, redirectUri, clientName) {
     const body = {

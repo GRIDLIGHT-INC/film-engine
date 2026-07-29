@@ -127,24 +127,35 @@ describe('Provider Settings API', () => {
         assert.equal(res.status, 404);
     });
 
-    it('exposes connection specs in the catalog (Artlist MCP oauth + catalog fields)', async () => {
+    it('every provider needing setup exposes a connection spec', async () => {
+        // Set-based: the SPA renders a setup card from connection.oauth or
+        // connection.fields, so a provider that requires a key but ships no
+        // connection spec is unconfigurable from the UI.
         const res = await request('/film/providers');
-        const mcp = res.data.providers.find(p => p.id === 'artlist-mcp');
-        const cat = res.data.providers.find(p => p.id === 'artlist-catalog');
-        assert.ok(mcp && mcp.connection && mcp.connection.oauth, 'artlist-mcp exposes oauth connection');
-        assert.equal(mcp.connection.oauth.connectPath, '/providers/artlist-mcp/connect');
-        assert.ok(cat && cat.connection && Array.isArray(cat.connection.fields), 'artlist-catalog exposes fields');
-        assert.ok(cat.connection.fields.some(f => f.key === 'client_id'));
+        const missing = (res.data.providers || [])
+            .filter(p => p.requiresKey && !p.connection)
+            .map(p => p.id);
+        assert.deepEqual(missing, [], `providers requiring setup with no connection spec: ${missing.join(', ')}`);
     });
 
-    it('stores multi-field credentials in meta and reports masked field status', async () => {
-        const res = await request('/film/providers/artlist-catalog/credentials', {
+    it('exposes the Runway connection spec', async () => {
+        const res = await request('/film/providers');
+        const runway = (res.data.providers || []).find(p => p.id === 'runway');
+        assert.ok(runway, 'runway is in the catalog');
+        assert.equal(runway.requiresKey, true);
+        assert.ok(runway.connection && runway.connection.instructions, 'runway explains how to get a key');
+        assert.deepEqual([...runway.capabilities].sort(), ['image', 'video']);
+    });
+
+    it('stores connection fields in meta without ever echoing raw values', async () => {
+        // Per-field masked status is only reflected for fields an adapter
+        // declares, and nothing bundled declares any today — but the endpoint is
+        // live, so the guarantee that matters (secrets never come back out) is
+        // still asserted here.
+        const res = await request('/film/providers/runway/credentials', {
             method: 'PUT', body: { fields: { client_id: 'CID-123', client_secret: 'SECRET-xyz' } },
         });
         assert.equal(res.status, 200);
-        assert.equal(res.data.credentials.fields.client_id, true);
-        assert.equal(res.data.credentials.fields.client_secret, true);
-        // Never echo raw values.
         assert.ok(!res.raw.includes('SECRET-xyz'));
         assert.ok(!res.raw.includes('CID-123'));
     });

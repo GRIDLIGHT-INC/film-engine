@@ -1,7 +1,25 @@
 # Multi-Provider AI Film Pipeline — Integration Plan
 
 **Authors:** Claude (codebase audit + architecture) & codex (provider/API research) — NeonCore confer task.
-**Status:** FINAL — agreed by Claude + codex. Scope confirmed by user: Phase 1+2+3 now, Artlist (catalog + MCP) as Phase 4.
+**Status:** FINAL as agreed — but **PARTLY SUPERSEDED (2026-07-29)**, see the note below.
+**Original scope confirmed by user:** Phase 1+2+3 now, Artlist (catalog + MCP) as Phase 4.
+
+> **Supersession note — 2026-07-29.** Both Artlist adapters have been removed and
+> replaced by a **Runway** adapter (`backend/lib/providers/runway.js`) serving
+> `video` + `image`. Runway is a direct REST API with a documented request
+> contract, versioned via an `X-Runway-Version` header and an asynchronous
+> task/poll lifecycle — chosen over the MCP aggregator for video quality and for
+> not having to discover tool names and argument shapes at runtime.
+>
+> Consequences: there is **no licensed-catalog source adapter any more**, so
+> `music` / `sfx` / `ambient` fall back to generation, the `stock` capability has
+> no provider, and `PREFERRED_WHEN_CONFIGURED` is empty. The three-kind adapter
+> model below (generator / source / mcp) is still the live design — only the
+> Artlist implementations of `source` and `mcp` are gone.
+>
+> Everything below this note is preserved as the original decision record,
+> including the provider evaluation tables. Read it as "what was decided then",
+> not as a description of the current provider lineup.
 **Goal:** Make Film Engine a fully operational, provider-pluggable pipeline: write a screenplay → generate images, video, music, SFX, dialogue → hand off to Premiere/final — using best-in-class pro providers (ChatGPT/gpt-image for images, Artlist for both licensed music/SFX/footage **and** generative image/video via its MCP, ElevenLabs for dialogue, plus alternatives), not just Gridlight.
 
 ---

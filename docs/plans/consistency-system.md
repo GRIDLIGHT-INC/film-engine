@@ -20,7 +20,7 @@ Current professional AI film/video tooling converges on reference-conditioned ge
 - Runway’s API and docs support reference images and image-to-video inputs; their reference-media guidance states that high-quality, isolated references are the biggest practical lever for output quality.
 - Luma Agents supports image and video generation with `image_ref` and keyframes, including multi-anchor keyframes for video.
 - OpenAI `gpt-image-1` accepts image inputs via image editing, which lets production images use locked reference files instead of text-only identity descriptions.
-- Artlist MCP exposes image/video generation through model-specific tools, so Film Engine passes canonical references in provider-agnostic `reference_images` arguments where tools accept them.
+- Runway accepts canonical references directly: tagged `referenceImages` on `text_to_image`, and a keyframe as `promptImage` on `image_to_video`, so locked identity images survive into production generation without prompt-only description.
 - ElevenLabs documents that voice consistency is best handled by stable voice identities and clean, consistent samples; Professional Voice Cloning is more consistent than instant cloning when high quality and emotional range matter.
 - Research/production patterns align with this: DreamBooth/LoRA for trained subject identity, IP-Adapter for image-prompt identity, and ControlNet/OpenPose/Depth/Canny for pose/layout control.
 
@@ -89,8 +89,8 @@ Provider adapters:
 
 - Gridlight receives canonical fields unchanged.
 - OpenAI uses `/images/edits` with local reference images when available; otherwise it preserves the existing text-to-image path.
-- Artlist MCP forwards `reference_images` and `input_refs` to tool arguments.
-- Multi-reference ordering is prepared in `buildShotReferencePayload` and preserved by OpenAI image edits and Artlist MCP tool arguments.
+- Runway maps `reference_images` onto tagged `referenceImages` for image generation. Its video endpoints take a single `promptImage`, so the shot keyframe becomes the first frame, falling back to the first locked reference when a shot has no keyframe.
+- Multi-reference ordering is prepared in `buildShotReferencePayload` and preserved by OpenAI image edits and Runway `referenceImages`.
 
 Verify rows:
 

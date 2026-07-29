@@ -171,7 +171,10 @@ function setProjectProviders(req, res, projectId) {
     return getProjectProviders(res, projectId);
 }
 
-// -- OAuth connect flow (for MCP/OAuth providers like artlist-mcp) --------
+// -- OAuth connect flow (for any provider declaring connection.oauth) -----
+// Generic and provider-agnostic. Nothing bundled uses it today — Runway
+// authenticates with an API key — but it stays wired so an OAuth/MCP provider
+// only has to declare connection.oauth to become connectable.
 
 function redirectUriFor(req, provider) {
     if (process.env.FILM_OAUTH_REDIRECT_BASE) {
@@ -184,7 +187,7 @@ function redirectUriFor(req, provider) {
 
 function connectHtml(ok, message) {
     const color = ok ? '#16a34a' : '#dc2626';
-    return `<!doctype html><meta charset="utf-8"><title>Artlist Connect</title>
+    return `<!doctype html><meta charset="utf-8"><title>Provider Connect</title>
 <body style="font-family:system-ui;background:#0b0b12;color:#e8e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
 <div style="text-align:center;max-width:420px;padding:24px">
   <div style="font-size:40px">${ok ? '&#9989;' : '&#9888;&#65039;'}</div>
@@ -238,7 +241,7 @@ async function connectProvider(req, res, provider) {
             } catch (regErr) {
                 if (/too_many_entities|reached the limit|\b403\b/.test(regErr.message)) {
                     return json(res, 409, {
-                        error: 'Artlist accepted OAuth discovery, but dynamic client registration is capped for your account (too_many_entities). Options, in order of least effort: (1) if Film Engine registered a client here before, use "Release registered client" to delete it and free a slot, then reconnect; (2) paste an existing Artlist OAuth Client ID/Secret under "Advanced" to skip registration entirely; (3) ask Artlist to reset the client-registration limit for auth.artlist.io/oidc/register. Note that clients registered before Film Engine started storing management tokens cannot be released automatically.',
+                        error: `${provider} accepted OAuth discovery, but dynamic client registration is capped for your account (too_many_entities). Options, in order of least effort: (1) if Film Engine registered a client here before, use "Release registered client" to delete it and free a slot, then reconnect; (2) paste an existing OAuth Client ID/Secret under "Advanced" to skip registration entirely; (3) ask the provider to reset the client-registration limit for its registration endpoint. Note that clients registered before Film Engine started storing management tokens cannot be released automatically.`,
                         code: 'too_many_entities',
                     });
                 }
@@ -361,7 +364,10 @@ async function releaseRegisteredClient(res, provider) {
     });
 }
 
-// -- Source adapters (search/license — e.g. Artlist catalog) --------------
+// -- Source adapters (search/license for licensed catalogs) ---------------
+// No source adapter ships today; these stay because they are capability-guarded
+// (a provider without search()/license() gets a 400) and are the contract any
+// future licensed catalog plugs into.
 
 async function sourceSearch(res, provider, query) {
     const adapter = providers.get(provider);

@@ -6,7 +6,7 @@
  *
  * In Phase 1 only the Gridlight adapter is registered, so resolution always
  * returns Gridlight and behavior is unchanged. Later phases register openai /
- * elevenlabs / artlist adapters, and a project can opt into them per capability.
+ * elevenlabs / runway adapters, and a project can opt into them per capability.
  */
 
 const fs = require('fs');
@@ -58,18 +58,18 @@ function list() {
  * @returns {string} provider id
  */
 /**
- * Capabilities better served by a licensed catalog than by generation, when
- * the user has that catalog connected. Ambient beds are the clear case: a
- * licensed room tone or rain wash is more usable than a generated one, and
- * rights are already cleared.
+ * Capabilities that should prefer a specific provider over the default when
+ * that provider is actually configured — used to favour a licensed catalog
+ * over generation for things like ambient beds, where cleared rights matter
+ * more than novelty.
  *
- * Only applied when the preferred provider is actually configured — an
- * install without Artlist credentials must keep generating as before rather
- * than failing on a provider it cannot reach.
+ * Empty since the licensed-catalog source adapter was removed: no provider
+ * currently serves music/sfx/ambient from a rights-cleared library, so every
+ * capability falls through to the normal default. The mechanism is kept
+ * because resolveId() still honours it the moment a catalog provider is added
+ * back, and an entry naming an unregistered provider would silently do nothing.
  */
-const PREFERRED_WHEN_CONFIGURED = {
-    ambient: 'artlist-catalog',
-};
+const PREFERRED_WHEN_CONFIGURED = {};
 
 function resolveId(capability, projectConfig) {
     const cfg = projectConfig || {};
@@ -89,10 +89,10 @@ function resolveId(capability, projectConfig) {
 /**
  * True when the provider has usable credentials.
  *
- * Checks stored fields as well as an API key: field-based providers such as
- * the Artlist catalog authenticate with a client id and secret and never set
- * api_key, so an apiKey-only check would report them unconfigured no matter
- * what the user had entered.
+ * Checks stored fields as well as an API key: field-based providers that
+ * authenticate with something other than a single key (a client id and secret,
+ * say) never set api_key, so an apiKey-only check would report them
+ * unconfigured no matter what the user had entered.
  */
 function isProviderConfigured(id) {
     const adapter = _registry.get(id);
@@ -142,9 +142,9 @@ function resolve(capability, projectConfig) {
 
 /**
  * Like resolve(), but guarantees a GENERATOR: if the configured provider for a
- * capability is a source/library adapter (no generate(), e.g. Artlist catalog)
- * or otherwise can't generate, fall back to the default generator so a bad
- * per-capability choice can never crash generation.
+ * capability is a source/library adapter (no generate()) or otherwise can't
+ * generate, fall back to the default generator so a bad per-capability choice
+ * can never crash generation.
  */
 function resolveGenerator(capability, projectConfig) {
     const adapter = resolve(capability, projectConfig);

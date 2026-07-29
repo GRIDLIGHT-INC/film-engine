@@ -123,7 +123,8 @@ async function executeStep(stepId, shot, scene, project) {
 
     try {
         // resolveGenerator guarantees a real generator even if a source provider
-        // (e.g. Artlist catalog) is configured for this capability.
+        // (a licensed catalog, which only searches and licenses) is configured
+        // for this capability.
         const result = await resolveGenerator(capability, config).generate(capability, payload);
         return result;
     } catch (err) {

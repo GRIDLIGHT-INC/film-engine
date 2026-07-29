@@ -4,10 +4,10 @@
  * Film Engine talks to external generation/licensing services through pluggable
  * "provider adapters". Three kinds (see docs/plans/multi-provider-pipeline.md):
  *
- *   generator  — prompt/payload -> NEW asset   (Gridlight, OpenAI, ElevenLabs, ...)
- *   source     — query -> EXISTING licensed asset (Artlist catalog, Epidemic)
- *   mcp        — MCP tool call -> NEW asset       (Artlist AI Toolkit; a generator
- *                                                  whose transport is MCP)
+ *   generator  — prompt/payload -> NEW asset   (Gridlight, OpenAI, Runway, ElevenLabs, ...)
+ *   source     — query -> EXISTING licensed asset (a licensed catalog, e.g. Epidemic)
+ *   mcp        — MCP tool call -> NEW asset       (a generator whose transport
+ *                                                  is MCP rather than REST)
  *
  * Adapter interface (duck-typed; not all methods required):
  *
