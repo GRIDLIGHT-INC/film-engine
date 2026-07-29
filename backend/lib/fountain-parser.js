@@ -53,7 +53,7 @@
         TITLE_KEY: /^([A-Za-z][A-Za-z0-9\s-]*)\s*:\s*(.*)$/,
 
         // Scene heading: INT./EXT. with optional forced prefix and scene number
-        SCENE_HEADING: /^(\.)?(?:\s)*(INT|EXT|EST|INT\.?\/?EXT|EXT\.?\/?INT|I\/E)[\.\s]+(.+?)(?:\s*#([^#]+)#)?$/i,
+        SCENE_HEADING: /^(\.)?(?:\s)*[^\w\s.]*(INT|EXT|EST|INT\.?\/?EXT|EXT\.?\/?INT|I\/E)[\.\s]+(.+?)(?:\s*#([^#]+)#)?$/i,
 
         // Character: ALL CAPS with optional extension and dual dialogue marker
         CHARACTER: /^(@)?([A-Z][A-Z0-9\s\-'\.]+?)(?:\s*\(([^)]+)\))?(\s*\^)?$/,
@@ -167,6 +167,7 @@
 
         // Remove scene number marker if present at end
         text = text.replace(/\s*#[^#]+#\s*$/, '');
+        text = text.replace(/^[^\w\s.]*(?=(INT|EXT|EST|I\/E)\b)/i, '');
 
         // Extract INT/EXT prefix
         const prefixMatch = text.match(/^(INT|EXT|EST|INT\.?\/?EXT|EXT\.?\/?INT|I\/E)[\.\s]+/i);
@@ -175,11 +176,11 @@
             text = text.slice(prefixMatch[0].length);
         }
 
-        // Split by dash for time of day
-        const dashMatch = text.match(/^(.+?)\s*[-–—]\s*(.+)$/);
-        if (dashMatch) {
-            result.location = dashMatch[1].trim();
-            result.time_of_day = dashMatch[2].trim().toUpperCase();
+        // Split on the final dash only when the final segment is a time marker.
+        const timeMatch = text.match(/^(.*?)\s*[-–—]\s*(DAY|NIGHT|MORNING|AFTERNOON|EVENING|DUSK|DAWN|LATER|EARLIER|CONTINUOUS|SAME|MOMENTS LATER|THE NEXT DAY|SUNRISE|SUNSET)$/i);
+        if (timeMatch) {
+            result.location = timeMatch[1].trim();
+            result.time_of_day = timeMatch[2].trim().toUpperCase();
         } else {
             result.location = text.trim();
         }
