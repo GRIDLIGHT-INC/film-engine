@@ -2,8 +2,12 @@
  * ElevenLabs provider adapter.
  *
  * Capabilities:
- *   voice — text-to-speech dialogue clips
- *   sfx   — text-to-sound-effects clips
+ *   voice — text-to-speech dialogue clips        POST /text-to-speech/:voiceId
+ *   sfx   — text-to-sound-effects clips          POST /sound-generation
+ *   music — scored cues and beds                 POST /music
+ *
+ * All three answer with raw audio bytes rather than a URL, so results come back
+ * as a Buffer and persistProviderMedia writes them straight to disk.
  *
  * Credentials are read server-side through providers/credentials.js.
  */
@@ -12,11 +16,17 @@ const { getCredential } = require('./credentials');
 
 const DEFAULT_BASE_URL = 'https://api.elevenlabs.io/v1';
 const DEFAULT_TTS_MODEL = 'eleven_multilingual_v2';
+const DEFAULT_MUSIC_MODEL = 'music_v2';
 const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // Rachel
 const DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
 
+// Documented bounds for POST /music.
+const MUSIC_MIN_MS = 3000;
+const MUSIC_MAX_MS = 600000;
+const MUSIC_DEFAULT_MS = 30000;
+
 function supports(capability) {
-    return capability === 'voice' || capability === 'sfx';
+    return capability === 'voice' || capability === 'sfx' || capability === 'music';
 }
 
 function missingKey() {
@@ -98,6 +108,53 @@ function buildSfxRequest(payload) {
     };
 }
 
+/**
+ * Build a POST /music request from a canonical music payload.
+ *
+ * Two mismatches with the rest of the pipeline are worth naming:
+ *
+ * Length is milliseconds here, while the scene card and the sfx endpoint both
+ * speak seconds — passing `duration_seconds` through would be silently ignored
+ * and every cue would come back at whatever length the model felt like.
+ *
+ * `model` arrives defaulted to Gridlight's `musicgen-large` from
+ * buildMusicPrompt, which is not an ElevenLabs model id. Forwarding it would
+ * fail the request, so only a real `music_*` id is honoured.
+ */
+function buildMusicRequest(payload) {
+    const baseUrl = (process.env.ELEVENLABS_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const prompt = payload.prompt || payload.text || payload.description || '';
+    const outputFormat = normalizeOutputFormat(payload);
+
+    const requestedS = Number(payload.duration_s || payload.duration_seconds || payload.duration || 0);
+    const lengthMs = requestedS > 0
+        ? Math.max(MUSIC_MIN_MS, Math.min(MUSIC_MAX_MS, Math.round(requestedS * 1000)))
+        : MUSIC_DEFAULT_MS;
+
+    const modelId = String(payload.model || '').startsWith('music_') ? payload.model : DEFAULT_MUSIC_MODEL;
+
+    // Film cues are underscore: sung vocals over dialogue ruin a scene, so
+    // instrumental is the default and has to be opted out of explicitly.
+    const wantsVocals = payload.vocals === true || payload.force_instrumental === false;
+
+    const body = {
+        prompt,
+        model_id: modelId,
+        music_length_ms: lengthMs,
+        force_instrumental: !wantsVocals,
+    };
+    if (Number.isInteger(payload.seed)) body.seed = payload.seed;
+
+    return {
+        url: `${baseUrl}/music?output_format=${encodeURIComponent(outputFormat)}`,
+        body,
+        model: modelId,
+        outputFormat,
+        mimeType: outputFormat.startsWith('pcm_') ? 'audio/wav' : 'audio/mpeg',
+        format: outputFormat.startsWith('pcm_') ? 'wav' : 'mp3',
+    };
+}
+
 async function callElevenLabs(request, apiKey, opts) {
     const controller = new AbortController();
     const timeout = (opts && opts.timeout) || 300000;
@@ -151,7 +208,7 @@ const adapter = {
     kind: 'generator',
     label: 'ElevenLabs',
     requiresKey: true,
-    capabilities: ['voice', 'sfx'],
+    capabilities: ['voice', 'sfx', 'music'],
     connection: {
         instructions: 'ElevenLabs has no OAuth for API access — paste an API key. Click "Get your key" to open your ElevenLabs API keys page.',
         helpUrl: 'https://elevenlabs.io/app/settings/api-keys',
@@ -166,8 +223,15 @@ const adapter = {
         const { apiKey } = getCredential('elevenlabs');
         if (!apiKey) return missingKey();
 
-        const request = capability === 'voice' ? buildVoiceRequest(payload || {}) : buildSfxRequest(payload || {});
-        if (!request.body.text) return { ok: false, status: 400, error: 'elevenlabs: text is required' };
+        let request;
+        if (capability === 'voice') request = buildVoiceRequest(payload || {});
+        else if (capability === 'sfx') request = buildSfxRequest(payload || {});
+        else request = buildMusicRequest(payload || {});
+
+        // /music carries the description in `prompt`; the other two use `text`.
+        if (!request.body.text && !request.body.prompt) {
+            return { ok: false, status: 400, error: `elevenlabs: ${capability === 'music' ? 'prompt' : 'text'} is required` };
+        }
         return callElevenLabs(request, apiKey, opts);
     },
 
@@ -188,5 +252,6 @@ module.exports = {
     adapter,
     buildVoiceRequest,
     buildSfxRequest,
+    buildMusicRequest,
     normalizeOutputFormat,
 };

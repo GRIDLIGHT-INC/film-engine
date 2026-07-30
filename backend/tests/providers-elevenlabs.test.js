@@ -22,6 +22,7 @@ const {
     adapter,
     buildVoiceRequest,
     buildSfxRequest,
+    buildMusicRequest,
     normalizeOutputFormat,
 } = require('../lib/providers/elevenlabs');
 
@@ -96,6 +97,12 @@ describe('providers/elevenlabs', () => {
                 return;
             }
 
+            if (req.url.startsWith('/v1/music')) {
+                res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'request-id': 'music-req-1' });
+                res.end(Buffer.from('mock-music-audio'));
+                return;
+            }
+
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ detail: 'not found' }));
         });
@@ -113,15 +120,31 @@ describe('providers/elevenlabs', () => {
         delete process.env.ELEVENLABS_API_KEY;
     });
 
-    it('registers through provider autoload and advertises voice+sfx', () => {
+    it('registers through provider autoload and advertises voice+sfx+music', () => {
         assert.equal(adapter.id, 'elevenlabs');
         assert.equal(adapter.kind, 'generator');
         assert.equal(adapter.requiresKey, true);
-        assert.equal(adapter.supports('voice'), true);
-        assert.equal(adapter.supports('sfx'), true);
         assert.equal(adapter.supports('image'), false);
         assert.equal(providers.get('elevenlabs').id, 'elevenlabs');
-        assert.equal(providers.resolve('voice', { voice: 'elevenlabs' }).id, 'elevenlabs');
+        assert.deepEqual([...adapter.capabilities].sort(), ['music', 'sfx', 'voice']);
+    });
+
+    it('every declared capability is actually wired end to end', () => {
+        // Set-based: declaring a capability without teaching supports() about it,
+        // or without a branch in generate(), is the exact half-wiring this catches.
+        const broken = [];
+        for (const cap of adapter.capabilities) {
+            if (adapter.supports(cap) !== true) broken.push(`${cap}: supports() says no`);
+            if (providers.resolve(cap, { [cap]: 'elevenlabs' }).id !== 'elevenlabs') broken.push(`${cap}: does not resolve`);
+            if (providers.resolveGenerator(cap, { [cap]: 'elevenlabs' }).id !== 'elevenlabs') broken.push(`${cap}: not a generator`);
+        }
+        assert.deepEqual(broken, []);
+    });
+
+    it('music is no longer a single-provider capability', () => {
+        const capable = providers.list().filter(a => a.supports && a.supports('music')).map(a => a.id).sort();
+        assert.ok(capable.length > 1, `music still has only: ${capable.join(', ')}`);
+        assert.ok(capable.includes('elevenlabs'));
     });
 
     it('maps canonical voice payloads to ElevenLabs TTS requests', () => {
@@ -146,6 +169,60 @@ describe('providers/elevenlabs', () => {
         assert.equal(request.body.text, 'metal door slam');
         assert.equal(request.body.duration_seconds, 30);
         assert.equal(request.model, 'elevenlabs-sound-effects');
+    });
+
+    it('maps canonical music payloads to the /v1/music contract', () => {
+        const request = buildMusicRequest({
+            prompt: 'tense orchestral underscore, low strings',
+            duration_s: 45,
+            seed: 7,
+        });
+        assert.match(request.url, /\/music\?output_format=mp3_44100_128$/);
+        assert.equal(request.body.prompt, 'tense orchestral underscore, low strings');
+        assert.equal(request.body.music_length_ms, 45000);
+        assert.equal(request.body.seed, 7);
+        assert.equal(request.format, 'mp3');
+        // duration_seconds is the sfx field; music takes milliseconds.
+        assert.equal(request.body.duration_seconds, undefined);
+    });
+
+    it('scores default to instrumental unless vocals are asked for', () => {
+        // A cue with sung vocals under dialogue is a bug, not a style choice.
+        assert.equal(buildMusicRequest({ prompt: 'x' }).body.force_instrumental, true);
+        assert.equal(buildMusicRequest({ prompt: 'x', force_instrumental: false }).body.force_instrumental, false);
+        assert.equal(buildMusicRequest({ prompt: 'x', vocals: true }).body.force_instrumental, false);
+    });
+
+    it('clamps music length to the documented 3s-10min window', () => {
+        for (const [durationS, expected] of [[0, 30000], [1, 3000], [45, 45000], [600, 600000], [9999, 600000]]) {
+            assert.equal(buildMusicRequest({ prompt: 'x', duration_s: durationS }).body.music_length_ms, expected, `duration_s=${durationS}`);
+        }
+    });
+
+    it('does not leak another provider model id into model_id', () => {
+        // buildMusicPrompt defaults model to Gridlight's 'musicgen-large'.
+        const request = buildMusicRequest({ prompt: 'x', model: 'musicgen-large' });
+        assert.equal(request.body.model_id, 'music_v2');
+        assert.equal(buildMusicRequest({ prompt: 'x', model: 'music_v1' }).body.model_id, 'music_v1');
+    });
+
+    it('generates music audio as a Buffer with provider metadata', async () => {
+        const result = await adapter.generate('music', { prompt: 'warm ambient pad', duration_s: 20 });
+
+        assert.equal(result.ok, true);
+        assert.equal(Buffer.isBuffer(result.data), true);
+        assert.equal(result.data.toString(), 'mock-music-audio');
+        assert.equal(result.provider_model, 'music_v2');
+        assert.equal(result.provider_job_id, 'music-req-1');
+        assert.equal(result.meta.format, 'mp3');
+        assert.equal(lastRequest.headers['xi-api-key'], 'test-elevenlabs-key');
+        assert.equal(lastRequest.body.prompt, 'warm ambient pad');
+    });
+
+    it('rejects a music request with no prompt', async () => {
+        const missing = await adapter.generate('music', {});
+        assert.equal(missing.ok, false);
+        assert.equal(missing.status, 400);
     });
 
     it('normalizes output format to a provider-supported audio type', () => {
@@ -281,5 +358,46 @@ describe('providers/elevenlabs', () => {
         assert.equal(served.status, 200);
         assert.match(served.headers['content-type'], /audio\/mpeg/);
         assert.equal(served.raw, 'mock-tts-audio');
+    });
+
+    it('music route resolves ElevenLabs and stores an mp3 with provenance', async () => {
+        // Reuses the app server spawned by the voice route test above.
+        const proj = await appRequest('/film/projects', { method: 'POST', body: { title: 'ElevenLabs Music Test', logline: 'x' } });
+        assert.equal(proj.status, 201);
+        const projectId = proj.data.id;
+
+        const cfg = await appRequest(`/film/projects/${projectId}/providers`, {
+            method: 'PUT',
+            body: { config: { music: 'elevenlabs' } },
+        });
+        assert.equal(cfg.status, 200);
+        assert.equal(cfg.data.config.music, 'elevenlabs');
+
+        await appRequest(`/film/projects/${projectId}/script`, {
+            method: 'POST',
+            body: { content: 'Title: Music Test\n\nINT. WAREHOUSE - NIGHT\n\nRain on the roof.\n', format: 'fountain' },
+        });
+        const scenes = await appRequest(`/film/projects/${projectId}/scenes`);
+        const sceneId = scenes.data.scenes[0].id;
+
+        const generated = await appRequest(`/film/scenes/${sceneId}/music/generate`, {
+            method: 'POST',
+            body: { mood: 'tense', genre: 'orchestral', description: 'low strings under rain' },
+        });
+        assert.equal(generated.status, 200);
+        assert.equal(generated.data.status, 'complete');
+        // The music payload asks for wav; ElevenLabs answers mp3, and the route
+        // must name the file for what it actually got.
+        assert.match(generated.data.music_url, /\.mp3$/);
+
+        const served = await appRequest(generated.data.music_url);
+        assert.equal(served.status, 200);
+        assert.equal(served.raw, 'mock-music-audio');
+
+        const jobs = await appRequest(`/film/projects/${projectId}/music/jobs`);
+        assert.equal(jobs.status, 200);
+        const job = (jobs.data.jobs || []).find(j => j.gen_type === 'score');
+        assert.ok(job, 'a score job was recorded');
+        assert.equal(job.status, 'complete');
     });
 });

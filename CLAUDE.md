@@ -235,7 +235,9 @@ Capabilities (`llm`, `image`, `video`, `music`, `voice`, `sfx`, `ambient`, `lips
 
 **Env vars:** `RUNWAY_API_KEY` (or Runway's own `RUNWAYML_API_SECRET`), `RUNWAY_BASE_URL` (default `https://api.dev.runwayml.com/v1`), `RUNWAY_VIDEO_MODEL`, `RUNWAY_IMAGE_MODEL`, `RUNWAY_POLL_INTERVAL_MS`
 
-No licensed-catalog *source* adapter ships today, so `music`/`sfx`/`ambient` fall back to generation and `stock` has no provider. The `source` (search/license) contract and the OAuth/MCP connect flow both remain wired for the next provider that needs them.
+**ElevenLabs** (`lib/providers/elevenlabs.js`) serves `voice` + `sfx` + `music` — `POST /text-to-speech/:voiceId`, `POST /sound-generation`, `POST /music` (`music_v2`, 3s–10min, instrumental by default since film cues are underscore). All three return raw audio bytes, so results are Buffers written straight to disk.
+
+No licensed-catalog *source* adapter ships today, so `ambient` still falls back to Gridlight generation and `stock` has no provider at all — nothing currently writes `film_assets.license_source = 'licensed_catalog'`, which the music-rights routes are built around. The `source` (search/license) contract and the OAuth/MCP connect flow both remain wired for the next provider that needs them.
 
 ### Lip-Sync
 Combines raw video with dialogue audio to produce lip-synced video. Requires both `video_raw` and `audio_dialogue` assets. Output stored as `data/video/{project_id}/{shot_code}_synced.mp4`.
