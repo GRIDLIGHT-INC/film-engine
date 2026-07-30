@@ -148,5 +148,26 @@ describe('music-prompt', () => {
             const payload = buildAmbientPrompt({}, null);
             assert.ok(payload.prompt.includes('quiet room'));
         });
+
+        it('asks for a loopable bed, not a full-length render', () => {
+            // Ambient is tiled to length at mix time, so duration_s is the LOOP
+            // length. bed_duration_s is what the loop has to cover.
+            const payload = buildAmbientPrompt({ location: 'Street', estimated_duration: 180000 }, null);
+            assert.equal(payload.loopable, true);
+            assert.equal(payload.bed_duration_s, 180);
+            assert.ok(payload.duration_s <= 30, `loop length ${payload.duration_s}s exceeds the 30s ceiling`);
+        });
+
+        it('keeps the loop length inside provider limits for any scene length', () => {
+            // Set-based: sweep scene durations rather than spot-checking one.
+            for (const ms of [0, 1000, 5000, 12000, 30000, 60000, 600000, 3600000]) {
+                const payload = buildAmbientPrompt({ location: 'Street', estimated_duration: ms }, null);
+                assert.ok(payload.duration_s >= 0.5 && payload.duration_s <= 30,
+                    `scene ${ms}ms produced an out-of-range loop of ${payload.duration_s}s`);
+                assert.ok(payload.bed_duration_s > 0, `scene ${ms}ms produced no bed length`);
+                assert.ok(payload.bed_duration_s >= payload.duration_s,
+                    `scene ${ms}ms: bed ${payload.bed_duration_s}s shorter than its own loop`);
+            }
+        });
     });
 });

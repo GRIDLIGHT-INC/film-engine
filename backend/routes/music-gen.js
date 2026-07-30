@@ -557,8 +557,13 @@ function listMusicJobs(req, res, projectId, query) {
 
 // -- FILM-093: Per-Shot Audio Mix -----------------------------------------
 
-function collectShotAudioTracks(shotId, scene) {
+function collectShotAudioTracks(shotId, scene, shot) {
     const tracks = [];
+
+    // How long the mix runs, and therefore how long a looping bed has to cover.
+    // Prefer the shot's own duration; fall back to the longest asset we collect
+    // so a shot with no recorded duration still gets a bed that reaches the end.
+    const shotDurationMs = (shot && shot.duration_ms) || 0;
 
     // Dialogue
     const dialogueAssets = db.prepare(
@@ -599,9 +604,16 @@ function collectShotAudioTracks(shotId, scene) {
             "SELECT * FROM film_assets WHERE scene_id = ? AND asset_type = 'audio_ambient' ORDER BY created_at DESC LIMIT 1"
         ).all(scene.id);
         for (const a of ambientAssets) {
+            // The bed is generated as a short seamless loop (see
+            // buildAmbientPrompt), so it has to be tiled across the shot or it
+            // stops early and the rest plays dry.
+            const longestOther = tracks.reduce((max, t) => Math.max(max, (t.start_ms || 0) + (t.duration_ms || 0)), 0);
             tracks.push({
                 type: 'ambient', url: a.file_path || getFileUrl('music', a.project_id, a.file_name),
                 start_ms: 0, duration_ms: a.duration_ms || 0, gain_db: -12,
+                loop: true,
+                loop_until_ms: shotDurationMs || longestOther,
+                crossfade_ms: 5000,
             });
         }
     }
@@ -614,7 +626,7 @@ async function mixShotAudio(req, res, shotId) {
     if (!shot) return json(res, 404, { error: 'Shot not found' });
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
-    const tracks = collectShotAudioTracks(shotId, scene);
+    const tracks = collectShotAudioTracks(shotId, scene, shot);
 
     if (tracks.length === 0) {
         return json(res, 200, { shot_id: shotId, message: 'No audio tracks found for this shot', tracks: [] });
@@ -693,7 +705,7 @@ async function mixProjectAudio(req, res, projectId) {
     const eligible = [];
     for (const shot of shots) {
         const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
-        const tracks = collectShotAudioTracks(shot.shot_id, scene);
+        const tracks = collectShotAudioTracks(shot.shot_id, scene, shot);
         if (tracks.length > 0) {
             eligible.push({ shot_id: shot.shot_id, shot_code: shot.shot_code, track_count: tracks.length });
         }

@@ -26,6 +26,14 @@ const MOOD_TO_MUSIC = {
 
 // ── Location → Ambient Sound Mapping ────────────────────────────────
 
+// Ambient loop bounds. The ceiling is the shortest limit across the ambient
+// generators we support (ElevenLabs sound-generation caps at 30s), and the
+// floor is that same endpoint's minimum. A loop is never longer than the bed it
+// has to fill — a 4-second scene gets a 4-second loop, not a padded 30.
+const AMBIENT_LOOP_MIN_S = 0.5;
+const AMBIENT_LOOP_MAX_S = 30;
+const DEFAULT_AMBIENT_BED_MS = 60000;
+
 const LOCATION_TO_AMBIENT = {
     'office': 'quiet office ambiance, distant keyboard typing, air conditioning hum, muffled phone ringing',
     'street': 'city street sounds, passing cars, distant sirens, pedestrian footsteps, pigeons',
@@ -199,12 +207,19 @@ function buildAmbientPrompt(scene, location) {
         promptParts.push(timeMod.trim().replace(/^,\s*/, ''));
     }
 
-    const durationMs = scene.estimated_duration || 60000;
+    // An ambient bed is a loop, not a full-length render. Scenes run minutes and
+    // generators cap well below that, so we ask for a short seamless loop and
+    // tile it to length at mix time (see buildMixPayload). duration_s is the
+    // LOOP; bed_duration_s is what that loop has to cover.
+    const bedMs = scene.estimated_duration || DEFAULT_AMBIENT_BED_MS;
+    const bedSeconds = bedMs / 1000;
+    const loopSeconds = Math.max(AMBIENT_LOOP_MIN_S, Math.min(AMBIENT_LOOP_MAX_S, bedSeconds));
 
     return {
         type: 'ambient',
         prompt: promptParts.join(', '),
-        duration_s: durationMs / 1000,
+        duration_s: loopSeconds,
+        bed_duration_s: bedSeconds,
         model: 'musicgen-ambient',
         loopable: true,
         crossfade_s: 5.0,

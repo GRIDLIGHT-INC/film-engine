@@ -1429,6 +1429,19 @@ Mixes all audio tracks for a shot (dialogue, music, SFX, ambient) with auto-duck
 | `ducking` | boolean | `true` | Enable auto-ducking during dialogue |
 | `output_format` | string | `wav` | Output format |
 
+**Looping beds.** Ambient is generated as a short seamless loop (generators cap
+around 30s while scenes run minutes), so each track in the mix payload sent to
+the mix service carries:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `loop` | boolean | Repeat this track to fill its slot. Only ever set when the track is shorter than the slot; never inferred from track type |
+| `loop_until_ms` | number | Repeat until this offset — the shot duration, or the longest other track when the shot has none |
+| `loop_crossfade_ms` | number | Crossfade between repeats so the seam is inaudible (ambient uses 5000) |
+
+The mix service must honour these for a bed to reach the end of a shot; a
+service that ignores `loop` will play the bed once and leave the remainder dry.
+
 **Response** `200`
 ```json
 {

@@ -44,6 +44,42 @@ describe('audio-mixer', () => {
             assert.equal(payload.output_format, 'wav');
         });
 
+        it('tiles a looping bed across the slot it has to fill', () => {
+            // A 30s ambient loop under a 90s shot must be repeated, not padded
+            // with 60s of silence.
+            const payload = buildMixPayload([
+                { type: 'ambient', url: '/audio/room.wav', start_ms: 0, duration_ms: 30000, loop: true, loop_until_ms: 90000, crossfade_ms: 5000 },
+            ]);
+            const bed = payload.tracks[0];
+            assert.equal(bed.loop, true);
+            assert.equal(bed.loop_until_ms, 90000);
+            assert.equal(bed.loop_crossfade_ms, 5000);
+        });
+
+        it('never loops a track that did not ask for it', () => {
+            // Guards against looping dialogue, which would repeat a line.
+            const payload = buildMixPayload(sampleTracks);
+            for (const t of payload.tracks) {
+                assert.equal(t.loop, false, `${t.type} was looped`);
+                assert.equal(t.loop_until_ms, 0);
+            }
+        });
+
+        it('does not loop a bed that already covers its slot', () => {
+            const payload = buildMixPayload([
+                { type: 'ambient', url: '/a.wav', start_ms: 0, duration_ms: 90000, loop: true, loop_until_ms: 90000 },
+            ]);
+            assert.equal(payload.tracks[0].loop, false);
+        });
+
+        it('ignores a loop request with no target length', () => {
+            // Without a slot to fill, looping forever is worse than not looping.
+            const payload = buildMixPayload([
+                { type: 'ambient', url: '/a.wav', start_ms: 0, duration_ms: 30000, loop: true },
+            ]);
+            assert.equal(payload.tracks[0].loop, false);
+        });
+
         it('applies default gain levels per type', () => {
             const payload = buildMixPayload(sampleTracks);
             assert.equal(payload.tracks[0].gain_db, DEFAULT_LEVELS.dialogue);

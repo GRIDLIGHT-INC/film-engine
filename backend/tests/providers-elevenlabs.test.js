@@ -23,6 +23,7 @@ const {
     buildVoiceRequest,
     buildSfxRequest,
     buildMusicRequest,
+    buildAmbientRequest,
     normalizeOutputFormat,
 } = require('../lib/providers/elevenlabs');
 
@@ -120,13 +121,13 @@ describe('providers/elevenlabs', () => {
         delete process.env.ELEVENLABS_API_KEY;
     });
 
-    it('registers through provider autoload and advertises voice+sfx+music', () => {
+    it('registers through provider autoload and advertises its audio capabilities', () => {
         assert.equal(adapter.id, 'elevenlabs');
         assert.equal(adapter.kind, 'generator');
         assert.equal(adapter.requiresKey, true);
         assert.equal(adapter.supports('image'), false);
         assert.equal(providers.get('elevenlabs').id, 'elevenlabs');
-        assert.deepEqual([...adapter.capabilities].sort(), ['music', 'sfx', 'voice']);
+        assert.deepEqual([...adapter.capabilities].sort(), ['ambient', 'music', 'sfx', 'voice']);
     });
 
     it('every declared capability is actually wired end to end', () => {
@@ -223,6 +224,35 @@ describe('providers/elevenlabs', () => {
         const missing = await adapter.generate('music', {});
         assert.equal(missing.ok, false);
         assert.equal(missing.status, 400);
+    });
+
+    it('generates ambient as a seamless loop from the sound-effects endpoint', () => {
+        // Room tone is a sound effect, not music — and loop:true is only
+        // honoured on eleven_text_to_sound_v2, so the model must be explicit.
+        const request = buildAmbientRequest({ prompt: 'quiet room ambiance, nighttime', duration_s: 30 });
+        assert.equal(request.url, `${baseUrl}/sound-generation`);
+        assert.equal(request.body.loop, true);
+        assert.equal(request.body.model_id, 'eleven_text_to_sound_v2');
+        assert.equal(request.body.duration_seconds, 30);
+    });
+
+    it('keeps the ambient loop inside the endpoint ceiling', () => {
+        for (const [input, expected] of [[0.1, 0.5], [5, 5], [30, 30], [120, 30]]) {
+            assert.equal(buildAmbientRequest({ prompt: 'x', duration_s: input }).body.duration_seconds, expected, `duration_s=${input}`);
+        }
+    });
+
+    it('does not loop plain sound effects', () => {
+        // A looping door slam would be a bug.
+        assert.notEqual(buildSfxRequest({ prompt: 'door slam', duration_s: 2 }).body.loop, true);
+    });
+
+    it('generates ambient audio as a Buffer', async () => {
+        const result = await adapter.generate('ambient', { prompt: 'rain on a tin roof', duration_s: 20 });
+        assert.equal(result.ok, true);
+        assert.equal(Buffer.isBuffer(result.data), true);
+        assert.equal(result.data.toString(), 'mock-sfx-audio');
+        assert.equal(lastRequest.body.loop, true);
     });
 
     it('normalizes output format to a provider-supported audio type', () => {

@@ -2,9 +2,10 @@
  * ElevenLabs provider adapter.
  *
  * Capabilities:
- *   voice — text-to-speech dialogue clips        POST /text-to-speech/:voiceId
- *   sfx   — text-to-sound-effects clips          POST /sound-generation
- *   music — scored cues and beds                 POST /music
+ *   voice   — text-to-speech dialogue clips      POST /text-to-speech/:voiceId
+ *   sfx     — one-shot sound effects             POST /sound-generation
+ *   ambient — seamless looping beds              POST /sound-generation (loop)
+ *   music   — scored cues                        POST /music
  *
  * All three answer with raw audio bytes rather than a URL, so results come back
  * as a Buffer and persistProviderMedia writes them straight to disk.
@@ -25,8 +26,14 @@ const MUSIC_MIN_MS = 3000;
 const MUSIC_MAX_MS = 600000;
 const MUSIC_DEFAULT_MS = 30000;
 
+// Documented bounds for POST /sound-generation. `loop` requires the v2 model.
+const SFX_MIN_SECONDS = 0.5;
+const SFX_MAX_SECONDS = 30;
+const LOOPABLE_SFX_MODEL = 'eleven_text_to_sound_v2';
+
 function supports(capability) {
-    return capability === 'voice' || capability === 'sfx' || capability === 'music';
+    return capability === 'voice' || capability === 'sfx'
+        || capability === 'music' || capability === 'ambient';
 }
 
 function missingKey() {
@@ -90,19 +97,52 @@ function buildVoiceRequest(payload) {
     };
 }
 
+function soundGenerationUrl() {
+    return `${(process.env.ELEVENLABS_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '')}/sound-generation`;
+}
+
+function clampSfxDuration(payload, fallback) {
+    const requested = Number(payload.duration_s || payload.duration_seconds || payload.duration || fallback);
+    return Math.max(SFX_MIN_SECONDS, Math.min(SFX_MAX_SECONDS, requested));
+}
+
 function buildSfxRequest(payload) {
-    const baseUrl = (process.env.ELEVENLABS_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
-    const text = payload.text || payload.prompt || payload.description || '';
-    const durationSeconds = Number(payload.duration_s || payload.duration_seconds || payload.duration || 3);
-    const safeDuration = Math.max(0.5, Math.min(30, durationSeconds));
     return {
-        url: `${baseUrl}/sound-generation`,
+        url: soundGenerationUrl(),
         body: {
-            text,
-            duration_seconds: safeDuration,
+            text: payload.text || payload.prompt || payload.description || '',
+            duration_seconds: clampSfxDuration(payload, 3),
             prompt_influence: typeof payload.prompt_influence === 'number' ? payload.prompt_influence : 0.3,
         },
         model: 'elevenlabs-sound-effects',
+        mimeType: 'audio/mpeg',
+        format: 'mp3',
+    };
+}
+
+/**
+ * Build an ambient bed request.
+ *
+ * Ambient goes to the sound-effects endpoint rather than /music on purpose:
+ * room tone, rain and traffic are sound effects, and a music model renders them
+ * as composed drones that sit wrong under dialogue.
+ *
+ * The endpoint caps at 30s, which is shorter than most scenes — so the bed is
+ * generated as a seamless loop and tiled to length at mix time. `loop` is only
+ * honoured on eleven_text_to_sound_v2, so the model is named explicitly rather
+ * than left to the endpoint default.
+ */
+function buildAmbientRequest(payload) {
+    return {
+        url: soundGenerationUrl(),
+        body: {
+            text: payload.text || payload.prompt || payload.description || '',
+            duration_seconds: clampSfxDuration(payload, SFX_MAX_SECONDS),
+            prompt_influence: typeof payload.prompt_influence === 'number' ? payload.prompt_influence : 0.3,
+            loop: true,
+            model_id: LOOPABLE_SFX_MODEL,
+        },
+        model: LOOPABLE_SFX_MODEL,
         mimeType: 'audio/mpeg',
         format: 'mp3',
     };
@@ -208,7 +248,7 @@ const adapter = {
     kind: 'generator',
     label: 'ElevenLabs',
     requiresKey: true,
-    capabilities: ['voice', 'sfx', 'music'],
+    capabilities: ['voice', 'sfx', 'ambient', 'music'],
     connection: {
         instructions: 'ElevenLabs has no OAuth for API access — paste an API key. Click "Get your key" to open your ElevenLabs API keys page.',
         helpUrl: 'https://elevenlabs.io/app/settings/api-keys',
@@ -226,6 +266,7 @@ const adapter = {
         let request;
         if (capability === 'voice') request = buildVoiceRequest(payload || {});
         else if (capability === 'sfx') request = buildSfxRequest(payload || {});
+        else if (capability === 'ambient') request = buildAmbientRequest(payload || {});
         else request = buildMusicRequest(payload || {});
 
         // /music carries the description in `prompt`; the other two use `text`.
@@ -253,5 +294,6 @@ module.exports = {
     buildVoiceRequest,
     buildSfxRequest,
     buildMusicRequest,
+    buildAmbientRequest,
     normalizeOutputFormat,
 };

@@ -40,24 +40,43 @@ const DUCKING_DEFAULTS = {
 /**
  * Build payload for the audio mix endpoint.
  *
- * @param {Array<{type: string, url: string, start_ms: number, duration_ms: number, gain_db?: number}>} tracks
+ * @param {Array<{type: string, url: string, start_ms: number, duration_ms: number, gain_db?: number,
+ *                loop?: boolean, loop_until_ms?: number, crossfade_ms?: number}>} tracks
  * @param {object} [options]
  * @returns {object} Mix payload
  */
 function buildMixPayload(tracks, options) {
     const opts = options || {};
 
-    const mixTracks = (tracks || []).map((t, i) => ({
-        index: i,
-        type: t.type || 'sfx',
-        url: t.url || t.file_path || '',
-        start_ms: t.start_ms || 0,
-        duration_ms: t.duration_ms || 0,
-        gain_db: t.gain_db !== undefined ? t.gain_db : (DEFAULT_LEVELS[t.type] || 0),
-        pan: t.pan || 0,           // -1 (left) to 1 (right)
-        fade_in_ms: t.fade_in_ms || 0,
-        fade_out_ms: t.fade_out_ms || 0,
-    }));
+    const mixTracks = (tracks || []).map((t, i) => {
+        // Looping is opt-in per track and only applied when it would actually do
+        // something: a bed shorter than the slot it must fill. Ambient generators
+        // cap at 30s while scenes run minutes, so without this the bed stops
+        // early and the rest of the shot plays dry.
+        //
+        // Never inferred from type — looping a dialogue track would repeat a
+        // line, so a caller has to ask.
+        const duration = t.duration_ms || 0;
+        const loopUntil = t.loop_until_ms || 0;
+        const shouldLoop = !!t.loop && loopUntil > 0 && duration > 0 && loopUntil > duration;
+
+        return {
+            index: i,
+            type: t.type || 'sfx',
+            url: t.url || t.file_path || '',
+            start_ms: t.start_ms || 0,
+            duration_ms: duration,
+            gain_db: t.gain_db !== undefined ? t.gain_db : (DEFAULT_LEVELS[t.type] || 0),
+            pan: t.pan || 0,           // -1 (left) to 1 (right)
+            fade_in_ms: t.fade_in_ms || 0,
+            fade_out_ms: t.fade_out_ms || 0,
+            loop: shouldLoop,
+            loop_until_ms: shouldLoop ? loopUntil : 0,
+            // Crossfading each repeat is what stops a seam being audible on a
+            // sustained bed; 0 means butt-join.
+            loop_crossfade_ms: shouldLoop ? (t.crossfade_ms || 0) : 0,
+        };
+    });
 
     return {
         type: 'mix',
