@@ -430,4 +430,80 @@ describe('providers/elevenlabs', () => {
         assert.ok(job, 'a score job was recorded');
         assert.equal(job.status, 'complete');
     });
+
+    it('ambient route resolves ElevenLabs and stores a looping bed', async () => {
+        const proj = await appRequest('/film/projects', { method: 'POST', body: { title: 'ElevenLabs Ambient Test', logline: 'x' } });
+        const projectId = proj.data.id;
+
+        const cfg = await appRequest(`/film/projects/${projectId}/providers`, {
+            method: 'PUT',
+            body: { config: { ambient: 'elevenlabs' } },
+        });
+        assert.equal(cfg.data.config.ambient, 'elevenlabs');
+
+        await appRequest(`/film/projects/${projectId}/script`, {
+            method: 'POST',
+            body: { content: 'Title: Ambient Test\n\nEXT. CITY STREET - NIGHT\n\nTraffic hums.\n', format: 'fountain' },
+        });
+        const scenes = await appRequest(`/film/projects/${projectId}/scenes`);
+        const sceneId = scenes.data.scenes[0].id;
+
+        const generated = await appRequest(`/film/scenes/${sceneId}/ambient/generate`, { method: 'POST', body: {} });
+        assert.equal(generated.status, 200);
+        assert.match(generated.data.ambient_url || '', /\.mp3$/);
+
+        // The bed must be a bounded loop, not a scene-length render.
+        assert.ok(lastRequest.body.loop === true, 'ambient asked for a seamless loop');
+        assert.ok(lastRequest.body.duration_seconds <= 30, `bed of ${lastRequest.body.duration_seconds}s exceeds the endpoint ceiling`);
+
+        const served = await appRequest(generated.data.ambient_url);
+        assert.equal(served.status, 200);
+        assert.equal(served.raw, 'mock-sfx-audio');
+    });
+
+    it('the mix payload actually carries the loop instruction', async () => {
+        // The whole point of this work is that a short bed gets tiled. Verifying
+        // buildMixPayload in isolation would pass even if the route never set
+        // loop on the track -- which is exactly how loopable/crossfade_s sat
+        // dead for so long. So this reads the payload the route really sent.
+        const proj = await appRequest('/film/projects', { method: 'POST', body: { title: 'ElevenLabs Mix Loop Test', logline: 'x' } });
+        const projectId = proj.data.id;
+        await appRequest(`/film/projects/${projectId}/providers`, { method: 'PUT', body: { config: { ambient: 'elevenlabs' } } });
+        await appRequest(`/film/projects/${projectId}/script`, {
+            method: 'POST',
+            body: { content: 'Title: Mix Test\n\nINT. BAR - NIGHT\n\nQuiet.\n', format: 'fountain' },
+        });
+        const scenes = await appRequest(`/film/projects/${projectId}/scenes`);
+        const sceneId = scenes.data.scenes[0].id;
+
+        // A 90s shot with a bed that is far shorter than it.
+        const shots = await appRequest('/film/shots', {
+            method: 'POST',
+            body: {
+                scene_id: sceneId,
+                cards: [{ shot_code: '1A', duration_ms: 90000, camera: { shot_type: 'wide', movement: 'static' } }],
+            },
+        });
+        assert.equal(shots.status, 201);
+        const shotId = shots.data.shots[0].id;
+
+        await appRequest(`/film/scenes/${sceneId}/ambient/generate`, { method: 'POST', body: {} });
+
+        // The mix service is not running here; the route records the payload it
+        // built before dispatching, which is the part under test.
+        await appRequest(`/film/shots/${shotId}/audio/mix`, { method: 'POST', body: {} });
+
+        const row = db.prepare(
+            'SELECT params FROM film_audio_mix_jobs WHERE shot_id = ? ORDER BY created_at DESC LIMIT 1'
+        ).get(shotId);
+        assert.ok(row, 'a mix job recorded its payload');
+
+        const payload = JSON.parse(row.params);
+        const bed = payload.tracks.find(t => t.type === 'ambient');
+        assert.ok(bed, 'the ambient bed is in the mix');
+        assert.equal(bed.loop, true, 'the bed is marked to loop');
+        assert.equal(bed.loop_until_ms, 90000, 'the bed loops for the full shot');
+        assert.equal(bed.loop_crossfade_ms, 5000, 'repeats are crossfaded');
+        assert.ok(bed.duration_ms < bed.loop_until_ms, 'the bed really is shorter than its slot');
+    });
 });

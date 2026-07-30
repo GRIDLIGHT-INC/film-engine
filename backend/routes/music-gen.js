@@ -607,12 +607,19 @@ function collectShotAudioTracks(shotId, scene, shot) {
             // The bed is generated as a short seamless loop (see
             // buildAmbientPrompt), so it has to be tiled across the shot or it
             // stops early and the rest plays dry.
+            //
+            // Most accurate first: the shot's own duration, then the furthest
+            // any other track reaches, then the scene estimate. A shot whose
+            // only track is the bed has no other track to measure against, so
+            // without the scene fallback it would get no loop target at all and
+            // the loop would silently not apply.
             const longestOther = tracks.reduce((max, t) => Math.max(max, (t.start_ms || 0) + (t.duration_ms || 0)), 0);
+            const loopUntilMs = shotDurationMs || longestOther || (scene && scene.estimated_duration) || 0;
             tracks.push({
                 type: 'ambient', url: a.file_path || getFileUrl('music', a.project_id, a.file_name),
                 start_ms: 0, duration_ms: a.duration_ms || 0, gain_db: -12,
                 loop: true,
-                loop_until_ms: shotDurationMs || longestOther,
+                loop_until_ms: loopUntilMs,
                 crossfade_ms: 5000,
             });
         }
