@@ -48,6 +48,33 @@ function extractMediaUrl(data) {
 }
 
 /**
+ * True when a URL points at the Gridlight gateway itself, and is therefore
+ * allowed to receive our gateway credential.
+ *
+ * Compares parsed ORIGINS, never string prefixes. `fetchUrl.startsWith(GRIDLIGHT_URL)`
+ * looks equivalent and is not: with a gateway of https://gw.example, all of
+ * `https://gw.example@evil.tld/`, `https://gw.example.evil.tld/` and
+ * `https://gw.example-evil.tld/` pass a prefix test while resolving to hosts the
+ * operator does not control. Since the URL being tested comes from a provider's
+ * response, that turns any malicious or compromised provider into gateway-key
+ * exfiltration.
+ *
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isGatewayUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    try {
+        const target = new URL(url);
+        // Only ever speak HTTP(S); file:, javascript: and friends are never the gateway.
+        if (target.protocol !== 'http:' && target.protocol !== 'https:') return false;
+        return target.origin === new URL(GRIDLIGHT_URL).origin;
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
  * Turn whatever URL form the provider returned into something fetchable.
  * Mirrors the storyboard route: absolute URLs pass through, root-relative paths
  * hang off the gateway, and a bare filename resolves under the serving dir.
@@ -89,7 +116,7 @@ async function persistProviderMedia(projectId, subdir, filename, data, opts) {
     // Only forward our credential to the gateway itself — never to a third-party
     // CDN a provider might point us at.
     const headers = {};
-    if (GRIDLIGHT_API_KEY && fetchUrl.startsWith(GRIDLIGHT_URL)) {
+    if (GRIDLIGHT_API_KEY && isGatewayUrl(fetchUrl)) {
         headers['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
     }
 
@@ -101,4 +128,4 @@ async function persistProviderMedia(projectId, subdir, filename, data, opts) {
     return saveFile(projectId, subdir, filename, Buffer.from(await response.arrayBuffer()));
 }
 
-module.exports = { persistProviderMedia, extractMediaUrl, resolveMediaUrl };
+module.exports = { persistProviderMedia, extractMediaUrl, resolveMediaUrl, isGatewayUrl };

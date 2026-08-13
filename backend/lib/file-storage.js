@@ -48,7 +48,24 @@ function saveFile(projectId, subdir, filename, buffer) {
  * @returns {string}
  */
 function getFilePath(projectId, subdir, filename) {
-    return path.join(DATA_DIR, subdir, projectId, filename);
+    const projectDir = path.join(DATA_DIR, subdir, projectId);
+    const full = path.join(projectDir, filename);
+
+    // Containment lives here rather than in each caller. file_name reaches this
+    // function straight off film_assets rows, and POST /projects/:id/assets
+    // accepts that field from a request body with no sanitisation, so a value
+    // like ../../../../etc/passwd would otherwise resolve outside the data
+    // directory. Callers such as loadShotContext then base64 whatever they read
+    // into a generation payload and send it to an external provider, turning a
+    // local read into exfiltration.
+    //
+    // Throws rather than returning a corrected path: a caller asking for a file
+    // outside its project is either a bug or an attack, and silently rewriting
+    // the path would hide both.
+    if (!isPathContained(full, projectDir)) {
+        throw new Error(`refusing to resolve a path outside the project directory: ${subdir}/${filename}`);
+    }
+    return full;
 }
 
 /**
@@ -70,7 +87,13 @@ function getFileUrl(subdir, projectId, filename) {
  * @returns {boolean}
  */
 function fileExists(projectId, subdir, filename) {
-    return fs.existsSync(getFilePath(projectId, subdir, filename));
+    // A path that escapes the project directory does not "exist" as far as
+    // callers are concerned; getFilePath throws, and that is not a crash here.
+    try {
+        return fs.existsSync(getFilePath(projectId, subdir, filename));
+    } catch (_) {
+        return false;
+    }
 }
 
 /**
@@ -102,7 +125,14 @@ function serveFile(res, projectId, subdir, filename) {
         return;
     }
 
-    const filePath = getFilePath(projectId, subdir, filename);
+    let filePath;
+    try {
+        filePath = getFilePath(projectId, subdir, filename);
+    } catch (_) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid file path' }));
+        return;
+    }
     if (!isPathContained(filePath, DATA_DIR)) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid file path' }));

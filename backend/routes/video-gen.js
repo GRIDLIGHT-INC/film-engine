@@ -108,10 +108,14 @@ function loadShotContext(shotId) {
 
     let initImage = null;
     if (keyframeAsset && keyframeAsset.file_name) {
-        const imgPath = getFilePath(scene.project_id, 'storyboards', keyframeAsset.file_name);
-        if (fs.existsSync(imgPath)) {
-            initImage = fs.readFileSync(imgPath).toString('base64');
-        }
+        // A file_name that escapes the project directory is refused by
+        // getFilePath; generate without an init image rather than 500.
+        try {
+            const imgPath = getFilePath(scene.project_id, 'storyboards', keyframeAsset.file_name);
+            if (fs.existsSync(imgPath)) {
+                initImage = fs.readFileSync(imgPath).toString('base64');
+            }
+        } catch (_) { initImage = null; }
     }
 
     return { shot, scene, sceneCard, characters, location, project, keyframeAsset, initImage };

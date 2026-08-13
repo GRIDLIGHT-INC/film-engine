@@ -228,7 +228,10 @@ async function generateFromImage(req, res, kind, subjectId, stream) {
         if (refAsset && refAsset.file_name && /^[\w.-]+$/.test(refAsset.file_name)) {
             // Try known image subdirs.
             for (const dir of ['refsheets', 'loc-refs', 'prop-refs', 'storyboards']) {
-                const p = getFilePath(projectId, dir, refAsset.file_name);
+                // The regex above admits ".." — getFilePath is what actually
+                // enforces containment, so a refusal just means "not here".
+                let p;
+                try { p = getFilePath(projectId, dir, refAsset.file_name); } catch (_) { continue; }
                 if (fs.existsSync(p)) { imageRef = fs.readFileSync(p).toString('base64'); break; }
             }
         }

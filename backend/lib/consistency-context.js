@@ -71,7 +71,11 @@ function resolveAssetPath(asset) {
     if (current && fs.existsSync(current)) return current;
     if (!asset.file_name || !asset.project_id) return current;
     for (const subdir of referenceSubdirs(asset)) {
-        const candidate = getFilePath(asset.project_id, subdir, asset.file_name);
+        // getFilePath refuses a file_name that escapes the project directory.
+        // Treat that like "not here" and keep looking: a poisoned asset row
+        // must not take down reference resolution for every other subject.
+        let candidate;
+        try { candidate = getFilePath(asset.project_id, subdir, asset.file_name); } catch (_) { continue; }
         if (fs.existsSync(candidate)) return candidate;
     }
     return current;

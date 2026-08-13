@@ -19,7 +19,7 @@ const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
 const { buildShotReferencePayload, applyConsistencyToImagePayload, recordConsistencyCheck, auditProjectReadiness } = require('../lib/consistency-context');
 const { resolveGenerator } = require('../lib/providers');
 const { endpointFor: gridlightEndpointFor } = require('../lib/providers/gridlight-adapter');
-const { extractMediaUrl, resolveMediaUrl } = require('../lib/provider-media');
+const { extractMediaUrl, resolveMediaUrl, isGatewayUrl } = require('../lib/provider-media');
 const { imageRequestPayload, providerConfigOf } = require('../lib/capability-payloads');
 
 const os = require('os');
@@ -82,8 +82,9 @@ async function imageResultToBuffer(data) {
     const fetchUrl = resolveMediaUrl(imageUrl, 'images');
     const headers = {};
     // Only forward our credential to the gateway itself, never to a CDN a
-    // provider might point us at.
-    if (GRIDLIGHT_API_KEY && fetchUrl.startsWith(GRIDLIGHT_URL)) {
+    // provider might point us at. Origin comparison, not a prefix test: see
+    // isGatewayUrl for why the two are not interchangeable.
+    if (GRIDLIGHT_API_KEY && isGatewayUrl(fetchUrl)) {
         headers['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
     }
 
