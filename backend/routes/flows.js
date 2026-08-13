@@ -19,6 +19,7 @@ const { db, generateId } = require('../db/database');
 const { validateGraph, graphFingerprint } = require('../lib/flow-graph');
 const { runFlow, cancelFlowRun, getFlowRun } = require('../lib/flow-executor');
 const { loadShotContext } = require('../lib/capability-payloads');
+const { NODE_TYPES } = require('../lib/flow-node-types');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Built-in ids are readable slugs, not UUIDs, so flow ids accept both.
@@ -316,7 +317,13 @@ function handleFlows(req, res, urlParts, query) {
         return json(res, 405, { error: 'Method not allowed' });
     }
 
-    // /film/flows/:id[/validate]
+    // /film/flows/node-types — the palette the canvas draws from. Served from
+    // the runtime registry so the UI can never offer a node the server refuses.
+    if (urlParts[1] === 'flows' && urlParts[2] === 'node-types' && req.method === 'GET') {
+        return json(res, 200, NODE_TYPES);
+    }
+
+    // /film/flows/:id[/validate|/run]
     if (urlParts[1] === 'flows' && urlParts[2]) {
         const flowId = urlParts[2];
         if (!FLOW_ID_RE.test(flowId)) return json(res, 400, { error: 'Invalid flow ID' });

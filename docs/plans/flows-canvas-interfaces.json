@@ -223,7 +223,7 @@
         "renderFlowsPage",
         "FlowCanvas"
       ],
-      "contract": "New nav-item data-page=\"flows\" wired through navigateTo(); FlowCanvas is a self-contained SVG editor (pan/zoom, drag nodes, bezier edges between typed ports, marquee select, delete) painting node status from the run SSE stream.",
+      "contract": "New nav-item data-page=\"flows\" wired through navigateTo(); FlowCanvas is a self-contained SVG editor (pan/zoom, drag nodes, bezier edges between typed ports, marquee select, delete) painting node status from the run SSE stream. Shipped in Phase 4.",
       "rationale": "Hand-rolled SVG rather than React Flow because gridlight.json pins build.target=single-html and the SPA has no bundler; the required interaction set is small enough that a dependency would cost more than it saves."
     },
     {
