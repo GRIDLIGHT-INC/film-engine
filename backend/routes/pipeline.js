@@ -18,6 +18,7 @@ const { resolveGenerator } = require('../lib/providers');
 const { auditShotReadiness, auditProjectReadiness } = require('../lib/consistency-context');
 const { ensureDir, saveFile, getFileUrl } = require('../lib/file-storage');
 const { PIPELINE_STEPS, buildStepPlan, autoSkipSteps, retryDelay, MAX_RETRIES } = require('../lib/pipeline-engine');
+const { buildCapabilityPayload, loadShotContext, providerConfigOf } = require('../lib/capability-payloads');
 const { buildSchedule, suggestResidency, MODEL_PROFILES } = require('../lib/scheduling-engine');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -115,18 +116,55 @@ async function executeStep(stepId, shot, scene, project) {
         return { ok: false, error: `Unknown pipeline step '${stepId}'` };
     }
 
-    let config = {};
-    try { config = JSON.parse((project && project.provider_config) || '{}'); } catch (_) { config = {}; }
+    const config = providerConfigOf(project);
 
-    // Build a minimal payload per step.
-    const payload = { shot_id: shot.id, scene_id: scene.id, project_id: scene.project_id, step: stepId };
+    // Build the SAME payload the per-domain route would build. This used to be
+    // { shot_id, scene_id, project_id, step }, which asked the generator to
+    // produce a shot from four ids and no prompt: orchestrated runs silently
+    // skipped every prompt builder and all consistency context.
+    let built;
+    try {
+        const ctx = loadShotContext(shot.id);
+        if (!ctx) return { ok: false, error: `Shot ${shot.id} could not be loaded for step '${stepId}'` };
+        built = buildCapabilityPayload(capability, ctx);
+    } catch (err) {
+        // A missing upstream artefact is work that is not ready, not a failure
+        // to retry: no amount of exponential backoff conjures a rendered video
+        // for lip-sync to consume. Report it as a skip so the run continues and
+        // the reason is visible, and keep retries for genuine faults.
+        if (err.code === 'PRECONDITION') {
+            return { ok: true, skipped: true, message: err.message, results: [] };
+        }
+        return { ok: false, error: `Could not build ${capability} payload: ${err.message}` };
+    }
+
+    // voice and sfx are one-context-to-many (per dialogue line / per cue), so a
+    // step may be several generation calls. A step with nothing to generate —
+    // a silent shot, a scene with no cues — is a success with no work, not a
+    // failure and not an empty request sent to a paid endpoint.
+    const requests = Array.isArray(built.payload) ? built.payload : [built.payload];
+    if (requests.length === 0) {
+        return { ok: true, skipped: true, message: `No ${capability} work for this shot`, results: [] };
+    }
 
     try {
         // resolveGenerator guarantees a real generator even if a source provider
         // (a licensed catalog, which only searches and licenses) is configured
         // for this capability.
-        const result = await resolveGenerator(capability, config).generate(capability, payload);
-        return result;
+        const generator = resolveGenerator(capability, config);
+
+        const results = [];
+        for (const payload of requests) {
+            const result = await generator.generate(capability, payload);
+            results.push(result);
+            if (!result || !result.ok) {
+                return { ok: false, error: (result && result.error) || `${capability} generation failed`, results };
+            }
+        }
+
+        return requests.length === 1
+            ? results[0]
+            : { ok: true, count: results.length, results };
     } catch (err) {
         return { ok: false, error: err.message };
     }

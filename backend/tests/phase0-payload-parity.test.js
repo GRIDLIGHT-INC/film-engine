@@ -209,7 +209,8 @@ test('AC3: ambient payload keeps the loop/bed split intact', () => {
 
 // ── AC4 — consistency context reaches every capability that supports it ─
 
-for (const capability of ['image', 'video', 'voice']) {
+// Visual capabilities take identity as references + a locked seed.
+for (const capability of ['image', 'video']) {
     test(`AC4: ${capability} payload carries the consistency references it is given`, () => {
         const { buildCapabilityPayload } = mod();
         const ctx = fixtureCtx({
@@ -229,6 +230,45 @@ for (const capability of ['image', 'video', 'voice']) {
         );
     });
 }
+
+// Voice identity is NOT a seed or an image reference — it is a voice id and its
+// settings, keyed by character (applyConsistencyToVoicePayload reads
+// context.voice.by_character). Asserting the visual shape here would demand that
+// a TTS request carry an image reference, so this pins the real contract and
+// checks exact propagation rather than a substring appearing somewhere.
+test('AC4: voice payload carries the locked voice profile for the speaking character', () => {
+    const { buildCapabilityPayload } = mod();
+    const ctx = fixtureCtx({
+        consistency: {
+            voice: {
+                by_character: {
+                    RAY: {
+                        profile_id: 'vp-locked-1',
+                        voice_id: 'ray-locked-voice',
+                        provider_model: 'eleven_v3',
+                        settings: { language: 'fr', speed: 0.9, stability: 0.6, similarity_boost: 0.85 },
+                    },
+                },
+            },
+        },
+    });
+    const { payload } = buildCapabilityPayload('voice', ctx);
+    assert.strictEqual(payload[0].voice_id, 'ray-locked-voice', 'locked voice id did not reach the payload');
+    assert.strictEqual(payload[0].consistency_profile_id, 'vp-locked-1', 'profile id was not recorded on the payload');
+    assert.strictEqual(payload[0].language, 'fr', 'locked language was not applied');
+    assert.strictEqual(payload[0].speed, 0.9, 'locked speed was not applied');
+    assert.strictEqual(payload[0].similarity_boost, 0.85, 'locked similarity_boost was not applied');
+});
+
+test('AC4: voice consistency for a different character leaves this payload untouched', () => {
+    const { buildCapabilityPayload } = mod();
+    const ctx = fixtureCtx({
+        consistency: { voice: { by_character: { NADIA: { profile_id: 'vp-2', voice_id: 'nadia-voice' } } } },
+    });
+    const { payload } = buildCapabilityPayload('voice', ctx);
+    assert.strictEqual(payload[0].voice_id, 'ray-voice', 'RAY was given another character\'s locked voice');
+    assert.strictEqual(payload[0].consistency_profile_id, undefined, 'an unrelated profile id was stamped on the payload');
+});
 
 // ── AC5 — cardinality and scope are honoured ───────────────────────────
 

@@ -14,6 +14,7 @@ const { saveFile, getFileUrl, getFilePath, ensureDir } = require('../lib/file-st
 const { persistProviderMedia } = require('../lib/provider-media');
 const { buildVisemeTrack, mergeVisemesWithAudio, buildVisemePayload } = require('../lib/viseme-builder');
 const { resolve, get } = require('../lib/providers');
+const { buildCapabilityPayload } = require('../lib/capability-payloads');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LIPSYNC_ENDPOINT = '/lipsync';
@@ -111,14 +112,17 @@ async function generateLipsync(req, res, shotId) {
     if (!videoAsset) return json(res, 400, { error: 'No video asset found for this shot. Generate video first.' });
     if (!audioAsset) return json(res, 400, { error: 'No audio dialogue asset found for this shot. Generate voice first.' });
 
-    const payload = {
-        video_url: videoAsset.file_path || getFileUrl('video', scene.project_id, videoAsset.file_name),
-        audio_url: audioAsset.file_path || getFileUrl('audio', scene.project_id, audioAsset.file_name),
-        model: (req.body && req.body.model) || 'wav2lip',
-        quality: (req.body && req.body.quality) || 'high',
-        output_format: 'mp4',
-        stream: false,
-    };
+    // Built by capability-payloads rather than assembled here, so the
+    // orchestrator and this route request lip-sync identically. The 400s above
+    // stay: a route can explain a missing prerequisite to a user better than a
+    // thrown builder error can.
+    const { payload } = buildCapabilityPayload('lipsync', {
+        scene, shot, videoAsset, audioAsset,
+        overrides: {
+            model: req.body && req.body.model,
+            quality: req.body && req.body.quality,
+        },
+    });
 
     const jobId = generateId();
     db.prepare(

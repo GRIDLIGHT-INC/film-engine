@@ -23,9 +23,16 @@ function parseJson(value, fallback) {
     try { return JSON.parse(value); } catch (_) { return fallback; }
 }
 
-function normalizeName(value) {
-    return String(value || '').trim().toUpperCase();
-}
+// The pure payload-shaping half of this module lives in consistency-apply.js so
+// that callers which only need to apply an already-built context (see
+// capability-payloads.js) do not have to import a database to do it. Re-exported
+// below, so every existing import of this module keeps working unchanged.
+const {
+    normalizeName,
+    shouldUseLockedSeed,
+    applyConsistencyToImagePayload,
+    applyConsistencyToVoicePayload,
+} = require('./consistency-apply');
 
 function roleRank(role) {
     return ROLE_ORDER[String(role || '').toLowerCase()] ?? 50;
@@ -304,9 +311,6 @@ function normalizeSeed(seed) {
     return Number.isFinite(n) ? n : null;
 }
 
-function shouldUseLockedSeed(seed) {
-    return seed === undefined || seed === null || seed === '' || seed === -1 || seed === '-1';
-}
 
 function buildPromptContract(profiles) {
     const promptParts = [];
@@ -502,45 +506,6 @@ function auditProjectReadiness(projectId) {
         missing: shots.flatMap(s => s.missing),
         warnings: shots.flatMap(s => s.warnings),
     };
-}
-
-function applyConsistencyToImagePayload(payload, context) {
-    const p = { ...(payload || {}) };
-    const ctx = context || {};
-    if (ctx.prompt_additions && ctx.prompt_additions.length) {
-        p.prompt = [p.prompt, ...ctx.prompt_additions].filter(Boolean).join(', ');
-    }
-    if (ctx.negative_additions && ctx.negative_additions.length) {
-        p.negative_prompt = [p.negative_prompt, ...ctx.negative_additions].filter(Boolean).join(', ');
-    }
-    if (shouldUseLockedSeed(p.seed) && ctx.locked_seed !== null && ctx.locked_seed !== undefined) p.seed = ctx.locked_seed;
-    if (ctx.references && ctx.references.length) {
-        p.reference_images = ctx.references;
-        p.input_refs = ctx.input_refs || [];
-        if (!p.ip_adapter_image) {
-            const primary = ctx.references[0];
-            p.ip_adapter_image = primary.file_path || primary.file_name || null;
-            p.ip_adapter_weight = primary.weight || 0.7;
-        }
-    }
-    return p;
-}
-
-function applyConsistencyToVoicePayload(payload, context, characterName) {
-    const p = { ...(payload || {}) };
-    const key = normalizeName(characterName || p.character_name);
-    const voice = context && context.voice && context.voice.by_character && context.voice.by_character[key];
-    if (!voice) return p;
-    if (voice.voice_id) p.voice_id = voice.voice_id;
-    if (voice.provider_model && !p.model) p.model = voice.provider_model;
-    if (voice.settings) {
-        if (voice.settings.language) p.language = voice.settings.language;
-        if (voice.settings.speed) p.speed = voice.settings.speed;
-        if (voice.settings.stability) p.stability = voice.settings.stability;
-        if (voice.settings.similarity_boost) p.similarity_boost = voice.settings.similarity_boost;
-    }
-    p.consistency_profile_id = voice.profile_id;
-    return p;
 }
 
 function statusForScore(score, thresholds) {

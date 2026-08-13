@@ -1,8 +1,8 @@
 # Phase 0 — Test Specification & Acceptance Criteria
 
-**Status:** Specification complete; suite written and RED. No implementation code written.
-**Under test:** `backend/lib/capability-payloads.js` (does not exist yet)
-**Executable suite:** `backend/tests/phase0-payload-parity.test.js` — 59 tests, currently 59 failing
+**Status:** Implemented and green.
+**Under test:** `backend/lib/capability-payloads.js`
+**Executable suite:** `backend/tests/phase0-payload-parity.test.js` — 60 tests, all passing
 **Completeness check:** `backend/tests/phase0-spec-coverage.test.js` — 11 tests, passing
 **Machine-readable matrix:** [`phase0-test-matrix.json`](./phase0-test-matrix.json)
 
@@ -92,13 +92,27 @@ Determinism: the fixture is a pure literal with no clock, no randomness, and no 
 
 ---
 
-## 6. Open decisions handed to implementation
+## 6. Decisions taken
 
-Per the standing instruction to take the reversible option and record it, these are the choices the implementer will face. Recommendations given; none is load-bearing enough to block.
+All three were resolved as recommended:
 
-1. **Which `post` sub-type does the orchestrated `post` step run?** Recommend `composite` (the existing full pipeline) as the default, overridable via node/step config. Reversible: it is a default, not a schema change.
-2. **Should `buildCapabilityPayload` return `{payload, meta}` or bare payload?** The suite assumes `{payload}`, matching the architecture manifest. Keep it — `meta` is where `providerId` and job-row fields will live in Phase 2.
-3. **Does `image` keep `callImageGen`'s defaults** (`model: 'sdxl'`, 1024×1024, 30 steps, guidance 7.5)? Recommend yes, moved into the builder verbatim, so the extraction is provably behavior-preserving.
+1. **Orchestrated `post` sub-type → `composite`.** `DEFAULT_POST_JOB_TYPE` in `capability-payloads.js`, overridable via `ctx.overrides.job_type`. An unconfigured run keeps doing what it did.
+2. **`buildCapabilityPayload` returns `{payload, meta}`.** `meta` carries capability, cardinality, count, and the project/scene/shot ids — the seam Phase 2's node handlers will use for job rows and `providerId`.
+3. **`image` keeps `callImageGen`'s defaults verbatim** (`sdxl`, 1024×1024, 30 steps, guidance 7.5), moved into `IMAGE_DEFAULTS`, so the extraction is behaviour-preserving rather than a retune.
+
+### A fourth decision the implementation forced
+
+**Precondition failures skip; they do not fail.** The orchestrator calls generators but never persists their output, so on an orchestrated run there is never a video asset for `lipsync` or `post` to consume. Hard-failing there cost three retries with exponential backoff on a condition no retry can change, and broke the pipeline end-to-end test.
+
+The builder still throws (AC6 is unchanged and still passes) — but the error is tagged `code: 'PRECONDITION'`, and `executeStep` turns that specific tag into a recorded skip with a reason. Layering the decision at the orchestrator rather than the builder keeps "missing prerequisite" and "broken context" distinguishable, which is what AC6 was drawing a line between in the first place.
+
+That the orchestrator discards generation results is a real gap, and a larger one than Phase 0. Phase 2's node handlers own persistence.
+
+### One test corrected
+
+`voice.AC4` originally asserted that a voice payload carries the locked **seed or image references** — the same shape as `image` and `video`. That is factually wrong: `applyConsistencyToVoicePayload` reads `context.voice.by_character`, because identity for speech is a voice id and its settings, not a seed. Satisfying the original assertion would have meant sending an image reference to a TTS provider.
+
+It was replaced with two cases pinning the real contract — exact propagation of `voice_id`, `consistency_profile_id`, `language`, `speed` and `similarity_boost`, plus a negative case proving another character's locked profile does **not** leak onto this payload. Both are strictly stronger than the substring OR-match they replaced. Test count went 59 → 60.
 
 ---
 
@@ -106,19 +120,15 @@ Per the standing instruction to take the reversible option and record it, these 
 
 ```
 $ node --test backend/tests/phase0-payload-parity.test.js
-# tests 59
-# pass 0
-# fail 59
+# tests 60
+# pass 60
+# fail 0
 ```
 
-All 59 fail: 56 because `lib/capability-payloads.js` does not exist, and **3 because the defects are still live** —
+Both original defects are closed, plus the third found while writing the spec:
 
-```
-global.stub-payload-gone   → routes/pipeline.js still constructs the four-key stub payload inline
-global.storyboard-...      → routes/storyboard.js still hard-codes fetch(GRIDLIGHT_URL + "/image")
-global.no-inline-payloads  → routes still building provider payloads inline: lipsync.js
-```
+- `routes/pipeline.js` builds through `buildCapabilityPayload`; the four-key stub is gone.
+- `routes/storyboard.js` resolves `image` through the provider registry on **both** the sync and streaming paths, so `provider_config.image` is finally honoured.
+- `routes/lipsync.js` no longer assembles its payload inline.
 
-Those three are genuine reproductions of the reported defects, not artifacts of the missing module.
-
-**Definition of done for the next step:** all 59 green, with no change to this file or to `phase0-test-matrix.json` other than recording the §6 decisions actually taken.
+One module was needed that the plan did not foresee: `backend/lib/consistency-apply.js`. `consistency-context.js` requires `db/database` at module scope, so applying an already-built consistency context forced a database import on any caller that only wanted to shape a payload. The pure functions moved out and are re-exported, so there is still one definition and every existing import is unchanged.

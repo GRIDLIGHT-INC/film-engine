@@ -17,6 +17,10 @@ const { db, generateId } = require('../db/database');
 const { buildStoryboardPrompt, applyStyleLock } = require('../lib/storyboard-prompt');
 const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
 const { buildShotReferencePayload, applyConsistencyToImagePayload, recordConsistencyCheck, auditProjectReadiness } = require('../lib/consistency-context');
+const { resolveGenerator } = require('../lib/providers');
+const { endpointFor: gridlightEndpointFor } = require('../lib/providers/gridlight-adapter');
+const { extractMediaUrl, resolveMediaUrl } = require('../lib/provider-media');
+const { imageRequestPayload, providerConfigOf } = require('../lib/capability-payloads');
 
 const os = require('os');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -60,79 +64,68 @@ function resolveImageUrl(imageUrl) {
 }
 
 /**
- * Call the ImageGen API to generate an image (non-streaming).
- * Returns a Buffer of the image data (PNG).
- * API returns JSON with url field; image is fetched from GET /images/{filename}.
+ * Turn a provider's image response into PNG bytes.
+ *
+ * Adapters answer either with a Buffer (binary body) or with parsed JSON naming
+ * a URL. provider-media already knows both shapes and how to resolve a bare
+ * filename against the gateway's serving directory, so this is a thin adapter
+ * from "generation result" to "the Buffer this route writes to disk".
  */
-async function callImageGen(prompt, negativePrompt, seed, options) {
-    const opts = options || {};
-    const payload = {
-        prompt,
-        negative_prompt: negativePrompt,
-        model: opts.model || 'sdxl',
-        width: opts.width || 1024,
-        height: opts.height || 1024,
-        steps: opts.steps || 30,
-        guidance_scale: opts.guidance_scale || 7.5,
-        seed: seed || null,
-        stream: false,
-    };
+async function imageResultToBuffer(data) {
+    if (Buffer.isBuffer(data)) return data;
 
-    // Include IP-Adapter fields if provided
-    if (opts.ip_adapter_image) {
-        payload.ip_adapter_image = opts.ip_adapter_image;
-        payload.ip_adapter_weight = opts.ip_adapter_weight || 0.7;
-    }
-    if (Array.isArray(opts.reference_images) && opts.reference_images.length > 0) {
-        payload.reference_images = opts.reference_images;
-    }
-    if (Array.isArray(opts.input_refs) && opts.input_refs.length > 0) {
-        payload.input_refs = opts.input_refs;
+    const imageUrl = extractMediaUrl(data);
+    if (!imageUrl) {
+        throw new Error('image provider returned neither image bytes nor an image URL');
     }
 
-    const headers = { 'Content-Type': 'application/json' };
-    if (GRIDLIGHT_API_KEY) {
+    const fetchUrl = resolveMediaUrl(imageUrl, 'images');
+    const headers = {};
+    // Only forward our credential to the gateway itself, never to a CDN a
+    // provider might point us at.
+    if (GRIDLIGHT_API_KEY && fetchUrl.startsWith(GRIDLIGHT_URL)) {
         headers['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
     }
 
-    const response = await fetch(`${GRIDLIGHT_URL}/image`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
+    const imgRes = await fetch(fetchUrl, { headers });
+    if (!imgRes.ok) {
+        throw new Error(`Failed to fetch generated image: ${imgRes.status}`);
+    }
+    return Buffer.from(await imgRes.arrayBuffer());
+}
+
+/**
+ * Generate a storyboard image. Returns a Buffer of PNG data.
+ *
+ * This used to POST straight to `${GRIDLIGHT_URL}/image`, which meant a project
+ * whose provider_config selected Runway or OpenAI for `image` still had every
+ * storyboard rendered by Gridlight — the provider layer was bypassed on the one
+ * path users meet first. It now resolves the image capability like every other
+ * generation route, and the request body is built by capability-payloads so the
+ * route and the orchestrator cannot describe an image differently.
+ *
+ * @param {object} [projectConfig] - parsed film_projects.provider_config
+ */
+async function callImageGen(prompt, negativePrompt, seed, options, projectConfig) {
+    const requestBody = imageRequestPayload({
+        ...(options || {}),
+        prompt,
+        negative_prompt: negativePrompt,
+        seed: seed || null,
     });
 
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`ImageGen error ${response.status}: ${errText}`);
+    const provider = resolveGenerator('image', projectConfig || {});
+    const result = await provider.generate('image', requestBody, { timeout: 300000 });
+
+    if (!result || !result.ok) {
+        const detail = (result && result.error) || 'unknown error';
+        const err = new Error(`ImageGen error: ${detail}`);
+        err.status = result && result.status;
+        err.providerId = provider.id;
+        throw err;
     }
 
-    const contentType = response.headers.get('content-type') || '';
-
-    // API returns JSON with image_url field (singular string)
-    if (contentType.includes('application/json')) {
-        const data = await response.json();
-        const imageUrl = data.image_url || data.url || (data.image_urls && data.image_urls[0]) || data.filename;
-        if (!imageUrl) {
-            throw new Error('ImageGen returned JSON but no image_url field');
-        }
-        // Resolve to a fetchable URL
-        let fetchUrl;
-        if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-            fetchUrl = imageUrl;
-        } else if (imageUrl.startsWith('/')) {
-            fetchUrl = `${GRIDLIGHT_URL}${imageUrl}`;
-        } else {
-            fetchUrl = `${GRIDLIGHT_URL}/images/${imageUrl}`;
-        }
-        const imgRes = await fetch(fetchUrl);
-        if (!imgRes.ok) {
-            throw new Error(`Failed to fetch generated image: ${imgRes.status}`);
-        }
-        return Buffer.from(await imgRes.arrayBuffer());
-    }
-
-    // Legacy: raw binary response
-    return Buffer.from(await response.arrayBuffer());
+    return imageResultToBuffer(result.data);
 }
 
 /**
@@ -140,29 +133,25 @@ async function callImageGen(prompt, negativePrompt, seed, options) {
  * Returns { buffer, metadata } where buffer is the PNG image data.
  * Calls onProgress callback with progress events during generation.
  */
-async function callImageGenStream(prompt, negativePrompt, seed, options, onProgress) {
-    const opts = options || {};
-    const payload = {
+async function callImageGenStream(prompt, negativePrompt, seed, options, onProgress, projectConfig) {
+    const payload = imageRequestPayload({
+        ...(options || {}),
         prompt,
         negative_prompt: negativePrompt,
-        model: opts.model || 'sdxl',
-        width: opts.width || 1024,
-        height: opts.height || 1024,
-        steps: opts.steps || 30,
-        guidance_scale: opts.guidance_scale || 7.5,
         seed: seed || null,
-        stream: true,
-    };
+    });
+    payload.stream = true;
 
-    if (opts.ip_adapter_image) {
-        payload.ip_adapter_image = opts.ip_adapter_image;
-        payload.ip_adapter_weight = opts.ip_adapter_weight || 0.7;
-    }
-    if (Array.isArray(opts.reference_images) && opts.reference_images.length > 0) {
-        payload.reference_images = opts.reference_images;
-    }
-    if (Array.isArray(opts.input_refs) && opts.input_refs.length > 0) {
-        payload.input_refs = opts.input_refs;
+    const provider = resolveGenerator('image', projectConfig || {});
+
+    // The progress-SSE contract parsed below is Gridlight's. Any other provider
+    // generates non-streaming and reports a single completed step — the point
+    // being that selecting Runway or OpenAI for `image` must actually reach
+    // them, where before this whole function posted to Gridlight regardless.
+    if (provider.id !== 'gridlight') {
+        const buffer = await callImageGen(prompt, negativePrompt, seed, options, projectConfig);
+        if (onProgress) onProgress({ type: 'progress', step: 1, total_steps: 1 });
+        return { buffer, metadata: { provider: provider.id, seed: payload.seed } };
     }
 
     const headers = { 'Content-Type': 'application/json' };
@@ -170,7 +159,9 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
         headers['Authorization'] = `Bearer ${GRIDLIGHT_API_KEY}`;
     }
 
-    const response = await fetch(`${GRIDLIGHT_URL}/image`, {
+    // Endpoint comes from the adapter's own capability map rather than being
+    // spelled out here, so there is one definition of where `image` lives.
+    const response = await fetch(`${GRIDLIGHT_URL}${gridlightEndpointFor('image')}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -591,7 +582,7 @@ async function generateStoryboard(req, res, projectId, query) {
                 ip_adapter_image: styleParams.ip_adapter_image,
                 ip_adapter_weight: styleParams.ip_adapter_weight,
             }, consistencyContext);
-            const imageBuffer = await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload);
+            const imageBuffer = await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
 
             // Save image to disk
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
@@ -796,7 +787,8 @@ async function generateStoryboardStream(req, res, projectId, query) {
                         scene_number: shot.scene_number,
                         ...progressData,
                     });
-                }
+                },
+                providerConfigOf(project)
             );
 
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
@@ -951,7 +943,7 @@ async function regenerateShot(req, res, shotId) {
             ip_adapter_image: primaryRef && (primaryRef.file_path || primaryRef.file_name),
             ip_adapter_weight: primaryRef && primaryRef.weight,
         }, consistencyContext);
-        const imageBuffer = await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload);
+        const imageBuffer = await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         fs.writeFileSync(imgPath, imageBuffer);
