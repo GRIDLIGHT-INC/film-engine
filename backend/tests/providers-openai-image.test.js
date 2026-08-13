@@ -8,7 +8,24 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
+
+// Point at a throwaway database BEFORE requiring db/database, which resolves its
+// path at import time. Without this the suite opened whatever database happened
+// to live at the default location and failed with "no such table:
+// film_provider_credentials" on any machine where the server had never been run
+// — a test depending on ambient state rather than on the code under test.
+process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
+    || path.join(os.tmpdir(), 'film-engine-openai-' + crypto.randomUUID().slice(0, 8));
+
 const { db } = require('../db/database');
+const { ensureSchema } = require('../db/schema');
+
+// Apply the real migrations rather than hand-rolling the table: a local CREATE
+// TABLE silently drifts from 044_provider_layer.sql (which has updated_at NOT
+// NULL), so the suite would keep passing against a schema production does not have.
+ensureSchema();
+
 const { adapter, buildImageRequest } = require('../lib/providers/openai-image');
 
 describe('openai-image: buildImageRequest (pure)', () => {
@@ -95,6 +112,7 @@ describe('openai-image adapter (mock server)', () => {
         server.close();
         delete process.env.OPENAI_BASE_URL;
         delete process.env.OPENAI_API_KEY;
+        try { fs.rmSync(process.env.FILM_DATA_DIR, { recursive: true, force: true }); } catch (_) {}
     });
 
     beforeEach(() => { mode = 'ok'; });
