@@ -21,7 +21,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (039 migrations)
+│   │   └── migrations/     # SQL migration files (51 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -55,7 +55,14 @@ film-engine/
 │   │   ├── credits.js          # Credits + title cards (Phase 18)
 │   │   ├── marketing.js        # Marketing assets (Phase 18)
 │   │   ├── budget.js           # Budget & cost tracking (Phase 18)
-│   │   └── backups.js          # Auto-backup system (Phase 18)
+│   │   ├── backups.js          # Auto-backup system (Phase 18)
+│   │   ├── providers.js        # Provider registry, credentials, OAuth connect
+│   │   ├── consistency.js      # Consistency profiles, locking, readiness audit
+│   │   ├── takes.js            # Takes & selects (circle-take workflow)
+│   │   ├── timeline.js         # Timeline assembly + reordering
+│   │   ├── jobs.js             # Unified job queue view across pipelines
+│   │   ├── budget-estimate.js  # Pre-flight cost estimation
+│   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
 │   │   ├── fountain-renderer.js   # Fountain → HTML renderer
@@ -77,6 +84,16 @@ film-engine/
 │   │   ├── qa-checker.js         # QA checks, continuity, acceptance rubric
 │   │   ├── scheduling-engine.js  # Smart scheduling & GPU model residency
 │   │   ├── project-bundle.js    # Project export/import (.tar.gz bundles)
+│   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
+│   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
+│   │   ├── consistency-context.js # Locked profiles → reference payloads
+│   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
+│   │   ├── llm-client.js         # Shared LLM call helper
+│   │   ├── budget-estimator.js   # Pre-flight cost estimation
+│   │   ├── prompt-diff.js        # Prompt/parameter diffing for A/B compare
+│   │   ├── provenance.js         # Provenance sidecar manifests
+│   │   ├── timeline.js           # Timeline assembly logic
+│   │   ├── docx-text.js          # DOCX → plain text extraction
 │   │   ├── project-presets.js   # Aspect ratios, resolutions, delivery presets (Phase 15)
 │   │   ├── subtitle-generator.js # SRT/VTT generation, parsing, conversion (Phase 17)
 │   │   ├── audio-deliverables.js # 5.1 spec, M&E, stems, validation (Phase 17)
@@ -99,6 +116,35 @@ film-engine/
 │       ├── project-presets.test.js  # Project presets unit tests (Phase 15)
 │       ├── subtitle-generator.test.js # Subtitle format tests (Phase 17)
 │       ├── backup.test.js           # Backup export/import tests (Phase 18)
+│       ├── phase0-payload-parity.test.js  # One payload path per capability (60 tests)
+│       ├── phase0-spec-coverage.test.js   # Phase 0 test-matrix completeness
+│       ├── flows-node-taxonomy.test.js    # Flows canvas node palette coverage
+│       ├── flows-canvas-plan.test.js      # Flows canvas plan/manifest conformance
+│       ├── gateway-credential-scope.test.js # Gateway key never leaves the gateway
+│       ├── asset-path-containment.test.js # DB file_name cannot escape project dir
+│       ├── test-isolation.test.js        # No test may open the real database
+│       ├── docs-drift.test.js            # CLAUDE.md matches the tree on disk
+│       ├── providers.test.js             # Provider registry + resolution
+│       ├── providers-api.test.js         # Provider settings/credentials API
+│       ├── providers-runway.test.js      # Runway adapter (mock server)
+│       ├── providers-openai-image.test.js # OpenAI image adapter (mock server)
+│       ├── providers-elevenlabs.test.js  # ElevenLabs adapter (mock server)
+│       ├── consistency-context.test.js   # Consistency context assembly
+│       ├── consistency-routes.test.js    # Consistency profiles API
+│       ├── consistency-verify.test.js    # Consistency verification
+│       ├── pipeline-e2e.test.js          # Pipeline end-to-end (mock gateway)
+│       ├── pipeline-readiness.test.js    # Pipeline consistency readiness gate
+│       ├── video-gen.test.js             # Video generation integration
+│       ├── music-gen.test.js             # Music generation integration
+│       ├── threed.test.js                # 3D integration (mock Gridlight)
+│       ├── threed-prompt.test.js         # 3D payload builders
+│       ├── timeline.test.js              # Timeline assembly
+│       ├── editorial-routes.test.js      # Editorial routes
+│       ├── ops-compliance.test.js        # Ops/compliance jobs + provenance
+│       ├── budget-estimator.test.js      # Cost estimation
+│       ├── prompt-diff.test.js           # Prompt/parameter diffing
+│       ├── fountain-parser.test.js       # Fountain parser
+│       ├── docx-text.test.js             # DOCX text extraction
 │       ├── integration.test.js       # Integration test suite (43 tests)
 │       └── helpers.js                # Test utilities
 ├── docs/
@@ -241,6 +287,21 @@ Ambient is a **loop, not a full render**: `buildAmbientPrompt` asks for a bed of
 
 No licensed-catalog *source* adapter ships today, so `stock` has no provider at all — nothing writes `film_assets.license_source = 'licensed_catalog'`, which the music-rights routes are built around. The `source` (search/license) contract and the OAuth/MCP connect flow both remain wired for the next provider that needs them.
 
+### Capability Payloads (one construction path)
+`lib/capability-payloads.js` builds the provider payload for every orchestrated capability, so the per-domain routes, the pipeline orchestrator, and (later) the flow canvas cannot describe the same generation differently. `buildCapabilityPayload(capability, ctx)` takes a **context, not an id**, and returns `{payload, meta}`; `loadShotContext(shotId)` does the DB reading separately and lazy-requires the database, so payload construction stays testable without I/O.
+
+Three asymmetries are deliberate and must not be flattened:
+- **Cardinality** — `voice` and `sfx` are one-context-to-many and return **arrays** (one payload per dialogue line / per cue). A single-object return silently drops everything after the first.
+- **Scope** — `music` and `ambient` are scene-scoped and build with **no shot** in context.
+- **Sub-types** — `post` has four (`upscale`, `face_restore`, `color_grade`, `composite`); the orchestrated step defaults to `composite`.
+
+Missing prerequisites throw with `err.code = 'PRECONDITION'`; the orchestrator converts that tag into a recorded **skip** rather than burning three retries on a condition no retry can change. Note the orchestrator does not yet persist generation results, so `lipsync` and `post` preconditions cannot be met mid-run — asset persistence is Phase 2 node-handler work.
+
+### Gateway Credential Scope
+`provider-media.isGatewayUrl(url)` decides whether a fetch may carry `Authorization: Bearer GRIDLIGHT_API_KEY`. It compares **parsed origins**, never string prefixes: with a gateway of `https://gw.example`, all of `https://gw.example@evil.tld/`, `https://gw.example.evil.tld/` and `https://gw.example-evil.tld/` pass a `startsWith` test while resolving to hosts the operator does not control. Since the URL comes from a provider's response, a prefix check turns any malicious provider into gateway-key exfiltration.
+
+Related: `file-storage.getFilePath()` enforces that a DB-sourced `file_name` cannot resolve outside its project directory, and **throws** rather than silently correcting. `POST /projects/:id/assets` accepts `file_name` unsanitised, and several paths base64 whatever they read into a generation payload, so containment lives at the one function all callers route through.
+
 ### Lip-Sync
 Combines raw video with dialogue audio to produce lip-synced video. Requires both `video_raw` and `audio_dialogue` assets. Output stored as `data/video/{project_id}/{shot_code}_synced.mp4`.
 
@@ -284,7 +345,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (39 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (51 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -349,7 +410,7 @@ All 164 planned tasks (FILM-001 to FILM-164) are complete — backend and fronte
 | 11 | FILM-065–069 | Desktop App Integration | Complete (web SPA) |
 | 12 | FILM-070–072 | Shot Pipeline Orchestrator | Complete |
 | 13 | FILM-073–075 | QA & Quality Gates | Complete |
-| 14 | FILM-076–081 | Testing & Documentation | Complete (315 tests + ADRs + guide) |
+| 14 | FILM-076–081 | Testing & Documentation | Complete (897 tests + ADRs + guide) |
 | Screenplay | FILM-094–131 | Screenplay Editor & Writing Tools | Complete |
 | Extra | — | Project Bundle Export/Import | Complete |
 | 15 | FILM-132–139 | Project Settings & Delivery Formats | Complete |
