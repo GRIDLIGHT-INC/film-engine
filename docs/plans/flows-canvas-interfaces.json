@@ -1,0 +1,266 @@
+{
+  "$comment": "Machine-readable half of docs/plans/flows-canvas-implementation-plan.md. Conformance is enforced by backend/tests/flows-canvas-plan.test.js: every taxonomy node must have exactly one binding whose port contract matches, every 'existing'/'modified' path must be on disk, every 'new' path must be free, and migrations must be numbered above db/migrations/.",
+  "version": 1,
+
+  "phases": [
+    {
+      "id": 0,
+      "name": "Shared payload builders",
+      "goal": "One payload construction path for every capability, used by both the per-domain routes and the orchestrator. Fixes the stub-payload bypass at routes/pipeline.js:122 and the hard-coded ImageGen fetch at routes/storyboard.js:97.",
+      "exit_criterion": "For every capability, routes/pipeline.js and the matching per-domain route produce a byte-identical payload for the same shot, asserted by a set-based test iterating STEP_CAPABILITY. No route constructs a provider payload inline.",
+      "reversible": true
+    },
+    {
+      "id": 1,
+      "name": "Graph as data",
+      "goal": "Flows, nodes, and edges become rows. The current 9-step pipeline is seeded as a built-in read-only flow.",
+      "exit_criterion": "buildStepPlan() output for the seeded built-in flow is deep-equal to the output derived from PIPELINE_STEPS, proving the DB graph reproduces the constant exactly.",
+      "reversible": true
+    },
+    {
+      "id": 2,
+      "name": "Typed-port executor",
+      "goal": "executeNode(node, inputs, ctx) replaces executeStep(). Edges carry typed values instead of implying a DB re-read.",
+      "exit_criterion": "Every one of the 23 taxonomy nodes resolves to a registered handler at runtime, and port-type validation rejects an incompatible edge server-side.",
+      "reversible": true
+    },
+    {
+      "id": 3,
+      "name": "Fan-out and select",
+      "goal": "One node produces N branches; downstream nodes run once per branch; a select node collapses back to one.",
+      "exit_criterion": "A flow with a fanout(n=3) feeding a generator produces 3 node-runs sharing a branch key, and the budget guard refuses the run when projected cost exceeds the project limit.",
+      "reversible": true
+    },
+    {
+      "id": 4,
+      "name": "Canvas UI",
+      "goal": "A hand-rolled SVG canvas on a new 'flows' sidebar page, painting live node status off the existing SSE stream.",
+      "exit_criterion": "A flow can be authored, saved, run, and watched entirely from the SPA, with no new build step and index.html still deployable as a single file.",
+      "reversible": true
+    },
+    {
+      "id": 5,
+      "name": "Built-in templates",
+      "goal": "Ship the flows Artlist ships, expressed in Film Engine's domain.",
+      "exit_criterion": "Every declared template instantiates into a graph that passes validateGraph() with zero errors.",
+      "reversible": true
+    }
+  ],
+
+  "modules": [
+    {
+      "path": "backend/lib/capability-payloads.js",
+      "status": "new",
+      "phase": 0,
+      "exports": ["buildCapabilityPayload", "CAPABILITY_BUILDERS", "loadShotContext", "persistCapabilityResult"],
+      "contract": "buildCapabilityPayload(capability, ctx) -> { payload, meta }. ctx = { project, scene, shot, sceneCard, overrides }. Dispatches to the existing pure prompt builders and then applies consistency context. Pure apart from the DB reads inside loadShotContext(), so it is unit-testable without a server.",
+      "rationale": "The six generation routes each repeat load-context -> build-payload -> apply-consistency -> resolveGenerator().generate() -> persistProviderMedia(). Extracting stages 2-3 is the smallest change that both fixes the orchestrator bypass and gives the node executor something to call. Doing it in phase 0 means phases 1-5 add no new payload logic."
+    },
+    {
+      "path": "backend/lib/flow-graph.js",
+      "status": "new",
+      "phase": 1,
+      "exports": ["validateGraph", "detectCycles", "topoSort", "nextNodes", "portsCompatible", "graphFingerprint"],
+      "contract": "Pure graph algebra over { nodes: [{id, type, config, x, y}], edges: [{from, fromPort, to, toPort}] }. validateGraph -> { ok, errors: [{code, nodeId?, edgeId?, message}] }. nextNodes(graph, completedIds, skipIds) mirrors pipeline-engine.getNextSteps() so the two can be diffed during phase 1.",
+      "rationale": "Kept free of DB and HTTP for the same reason pipeline-engine.js is: it is the piece most worth unit-testing exhaustively, and cycle detection is the correctness risk that user-authored graphs introduce and the hard-coded DAG never had."
+    },
+    {
+      "path": "backend/lib/flow-seed.js",
+      "status": "new",
+      "phase": 1,
+      "exports": ["seedBuiltinFlows", "BUILTIN_FLOW_IDS", "pipelineStepsAsGraph"],
+      "contract": "seedBuiltinFlows(db) is idempotent; called from server.js after ensureSchema(). pipelineStepsAsGraph() converts PIPELINE_STEPS into { nodes, edges } so the seed is derived from the constant, not transcribed from it.",
+      "rationale": "Deriving rather than transcribing is what makes the phase-1 exit criterion meaningful: if PIPELINE_STEPS changes, the seed changes with it and the equivalence test still holds."
+    },
+    {
+      "path": "backend/lib/flow-executor.js",
+      "status": "new",
+      "phase": 2,
+      "exports": ["runFlow", "runFlowStream", "executeNode", "resolveNodeInputs", "cancelFlowRun"],
+      "contract": "executeNode(node, inputs, ctx) -> { ok, outputs: {port: {type, value}}, error?, providerId? }. resolveNodeInputs(graph, nodeId, outputsSoFar) gathers upstream port values. runFlow walks nextNodes() until the frontier is empty, persisting each node-run.",
+      "rationale": "This is the generalization of routes/pipeline.js:executeStep(). Keeping it in lib/ rather than routes/ mirrors how pipeline-engine.js is split from routes/pipeline.js, and lets a flow be run from a route, a batch job, or a test with no HTTP."
+    },
+    {
+      "path": "backend/lib/node-handlers/index.js",
+      "status": "new",
+      "phase": 2,
+      "exports": ["register", "get", "list", "handlerFor"],
+      "contract": "Auto-loads every sibling .js file and registers each module's exported handlers by node id, exactly like lib/providers/index.js:_autoload(). handlerFor(nodeType) -> { execute(node, inputs, ctx), inputs, outputs, capability? }.",
+      "rationale": "Reusing the provider registry's filename-autoload pattern means adding a node type is one new file and never an edit to a central switch — the same property that keeps provider work conflict-free."
+    },
+    {
+      "path": "backend/lib/node-handlers/input.js",
+      "status": "new",
+      "phase": 2,
+      "exports": ["handlers"],
+      "contract": "Source nodes: in.prompt (literal + {{interpolation}} from upstream text), in.asset (film_assets lookup), in.subject (consistency profile -> subject port), in.scene (scene_card_yaml -> text + subject), in.stock (provider.search/.license; disabled while no source adapter is registered).",
+      "rationale": "Grouped by kind rather than one file per node because these five share context loading and none of them call a generator."
+    },
+    {
+      "path": "backend/lib/node-handlers/generate.js",
+      "status": "new",
+      "phase": 2,
+      "exports": ["handlers"],
+      "contract": "One generic execute() serving all ten gen.* nodes: reads node.capability, calls buildCapabilityPayload(), then resolveGenerator(capability, projectConfig).generate(), then persistCapabilityResult(). Per-node config (model, seed, provider override) rides on node.config.",
+      "rationale": "The capability is data, so ten node types need one implementation — the same insight that already makes routes/pipeline.js:executeStep() four lines long. A per-node provider override is what delivers Flows' 'multi-model' headline with no new provider work."
+    },
+    {
+      "path": "backend/lib/node-handlers/transform.js",
+      "status": "new",
+      "phase": 2,
+      "exports": ["handlers"],
+      "contract": "tf.mix -> lib/audio-mixer.buildMixPayload/calculateDucking; tf.stitch -> lib/video-stitcher.planClips/buildStitchPayload; tf.encode -> the post capability with an encode profile.",
+      "rationale": "These three already exist as pure functions with unit tests, so the handler is an adapter, not an implementation."
+    },
+    {
+      "path": "backend/lib/node-handlers/control.js",
+      "status": "new",
+      "phase": 3,
+      "exports": ["handlers"],
+      "contract": "tf.fanout emits N branch contexts from one input (varying seed, prompt, or provider) and is the only handler allowed to widen the frontier; tf.select is a human gate that parks the run in 'paused' until a branch is chosen.",
+      "rationale": "Isolated in its own file because these are the only two handlers the executor treats specially — everything else is one-in-one-out, and mixing branch semantics into generate.js would make the common path pay for the rare one."
+    },
+    {
+      "path": "backend/lib/node-handlers/output.js",
+      "status": "new",
+      "phase": 2,
+      "exports": ["handlers"],
+      "contract": "out.asset registers the value in film_assets via lib/file-storage + provider-media; out.assembly hands off to routes/nle-export; out.timeline emits FCPXML/EDL/Premiere XML.",
+      "rationale": "out.asset is the load-bearing one: without it canvas output becomes a side channel that the QA checker, budget ledger, and NLE export cannot see."
+    },
+    {
+      "path": "backend/lib/flow-templates.js",
+      "status": "new",
+      "phase": 5,
+      "exports": ["TEMPLATES", "instantiate", "listTemplates"],
+      "contract": "instantiate(templateId, { projectId, sceneId?, shotId? }) -> { nodes, edges } ready for POST /film/projects/:id/flows. Templates are data, validated by validateGraph() at load.",
+      "rationale": "Templates as data rather than seeded rows keeps them versioned with the code and lets validateGraph() police them in CI instead of at first use."
+    },
+    {
+      "path": "backend/routes/flows.js",
+      "status": "new",
+      "phase": 1,
+      "exports": ["handleFlows"],
+      "contract": "handleFlows(req, res, parts, query) — matches the handleX(req, res, parts, query) signature every other route module in server.js uses.",
+      "rationale": "Follows ADR-002: one exported handler, dispatched from server.js by parts[1], no framework."
+    },
+    {
+      "path": "backend/routes/pipeline.js",
+      "status": "modified",
+      "phase": 0,
+      "exports": ["handlePipeline"],
+      "contract": "executeStep() stops constructing { shot_id, scene_id, project_id, step } inline and calls buildCapabilityPayload(capability, ctx) instead. In phase 2 it delegates to flow-executor for the seeded built-in flow.",
+      "rationale": "This is the defect: routes/storyboard.js:581 builds a real prompt while routes/pipeline.js:122 ships a four-key stub to the same endpoint, so every orchestrated run silently generates from an empty prompt."
+    },
+    {
+      "path": "backend/routes/storyboard.js",
+      "status": "modified",
+      "phase": 0,
+      "exports": ["handleStoryboard"],
+      "contract": "callImageGen() is replaced by resolveGenerator('image', projectConfig).generate('image', payload); payload construction moves to capability-payloads.js.",
+      "rationale": "Second defect: routes/storyboard.js:97 calls fetch(GRIDLIGHT_URL + '/image') directly, so a project whose provider_config sets image=runway or image=openai still gets Gridlight for every storyboard. The provider layer is bypassed entirely on the one path users see first."
+    },
+    {
+      "path": "backend/server.js",
+      "status": "modified",
+      "phase": 1,
+      "exports": [],
+      "contract": "require handleFlows; dispatch parts[1] === 'flows' | 'flow-runs' | 'flow-templates'; call seedBuiltinFlows(db) after ensureSchema().",
+      "rationale": "Same require-and-dispatch pattern as the other 33 route modules; no new abstraction."
+    },
+    {
+      "path": "src/index.html",
+      "status": "modified",
+      "phase": 4,
+      "exports": ["renderFlowsPage", "FlowCanvas"],
+      "contract": "New nav-item data-page=\"flows\" wired through navigateTo(); FlowCanvas is a self-contained SVG editor (pan/zoom, drag nodes, bezier edges between typed ports, marquee select, delete) painting node status from the run SSE stream.",
+      "rationale": "Hand-rolled SVG rather than React Flow because gridlight.json pins build.target=single-html and the SPA has no bundler; the required interaction set is small enough that a dependency would cost more than it saves."
+    },
+
+    { "path": "backend/lib/pipeline-engine.js", "status": "existing", "phase": 1, "exports": ["PIPELINE_STEPS", "getNextSteps", "buildStepPlan", "autoSkipSteps"], "contract": "Read-only source of truth for the built-in flow seed; not deleted, so the legacy pipeline keeps working through phase 5.", "rationale": "Deleting the constant before the canvas is proven would make phase 1 irreversible for no gain." },
+    { "path": "backend/lib/providers/index.js", "status": "existing", "phase": 2, "exports": ["resolve", "resolveGenerator", "resolveId", "list"], "contract": "Unchanged. Node handlers pass node.config.provider as a per-node override layered over the project config.", "rationale": "Per-node model choice needs no provider-layer change — only a different config object at the call site." },
+    { "path": "backend/lib/providers/base.js", "status": "existing", "phase": 2, "exports": ["CAPABILITIES", "isCapability"], "contract": "Unchanged. The node palette is validated against CAPABILITIES rather than duplicating it.", "rationale": "Single source of truth for what the engine can generate." },
+    { "path": "backend/lib/storyboard-prompt.js", "status": "existing", "phase": 0, "exports": ["buildStoryboardPrompt", "applyStyleLock"], "contract": "Called by CAPABILITY_BUILDERS.image.", "rationale": "Already pure and unit-tested." },
+    { "path": "backend/lib/video-prompt.js", "status": "existing", "phase": 0, "exports": ["buildVideoPayload"], "contract": "Called by CAPABILITY_BUILDERS.video.", "rationale": "Already pure and unit-tested." },
+    { "path": "backend/lib/dialogue-builder.js", "status": "existing", "phase": 0, "exports": ["extractDialogue", "buildVoicePayload", "dialogueFilename"], "contract": "Called by CAPABILITY_BUILDERS.voice.", "rationale": "Already pure and unit-tested." },
+    { "path": "backend/lib/music-prompt.js", "status": "existing", "phase": 0, "exports": ["buildMusicPrompt", "buildSFXPrompts", "buildAmbientPrompt"], "contract": "Called by CAPABILITY_BUILDERS.music / .sfx / .ambient. buildAmbientPrompt keeps emitting bed_duration_s so tf.mix can tile the loop.", "rationale": "Three capabilities share one module; the builder table makes that explicit instead of implicit." },
+    { "path": "backend/lib/viseme-builder.js", "status": "existing", "phase": 0, "exports": ["buildVisemeTrack", "buildVisemePayload", "mergeVisemesWithAudio"], "contract": "Called by CAPABILITY_BUILDERS.lipsync.", "rationale": "Already pure and unit-tested." },
+    { "path": "backend/lib/threed-prompt.js", "status": "existing", "phase": 0, "exports": ["buildTextToMeshPayload", "buildImageToMeshPayload"], "contract": "Called by CAPABILITY_BUILDERS.model3d.", "rationale": "Already pure; brings the one capability the legacy pipeline never covered into the same builder table." },
+    { "path": "backend/lib/audio-mixer.js", "status": "existing", "phase": 2, "exports": ["buildMixPayload", "calculateDucking", "buildStemExport", "generateSRT"], "contract": "Backs tf.mix.", "rationale": "Pure; drops into a handler unchanged." },
+    { "path": "backend/lib/video-stitcher.js", "status": "existing", "phase": 2, "exports": ["needsStitching", "planClips", "buildStitchPayload", "calculateTransitions"], "contract": "Backs tf.stitch.", "rationale": "Pure; drops into a handler unchanged." },
+    { "path": "backend/lib/nle-export.js", "status": "existing", "phase": 2, "exports": ["buildFCPXML", "buildEDL", "buildPremiereXML"], "contract": "Backs out.assembly and out.timeline.", "rationale": "Pure; drops into a handler unchanged." },
+    { "path": "backend/lib/consistency-context.js", "status": "existing", "phase": 0, "exports": ["buildShotReferencePayload", "applyConsistencyToImagePayload", "applyConsistencyToVoicePayload", "recordConsistencyCheck"], "contract": "Applied inside buildCapabilityPayload() so every path — route, orchestrator, canvas node — gets identity references, and backs the in.subject node's subject port.", "rationale": "Today consistency is applied per-route, which is exactly why the orchestrator lost it. Centralizing it in the builder is what makes in.subject a real typed port rather than a label." },
+    { "path": "backend/lib/provider-media.js", "status": "existing", "phase": 2, "exports": ["persistProviderMedia", "extractMediaUrl", "resolveMediaUrl"], "contract": "Backs persistCapabilityResult() and out.asset.", "rationale": "Already normalizes buffer-vs-URL provider responses; node handlers must not re-solve that." },
+    { "path": "backend/lib/file-storage.js", "status": "existing", "phase": 2, "exports": ["saveFile", "getFileUrl", "getFilePath", "ensureDir", "serveFile"], "contract": "Unchanged; used by out.asset.", "rationale": "Existing storage convention keeps canvas output on the same paths as pipeline output." }
+  ],
+
+  "migrations": [
+    {
+      "file": "054_flow_graphs.sql",
+      "phase": 1,
+      "tables": ["film_flows", "film_flow_nodes", "film_flow_edges"],
+      "sketch": "film_flows(id TEXT PK, project_id TEXT NULL REFERENCES film_projects ON DELETE CASCADE, name, description, is_builtin INTEGER DEFAULT 0, version INTEGER DEFAULT 1, created_at, updated_at). project_id is NULLABLE so a flow can be library-scoped and reused across projects — the 'save it once, reuse it everywhere' claim. film_flow_nodes(id, flow_id, node_type, label, config TEXT DEFAULT '{}', position_x REAL, position_y REAL). film_flow_edges(id, flow_id, from_node, from_port, to_node, to_port, UNIQUE(flow_id, to_node, to_port)).",
+      "rationale": "The UNIQUE on (flow_id, to_node, to_port) makes fan-IN to a single port impossible at the schema level, so the executor never has to decide which of two competing values wins. Node position lives on the row, following NeonCore's WorkflowStep."
+    },
+    {
+      "file": "055_flow_runs.sql",
+      "phase": 2,
+      "tables": ["film_flow_runs", "film_flow_node_runs"],
+      "sketch": "film_flow_runs(id, flow_id, project_id, graph_snapshot TEXT, status CHECK IN ('pending','running','paused','complete','failed','cancelled'), progress_pct, started_at, completed_at, error_message). film_flow_node_runs(id, run_id, node_id, status, provider_id, outputs TEXT DEFAULT '{}', error, routing_note, started_at, completed_at).",
+      "rationale": "graph_snapshot is the reproducibility fix: render_ledger can point at an immutable copy of the graph as run, so editing a flow later cannot silently invalidate 'recreate this exactly'. routing_note is borrowed verbatim from NeonCore — a provider fallback is not an error and must not paint the node red."
+    },
+    {
+      "file": "056_flow_branches.sql",
+      "phase": 3,
+      "tables": ["film_flow_branches"],
+      "sketch": "film_flow_branches(id, run_id, parent_branch_id NULL, origin_node_id, branch_key, variant_config TEXT, selected INTEGER DEFAULT 0) plus film_flow_node_runs.branch_id.",
+      "rationale": "Branches are rows rather than an in-memory fan-out so a paused tf.select survives a restart, and so the budget ledger can attribute cost per branch before the user picks one."
+    }
+  ],
+
+  "routes": [
+    { "method": "GET",    "path": "/film/projects/:id/flows",              "module": "backend/routes/flows.js", "phase": 1, "desc": "List flows visible to a project (project-scoped + library)" },
+    { "method": "POST",   "path": "/film/projects/:id/flows",              "module": "backend/routes/flows.js", "phase": 1, "desc": "Create a flow from { name, nodes, edges }" },
+    { "method": "GET",    "path": "/film/flows/:id",                       "module": "backend/routes/flows.js", "phase": 1, "desc": "Read one flow with its nodes and edges" },
+    { "method": "PUT",    "path": "/film/flows/:id",                       "module": "backend/routes/flows.js", "phase": 1, "desc": "Replace the graph; bumps version; rejected for is_builtin flows" },
+    { "method": "DELETE", "path": "/film/flows/:id",                       "module": "backend/routes/flows.js", "phase": 1, "desc": "Delete a flow; rejected for is_builtin flows" },
+    { "method": "POST",   "path": "/film/flows/:id/validate",              "module": "backend/routes/flows.js", "phase": 1, "desc": "validateGraph() without running — cycles, port mismatches, orphans" },
+    { "method": "POST",   "path": "/film/flows/:id/run",                   "module": "backend/routes/flows.js", "phase": 2, "desc": "Execute against { project_id, scene_id?, shot_id?, inputs }" },
+    { "method": "POST",   "path": "/film/flows/:id/run/stream",            "module": "backend/routes/flows.js", "phase": 2, "desc": "SSE variant; per-node start/complete/error events" },
+    { "method": "GET",    "path": "/film/flow-runs/:id",                   "module": "backend/routes/flows.js", "phase": 2, "desc": "Run status with per-node state" },
+    { "method": "POST",   "path": "/film/flow-runs/:id/cancel",            "module": "backend/routes/flows.js", "phase": 2, "desc": "The Stop Flow button" },
+    { "method": "GET",    "path": "/film/flow-runs/:id/branches",          "module": "backend/routes/flows.js", "phase": 3, "desc": "Variant branches produced by tf.fanout" },
+    { "method": "POST",   "path": "/film/flow-runs/:id/select",            "module": "backend/routes/flows.js", "phase": 3, "desc": "Resolve a paused tf.select by choosing a branch" },
+    { "method": "GET",    "path": "/film/flow-templates",                  "module": "backend/lib/flow-templates.js", "phase": 5, "desc": "List built-in templates" },
+    { "method": "POST",   "path": "/film/projects/:id/flows/from-template", "module": "backend/lib/flow-templates.js", "phase": 5, "desc": "Instantiate a template into a project flow" }
+  ],
+
+  "bindings": [
+    { "node": "in.prompt",   "handler": "backend/lib/node-handlers/input.js",     "capability": null,      "inputs": [],                                    "outputs": ["text"] },
+    { "node": "in.asset",    "handler": "backend/lib/node-handlers/input.js",     "capability": null,      "inputs": [],                                    "outputs": ["image", "video", "audio", "model3d"] },
+    { "node": "in.subject",  "handler": "backend/lib/node-handlers/input.js",     "capability": null,      "inputs": [],                                    "outputs": ["subject", "image"] },
+    { "node": "in.scene",    "handler": "backend/lib/node-handlers/input.js",     "capability": null,      "inputs": [],                                    "outputs": ["text", "subject"] },
+    { "node": "in.stock",    "handler": "backend/lib/node-handlers/input.js",     "capability": "stock",   "inputs": ["text"],                              "outputs": ["audio", "video", "image"] },
+
+    { "node": "gen.llm",     "handler": "backend/lib/node-handlers/generate.js",  "capability": "llm",     "inputs": ["text"],                              "outputs": ["text"] },
+    { "node": "gen.image",   "handler": "backend/lib/node-handlers/generate.js",  "capability": "image",   "inputs": ["text", "image", "subject"],          "outputs": ["image"] },
+    { "node": "gen.video",   "handler": "backend/lib/node-handlers/generate.js",  "capability": "video",   "inputs": ["text", "image", "subject"],          "outputs": ["video"] },
+    { "node": "gen.voice",   "handler": "backend/lib/node-handlers/generate.js",  "capability": "voice",   "inputs": ["text", "subject"],                   "outputs": ["audio"] },
+    { "node": "gen.music",   "handler": "backend/lib/node-handlers/generate.js",  "capability": "music",   "inputs": ["text"],                              "outputs": ["audio"] },
+    { "node": "gen.sfx",     "handler": "backend/lib/node-handlers/generate.js",  "capability": "sfx",     "inputs": ["text"],                              "outputs": ["audio"] },
+    { "node": "gen.ambient", "handler": "backend/lib/node-handlers/generate.js",  "capability": "ambient", "inputs": ["text"],                              "outputs": ["audio"] },
+    { "node": "gen.lipsync", "handler": "backend/lib/node-handlers/generate.js",  "capability": "lipsync", "inputs": ["video", "audio"],                    "outputs": ["video"] },
+    { "node": "gen.post",    "handler": "backend/lib/node-handlers/generate.js",  "capability": "post",    "inputs": ["video", "image"],                    "outputs": ["video", "image"] },
+    { "node": "gen.model3d", "handler": "backend/lib/node-handlers/generate.js",  "capability": "model3d", "inputs": ["text", "image", "subject"],          "outputs": ["model3d"] },
+
+    { "node": "tf.mix",      "handler": "backend/lib/node-handlers/transform.js", "capability": null,      "inputs": ["audio", "video"],                    "outputs": ["audio"] },
+    { "node": "tf.stitch",   "handler": "backend/lib/node-handlers/transform.js", "capability": null,      "inputs": ["video"],                             "outputs": ["video"] },
+    { "node": "tf.encode",   "handler": "backend/lib/node-handlers/transform.js", "capability": null,      "inputs": ["video"],                             "outputs": ["video"] },
+    { "node": "tf.fanout",   "handler": "backend/lib/node-handlers/control.js",   "capability": null,      "inputs": ["any"],                               "outputs": ["any"] },
+    { "node": "tf.select",   "handler": "backend/lib/node-handlers/control.js",   "capability": null,      "inputs": ["any"],                               "outputs": ["any"] },
+
+    { "node": "out.assembly", "handler": "backend/lib/node-handlers/output.js",   "capability": null,      "inputs": ["video", "audio"],                    "outputs": ["timeline"] },
+    { "node": "out.asset",    "handler": "backend/lib/node-handlers/output.js",   "capability": null,      "inputs": ["image", "video", "audio", "model3d"], "outputs": [] },
+    { "node": "out.timeline", "handler": "backend/lib/node-handlers/output.js",   "capability": null,      "inputs": ["timeline", "video"],                 "outputs": [] }
+  ]
+}

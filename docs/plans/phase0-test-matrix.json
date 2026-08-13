@@ -1,0 +1,227 @@
+{
+  "$comment": "Machine-readable half of docs/plans/phase0-acceptance-criteria.md. Completeness enforced by backend/tests/phase0-spec-coverage.test.js, which requires the matrix to be rectangular over the orchestrator's own STEP_CAPABILITY table. The executable suite is backend/tests/phase0-payload-parity.test.js; case ids match.",
+  "version": 1,
+  "phase": 0,
+  "under_test": "backend/lib/capability-payloads.js",
+
+  "acceptance_criteria": [
+    {
+      "id": "AC1",
+      "name": "Builder registration and provider dispatch",
+      "statement": "Every capability the orchestrator dispatches resolves to a registered builder, and the provider that runs is the one provider_config names.",
+      "failure_means": "A capability silently has no builder, or a project's provider choice is ignored — the two shapes the current defects take."
+    },
+    {
+      "id": "AC2",
+      "name": "Payload content",
+      "statement": "Every payload carries the capability's required content keys and is never the four-key {shot_id, scene_id, project_id, step} stub.",
+      "failure_means": "The generator is being asked to produce something from nothing; output is unrelated to the screenplay."
+    },
+    {
+      "id": "AC3",
+      "name": "Caller parity and determinism",
+      "statement": "The payload is identical whether the per-domain route or the orchestrator asks for it, and identical context yields identical payload.",
+      "failure_means": "Running a shot through the pipeline gives a different result than running it from its own page — the defect Phase 0 exists to remove."
+    },
+    {
+      "id": "AC4",
+      "name": "Consistency propagation",
+      "statement": "Locked seed, prompt/negative additions, and reference images reach the payload for every capability that supports them.",
+      "failure_means": "Character identity drifts between shots; the consistency system is applied on one path and dropped on the other."
+    },
+    {
+      "id": "AC5",
+      "name": "Cardinality and scope",
+      "statement": "One-to-many capabilities return arrays, one-to-one return a single object, and scene-scoped capabilities build with no shot present.",
+      "failure_means": "Dialogue lines or SFX cues are silently collapsed to one, or a scene-level cue demands a shot it should not need."
+    },
+    {
+      "id": "AC6",
+      "name": "Error paths and preconditions",
+      "statement": "Missing preconditions raise a diagnosable error; genuinely empty inputs yield zero payloads rather than one malformed payload.",
+      "failure_means": "Undefined URLs and empty prompts reach the provider, burning budget on a request that could never succeed."
+    }
+  ],
+
+  "capabilities": [
+    {
+      "capability": "image",
+      "step": "keyframe",
+      "scope": "shot",
+      "cardinality": "one",
+      "builder": "buildStoryboardPrompt + applyConsistencyToImagePayload",
+      "builder_module": "backend/lib/storyboard-prompt.js",
+      "required_keys": ["prompt", "negative_prompt"],
+      "preconditions": [],
+      "notes": "Also the site of defect 2: routes/storyboard.js:97 calls fetch(GRIDLIGHT_URL + '/image') with no provider resolution.",
+      "cases": [
+        { "id": "image.AC1", "ac": "AC1", "kind": "happy", "scenario": "The registry is asked for the image builder.", "inputs": "CAPABILITY_BUILDERS['image']", "expected": "A function is registered, and generation resolves through resolve('image', provider_config).", "failure_means": "Storyboards keep going to Gridlight regardless of the project's configured image provider." },
+        { "id": "image.AC2", "ac": "AC2", "kind": "happy", "scenario": "A fully populated shot with characters, location and style preset.", "inputs": "fixtureCtx()", "expected": "payload.prompt and payload.negative_prompt are non-empty strings; key set is not the four-key stub.", "failure_means": "The orchestrator is generating keyframes from an empty prompt." },
+        { "id": "image.AC3", "ac": "AC3", "kind": "happy", "scenario": "Compare the builder's prompt against buildStoryboardPrompt called directly with the same context.", "inputs": "fixtureCtx(); buildStoryboardPrompt(sceneCard, characters, location, style_preset)", "expected": "prompt and negative_prompt are strictly equal.", "failure_means": "The extraction changed prompt semantics; every existing storyboard becomes irreproducible." },
+        { "id": "image.AC4", "ac": "AC4", "kind": "happy", "scenario": "Context carries a locked seed, prompt additions and a face reference.", "inputs": "fixtureCtx({ consistency: { locked_seed: 424242, references: [face] } })", "expected": "The serialized payload contains the seed, the addition, or the reference.", "failure_means": "Faces drift across shots on the orchestrated path while holding on the route path." },
+        { "id": "image.AC5", "ac": "AC5", "kind": "happy", "scenario": "One shot is built.", "inputs": "fixtureCtx()", "expected": "A single payload object, not an array.", "failure_means": "Callers must branch on shape, and the job-row INSERT writes an array into a scalar column." },
+        { "id": "image.AC6", "ac": "AC6", "kind": "error", "scenario": "An empty context object is passed.", "inputs": "buildCapabilityPayload('image', {})", "expected": "Throws an Error with a message longer than a bare type error.", "failure_means": "undefined propagates to the provider and fails far from its cause." }
+      ]
+    },
+    {
+      "capability": "video",
+      "step": "video",
+      "scope": "shot",
+      "cardinality": "one",
+      "builder": "buildVideoPayload",
+      "builder_module": "backend/lib/video-prompt.js",
+      "required_keys": ["prompt", "negative_prompt", "model", "width", "height", "num_frames", "fps", "camera_control"],
+      "preconditions": ["keyframe asset optional — supplies init_image when present"],
+      "cases": [
+        { "id": "video.AC1", "ac": "AC1", "kind": "happy", "scenario": "The registry is asked for the video builder.", "inputs": "CAPABILITY_BUILDERS['video']", "expected": "A function is registered; generation resolves through resolve('video', provider_config), so a Runway-configured project reaches Runway.", "failure_means": "Per-project provider selection is decorative for video." },
+        { "id": "video.AC2", "ac": "AC2", "kind": "happy", "scenario": "A shot with camera movement and lighting in its scene card.", "inputs": "fixtureCtx()", "expected": "All eight required keys present; camera_control is an object, not a string.", "failure_means": "film_video_jobs rows are written with null model/fps/frames and the render ledger cannot reproduce the clip." },
+        { "id": "video.AC3", "ac": "AC3", "kind": "happy", "scenario": "Compare against buildVideoPayload called directly with the same context.", "inputs": "fixtureCtx(); buildVideoPayload(sceneCard, characters, location, style_preset, {})", "expected": "prompt equal; camera_control.type equal.", "failure_means": "Orchestrated video differs from route-generated video for the same shot." },
+        { "id": "video.AC4", "ac": "AC4", "kind": "happy", "scenario": "Context carries reference images and input_refs.", "inputs": "fixtureCtx({ consistency: {...} })", "expected": "Payload carries the seed, references or input_refs.", "failure_means": "The character in the video is not the character in the keyframe." },
+        { "id": "video.AC5", "ac": "AC5", "kind": "happy", "scenario": "One shot is built.", "inputs": "fixtureCtx()", "expected": "A single payload object.", "failure_means": "Shape branching leaks into every caller." },
+        { "id": "video.AC6", "ac": "AC6", "kind": "error", "scenario": "An empty context object is passed.", "inputs": "buildCapabilityPayload('video', {})", "expected": "Throws a diagnosable Error.", "failure_means": "A malformed request reaches a paid video endpoint." }
+      ]
+    },
+    {
+      "capability": "voice",
+      "step": "voice",
+      "scope": "shot",
+      "cardinality": "many",
+      "builder": "buildVoicePayload + applyConsistencyToVoicePayload, per dialogue line",
+      "builder_module": "backend/lib/dialogue-builder.js",
+      "required_keys": ["text", "model", "language", "emotion", "output_format", "sample_rate"],
+      "preconditions": ["scene card contains a dialogue array"],
+      "notes": "The only shot-scoped capability whose cardinality is driven by scene-card content rather than by the shot itself.",
+      "cases": [
+        { "id": "voice.AC1", "ac": "AC1", "kind": "happy", "scenario": "The registry is asked for the voice builder.", "inputs": "CAPABILITY_BUILDERS['voice']", "expected": "A function is registered; generation resolves through resolve('voice', provider_config) so an ElevenLabs project reaches ElevenLabs.", "failure_means": "Voice provider choice silently ignored." },
+        { "id": "voice.AC2", "ac": "AC2", "kind": "happy", "scenario": "A shot with one dialogue line and a matched voice profile.", "inputs": "fixtureCtx()", "expected": "Each payload carries text, model, language, emotion, output_format, sample_rate; text equals the line.", "failure_means": "The TTS request has no text — the clearest form of the stub-payload bug." },
+        { "id": "voice.AC3", "ac": "AC3", "kind": "happy", "scenario": "Build twice from identical context.", "inputs": "fixtureCtx() twice", "expected": "Deep-equal payload arrays.", "failure_means": "Non-determinism makes the render ledger meaningless for dialogue." },
+        { "id": "voice.AC4", "ac": "AC4", "kind": "happy", "scenario": "Context carries a voice consistency profile for the speaking character.", "inputs": "fixtureCtx({ consistency: {...} })", "expected": "Payload reflects the profile (voice_id, speaker embedding, or locked params).", "failure_means": "The same character is voiced differently shot to shot." },
+        { "id": "voice.AC5", "ac": "AC5", "kind": "happy", "scenario": "A shot whose scene card has two dialogue lines.", "inputs": "fixtureCtx() with a second line pushed", "expected": "An array of exactly 2 payloads; payload[1].text is the second line.", "failure_means": "Half the dialogue is never generated and the shot plays silent." },
+        { "id": "voice.AC6", "ac": "AC6", "kind": "error", "scenario": "A shot with an empty dialogue array.", "inputs": "sceneCard.dialogue = []", "expected": "Returns an empty array — zero payloads, no throw.", "failure_means": "A silent shot triggers a paid TTS call for an empty string." }
+      ]
+    },
+    {
+      "capability": "lipsync",
+      "step": "lipsync",
+      "scope": "shot",
+      "cardinality": "one",
+      "builder": "inline in routes/lipsync.js — to be extracted by Phase 0",
+      "builder_module": "inline",
+      "required_keys": ["video_url", "audio_url", "model", "quality", "output_format"],
+      "preconditions": ["a rendered video asset", "a dialogue audio asset"],
+      "notes": "Currently the only orchestrated capability with no lib builder at all; routes/lipsync.js:115 assembles the literal. Flagged by global.no-inline-payloads.",
+      "cases": [
+        { "id": "lipsync.AC1", "ac": "AC1", "kind": "happy", "scenario": "The registry is asked for the lipsync builder.", "inputs": "CAPABILITY_BUILDERS['lipsync']", "expected": "A function is registered — the inline literal has become a real builder.", "failure_means": "Phase 0 extracted seven of eight capabilities and left the eighth inline." },
+        { "id": "lipsync.AC2", "ac": "AC2", "kind": "happy", "scenario": "A shot with both a video and a dialogue audio asset.", "inputs": "fixtureCtx()", "expected": "video_url and audio_url resolve to the asset paths; model and quality defaulted.", "failure_means": "The lipsync service receives undefined URLs." },
+        { "id": "lipsync.AC3", "ac": "AC3", "kind": "happy", "scenario": "Build twice from identical context.", "inputs": "fixtureCtx() twice", "expected": "Deep-equal payloads.", "failure_means": "Non-deterministic asset selection between callers." },
+        { "id": "lipsync.AC4", "ac": "AC4", "kind": "happy", "scenario": "Context carries consistency data.", "inputs": "fixtureCtx({ consistency: {...} })", "expected": "Consistency is accepted without corrupting the payload; lipsync consumes assets, not prompts, so propagation is a no-op it must tolerate.", "failure_means": "Passing consistency context to an asset-driven capability throws." },
+        { "id": "lipsync.AC5", "ac": "AC5", "kind": "happy", "scenario": "One shot is built.", "inputs": "fixtureCtx()", "expected": "A single payload object.", "failure_means": "Shape mismatch against film_lipsync_jobs." },
+        { "id": "lipsync.AC6", "ac": "AC6", "kind": "error", "scenario": "The shot has no video asset, then separately no audio asset.", "inputs": "fixtureCtx({ videoAsset: null }); fixtureCtx({ audioAsset: null })", "expected": "Throws matching /video/i and /audio/i respectively.", "failure_means": "The 400 the route returns today becomes a malformed provider call on the orchestrated path." }
+      ]
+    },
+    {
+      "capability": "music",
+      "step": "music",
+      "scope": "scene",
+      "cardinality": "one",
+      "builder": "buildMusicPrompt",
+      "builder_module": "backend/lib/music-prompt.js",
+      "required_keys": ["prompt", "model", "duration_s"],
+      "preconditions": ["a music cue row, or cue fields supplied as overrides"],
+      "cases": [
+        { "id": "music.AC1", "ac": "AC1", "kind": "happy", "scenario": "The registry is asked for the music builder.", "inputs": "CAPABILITY_BUILDERS['music']", "expected": "A function is registered; resolve('music', provider_config) governs which service runs.", "failure_means": "Music provider choice ignored." },
+        { "id": "music.AC2", "ac": "AC2", "kind": "happy", "scenario": "A scene with a mood-bearing cue.", "inputs": "fixtureCtx() with musicCue", "expected": "prompt, model, duration_s present; prompt reflects mood.", "failure_means": "film_music_jobs stores a null prompt and duration." },
+        { "id": "music.AC3", "ac": "AC3", "kind": "happy", "scenario": "Build twice from identical context.", "inputs": "fixtureCtx() twice", "expected": "Deep-equal payloads.", "failure_means": "Cue selection differs between callers for the same scene." },
+        { "id": "music.AC4", "ac": "AC4", "kind": "happy", "scenario": "Context carries consistency data.", "inputs": "fixtureCtx({ consistency: {...} })", "expected": "Tolerated without corrupting the payload; music has no visual identity to lock.", "failure_means": "Uniform context handling is not actually uniform." },
+        { "id": "music.AC5", "ac": "AC5", "kind": "happy", "scenario": "Build with the shot deleted from context.", "inputs": "fixtureCtx() with shot and sceneCard removed", "expected": "A single payload with a prompt — scene context alone suffices.", "failure_means": "A scene-scoped cue cannot be generated without picking an arbitrary shot." },
+        { "id": "music.AC6", "ac": "AC6", "kind": "error", "scenario": "An empty context object is passed.", "inputs": "buildCapabilityPayload('music', {})", "expected": "Throws a diagnosable Error.", "failure_means": "A scene-less music request reaches the provider." }
+      ]
+    },
+    {
+      "capability": "sfx",
+      "step": "sfx",
+      "scope": "shot",
+      "cardinality": "many",
+      "builder": "buildSFXPrompts",
+      "builder_module": "backend/lib/music-prompt.js",
+      "required_keys": ["type", "prompt", "duration_s", "model", "category"],
+      "preconditions": ["scene card contains an sfx_cues array"],
+      "cases": [
+        { "id": "sfx.AC1", "ac": "AC1", "kind": "happy", "scenario": "The registry is asked for the sfx builder.", "inputs": "CAPABILITY_BUILDERS['sfx']", "expected": "A function is registered; resolve('sfx', provider_config) governs the service.", "failure_means": "SFX provider choice ignored." },
+        { "id": "sfx.AC2", "ac": "AC2", "kind": "happy", "scenario": "A shot whose scene card declares one cue.", "inputs": "fixtureCtx()", "expected": "One payload with type, prompt, duration_s, model, category.", "failure_means": "Cues are requested with no description." },
+        { "id": "sfx.AC3", "ac": "AC3", "kind": "happy", "scenario": "Build twice from identical context.", "inputs": "fixtureCtx() twice", "expected": "Deep-equal payload arrays.", "failure_means": "Cue ordering is unstable, so takes cannot be matched to cues." },
+        { "id": "sfx.AC4", "ac": "AC4", "kind": "happy", "scenario": "Context carries consistency data.", "inputs": "fixtureCtx({ consistency: {...} })", "expected": "Tolerated without corrupting the payloads.", "failure_means": "Uniform context handling is not uniform." },
+        { "id": "sfx.AC5", "ac": "AC5", "kind": "happy", "scenario": "A shot with cues present.", "inputs": "fixtureCtx()", "expected": "An array, one payload per cue.", "failure_means": "Multiple cues collapse into one sound." },
+        { "id": "sfx.AC6", "ac": "AC6", "kind": "error", "scenario": "A scene card with no sfx_cues key.", "inputs": "delete sceneCard.sfx_cues", "expected": "Returns an empty array — no throw, no payload.", "failure_means": "Every silent shot triggers a paid SFX generation." }
+      ]
+    },
+    {
+      "capability": "ambient",
+      "step": "ambient",
+      "scope": "scene",
+      "cardinality": "one",
+      "builder": "buildAmbientPrompt",
+      "builder_module": "backend/lib/music-prompt.js",
+      "required_keys": ["type", "prompt", "duration_s", "bed_duration_s", "loopable", "crossfade_s"],
+      "preconditions": [],
+      "notes": "Ambient is a loop, not a full render. duration_s is the loop; bed_duration_s is what it must cover. Losing that split is a silent regression the mixer cannot detect.",
+      "cases": [
+        { "id": "ambient.AC1", "ac": "AC1", "kind": "happy", "scenario": "The registry is asked for the ambient builder.", "inputs": "CAPABILITY_BUILDERS['ambient']", "expected": "A function is registered; resolve('ambient', provider_config) governs the service.", "failure_means": "Ambient provider choice ignored." },
+        { "id": "ambient.AC2", "ac": "AC2", "kind": "happy", "scenario": "A 45-second night interior scene.", "inputs": "fixtureCtx() with scene.estimated_duration = 45000", "expected": "All six required keys; prompt reflects location and time of day.", "failure_means": "The bed is generated with no description of the space." },
+        { "id": "ambient.AC3", "ac": "AC3", "kind": "happy", "scenario": "Inspect the loop/bed split for a 45s scene.", "inputs": "fixtureCtx()", "expected": "duration_s <= 30 (a loop), bed_duration_s === 45, loopable === true.", "failure_means": "The mixer plays the bed once and leaves the rest of the scene dry — the exact regression the loop design was added to prevent." },
+        { "id": "ambient.AC4", "ac": "AC4", "kind": "happy", "scenario": "Context carries consistency data.", "inputs": "fixtureCtx({ consistency: {...} })", "expected": "Tolerated without corrupting the payload.", "failure_means": "Uniform context handling is not uniform." },
+        { "id": "ambient.AC5", "ac": "AC5", "kind": "happy", "scenario": "Build with the shot deleted from context.", "inputs": "fixtureCtx() with shot and sceneCard removed", "expected": "A single payload with a prompt.", "failure_means": "A scene-level bed needs a shot it should not need." },
+        { "id": "ambient.AC6", "ac": "AC6", "kind": "error", "scenario": "An empty context object is passed.", "inputs": "buildCapabilityPayload('ambient', {})", "expected": "Throws a diagnosable Error.", "failure_means": "A bed is requested for no scene, with a default duration nobody chose." }
+      ]
+    },
+    {
+      "capability": "post",
+      "step": "post",
+      "scope": "shot",
+      "cardinality": "one",
+      "builder": "inline buildPostPayload in routes/post-production.js — to be extracted by Phase 0",
+      "builder_module": "inline",
+      "required_keys": ["input_url", "output_format"],
+      "preconditions": ["a rendered video asset"],
+      "notes": "The one capability with sub-types: upscale, face_restore, color_grade, composite. The orchestrator's single 'post' step must select one, and that selection is currently unspecified.",
+      "cases": [
+        { "id": "post.AC1", "ac": "AC1", "kind": "happy", "scenario": "The registry is asked for the post builder.", "inputs": "CAPABILITY_BUILDERS['post']", "expected": "A function is registered and accepts a job-type override; resolve('post', provider_config) governs the service.", "failure_means": "The four post sub-types remain reachable only from the route." },
+        { "id": "post.AC2", "ac": "AC2", "kind": "happy", "scenario": "A shot with a rendered video asset.", "inputs": "fixtureCtx()", "expected": "input_url resolves to the video asset path; output_format present.", "failure_means": "The post service is handed an undefined input URL." },
+        { "id": "post.AC3", "ac": "AC3", "kind": "happy", "scenario": "Build twice from identical context.", "inputs": "fixtureCtx() twice", "expected": "Deep-equal payloads, including the default job type.", "failure_means": "The orchestrated post step does something different each run." },
+        { "id": "post.AC4", "ac": "AC4", "kind": "happy", "scenario": "Context carries consistency data.", "inputs": "fixtureCtx({ consistency: {...} })", "expected": "Tolerated without corrupting the payload.", "failure_means": "Uniform context handling is not uniform." },
+        { "id": "post.AC5", "ac": "AC5", "kind": "happy", "scenario": "One shot is built.", "inputs": "fixtureCtx()", "expected": "A single payload object.", "failure_means": "Shape mismatch against film_post_jobs." },
+        { "id": "post.AC6", "ac": "AC6", "kind": "error", "scenario": "The shot has no source video.", "inputs": "fixtureCtx({ videoAsset: null })", "expected": "Throws matching /video/i.", "failure_means": "Post-production runs against nothing and reports success." }
+      ]
+    }
+  ],
+
+  "global_cases": [
+    {
+      "id": "global.stub-payload-gone",
+      "ac": "AC2",
+      "kind": "error",
+      "scenario": "Static inspection of routes/pipeline.js after Phase 0.",
+      "inputs": "Source of backend/routes/pipeline.js",
+      "expected": "No `const payload = { shot_id...` literal remains, and buildCapabilityPayload is referenced.",
+      "failure_means": "Defect 1 is still live: every orchestrated generation is made from four ids and no prompt."
+    },
+    {
+      "id": "global.storyboard-uses-provider-registry",
+      "ac": "AC1",
+      "kind": "error",
+      "scenario": "Static inspection of routes/storyboard.js after Phase 0.",
+      "inputs": "Source of backend/routes/storyboard.js",
+      "expected": "No fetch(`${GRIDLIGHT_URL}/image`) remains, and resolve('image', ...) is used.",
+      "failure_means": "Defect 2 is still live: provider_config.image is ignored on the most visible path in the product."
+    },
+    {
+      "id": "global.no-inline-payloads",
+      "ac": "AC3",
+      "kind": "error",
+      "scenario": "Scan every route that calls a provider for a payload literal containing a `stream:` key.",
+      "inputs": "All of backend/routes/*.js that reference resolveGenerator or .generate(",
+      "expected": "No offenders. Known offender at spec time: lipsync.js.",
+      "failure_means": "A second construction path survives, so parity between orchestrator and route is coincidental rather than structural."
+    }
+  ]
+}
