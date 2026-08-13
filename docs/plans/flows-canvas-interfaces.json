@@ -167,7 +167,7 @@
     },
     {
       "path": "backend/lib/flow-templates.js",
-      "status": "new",
+      "status": "existing",
       "phase": 5,
       "exports": [
         "TEMPLATES",
@@ -445,6 +445,19 @@
       ],
       "contract": "PORT(type, value) \u2014 the { type, value } envelope every edge carries.",
       "rationale": "Not in the plan. Built in one place rather than spelled out by each handler and eventually forgotten by one of them; the typing is the point of the graph."
+    },
+    {
+      "path": "backend/lib/flow-cost.js",
+      "status": "existing",
+      "phase": 3,
+      "exports": [
+        "COST_PER_CALL",
+        "projectedCost",
+        "branchMultipliers",
+        "budgetStatus"
+      ],
+      "contract": "projectedCost(graph) -> {total, calls, byCapability}; budgetStatus(db, projectId, projected) -> {limit, spent, projected, remaining, wouldExceed}. Fan-out multiplies along a path.",
+      "rationale": "Not in the plan, which named the budget guard as a phase-3 exit criterion without saying where the numbers come from. Split out so the projection is testable without an executor, and so the estimates are visibly estimates rather than buried in run logic."
     }
   ],
   "migrations": [
@@ -479,7 +492,7 @@
       ],
       "sketch": "film_flow_branches(id, run_id, parent_branch_id NULL, origin_node_id, branch_key, variant_config TEXT, selected INTEGER DEFAULT 0) plus film_flow_node_runs.branch_id.",
       "rationale": "Branches are rows rather than an in-memory fan-out so a paused tf.select survives a restart, and so the budget ledger can attribute cost per branch before the user picks one.",
-      "status": "planned"
+      "status": "shipped"
     }
   ],
   "routes": [
@@ -569,7 +582,7 @@
       "module": "backend/routes/flows.js",
       "phase": 3,
       "desc": "Variant branches produced by tf.fanout",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "method": "POST",
@@ -577,7 +590,7 @@
       "module": "backend/routes/flows.js",
       "phase": 3,
       "desc": "Resolve a paused tf.select by choosing a branch",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "method": "GET",
@@ -585,7 +598,7 @@
       "module": "backend/lib/flow-templates.js",
       "phase": 5,
       "desc": "List built-in templates",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "method": "POST",
@@ -593,7 +606,7 @@
       "module": "backend/lib/flow-templates.js",
       "phase": 5,
       "desc": "Instantiate a template into a project flow",
-      "status": "planned"
+      "status": "shipped"
     }
   ],
   "bindings": [

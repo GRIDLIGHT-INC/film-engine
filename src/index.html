@@ -4683,6 +4683,7 @@
                 <div style="display:flex;gap:8px;align-items:center;">
                     <select id="flowSelect" style="min-width:260px;" onchange="flowCanvasOpen(this.value)"></select>
                     <button class="btn btn-secondary" onclick="flowCanvasNew()">New flow</button>
+                    <button class="btn btn-secondary" onclick="flowCanvasFromTemplate()">From template</button>
                     <button class="btn btn-secondary" onclick="flowCanvasDuplicate()">Duplicate</button>
                     <button class="btn btn-secondary" onclick="flowCanvasSave()" id="flowSaveBtn">Save</button>
                     <button class="btn btn-primary" onclick="flowCanvasRun()" id="flowRunBtn">Run flow</button>
@@ -6972,6 +6973,9 @@
               </select>
               <label>Model override</label>
               <input value="${escapeHtml((n.config || {}).model || '')}" ${ro} oninput="flowNodeSetConfig('model',this.value)">` : ''}
+            ${n.type === 'tf.fanout' ? `<label>Variants</label>
+              <input type="number" min="1" max="24" value="${(n.config || {}).count || 1}" ${ro} oninput="flowNodeSetConfig('count', Number(this.value))">
+              <p class="text-sm text-muted">Each variant runs everything downstream once. Cost is projected before the run.</p>` : ''}
             ${n.type === 'out.asset' ? `<label>Asset type</label>
               <input value="${escapeHtml((n.config || {}).asset_type || '')}" ${ro} placeholder="keyframe" oninput="flowNodeSetConfig('asset_type',this.value)">` : ''}
             <p class="text-sm text-muted mt-8">in: ${(def.inputs || []).join(', ') || '—'}<br>out: ${(def.outputs || []).join(', ') || '—'}</p>`;
@@ -6992,6 +6996,31 @@
     }
 
     // ── Persistence + run ────────────────────────────────────────────────
+
+    /**
+     * Start from a ready-made flow. The shelf comes from the server so the UI
+     * never offers a template the executor cannot run.
+     */
+    async function flowCanvasFromTemplate() {
+        if (!state.currentProject) return;
+        try {
+            const { templates } = await api('/flow-templates');
+            const choice = prompt(
+                'Start from a template:\n\n' +
+                templates.map((t, i) => `${i + 1}. ${t.name} — ${t.description}`).join('\n') +
+                '\n\nEnter a number:'
+            );
+            const picked = templates[parseInt(choice, 10) - 1];
+            if (!picked) return;
+
+            const created = await api(`/projects/${state.currentProject.id}/flows/from-template`, {
+                method: 'POST', body: JSON.stringify({ template_id: picked.id }),
+            });
+            await loadFlowsPage();
+            await flowCanvasOpen(created.id);
+            setFlowStatus(`Created from "${picked.name}" — drop in your media and run.`);
+        } catch (err) { setFlowStatus('Template failed: ' + err.message); }
+    }
 
     async function flowCanvasNew() {
         if (!state.currentProject) return;
@@ -7049,18 +7078,55 @@
                 body: JSON.stringify({ project_id: state.currentProject.id }),
             });
             const run = await res.json();
+
+            // 402: the run would cost more than the project allows. Offer the
+            // override rather than dead-ending, since an estimate can be wrong
+            // — but make the user say so.
+            if (res.status === 402) {
+                const b = run.budget || {};
+                const proceed = confirm(
+                    `This run projects $${(b.projected || 0).toFixed(2)} across ${b.calls || 0} generation call(s).\n` +
+                    `$${(b.spent || 0).toFixed(2)} of the $${(b.limit || 0).toFixed(2)} budget is already spent.\n\n` +
+                    `Run it anyway?`
+                );
+                if (!proceed) {
+                    setFlowStatus('Run refused — over budget');
+                    document.getElementById('flowRunOutput').innerHTML =
+                        `<p class="text-danger">Over budget: projected $${(b.projected || 0).toFixed(2)}, ` +
+                        `$${(b.spent || 0).toFixed(2)} of $${(b.limit || 0).toFixed(2)} already spent.</p>`;
+                    return;
+                }
+                const retry = await fetch(API() + `/flows/${FLOW.flow.id}/run`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ project_id: state.currentProject.id, ignore_budget: true }),
+                });
+                const forced = await retry.json();
+                if (forced && forced.nodes) return flowPaintRun(forced);
+            }
+
             if (!run || !run.nodes) throw new Error(run && run.error ? run.error : `HTTP ${res.status}`);
-            (run.nodes || []).forEach(n => { FLOW.runNodeStatus[n.id] = n.skipped ? 'skipped' : (n.ok ? 'complete' : 'failed'); });
-            flowCanvasRender();
-            setFlowStatus(`Run ${run.status}`);
-            document.getElementById('flowRunOutput').innerHTML =
-                `<p><strong>${run.status}</strong> — run ${run.id}</p><ul>` +
-                (run.nodes || []).map(n => `<li>${escapeHtml(n.id)} (${escapeHtml(n.type)}) — ${n.ok ? (n.skipped ? 'skipped: ' + escapeHtml(n.message || '') : 'ok') : 'failed: ' + escapeHtml(n.error || '')}</li>`).join('') +
-                '</ul>';
+            flowPaintRun(run);
         } catch (err) {
             setFlowStatus('Run failed: ' + err.message);
             document.getElementById('flowRunOutput').innerHTML = `<p class="text-danger">${escapeHtml(err.message)}</p>`;
         }
+    }
+
+    /** Paint a finished run onto the canvas and the panel. */
+    function flowPaintRun(run) {
+        FLOW.runNodeStatus = {};
+        (run.nodes || []).forEach(n => { FLOW.runNodeStatus[n.id] = n.skipped ? 'skipped' : (n.ok ? 'complete' : 'failed'); });
+        flowCanvasRender();
+        setFlowStatus(`Run ${run.status}`);
+
+        const branches = [...new Set((run.nodes || []).map(n => n.branch).filter(Boolean))];
+        document.getElementById('flowRunOutput').innerHTML =
+            `<p><strong>${run.status}</strong> — run ${escapeHtml(run.id)}` +
+            (branches.length ? ` · ${branches.length} variant(s)` : '') + '</p><ul>' +
+            (run.nodes || []).map(n =>
+                `<li>${escapeHtml(n.id)}${n.branch ? ' [' + escapeHtml(n.branch) + ']' : ''} (${escapeHtml(n.type)}) — ` +
+                `${n.ok ? (n.skipped ? 'skipped: ' + escapeHtml(n.message || '') : 'ok') : 'failed: ' + escapeHtml(n.error || '')}</li>`
+            ).join('') + '</ul>';
     }
 
     // Canvas-level pointer handling: pan on background drag, move on node drag.

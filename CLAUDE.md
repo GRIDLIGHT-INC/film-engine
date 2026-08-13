@@ -21,7 +21,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (53 migrations)
+│   │   └── migrations/     # SQL migration files (54 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -85,6 +85,8 @@ film-engine/
 │   │   ├── qa-checker.js         # QA checks, continuity, acceptance rubric
 │   │   ├── scheduling-engine.js  # Smart scheduling & GPU model residency
 │   │   ├── project-bundle.js    # Project export/import (.tar.gz bundles)
+│   │   ├── flow-cost.js          # Projected cost + the budget gate (Phase 3)
+│   │   ├── flow-templates.js     # Six ready-made flows, validated at load (Phase 5)
 │   │   ├── flow-executor.js      # runFlow / executeNode / resolveNodeInputs (Phase 2)
 │   │   ├── node-handlers/        # Per-node execution, autoloaded by filename (Phase 2)
 │   │   │   ├── index.js          #   registry (mirrors lib/providers autoload)
@@ -129,6 +131,8 @@ film-engine/
 │       ├── project-presets.test.js  # Project presets unit tests (Phase 15)
 │       ├── subtitle-generator.test.js # Subtitle format tests (Phase 17)
 │       ├── backup.test.js           # Backup export/import tests (Phase 18)
+│       ├── flow-branches.test.js         # Fan-out, select gate, budget guard (Phase 3)
+│       ├── flow-templates.test.js        # Every template validates (Phase 5)
 │       ├── flow-executor.test.js         # Typed-port execution, all 23 handlers (Phase 2)
 │       ├── flow-graph.test.js            # Graph algebra + PIPELINE_STEPS lockstep (Phase 1)
 │       ├── flows-routes.test.js          # Flow CRUD against a real database (Phase 1)
@@ -303,6 +307,14 @@ Ambient is a **loop, not a full render**: `buildAmbientPrompt` asks for a bed of
 
 No licensed-catalog *source* adapter ships today, so `stock` has no provider at all — nothing writes `film_assets.license_source = 'licensed_catalog'`, which the music-rights routes are built around. The `source` (search/license) contract and the OAuth/MCP connect flow both remain wired for the next provider that needs them.
 
+### Variants & the Budget Guard (Phase 3)
+`tf.fanout` runs **once** and declares the branches its dependants run across, so no generator handler ever has to know it is being fanned — the executor replays everything downstream per branch key. Branches are rows (`film_flow_branches`), not in-memory state, so a paused gate survives a restart and cost can be attributed per variant. `tf.select` **pauses** the run when more than one branch reaches it; auto-selecting would make the gate decorative.
+
+**The budget guard runs before anything generates.** A fan-out of 4 across a 200-shot feature is 800 calls, and a ceiling you discover on the ledger afterwards is not a ceiling. `lib/flow-cost.js` projects cost per capability, multiplying (not adding) along nested fan-outs, and the run is refused with **HTTP 402** if projected + already-spent exceeds `film_projects.budget_total`. An unset budget is unlimited, never an accidental ceiling of zero. The refusal is overridable via `ignore_budget`, because a wrong estimate must not make the feature unusable — but the user has to say so.
+
+### Built-in Templates (Phase 5)
+Six ready-made flows — prompt→image, multi-model video, character sheet, shot→clip, dialogue→lip-sync, scene soundscape — as **data**, so they stay versioned with the code and `validateGraph()` polices them at module load rather than at first use by whoever picked the broken one. Multi-model video fans across three providers; character sheet fans across four views driven by the subject's consistency profile.
+
 ### Flows Canvas (Phase 4)
 A hand-rolled SVG canvas on the `flows` sidebar page — no graph library, because `gridlight.json` pins `build.target=single-html` and the SPA has no bundler, so a React-based canvas would mean adding a build system to ship one page.
 
@@ -386,7 +398,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (53 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (54 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status

@@ -18,6 +18,8 @@
 const { db, generateId } = require('../db/database');
 const { validateGraph, graphFingerprint } = require('../lib/flow-graph');
 const { runFlow, cancelFlowRun, getFlowRun } = require('../lib/flow-executor');
+const { projectedCost, budgetStatus } = require('../lib/flow-cost');
+const { listTemplates, instantiate } = require('../lib/flow-templates');
 const { loadShotContext } = require('../lib/capability-payloads');
 const { NODE_TYPES } = require('../lib/flow-node-types');
 
@@ -152,6 +154,32 @@ function listFlows(req, res, projectId) {
     });
 }
 
+/** Create a flow from a built-in template. */
+function createFromTemplate(req, res, projectId) {
+    const body = req.body || {};
+    const templateId = String(body.template_id || '');
+
+    let graph;
+    try {
+        graph = instantiate(templateId, { projectId, sceneId: body.scene_id, shotId: body.shot_id });
+    } catch (err) {
+        return json(res, 400, { error: err.message });
+    }
+
+    const result = validateGraph(graph);
+    if (!result.ok) return json(res, 500, { error: 'Template produced an invalid graph', errors: result.errors });
+
+    const flowId = generateId();
+    const meta = listTemplates().find(t => t.id === templateId) || { name: templateId, description: '' };
+    db.prepare(
+        `INSERT INTO film_flows (id, project_id, owner, name, description, is_builtin, version)
+         VALUES (?, ?, '', ?, ?, 0, 1)`
+    ).run(flowId, projectId, body.name || meta.name, meta.description);
+    writeGraph(flowId, graph);
+
+    return json(res, 201, loadGraph(flowId));
+}
+
 function createFlow(req, res, projectId) {
     const body = req.body || {};
     const name = String(body.name || '').trim();
@@ -273,8 +301,12 @@ async function runFlowRoute(req, res, flowId) {
         const run = await runFlow({ nodes: stored.nodes, edges: stored.edges }, ctx, {
             flowId,
             params: body,
+            ignoreBudget: !!body.ignore_budget,
         });
-        return json(res, run.status === 'failed' ? 422 : 200, run);
+        // A budget refusal is not a malformed request — 402 says "this would
+        // cost more than you allowed" and the canvas can offer the override.
+        const budgetRefused = (run.errors || []).some(e => e.code === 'BUDGET_EXCEEDED');
+        return json(res, budgetRefused ? 402 : (run.status === 'failed' ? 422 : 200), run);
     } catch (err) {
         return json(res, 500, { error: err.message });
     }
@@ -298,6 +330,60 @@ function getRun(req, res, runId) {
     });
 }
 
+/** Variants produced by a fan-out, for the canvas to show side by side. */
+function getBranches(req, res, runId) {
+    const run = db.prepare('SELECT id FROM film_flow_runs WHERE id = ?').get(runId);
+    if (!run) return json(res, 404, { error: 'Run not found' });
+
+    const branches = db.prepare(
+        'SELECT * FROM film_flow_branches WHERE run_id = ? ORDER BY branch_key'
+    ).all(runId);
+
+    const nodeRuns = db.prepare('SELECT * FROM film_flow_node_runs WHERE run_id = ?').all(runId);
+
+    return json(res, 200, {
+        branches: branches.map(b => ({
+            ...b,
+            selected: !!b.selected,
+            variant_config: (() => { try { return JSON.parse(b.variant_config || '{}'); } catch (_) { return {}; } })(),
+            nodes: nodeRuns.filter(n => n.branch_id === b.id).map(n => ({ node_id: n.node_id, status: n.status })),
+        })),
+    });
+}
+
+/**
+ * Resolve a paused select gate by choosing a branch.
+ *
+ * Records the choice; re-running the flow with the branch pinned is what
+ * actually carries it downstream, so the decision is data rather than a
+ * transient bit of executor state.
+ */
+function selectBranch(req, res, runId) {
+    const body = req.body || {};
+    const key = String(body.branch_key || '');
+    if (!key) return json(res, 400, { error: 'branch_key is required' });
+
+    const branch = db.prepare('SELECT * FROM film_flow_branches WHERE run_id = ? AND branch_key = ?').get(runId, key);
+    if (!branch) return json(res, 404, { error: 'Branch not found for this run' });
+
+    db.prepare('UPDATE film_flow_branches SET selected = 0 WHERE run_id = ?').run(runId);
+    db.prepare('UPDATE film_flow_branches SET selected = 1 WHERE id = ?').run(branch.id);
+
+    return json(res, 200, { run_id: runId, selected: key });
+}
+
+/** What a run would cost, and whether the budget allows it. Checked before running. */
+function estimateFlow(req, res, flowId) {
+    const stored = loadGraph(flowId);
+    if (!stored) return json(res, 404, { error: 'Flow not found' });
+
+    const projectId = (req.body && req.body.project_id) || stored.project_id || null;
+    const cost = projectedCost({ nodes: stored.nodes, edges: stored.edges });
+    const budget = projectId ? budgetStatus(db, projectId, cost.total) : { wouldExceed: false, limit: 0, spent: 0 };
+
+    return json(res, 200, { ...cost, budget });
+}
+
 function cancelRun(req, res, runId) {
     const run = getFlowRun(runId);
     if (!run) return json(res, 404, { error: 'Run not found' });
@@ -314,7 +400,13 @@ function handleFlows(req, res, urlParts, query) {
 
         if (!urlParts[4] && req.method === 'GET') return listFlows(req, res, projectId);
         if (!urlParts[4] && req.method === 'POST') return createFlow(req, res, projectId);
+        if (urlParts[4] === 'from-template' && req.method === 'POST') return createFromTemplate(req, res, projectId);
         return json(res, 405, { error: 'Method not allowed' });
+    }
+
+    // /film/flow-templates — the ready-made shelf.
+    if (urlParts[1] === 'flow-templates' && !urlParts[2] && req.method === 'GET') {
+        return json(res, 200, { templates: listTemplates() });
     }
 
     // /film/flows/node-types — the palette the canvas draws from. Served from
@@ -330,6 +422,7 @@ function handleFlows(req, res, urlParts, query) {
 
         if (urlParts[3] === 'validate' && req.method === 'POST') return validateFlow(req, res, flowId);
         if (urlParts[3] === 'run' && req.method === 'POST') return runFlowRoute(req, res, flowId);
+        if (urlParts[3] === 'estimate' && req.method === 'POST') return estimateFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'GET') return getFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'PUT') return updateFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'DELETE') return deleteFlow(req, res, flowId);
@@ -343,6 +436,8 @@ function handleFlows(req, res, urlParts, query) {
 
         if (!urlParts[3] && req.method === 'GET') return getRun(req, res, runId);
         if (urlParts[3] === 'cancel' && req.method === 'POST') return cancelRun(req, res, runId);
+        if (urlParts[3] === 'branches' && req.method === 'GET') return getBranches(req, res, runId);
+        if (urlParts[3] === 'select' && req.method === 'POST') return selectBranch(req, res, runId);
         return json(res, 405, { error: 'Method not allowed' });
     }
 
