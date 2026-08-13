@@ -1,0 +1,274 @@
+/**
+ * Phase 1: flow CRUD + validation.
+ *
+ * GET    /film/projects/:id/flows   — flows visible to a project (its own + library)
+ * POST   /film/projects/:id/flows   — create from { name, nodes, edges }
+ * GET    /film/flows/:id            — one flow with its nodes and edges
+ * PUT    /film/flows/:id            — replace the graph; bumps version
+ * DELETE /film/flows/:id            — delete
+ * POST   /film/flows/:id/validate   — validate without running
+ *
+ * Built-in flows are readable but never writable: the seeded shot pipeline is
+ * what proves the graph engine reproduces PIPELINE_STEPS, and that guarantee
+ * only holds while nothing can edit the row. The UI offers duplicate-to-edit.
+ *
+ * One handler export dispatched by parts[1], per ADR-002.
+ */
+
+const { db, generateId } = require('../db/database');
+const { validateGraph, graphFingerprint } = require('../lib/flow-graph');
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Built-in ids are readable slugs, not UUIDs, so flow ids accept both.
+const FLOW_ID_RE = /^[\w-]{1,64}$/;
+
+function json(res, status, data) {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+}
+
+// ── Row <-> graph ───────────────────────────────────────────────────────
+
+/**
+ * Node ids are namespaced per flow on disk (`<flowId>:<nodeId>`) so two flows
+ * can both contain a node called "video". The API speaks the short form, so the
+ * canvas never has to know about the prefix.
+ */
+const qualify = (flowId, nodeId) => `${flowId}:${nodeId}`;
+const unqualify = (flowId, rowId) => (rowId.startsWith(`${flowId}:`) ? rowId.slice(flowId.length + 1) : rowId);
+
+function loadGraph(flowId) {
+    const flow = db.prepare('SELECT * FROM film_flows WHERE id = ?').get(flowId);
+    if (!flow) return null;
+
+    const nodeRows = db.prepare('SELECT * FROM film_flow_nodes WHERE flow_id = ? ORDER BY created_at, id').all(flowId);
+    const edgeRows = db.prepare('SELECT * FROM film_flow_edges WHERE flow_id = ? ORDER BY created_at, id').all(flowId);
+
+    const nodes = nodeRows.map(r => {
+        let config = {};
+        try { config = JSON.parse(r.config || '{}'); } catch (_) { config = {}; }
+        return {
+            id: unqualify(flowId, r.id),
+            type: r.node_type,
+            label: r.label || '',
+            config,
+            x: r.position_x,
+            y: r.position_y,
+        };
+    });
+
+    const edges = edgeRows.map(r => ({
+        id: unqualify(flowId, r.id),
+        from: unqualify(flowId, r.from_node),
+        fromPort: r.from_port,
+        to: unqualify(flowId, r.to_node),
+        toPort: r.to_port,
+    }));
+
+    return {
+        id: flow.id,
+        project_id: flow.project_id,
+        owner: flow.owner || '',
+        name: flow.name,
+        description: flow.description || '',
+        is_builtin: !!flow.is_builtin,
+        version: flow.version,
+        created_at: flow.created_at,
+        updated_at: flow.updated_at,
+        nodes,
+        edges,
+        fingerprint: graphFingerprint({ nodes, edges }),
+    };
+}
+
+/** Replace a flow's topology. Caller validates first. */
+function writeGraph(flowId, graph) {
+    const write = db.transaction(() => {
+        db.prepare('DELETE FROM film_flow_edges WHERE flow_id = ?').run(flowId);
+        db.prepare('DELETE FROM film_flow_nodes WHERE flow_id = ?').run(flowId);
+
+        const insertNode = db.prepare(
+            `INSERT INTO film_flow_nodes (id, flow_id, node_type, label, config, position_x, position_y)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+        );
+        for (const n of graph.nodes) {
+            insertNode.run(
+                qualify(flowId, n.id), flowId, n.type, n.label || '',
+                JSON.stringify(n.config || {}),
+                Number(n.x) || 0, Number(n.y) || 0
+            );
+        }
+
+        const insertEdge = db.prepare(
+            `INSERT INTO film_flow_edges (id, flow_id, from_node, from_port, to_node, to_port)
+             VALUES (?, ?, ?, ?, ?, ?)`
+        );
+        for (const e of graph.edges) {
+            insertEdge.run(
+                qualify(flowId, e.id || `${e.from}.${e.fromPort}->${e.to}.${e.toPort}`),
+                flowId,
+                qualify(flowId, e.from), e.fromPort,
+                qualify(flowId, e.to), e.toPort
+            );
+        }
+    });
+    write();
+}
+
+/** Pull { nodes, edges } out of a request body, tolerating absent arrays. */
+function graphFromBody(body) {
+    return {
+        nodes: Array.isArray(body && body.nodes) ? body.nodes : [],
+        edges: Array.isArray(body && body.edges) ? body.edges : [],
+    };
+}
+
+// ── Handlers ────────────────────────────────────────────────────────────
+
+function listFlows(req, res, projectId) {
+    // A project sees its own flows plus every library flow (project_id IS NULL),
+    // which is what makes "save it once, reuse it everywhere" true.
+    const rows = db.prepare(
+        `SELECT id, project_id, owner, name, description, is_builtin, version, created_at, updated_at
+         FROM film_flows
+         WHERE project_id = ? OR project_id IS NULL
+         ORDER BY is_builtin DESC, updated_at DESC`
+    ).all(projectId);
+
+    const counts = db.prepare(
+        'SELECT flow_id, COUNT(*) AS n FROM film_flow_nodes GROUP BY flow_id'
+    ).all().reduce((acc, r) => { acc[r.flow_id] = r.n; return acc; }, {});
+
+    return json(res, 200, {
+        flows: rows.map(r => ({
+            ...r,
+            is_builtin: !!r.is_builtin,
+            scope: r.project_id ? 'project' : 'library',
+            node_count: counts[r.id] || 0,
+        })),
+    });
+}
+
+function createFlow(req, res, projectId) {
+    const body = req.body || {};
+    const name = String(body.name || '').trim();
+    if (!name) return json(res, 400, { error: 'name is required' });
+
+    const graph = graphFromBody(body);
+    const result = validateGraph(graph);
+    if (!result.ok) return json(res, 400, { error: 'Invalid flow graph', errors: result.errors });
+
+    const flowId = generateId();
+    db.prepare(
+        `INSERT INTO film_flows (id, project_id, owner, name, description, is_builtin, version)
+         VALUES (?, ?, ?, ?, ?, 0, 1)`
+    ).run(
+        flowId,
+        body.scope === 'library' ? null : projectId,
+        String(body.owner || ''),
+        name,
+        String(body.description || '')
+    );
+    writeGraph(flowId, graph);
+
+    return json(res, 201, loadGraph(flowId));
+}
+
+function getFlow(req, res, flowId) {
+    const flow = loadGraph(flowId);
+    if (!flow) return json(res, 404, { error: 'Flow not found' });
+    return json(res, 200, flow);
+}
+
+function updateFlow(req, res, flowId) {
+    const existing = db.prepare('SELECT * FROM film_flows WHERE id = ?').get(flowId);
+    if (!existing) return json(res, 404, { error: 'Flow not found' });
+    if (existing.is_builtin) {
+        return json(res, 409, {
+            error: 'Built-in flows cannot be edited. Duplicate it first.',
+            hint: 'POST /film/projects/:id/flows with this flow\'s nodes and edges',
+        });
+    }
+
+    const body = req.body || {};
+    const graph = graphFromBody(body);
+    const result = validateGraph(graph);
+    if (!result.ok) return json(res, 400, { error: 'Invalid flow graph', errors: result.errors });
+
+    db.prepare(
+        `UPDATE film_flows SET name = ?, description = ?, version = version + 1, updated_at = datetime('now')
+         WHERE id = ?`
+    ).run(
+        body.name !== undefined ? String(body.name) : existing.name,
+        body.description !== undefined ? String(body.description) : existing.description,
+        flowId
+    );
+    writeGraph(flowId, graph);
+
+    return json(res, 200, loadGraph(flowId));
+}
+
+function deleteFlow(req, res, flowId) {
+    const existing = db.prepare('SELECT * FROM film_flows WHERE id = ?').get(flowId);
+    if (!existing) return json(res, 404, { error: 'Flow not found' });
+    if (existing.is_builtin) return json(res, 409, { error: 'Built-in flows cannot be deleted' });
+
+    db.prepare('DELETE FROM film_flows WHERE id = ?').run(flowId);
+    return json(res, 200, { deleted: flowId });
+}
+
+/**
+ * Validate a graph without saving it. Takes the body's graph when present so the
+ * canvas can check work in progress, and falls back to the stored one.
+ */
+function validateFlow(req, res, flowId) {
+    const body = req.body || {};
+    let graph;
+
+    if (Array.isArray(body.nodes) || Array.isArray(body.edges)) {
+        graph = graphFromBody(body);
+    } else {
+        const stored = loadGraph(flowId);
+        if (!stored) return json(res, 404, { error: 'Flow not found' });
+        graph = { nodes: stored.nodes, edges: stored.edges };
+    }
+
+    const result = validateGraph(graph);
+    return json(res, 200, {
+        ok: result.ok,
+        errors: result.errors,
+        fingerprint: graphFingerprint(graph),
+        node_count: graph.nodes.length,
+        edge_count: graph.edges.length,
+    });
+}
+
+// ── Router ──────────────────────────────────────────────────────────────
+
+function handleFlows(req, res, urlParts, query) {
+    // /film/projects/:id/flows
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'flows') {
+        const projectId = urlParts[2];
+        if (!UUID_RE.test(projectId)) return json(res, 400, { error: 'Invalid project ID' });
+
+        if (!urlParts[4] && req.method === 'GET') return listFlows(req, res, projectId);
+        if (!urlParts[4] && req.method === 'POST') return createFlow(req, res, projectId);
+        return json(res, 405, { error: 'Method not allowed' });
+    }
+
+    // /film/flows/:id[/validate]
+    if (urlParts[1] === 'flows' && urlParts[2]) {
+        const flowId = urlParts[2];
+        if (!FLOW_ID_RE.test(flowId)) return json(res, 400, { error: 'Invalid flow ID' });
+
+        if (urlParts[3] === 'validate' && req.method === 'POST') return validateFlow(req, res, flowId);
+        if (!urlParts[3] && req.method === 'GET') return getFlow(req, res, flowId);
+        if (!urlParts[3] && req.method === 'PUT') return updateFlow(req, res, flowId);
+        if (!urlParts[3] && req.method === 'DELETE') return deleteFlow(req, res, flowId);
+        return json(res, 405, { error: 'Method not allowed' });
+    }
+
+    return json(res, 404, { error: 'Not found' });
+}
+
+module.exports = { handleFlows, loadGraph, writeGraph };

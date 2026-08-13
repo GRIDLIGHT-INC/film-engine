@@ -63,7 +63,7 @@
     },
     {
       "path": "backend/lib/flow-graph.js",
-      "status": "new",
+      "status": "existing",
       "phase": 1,
       "exports": [
         "validateGraph",
@@ -78,7 +78,7 @@
     },
     {
       "path": "backend/lib/flow-seed.js",
-      "status": "new",
+      "status": "existing",
       "phase": 1,
       "exports": [
         "seedBuiltinFlows",
@@ -179,7 +179,7 @@
     },
     {
       "path": "backend/routes/flows.js",
-      "status": "new",
+      "status": "existing",
       "phase": 1,
       "exports": [
         "handleFlows"
@@ -420,6 +420,21 @@
       ],
       "contract": "The pure payload-shaping half of consistency-context.js. consistency-context re-exports these, so there is one definition and every existing import keeps working.",
       "rationale": "Not foreseen by the plan. consistency-context requires db/database at module scope, so applying an already-built context forced a database import on any caller that only wanted to shape a payload \u2014 including capability-payloads.js, whose contract is to be callable without one. Splitting the pure functions out was the smallest change that made the Phase 0 interface honest."
+    },
+    {
+      "path": "backend/lib/flow-node-types.js",
+      "status": "existing",
+      "phase": 1,
+      "exports": [
+        "NODE_TYPES",
+        "PORT_TYPES",
+        "nodeType",
+        "portsCompatible",
+        "byKind",
+        "nodeTypeForStep"
+      ],
+      "contract": "Runtime node-type registry: ports, kind, capability, pipelineSteps and multiInputs per node type. flow-graph and (from Phase 2) the executor read it; tests assert it matches flows-canvas-node-taxonomy.json in both directions.",
+      "rationale": "Not foreseen by the plan, which assumed flow-graph would carry the node definitions. Splitting them out gives the canvas a palette source that is not coupled to graph algebra, and makes the registry-vs-taxonomy drift check a single clean assertion."
     }
   ],
   "migrations": [
@@ -432,7 +447,8 @@
         "film_flow_edges"
       ],
       "sketch": "film_flows(id TEXT PK, project_id TEXT NULL REFERENCES film_projects ON DELETE CASCADE, name, description, is_builtin INTEGER DEFAULT 0, version INTEGER DEFAULT 1, created_at, updated_at). project_id is NULLABLE so a flow can be library-scoped and reused across projects \u2014 the 'save it once, reuse it everywhere' claim. film_flow_nodes(id, flow_id, node_type, label, config TEXT DEFAULT '{}', position_x REAL, position_y REAL). film_flow_edges(id, flow_id, from_node, from_port, to_node, to_port, UNIQUE(flow_id, to_node, to_port)).",
-      "rationale": "The UNIQUE on (flow_id, to_node, to_port) makes fan-IN to a single port impossible at the schema level, so the executor never has to decide which of two competing values wins. Node position lives on the row, following NeonCore's WorkflowStep."
+      "rationale": "The UNIQUE on (flow_id, to_node, to_port) makes fan-IN to a single port impossible at the schema level, so the executor never has to decide which of two competing values wins. Node position lives on the row, following NeonCore's WorkflowStep.",
+      "status": "shipped"
     },
     {
       "file": "055_flow_runs.sql",
@@ -442,7 +458,8 @@
         "film_flow_node_runs"
       ],
       "sketch": "film_flow_runs(id, flow_id, project_id, graph_snapshot TEXT, status CHECK IN ('pending','running','paused','complete','failed','cancelled'), progress_pct, started_at, completed_at, error_message). film_flow_node_runs(id, run_id, node_id, status, provider_id, outputs TEXT DEFAULT '{}', error, routing_note, started_at, completed_at).",
-      "rationale": "graph_snapshot is the reproducibility fix: render_ledger can point at an immutable copy of the graph as run, so editing a flow later cannot silently invalidate 'recreate this exactly'. routing_note is borrowed verbatim from NeonCore \u2014 a provider fallback is not an error and must not paint the node red."
+      "rationale": "graph_snapshot is the reproducibility fix: render_ledger can point at an immutable copy of the graph as run, so editing a flow later cannot silently invalidate 'recreate this exactly'. routing_note is borrowed verbatim from NeonCore \u2014 a provider fallback is not an error and must not paint the node red.",
+      "status": "planned"
     },
     {
       "file": "056_flow_branches.sql",
@@ -451,7 +468,8 @@
         "film_flow_branches"
       ],
       "sketch": "film_flow_branches(id, run_id, parent_branch_id NULL, origin_node_id, branch_key, variant_config TEXT, selected INTEGER DEFAULT 0) plus film_flow_node_runs.branch_id.",
-      "rationale": "Branches are rows rather than an in-memory fan-out so a paused tf.select survives a restart, and so the budget ledger can attribute cost per branch before the user picks one."
+      "rationale": "Branches are rows rather than an in-memory fan-out so a paused tf.select survives a restart, and so the budget ledger can attribute cost per branch before the user picks one.",
+      "status": "planned"
     }
   ],
   "routes": [
@@ -460,98 +478,112 @@
       "path": "/film/projects/:id/flows",
       "module": "backend/routes/flows.js",
       "phase": 1,
-      "desc": "List flows visible to a project (project-scoped + library)"
+      "desc": "List flows visible to a project (project-scoped + library)",
+      "status": "shipped"
     },
     {
       "method": "POST",
       "path": "/film/projects/:id/flows",
       "module": "backend/routes/flows.js",
       "phase": 1,
-      "desc": "Create a flow from { name, nodes, edges }"
+      "desc": "Create a flow from { name, nodes, edges }",
+      "status": "shipped"
     },
     {
       "method": "GET",
       "path": "/film/flows/:id",
       "module": "backend/routes/flows.js",
       "phase": 1,
-      "desc": "Read one flow with its nodes and edges"
+      "desc": "Read one flow with its nodes and edges",
+      "status": "shipped"
     },
     {
       "method": "PUT",
       "path": "/film/flows/:id",
       "module": "backend/routes/flows.js",
       "phase": 1,
-      "desc": "Replace the graph; bumps version; rejected for is_builtin flows"
+      "desc": "Replace the graph; bumps version; rejected for is_builtin flows",
+      "status": "shipped"
     },
     {
       "method": "DELETE",
       "path": "/film/flows/:id",
       "module": "backend/routes/flows.js",
       "phase": 1,
-      "desc": "Delete a flow; rejected for is_builtin flows"
+      "desc": "Delete a flow; rejected for is_builtin flows",
+      "status": "shipped"
     },
     {
       "method": "POST",
       "path": "/film/flows/:id/validate",
       "module": "backend/routes/flows.js",
       "phase": 1,
-      "desc": "validateGraph() without running \u2014 cycles, port mismatches, orphans"
+      "desc": "validateGraph() without running \u2014 cycles, port mismatches, orphans",
+      "status": "shipped"
     },
     {
       "method": "POST",
       "path": "/film/flows/:id/run",
       "module": "backend/routes/flows.js",
       "phase": 2,
-      "desc": "Execute against { project_id, scene_id?, shot_id?, inputs }"
+      "desc": "Execute against { project_id, scene_id?, shot_id?, inputs }",
+      "status": "planned"
     },
     {
       "method": "POST",
       "path": "/film/flows/:id/run/stream",
       "module": "backend/routes/flows.js",
       "phase": 2,
-      "desc": "SSE variant; per-node start/complete/error events"
+      "desc": "SSE variant; per-node start/complete/error events",
+      "status": "planned"
     },
     {
       "method": "GET",
       "path": "/film/flow-runs/:id",
       "module": "backend/routes/flows.js",
       "phase": 2,
-      "desc": "Run status with per-node state"
+      "desc": "Run status with per-node state",
+      "status": "planned"
     },
     {
       "method": "POST",
       "path": "/film/flow-runs/:id/cancel",
       "module": "backend/routes/flows.js",
       "phase": 2,
-      "desc": "The Stop Flow button"
+      "desc": "The Stop Flow button",
+      "status": "planned"
     },
     {
       "method": "GET",
       "path": "/film/flow-runs/:id/branches",
       "module": "backend/routes/flows.js",
       "phase": 3,
-      "desc": "Variant branches produced by tf.fanout"
+      "desc": "Variant branches produced by tf.fanout",
+      "status": "planned"
     },
     {
       "method": "POST",
       "path": "/film/flow-runs/:id/select",
       "module": "backend/routes/flows.js",
       "phase": 3,
-      "desc": "Resolve a paused tf.select by choosing a branch"
+      "desc": "Resolve a paused tf.select by choosing a branch",
+      "status": "planned"
     },
     {
       "method": "GET",
       "path": "/film/flow-templates",
       "module": "backend/lib/flow-templates.js",
       "phase": 5,
-      "desc": "List built-in templates"
+      "desc": "List built-in templates",
+      "status": "planned"
     },
     {
       "method": "POST",
       "path": "/film/projects/:id/flows/from-template",
       "module": "backend/lib/flow-templates.js",
       "phase": 5,
-      "desc": "Instantiate a template into a project flow"
+      "desc": "Instantiate a template into a project flow",
+      "status": "planned"
     }
   ],
   "bindings": [
