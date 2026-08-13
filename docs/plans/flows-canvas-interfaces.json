@@ -90,7 +90,7 @@
     },
     {
       "path": "backend/lib/flow-executor.js",
-      "status": "new",
+      "status": "existing",
       "phase": 2,
       "exports": [
         "runFlow",
@@ -104,7 +104,7 @@
     },
     {
       "path": "backend/lib/node-handlers/index.js",
-      "status": "new",
+      "status": "existing",
       "phase": 2,
       "exports": [
         "register",
@@ -117,7 +117,7 @@
     },
     {
       "path": "backend/lib/node-handlers/input.js",
-      "status": "new",
+      "status": "existing",
       "phase": 2,
       "exports": [
         "handlers"
@@ -127,7 +127,7 @@
     },
     {
       "path": "backend/lib/node-handlers/generate.js",
-      "status": "new",
+      "status": "existing",
       "phase": 2,
       "exports": [
         "handlers"
@@ -137,7 +137,7 @@
     },
     {
       "path": "backend/lib/node-handlers/transform.js",
-      "status": "new",
+      "status": "existing",
       "phase": 2,
       "exports": [
         "handlers"
@@ -147,7 +147,7 @@
     },
     {
       "path": "backend/lib/node-handlers/control.js",
-      "status": "new",
+      "status": "existing",
       "phase": 3,
       "exports": [
         "handlers"
@@ -157,7 +157,7 @@
     },
     {
       "path": "backend/lib/node-handlers/output.js",
-      "status": "new",
+      "status": "existing",
       "phase": 2,
       "exports": [
         "handlers"
@@ -435,6 +435,16 @@
       ],
       "contract": "Runtime node-type registry: ports, kind, capability, pipelineSteps and multiInputs per node type. flow-graph and (from Phase 2) the executor read it; tests assert it matches flows-canvas-node-taxonomy.json in both directions.",
       "rationale": "Not foreseen by the plan, which assumed flow-graph would carry the node definitions. Splitting them out gives the canvas a palette source that is not coupled to graph algebra, and makes the registry-vs-taxonomy drift check a single clean assertion."
+    },
+    {
+      "path": "backend/lib/node-handlers/port.js",
+      "status": "existing",
+      "phase": 2,
+      "exports": [
+        "PORT"
+      ],
+      "contract": "PORT(type, value) \u2014 the { type, value } envelope every edge carries.",
+      "rationale": "Not in the plan. Built in one place rather than spelled out by each handler and eventually forgotten by one of them; the typing is the point of the graph."
     }
   ],
   "migrations": [
@@ -459,7 +469,7 @@
       ],
       "sketch": "film_flow_runs(id, flow_id, project_id, graph_snapshot TEXT, status CHECK IN ('pending','running','paused','complete','failed','cancelled'), progress_pct, started_at, completed_at, error_message). film_flow_node_runs(id, run_id, node_id, status, provider_id, outputs TEXT DEFAULT '{}', error, routing_note, started_at, completed_at).",
       "rationale": "graph_snapshot is the reproducibility fix: render_ledger can point at an immutable copy of the graph as run, so editing a flow later cannot silently invalidate 'recreate this exactly'. routing_note is borrowed verbatim from NeonCore \u2014 a provider fallback is not an error and must not paint the node red.",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "file": "056_flow_branches.sql",
@@ -527,7 +537,7 @@
       "module": "backend/routes/flows.js",
       "phase": 2,
       "desc": "Execute against { project_id, scene_id?, shot_id?, inputs }",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "method": "POST",
@@ -535,7 +545,7 @@
       "module": "backend/routes/flows.js",
       "phase": 2,
       "desc": "SSE variant; per-node start/complete/error events",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "method": "GET",
@@ -543,7 +553,7 @@
       "module": "backend/routes/flows.js",
       "phase": 2,
       "desc": "Run status with per-node state",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "method": "POST",
@@ -551,7 +561,7 @@
       "module": "backend/routes/flows.js",
       "phase": 2,
       "desc": "The Stop Flow button",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "method": "GET",

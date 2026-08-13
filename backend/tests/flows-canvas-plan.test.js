@@ -214,7 +214,7 @@ test('the flows route namespace is not already claimed in server.js', () => {
     // (projects, shots) are expected and exempt.
     // Segments we already own. Phase 2/3 routes extend the flows module rather
     // than claiming a new namespace, exactly as they extend projects/shots.
-    const RESERVED_OK = new Set(['projects', 'shots', 'scenes', 'flows']);
+    const RESERVED_OK = new Set(['projects', 'shots', 'scenes', 'flows', 'flow-runs']);
     const clashes = [...segments]
         .filter(s => !RESERVED_OK.has(s))
         .filter(s => server.includes(`parts[1] === '${s}'`));

@@ -403,6 +403,9 @@ const server = http.createServer(async (req, res) => {
         if (parts[1] === 'flows' && parts[2]) {
             return handleFlows(req, res, parts, query);
         }
+        if (parts[1] === 'flow-runs' && parts[2]) {
+            return handleFlows(req, res, parts, query);
+        }
 
         // ==== CODEX:START ops-compliance-routes ====
         // Route: /film/projects/:id/jobs[/summary]

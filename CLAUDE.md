@@ -21,7 +21,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (52 migrations)
+│   │   └── migrations/     # SQL migration files (53 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -85,6 +85,15 @@ film-engine/
 │   │   ├── qa-checker.js         # QA checks, continuity, acceptance rubric
 │   │   ├── scheduling-engine.js  # Smart scheduling & GPU model residency
 │   │   ├── project-bundle.js    # Project export/import (.tar.gz bundles)
+│   │   ├── flow-executor.js      # runFlow / executeNode / resolveNodeInputs (Phase 2)
+│   │   ├── node-handlers/        # Per-node execution, autoloaded by filename (Phase 2)
+│   │   │   ├── index.js          #   registry (mirrors lib/providers autoload)
+│   │   │   ├── port.js           #   the { type, value } envelope an edge carries
+│   │   │   ├── input.js          #   in.prompt, in.asset, in.subject, in.scene, in.stock
+│   │   │   ├── generate.js       #   all 10 gen.* nodes, one implementation
+│   │   │   ├── transform.js      #   tf.mix, tf.stitch, tf.encode
+│   │   │   ├── control.js        #   tf.fanout, tf.select
+│   │   │   └── output.js         #   out.asset, out.assembly, out.timeline
 │   │   ├── flow-graph.js         # Flow graph algebra: validate, cycles, topo, ports (Phase 1)
 │   │   ├── flow-node-types.js    # Runtime node-type registry: ports, kinds, arity (Phase 1)
 │   │   ├── flow-seed.js          # Built-in flow derived from PIPELINE_STEPS (Phase 1)
@@ -120,6 +129,7 @@ film-engine/
 │       ├── project-presets.test.js  # Project presets unit tests (Phase 15)
 │       ├── subtitle-generator.test.js # Subtitle format tests (Phase 17)
 │       ├── backup.test.js           # Backup export/import tests (Phase 18)
+│       ├── flow-executor.test.js         # Typed-port execution, all 23 handlers (Phase 2)
 │       ├── flow-graph.test.js            # Graph algebra + PIPELINE_STEPS lockstep (Phase 1)
 │       ├── flows-routes.test.js          # Flow CRUD against a real database (Phase 1)
 │       ├── phase0-payload-parity.test.js  # One payload path per capability (60 tests)
@@ -302,6 +312,15 @@ Ports are typed (8 types) and most carry exactly one value, so the executor neve
 
 Built-in flows are immutable through the API (the UI offers duplicate-to-edit), which keeps the equivalence guarantee true permanently. A flow with `project_id IS NULL` is a **library** flow, visible from every project — "save it once, reuse it across every project".
 
+### Flow Execution (Phase 2)
+`lib/flow-executor.js` generalises `routes/pipeline.js:executeStep`. The shape is deliberately the same — capability in, provider result out — and the one real change is that **inputs arrive as an argument** instead of being re-read from the database. That is what an edge carrying a value means in practice.
+
+Node handlers autoload by filename from `lib/node-handlers/`, the same pattern as `lib/providers/`, so adding a node type is one new file and never an edit to a central switch. All ten `gen.*` types share **one** implementation, because the capability is data on the node type — which is also what delivers per-node model choice for free.
+
+`out.asset` closes the gap carried out of Phase 0: the legacy orchestrator called generators and discarded the results, so an orchestrated run produced no assets at all. Handlers own persistence now, and `film_flow_runs.graph_snapshot` stores the graph **as run**, so a render-ledger entry cannot be invalidated by someone editing the flow afterwards.
+
+Validation runs before anything executes — a cycle would otherwise spin the frontier forever, after billing you for whatever generated first.
+
 ### Capability Payloads (one construction path)
 `lib/capability-payloads.js` builds the provider payload for every orchestrated capability, so the per-domain routes, the pipeline orchestrator, and (later) the flow canvas cannot describe the same generation differently. `buildCapabilityPayload(capability, ctx)` takes a **context, not an id**, and returns `{payload, meta}`; `loadShotContext(shotId)` does the DB reading separately and lazy-requires the database, so payload construction stays testable without I/O.
 
@@ -360,7 +379,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (52 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (53 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status

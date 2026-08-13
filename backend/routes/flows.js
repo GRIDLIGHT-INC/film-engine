@@ -17,6 +17,8 @@
 
 const { db, generateId } = require('../db/database');
 const { validateGraph, graphFingerprint } = require('../lib/flow-graph');
+const { runFlow, cancelFlowRun, getFlowRun } = require('../lib/flow-executor');
+const { loadShotContext } = require('../lib/capability-payloads');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Built-in ids are readable slugs, not UUIDs, so flow ids accept both.
@@ -243,6 +245,64 @@ function validateFlow(req, res, flowId) {
     });
 }
 
+/**
+ * Execute a flow.
+ *
+ * Context comes from the shot when one is named, so a flow authored once runs
+ * against any shot — the reusability the whole feature is for. Without a shot
+ * it still runs; nodes needing shot data simply skip.
+ */
+async function runFlowRoute(req, res, flowId) {
+    const stored = loadGraph(flowId);
+    if (!stored) return json(res, 404, { error: 'Flow not found' });
+
+    const body = req.body || {};
+    let ctx = {};
+
+    if (body.shot_id) {
+        ctx = loadShotContext(body.shot_id) || {};
+        if (!ctx.shot) return json(res, 404, { error: 'Shot not found' });
+    } else if (body.project_id) {
+        ctx.project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(body.project_id) || null;
+        if (!ctx.project) return json(res, 404, { error: 'Project not found' });
+    }
+    ctx.vars = body.vars || {};
+
+    try {
+        const run = await runFlow({ nodes: stored.nodes, edges: stored.edges }, ctx, {
+            flowId,
+            params: body,
+        });
+        return json(res, run.status === 'failed' ? 422 : 200, run);
+    } catch (err) {
+        return json(res, 500, { error: err.message });
+    }
+}
+
+function getRun(req, res, runId) {
+    const run = getFlowRun(runId);
+    if (!run) return json(res, 404, { error: 'Run not found' });
+
+    let snapshot = {};
+    try { snapshot = JSON.parse(run.graph_snapshot || '{}'); } catch (_) { snapshot = {}; }
+
+    return json(res, 200, {
+        ...run,
+        graph_snapshot: snapshot,
+        nodes: run.nodes.map(n => {
+            let outputs = {};
+            try { outputs = JSON.parse(n.outputs || '{}'); } catch (_) { outputs = {}; }
+            return { ...n, outputs };
+        }),
+    });
+}
+
+function cancelRun(req, res, runId) {
+    const run = getFlowRun(runId);
+    if (!run) return json(res, 404, { error: 'Run not found' });
+    return json(res, 200, cancelFlowRun(runId));
+}
+
 // ── Router ──────────────────────────────────────────────────────────────
 
 function handleFlows(req, res, urlParts, query) {
@@ -262,9 +322,20 @@ function handleFlows(req, res, urlParts, query) {
         if (!FLOW_ID_RE.test(flowId)) return json(res, 400, { error: 'Invalid flow ID' });
 
         if (urlParts[3] === 'validate' && req.method === 'POST') return validateFlow(req, res, flowId);
+        if (urlParts[3] === 'run' && req.method === 'POST') return runFlowRoute(req, res, flowId);
         if (!urlParts[3] && req.method === 'GET') return getFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'PUT') return updateFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'DELETE') return deleteFlow(req, res, flowId);
+        return json(res, 405, { error: 'Method not allowed' });
+    }
+
+    // /film/flow-runs/:id[/cancel]
+    if (urlParts[1] === 'flow-runs' && urlParts[2]) {
+        const runId = urlParts[2];
+        if (!UUID_RE.test(runId)) return json(res, 400, { error: 'Invalid run ID' });
+
+        if (!urlParts[3] && req.method === 'GET') return getRun(req, res, runId);
+        if (urlParts[3] === 'cancel' && req.method === 'POST') return cancelRun(req, res, runId);
         return json(res, 405, { error: 'Method not allowed' });
     }
 

@@ -84,6 +84,7 @@ test('no lib module referenced by CLAUDE.md has been deleted', () => {
         ...fs.readdirSync(path.join(BACKEND, 'tests')).filter(f => f.endsWith('.js')),
         ...jsFiles(path.join(BACKEND, 'db')),
         ...jsFiles(path.join(BACKEND, 'lib', 'providers')),
+        ...jsFiles(path.join(BACKEND, 'lib', 'node-handlers')),
         'server.js', 'index.html', 'app.json',
     ]);
 
