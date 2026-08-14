@@ -3652,6 +3652,37 @@
         .diff-summary { font-size: 12px; margin-bottom: 8px; }
         .diff-params { font-size: 11px; margin-top: 8px; }
         /* ==== CLAUDE:END ==== */
+        /* ── Flows canvas ─────────────────────────────────────────── */
+        .flow-workspace { display: grid; grid-template-columns: 190px 1fr 260px; gap: 12px; height: calc(100vh - 190px); min-height: 460px; }
+        .flow-palette, .flow-inspector { background: var(--panel, #1a1a1f); border: 1px solid var(--border, #2c2c34); border-radius: 8px; padding: 10px; overflow-y: auto; }
+        .flow-palette h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; opacity: .6; margin: 10px 0 6px; }
+        .flow-palette h4:first-child { margin-top: 0; }
+        .flow-node-btn { display: block; width: 100%; text-align: left; background: var(--panel-2, #232329); border: 1px solid var(--border, #2c2c34); color: inherit; border-radius: 6px; padding: 6px 8px; margin-bottom: 4px; cursor: grab; font-size: 12px; }
+        .flow-node-btn:hover { border-color: var(--accent, #f5c451); }
+        .flow-canvas-wrap { position: relative; background: var(--panel, #1a1a1f); border: 1px solid var(--border, #2c2c34); border-radius: 8px; overflow: hidden; }
+        .flow-canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+        .flow-canvas.panning { cursor: grabbing; }
+        .flow-toolbar { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; align-items: center; background: rgba(20,20,24,.92); border: 1px solid var(--border, #2c2c34); border-radius: 8px; padding: 6px 10px; }
+        .flow-toolbar .btn-sm { padding: 2px 8px; font-size: 12px; }
+        .flow-status { font-size: 12px; opacity: .75; margin-left: 6px; }
+        .fnode rect.fbody { fill: #232329; stroke: #3a3a44; stroke-width: 1.5; rx: 8; }
+        .fnode.selected rect.fbody { stroke: #f5c451; stroke-width: 2.5; }
+        .fnode text.ftitle { fill: #eee; font-size: 12px; font-weight: 600; }
+        .fnode text.fsub { fill: #8a8a96; font-size: 10px; }
+        .fnode .fport { stroke: #1a1a1f; stroke-width: 1.5; cursor: crosshair; }
+        .fnode .fport:hover { r: 7; }
+        .fnode text.fportlabel { fill: #9a9aa6; font-size: 9px; }
+        .fedge { fill: none; stroke: #6c6cff; stroke-width: 2; }
+        .fedge.audio { stroke: #57c98a; } .fedge.video { stroke: #e2c15a; }
+        .fedge.text  { stroke: #8a8aff; } .fedge.image { stroke: #c07ce0; }
+        .fedge:hover { stroke-width: 3.5; }
+        .fedge-ghost { fill: none; stroke: #f5c451; stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
+        .fnode.status-running rect.fbody { stroke: #f5c451; }
+        .fnode.status-complete rect.fbody { stroke: #57c98a; }
+        .fnode.status-failed rect.fbody { stroke: #e05c5c; }
+        .fnode.status-skipped rect.fbody { stroke-dasharray: 4 3; }
+        .flow-inspector label { display: block; font-size: 11px; opacity: .7; margin: 8px 0 3px; }
+        .flow-inspector input, .flow-inspector select, .flow-inspector textarea { width: 100%; box-sizing: border-box; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -3775,6 +3806,9 @@
                 </button>
                 <button class="nav-item" data-page="pipeline" onclick="navigateTo('pipeline')" data-tooltip="Automated 9-step production pipeline from keyframe to assembly" data-tooltip-pos="right">
                     <span class="nav-icon">&#9881;</span> Pipeline
+                </button>
+                <button class="nav-item" data-page="flows" onclick="navigateTo('flows')" data-tooltip="Visual canvas: connect prompts, models and assets into reusable flows" data-tooltip-pos="right">
+                    <span class="nav-icon">&#128279;</span> Flows
                 </button>
                 <button class="nav-item" data-page="settings" onclick="navigateTo('settings')" data-tooltip="Resolution, frame rate, aspect ratio, color space, and delivery presets" data-tooltip-pos="right">
                     <span class="nav-icon">&#9881;</span> Settings
@@ -4643,6 +4677,45 @@
         </div>
 
         <!-- ── 16b. PIPELINE ──────────────────────────────────────── -->
+        <div class="page" id="page-flows">
+            <div class="flex-between mb-16">
+                <h2>Flows</h2>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="flowSelect" style="min-width:260px;" onchange="flowCanvasOpen(this.value)"></select>
+                    <button class="btn btn-secondary" onclick="flowCanvasNew()">New flow</button>
+                    <button class="btn btn-secondary" onclick="flowCanvasFromTemplate()">From template</button>
+                    <button class="btn btn-secondary" onclick="flowCanvasDuplicate()">Duplicate</button>
+                    <button class="btn btn-secondary" onclick="flowCanvasSave()" id="flowSaveBtn">Save</button>
+                    <button class="btn btn-primary" onclick="flowCanvasRun()" id="flowRunBtn">Run flow</button>
+                </div>
+            </div>
+
+            <div class="flow-workspace">
+                <aside class="flow-palette" id="flowPalette"></aside>
+
+                <div class="flow-canvas-wrap">
+                    <svg id="flowCanvas" class="flow-canvas" onmousedown="flowCanvasBackgroundDown(event)"></svg>
+                    <div class="flow-toolbar">
+                        <button class="btn btn-sm" onclick="flowCanvasZoom(-0.15)">&minus;</button>
+                        <span id="flowZoomLabel" class="text-sm text-muted">100%</span>
+                        <button class="btn btn-sm" onclick="flowCanvasZoom(0.15)">+</button>
+                        <button class="btn btn-sm" onclick="flowCanvasFit()">Fit</button>
+                        <button class="btn btn-sm" onclick="flowCanvasDeleteSelected()">Delete</button>
+                        <span class="flow-status" id="flowStatus"></span>
+                    </div>
+                </div>
+
+                <aside class="flow-inspector" id="flowInspector">
+                    <p class="text-sm text-muted">Select a node to edit it.</p>
+                </aside>
+            </div>
+
+            <div class="card mt-16" id="flowRunPanel" style="display:none;">
+                <h3 class="mb-8">Run</h3>
+                <div id="flowRunOutput" class="text-sm"></div>
+            </div>
+        </div>
+
         <div class="page" id="page-pipeline">
             <div class="flex-between mb-16">
                 <h2>Pipeline</h2>
@@ -6596,6 +6669,499 @@
     // ══════════════════════════════════════════════════════════════
     // API HELPERS
     // ══════════════════════════════════════════════════════════════
+    // ── Flows canvas ─────────────────────────────────────────────────────
+    //
+    // Hand-rolled SVG rather than a graph library: gridlight.json pins
+    // build.target=single-html and this SPA has no bundler, so a React-based
+    // canvas would mean introducing a build system to ship one page. The
+    // interaction set a media flow actually needs — drag nodes, draw typed
+    // edges, pan/zoom, select, delete — is small enough that the dependency
+    // would cost more than it saves.
+
+    const FLOW = {
+        flow: null,           // { id, name, is_builtin, nodes, edges }
+        types: {},            // node type registry, fetched from the server
+        selected: null,       // node id
+        view: { x: 0, y: 0, k: 1 },
+        drag: null,           // { id, dx, dy } while moving a node
+        link: null,           // { from, port, type } while drawing an edge
+        pan: null,
+        dirty: false,
+        runNodeStatus: {},    // nodeId -> status, painted during a run
+    };
+
+    // Ports sit BELOW a header band. Laying them across the full node height
+    // put the first port label on the same baseline as the title, and the two
+    // overlapped on every node with three inputs.
+    const NODE_W = 200, NODE_HEAD = 34, PORT_ROW = 15, PORT_R = 5;
+    const nodeHeight = def => NODE_HEAD + Math.max(1, Math.max((def.inputs || []).length, (def.outputs || []).length)) * PORT_ROW + 8;
+
+    const PORT_COLOR = {
+        text: '#8a8aff', image: '#c07ce0', video: '#e2c15a', audio: '#57c98a',
+        model3d: '#e08a5c', subject: '#5cd0e0', timeline: '#d0d0d8', any: '#9a9aa6',
+    };
+
+    async function loadFlowsPage() {
+        if (!state.currentProject) { setFlowStatus('Select a project first.'); return; }
+        try {
+            FLOW.types = await api('/flows/node-types');
+            renderFlowPalette();
+            const data = await api(`/projects/${state.currentProject.id}/flows`);
+            const sel = document.getElementById('flowSelect');
+            sel.innerHTML = data.flows.map(f =>
+                `<option value="${f.id}">${escapeHtml(f.name)}${f.is_builtin ? ' (built-in)' : ''} — ${f.node_count} nodes</option>`
+            ).join('');
+            if (data.flows.length) await flowCanvasOpen(data.flows[0].id);
+            else setFlowStatus('No flows yet — create one.');
+        } catch (err) {
+            setFlowStatus('Could not load flows: ' + err.message);
+        }
+    }
+
+    function setFlowStatus(msg) {
+        const el = document.getElementById('flowStatus');
+        if (el) el.textContent = msg || '';
+    }
+
+    function renderFlowPalette() {
+        const el = document.getElementById('flowPalette');
+        if (!el) return;
+        const KINDS = [['input', 'Sources'], ['generator', 'Generate'], ['transform', 'Transform'], ['output', 'Output']];
+        el.innerHTML = KINDS.map(([kind, title]) => {
+            const items = Object.entries(FLOW.types)
+                .filter(([, d]) => d.kind === kind)
+                .map(([id, d]) => `<button class="flow-node-btn" onclick="flowCanvasAddNode('${id}')" title="${escapeHtml(id)}">${escapeHtml(d.label)}</button>`)
+                .join('');
+            return items ? `<h4>${title}</h4>${items}` : '';
+        }).join('');
+    }
+
+    async function flowCanvasOpen(flowId) {
+        if (!flowId) return;
+        try {
+            FLOW.flow = await api(`/flows/${flowId}`);
+            FLOW.selected = null;
+            FLOW.dirty = false;
+            FLOW.runNodeStatus = {};
+            document.getElementById('flowSelect').value = flowId;
+            flowCanvasFit();
+            renderFlowInspector();
+            setFlowStatus(FLOW.flow.is_builtin ? 'Built-in flow — duplicate it to edit.' : '');
+        } catch (err) { setFlowStatus('Open failed: ' + err.message); }
+    }
+
+    // ── Rendering ────────────────────────────────────────────────────────
+
+    function flowCanvasRender() {
+        const svg = document.getElementById('flowCanvas');
+        if (!svg || !FLOW.flow) return;
+        const { x, y, k } = FLOW.view;
+
+        const edges = FLOW.flow.edges.map(e => {
+            const a = portPos(e.from, e.fromPort, 'out');
+            const b = portPos(e.to, e.toPort, 'in');
+            if (!a || !b) return '';
+            const dx = Math.max(40, Math.abs(b.x - a.x) * 0.5);
+            const d = `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
+            return `<path class="fedge ${e.fromPort}" d="${d}" onclick="flowCanvasDeleteEdge('${e.from}','${e.fromPort}','${e.to}','${e.toPort}')"><title>${e.from}.${e.fromPort} → ${e.to}.${e.toPort} (click to remove)</title></path>`;
+        }).join('');
+
+        const nodes = FLOW.flow.nodes.map(n => renderFlowNode(n)).join('');
+
+        const ghost = FLOW.link && FLOW.link.cursor
+            ? (() => {
+                const a = portPos(FLOW.link.from, FLOW.link.port, 'out');
+                if (!a) return '';
+                return `<path class="fedge-ghost" d="M ${a.x} ${a.y} L ${FLOW.link.cursor.x} ${FLOW.link.cursor.y}"/>`;
+              })()
+            : '';
+
+        svg.innerHTML = `
+          <defs>
+            <pattern id="fgrid" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="1" fill="#2a2a33"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#fgrid)"/>
+          <g transform="translate(${x},${y}) scale(${k})">${edges}${ghost}${nodes}</g>`;
+
+        document.getElementById('flowZoomLabel').textContent = Math.round(k * 100) + '%';
+    }
+
+    function renderFlowNode(n) {
+        const def = FLOW.types[n.type] || { inputs: [], outputs: [], label: n.type, kind: 'generator' };
+        const status = FLOW.runNodeStatus[n.id] || '';
+        const sel = FLOW.selected === n.id ? ' selected' : '';
+
+        const H = nodeHeight(def);
+        const ports = [];
+        def.inputs.forEach((p, i) => {
+            const py = portY(def.inputs.length, i);
+            ports.push(`<circle class="fport" cx="0" cy="${py}" r="${PORT_R}" fill="${PORT_COLOR[p] || '#999'}" onmouseup="flowCanvasEndLink(event,'${n.id}','${p}')"><title>in: ${p}</title></circle>`);
+            ports.push(`<text class="fportlabel" x="9" y="${py + 3}">${p}</text>`);
+        });
+        def.outputs.forEach((p, i) => {
+            const py = portY(def.outputs.length, i);
+            ports.push(`<circle class="fport" cx="${NODE_W}" cy="${py}" r="${PORT_R}" fill="${PORT_COLOR[p] || '#999'}" onmousedown="flowCanvasStartLink(event,'${n.id}','${p}')"><title>out: ${p}</title></circle>`);
+            ports.push(`<text class="fportlabel" x="${NODE_W - 9}" y="${py + 3}" text-anchor="end">${p}</text>`);
+        });
+
+        return `<g class="fnode${sel} status-${status}" transform="translate(${n.x || 0},${n.y || 0})" onmousedown="flowCanvasStartDrag(event,'${n.id}')">
+            <rect class="fbody" width="${NODE_W}" height="${H}"/>
+            <line x1="0" y1="${NODE_HEAD - 6}" x2="${NODE_W}" y2="${NODE_HEAD - 6}" stroke="#33333d"/>
+            <text class="ftitle" x="10" y="20">${escapeHtml(n.label || def.label)}</text>
+            <text class="fsub" x="10" y="34">${escapeHtml(n.type)}${status ? ' · ' + status : ''}</text>
+            ${ports.join('')}
+        </g>`;
+    }
+
+    const portY = (count, i) => NODE_HEAD + PORT_ROW * i + PORT_ROW / 2;
+
+    function portPos(nodeId, port, side) {
+        const n = FLOW.flow.nodes.find(x => x.id === nodeId);
+        if (!n) return null;
+        const def = FLOW.types[n.type];
+        if (!def) return null;
+        const list = side === 'in' ? def.inputs : def.outputs;
+        const i = list.indexOf(port);
+        if (i === -1) return null;
+        return { x: (n.x || 0) + (side === 'in' ? 0 : NODE_W), y: (n.y || 0) + portY(list.length, i) };
+    }
+
+    // ── Interaction ──────────────────────────────────────────────────────
+
+    function svgPoint(evt) {
+        const svg = document.getElementById('flowCanvas');
+        const r = svg.getBoundingClientRect();
+        return {
+            x: (evt.clientX - r.left - FLOW.view.x) / FLOW.view.k,
+            y: (evt.clientY - r.top - FLOW.view.y) / FLOW.view.k,
+        };
+    }
+
+    function flowCanvasStartDrag(evt, nodeId) {
+        if (evt.target.classList.contains('fport')) return;   // ports draw edges
+        evt.stopPropagation();
+        FLOW.selected = nodeId;
+        const p = svgPoint(evt);
+        const n = FLOW.flow.nodes.find(x => x.id === nodeId);
+        FLOW.drag = { id: nodeId, dx: p.x - (n.x || 0), dy: p.y - (n.y || 0) };
+        renderFlowInspector();
+        flowCanvasRender();
+    }
+
+    function flowCanvasStartLink(evt, nodeId, port) {
+        evt.stopPropagation();
+        if (FLOW.flow.is_builtin) return;
+        FLOW.link = { from: nodeId, port, cursor: svgPoint(evt) };
+    }
+
+    function flowCanvasEndLink(evt, nodeId, port) {
+        if (!FLOW.link) return;
+        evt.stopPropagation();
+        const { from, port: fromPort } = FLOW.link;
+        FLOW.link = null;
+
+        if (from === nodeId) { flowCanvasRender(); return; }
+
+        // Refuse client-side what the server would refuse anyway, so the user
+        // finds out while drawing rather than on save. The server still
+        // validates — this is convenience, not the guarantee.
+        if (!portsCompatibleClient(fromPort, port)) {
+            setFlowStatus(`Cannot connect ${fromPort} → ${port}`);
+            flowCanvasRender();
+            return;
+        }
+        const def = FLOW.types[FLOW.flow.nodes.find(n => n.id === nodeId).type];
+        const collector = (def.multiInputs || []).includes(port);
+        if (!collector) FLOW.flow.edges = FLOW.flow.edges.filter(e => !(e.to === nodeId && e.toPort === port));
+
+        FLOW.flow.edges.push({ from, fromPort, to: nodeId, toPort: port });
+        FLOW.dirty = true;
+        setFlowStatus('Edge added — unsaved');
+        flowCanvasRender();
+    }
+
+    const portsCompatibleClient = (a, b) => a === b || a === 'any' || b === 'any';
+
+    function flowCanvasDeleteEdge(from, fromPort, to, toPort) {
+        if (FLOW.flow.is_builtin) return;
+        FLOW.flow.edges = FLOW.flow.edges.filter(e => !(e.from === from && e.fromPort === fromPort && e.to === to && e.toPort === toPort));
+        FLOW.dirty = true;
+        setFlowStatus('Edge removed — unsaved');
+        flowCanvasRender();
+    }
+
+    function flowCanvasAddNode(type) {
+        if (!FLOW.flow) return;
+        if (FLOW.flow.is_builtin) { setFlowStatus('Built-in flow — duplicate it to edit.'); return; }
+        const def = FLOW.types[type];
+        let id = type.split('.')[1] || 'node', i = 1;
+        while (FLOW.flow.nodes.some(n => n.id === id)) id = `${type.split('.')[1]}${++i}`;
+
+        FLOW.flow.nodes.push({
+            id, type, label: def.label, config: {},
+            x: (-FLOW.view.x / FLOW.view.k) + 80 + (FLOW.flow.nodes.length % 5) * 30,
+            y: (-FLOW.view.y / FLOW.view.k) + 80 + (FLOW.flow.nodes.length % 7) * 30,
+        });
+        FLOW.selected = id;
+        FLOW.dirty = true;
+        setFlowStatus('Node added — unsaved');
+        renderFlowInspector();
+        flowCanvasRender();
+    }
+
+    function flowCanvasDeleteSelected() {
+        if (!FLOW.flow || !FLOW.selected || FLOW.flow.is_builtin) return;
+        const id = FLOW.selected;
+        FLOW.flow.nodes = FLOW.flow.nodes.filter(n => n.id !== id);
+        FLOW.flow.edges = FLOW.flow.edges.filter(e => e.from !== id && e.to !== id);
+        FLOW.selected = null;
+        FLOW.dirty = true;
+        renderFlowInspector();
+        flowCanvasRender();
+    }
+
+    function flowCanvasZoom(delta) {
+        FLOW.view.k = Math.max(0.25, Math.min(2.5, FLOW.view.k + delta));
+        flowCanvasRender();
+    }
+
+    function flowCanvasFit() {
+        if (!FLOW.flow || !FLOW.flow.nodes.length) { FLOW.view = { x: 20, y: 20, k: 1 }; flowCanvasRender(); return; }
+        const svg = document.getElementById('flowCanvas');
+        const r = svg.getBoundingClientRect();
+        const xs = FLOW.flow.nodes.map(n => n.x || 0), ys = FLOW.flow.nodes.map(n => n.y || 0);
+        const minX = Math.min(...xs), maxX = Math.max(...xs) + NODE_W;
+        const minY = Math.min(...ys), maxY = Math.max(...ys) + 130;
+        const k = Math.max(0.3, Math.min(1.2, Math.min((r.width - 60) / (maxX - minX || 1), (r.height - 60) / (maxY - minY || 1))));
+        FLOW.view = { k, x: 30 - minX * k, y: 30 - minY * k };
+        flowCanvasRender();
+    }
+
+    // ── Inspector ────────────────────────────────────────────────────────
+
+    function renderFlowInspector() {
+        const el = document.getElementById('flowInspector');
+        if (!el) return;
+        if (!FLOW.flow) { el.innerHTML = '<p class="text-sm text-muted">No flow open.</p>'; return; }
+
+        const n = FLOW.flow.nodes.find(x => x.id === FLOW.selected);
+        if (!n) {
+            el.innerHTML = `<p class="text-sm text-muted">Select a node to edit it.</p>
+                <label>Flow name</label>
+                <input id="flowNameInput" value="${escapeHtml(FLOW.flow.name)}" ${FLOW.flow.is_builtin ? 'disabled' : ''} oninput="FLOW.flow.name=this.value;FLOW.dirty=true">
+                <p class="text-sm text-muted mt-8">${FLOW.flow.nodes.length} nodes · ${FLOW.flow.edges.length} edges</p>`;
+            return;
+        }
+
+        const def = FLOW.types[n.type] || {};
+        const ro = FLOW.flow.is_builtin ? 'disabled' : '';
+        const providers = ['', 'gridlight', 'runway', 'openai', 'elevenlabs', 'meshy'];
+
+        el.innerHTML = `
+            <h4 style="margin:0 0 8px;">${escapeHtml(def.label || n.type)}</h4>
+            <p class="text-sm text-muted" style="margin:0 0 8px;">${escapeHtml(n.type)}</p>
+            <label>Label</label>
+            <input value="${escapeHtml(n.label || '')}" ${ro} oninput="flowNodeSet('label',this.value)">
+            ${n.type === 'in.prompt' ? `<label>Prompt text</label>
+              <textarea rows="4" ${ro} oninput="flowNodeSetConfig('text',this.value)">${escapeHtml((n.config || {}).text || '')}</textarea>
+              <p class="text-sm text-muted">Use {{name}} to interpolate.</p>` : ''}
+            ${def.capability ? `<label>Provider (this node only)</label>
+              <select ${ro} onchange="flowNodeSetConfig('provider',this.value)">
+                ${providers.map(p => `<option value="${p}" ${(n.config || {}).provider === p ? 'selected' : ''}>${p || 'project default'}</option>`).join('')}
+              </select>
+              <label>Model override</label>
+              <input value="${escapeHtml((n.config || {}).model || '')}" ${ro} oninput="flowNodeSetConfig('model',this.value)">` : ''}
+            ${n.type === 'tf.fanout' ? `<label>Variants</label>
+              <input type="number" min="1" max="24" value="${(n.config || {}).count || 1}" ${ro} oninput="flowNodeSetConfig('count', Number(this.value))">
+              <p class="text-sm text-muted">Each variant runs everything downstream once. Cost is projected before the run.</p>` : ''}
+            ${n.type === 'out.asset' ? `<label>Asset type</label>
+              <input value="${escapeHtml((n.config || {}).asset_type || '')}" ${ro} placeholder="keyframe" oninput="flowNodeSetConfig('asset_type',this.value)">` : ''}
+            <p class="text-sm text-muted mt-8">in: ${(def.inputs || []).join(', ') || '—'}<br>out: ${(def.outputs || []).join(', ') || '—'}</p>`;
+    }
+
+    function flowNodeSet(key, value) {
+        const n = FLOW.flow.nodes.find(x => x.id === FLOW.selected);
+        if (!n) return;
+        n[key] = value; FLOW.dirty = true; flowCanvasRender();
+    }
+
+    function flowNodeSetConfig(key, value) {
+        const n = FLOW.flow.nodes.find(x => x.id === FLOW.selected);
+        if (!n) return;
+        n.config = n.config || {};
+        if (value === '') delete n.config[key]; else n.config[key] = value;
+        FLOW.dirty = true;
+    }
+
+    // ── Persistence + run ────────────────────────────────────────────────
+
+    /**
+     * Start from a ready-made flow. The shelf comes from the server so the UI
+     * never offers a template the executor cannot run.
+     */
+    async function flowCanvasFromTemplate() {
+        if (!state.currentProject) return;
+        try {
+            const { templates } = await api('/flow-templates');
+            const choice = prompt(
+                'Start from a template:\n\n' +
+                templates.map((t, i) => `${i + 1}. ${t.name} — ${t.description}`).join('\n') +
+                '\n\nEnter a number:'
+            );
+            const picked = templates[parseInt(choice, 10) - 1];
+            if (!picked) return;
+
+            const created = await api(`/projects/${state.currentProject.id}/flows/from-template`, {
+                method: 'POST', body: JSON.stringify({ template_id: picked.id }),
+            });
+            await loadFlowsPage();
+            await flowCanvasOpen(created.id);
+            setFlowStatus(`Created from "${picked.name}" — drop in your media and run.`);
+        } catch (err) { setFlowStatus('Template failed: ' + err.message); }
+    }
+
+    async function flowCanvasNew() {
+        if (!state.currentProject) return;
+        const name = prompt('Flow name', 'Untitled flow');
+        if (!name) return;
+        try {
+            const created = await api(`/projects/${state.currentProject.id}/flows`, {
+                method: 'POST', body: JSON.stringify({ name, nodes: [], edges: [] }),
+            });
+            await loadFlowsPage();
+            await flowCanvasOpen(created.id);
+        } catch (err) { setFlowStatus('Create failed: ' + err.message); }
+    }
+
+    async function flowCanvasDuplicate() {
+        if (!FLOW.flow || !state.currentProject) return;
+        try {
+            const created = await api(`/projects/${state.currentProject.id}/flows`, {
+                method: 'POST',
+                body: JSON.stringify({ name: FLOW.flow.name + ' (copy)', nodes: FLOW.flow.nodes, edges: FLOW.flow.edges }),
+            });
+            await loadFlowsPage();
+            await flowCanvasOpen(created.id);
+            setFlowStatus('Duplicated — this copy is editable.');
+        } catch (err) { setFlowStatus('Duplicate failed: ' + err.message); }
+    }
+
+    async function flowCanvasSave() {
+        if (!FLOW.flow) return;
+        if (FLOW.flow.is_builtin) { setFlowStatus('Built-in flow — duplicate it to edit.'); return; }
+        try {
+            const saved = await api(`/flows/${FLOW.flow.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ name: FLOW.flow.name, nodes: FLOW.flow.nodes, edges: FLOW.flow.edges }),
+            });
+            FLOW.flow = saved; FLOW.dirty = false;
+            setFlowStatus(`Saved — v${saved.version}`);
+            flowCanvasRender();
+        } catch (err) { setFlowStatus('Save failed: ' + err.message); }
+    }
+
+    async function flowCanvasRun() {
+        if (!FLOW.flow || !state.currentProject) return;
+        FLOW.runNodeStatus = {};
+        setFlowStatus('Running…');
+        document.getElementById('flowRunPanel').style.display = '';
+        document.getElementById('flowRunOutput').innerHTML = '<p class="text-muted">Running…</p>';
+        try {
+            // Read the body even on a non-2xx: a failed run still returns the
+            // full per-node record, and the whole point of the panel is to say
+            // WHICH node failed. api() throws on !ok, which would discard it.
+            const res = await fetch(API() + `/flows/${FLOW.flow.id}/run`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_id: state.currentProject.id }),
+            });
+            const run = await res.json();
+
+            // 402: the run would cost more than the project allows. Offer the
+            // override rather than dead-ending, since an estimate can be wrong
+            // — but make the user say so.
+            if (res.status === 402) {
+                const b = run.budget || {};
+                const proceed = confirm(
+                    `This run projects $${(b.projected || 0).toFixed(2)} across ${b.calls || 0} generation call(s).\n` +
+                    `$${(b.spent || 0).toFixed(2)} of the $${(b.limit || 0).toFixed(2)} budget is already spent.\n\n` +
+                    `Run it anyway?`
+                );
+                if (!proceed) {
+                    setFlowStatus('Run refused — over budget');
+                    document.getElementById('flowRunOutput').innerHTML =
+                        `<p class="text-danger">Over budget: projected $${(b.projected || 0).toFixed(2)}, ` +
+                        `$${(b.spent || 0).toFixed(2)} of $${(b.limit || 0).toFixed(2)} already spent.</p>`;
+                    return;
+                }
+                const retry = await fetch(API() + `/flows/${FLOW.flow.id}/run`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ project_id: state.currentProject.id, ignore_budget: true }),
+                });
+                const forced = await retry.json();
+                if (forced && forced.nodes) return flowPaintRun(forced);
+            }
+
+            if (!run || !run.nodes) throw new Error(run && run.error ? run.error : `HTTP ${res.status}`);
+            flowPaintRun(run);
+        } catch (err) {
+            setFlowStatus('Run failed: ' + err.message);
+            document.getElementById('flowRunOutput').innerHTML = `<p class="text-danger">${escapeHtml(err.message)}</p>`;
+        }
+    }
+
+    /** Paint a finished run onto the canvas and the panel. */
+    function flowPaintRun(run) {
+        FLOW.runNodeStatus = {};
+        (run.nodes || []).forEach(n => { FLOW.runNodeStatus[n.id] = n.skipped ? 'skipped' : (n.ok ? 'complete' : 'failed'); });
+        flowCanvasRender();
+        setFlowStatus(`Run ${run.status}`);
+
+        const branches = [...new Set((run.nodes || []).map(n => n.branch).filter(Boolean))];
+        document.getElementById('flowRunOutput').innerHTML =
+            `<p><strong>${run.status}</strong> — run ${escapeHtml(run.id)}` +
+            (branches.length ? ` · ${branches.length} variant(s)` : '') + '</p><ul>' +
+            (run.nodes || []).map(n =>
+                `<li>${escapeHtml(n.id)}${n.branch ? ' [' + escapeHtml(n.branch) + ']' : ''} (${escapeHtml(n.type)}) — ` +
+                `${n.ok ? (n.skipped ? 'skipped: ' + escapeHtml(n.message || '') : 'ok') : 'failed: ' + escapeHtml(n.error || '')}</li>`
+            ).join('') + '</ul>';
+    }
+
+    // Canvas-level pointer handling: pan on background drag, move on node drag.
+    document.addEventListener('mousemove', (evt) => {
+        if (!FLOW.flow) return;
+        if (FLOW.drag) {
+            const p = svgPoint(evt);
+            const n = FLOW.flow.nodes.find(x => x.id === FLOW.drag.id);
+            if (n) { n.x = p.x - FLOW.drag.dx; n.y = p.y - FLOW.drag.dy; FLOW.dirty = true; flowCanvasRender(); }
+        } else if (FLOW.link) {
+            FLOW.link.cursor = svgPoint(evt);
+            flowCanvasRender();
+        } else if (FLOW.pan) {
+            FLOW.view.x = evt.clientX - FLOW.pan.x;
+            FLOW.view.y = evt.clientY - FLOW.pan.y;
+            flowCanvasRender();
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (FLOW.link) { FLOW.link = null; flowCanvasRender(); }
+        FLOW.drag = null;
+        FLOW.pan = null;
+        const svg = document.getElementById('flowCanvas');
+        if (svg) svg.classList.remove('panning');
+    });
+
+    function flowCanvasBackgroundDown(evt) {
+        FLOW.selected = null;
+        FLOW.pan = { x: evt.clientX - FLOW.view.x, y: evt.clientY - FLOW.view.y };
+        evt.currentTarget.classList.add('panning');
+        renderFlowInspector();
+        flowCanvasRender();
+    }
+
     async function api(path, opts = {}) {
         const url = API() + path;
         try {
@@ -6671,6 +7237,7 @@
             renderhistory: loadRenderPage,
             exportpage: loadExportPage,
             pipeline: loadPipeline,
+            flows: loadFlowsPage,
             settings: loadSettings,
             acts: loadActs,
             continuity: loadContinuity,
@@ -10162,7 +10729,8 @@
         .scene-number-gutter {
             display: none;
         }
-    </style>
+    
+</style>
 </head>
 <body>
     ${editorContent}

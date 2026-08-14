@@ -170,7 +170,10 @@ test('planned migrations are numbered above every applied migration', () => {
 
     const bad = [];
     const seen = new Set();
-    for (const mig of iface().migrations) {
+    // A shipped migration is on disk by definition; only what is still PLANNED
+    // has to be numbered above it. Without this the guard would fire the moment
+    // a phase lands, which trains people to ignore it.
+    for (const mig of iface().migrations.filter(m => m.status !== 'shipped')) {
         if (!/^\d{3}_[a-z0-9_]+\.sql$/.test(mig.file)) bad.push(`${mig.file} does not match NNN_snake_case.sql`);
         if (existing.includes(mig.file)) bad.push(`${mig.file} already exists`);
         if (seen.has(mig.file)) bad.push(`${mig.file} declared twice`);
@@ -189,7 +192,7 @@ test('planned routes are unique, /film-prefixed, and owned by a declared module'
     const METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE']);
     const seen = new Set();
     const bad = [];
-    for (const r of iface().routes) {
+    for (const r of iface().routes.filter(x => x.status !== 'shipped')) {
         const key = `${r.method} ${r.path}`;
         if (seen.has(key)) bad.push(`duplicate route ${key}`);
         seen.add(key);
@@ -203,13 +206,15 @@ test('planned routes are unique, /film-prefixed, and owned by a declared module'
 test('the flows route namespace is not already claimed in server.js', () => {
     const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
     const segments = new Set();
-    for (const r of iface().routes) {
+    for (const r of iface().routes.filter(x => x.status !== 'shipped')) {
         const seg = r.path.split('/').filter(Boolean)[1]; // /film/<seg>/...
         if (seg && !seg.startsWith(':')) segments.add(seg);
     }
     // A new top-level segment must not already be dispatched; reused segments
     // (projects, shots) are expected and exempt.
-    const RESERVED_OK = new Set(['projects', 'shots', 'scenes']);
+    // Segments we already own. Phase 2/3 routes extend the flows module rather
+    // than claiming a new namespace, exactly as they extend projects/shots.
+    const RESERVED_OK = new Set(['projects', 'shots', 'scenes', 'flows', 'flow-runs']);
     const clashes = [...segments]
         .filter(s => !RESERVED_OK.has(s))
         .filter(s => server.includes(`parts[1] === '${s}'`));

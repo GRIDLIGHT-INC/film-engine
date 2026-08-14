@@ -21,7 +21,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (51 migrations)
+│   │   └── migrations/     # SQL migration files (54 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -56,6 +56,7 @@ film-engine/
 │   │   ├── marketing.js        # Marketing assets (Phase 18)
 │   │   ├── budget.js           # Budget & cost tracking (Phase 18)
 │   │   ├── backups.js          # Auto-backup system (Phase 18)
+│   │   ├── flows.js            # Flow CRUD + graph validation (Phase 1)
 │   │   ├── providers.js        # Provider registry, credentials, OAuth connect
 │   │   ├── consistency.js      # Consistency profiles, locking, readiness audit
 │   │   ├── takes.js            # Takes & selects (circle-take workflow)
@@ -84,6 +85,20 @@ film-engine/
 │   │   ├── qa-checker.js         # QA checks, continuity, acceptance rubric
 │   │   ├── scheduling-engine.js  # Smart scheduling & GPU model residency
 │   │   ├── project-bundle.js    # Project export/import (.tar.gz bundles)
+│   │   ├── flow-cost.js          # Projected cost + the budget gate (Phase 3)
+│   │   ├── flow-templates.js     # Six ready-made flows, validated at load (Phase 5)
+│   │   ├── flow-executor.js      # runFlow / executeNode / resolveNodeInputs (Phase 2)
+│   │   ├── node-handlers/        # Per-node execution, autoloaded by filename (Phase 2)
+│   │   │   ├── index.js          #   registry (mirrors lib/providers autoload)
+│   │   │   ├── port.js           #   the { type, value } envelope an edge carries
+│   │   │   ├── input.js          #   in.prompt, in.asset, in.subject, in.scene, in.stock
+│   │   │   ├── generate.js       #   all 10 gen.* nodes, one implementation
+│   │   │   ├── transform.js      #   tf.mix, tf.stitch, tf.encode
+│   │   │   ├── control.js        #   tf.fanout, tf.select
+│   │   │   └── output.js         #   out.asset, out.assembly, out.timeline
+│   │   ├── flow-graph.js         # Flow graph algebra: validate, cycles, topo, ports (Phase 1)
+│   │   ├── flow-node-types.js    # Runtime node-type registry: ports, kinds, arity (Phase 1)
+│   │   ├── flow-seed.js          # Built-in flow derived from PIPELINE_STEPS (Phase 1)
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
@@ -116,6 +131,11 @@ film-engine/
 │       ├── project-presets.test.js  # Project presets unit tests (Phase 15)
 │       ├── subtitle-generator.test.js # Subtitle format tests (Phase 17)
 │       ├── backup.test.js           # Backup export/import tests (Phase 18)
+│       ├── flow-branches.test.js         # Fan-out, select gate, budget guard (Phase 3)
+│       ├── flow-templates.test.js        # Every template validates (Phase 5)
+│       ├── flow-executor.test.js         # Typed-port execution, all 23 handlers (Phase 2)
+│       ├── flow-graph.test.js            # Graph algebra + PIPELINE_STEPS lockstep (Phase 1)
+│       ├── flows-routes.test.js          # Flow CRUD against a real database (Phase 1)
 │       ├── phase0-payload-parity.test.js  # One payload path per capability (60 tests)
 │       ├── phase0-spec-coverage.test.js   # Phase 0 test-matrix completeness
 │       ├── flows-node-taxonomy.test.js    # Flows canvas node palette coverage
@@ -287,6 +307,39 @@ Ambient is a **loop, not a full render**: `buildAmbientPrompt` asks for a bed of
 
 No licensed-catalog *source* adapter ships today, so `stock` has no provider at all — nothing writes `film_assets.license_source = 'licensed_catalog'`, which the music-rights routes are built around. The `source` (search/license) contract and the OAuth/MCP connect flow both remain wired for the next provider that needs them.
 
+### Variants & the Budget Guard (Phase 3)
+`tf.fanout` runs **once** and declares the branches its dependants run across, so no generator handler ever has to know it is being fanned — the executor replays everything downstream per branch key. Branches are rows (`film_flow_branches`), not in-memory state, so a paused gate survives a restart and cost can be attributed per variant. `tf.select` **pauses** the run when more than one branch reaches it; auto-selecting would make the gate decorative.
+
+**The budget guard runs before anything generates.** A fan-out of 4 across a 200-shot feature is 800 calls, and a ceiling you discover on the ledger afterwards is not a ceiling. `lib/flow-cost.js` projects cost per capability, multiplying (not adding) along nested fan-outs, and the run is refused with **HTTP 402** if projected + already-spent exceeds `film_projects.budget_total`. An unset budget is unlimited, never an accidental ceiling of zero. The refusal is overridable via `ignore_budget`, because a wrong estimate must not make the feature unusable — but the user has to say so.
+
+### Built-in Templates (Phase 5)
+Six ready-made flows — prompt→image, multi-model video, character sheet, shot→clip, dialogue→lip-sync, scene soundscape — as **data**, so they stay versioned with the code and `validateGraph()` polices them at module load rather than at first use by whoever picked the broken one. Multi-model video fans across three providers; character sheet fans across four views driven by the subject's consistency profile.
+
+### Flows Canvas (Phase 4)
+A hand-rolled SVG canvas on the `flows` sidebar page — no graph library, because `gridlight.json` pins `build.target=single-html` and the SPA has no bundler, so a React-based canvas would mean adding a build system to ship one page.
+
+Left: the node palette, served from `GET /film/flows/node-types` so the UI can never offer a node the server would refuse. Middle: pan/zoom canvas with draggable nodes and typed bezier edges, colour-coded per port type. Right: an inspector for the selected node, including a **per-node provider and model override** — the multi-model claim, exposed where you'd expect it.
+
+Node geometry puts ports below a header band; laying them across the full node height put the first port label on the same baseline as the title and the two overlapped. Illegal wirings are refused as you draw (`text → video` will not connect), but the server still validates on save — the client check is convenience, not the guarantee. Built-in flows render read-only with a duplicate-to-edit path. Running paints per-node status onto the canvas, and a failed run lists which node failed and why.
+
+### Flow Graphs (Phase 1)
+The pipeline was always a DAG — it was just a module-level constant nobody could edit. `film_flows` / `film_flow_nodes` / `film_flow_edges` make it data, and `lib/flow-seed.js` seeds the existing 9-step pipeline as a read-only built-in flow **derived** from `PIPELINE_STEPS` rather than transcribed beside it, so a new step reaches the canvas with no migration.
+
+`lib/flow-graph.js` is pure algebra — `validateGraph`, `detectCycles`, `topoSort`, `nextNodes`, `graphFingerprint` — with no DB or HTTP, mirroring the `pipeline-engine.js` / `routes/pipeline.js` split. `nextNodes()` deliberately matches `getNextSteps()` so the seeded flow walks in **lockstep** with `PIPELINE_STEPS`; that equivalence is what makes Phase 1 a provable no-op rather than a rewrite anyone has to trust.
+
+Ports are typed (8 types) and most carry exactly one value, so the executor never arbitrates. The exception is **collector ports**, declared per node type as `multiInputs`: a final mix genuinely takes music, sfx and ambient at once, which the real pipeline does at `assembly`. Cycle detection runs on save and before every run — the hard-coded DAG was acyclic because a human checked once; a user-authored one is acyclic only if something checks every time.
+
+Built-in flows are immutable through the API (the UI offers duplicate-to-edit), which keeps the equivalence guarantee true permanently. A flow with `project_id IS NULL` is a **library** flow, visible from every project — "save it once, reuse it across every project".
+
+### Flow Execution (Phase 2)
+`lib/flow-executor.js` generalises `routes/pipeline.js:executeStep`. The shape is deliberately the same — capability in, provider result out — and the one real change is that **inputs arrive as an argument** instead of being re-read from the database. That is what an edge carrying a value means in practice.
+
+Node handlers autoload by filename from `lib/node-handlers/`, the same pattern as `lib/providers/`, so adding a node type is one new file and never an edit to a central switch. All ten `gen.*` types share **one** implementation, because the capability is data on the node type — which is also what delivers per-node model choice for free.
+
+`out.asset` closes the gap carried out of Phase 0: the legacy orchestrator called generators and discarded the results, so an orchestrated run produced no assets at all. Handlers own persistence now, and `film_flow_runs.graph_snapshot` stores the graph **as run**, so a render-ledger entry cannot be invalidated by someone editing the flow afterwards.
+
+Validation runs before anything executes — a cycle would otherwise spin the frontier forever, after billing you for whatever generated first.
+
 ### Capability Payloads (one construction path)
 `lib/capability-payloads.js` builds the provider payload for every orchestrated capability, so the per-domain routes, the pipeline orchestrator, and (later) the flow canvas cannot describe the same generation differently. `buildCapabilityPayload(capability, ctx)` takes a **context, not an id**, and returns `{payload, meta}`; `loadShotContext(shotId)` does the DB reading separately and lazy-requires the database, so payload construction stays testable without I/O.
 
@@ -345,7 +398,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (51 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (54 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status

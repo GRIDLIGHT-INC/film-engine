@@ -111,6 +111,7 @@ const { handleBackups } = require('./routes/backups');
 const { handleDemoProject } = require('./routes/demo-project');
 // ==== CODEX:START ops-compliance-routes ====
 const { handleJobs } = require('./routes/jobs');
+const { handleFlows } = require('./routes/flows');
 // ==== CODEX:END ====
 
 const PORT = process.env.PORT || 3100;
@@ -393,6 +394,20 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/projects/:id/assets
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'assets') {
             return handleAssets(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/flows  and  /film/flows/:id[/validate]
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'flows') {
+            return handleFlows(req, res, parts, query);
+        }
+        if (parts[1] === 'flows' && parts[2]) {
+            return handleFlows(req, res, parts, query);
+        }
+        if (parts[1] === 'flow-runs' && parts[2]) {
+            return handleFlows(req, res, parts, query);
+        }
+        if (parts[1] === 'flow-templates') {
+            return handleFlows(req, res, parts, query);
         }
 
         // ==== CODEX:START ops-compliance-routes ====
@@ -883,6 +898,18 @@ function start() {
     } catch (err) {
         console.error('Failed to initialize database:', err.message);
         process.exit(1);
+    }
+
+    // The built-in flow is derived from PIPELINE_STEPS, so re-seeding on every
+    // boot is how a newly added pipeline step reaches the canvas without a
+    // migration. Idempotent.
+    try {
+        const { db } = require('./db/database');
+        const { seedBuiltinFlows } = require('./lib/flow-seed');
+        const seeded = seedBuiltinFlows(db);
+        console.log(`  Built-in flow ${seeded.created ? 'created' : 'refreshed'}: ${seeded.nodes} nodes, ${seeded.edges} edges`);
+    } catch (err) {
+        console.error('Failed to seed built-in flows:', err.message);
     }
 
     server.listen(PORT, () => {
