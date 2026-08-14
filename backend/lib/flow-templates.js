@@ -132,7 +132,7 @@ const TEMPLATES = {
                 // The collector port earns its keep here: three audio sources,
                 // one input.
                 { id: 'mix', type: 'tf.mix', label: 'Mix', config: {}, x: 60 + COL * 2, y: 60 + ROW },
-                { id: 'save', type: 'out.asset', label: 'Save', config: { asset_type: 'music' }, x: 60 + COL * 3, y: 60 + ROW },
+                { id: 'save', type: 'out.asset', label: 'Save', config: { asset_type: 'audio_music' }, x: 60 + COL * 3, y: 60 + ROW },
             ],
             edges: [
                 { from: 'scene', fromPort: 'text', to: 'music', toPort: 'text' },

@@ -97,7 +97,8 @@
         "runFlowStream",
         "executeNode",
         "resolveNodeInputs",
-        "cancelFlowRun"
+        "cancelFlowRun",
+        "getFlowRun"
       ],
       "contract": "executeNode(node, inputs, ctx) -> { ok, outputs: {port: {type, value}}, error?, providerId? }. resolveNodeInputs(graph, nodeId, outputsSoFar) gathers upstream port values. runFlow walks nextNodes() until the frontier is empty, persisting each node-run.",
       "rationale": "This is the generalization of routes/pipeline.js:executeStep(). Keeping it in lib/ rather than routes/ mirrors how pipeline-engine.js is split from routes/pipeline.js, and lets a flow be run from a route, a batch job, or a test with no HTTP."
@@ -192,9 +193,11 @@
       "status": "modified",
       "phase": 0,
       "exports": [
-        "handlePipeline"
+        "handlePipeline",
+        "persistStepResult",
+        "STEP_CAPABILITY"
       ],
-      "contract": "executeStep() stops constructing { shot_id, scene_id, project_id, step } inline and calls buildCapabilityPayload(capability, ctx) instead. In phase 2 it delegates to flow-executor for the seeded built-in flow.",
+      "contract": "executeStep() stops constructing { shot_id, scene_id, project_id, step } inline and calls buildCapabilityPayload(capability, ctx) instead. In phase 2 it delegates to flow-executor for the seeded built-in flow. Phase 6: also persists each step's output, closing the gap where orchestrated runs generated media and discarded it.",
       "rationale": "This is the defect: routes/storyboard.js:581 builds a real prompt while routes/pipeline.js:122 ships a four-key stub to the same endpoint, so every orchestrated run silently generates from an empty prompt."
     },
     {
