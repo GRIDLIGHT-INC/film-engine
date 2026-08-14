@@ -21,7 +21,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (54 migrations)
+│   │   └── migrations/     # SQL migration files (55 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -131,6 +131,7 @@ film-engine/
 │       ├── project-presets.test.js  # Project presets unit tests (Phase 15)
 │       ├── subtitle-generator.test.js # Subtitle format tests (Phase 17)
 │       ├── backup.test.js           # Backup export/import tests (Phase 18)
+│       ├── phase6-live-runs.test.js       # SSE streaming, orchestrator persistence (Phase 6)
 │       ├── flow-branches.test.js         # Fan-out, select gate, budget guard (Phase 3)
 │       ├── flow-templates.test.js        # Every template validates (Phase 5)
 │       ├── flow-executor.test.js         # Typed-port execution, all 23 handlers (Phase 2)
@@ -307,6 +308,13 @@ Ambient is a **loop, not a full render**: `buildAmbientPrompt` asks for a bed of
 
 No licensed-catalog *source* adapter ships today, so `stock` has no provider at all — nothing writes `film_assets.license_source = 'licensed_catalog'`, which the music-rights routes are built around. The `source` (search/license) contract and the OAuth/MCP connect flow both remain wired for the next provider that needs them.
 
+### Live Runs & Orchestrator Persistence (Phase 6)
+`POST /film/flows/:id/run/stream` reports progress over SSE — `node_start` / `node_complete` per node, then a terminal event — because a fan-out is minutes of generation and a blocking response tells the user nothing until it is too late to stop. Same executor, callbacks wired to the response, so there is no second graph walk to drift. Every write is guarded on the client still being connected, and a client hanging up is treated as cancellation.
+
+**The orchestrator now saves what it generates.** `routes/pipeline.js` called generators and discarded the results, so an orchestrated run produced no assets at all — which is why `lipsync` and `post` could never find their inputs and skipped. `persistStepResult()` stores each step's output and registers it in `film_assets`; a step that generated but could not save is reported **failed**, because a "complete" pipeline with no output is the worse outcome.
+
+Two latent defects surfaced once steps could fail: `film_pipeline_runs` never permitted the `completed_with_errors` status its own code writes (so any partially failed run 500'd), and the audio asset types are `audio_music`/`audio_sfx`/`audio_ambient` rather than the bare names. Both are now guarded set-based against the schema's own vocabulary.
+
 ### Variants & the Budget Guard (Phase 3)
 `tf.fanout` runs **once** and declares the branches its dependants run across, so no generator handler ever has to know it is being fanned — the executor replays everything downstream per branch key. Branches are rows (`film_flow_branches`), not in-memory state, so a paused gate survives a restart and cost can be attributed per variant. `tf.select` **pauses** the run when more than one branch reaches it; auto-selecting would make the gate decorative.
 
@@ -398,7 +406,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (54 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (55 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status

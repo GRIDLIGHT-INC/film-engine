@@ -17,7 +17,7 @@
 
 const { db, generateId } = require('../db/database');
 const { validateGraph, graphFingerprint } = require('../lib/flow-graph');
-const { runFlow, cancelFlowRun, getFlowRun } = require('../lib/flow-executor');
+const { runFlow, runFlowStream, cancelFlowRun, getFlowRun } = require('../lib/flow-executor');
 const { projectedCost, budgetStatus } = require('../lib/flow-cost');
 const { listTemplates, instantiate } = require('../lib/flow-templates');
 const { loadShotContext } = require('../lib/capability-payloads');
@@ -281,6 +281,34 @@ function validateFlow(req, res, flowId) {
  * against any shot — the reusability the whole feature is for. Without a shot
  * it still runs; nodes needing shot data simply skip.
  */
+/** Context for a run: shot if named, else project. Shared by both run paths. */
+function runContext(body) {
+    let ctx = {};
+    if (body.shot_id) {
+        ctx = loadShotContext(body.shot_id) || {};
+        if (!ctx.shot) return { error: 'Shot not found' };
+    } else if (body.project_id) {
+        ctx.project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(body.project_id) || null;
+        if (!ctx.project) return { error: 'Project not found' };
+    }
+    ctx.vars = body.vars || {};
+    return { ctx };
+}
+
+/** SSE variant. A fan-out is minutes of work; a blocking response tells the user nothing until it is over. */
+async function runFlowStreamRoute(req, res, flowId) {
+    const stored = loadGraph(flowId);
+    if (!stored) return json(res, 404, { error: 'Flow not found' });
+
+    const body = req.body || {};
+    const resolved = runContext(body);
+    if (resolved.error) return json(res, 404, { error: resolved.error });
+
+    return runFlowStream({ nodes: stored.nodes, edges: stored.edges }, resolved.ctx, {
+        flowId, params: body, ignoreBudget: !!body.ignore_budget,
+    }, res);
+}
+
 async function runFlowRoute(req, res, flowId) {
     const stored = loadGraph(flowId);
     if (!stored) return json(res, 404, { error: 'Flow not found' });
@@ -421,7 +449,12 @@ function handleFlows(req, res, urlParts, query) {
         if (!FLOW_ID_RE.test(flowId)) return json(res, 400, { error: 'Invalid flow ID' });
 
         if (urlParts[3] === 'validate' && req.method === 'POST') return validateFlow(req, res, flowId);
-        if (urlParts[3] === 'run' && req.method === 'POST') return runFlowRoute(req, res, flowId);
+        if (urlParts[3] === 'run' && req.method === 'POST') {
+            // urlParts[4] matters: matching only on 'run' silently served the
+            // blocking handler to clients asking for a stream.
+            if (urlParts[4] === 'stream') return runFlowStreamRoute(req, res, flowId);
+            return runFlowRoute(req, res, flowId);
+        }
         if (urlParts[3] === 'estimate' && req.method === 'POST') return estimateFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'GET') return getFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'PUT') return updateFlow(req, res, flowId);

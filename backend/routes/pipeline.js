@@ -18,7 +18,7 @@ const { resolveGenerator } = require('../lib/providers');
 const { auditShotReadiness, auditProjectReadiness } = require('../lib/consistency-context');
 const { ensureDir, saveFile, getFileUrl } = require('../lib/file-storage');
 const { PIPELINE_STEPS, buildStepPlan, autoSkipSteps, retryDelay, MAX_RETRIES } = require('../lib/pipeline-engine');
-const { buildCapabilityPayload, loadShotContext, providerConfigOf } = require('../lib/capability-payloads');
+const { buildCapabilityPayload, loadShotContext, providerConfigOf, persistCapabilityResult } = require('../lib/capability-payloads');
 const { buildSchedule, suggestResidency, MODEL_PROFILES } = require('../lib/scheduling-engine');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -105,6 +105,76 @@ const STEP_CAPABILITY = {
     music: 'music', sfx: 'sfx', ambient: 'ambient', post: 'post',
 };
 
+
+// Where each orchestrated capability's output lands, and under what filename.
+// A capability missing from here would generate media that goes nowhere, so
+// tests assert this covers STEP_CAPABILITY rather than trusting it.
+const PERSIST_EXT = {
+    image: 'png', video: 'mp4', voice: 'wav', lipsync: 'mp4',
+    music: 'wav', sfx: 'wav', ambient: 'wav', post: 'mp4',
+};
+
+/**
+ * Save what a step generated.
+ *
+ * The orchestrator used to call a generator and throw the result away. An
+ * orchestrated run therefore produced NO assets at all — which is why lipsync
+ * and post could never find their inputs mid-run, and skipped. Flow node
+ * handlers persisted from the start; this is the legacy path catching up.
+ *
+ * Returns { ok } rather than throwing: a step that generated but could not save
+ * must be reported as failed, because a "complete" pipeline with no output is
+ * the worse outcome.
+ */
+async function persistStepResult(stepId, capability, result, ctx) {
+    if (!PERSIST_EXT[capability]) {
+        return { ok: false, error: `no storage mapping for capability '${capability}'` };
+    }
+    if (!result || !result.ok || result.data === undefined || result.data === null) {
+        return { ok: false, error: 'nothing to persist' };
+    }
+
+    const shot = ctx && ctx.shot;
+    const scene = ctx && ctx.scene;
+    const code = (shot && shot.shot_code) || (shot && shot.id) || 'shot';
+    const filename = `${code}_${stepId}.${PERSIST_EXT[capability]}`;
+
+    try {
+        const saved = await persistCapabilityResult(capability, result, ctx, filename);
+
+        const assetId = generateId();
+        // These must be values film_assets.asset_type actually permits — the
+        // audio ones are prefixed there ('audio_music', not 'music'), and a
+        // wrong value fails the CHECK at insert, turning a successful
+        // generation into a failed step.
+        const ASSET_TYPE = {
+            image: 'keyframe', video: 'video_raw', voice: 'audio_dialogue', lipsync: 'video_synced',
+            music: 'audio_music', sfx: 'audio_sfx', ambient: 'audio_ambient', post: 'video_final',
+        };
+
+        db.prepare(
+            `INSERT INTO film_assets (id, project_id, shot_id, scene_id, asset_type, file_path, file_name, version, license_source, license_status, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'generated', 'generated', ?)`
+        ).run(
+            assetId,
+            (scene && scene.project_id) || null,
+            (shot && shot.id) || null,
+            (scene && scene.id) || null,
+            ASSET_TYPE[capability] || 'other',
+            saved.path,
+            filename,
+            JSON.stringify({ source: 'pipeline', step: stepId })
+        );
+
+        return { ok: true, assetId, path: saved.path };
+    } catch (err) {
+        return { ok: false, error: `could not persist ${capability} output: ${err.message}` };
+    }
+}
+
+/** Capabilities this function knows how to store. */
+persistStepResult.supports = capability => !!PERSIST_EXT[capability];
+
 async function executeStep(stepId, shot, scene, project) {
     // Assembly is handled locally (NLE export), not an external generation call.
     if (stepId === 'assembly') {
@@ -160,6 +230,14 @@ async function executeStep(stepId, shot, scene, project) {
             if (!result || !result.ok) {
                 return { ok: false, error: (result && result.error) || `${capability} generation failed`, results };
             }
+
+            // Save it. Generating and discarding is what left orchestrated runs
+            // with no assets and downstream steps with nothing to consume.
+            const saved = await persistStepResult(stepId, capability, result, { shot, scene, project });
+            if (!saved.ok) {
+                return { ok: false, error: saved.error, results };
+            }
+            result.assetId = saved.assetId;
         }
 
         return requests.length === 1
@@ -536,4 +614,4 @@ function getLatestSchedule(req, res, projectId) {
     json(res, 200, { ...run, schedule, residency });
 }
 
-module.exports = { handlePipeline };
+module.exports = { handlePipeline, persistStepResult, STEP_CAPABILITY };

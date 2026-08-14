@@ -249,6 +249,81 @@ function recordBranch(runId, branchKey, originNodeId, branchRows) {
     return branchRows.get(branchKey);
 }
 
+
+/**
+ * Run a flow, reporting progress over SSE as it goes.
+ *
+ * Same executor, with callbacks wired to the response — the alternative was a
+ * second walk of the graph that could drift from the first. A long run is the
+ * normal case here (a fan-out is minutes of generation), so a blocking JSON
+ * response tells the user nothing until it is far too late to stop.
+ *
+ * Every write is guarded on the client still being there: an abandoned request
+ * must not keep a run writing into a closed socket.
+ */
+async function runFlowStream(graph, ctx, opts, res) {
+    const alive = () => res && !res.writableEnded;
+
+    if (!alive()) return { id: null, status: 'cancelled', nodes: [] };
+
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+    });
+
+    const send = (event, data) => {
+        if (!alive()) return;
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // The client hanging up is a cancellation, not an error.
+    let clientGone = false;
+    const onClose = () => { clientGone = true; };
+    if (res && typeof res.on === 'function') res.on('close', onClose);
+
+    const context = {
+        ...(ctx || {}),
+        onNodeStart: (nodeId, node, branch) => send('node_start', { node_id: nodeId, node_type: node.type, branch: branch || '' }),
+        onNodeDone: (nodeId, result) => send('node_complete', {
+            node_id: nodeId,
+            ok: result.ok,
+            skipped: !!result.skipped,
+            error: result.error || '',
+            message: result.message || '',
+            provider: result.providerId || '',
+        }),
+    };
+
+    let run;
+    try {
+        run = await runFlow(graph, context, { ...(opts || {}), isCancelled: () => clientGone });
+    } catch (err) {
+        send('error', { error: err.message });
+        if (alive()) res.end();
+        return { id: null, status: 'failed', nodes: [], errors: [{ code: 'EXECUTOR_ERROR', message: err.message }] };
+    } finally {
+        if (res && typeof res.removeListener === 'function') res.removeListener('close', onClose);
+    }
+
+    // A refusal has to reach the client too — the failure mode this replaces is
+    // a stream that simply stops with no explanation.
+    if (run.errors && run.errors.length) {
+        for (const e of run.errors) send('error', e);
+    }
+
+    send(run.status === 'complete' ? 'complete' : run.status, {
+        run_id: run.id,
+        status: run.status,
+        nodes: run.nodes,
+        budget: run.budget,
+        errors: run.errors || [],
+    });
+
+    if (alive()) res.end();
+    return run;
+}
+
 /** True when nodeId transitively depends on any of `ids`. */
 function dependsOnAny(graph, nodeId, ids) {
     if (!ids.length) return false;
@@ -341,5 +416,5 @@ function getFlowRun(runId) {
 }
 
 module.exports = {
-    runFlow, executeNode, resolveNodeInputs, cancelFlowRun, getFlowRun,
+    runFlow, runFlowStream, executeNode, resolveNodeInputs, cancelFlowRun, getFlowRun,
 };
