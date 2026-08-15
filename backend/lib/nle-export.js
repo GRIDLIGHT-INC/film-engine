@@ -11,6 +11,26 @@
 
 const FPS = 24;
 
+/**
+ * The audio elements that leave the engine on their own lanes.
+ *
+ * ONE list, because there were two: FCPXML laid out four elements and the
+ * Premiere generator laid out three, so every Premiere export silently dropped
+ * the ambient bed. Nothing failed — the file opened, the timeline played, and
+ * the missing layer looked like a creative choice. That matters more now that
+ * finishing happens in the NLE: mix, ducking and grade are done against these
+ * lanes, so a lane that never arrives is work that cannot be done at all.
+ *
+ * audio_mix is deliberately absent: it is the finished master, and laying it
+ * beside its own stems would double every element.
+ */
+const AUDIO_LANES = [
+    { type: 'audio_dialogue', label: 'Dialogue' },
+    { type: 'audio_music', label: 'Music' },
+    { type: 'audio_sfx', label: 'SFX' },
+    { type: 'audio_ambient', label: 'Ambient' },
+];
+
 /** Default project settings for backward compatibility */
 const DEFAULT_SETTINGS = {
     target_fps: 24,
@@ -360,7 +380,7 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
             xml += `    <asset id="${refId}" name="${escapeXml(videoAsset.file_name || shot.shot_code)}" src="${escapeXml(toFileUrl(videoAsset.file_path))}" start="0/1s" duration="${durFrames * frameDurNum}/${frameDurDen}s" format="r1"/>\n`;
         }
 
-        for (const audioType of ['audio_dialogue', 'audio_music', 'audio_sfx', 'audio_ambient']) {
+        for (const { type: audioType } of AUDIO_LANES) {
             const audioAsset = shotAssets.find(a => a.asset_type === audioType);
             if (audioAsset) {
                 const refId = `a${assetIndex++}`;
@@ -412,7 +432,7 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
             xml += `              <video ref="${videoRef}" duration="${durRational}"/>\n`;
 
             let lane = 1;
-            for (const audioType of ['audio_dialogue', 'audio_music', 'audio_sfx', 'audio_ambient']) {
+            for (const { type: audioType } of AUDIO_LANES) {
                 const audioRef = assetIdMap[`${shot.id}_${audioType}`];
                 if (audioRef) {
                     xml += `              <audio ref="${audioRef}" lane="${lane}" duration="${durRational}"/>\n`;
@@ -570,12 +590,8 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
     xml += `        </track>\n`;
     xml += `      </video>\n`;
 
-    // Audio tracks (dialogue, music, SFX)
-    const audioTypes = [
-        { type: 'audio_dialogue', label: 'Dialogue' },
-        { type: 'audio_music', label: 'Music' },
-        { type: 'audio_sfx', label: 'SFX' },
-    ];
+    // One track per element, from the shared lane list.
+    const audioTypes = AUDIO_LANES;
 
     xml += `      <audio>\n`;
 
@@ -623,6 +639,7 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
 }
 
 module.exports = {
+    AUDIO_LANES,
     generateEDL,
     generateFCPXML,
     generatePremiereXML,

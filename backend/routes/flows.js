@@ -477,4 +477,7 @@ function handleFlows(req, res, urlParts, query) {
     return json(res, 404, { error: 'Not found' });
 }
 
-module.exports = { handleFlows, loadGraph, writeGraph };
+// runContext is exported for lib/mcp-tools.js: a node invoked over MCP must see
+// the same context the same node sees inside a flow, and two copies of this
+// loader would be two answers to "what does this shot look like".
+module.exports = { handleFlows, loadGraph, writeGraph, runContext };

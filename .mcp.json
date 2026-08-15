@@ -1,5 +1,11 @@
 {
   "mcpServers": {
+    "film-engine": {
+      "command": "node",
+      "args": [
+        "backend/mcp-server.js"
+      ]
+    },
     "neoncore": {
       "command": "node",
       "args": [

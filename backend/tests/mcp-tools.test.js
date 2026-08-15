@@ -1,0 +1,246 @@
+/**
+ * MCP surface tests.
+ *
+ * The point of generating the MCP tool list from the runtime registries rather
+ * than hand-writing it is that it CANNOT drift: a new node type is a new tool
+ * without anyone remembering. These tests are therefore all set-based — they
+ * iterate NODE_TYPES and the flows router itself. An example-based test ("is
+ * there a gen.image tool?") passes on a half-generated list, which is the exact
+ * failure this file exists to prevent.
+ */
+
+const { test } = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const { spawn } = require('child_process');
+
+// Before any require that reaches db/database — mcp-tools pulls in routes/flows,
+// which opens the database at import time. See test-isolation.test.js.
+process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
+    || path.join(os.tmpdir(), 'film-engine-mcp-' + crypto.randomUUID().slice(0, 8));
+
+const { ensureSchema } = require('../db/schema');
+ensureSchema();
+
+const { NODE_TYPES } = require('../lib/flow-node-types');
+const { list: listHandlers } = require('../lib/node-handlers');
+const {
+    listTools, hasTool, callTool, toolNameForNodeType, NODE_TOOL_PREFIX, ROUTE_TOOLS, SSE_EXCEPTION,
+} = require('../lib/mcp-tools');
+
+const TOOLS = listTools();
+const byName = new Map(TOOLS.map(t => [t.name, t]));
+const nodeTools = TOOLS.filter(t => t.name.startsWith(NODE_TOOL_PREFIX));
+const flowTools = TOOLS.filter(t => !t.name.startsWith(NODE_TOOL_PREFIX));
+
+// ── Set 1: the node-type registry ───────────────────────────────────────────
+
+test('every node type in the registry has exactly one MCP tool', () => {
+    const missing = Object.keys(NODE_TYPES).filter(id => !hasTool(toolNameForNodeType(id)));
+    assert.deepStrictEqual(missing, [], `node types with no MCP tool: ${missing.join(', ')}`);
+
+    // And nothing extra: a node tool with no registry entry would be a tool an
+    // agent can call that the canvas cannot draw.
+    const registryNames = new Set(Object.keys(NODE_TYPES).map(toolNameForNodeType));
+    const orphans = nodeTools.map(t => t.name).filter(n => !registryNames.has(n));
+    assert.deepStrictEqual(orphans, [], `node tools with no registry entry: ${orphans.join(', ')}`);
+
+    assert.strictEqual(nodeTools.length, Object.keys(NODE_TYPES).length);
+});
+
+test('every node type with a tool also has a handler that can run it', () => {
+    const handlers = new Set(listHandlers());
+    const unrunnable = Object.keys(NODE_TYPES).filter(id => !handlers.has(id));
+    assert.deepStrictEqual(unrunnable, [],
+        `tools exposed for node types with no handler: ${unrunnable.join(', ')}`);
+});
+
+test("every node tool's schema declares exactly its registry input ports", () => {
+    const wrong = [];
+    for (const [id, def] of Object.entries(NODE_TYPES)) {
+        const tool = byName.get(toolNameForNodeType(id));
+        const declared = Object.keys((tool.inputSchema.properties.inputs || {}).properties || {}).sort();
+        const expected = [...def.inputs].sort();
+        if (JSON.stringify(declared) !== JSON.stringify(expected)) {
+            wrong.push({ id, declared, expected });
+        }
+    }
+    assert.deepStrictEqual(wrong, [], `port/schema mismatch: ${JSON.stringify(wrong, null, 1)}`);
+});
+
+test('a node tool names its capability so an agent can see what it will spend on', () => {
+    const missing = Object.entries(NODE_TYPES)
+        .filter(([, def]) => def.capability)
+        .filter(([id, def]) => !byName.get(toolNameForNodeType(id)).description.includes(def.capability));
+    assert.deepStrictEqual(missing.map(([id]) => id), []);
+});
+
+// ── Set 2: the shipped HTTP route surface ───────────────────────────────────
+//
+// Parsed from the router itself. A route added to handleFlows without an MCP
+// tool fails here, which is the drift this whole design is guarding against.
+
+function handlersReachableFromRouter() {
+    const src = fs.readFileSync(path.join(__dirname, '../routes/flows.js'), 'utf8');
+    const body = src.slice(src.indexOf('function handleFlows'));
+    return [...new Set([...body.matchAll(/return\s+(\w+)\(req,\s*res/g)].map(m => m[1]))].sort();
+}
+
+test('every handler reachable from the flows router has an MCP tool', () => {
+    const reachable = handlersReachableFromRouter();
+    assert.ok(reachable.length >= 14, `router parse found only ${reachable.length} handlers`);
+
+    const covered = new Set(ROUTE_TOOLS.map(t => t.handler).filter(Boolean));
+    const missing = reachable.filter(h => !covered.has(h) && h !== SSE_EXCEPTION);
+    assert.deepStrictEqual(missing, [],
+        `shipped routes with no MCP tool: ${missing.join(', ')}`);
+});
+
+test('the one uncovered route is the SSE stream, and it is named', () => {
+    // Not an oversight: a single tools/call returns one result, so a streaming
+    // route has nothing extra to offer. flow_run covers the same work.
+    assert.strictEqual(SSE_EXCEPTION, 'runFlowStreamRoute');
+    assert.ok(handlersReachableFromRouter().includes(SSE_EXCEPTION));
+    assert.ok(ROUTE_TOOLS.every(t => t.handler !== SSE_EXCEPTION));
+});
+
+test('every flow tool maps to a route that actually dispatches', async () => {
+    // The phase-6 lesson: a route claimed shipped must be proven dispatched.
+    // 404 "Not found" is the router's fallthrough; 405 means the method is wrong.
+    const bad = [];
+    for (const tool of ROUTE_TOOLS) {
+        const res = await callTool(tool.name, tool.probe || {});
+        const status = res._status;
+        // Exactly the router's fallthrough body. "Flow not found" from a real
+        // handler is a dispatched route answering about a missing row, and must
+        // not be mistaken for an unrouted one.
+        if (status === 404 && res.body && res.body.error === 'Not found') {
+            bad.push({ tool: tool.name, why: 'router fallthrough' });
+        }
+        if (status === 405) bad.push({ tool: tool.name, why: 'method not allowed' });
+    }
+    assert.deepStrictEqual(bad, [], `undispatched flow tools: ${JSON.stringify(bad)}`);
+});
+
+// ── Shape of the surface as a whole ─────────────────────────────────────────
+
+test('tool names are unique and MCP-safe', () => {
+    const names = TOOLS.map(t => t.name);
+    assert.strictEqual(new Set(names).size, names.length, 'duplicate tool name');
+    const illegal = names.filter(n => !/^[a-z][a-z0-9_]{0,62}$/.test(n));
+    assert.deepStrictEqual(illegal, [], `illegal tool names: ${illegal.join(', ')}`);
+});
+
+test('every tool has a usable object inputSchema and a description', () => {
+    const bad = TOOLS.filter(t =>
+        !t.inputSchema || t.inputSchema.type !== 'object' ||
+        typeof t.inputSchema.properties !== 'object' ||
+        !t.description || t.description.length < 10);
+    assert.deepStrictEqual(bad.map(t => t.name), []);
+});
+
+test('every advertised tool dispatches — none is a name with no code behind it', async () => {
+    // Called with empty arguments on purpose: the assertion is only that the
+    // dispatcher recognises the name. A generator with no bound shot fails at
+    // payload-build time, before any provider is resolved, so this reaches no
+    // network and spends nothing.
+    const unknown = [];
+    for (const tool of TOOLS) {
+        const res = await callTool(tool.name, {});
+        if (res && res.unknownTool) unknown.push(tool.name);
+    }
+    assert.deepStrictEqual(unknown, [], `advertised but not dispatched: ${unknown.join(', ')}`);
+});
+
+test('an unadvertised tool name is rejected rather than silently doing nothing', async () => {
+    const res = await callTool('node_gen_nonexistent', {});
+    assert.ok(res.unknownTool, 'dispatcher accepted a tool it never advertised');
+});
+
+// ── The stdio server itself ─────────────────────────────────────────────────
+
+function rpc(requests, timeoutMs = 15000) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [path.join(__dirname, '../mcp-server.js')], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: { ...process.env, FILM_ENGINE_MCP_TEST: '1' },
+        });
+        let out = '';
+        let stderr = '';
+        const timer = setTimeout(() => { child.kill(); reject(new Error(`timeout; stderr=${stderr}`)); }, timeoutMs);
+
+        child.stdout.on('data', d => { out += d.toString(); });
+        child.stderr.on('data', d => { stderr += d.toString(); });
+        child.on('close', () => {
+            clearTimeout(timer);
+            const messages = out.split('\n').filter(Boolean).map(l => {
+                try { return JSON.parse(l); } catch (_) { return { _unparsed: l }; }
+            });
+            resolve({ messages, stderr });
+        });
+
+        for (const r of requests) child.stdin.write(JSON.stringify(r) + '\n');
+        child.stdin.end();
+    });
+}
+
+test('the stdio server speaks JSON-RPC: initialize then tools/list', async () => {
+    const { messages, stderr } = await rpc([
+        { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } } },
+        { jsonrpc: '2.0', method: 'notifications/initialized' },
+        { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+    ]);
+
+    const init = messages.find(m => m.id === 1);
+    assert.ok(init && init.result, `no initialize result; stderr=${stderr}`);
+    assert.ok(init.result.protocolVersion, 'initialize returned no protocolVersion');
+    assert.ok(init.result.capabilities.tools, 'server did not advertise tools capability');
+    assert.strictEqual(init.result.serverInfo.name, 'film-engine');
+
+    const listed = messages.find(m => m.id === 2);
+    assert.ok(listed && listed.result, 'no tools/list result');
+    assert.strictEqual(listed.result.tools.length, TOOLS.length,
+        'the wire tool list disagrees with the generated one');
+
+    // A notification carries no id and must draw no response.
+    assert.ok(!messages.some(m => m.id === undefined && m.result !== undefined),
+        'server replied to a notification');
+});
+
+test('the stdio server returns a JSON-RPC error for an unknown method', async () => {
+    const { messages } = await rpc([
+        { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {} } },
+        { jsonrpc: '2.0', id: 7, method: 'nonexistent/method' },
+    ]);
+    const err = messages.find(m => m.id === 7);
+    assert.ok(err && err.error, 'no error object for an unknown method');
+    assert.strictEqual(err.error.code, -32601);
+});
+
+test('tools/call over the wire reaches a real tool', async () => {
+    const { messages } = await rpc([
+        { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {} } },
+        { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'flow_node_types', arguments: {} } },
+    ]);
+    const called = messages.find(m => m.id === 3);
+    assert.ok(called && called.result, 'tools/call returned no result');
+    assert.ok(Array.isArray(called.result.content) && called.result.content[0].type === 'text');
+    const payload = JSON.parse(called.result.content[0].text);
+    assert.strictEqual(Object.keys(payload).length, Object.keys(NODE_TYPES).length,
+        'flow_node_types did not return the registry');
+});
+
+test('a failing tool reports isError rather than a JSON-RPC error', async () => {
+    // MCP draws this line deliberately: a tool that ran and failed is a result
+    // the model can read and react to; a JSON-RPC error is a protocol fault.
+    const { messages } = await rpc([
+        { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {} } },
+        { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'flow_get', arguments: { flow_id: 'no-such-flow' } } },
+    ]);
+    const called = messages.find(m => m.id === 4);
+    assert.ok(called && called.result, 'a tool failure became a protocol error');
+    assert.strictEqual(called.result.isError, true);
+});

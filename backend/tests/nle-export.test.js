@@ -22,6 +22,7 @@ const {
     isNtscFps,
     FPS,
     DEFAULT_SETTINGS,
+    AUDIO_LANES,
 } = require('../lib/nle-export');
 
 // ── Test Data ────────────────────────────────────────────────────────
@@ -331,13 +332,15 @@ describe('generatePremiereXML', () => {
         assert.ok(xml.includes('<height>1080</height>'));
     });
 
-    it('creates audio tracks for dialogue, music, SFX', () => {
+    it('creates one audio track per element lane', () => {
+        // Was pinned at 3 — dialogue, music, SFX — which is why the missing
+        // ambient track read as correct for as long as it did. Counted against
+        // AUDIO_LANES now, so the count follows the list instead of contradicting it.
         const xml = generatePremiereXML(testProject, testShots, testAssets);
         assert.ok(xml.includes('<audio>'));
-        // Should have track elements
         const audioSection = xml.split('<audio>')[1].split('</audio>')[0];
         const trackCount = (audioSection.match(/<track>/g) || []).length;
-        assert.equal(trackCount, 3); // dialogue, music, SFX
+        assert.equal(trackCount, AUDIO_LANES.length);
     });
 
     it('includes scene markers', () => {
@@ -604,4 +607,53 @@ describe('generatePremiereXML with custom settings', () => {
         // 1000ms at 30fps = 30 frames
         assert.ok(xml.includes('<duration>30</duration>'));
     });
+});
+
+/**
+ * The handoff to the NLE.
+ *
+ * With lip-sync, mix and grade finished in Premiere rather than in the engine,
+ * an element that never reaches the timeline is work that cannot be done at
+ * all — and it fails silently, because the file still opens and still plays.
+ * Iterating AUDIO_LANES rather than naming lanes is the point: it is a
+ * three-versus-four mismatch between two hand-kept lists that lost ambient
+ * from every Premiere export in the first place.
+ */
+describe('audio lanes reach every format that carries audio', () => {
+    const project = { id: 'p1', title: 'Handoff' };
+    const shots = [{ id: 's1', shot_code: 'SH01', duration_ms: 4000, scene_number: 1 }];
+    const assets = [
+        { shot_id: 's1', asset_type: 'video_final', file_path: '/tmp/SH01.mp4', file_name: 'SH01.mp4', duration_ms: 4000 },
+        ...AUDIO_LANES.map((lane, i) => ({
+            shot_id: 's1',
+            asset_type: lane.type,
+            file_path: `/tmp/SH01_${lane.type}.wav`,
+            file_name: `SH01_${lane.type}.wav`,
+            duration_ms: 4000,
+        })),
+    ];
+
+    it('AUDIO_LANES covers every audio element the pipeline produces', () => {
+        // The four generating steps that emit audio: voice, music, sfx, ambient.
+        // audio_mix is the master and is deliberately not a lane.
+        const fromPipeline = ['audio_dialogue', 'audio_music', 'audio_sfx', 'audio_ambient'];
+        assert.deepEqual(AUDIO_LANES.map(l => l.type).sort(), fromPipeline.sort());
+    });
+
+    for (const [format, generate] of [['FCPXML', generateFCPXML], ['Premiere XML', generatePremiereXML]]) {
+        it(`${format} references every audio lane`, () => {
+            const xml = generate(project, shots, assets, {});
+            const missing = AUDIO_LANES.filter(lane => !xml.includes(`SH01_${lane.type}.wav`));
+            assert.deepEqual(missing.map(l => l.type), [],
+                `${format} dropped: ${missing.map(l => l.type).join(', ')}`);
+        });
+
+        it(`${format} lays out one distinct track per lane`, () => {
+            const xml = generate(project, shots, assets, {});
+            for (const lane of AUDIO_LANES) {
+                const refs = xml.split(`SH01_${lane.type}.wav`).length - 1;
+                assert.ok(refs >= 1, `${format} lost ${lane.type}`);
+            }
+        });
+    }
 });

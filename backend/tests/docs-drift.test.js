@@ -85,7 +85,12 @@ test('no lib module referenced by CLAUDE.md has been deleted', () => {
         ...jsFiles(path.join(BACKEND, 'db')),
         ...jsFiles(path.join(BACKEND, 'lib', 'providers')),
         ...jsFiles(path.join(BACKEND, 'lib', 'node-handlers')),
-        'server.js', 'index.html', 'app.json',
+        // The backend root is scanned rather than listed: it held only
+        // server.js when this guard was written, and hardcoding that name meant
+        // the next root-level entry point (mcp-server.js) failed the check for
+        // existing rather than for being undocumented.
+        ...jsFiles(BACKEND),
+        'index.html', 'app.json',
     ]);
 
     const dangling = [...new Set(referenced)].filter(f => !known.has(f));

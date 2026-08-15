@@ -18,6 +18,8 @@ Server runs on `http://localhost:3100`. Database auto-initializes on first run (
 film-engine/
 ├── backend/
 │   ├── server.js           # HTTP server + routing (port 3100)
+│   ├── mcp-server.js       # MCP stdio server (JSON-RPC, no SDK)
+│   ├── preflight.js        # End-to-end readiness report (CLI, exits 1 if blocked)
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
@@ -99,6 +101,8 @@ film-engine/
 │   │   ├── flow-graph.js         # Flow graph algebra: validate, cycles, topo, ports (Phase 1)
 │   │   ├── flow-node-types.js    # Runtime node-type registry: ports, kinds, arity (Phase 1)
 │   │   ├── flow-seed.js          # Built-in flow derived from PIPELINE_STEPS (Phase 1)
+│   │   ├── mcp-tools.js          # MCP tool surface, generated from the registries
+│   │   ├── e2e-preflight.js      # Screenplay→final-shot readiness, derived from PIPELINE_STEPS
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
@@ -131,6 +135,9 @@ film-engine/
 │       ├── project-presets.test.js  # Project presets unit tests (Phase 15)
 │       ├── subtitle-generator.test.js # Subtitle format tests (Phase 17)
 │       ├── backup.test.js           # Backup export/import tests (Phase 18)
+│       ├── mcp-tools.test.js             # MCP tool generation, dispatch, JSON-RPC wire
+│       ├── e2e-readiness.test.js         # Preflight covers every stage screenplay→final
+│       ├── fixtures/thirty-second.fountain # 30-second E2E test screenplay
 │       ├── phase6-live-runs.test.js       # SSE streaming, orchestrator persistence (Phase 6)
 │       ├── flow-branches.test.js         # Fan-out, select gate, budget guard (Phase 3)
 │       ├── flow-templates.test.js        # Every template validates (Phase 5)
@@ -281,6 +288,8 @@ Export project timelines for professional video editors:
 
 All three formats support dynamic project settings (resolution, fps, aspect ratio, color space), transition metadata (dissolve, fade, wipe), and rational frame durations for NTSC fps. Exports are registered in the asset registry.
 
+`AUDIO_LANES` is the single source for which audio elements leave on their own track — dialogue, music, SFX, ambient (`audio_mix` is excluded: it is the finished master, and laying it beside its own stems would double every element). It exists because there were two lists: FCPXML laid out four elements and Premiere XML laid out three, so every Premiere export silently dropped the ambient bed. Nothing failed — the file opened and played, and the missing layer looked like a creative choice. Since finishing now happens in the NLE, a lane that never arrives is work that cannot be done at all.
+
 ### Project Settings
 Per-project technical settings: resolution (8 presets + custom), frame rate (8 options including 23.976, 29.97), aspect ratio (12 presets including IMAX 1.43:1/1.90:1, anamorphic 2.39:1, Univisium 2:1), color space (sRGB, Rec.709, DCI-P3, Rec.2020, ACES), and 6 delivery presets (Theatrical DCP, IMAX, Streaming HD/4K, Social Media, Broadcast).
 
@@ -294,6 +303,40 @@ Extracts dialogue from scene cards, matches characters to voice profiles, and ge
 
 ### Video Generation
 Builds video generation payloads from storyboard keyframes + scene cards. Maps camera movements to `camera_control` objects (18 movement types). Uses storyboard keyframe as `init_image`. Videos stored at `data/video/{project_id}/{shot_code}.mp4`.
+
+### End-to-End Preflight
+`node backend/preflight.js [project-id] [--no-dialogue] [--json]` answers one question: can a screenplay reach a finished shot **right now**? It checks all 15 stages from project creation to NLE export — the 9 `PIPELINE_STEPS` derived from code, plus breakdown, script parse, shots, audio mix and export — and exits non-zero if any is blocked, so it can gate a run rather than just describe one. It generates nothing; it reads config and opens sockets.
+
+The failure it exists to catch: `resolveGenerator()` falls back to Gridlight when a project's `provider_config` names a provider that no longer exists, so a dead configuration **resolves successfully** and only fails at generation time. The preflight compares what the config asks for against what would actually run and reports the gap.
+
+**Finishing happens in the NLE.** Lip-sync, post/grade and the audio mix are performed in Premiere (or by a third-party lip-sync provider) against the exported lanes, not generated in-engine — they have no adapter but Gridlight, which does not implement `/lipsync`, `/postprocess` or `/audio/mix`. The preflight reports them as `NLE`, not blocked. That exemption is only honest because the export carries the material: `AUDIO_LANES` in `lib/nle-export.js` is the single list of elements that leave on their own track, and `tests/nle-export.test.js` iterates it to prove each one lands in both FCPXML and Premiere XML. Pass `--in-engine` to hold those three to a real provider instead.
+
+Capability coverage as it stands:
+
+| Capability | Providers that serve it |
+|---|---|
+| llm, image | openai, gridlight (image also: runway) |
+| video | runway, gridlight |
+| music, voice, sfx, ambient | elevenlabs, gridlight |
+| lipsync, post | **gridlight only** |
+| model3d | meshy, gridlight |
+| stock | **none** |
+
+Test screenplay for an end-to-end run: `backend/tests/fixtures/thirty-second.fountain` — one location, one speaking character, ~30 seconds, sized to exercise every step at the lowest cost.
+
+### MCP Server
+`backend/mcp-server.js` exposes the flows engine to agents over MCP (stdio, JSON-RPC). Run it with `node backend/mcp-server.js` — a client spawns it; it does not talk to a human.
+
+The tool list is **generated, never enumerated** (`lib/mcp-tools.js`), in two sets:
+
+- **One tool per node type** — `node_<type>`, e.g. `node_gen_image`, built by iterating `NODE_TYPES` in `lib/flow-node-types.js`, the same registry the canvas palette reads. Input schemas are derived from each node's declared ports, so a new node type becomes a correctly-typed MCP tool with no edit here. Execution goes straight to `handlerFor(type).execute()`, with context from the run routes' own `runContext()`.
+- **One tool per shipped flows route** — `flow_list`, `flow_run`, `flow_estimate`, and so on, dispatched *through* `handleFlows` via an in-process request shim rather than reimplemented. One budget gate, one validator, one set of bugs. `runFlowStreamRoute` is the single deliberate omission (`SSE_EXCEPTION`): a `tools/call` returns one result, so a stream has nothing to add over `flow_run`.
+
+`tests/mcp-tools.test.js` iterates both registries in both directions — a node type without a tool, a tool without a registry entry, a router handler without a tool, or a tool whose route does not actually dispatch all fail. Route results are unwrapped before reaching the model (`presentResult`), keeping the HTTP status only when it explains a refusal, since a 402 budget rejection a model reads as "failed" is a call it will retry unchanged.
+
+**No SDK.** Hand-rolled JSON-RPC over newline-delimited stdio: four methods, and `@modelcontextprotocol/sdk` would be a larger surface than the thing it wraps. Same reasoning as [ADR-002](docs/adr/002-vanilla-http-no-framework.md); the backend still has exactly one dependency.
+
+**Env vars:** `FILM_DATA_DIR` — the database the server reads/writes; defaults to the HTTP server's, so both see one project set.
 
 ### Providers (pluggable generation backends)
 Capabilities (`llm`, `image`, `video`, `music`, `voice`, `sfx`, `ambient`, `lipsync`, `post`, `model3d`, `stock`) each resolve to a provider adapter: per-project `provider_config` → `PROVIDER_<CAP>` env → Gridlight default. Adapters live in `lib/providers/` and are auto-loaded by filename, so adding one never means editing the registry.
@@ -531,6 +574,8 @@ node --test backend/tests/gridlight-client.test.js
 node --test backend/tests/project-presets.test.js
 node --test backend/tests/subtitle-generator.test.js
 node --test backend/tests/backup.test.js
+node --test backend/tests/mcp-tools.test.js
+node --test backend/tests/e2e-readiness.test.js
 
 # Run integration tests (spawns server with temp DB)
 node --test backend/tests/integration.test.js
