@@ -29,6 +29,11 @@ const VALID_LIGHTING = [
 
 const VALID_GEN_MODES = ['creative', 'locked'];
 
+// Sensor formats a scene card may name, taken from the previs optics registry
+// rather than retyped: a card that validates against a sensor the maths does not
+// know is a card that cannot be blocked.
+const VALID_SENSORS = Object.keys(require('./previs-camera').SENSORS);
+
 /**
  * Validate a single scene card object.
  * Returns { valid: true } or { valid: false, errors: [...] }
@@ -67,6 +72,27 @@ function validateSceneCard(card) {
             }
             if (card.camera.lens !== undefined && typeof card.camera.lens !== 'string') {
                 errors.push('camera.lens must be a string (e.g. "35mm", "85mm")');
+            }
+
+            // Optical fields for 3D previs. All optional, and `lens` stays the
+            // free string it has always been: every scene card written before
+            // previs existed must keep validating, so these are added beside it
+            // rather than replacing it. Parsing "35mm" into a number would be
+            // lossy ("35mm anamorphic"), and a card can carry both.
+            if (card.camera.sensor !== undefined && !VALID_SENSORS.includes(card.camera.sensor)) {
+                errors.push(`camera.sensor must be one of: ${VALID_SENSORS.join(', ')}`);
+            }
+            if (card.camera.aperture !== undefined
+                && (typeof card.camera.aperture !== 'number' || !(card.camera.aperture > 0))) {
+                errors.push('camera.aperture must be a positive number (the f-number, e.g. 2.8)');
+            }
+            if (card.camera.focus_distance_m !== undefined
+                && (typeof card.camera.focus_distance_m !== 'number' || !(card.camera.focus_distance_m > 0))) {
+                errors.push('camera.focus_distance_m must be a positive number of metres');
+            }
+            if (card.camera.height_m !== undefined
+                && (typeof card.camera.height_m !== 'number' || !Number.isFinite(card.camera.height_m))) {
+                errors.push('camera.height_m must be a number of metres above the floor');
             }
         }
     }
@@ -171,5 +197,6 @@ module.exports = {
     VALID_SHOT_TYPES,
     VALID_CAMERA_MOVES,
     VALID_LIGHTING,
-    VALID_GEN_MODES
+    VALID_GEN_MODES,
+    VALID_SENSORS
 };

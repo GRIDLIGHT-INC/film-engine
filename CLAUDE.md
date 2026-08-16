@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (55 migrations)
+│   │   └── migrations/     # SQL migration files (58 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -59,6 +59,7 @@ film-engine/
 │   │   ├── budget.js           # Budget & cost tracking (Phase 18)
 │   │   ├── backups.js          # Auto-backup system (Phase 18)
 │   │   ├── flows.js            # Flow CRUD + graph validation (Phase 1)
+│   │   ├── previs.js           # Previs blocking CRUD + framing solve (Phase 2)
 │   │   ├── providers.js        # Provider registry, credentials, OAuth connect
 │   │   ├── consistency.js      # Consistency profiles, locking, readiness audit
 │   │   ├── takes.js            # Takes & selects (circle-take workflow)
@@ -102,6 +103,11 @@ film-engine/
 │   │   ├── flow-node-types.js    # Runtime node-type registry: ports, kinds, arity (Phase 1)
 │   │   ├── flow-seed.js          # Built-in flow derived from PIPELINE_STEPS (Phase 1)
 │   │   ├── mcp-tools.js          # MCP tool surface, generated from the registries
+│   │   ├── previs-camera.js      # Previs optics: FOV, framing distance, DOF (Phase 0)
+│   │   ├── previs-blocking.js    # Previs blocking: rigs, movement paths, shot solving (Phase 1)
+│   │   ├── previs-primitives.js  # Stage primitives: standing figure, box, sphere (Phase 5)
+│   │   ├── previs-pick.js        # Unproject + hit test for direct manipulation (Phase 6)
+│   │   ├── nav-flow.js           # Sidebar order, derived from PROJECT_PHASES (Phase 6)
 │   │   ├── e2e-preflight.js      # Screenplay→final-shot readiness, derived from PIPELINE_STEPS
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
@@ -136,6 +142,14 @@ film-engine/
 │       ├── subtitle-generator.test.js # Subtitle format tests (Phase 17)
 │       ├── backup.test.js           # Backup export/import tests (Phase 18)
 │       ├── mcp-tools.test.js             # MCP tool generation, dispatch, JSON-RPC wire
+│       ├── previs-routes.test.js         # Previs API + single-file viewer guarantees (Phase 2)
+│       ├── previs-to-video.test.js        # Blocking reaches camera_control; unblocked byte-identical (Phase 3)
+│       ├── previs-moves.test.js           # Move amounts, sequences, stage primitives (Phase 5)
+│       ├── previs-pick.test.js            # Project/unproject round trip, hit testing (Phase 6)
+│       ├── nav-flow.test.js               # Every page in exactly one production phase (Phase 6)
+│       ├── previs-camera.test.js         # Optics vs published lens charts (Phase 0)
+│       ├── previs-blocking.test.js       # All 18 moves sample, all framings solve (Phase 1)
+│       ├── previs-plan.test.js           # 3D previs plan conformance (18 moves, 18 shots, 12 ratios)
 │       ├── e2e-readiness.test.js         # Preflight covers every stage screenplay→final
 │       ├── fixtures/thirty-second.fountain # 30-second E2E test screenplay
 │       ├── phase6-live-runs.test.js       # SSE streaming, orchestrator persistence (Phase 6)
@@ -304,6 +318,27 @@ Extracts dialogue from scene cards, matches characters to voice profiles, and ge
 ### Video Generation
 Builds video generation payloads from storyboard keyframes + scene cards. Maps camera movements to `camera_control` objects (18 movement types). Uses storyboard keyframe as `init_image`. Videos stored at `data/video/{project_id}/{shot_code}.mp4`.
 
+### 3D Previs Camera (phases 0–3, 5–6 built)
+A 3D stage for blocking a shot — ground plane, subject, camera with real lens and aperture — before it goes to video generation.
+
+**Phases 0–1 are built.** `lib/previs-camera.js` is the optics (FOV, framing distance, depth of field, hyperfocal) as pure functions with no I/O, checked against published lens charts rather than against itself — full frame 50mm computes to 39.6° and focusing at hyperfocal yields exactly H/2 → ∞. `lib/previs-blocking.js` is blocking as data: 9 rigs with movement affordances, all 18 movement paths, and `solveShot()`, which turns "close-up on a 50" into a camera 1.21 m from the subject. Scene cards gained optional `camera.sensor`, `aperture`, `focus_distance_m` and `height_m`; `lens` stays a free string so every existing card still validates. **Phase 2** adds the API and the viewer: migration 058 (`film_previs_blocking`, `UNIQUE(shot_id)`, storing the movement **sampled to keyframes** rather than the parameters it came from), `routes/previs.js` (blocking CRUD, `POST /shots/:id/previs/solve`, `GET /previs/taxonomy`), and a Previs page in the SPA with a stage view and a camera view. The renderer is hand-rolled canvas 2D — a 4×4 projection and a polygon painter — for the same reason the flows canvas rejected React Flow: `build.target: single-html` and no bundler. The camera pane is not a second renderer, it is the same projection evaluated from the camera's transform, given the real vertical angle of view for its lens and sensor. The camera pane models the **delivered** frame, not the gate: 2.39:1 out of a 1.33:1 Super 35 sensor is width-limited, so the vertical angle is cropped and a close-up solved for 0.45m of subject height delivers 0.25m. Both numbers are shown, because `solveShot` frames against the sensor and a director reading one would frame loose. Errors block a save; **warnings do not** — telling a director a slider cannot crane is useful, refusing to save it is not. **Phase 3** makes blocking reach generation. `loadShotContext()` carries `ctx.previs`, so previs travels the **one** payload path and the orchestrator cannot describe a shot differently from the per-domain route; `buildVideoPrompt` adds `path` and `rig` to `camera_control` and leaves `type`/`intensity` exactly as the movement enum defines them. A stored path always wins over resampling — it is what was approved in the viewer. `POST /shots/:id/previs/to-video` previews the whole payload the generator would receive. The byte-identical guarantee for unblocked shots is pinned by `tests/fixtures/video-payload-golden.json`, 54 payloads captured from the code as it stood **before** phase 3; regenerating that fixture would delete the guarantee. **Phase 5** makes moves measurable and the stage populated. Every movement now declares a `unit` (`m`/`deg`/`ratio`) and a `defaultAmount` **derived from its own vector**, so "dolly in two metres" is sayable where only an abstract 0–1 intensity existed; omitting the amount reproduces the old path exactly, which is what keeps blockings saved earlier unchanged. `sampleSequence()` runs compound moves leg by leg, each starting where the last ended, weighted by time. In a sequence an explicit amount **is** the magnitude — the movement's default intensity does not also scale it, or asking for 15° would give 7.5°. `lib/previs-primitives.js` adds a standing figure (8 boxes on life-drawing proportions, scaled so a 1.7m figure measures 1.7m), plus boxes and spheres; all rest **on** the floor at their position rather than being centred on it. Migration 059 stores legs and objects additively. **Phase 6** makes the stage editable and the menus follow the film. `lib/previs-pick.js` inverts the projection — screen point back to a point on the floor — so objects are dragged rather than typed; the round trip is asserted over four camera poses, because the obvious wrong inverse (a sign flip on the up axis) is correct for a level camera and only wrong once you tilt. Picking returns the **nearest** object, so clicking never edits something hidden behind what you are looking at, and a figure's pick box comes from its proportions rather than a typed width its arms reach past. Objects are also finally drawn in the camera pane — they were missing from the one view that answers "is it in the shot".
+
+**The framing subject is no longer a box of its own.** It duplicated a silhouette and carried a height unrelated to the figure actually staged, so it became a *pointer*: `resolveTarget()` picks whichever staged object is marked, falling back to the first placed, and to a floor mark when the stage is empty (framing on empty space is real — a doorway, a mark for an actor). The target object is drawn pink and its own height is the subject height.
+
+Moves carry a **duration** (migration 060), defaulting to the shot's own `duration_ms` — a 1.5m push over 1s is a lunge, over 8s a creep, and the geometry is identical. `legTimings()` splits it by weight and reports pace in the movement's own unit (m/s for a dolly, deg/s for a pan). Legs marked `with` run **concurrently**: `sampleGroup()` samples each from the same start pose and composes their deltas — translations add, rotations add, focal lengths multiply — so a push-while-panning is one move sharing one time slice, and a dolly-zoom comes out right. Chaining poses instead would zoom a camera that had already moved, which is a different shot.
+
+**Playback interpolates.** It used to snap to the nearest keyframe, so a 24-key path repainted at 60fps moved 24 times and stood still between — every movement stepped, not just short ones, and a pull-out (30cm default travel) hopped 12mm at a time. `poseAt()` reads a pose at any moment by mixing the bracketing keys, so how densely a path was sampled is a storage decision rather than something visible in the shot. Legs also carry an `ease` (`linear` default, plus in/out/in-out): a move that starts and stops instantly has no dropped frames and is mechanical in every other sense.
+
+Objects are dragged on the floor, selected by clicking (nearest wins), placed by double-clicking empty floor and removed with Delete. The **image card** primitive stands a generated keyframe, character sheet or reference image in the scene as a cutout: fixed in world space rather than billboarded, so it goes edge-on as you orbit, which is the truth about a flat stand-in. Canvas 2D has no perspective texture map, so the quad is split into two triangles and each affine-mapped — exact at the corners, imperceptibly wrong along the diagonal.
+
+`lib/nav-flow.js` regroups all 34 pages into the nine `PROJECT_PHASES` the status machine already declares, so the sidebar and the phase a project reports itself in cannot disagree. Served over `GET /film/nav-flow`; the SPA **moves** the existing buttons rather than rebuilding them, keeping every tooltip and handler. Phase 4 (`.glb` subjects) remains designed only.
+
+Design: [`docs/plans/previs-camera-implementation-plan.md`](docs/plans/previs-camera-implementation-plan.md), [`previs-camera-research.md`](docs/plans/previs-camera-research.md), machine-readable taxonomy in [`previs-camera-taxonomy.json`](docs/plans/previs-camera-taxonomy.json), conformance enforced by `tests/previs-plan.test.js`.
+
+The vocabulary is already in the code and the plan must cover all of it: 18 `VALID_CAMERA_MOVES`, 18 `VALID_SHOT_TYPES`, 18 `CAMERA_CONTROL_MAP` entries, 12 `ASPECT_RATIO_IDS`. Two findings recorded there: `VALID_SHOT_TYPES` mixes three independent axes (framing from lens+distance, angle from height+pitch, rig from motion path), and six of the eighteen movements are the same 3D transform — `dolly-in`/`tracking-forward`/`push-in` all translate camera-local −Z — so the vocabulary has twelve distinct transforms, not eighteen. Neither matters to a text prompt; both are load-bearing in 3D.
+
+Phases 0–3 need no 3D library (canvas 2D and a 4×4 matrix pipeline, same call as the Flows canvas rejecting React Flow against `build.target: single-html`). Only phase 4 — loading the actual generated `.glb` as the subject — needs Three.js, and that gets its own ADR.
+
 ### End-to-End Preflight
 `node backend/preflight.js [project-id] [--no-dialogue] [--json]` answers one question: can a screenplay reach a finished shot **right now**? It checks all 15 stages from project creation to NLE export — the 9 `PIPELINE_STEPS` derived from code, plus breakdown, script parse, shots, audio mix and export — and exits non-zero if any is blocked, so it can gate a run rather than just describe one. It generates nothing; it reads config and opens sockets.
 
@@ -449,7 +484,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (55 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (58 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -576,6 +611,14 @@ node --test backend/tests/subtitle-generator.test.js
 node --test backend/tests/backup.test.js
 node --test backend/tests/mcp-tools.test.js
 node --test backend/tests/e2e-readiness.test.js
+node --test backend/tests/previs-plan.test.js
+node --test backend/tests/previs-camera.test.js
+node --test backend/tests/previs-blocking.test.js
+node --test backend/tests/previs-routes.test.js
+node --test backend/tests/previs-to-video.test.js
+node --test backend/tests/previs-moves.test.js
+node --test backend/tests/previs-pick.test.js
+node --test backend/tests/nav-flow.test.js
 
 # Run integration tests (spawns server with temp DB)
 node --test backend/tests/integration.test.js

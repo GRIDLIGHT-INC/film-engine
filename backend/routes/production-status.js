@@ -349,4 +349,10 @@ function buildStatusSummary(projectId) {
     };
 }
 
-module.exports = { handleProductionStatus, evaluateSceneStatus, evaluateProjectStatus };
+// PROJECT_PHASES is exported for lib/nav-flow.js: the sidebar is ordered by the
+// same state machine that advances a project, so the menu and the status a
+// project reports can never disagree about what phase the work is in.
+module.exports = {
+    handleProductionStatus, evaluateSceneStatus, evaluateProjectStatus,
+    PROJECT_PHASES, SCENE_STATUSES, SHOT_STATUSES,
+};

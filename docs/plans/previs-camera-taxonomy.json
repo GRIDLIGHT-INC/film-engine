@@ -1,0 +1,955 @@
+{
+  "version": 1,
+  "note": "Machine-readable half of previs-camera-implementation-plan.md. Conformance enforced by backend/tests/previs-plan.test.js, which iterates VALID_CAMERA_MOVES, VALID_SHOT_TYPES, CAMERA_CONTROL_MAP and ASPECT_RATIO_IDS rather than sampling them.",
+  "coordinateSystem": {
+    "handedness": "right",
+    "up": "+Y",
+    "cameraForward": "-Z",
+    "units": "metres",
+    "rotateOrder": "yaw (Y), pitch (X), roll (Z), degrees",
+    "note": "Matches glTF 2.0, which is what lib/threed-prompt.js already produces for characters and props, so a generated .glb drops in without a conversion step."
+  },
+  "sensors": {
+    "super35": {
+      "label": "Super 35 (3-perf)",
+      "widthMm": 24.89,
+      "heightMm": 18.66,
+      "circleOfConfusionMm": 0.025,
+      "note": "The default. ARRI Alexa 35, most digital cinema."
+    },
+    "fullframe": {
+      "label": "Full Frame / VistaVision",
+      "widthMm": 36.0,
+      "heightMm": 24.0,
+      "circleOfConfusionMm": 0.03,
+      "note": "Alexa LF, Sony Venice FF. c = 0.03mm is the classic 35mm-still value."
+    },
+    "s16": {
+      "label": "Super 16",
+      "widthMm": 12.52,
+      "heightMm": 7.41,
+      "circleOfConfusionMm": 0.015
+    },
+    "m43": {
+      "label": "Micro Four Thirds",
+      "widthMm": 17.3,
+      "heightMm": 13.0,
+      "circleOfConfusionMm": 0.015
+    },
+    "imax65": {
+      "label": "IMAX 65mm 15-perf",
+      "widthMm": 70.41,
+      "heightMm": 52.63,
+      "circleOfConfusionMm": 0.045,
+      "note": "Pairs with the 1.43:1 aspect ratio already in project-presets."
+    },
+    "phone": {
+      "label": "Phone (1/1.7\")",
+      "widthMm": 7.6,
+      "heightMm": 5.7,
+      "circleOfConfusionMm": 0.008,
+      "note": "Vertical social deliverables shoot here; 9:16 is already a project preset."
+    }
+  },
+  "lensKit": [
+    12,
+    14,
+    16,
+    18,
+    21,
+    25,
+    27,
+    32,
+    35,
+    40,
+    50,
+    65,
+    75,
+    85,
+    100,
+    135,
+    150,
+    200
+  ],
+  "apertures": [
+    1.3,
+    1.4,
+    2.0,
+    2.8,
+    4.0,
+    5.6,
+    8.0,
+    11.0,
+    16.0,
+    22.0
+  ],
+  "rigs": {
+    "tripod": {
+      "label": "Tripod / fluid head",
+      "affords": [
+        "static",
+        "pan-left",
+        "pan-right",
+        "tilt-up",
+        "tilt-down",
+        "zoom-in",
+        "zoom-out"
+      ],
+      "heightRangeM": [
+        0.3,
+        1.9
+      ],
+      "note": "Locked base. Cannot translate — the distinction previs exists to make visible."
+    },
+    "dolly": {
+      "label": "Dolly on track",
+      "affords": [
+        "dolly-in",
+        "dolly-out",
+        "tracking-left",
+        "tracking-right",
+        "tracking-forward",
+        "tracking-back",
+        "push-in",
+        "pull-out",
+        "pan-left",
+        "pan-right",
+        "static",
+        "zoom-in",
+        "zoom-out"
+      ],
+      "heightRangeM": [
+        0.4,
+        1.7
+      ],
+      "note": "Track must be laid: a straight path, and the previs viewer should draw it, because where the track goes is where the lights cannot."
+    },
+    "slider": {
+      "label": "Slider",
+      "affords": [
+        "tracking-left",
+        "tracking-right",
+        "push-in",
+        "pull-out",
+        "dolly-in",
+        "dolly-out",
+        "zoom-in",
+        "zoom-out"
+      ],
+      "travelM": [
+        0.3,
+        1.5
+      ],
+      "note": "Short throw. A 3m tracking move on a slider is the error previs should catch."
+    },
+    "crane": {
+      "label": "Jib / crane",
+      "affords": [
+        "crane-up",
+        "crane-down",
+        "orbit",
+        "tilt-up",
+        "tilt-down",
+        "pan-left",
+        "pan-right",
+        "zoom-in",
+        "zoom-out"
+      ],
+      "armLengthM": [
+        1.5,
+        9.0
+      ],
+      "note": "Vertical travel plus arc. Arm length bounds the arc radius."
+    },
+    "steadicam": {
+      "label": "Steadicam",
+      "affords": [
+        "tracking-forward",
+        "tracking-back",
+        "tracking-left",
+        "tracking-right",
+        "orbit",
+        "dolly-in",
+        "dolly-out",
+        "crane-up",
+        "crane-down",
+        "zoom-in",
+        "zoom-out"
+      ],
+      "heightRangeM": [
+        0.2,
+        2.1
+      ],
+      "note": "Free path, no track. Trades precision for reach."
+    },
+    "handheld": {
+      "label": "Handheld",
+      "affords": [
+        "static",
+        "tracking-forward",
+        "tracking-back",
+        "tracking-left",
+        "tracking-right",
+        "pan-left",
+        "pan-right",
+        "tilt-up",
+        "tilt-down",
+        "zoom-in",
+        "zoom-out"
+      ],
+      "heightRangeM": [
+        0.2,
+        2.0
+      ],
+      "noiseAmplitude": 0.35,
+      "note": "The only rig with a noise term: previs that renders handheld as perfectly smooth is lying about the shot."
+    },
+    "gimbal": {
+      "label": "Gimbal",
+      "affords": [
+        "tracking-forward",
+        "tracking-back",
+        "tracking-left",
+        "tracking-right",
+        "orbit",
+        "push-in",
+        "pull-out",
+        "pan-left",
+        "pan-right",
+        "zoom-in",
+        "zoom-out"
+      ],
+      "heightRangeM": [
+        0.1,
+        2.2
+      ]
+    },
+    "drone": {
+      "label": "Drone",
+      "affords": [
+        "crane-up",
+        "crane-down",
+        "orbit",
+        "tracking-forward",
+        "tracking-back",
+        "tracking-left",
+        "tracking-right",
+        "tilt-down",
+        "pan-left",
+        "pan-right",
+        "zoom-in",
+        "zoom-out"
+      ],
+      "heightRangeM": [
+        0.5,
+        120.0
+      ],
+      "note": "The only rig whose height range makes the aerial shot type reachable."
+    },
+    "cablecam": {
+      "label": "Cable cam",
+      "affords": [
+        "tracking-forward",
+        "tracking-back",
+        "crane-down",
+        "crane-up",
+        "zoom-in",
+        "zoom-out"
+      ],
+      "heightRangeM": [
+        2.0,
+        60.0
+      ]
+    }
+  },
+  "shotTypes": {
+    "extreme-close-up": {
+      "axis": "framing",
+      "subjectHeightM": 0.18,
+      "note": "Eyes, hands, a detail."
+    },
+    "close-up": {
+      "axis": "framing",
+      "subjectHeightM": 0.45,
+      "note": "Head and shoulders."
+    },
+    "medium": {
+      "axis": "framing",
+      "subjectHeightM": 1.0,
+      "note": "Waist up."
+    },
+    "two-shot": {
+      "axis": "framing",
+      "subjectHeightM": 1.3,
+      "subjectWidthM": 1.6,
+      "note": "Two people; width is the governing dimension."
+    },
+    "over-the-shoulder": {
+      "axis": "framing",
+      "subjectHeightM": 0.9,
+      "foregroundOccluder": true,
+      "note": "Needs a second subject between camera and target."
+    },
+    "wide": {
+      "axis": "framing",
+      "subjectHeightM": 2.2,
+      "note": "Full body with headroom."
+    },
+    "insert": {
+      "axis": "framing",
+      "subjectHeightM": 0.12,
+      "note": "A prop, not a person."
+    },
+    "establishing": {
+      "axis": "framing",
+      "subjectHeightM": 12.0,
+      "note": "The space, not the subject."
+    },
+    "low-angle": {
+      "axis": "angle",
+      "cameraHeightM": 0.45,
+      "pitchDegrees": 18,
+      "note": "Below eyeline, looking up."
+    },
+    "high-angle": {
+      "axis": "angle",
+      "cameraHeightM": 2.6,
+      "pitchDegrees": -22,
+      "note": "Above eyeline, looking down."
+    },
+    "dutch-angle": {
+      "axis": "angle",
+      "cameraHeightM": 1.6,
+      "pitchDegrees": 0,
+      "rollDegrees": 15,
+      "note": "The only shot type that sets roll."
+    },
+    "aerial": {
+      "axis": "angle",
+      "cameraHeightM": 40.0,
+      "pitchDegrees": -55,
+      "requiresRig": "drone"
+    },
+    "pov": {
+      "axis": "angle",
+      "cameraHeightM": 1.65,
+      "pitchDegrees": 0,
+      "note": "Camera stands in for a character's eyeline; height comes from that character."
+    },
+    "tracking": {
+      "axis": "rig",
+      "rig": "dolly"
+    },
+    "dolly": {
+      "axis": "rig",
+      "rig": "dolly"
+    },
+    "steadicam": {
+      "axis": "rig",
+      "rig": "steadicam"
+    },
+    "handheld": {
+      "axis": "rig",
+      "rig": "handheld"
+    },
+    "crane": {
+      "axis": "rig",
+      "rig": "crane"
+    }
+  },
+  "movements": {
+    "static": {
+      "space": "none",
+      "translate": [
+        0,
+        0,
+        0
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.0,
+      "cameraControlType": "static",
+      "rigs": [
+        "tripod",
+        "dolly",
+        "handheld"
+      ]
+    },
+    "pan-left": {
+      "space": "camera",
+      "translate": [
+        0,
+        0,
+        0
+      ],
+      "rotate": [
+        30,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "pan-left",
+      "rigs": [
+        "tripod",
+        "dolly",
+        "crane",
+        "handheld",
+        "gimbal",
+        "drone"
+      ]
+    },
+    "pan-right": {
+      "space": "camera",
+      "translate": [
+        0,
+        0,
+        0
+      ],
+      "rotate": [
+        -30,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "pan-right",
+      "rigs": [
+        "tripod",
+        "dolly",
+        "crane",
+        "handheld",
+        "gimbal",
+        "drone"
+      ]
+    },
+    "tilt-up": {
+      "space": "camera",
+      "translate": [
+        0,
+        0,
+        0
+      ],
+      "rotate": [
+        0,
+        20,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "tilt-up",
+      "rigs": [
+        "tripod",
+        "crane",
+        "handheld"
+      ]
+    },
+    "tilt-down": {
+      "space": "camera",
+      "translate": [
+        0,
+        0,
+        0
+      ],
+      "rotate": [
+        0,
+        -20,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "tilt-down",
+      "rigs": [
+        "tripod",
+        "crane",
+        "handheld",
+        "drone"
+      ]
+    },
+    "dolly-in": {
+      "space": "camera",
+      "translate": [
+        0,
+        0,
+        -2
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "dolly-in",
+      "rigs": [
+        "dolly",
+        "slider",
+        "steadicam"
+      ]
+    },
+    "dolly-out": {
+      "space": "camera",
+      "translate": [
+        0,
+        0,
+        2
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "dolly-out",
+      "rigs": [
+        "dolly",
+        "slider",
+        "steadicam"
+      ]
+    },
+    "zoom-in": {
+      "space": "none",
+      "translate": [
+        0,
+        0,
+        0
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 2.0,
+      "defaultIntensity": 0.6,
+      "cameraControlType": "zoom-in",
+      "rigs": [
+        "tripod",
+        "dolly",
+        "slider",
+        "crane",
+        "steadicam",
+        "handheld",
+        "gimbal",
+        "drone",
+        "cablecam"
+      ],
+      "note": "A zoom is performed by the lens, not the mount, so every rig affords it. Listing only tripod and dolly was a category error: it implied a Steadicam operator cannot zoom."
+    },
+    "zoom-out": {
+      "space": "none",
+      "translate": [
+        0,
+        0,
+        0
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 0.5,
+      "defaultIntensity": 0.6,
+      "cameraControlType": "zoom-out",
+      "rigs": [
+        "tripod",
+        "dolly",
+        "slider",
+        "crane",
+        "steadicam",
+        "handheld",
+        "gimbal",
+        "drone",
+        "cablecam"
+      ]
+    },
+    "tracking-left": {
+      "space": "camera",
+      "translate": [
+        -2,
+        0,
+        0
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "tracking-left",
+      "rigs": [
+        "dolly",
+        "slider",
+        "steadicam",
+        "handheld",
+        "gimbal",
+        "drone"
+      ]
+    },
+    "tracking-right": {
+      "space": "camera",
+      "translate": [
+        2,
+        0,
+        0
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "tracking-right",
+      "rigs": [
+        "dolly",
+        "slider",
+        "steadicam",
+        "handheld",
+        "gimbal",
+        "drone"
+      ]
+    },
+    "tracking-forward": {
+      "space": "camera",
+      "translate": [
+        0,
+        0,
+        -3
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "tracking-forward",
+      "rigs": [
+        "dolly",
+        "steadicam",
+        "handheld",
+        "gimbal",
+        "drone",
+        "cablecam"
+      ]
+    },
+    "tracking-back": {
+      "space": "camera",
+      "translate": [
+        0,
+        0,
+        3
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "tracking-back",
+      "rigs": [
+        "dolly",
+        "steadicam",
+        "handheld",
+        "gimbal",
+        "drone",
+        "cablecam"
+      ]
+    },
+    "crane-up": {
+      "space": "world",
+      "translate": [
+        0,
+        2.5,
+        0
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.6,
+      "cameraControlType": "crane-up",
+      "rigs": [
+        "crane",
+        "steadicam",
+        "drone",
+        "cablecam"
+      ]
+    },
+    "crane-down": {
+      "space": "world",
+      "translate": [
+        0,
+        -2.5,
+        0
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.6,
+      "cameraControlType": "crane-down",
+      "rigs": [
+        "crane",
+        "steadicam",
+        "drone",
+        "cablecam"
+      ]
+    },
+    "orbit": {
+      "space": "subject",
+      "translate": [
+        0,
+        0,
+        0
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.7,
+      "cameraControlType": "orbit",
+      "orbitDegrees": 90,
+      "rigs": [
+        "crane",
+        "steadicam",
+        "gimbal",
+        "drone"
+      ]
+    },
+    "push-in": {
+      "space": "camera",
+      "translate": [
+        0,
+        0,
+        -0.6
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "push-in",
+      "rigs": [
+        "dolly",
+        "slider",
+        "gimbal"
+      ]
+    },
+    "pull-out": {
+      "space": "camera",
+      "translate": [
+        0,
+        0,
+        0.6
+      ],
+      "rotate": [
+        0,
+        0,
+        0
+      ],
+      "focalScale": 1,
+      "defaultIntensity": 0.5,
+      "cameraControlType": "pull-out",
+      "rigs": [
+        "dolly",
+        "slider",
+        "gimbal"
+      ]
+    }
+  },
+  "distinctTransforms": {
+    "note": "Six of the eighteen movements are the same 3D transform at different magnitudes and with different rig intent: dolly-in / tracking-forward / push-in all translate camera-local -Z, and dolly-out / tracking-back / pull-out all translate +Z. The vocabulary has twelve distinct transforms, not eighteen. Previs makes that visible; the prompt layer cannot, because a text token for each reads as a different shot.",
+    "forward": [
+      "dolly-in",
+      "tracking-forward",
+      "push-in"
+    ],
+    "backward": [
+      "dolly-out",
+      "tracking-back",
+      "pull-out"
+    ]
+  },
+  "aspectRatios": [
+    "16:9",
+    "2.39:1",
+    "2.35:1",
+    "1.85:1",
+    "1.43:1",
+    "1.90:1",
+    "4:3",
+    "9:16",
+    "1:1",
+    "2:1",
+    "2.76:1",
+    "custom"
+  ],
+  "plan": {
+    "routeNamespace": "previs",
+    "modules": [
+      {
+        "path": "backend/lib/previs-camera.js",
+        "status": "built",
+        "phase": 0,
+        "why": "Pure optics: FOV, framing distance, depth of field, hyperfocal. No DB, no DOM."
+      },
+      {
+        "path": "backend/lib/previs-blocking.js",
+        "status": "built",
+        "phase": 1,
+        "why": "Blocking as data: camera transform, subject placement, the ground plane, and the movement path sampled to keyframes."
+      },
+      {
+        "path": "backend/routes/previs.js",
+        "status": "built",
+        "phase": 2,
+        "why": "handlePrevis(req, res, parts, query) — CRUD for a shot's blocking, per ADR-002."
+      },
+      {
+        "path": "backend/tests/previs-camera.test.js",
+        "status": "built",
+        "phase": 0,
+        "why": "Optics against published values."
+      },
+      {
+        "path": "backend/tests/previs-blocking.test.js",
+        "status": "built",
+        "phase": 1,
+        "why": "Every movement sampled; every shot type solved for distance."
+      },
+      {
+        "path": "backend/lib/scene-card-schema.js",
+        "status": "modified",
+        "phase": 1,
+        "why": "camera gains sensor, aperture, focus_distance_m, height_m and an optional blocking reference. lens stays a string for compatibility."
+      },
+      {
+        "path": "backend/lib/video-prompt.js",
+        "status": "modified",
+        "phase": 3,
+        "why": "camera_control gains the sampled path when a shot has blocking, so previs reaches the generator instead of stopping at the diagram."
+      },
+      {
+        "path": "backend/server.js",
+        "status": "modified",
+        "phase": 2,
+        "why": "Dispatch the previs namespace."
+      },
+      {
+        "path": "src/index.html",
+        "status": "modified",
+        "phase": 2,
+        "why": "The viewer: stage view, camera view, inspector."
+      },
+      {
+        "path": "backend/tests/previs-routes.test.js",
+        "status": "built",
+        "phase": 2,
+        "why": "Routes dispatch, blocking round-trips, and the viewer stays a single file with no build step."
+      },
+      {
+        "path": "backend/tests/previs-to-video.test.js",
+        "status": "built",
+        "phase": 3,
+        "why": "Blocking reaches camera_control; unblocked shots stay byte-identical against a pre-phase-3 golden fixture."
+      },
+      {
+        "path": "backend/lib/capability-payloads.js",
+        "status": "modified",
+        "phase": 3,
+        "why": "loadShotContext carries ctx.previs so blocking travels the one payload path."
+      }
+    ],
+    "migrations": [
+      {
+        "file": "058_previs_blocking.sql",
+        "status": "applied",
+        "phase": 2
+      }
+    ],
+    "routes": [
+      {
+        "method": "GET",
+        "path": "/film/shots/:id/previs",
+        "phase": 2
+      },
+      {
+        "method": "PUT",
+        "path": "/film/shots/:id/previs",
+        "phase": 2
+      },
+      {
+        "method": "DELETE",
+        "path": "/film/shots/:id/previs",
+        "phase": 2
+      },
+      {
+        "method": "POST",
+        "path": "/film/shots/:id/previs/solve",
+        "phase": 2
+      },
+      {
+        "method": "GET",
+        "path": "/film/previs/taxonomy",
+        "phase": 2
+      },
+      {
+        "method": "POST",
+        "path": "/film/shots/:id/previs/to-video",
+        "phase": 3
+      }
+    ],
+    "phases": [
+      {
+        "id": 0,
+        "name": "Optics as pure functions",
+        "exit": "For every sensor and every lens in the kit, computed horizontal FOV matches the published value within 0.1 degrees, and hyperfocal distance matches a reference table within 1 percent."
+      },
+      {
+        "id": 1,
+        "name": "Blocking as data",
+        "exit": "Every one of the 18 movements samples to a keyframe path whose start and end transforms differ, except static; and every framing shot type solves to a camera distance that puts the declared subject height exactly in frame."
+      },
+      {
+        "id": 2,
+        "name": "The viewer",
+        "exit": "A shot can be blocked, saved, reloaded and played back in the SPA with no new build step, and index.html remains deployable as a single file."
+      },
+      {
+        "id": 3,
+        "name": "Feed the generator",
+        "exit": "A blocked shot produces a camera_control whose type equals the one CAMERA_CONTROL_MAP already sends for that movement, plus a sampled path; an unblocked shot produces byte-identical output to today."
+      },
+      {
+        "id": 4,
+        "name": "Real subjects",
+        "exit": "A character with a generated .glb loads into the stage view as its actual mesh, and the shot still renders when the model is absent."
+      }
+    ],
+    "statusMeaning": {
+      "new": "planned, must not exist yet",
+      "built": "landed; the phase that owns it is complete",
+      "modified": "already on disk, this plan changes it",
+      "applied": "migration is on disk and has run"
+    },
+    "openQuestions": [
+      "solveShot frames against the SENSOR, but delivery crops it: a close-up solved for 0.45m of subject height delivers 0.25m once a 2.39:1 extraction is taken from a 1.33:1 Super 35 gate. The viewer now shows both numbers, but the solver should probably take the project's aspect ratio and solve for the DELIVERED height. That changes phase 1's exit criterion, so it is a decision rather than a fix."
+    ]
+  }
+}

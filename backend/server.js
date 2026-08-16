@@ -112,6 +112,7 @@ const { handleDemoProject } = require('./routes/demo-project');
 // ==== CODEX:START ops-compliance-routes ====
 const { handleJobs } = require('./routes/jobs');
 const { handleFlows } = require('./routes/flows');
+const { handlePrevis } = require('./routes/previs');
 // ==== CODEX:END ====
 
 const PORT = process.env.PORT || 3100;
@@ -408,6 +409,14 @@ const server = http.createServer(async (req, res) => {
         }
         if (parts[1] === 'flow-templates') {
             return handleFlows(req, res, parts, query);
+        }
+
+        // Route: /film/shots/:id/previs[/solve]  and  /film/previs/taxonomy
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'previs') {
+            return handlePrevis(req, res, parts, query);
+        }
+        if (parts[1] === 'previs' || parts[1] === 'nav-flow') {
+            return handlePrevis(req, res, parts, query);
         }
 
         // ==== CODEX:START ops-compliance-routes ====

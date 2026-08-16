@@ -69,6 +69,27 @@ function buildVideoPrompt(sceneCard, characters, location, stylePreset, options)
         ? { ...CAMERA_CONTROL_MAP[movement] }
         : { type: 'static', intensity: 0.0 };
 
+    // Previs, when the shot has been blocked in 3D. STRICTLY ADDITIVE: `type`
+    // and `intensity` are left exactly as the movement enum defines them, so a
+    // blocked shot generates what an unblocked one would plus a path — blocking
+    // a shot must not quietly change its look for reasons nobody asked for.
+    //
+    // A STORED path always wins. It is what was seen and approved in the
+    // viewer, and recomputing it would let a later change to a movement's
+    // default intensity silently re-tune an already-approved shot. Sampling
+    // here is only the fallback for blocking assembled in code that has never
+    // been through the viewer.
+    if (opts.previs) {
+        const stored = opts.previs.path;
+        const path = (Array.isArray(stored) && stored.length)
+            ? stored
+            : require('./previs-blocking').samplePath(movement || 'static', opts.previs, { frames: 24 });
+        if (path.length) {
+            camera_control.path = path;
+            if (opts.previs.rig) camera_control.rig = opts.previs.rig;
+        }
+    }
+
     return { prompt, negative_prompt, camera_control };
 }
 

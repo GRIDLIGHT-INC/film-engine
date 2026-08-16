@@ -3652,6 +3652,28 @@
         .diff-summary { font-size: 12px; margin-bottom: 8px; }
         .diff-params { font-size: 11px; margin-top: 8px; }
         /* ==== CLAUDE:END ==== */
+        .nav-group { margin-bottom: 10px; }
+        .nav-group-label { display:flex; justify-content:space-between; align-items:center; padding:6px 12px 4px; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); }
+        .nav-group-count { opacity:.55; font-size:10px; }
+        .nav-group-pinned { border-bottom:1px solid var(--border); padding-bottom:8px; margin-bottom:12px; }
+
+        /* ── Previs stage ──────────────────────────────────────────── */
+        .previs-workspace { display:grid; grid-template-columns:1fr 1fr 300px; gap:12px; height:calc(100vh - 190px); min-height:460px; }
+        .previs-pane { position:relative; background:#0b0d13; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+        .previs-pane canvas { display:block; width:100%; height:100%; cursor:grab; }
+        .previs-pane.dragging canvas { cursor:grabbing; }
+        .previs-viewbar { position:absolute; top:34px; left:10px; display:flex; flex-direction:column; gap:4px; }
+        .previs-viewbar .btn { font-size:10px; padding:3px 8px; opacity:.75; }
+        .previs-viewbar .btn:hover { opacity:1; }
+        .previs-label { position:absolute; top:8px; left:10px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); pointer-events:none; }
+        .previs-readout { position:absolute; bottom:8px; left:10px; right:10px; font-size:11px; color:var(--text-muted); display:flex; gap:14px; flex-wrap:wrap; pointer-events:none; }
+        .previs-readout b { color:var(--text); font-weight:600; }
+        .previs-inspector { overflow-y:auto; padding-right:4px; }
+        .previs-inspector label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:10px 0 3px; }
+        .previs-inspector select, .previs-inspector input { width:100%; }
+        .previs-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+        .previs-warn { margin-top:10px; padding:8px 10px; border-radius:6px; background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.35); color:#f5b544; font-size:12px; }
+
         /* ── Flows canvas ─────────────────────────────────────────── */
         .flow-workspace { display: grid; grid-template-columns: 190px 1fr 260px; gap: 12px; height: calc(100vh - 190px); min-height: 460px; }
         .flow-palette, .flow-inspector { background: var(--panel, #1a1a1f); border: 1px solid var(--border, #2c2c34); border-radius: 8px; padding: 10px; overflow-y: auto; }
@@ -3809,6 +3831,9 @@
                 </button>
                 <button class="nav-item" data-page="flows" onclick="navigateTo('flows')" data-tooltip="Visual canvas: connect prompts, models and assets into reusable flows" data-tooltip-pos="right">
                     <span class="nav-icon">&#128279;</span> Flows
+                </button>
+                <button class="nav-item" data-page="previs" onclick="navigateTo('previs')" data-tooltip="Block a shot in 3D: place the camera, pick a lens, see the frame before you generate" data-tooltip-pos="right">
+                    <span class="nav-icon">&#127916;</span> Previs
                 </button>
                 <button class="nav-item" data-page="settings" onclick="navigateTo('settings')" data-tooltip="Resolution, frame rate, aspect ratio, color space, and delivery presets" data-tooltip-pos="right">
                     <span class="nav-icon">&#9881;</span> Settings
@@ -4713,6 +4738,111 @@
             <div class="card mt-16" id="flowRunPanel" style="display:none;">
                 <h3 class="mb-8">Run</h3>
                 <div id="flowRunOutput" class="text-sm"></div>
+            </div>
+        </div>
+
+        <div class="page" id="page-previs">
+            <div class="flex-between mb-16">
+                <h2>Previs</h2>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="previsShotSelect" style="min-width:220px;" onchange="previsOpenShot(this.value)"></select>
+                    <button class="btn btn-secondary" onclick="previsSolve()">Solve framing</button>
+                    <button class="btn btn-secondary" onclick="previsPlay()" id="previsPlayBtn">Play move</button>
+                    <button class="btn btn-primary" onclick="previsSave()" id="previsSaveBtn">Save blocking</button>
+                </div>
+            </div>
+
+            <div class="previs-workspace">
+                <div class="previs-pane" id="previsStagePane">
+                    <canvas id="previsStage"></canvas>
+                    <div class="previs-label">Stage &mdash; drag to orbit, scroll to zoom</div>
+                    <div class="previs-viewbar">
+                        <button class="btn btn-sm" onclick="previsReframe()" title="fit everything back in view">Reframe</button>
+                        <button class="btn btn-sm" onclick="previsViewFrom('front')" title="look from the front">Front</button>
+                        <button class="btn btn-sm" onclick="previsViewFrom('side')" title="look from the side">Side</button>
+                        <button class="btn btn-sm" onclick="previsViewFrom('top')" title="look straight down">Top</button>
+                    </div>
+                    <div class="previs-readout" id="previsStageReadout"></div>
+                </div>
+
+                <div class="previs-pane">
+                    <canvas id="previsCamera"></canvas>
+                    <div class="previs-label">Camera</div>
+                    <div class="previs-readout" id="previsCameraReadout"></div>
+                </div>
+
+                <aside class="previs-inspector">
+                    <div class="card">
+                        <h3 class="mb-8" style="font-size:13px;">Shot</h3>
+                        <label>Framing / angle / rig</label>
+                        <select id="previsShotType" onchange="previsSolve()"></select>
+                        <label>Movement</label>
+                        <select id="previsMovement" onchange="previsRefresh()"></select>
+                        <label>Rig</label>
+                        <select id="previsRig" onchange="previsRefresh()"></select>
+                    </div>
+
+                    <div class="card mt-16">
+                        <h3 class="mb-8" style="font-size:13px;">Camera</h3>
+                        <label>Sensor</label>
+                        <select id="previsSensor" onchange="previsRefresh()"></select>
+                        <div class="previs-row">
+                            <div>
+                                <label>Lens (mm)</label>
+                                <select id="previsFocal" onchange="previsRefresh()"></select>
+                            </div>
+                            <div>
+                                <label>Aperture</label>
+                                <select id="previsAperture" onchange="previsRefresh()"></select>
+                            </div>
+                        </div>
+                        <div class="previs-row">
+                            <div>
+                                <label>Height (m)</label>
+                                <input type="number" id="previsHeight" step="0.05" value="1.6" oninput="previsRefresh()">
+                            </div>
+                            <div>
+                                <label>Distance (m)</label>
+                                <input type="number" id="previsDistance" step="0.1" value="3" oninput="previsRefresh()">
+                            </div>
+                        </div>
+                        <label>Intensity</label>
+                        <input type="range" id="previsIntensity" min="0" max="1" step="0.05" value="0.5" oninput="previsRefresh()">
+                    </div>
+
+                    <div class="card mt-16">
+                        <div class="flex-between mb-8">
+                            <h3 style="font-size:13px;margin:0;">Move sequence</h3>
+                            <div style="display:flex;gap:6px;align-items:center;">
+                                <input type="number" id="previsDuration" step="0.5" min="0.1" value="4" title="how long the whole move takes (s)"
+                                       oninput="previsRenderMoves();previsRefresh();" style="width:56px;font-size:11px;">
+                                <span class="text-muted" style="font-size:10px;">s</span>
+                                <button class="btn btn-sm btn-secondary" onclick="previsAddLeg()">+ Add</button>
+                            </div>
+                        </div>
+                        <div id="previsMoveList" class="text-sm text-muted">Single move &mdash; add legs to build a compound one.</div>
+                    </div>
+
+                    <div class="card mt-16">
+                        <div class="flex-between mb-8">
+                            <h3 style="font-size:13px;margin:0;">Stage</h3>
+                            <div id="previsAddButtons" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+                        </div>
+                        <div id="previsObjectList" class="text-sm text-muted">Empty stage.</div>
+                    </div>
+
+                    <div class="card mt-16">
+                        <h3 class="mb-8" style="font-size:13px;">Stage</h3>
+                        <label>Floor size (m)</label>
+                        <input type="number" id="previsStageSize" step="1" value="12" oninput="previsRefresh()">
+                        <p class="text-muted" style="font-size:10px;margin-top:6px;">
+                            The shot is framed on whichever object is marked &#9673;. Its own height is the subject height.
+                        </p>
+                    </div>
+
+                    <div id="previsWarnings"></div>
+                    <div class="text-sm text-muted mt-16" id="previsStatus"></div>
+                </aside>
             </div>
         </div>
 
@@ -7207,7 +7337,1712 @@
     // ══════════════════════════════════════════════════════════════
     // NAVIGATION
     // ══════════════════════════════════════════════════════════════
+    // ── Previs canvas ────────────────────────────────────────────────────
+    //
+    // Hand-rolled, for the same reason the flows canvas is: gridlight.json pins
+    // build.target=single-html and this SPA has no bundler, so a 3D library
+    // would mean introducing a build system to ship one page. What a grey-box
+    // previs needs is a 4x4 matrix pipeline and a polygon painter, and the
+    // second view is not a second renderer — it is the same projection
+    // evaluated from the camera's transform instead of the orbit view's.
+    //
+    // The vocabulary is fetched from GET /film/previs/taxonomy rather than
+    // copied here, so the inspector cannot offer a movement, rig or sensor the
+    // server would refuse.
+
+    const PREVIS = {
+        taxonomy: null,
+        shots: [],
+        shotId: null,
+        blocking: null,
+        path: [],
+        playhead: null,
+        orbit: { yaw: 0.6, pitch: 0.35, distance: 14 },
+        drag: null,
+        moves: [],       // compound move legs; empty means the single movement
+        objects: [],     // staged primitives
+        images: [],      // project images an image card can show
+        textures: {},    // url -> HTMLImageElement, loaded once
+        viewCentre: null,        // set by Reframe; null means follow the subject
+        yDrag: null,             // lifting an object off the floor
+        subjectPos: [0, 0, 0],   // the framing subject; SUBJECT_SEL selects it
+        selected: -1,    // index into objects, -1 for none, SUBJECT_SEL for the subject
+        objectDrag: null,
+    };
+
+    // The framing subject is not in PREVIS.objects — it predates them, and it
+    // has a job they do not: solveShot measures against it and the stage orbits
+    // it. It still has to be draggable, so it is picked as a pseudo-object at
+    // this sentinel rather than being demoted into the ordinary list.
+    const SUBJECT_SEL = -2;
+
+    const P_DEG = Math.PI / 180;
+
+    async function loadPrevisPage() {
+        if (!state.currentProject) return;
+        try {
+            if (!PREVIS.taxonomy) PREVIS.taxonomy = await api('/previs/taxonomy');
+            previsFillInspector();
+
+            const data = await api(`/projects/${state.currentProject.id}/shotlist`);
+            PREVIS.shots = data.shots || [];
+            const sel = document.getElementById('previsShotSelect');
+            sel.innerHTML = PREVIS.shots.map(s =>
+                `<option value="${s.id}">${escapeHtml(s.shot_code || s.id.slice(0, 8))}</option>`).join('');
+
+            if (PREVIS.shots.length) await previsOpenShot(PREVIS.shots[0].id);
+            else previsStatus('No shots yet — create one on the Shot Board.');
+
+            await previsLoadImages();
+            previsRenderAddButtons();
+            previsBindStage();
+            previsRefresh();
+        } catch (err) {
+            previsStatus('Could not load previs: ' + err.message);
+        }
+    }
+
+    /**
+     * Images an image card can show — everything the pipeline has already made
+     * for this project. Keyframes and character sheets are the useful ones:
+     * the person standing in the previs becomes the person in the render.
+     */
+    async function previsLoadImages() {
+        PREVIS.images = [];
+        try {
+            const data = await api(`/projects/${state.currentProject.id}/assets`);
+            // Each kind of image is served from its own directory; sending them
+            // all to /storyboards/ meant every character sheet 404'd silently
+            // and the card stayed blank with no clue why.
+            const SERVED_FROM = {
+                keyframe: 'storyboards', storyboard: 'storyboards',
+                character_sheet: 'refsheets', reference_image: 'refsheets',
+            };
+            PREVIS.images = (data.assets || [])
+                .filter(a => SERVED_FROM[a.asset_type] && a.file_name)
+                .map(a => ({
+                    label: `${a.asset_type.replace(/_/g, ' ')} — ${a.file_name}`,
+                    url: `${API_BASE}/film/${SERVED_FROM[a.asset_type]}/${state.currentProject.id}/${encodeURIComponent(a.file_name)}`,
+                }));
+        } catch (err) { /* an empty catalogue is a usable one */ }
+    }
+
+    /** Load a texture once, and repaint when it arrives. */
+    function previsTexture(url) {
+        if (!url) return null;
+        if (PREVIS.textures[url] !== undefined) return PREVIS.textures[url];
+        const img = new Image();
+        PREVIS.textures[url] = null;                 // in flight
+        img.onload = () => { PREVIS.textures[url] = img; previsRefresh(); };
+        img.onerror = () => { PREVIS.textures[url] = false; };
+        img.src = url;
+        return null;
+    }
+
+    function previsStatus(message) {
+        const el = document.getElementById('previsStatus');
+        if (el) el.textContent = message || '';
+    }
+
+    /** Populate every picker from the served taxonomy. */
+    function previsFillInspector() {
+        const t = PREVIS.taxonomy;
+        const opts = (entries, label) => entries.map(([id, def]) =>
+            `<option value="${id}">${escapeHtml(label ? label(id, def) : id)}</option>`).join('');
+
+        document.getElementById('previsShotType').innerHTML =
+            opts(Object.entries(t.shotTypes), (id, d) => `${id}  (${d.axis})`);
+        document.getElementById('previsMovement').innerHTML = opts(Object.entries(t.movements));
+        document.getElementById('previsRig').innerHTML =
+            opts(Object.entries(t.rigs), (id, d) => d.label || id);
+        document.getElementById('previsSensor').innerHTML =
+            opts(Object.entries(t.sensors), (id, d) => d.label || id);
+        document.getElementById('previsFocal').innerHTML =
+            t.lensKit.map(f => `<option value="${f}"${f === 50 ? ' selected' : ''}>${f}mm</option>`).join('');
+        document.getElementById('previsAperture').innerHTML =
+            t.apertures.map(a => `<option value="${a}"${a === 2.8 ? ' selected' : ''}>f/${a}</option>`).join('');
+    }
+
+    async function previsOpenShot(shotId) {
+        PREVIS.shotId = shotId;
+        PREVIS.playhead = null;
+        try {
+            const res = await api(`/shots/${shotId}/previs`);
+            if (res.blocking) {
+                PREVIS.blocking = res.blocking;
+                const c = res.blocking.camera || {};
+                document.getElementById('previsMovement').value = res.blocking.movement || 'static';
+                document.getElementById('previsRig').value = res.blocking.rig || 'dolly';
+                if (c.sensorId) document.getElementById('previsSensor').value = c.sensorId;
+                if (c.focalMm) document.getElementById('previsFocal').value = String(c.focalMm);
+                if (c.fStop) document.getElementById('previsAperture').value = String(c.fStop);
+                if (c.position) {
+                    document.getElementById('previsHeight').value = c.position[1];
+                    document.getElementById('previsDistance').value = c.position[2];
+                }
+                // Subject height is no longer a field: it is the target
+                // object's own height, restored with the objects below.
+                PREVIS.subjectPos = (res.blocking.subject && Array.isArray(res.blocking.subject.position))
+                    ? res.blocking.subject.position.slice() : [0, 0, 0];
+                if (res.blocking.durationMs > 0) document.getElementById('previsDuration').value = res.blocking.durationMs / 1000;
+                PREVIS.moves = Array.isArray(res.blocking.moves) ? res.blocking.moves : [];
+                PREVIS.objects = Array.isArray(res.blocking.subjects) ? res.blocking.subjects : [];
+                previsRenderMoves();
+                previsRenderObjects();
+                previsStatus('Blocking loaded.');
+            } else {
+                PREVIS.blocking = null;
+                PREVIS.subjectPos = [0, 0, 0];
+                PREVIS.moves = [];
+                PREVIS.objects = [];
+                previsRenderMoves();
+                previsRenderObjects();
+                previsStatus('No blocking yet — set a lens and save.');
+            }
+        } catch (err) {
+            previsStatus('Could not open shot: ' + err.message);
+        }
+        previsRefresh();
+    }
+
+    // ── Move sequence ────────────────────────────────────────────────────
+    //
+    // Legs are edited as a list because a compound move is a list: push in,
+    // settle, pan off. Each leg states how far in its OWN unit — metres for a
+    // dolly, degrees for a pan — because "0.7 intensity" is not a number anyone
+    // can carry onto a set.
+
+    function previsRenderMoves() {
+        const el = document.getElementById('previsMoveList');
+        if (!el) return;
+        if (!PREVIS.moves.length) {
+            el.innerHTML = '<span class="text-muted">Single move &mdash; add legs to build a compound one.</span>';
+            return;
+        }
+        const t = PREVIS.taxonomy;
+        const timings = previsLegTimings();
+        el.innerHTML = PREVIS.moves.map((leg, i) => {
+            const def = t.movements[leg.movement] || {};
+            const unit = def.unit === 'm' ? 'm' : def.unit === 'deg' ? '&deg;' : def.unit === 'ratio' ? '&times;' : '';
+            const options = Object.keys(t.movements).map(id =>
+                `<option value="${id}"${id === leg.movement ? ' selected' : ''}>${id}</option>`).join('');
+            const timing = timings[i] || {};
+            return `<div style="margin-bottom:6px;">
+                <div style="display:grid;grid-template-columns:1fr 58px 26px 26px 24px;gap:4px;align-items:center;">
+                    <select onchange="previsSetLeg(${i},'movement',this.value)" style="font-size:11px;">${options}</select>
+                    <input type="number" step="0.1" value="${leg.amount !== undefined ? leg.amount : (def.defaultAmount || 0)}"
+                           title="how far, in ${def.unit || ''}" onchange="previsSetLeg(${i},'amount',parseFloat(this.value))" style="font-size:11px;">
+                    <span class="text-muted" style="font-size:10px;">${unit}</span>
+                    <button class="btn btn-sm" onclick="previsToggleWith(${i})" title="${i === 0 ? 'the first leg starts the move' : 'run at the same time as the leg above'}"
+                            style="font-size:10px;padding:2px 0;${leg.with && i > 0 ? 'color:#38bdf8;border-color:rgba(56,189,248,.6);' : ''}"
+                            ${i === 0 ? 'disabled' : ''}>&#8214;</button>
+                    <button class="btn btn-sm" onclick="previsRemoveLeg(${i})" title="remove">&times;</button>
+                </div>
+                <select onchange="previsSetLeg(${i},'ease',this.value)" style="font-size:10px;width:100%;margin-top:3px;">
+                    ${(PREVIS.taxonomy.easings || ['linear']).map(e =>
+                        `<option value="${e}"${(leg.ease || 'linear') === e ? ' selected' : ''}>${e}</option>`).join('')}
+                </select>
+                <div class="text-muted" style="font-size:10px;padding-left:2px;">
+                    ${leg.with && i > 0 ? 'with the leg above &middot; ' : ''}${timing.ms !== undefined ? (timing.ms / 1000).toFixed(1) + 's' : ''}
+                    ${timing.pace && timing.pace.label !== 'still' ? ' &middot; ' + timing.pace.label : ''}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    /**
+     * How the duration divides between legs, mirroring lib/previs-blocking.js.
+     *
+     * Legs running together SHARE a slice rather than each taking one, so
+     * combining two moves does not silently double the length of the shot.
+     */
+    function previsLegTimings() {
+        const total = Math.max(100, (parseFloat(document.getElementById('previsDuration').value) || 4) * 1000);
+        const groups = [];
+        PREVIS.moves.forEach(leg => {
+            if (leg.with && groups.length) groups[groups.length - 1].push(leg);
+            else groups.push([leg]);
+        });
+        if (!groups.length) return [];
+
+        const weights = groups.map(g => Math.max(...g.map(l => (l.weight > 0 ? l.weight : 1))));
+        const sum = weights.reduce((a, b) => a + b, 0);
+        const out = [];
+        let spent = 0;
+        groups.forEach((group, gi) => {
+            const ms = (gi === groups.length - 1) ? total - spent : Math.round(total * weights[gi] / sum);
+            spent += ms;
+            for (const leg of group) {
+                const def = PREVIS.taxonomy.movements[leg.movement] || {};
+                const amount = (typeof leg.amount === 'number') ? leg.amount : def.defaultAmount;
+                const seconds = ms / 1000;
+                const pace = (def.unit && def.unit !== 'none' && seconds > 0)
+                    ? { label: `${(amount / seconds).toFixed(def.unit === 'deg' ? 0 : 2)} ${def.unit}/s` }
+                    : { label: 'still' };
+                out.push({ ms, pace });
+            }
+        });
+        return out;
+    }
+
+    /** Run this leg at the same time as the one above, or after it. */
+    function previsToggleWith(index) {
+        if (index < 1 || !PREVIS.moves[index]) return;
+        PREVIS.moves[index].with = !PREVIS.moves[index].with;
+        previsRenderMoves();
+        previsRefresh();
+    }
+
+    function previsAddLeg() {
+        const movement = document.getElementById('previsMovement').value;
+        const def = PREVIS.taxonomy.movements[movement];
+        PREVIS.moves.push({ movement, amount: def.defaultAmount });
+        previsRenderMoves();
+        previsRefresh();
+    }
+
+    function previsSetLeg(index, field, value) {
+        if (!PREVIS.moves[index]) return;
+        PREVIS.moves[index][field] = value;
+        // Changing the movement resets the amount to that movement's own unit;
+        // carrying 90 degrees over to a dolly would read as 90 metres.
+        if (field === 'movement') PREVIS.moves[index].amount = PREVIS.taxonomy.movements[value].defaultAmount;
+        previsRenderMoves();
+        previsRefresh();
+    }
+
+    function previsRemoveLeg(index) {
+        PREVIS.moves.splice(index, 1);
+        previsRenderMoves();
+        previsRefresh();
+    }
+
+    // ── Staged objects ───────────────────────────────────────────────────
+
+    /**
+     * One button per primitive, so you choose WHAT you are adding at the moment
+     * you add it. A single "+ Object" put a default on the stage and left you
+     * to find its kind dropdown in a 1500px inspector — the control existed and
+     * was unreachable, which is the same as missing.
+     */
+    function previsRenderAddButtons() {
+        const host = document.getElementById('previsAddButtons');
+        if (!host || !PREVIS.taxonomy) return;
+        host.innerHTML = Object.entries(PREVIS.taxonomy.primitives).map(([id, p]) =>
+            `<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:3px 7px;"
+                     onclick="previsAddObject(null,'${id}')" title="${escapeHtml(p.note || '')}">+ ${escapeHtml(p.label)}</button>`
+        ).join('');
+    }
+
+    /**
+     * Select the row that was clicked — without rebuilding the list if the
+     * click landed on a control.
+     *
+     * The row used to call previsRenderObjects() on every mousedown, which
+     * replaced the list markup while the browser was still opening the <select>
+     * underneath the cursor. The dropdown was destroyed mid-click, so the kind
+     * picker and the image picker could never be used at all. Repainting the
+     * canvas is fine; re-rendering the thing being interacted with is not.
+     */
+    function previsSelectRow(event, index) {
+        PREVIS.selected = index;
+        const tag = (event.target && event.target.tagName) || '';
+        if (/^(SELECT|INPUT|BUTTON|OPTION|TEXTAREA|LABEL)$/.test(tag)) {
+            previsRefresh();               // repaint the stage, leave the DOM alone
+            return;
+        }
+        previsRenderObjects();
+        previsRefresh();
+    }
+
+
+    /**
+     * Nominate the object the shot is of.
+     *
+     * Exactly one at a time: two things claiming to be the subject makes every
+     * framing solve ambiguous, so setting one clears the rest.
+     */
+    function previsSetTarget(index) {
+        if (!PREVIS.objects[index]) return;
+        PREVIS.objects.forEach((o, i) => { o.isTarget = (i === index); });
+        previsRenderObjects();
+        previsRefresh();
+    }
+
+
+
+    function previsRenderObjects() {
+        const el = document.getElementById('previsObjectList');
+        if (!el) return;
+        const kinds = Object.entries(PREVIS.taxonomy.primitives);
+        // The subject always leads the list: it is what the shot is of.
+        const subjectRow = '';   // the subject is an object now, marked in its own row
+        if (!PREVIS.objects.length) { el.innerHTML = '<span class="text-muted" style="font-size:11px;">Empty stage. The camera aims at the floor mark until you place something.</span>'; return; }
+        el.innerHTML = subjectRow + PREVIS.objects.map((o, i) => {
+            const options = kinds.map(([id, p]) =>
+                `<option value="${id}"${id === o.kind ? ' selected' : ''}>${escapeHtml(p.label)}</option>`).join('');
+            const chosen = i === PREVIS.selected;
+            const spec = PREVIS.taxonomy.primitives[o.kind] || {};
+            // A project with nothing generated yet still needs to be able to
+            // stand a picture in the scene, so a file from disk works too.
+            const known = PREVIS.images.some(img => img.url === o.src);
+            const picker = spec.acceptsImage
+                ? `<select onchange="previsSetObject(${i},'src',this.value)" style="font-size:10px;margin-top:3px;width:100%;">
+                       <option value="">— choose an image —</option>
+                       ${PREVIS.images.map(img => `<option value="${escapeHtml(img.url)}"${img.url === o.src ? ' selected' : ''}>${escapeHtml(img.label)}</option>`).join('')}
+                       ${o.src && !known ? `<option value="${escapeHtml(o.src)}" selected>chosen file</option>` : ''}
+                   </select>
+                   <label class="btn btn-sm btn-secondary" style="font-size:10px;margin-top:3px;display:block;text-align:center;cursor:pointer;">
+                       Use a file&hellip;
+                       <input type="file" accept="image/*" style="display:none;" onchange="previsPickFile(event, ${i})">
+                   </label>` : '';
+            return `<div data-object="${i}" style="margin-bottom:7px;padding:4px;border-radius:5px;${chosen ? 'background:rgba(56,189,248,.12);outline:1px solid rgba(56,189,248,.5);' : ''}"
+                        onmousedown="previsSelectRow(event, ${i})">
+                <div style="display:grid;grid-template-columns:1fr 26px 24px;gap:4px;">
+                    <select onchange="previsSetObject(${i},'kind',this.value)" style="font-size:11px;">${options}</select>
+                    <button class="btn btn-sm" onclick="previsSetTarget(${i})" title="make this the framing subject"
+                            style="${i === previsTargetIndex() ? 'color:#ec4899;border-color:rgba(236,72,153,.6);' : ''}">&#9673;</button>
+                    <button class="btn btn-sm" onclick="previsRemoveObject(${i})" title="remove">&times;</button>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-top:3px;">
+                    ${['x', 'y', 'z'].map((ax, a) => `<input type="number" step="0.25" value="${o.position[a]}" title="${ax} (m)"
+                        onchange="previsSetObjectVec(${i},'position',${a},parseFloat(this.value))" style="font-size:10px;">`).join('')}
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-top:3px;">
+                    ${['w', 'h', 'd'].map((ax, a) => `<input type="number" step="0.1" min="0.05" value="${o.sizeM[a]}" title="${ax} (m)"
+                        onchange="previsSetObjectVec(${i},'sizeM',${a},parseFloat(this.value))" style="font-size:10px;">`).join('')}
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-top:3px;">
+                    ${['yaw', 'tilt', 'roll'].map((ax, a) => `<input type="number" step="5" value="${(o.rotationDeg || [0,0,0])[a]}" title="${ax} (deg)"
+                        onchange="previsSetObjectVec(${i},'rotationDeg',${a},parseFloat(this.value))" style="font-size:10px;">`).join('')}
+                </div>
+                ${spec.acceptsImage ? `<button class="btn btn-sm btn-secondary" style="font-size:10px;margin-top:3px;width:100%;"
+                        onclick="previsRollCard(${i})">Rotate 90&deg; (portrait &harr; wide)</button>` : ''}
+                ${picker}
+            </div>`;
+        }).join('');
+    }
+
+    function previsAddObject(at, kindArg) {
+        const kind = kindArg || (PREVIS.objects.length ? 'cube' : 'human');
+        const spec = PREVIS.taxonomy.primitives[kind];
+        if (!spec) return;
+        const position = Array.isArray(at)
+            ? [+at[0].toFixed(3), 0, +at[2].toFixed(3)]
+            : [PREVIS.objects.length * 1.2, 0, 0];
+        PREVIS.objects.push({ kind, position, sizeM: spec.defaultSizeM.slice(), rotationDeg: [0, 0, 0], src: '' });
+        PREVIS.selected = PREVIS.objects.length - 1;
+        previsRenderObjects();
+        previsRefresh();
+
+        // The inspector is taller than its pane, so a new row lands off-screen
+        // unless it is brought into view.
+        const row = document.querySelector(`#previsObjectList [data-object="${PREVIS.selected}"]`);
+        if (row) row.scrollIntoView({ block: 'nearest' });
+    }
+
+    function previsSetObject(index, field, value) {
+        const o = PREVIS.objects[index];
+        if (!o) return;
+        o[field] = value;
+        if (field === 'kind') o.sizeM = PREVIS.taxonomy.primitives[value].defaultSizeM.slice();
+        previsRenderObjects();
+        previsRefresh();
+    }
+
+    function previsRemoveObject(index) {
+        if (!PREVIS.objects[index]) return;
+        PREVIS.objects.splice(index, 1);
+        // Selection follows the list rather than pointing at whatever slid into
+        // the gap, which would silently arm the next Delete on a bystander.
+        if (PREVIS.selected === index) PREVIS.selected = -1;
+        else if (PREVIS.selected > index) PREVIS.selected -= 1;
+        previsRenderObjects();
+        previsRefresh();
+    }
+
+    /** Read a local image straight into the card. No upload, no round trip. */
+    function previsPickFile(event, index) {
+        const file = event.target.files && event.target.files[0];
+        if (!file || !PREVIS.objects[index]) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            PREVIS.objects[index].src = reader.result;
+            previsRenderObjects();
+            previsRefresh();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function previsSetObjectVec(index, field, axis, value) {
+        const o = PREVIS.objects[index];
+        if (!o || !Number.isFinite(value)) return;
+        // Blocking saved before rotation existed has no array to write into.
+        if (!Array.isArray(o[field])) o[field] = [0, 0, 0];
+        o[field][axis] = value;
+        previsRefresh();
+    }
+
+    /**
+     * Roll a card a quarter turn.
+     *
+     * The common case, and fiddly to reach through a degrees box: a portrait
+     * source in a landscape shot, or the reverse. Snaps between the two rather
+     * than accumulating, so pressing it twice returns you to where you started.
+     */
+    function previsRollCard(index) {
+        const o = PREVIS.objects[index];
+        if (!o) return;
+        if (!Array.isArray(o.rotationDeg)) o.rotationDeg = [0, 0, 0];
+        o.rotationDeg[2] = Math.abs(o.rotationDeg[2] % 180) < 1e-6 ? 90 : 0;
+        previsRenderObjects();
+        previsRefresh();
+    }
+
+    /**
+     * Geometry for a staged primitive.
+     *
+     * Mirrors lib/previs-primitives.js, and reads the human's proportions from
+     * the taxonomy the server served rather than keeping a second copy of them,
+     * so a figure drawn here measures what the server measured.
+     */
+    /**
+     * Rotate an offset by [yaw, pitch, roll]. Mirrors lib/previs-primitives.js.
+     *
+     * Roll first, so it acts in the object's own plane: rolling an image card
+     * ninety degrees turns a portrait into a widescreen rather than tipping it
+     * over sideways.
+     */
+    function previsRotate(v, rot) {
+        if (!rot || (!rot[0] && !rot[1] && !rot[2])) return v;
+        const yaw = rot[0] || 0, pitch = rot[1] || 0, roll = rot[2] || 0;
+        let p = v.slice();
+        if (roll) { const c = Math.cos(roll * P_DEG), k = Math.sin(roll * P_DEG); p = [p[0]*c - p[1]*k, p[0]*k + p[1]*c, p[2]]; }
+        if (pitch) { const c = Math.cos(pitch * P_DEG), k = Math.sin(pitch * P_DEG); p = [p[0], p[1]*c - p[2]*k, p[1]*k + p[2]*c]; }
+        if (yaw) { const c = Math.cos(yaw * P_DEG), k = Math.sin(yaw * P_DEG); p = [p[0]*c + p[2]*k, p[1], -p[0]*k + p[2]*c]; }
+        return p;
+    }
+
+    /** Turn a set of vertices about a pivot, never about the world origin. */
+    function previsSpin(vertices, pivot, rot) {
+        if (!rot || (!rot[0] && !rot[1] && !rot[2])) return vertices;
+        return vertices.map(v => {
+            const q = previsRotate([v[0]-pivot[0], v[1]-pivot[1], v[2]-pivot[2]], rot);
+            return [q[0]+pivot[0], q[1]+pivot[1], q[2]+pivot[2]];
+        });
+    }
+
+    function previsObjectGeometry(o) {
+        const box = (centre, size) => {
+            const [w, h, d] = size.map(v => v / 2);
+            const vertices = [
+                [-w, -h, -d], [w, -h, -d], [w, -h, d], [-w, -h, d],
+                [-w, h, -d], [w, h, -d], [w, h, d], [-w, h, d],
+            ].map(([x, y, z]) => [x + centre[0], y + centre[1], z + centre[2]]);
+            return { vertices, edges: [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]] };
+        };
+
+        if (o.kind === 'human') {
+            const h = o.sizeM[1];
+            const vertices = [];
+            const edges = [];
+            for (const part of PREVIS.taxonomy.humanParts) {
+                const geo = box(part.centre.map((v, a) => v * h + o.position[a]), part.size.map(v => v * h));
+                const base = vertices.length;
+                vertices.push(...geo.vertices);
+                edges.push(...geo.edges.map(([a, b]) => [a + base, b + base]));
+            }
+            return { vertices: previsSpin(vertices, o.position, o.rotationDeg), edges };
+        }
+
+        if (o.kind === 'imageplane') {
+            const halfW = o.sizeM[0] / 2;
+            const h = o.sizeM[1];
+            const [px, py, pz] = o.position;
+            const verts = [
+                [px - halfW, py + h, pz], [px + halfW, py + h, pz],
+                [px + halfW, py, pz], [px - halfW, py, pz],
+            ];
+            // Spun about the card's own centre, so a roll turns the picture in
+            // place rather than swinging it around its feet.
+            return { vertices: previsSpin(verts, [px, py + h / 2, pz], o.rotationDeg), edges: [[0, 1], [1, 2], [2, 3], [3, 0]] };
+        }
+
+        if (o.kind === 'sphere') {
+            const r = o.sizeM[1] / 2;
+            const centre = [o.position[0], o.position[1] + r, o.position[2]];
+            const segments = PREVIS.taxonomy.primitives.sphere.segments || 12;
+            const rings = Math.max(3, Math.floor(segments / 2));
+            const vertices = [];
+            const edges = [];
+            for (let i = 0; i <= rings; i++) {
+                const phi = Math.PI * (i / rings) - Math.PI / 2;
+                for (let j = 0; j < segments; j++) {
+                    const th = 2 * Math.PI * (j / segments);
+                    vertices.push([centre[0] + r * Math.cos(phi) * Math.cos(th), centre[1] + r * Math.sin(phi), centre[2] + r * Math.cos(phi) * Math.sin(th)]);
+                }
+            }
+            const at = (i, j) => i * segments + (j % segments);
+            for (let i = 0; i <= rings; i++) for (let j = 0; j < segments; j++) {
+                edges.push([at(i, j), at(i, j + 1)]);
+                if (i < rings) edges.push([at(i, j), at(i + 1, j)]);
+            }
+            return { vertices: previsSpin(vertices, o.position, o.rotationDeg), edges };
+        }
+
+        const boxed = box([o.position[0], o.position[1] + o.sizeM[1] / 2, o.position[2]], o.sizeM);
+        return { vertices: previsSpin(boxed.vertices, o.position, o.rotationDeg), edges: boxed.edges };
+    }
+
+    /**
+     * Paint an image onto a quad under perspective.
+     *
+     * Canvas 2D has no perspective texture map — a quad under perspective is a
+     * homography, and setTransform is affine. Split into two triangles and
+     * affine-map each: the standard trick, exact at the corners and slightly
+     * wrong along the shared diagonal, which at previs scale nobody can see.
+     */
+    function previsDrawTexturedQuad(ctx, img, pts) {
+        if (!img || pts.some(p => !p)) return false;
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (!w || !h) return false;
+
+        // [dest corner, source corner] in the order primitiveGeometry emits:
+        // top-left, top-right, bottom-right, bottom-left.
+        const src = [[0, 0], [w, 0], [w, h], [0, h]];
+        const tri = (a, b, c) => {
+            const [x0, y0] = [pts[a].x, pts[a].y], [x1, y1] = [pts[b].x, pts[b].y], [x2, y2] = [pts[c].x, pts[c].y];
+            const [u0, v0] = src[a], [u1, v1] = src[b], [u2, v2] = src[c];
+            const den = (u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0);
+            if (!den) return;
+            const a1 = ((x1 - x0) * (v2 - v0) - (x2 - x0) * (v1 - v0)) / den;
+            const b1 = ((x2 - x0) * (u1 - u0) - (x1 - x0) * (u2 - u0)) / den;
+            const c1 = ((y1 - y0) * (v2 - v0) - (y2 - y0) * (v1 - v0)) / den;
+            const d1 = ((y2 - y0) * (u1 - u0) - (y1 - y0) * (u2 - u0)) / den;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); ctx.closePath();
+            ctx.clip();
+            ctx.transform(a1, c1, b1, d1, x0 - a1 * u0 - b1 * v0, y0 - c1 * u0 - d1 * v0);
+            ctx.drawImage(img, 0, 0);
+            ctx.restore();
+        };
+        tri(0, 1, 2);
+        tri(0, 2, 3);
+        return true;
+    }
+
+    /** Which staged object the shot is of, or -1 when the stage is empty. */
+    function previsTargetIndex() {
+        if (!PREVIS.objects.length) return -1;
+        const marked = PREVIS.objects.findIndex(o => o && o.isTarget);
+        return marked >= 0 ? marked : 0;
+    }
+
+    /** A cross on the floor for the point-only case — a mark, not a subject. */
+    function previsDrawFloorMark(ctx, pr, at) {
+        const r = 0.4;
+        previsLine(ctx, pr([at[0]-r, 0.01, at[2]]), pr([at[0]+r, 0.01, at[2]]), 'rgba(236,72,153,.8)', 1.4);
+        previsLine(ctx, pr([at[0], 0.01, at[2]-r]), pr([at[0], 0.01, at[2]+r]), 'rgba(236,72,153,.8)', 1.4);
+    }
+
+    /** Where the lift knob sits in world space, above the selected object. */
+    function previsYHandlePoint(o) {
+        return [o.position[0], o.position[1] + o.sizeM[1] + 0.35, o.position[2]];
+    }
+
+    /**
+     * The lift gizmo, and the line to the floor beneath it.
+     *
+     * The drop line matters more than the knob: a box floating at 1.2m and a
+     * box on the floor look identical from most angles, so without it you
+     * cannot tell whether the lift took.
+     */
+    function previsDrawYHandle(ctx, pr, o) {
+        const base = [o.position[0], o.position[1], o.position[2]];
+        const knob = previsYHandlePoint(o);
+
+        if (o.position[1] > 1e-6) {
+            const ground = [o.position[0], 0, o.position[2]];
+            previsLine(ctx, pr(ground), pr(base), 'rgba(56,189,248,.45)', 1);
+            const r = 0.18;
+            const ring = [];
+            for (let a = 0; a <= 16; a++) {
+                const th = a / 16 * Math.PI * 2;
+                ring.push(pr([ground[0] + Math.cos(th) * r, 0.01, ground[2] + Math.sin(th) * r]));
+            }
+            for (let a = 1; a < ring.length; a++) previsLine(ctx, ring[a-1], ring[a], 'rgba(56,189,248,.45)', 1);
+        }
+
+        const top = [o.position[0], o.position[1] + o.sizeM[1], o.position[2]];
+        previsLine(ctx, pr(top), pr(knob), 'rgba(56,189,248,.9)', 1.4);
+        const k = pr(knob);
+        if (k) {
+            ctx.fillStyle = '#38bdf8';
+            ctx.beginPath();
+            ctx.arc(k.x, k.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    function previsDrawObjects(ctx, pr, colour, width, showSelection) {
+        const targetIndex = previsTargetIndex();
+        PREVIS.objects.forEach((o, i) => {
+            const chosen = showSelection && i === PREVIS.selected;
+            // The subject wears pink wherever selection is not overriding it,
+            // so what the shot is of is legible in one glance.
+            const own = (i === targetIndex) ? 'rgba(236,72,153,.95)' : colour;
+            const geo = previsObjectGeometry(o);
+            const points = geo.vertices.map(pr);
+
+            if (o.kind === 'imageplane') {
+                const painted = previsDrawTexturedQuad(ctx, previsTexture(o.src), points);
+                if (!painted) {
+                    // An empty or still-loading card is drawn as its outline
+                    // with a cross, so it reads as a placeholder rather than
+                    // as nothing at all.
+                    for (const [a, b] of geo.edges) previsLine(ctx, points[a], points[b], chosen ? 'rgba(56,189,248,1)' : own, width);
+                    previsLine(ctx, points[0], points[2], own, width * 0.6);
+                    previsLine(ctx, points[1], points[3], own, width * 0.6);
+                }
+                if (chosen) {
+                    for (const [a, b] of geo.edges) previsLine(ctx, points[a], points[b], 'rgba(56,189,248,1)', width + 0.8);
+                }
+                return;
+            }
+            for (const [a, b] of geo.edges) {
+                previsLine(ctx, points[a], points[b], chosen ? 'rgba(56,189,248,1)' : own,
+                    (chosen || i === targetIndex) ? width + 0.8 : width);
+            }
+            // A footprint ring, so a selected object reads as selected even when
+            // its edges are behind the subject.
+            if (chosen) {
+                const r = 0.35 + (o.sizeM[0] || 0.5) / 2;
+                const ring = [];
+                for (let a = 0; a <= 24; a++) {
+                    const th = a / 24 * Math.PI * 2;
+                    ring.push(pr([o.position[0] + Math.cos(th) * r, 0.01, o.position[2] + Math.sin(th) * r]));
+                }
+                for (let a = 1; a < ring.length; a++) previsLine(ctx, ring[a - 1], ring[a], 'rgba(56,189,248,.85)', 1.5);
+            }
+        });
+    }
+
+    /** Read the inspector into the blocking shape the API speaks. */
+    /**
+     * The subject, derived from whichever object is the target.
+     *
+     * One position and one height, taken from the figure actually standing
+     * there — rather than a separate record that could disagree with it.
+     */
+    function previsDerivedSubject() {
+        const i = previsTargetIndex();
+        if (i < 0) return { position: PREVIS.subjectPos.slice(), heightM: 1.7 };
+        const o = PREVIS.objects[i];
+        return { position: o.position.slice(), heightM: o.sizeM[1] };
+    }
+
+    function previsReadInspector() {
+        // Every reading is guarded. A cleared number field, or a select left
+        // with no matching option, yields NaN — and one NaN propagates through
+        // the projection into every optic, blanking the camera pane and
+        // printing "NaNmm" with nothing to explain it. Falling back keeps the
+        // viewer answering while the field is mid-edit.
+        const num = (id, fallback) => {
+            const el = document.getElementById(id);
+            const v = el ? parseFloat(el.value) : NaN;
+            return Number.isFinite(v) ? v : fallback;
+        };
+        return {
+            camera: {
+                position: [0, num('previsHeight', 1.6), num('previsDistance', 3)],
+                rotation: [0, 0, 0],
+                focalMm: num('previsFocal', 50),
+                sensorId: document.getElementById('previsSensor').value || 'super35',
+                fStop: num('previsAperture', 2.8),
+                focusDistanceM: Math.max(0.1, num('previsDistance', 3)),
+            },
+            subject: previsDerivedSubject(),
+            stage: { widthM: num('previsStageSize', 12), depthM: num('previsStageSize', 12) },
+            rig: document.getElementById('previsRig').value,
+            movement: document.getElementById('previsMovement').value,
+            moves: PREVIS.moves,
+            subjects: PREVIS.objects,
+            durationMs: Math.max(100, (parseFloat(document.getElementById('previsDuration').value) || 4) * 1000),
+        };
+    }
+
+    // ── Maths ────────────────────────────────────────────────────────────
+
+    const pSub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const pCross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const pDot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    function pNorm(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; }
+
+    /**
+     * World -> screen for one eye.
+     *
+     * A view basis built from eye/target, then a perspective divide. vFovDeg is
+     * where the optics enter: the camera pane is given the REAL vertical angle
+     * of view for its lens and sensor, which is what makes the two panes
+     * disagree in exactly the way a longer lens does.
+     */
+    function previsProject(point, eye, target, vFovDeg, view) {
+        const forward = pNorm(pSub(target, eye));
+        const right = pNorm(pCross(forward, [0, 1, 0]));
+        const up = pCross(right, forward);
+
+        const d = pSub(point, eye);
+        const x = pDot(d, right);
+        const y = pDot(d, up);
+        const z = pDot(d, forward);
+        if (z <= 0.02) return null;                     // behind the eye
+
+        // Projected into `view` — a rect, not the canvas. The camera pane's
+        // shape is a layout accident; the SHOT's shape is the project's aspect
+        // ratio, and squeezing the image to the pane would make a 2.39:1
+        // composition unreadable in a portrait column.
+        const f = 1 / Math.tan(vFovDeg * P_DEG / 2);
+        const aspect = view.w / view.h;
+        return {
+            x: view.x + (x / z) * (f / aspect) * view.w / 2 + view.w / 2,
+            y: view.y - (y / z) * f * view.h / 2 + view.h / 2,
+            z,
+        };
+    }
+
+    /** The whole canvas, as a viewport rect. */
+    function previsFullView(canvas) {
+        return { x: 0, y: 0, w: canvas.width, h: canvas.height };
+    }
+
+    /** The largest rect inside the canvas at the project's aspect ratio. */
+    function previsFrameView(canvas) {
+        const ratio = previsAspect();
+        let w = canvas.width;
+        let h = w / ratio;
+        if (h > canvas.height) { h = canvas.height; w = h * ratio; }
+        return { x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, w, h };
+    }
+
+    /**
+     * Screen -> the point on the floor under it. The projection run backwards.
+     *
+     * Mirrors lib/previs-pick.js, which is where the round trip is asserted:
+     * a picker that disagrees with the renderer selects things you are not
+     * pointing at, and that disagreement is invisible until someone drags.
+     */
+    function previsGroundPoint(screenX, screenY, eye, target, vFovDeg, view) {
+        const forward = pNorm(pSub(target, eye));
+        const reference = Math.abs(forward[1]) > 0.999 ? [0, 0, 1] : [0, 1, 0];
+        const right = pNorm(pCross(forward, reference));
+        const up = pCross(right, forward);
+
+        const f = 1 / Math.tan(vFovDeg * P_DEG / 2);
+        const aspect = view.w / view.h;
+        const cx = ((screenX - view.x - view.w / 2) / (view.w / 2)) * aspect / f;
+        const cy = ((view.y + view.h / 2 - screenY) / (view.h / 2)) / f;
+
+        const ray = pNorm([
+            forward[0] + right[0] * cx + up[0] * cy,
+            forward[1] + right[1] * cx + up[1] * cy,
+            forward[2] + right[2] * cx + up[2] * cy,
+        ]);
+        if (Math.abs(ray[1]) < 1e-9) return null;
+        const t = -eye[1] / ray[1];
+        if (t <= 0) return null;                       // the floor is behind us
+
+        const hit = [eye[0] + ray[0] * t, 0, eye[2] + ray[2] * t];
+        // Refused near the horizon, where the intersection is unbounded: a drag
+        // in the top band of a low-pitched view flung an object tens of metres
+        // in one mouse move. Bounded to a few stages' width so an object simply
+        // stops following rather than leaping away. Mirrors lib/previs-pick.js.
+        const limit = Math.max(40, (previsReadInspector().stage.widthM || 12) * 4);
+        if (Math.hypot(hit[0] - eye[0], hit[2] - eye[2]) > limit) return null;
+        return hit;
+    }
+
+    /** The framing subject expressed as an object, for picking and bounds. */
+    function previsSubjectAsObject() {
+        // Only reached in the point-only case now; a small footprint so the
+        // floor mark can still be grabbed and moved.
+        return { kind: 'cube', position: PREVIS.subjectPos.slice(), sizeM: [0.8, 0.05, 0.8] };
+    }
+
+    /** The screen-space box an object covers, from its bounds' eight corners. */
+    function previsObjectBox(o, pr) {
+        const h = o.sizeM[1];
+        let halfW = (o.sizeM[0] || 0.5) / 2;
+        let halfD = (o.sizeM[2] || 0.5) / 2;
+        if (o.kind === 'human') {
+            // Sized by height alone; the arms reach wider than any typed width.
+            for (const part of PREVIS.taxonomy.humanParts) {
+                halfW = Math.max(halfW, (Math.abs(part.centre[0]) + part.size[0] / 2) * h);
+                halfD = Math.max(halfD, (Math.abs(part.centre[2]) + part.size[2] / 2) * h);
+            }
+        }
+        const [x, y, z] = o.position;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, depth = Infinity, seen = false;
+
+        // A rotated object no longer fits its declared box, so pick against the
+        // geometry actually drawn — otherwise you click where it used to be.
+        const corners = (o.rotationDeg && o.rotationDeg.some(v => v))
+            ? previsObjectGeometry(o).vertices
+            : [[x-halfW,y,z-halfD],[x+halfW,y,z-halfD],[x+halfW,y,z+halfD],[x-halfW,y,z+halfD],
+               [x-halfW,y+h,z-halfD],[x+halfW,y+h,z-halfD],[x+halfW,y+h,z+halfD],[x-halfW,y+h,z+halfD]];
+        for (const corner of corners) {
+                    const p = pr(corner);
+                    if (!p) continue;
+                    seen = true;
+                    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+                    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+                    depth = Math.min(depth, p.z);
+        }
+        return seen ? { minX, minY, maxX, maxY, depth } : null;
+    }
+
+    /** Nearest object under the cursor, or -1. Nearest, so you never edit
+     *  something hidden behind what you are looking at. */
+    function previsPick(screenX, screenY, pr) {
+        const slack = 18;
+        let best = -1;
+        let bestDepth = Infinity;
+
+        // The subject competes on depth with everything else, so a prop in
+        // front of it still wins the click.
+        const subjectBox = previsObjectBox(previsSubjectAsObject(), pr);
+        if (subjectBox) {
+            const inside = screenX >= subjectBox.minX - slack && screenX <= subjectBox.maxX + slack
+                && screenY >= subjectBox.minY - slack && screenY <= subjectBox.maxY + slack;
+            if (inside) { best = SUBJECT_SEL; bestDepth = subjectBox.depth; }
+        }
+
+        PREVIS.objects.forEach((o, i) => {
+            const box = previsObjectBox(o, pr);
+            if (!box) return;
+            const inside = screenX >= box.minX - slack && screenX <= box.maxX + slack
+                && screenY >= box.minY - slack && screenY <= box.maxY + slack;
+            if (inside && box.depth < bestDepth) { best = i; bestDepth = box.depth; }
+        });
+        return best;
+    }
+
+    /**
+     * What the stage view is aimed at.
+     *
+     * ONE definition, used by the renderer, the picker and the unprojector.
+     * Reframe parks the orbit on the scene's centre while those three each
+     * decided for themselves what to look at — so after pressing it the picker
+     * aimed at the subject, the renderer aimed at the centre, and every click
+     * landed somewhere other than where it looked.
+     */
+    function previsStageFocus(blocking) {
+        return PREVIS.viewCentre || blocking.subject.position;
+    }
+
+    /** The stage camera, shared by drawing and by picking. */
+    function previsStageEye(blocking) {
+        const o = PREVIS.orbit;
+        const focus = previsStageFocus(blocking);
+        return [
+            focus[0] + Math.sin(o.yaw) * Math.cos(o.pitch) * o.distance,
+            focus[1] + Math.sin(o.pitch) * o.distance + 1,
+            focus[2] + Math.cos(o.yaw) * Math.cos(o.pitch) * o.distance,
+        ];
+    }
+
+    function previsLine(ctx, a, b, colour, width) {
+        if (!a || !b) return;
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = width || 1;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+    }
+
+    /** The camera pose at the current playhead, or its start pose. */
+    function previsPose(blocking) {
+        if (PREVIS.playhead !== null && PREVIS.path.length) {
+            // Interpolated, not snapped. Rounding to the NEAREST key meant a
+            // 24-key path repainted at 60fps moved twenty-four times and stood
+            // still in between — every movement stepped, not just the short
+            // ones. How densely the path was sampled is a storage decision and
+            // must not be visible in the shot. Mirrors poseAt() in
+            // lib/previs-blocking.js.
+            const path = PREVIS.path;
+            if (path.length === 1) return path[0];
+            const span = (path.length - 1) * Math.max(0, Math.min(1, PREVIS.playhead));
+            const i = Math.min(path.length - 2, Math.floor(span));
+            const f = span - i;
+            const a = path[i], b = path[i + 1];
+            const mix = (x, y) => x + (y - x) * f;
+            return {
+                position: a.position.map((v, ax) => mix(v, b.position[ax])),
+                rotation: a.rotation.map((v, ax) => mix(v, b.rotation[ax])),
+                focalMm: mix(a.focalMm, b.focalMm),
+            };
+        }
+        return { position: blocking.camera.position, rotation: blocking.camera.rotation, focalMm: blocking.camera.focalMm };
+    }
+
+    /** Where a camera at `pose` is looking — yaw/pitch applied to -Z. */
+    function previsAim(pose) {
+        const yaw = (pose.rotation[0] || 0) * P_DEG;
+        const pitch = (pose.rotation[1] || 0) * P_DEG;
+        const dir = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
+        return [pose.position[0] + dir[0] * 5, pose.position[1] + dir[1] * 5, pose.position[2] + dir[2] * 5];
+    }
+
+    // ── Drawing ──────────────────────────────────────────────────────────
+
+    function previsFit(canvas) {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = Math.max(2, Math.floor(rect.width));
+        canvas.height = Math.max(2, Math.floor(rect.height));
+    }
+
+    function previsDrawStage(blocking, sensor) {
+        const canvas = document.getElementById('previsStage');
+        if (!canvas) return;
+        previsFit(canvas);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#0b0d13';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const o = PREVIS.orbit;
+        const focus = previsStageFocus(blocking);
+        const eye = [
+            focus[0] + Math.sin(o.yaw) * Math.cos(o.pitch) * o.distance,
+            focus[1] + Math.sin(o.pitch) * o.distance + 1,
+            focus[2] + Math.cos(o.yaw) * Math.cos(o.pitch) * o.distance,
+        ];
+        const view = previsFullView(canvas);
+        const pr = pt => previsProject(pt, eye, focus, 45, view);
+
+        // Ground plane
+        const half = (blocking.stage.widthM || 12) / 2;
+        const step = 1;
+        for (let g = -half; g <= half + 1e-6; g += step) {
+            const major = Math.abs(g) < 1e-6;
+            const colour = major ? 'rgba(120,140,200,.45)' : 'rgba(90,100,140,.16)';
+            previsLine(ctx, pr([g, 0, -half]), pr([g, 0, half]), colour);
+            previsLine(ctx, pr([-half, 0, g]), pr([half, 0, g]), colour);
+        }
+
+        // Subject: a box at the origin, its real height
+        const h = blocking.subject.heightM || 1.7;
+        const w = 0.45;
+        const s = blocking.subject.position;
+        const corners = [
+            [s[0] - w, 0, s[2] - w], [s[0] + w, 0, s[2] - w], [s[0] + w, 0, s[2] + w], [s[0] - w, 0, s[2] + w],
+            [s[0] - w, h, s[2] - w], [s[0] + w, h, s[2] - w], [s[0] + w, h, s[2] + w], [s[0] - w, h, s[2] + w],
+        ].map(pr);
+        const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+        // Nothing drawn here any more. The framing subject is no longer a box
+        // of its own standing beside the objects — it IS one of them, and the
+        // one it is gets drawn pink by previsDrawObjects. A point-only fallback
+        // is marked on the floor instead, because a mark is what it is.
+        if (previsTargetIndex() < 0) previsDrawFloorMark(ctx, pr, PREVIS.subjectPos);
+
+        // Staged objects, drawn before the camera so the frustum reads on top.
+        previsDrawObjects(ctx, pr, 'rgba(148,163,184,.7)', 1, true);
+        if (PREVIS.objects[PREVIS.selected]) previsDrawYHandle(ctx, pr, PREVIS.objects[PREVIS.selected]);
+
+        // The move, drawn as the track it needs
+        if (PREVIS.path.length > 1) {
+            for (let i = 1; i < PREVIS.path.length; i++) {
+                previsLine(ctx, pr(PREVIS.path[i - 1].position), pr(PREVIS.path[i].position), 'rgba(56,189,248,.55)', 1);
+            }
+        }
+
+        // Camera and its frustum
+        const pose = previsPose(blocking);
+        const fov = previsDeliveredFov(pose.focalMm, sensor);
+        previsDrawFrustum(ctx, pr, pose, fov, blocking);
+
+        const readout = document.getElementById('previsStageReadout');
+        if (readout) {
+            // Measured across the floor, not to the subject's origin: "stand
+            // 2.05m out" is a horizontal distance on a tape measure, and
+            // including the camera's height turned 2.05 into 2.60.
+            const dist = Math.hypot(pose.position[0] - s[0], pose.position[2] - s[2]);
+            readout.innerHTML = `<span>distance <b>${dist.toFixed(2)}m</b></span>` +
+                `<span>height <b>${pose.position[1].toFixed(2)}m</b></span>` +
+                `<span>rig <b>${escapeHtml(blocking.rig)}</b></span>`;
+        }
+    }
+
+    function previsFov(focalMm, sensor) {
+        return {
+            h: 2 * Math.atan(sensor.widthMm / (2 * focalMm)) / P_DEG,
+            v: 2 * Math.atan(sensor.heightMm / (2 * focalMm)) / P_DEG,
+        };
+    }
+
+    /**
+     * The angle of view actually DELIVERED, after the frame is extracted.
+     *
+     * The gate and the delivery format are rarely the same shape: 2.39:1 out of
+     * a 1.33:1 Super 35 gate is a crop, and which axis gets cropped decides what
+     * is in the shot. Taking the sensor's vertical angle and letting the width
+     * follow the delivery aspect — the obvious implementation — shows a wider
+     * horizontal field than the camera can capture, so a 2.39 extraction
+     * appeared to see past the edges of its own sensor.
+     *
+     *   delivery wider than the gate  -> width-limited, crop top and bottom
+     *   delivery taller than the gate -> height-limited, crop the sides
+     */
+    function previsDeliveredFov(focalMm, sensor) {
+        const sensorAspect = sensor.widthMm / sensor.heightMm;
+        const delivery = previsAspect();
+        const full = previsFov(focalMm, sensor);
+
+        if (delivery >= sensorAspect) {
+            const halfH = sensor.widthMm / delivery / 2;
+            return { h: full.h, v: 2 * Math.atan(halfH / focalMm) / P_DEG, limitedBy: 'width' };
+        }
+        const halfW = sensor.heightMm * delivery / 2;
+        return { h: 2 * Math.atan(halfW / focalMm) / P_DEG, v: full.v, limitedBy: 'height' };
+    }
+
+    function previsDrawFrustum(ctx, pr, pose, fov, blocking) {
+        const eye = pose.position;
+        const aim = pNorm(pSub(previsAim(pose), eye));
+        const right = pNorm(pCross(aim, [0, 1, 0]));
+        const up = pCross(right, aim);
+
+        const reach = Math.max(2, Math.hypot(eye[0] - blocking.subject.position[0], eye[2] - blocking.subject.position[2]));
+        const th = Math.tan(fov.h * P_DEG / 2) * reach;
+        const tv = Math.tan(fov.v * P_DEG / 2) * reach;
+        const centre = [eye[0] + aim[0] * reach, eye[1] + aim[1] * reach, eye[2] + aim[2] * reach];
+
+        const corner = (sx, sy) => pr([
+            centre[0] + right[0] * th * sx + up[0] * tv * sy,
+            centre[1] + right[1] * th * sx + up[1] * tv * sy,
+            centre[2] + right[2] * th * sx + up[2] * tv * sy,
+        ]);
+        const c = [corner(-1, 1), corner(1, 1), corner(1, -1), corner(-1, -1)];
+        const apex = pr(eye);
+
+        for (let i = 0; i < 4; i++) {
+            previsLine(ctx, c[i], c[(i + 1) % 4], 'rgba(34,197,94,.7)', 1.2);
+            previsLine(ctx, apex, c[i], 'rgba(34,197,94,.35)', 1);
+        }
+        if (apex) {
+            ctx.fillStyle = '#22c55e';
+            ctx.beginPath();
+            ctx.arc(apex.x, apex.y, 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    /** What the camera sees: the same projection, from the camera's pose. */
+    function previsDrawCamera(blocking, sensor) {
+        const canvas = document.getElementById('previsCamera');
+        if (!canvas) return;
+        previsFit(canvas);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#07080c';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const pose = previsPose(blocking);
+        const fov = previsDeliveredFov(pose.focalMm, sensor);
+        const eye = pose.position;
+        const target = previsAim(pose);
+        const view = previsFrameView(canvas);
+        const pr = pt => previsProject(pt, eye, target, fov.v, view);
+
+        // Everything outside the frame is drawn AFTER the scene, so the mask is
+        // a real edge rather than a tint.
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(view.x, view.y, view.w, view.h);
+        ctx.clip();
+
+        const half = (blocking.stage.widthM || 12) / 2;
+        for (let g = -half; g <= half + 1e-6; g += 1) {
+            previsLine(ctx, pr([g, 0, -half]), pr([g, 0, half]), 'rgba(90,100,140,.22)');
+            previsLine(ctx, pr([-half, 0, g]), pr([half, 0, g]), 'rgba(90,100,140,.22)');
+        }
+
+        const h = blocking.subject.heightM || 1.7;
+        const w = 0.45;
+        const s = blocking.subject.position;
+        const corners = [
+            [s[0] - w, 0, s[2] - w], [s[0] + w, 0, s[2] - w], [s[0] + w, 0, s[2] + w], [s[0] - w, 0, s[2] + w],
+            [s[0] - w, h, s[2] - w], [s[0] + w, h, s[2] - w], [s[0] + w, h, s[2] + w], [s[0] - w, h, s[2] + w],
+        ].map(pr);
+        // The subject box used to be drawn here too; it is an object now.
+
+        // Staged objects. Absent here until now, so anything placed on the stage
+        // was invisible in the one pane that answers "is it in the shot".
+        previsDrawObjects(ctx, pr, 'rgba(203,213,225,.9)', 1.4);
+
+        ctx.restore();
+
+        // Frame the project's aspect ratio, so what is inside the box is the shot.
+        previsLetterbox(ctx, canvas, view);
+    }
+
+    function previsLetterbox(ctx, canvas, view) {
+        // OPAQUE, not a tint. A 72%-black wash over a near-black background is
+        // invisible, and a camera view whose frame edge cannot be seen does not
+        // answer the only question it is there to answer: what is in the shot.
+        ctx.fillStyle = '#15171f';
+        ctx.fillRect(0, 0, canvas.width, view.y);
+        ctx.fillRect(0, view.y + view.h, canvas.width, canvas.height - (view.y + view.h));
+        ctx.fillRect(0, view.y, view.x, view.h);
+        ctx.fillRect(view.x + view.w, view.y, canvas.width - (view.x + view.w), view.h);
+
+        ctx.strokeStyle = 'rgba(148,163,184,.55)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(view.x + 0.5, view.y + 0.5, view.w - 1, view.h - 1);
+
+        // Thirds, the composition guide every viewfinder has.
+        ctx.strokeStyle = 'rgba(148,163,184,.16)';
+        for (let i = 1; i < 3; i++) {
+            previsLine(ctx, { x: view.x + view.w * i / 3, y: view.y }, { x: view.x + view.w * i / 3, y: view.y + view.h }, ctx.strokeStyle);
+            previsLine(ctx, { x: view.x, y: view.y + view.h * i / 3 }, { x: view.x + view.w, y: view.y + view.h * i / 3 }, ctx.strokeStyle);
+        }
+    }
+
+    /** The project's aspect ratio as a number, defaulting to 16:9. */
+    function previsAspect() {
+        const raw = (state.currentProject && state.currentProject.aspect_ratio) || '16:9';
+        const m = String(raw).match(/^([\d.]+)\s*:\s*([\d.]+)$/);
+        if (!m) return 16 / 9;
+        const r = parseFloat(m[1]) / parseFloat(m[2]);
+        return Number.isFinite(r) && r > 0 ? r : 16 / 9;
+    }
+
+    // ── Refresh, solve, save, play ───────────────────────────────────────
+
+    function previsRefresh() {
+        if (!PREVIS.taxonomy) return;
+        const blocking = previsReadInspector();
+        const sensor = PREVIS.taxonomy.sensors[blocking.camera.sensorId];
+        if (!sensor) return;
+
+        PREVIS.path = previsSamplePath(blocking);
+        previsDrawStage(blocking, sensor);
+        previsDrawCamera(blocking, sensor);
+        previsShowOptics(blocking, sensor);
+    }
+
+    /**
+     * Sample the movement client-side for immediate feedback.
+     *
+     * The server samples again on save, and the stored path is the one that
+     * counts — this is a preview of it, not a second source of truth.
+     */
+    function previsSamplePath(blocking) {
+        // A sequence is sampled leg by leg, each starting where the last ended.
+        if (PREVIS.moves.length) return previsSampleSequence(blocking);
+        const move = PREVIS.taxonomy.movements[blocking.movement];
+        if (!move) return [];
+        const intensity = parseFloat(document.getElementById('previsIntensity').value);
+        const frames = 24;   // interpolated at playback, so this is storage density, not frame rate
+        // A lone movement has no leg to carry an easing, so it runs linear.
+        const curve = PREVIS_EASINGS.linear;
+        const from = blocking.camera.position;
+        const rot = blocking.camera.rotation;
+        const target = blocking.subject.position;
+        const radius = Math.hypot(from[0] - target[0], from[2] - target[2]);
+        const startAngle = Math.atan2(from[0] - target[0], from[2] - target[2]);
+
+        const keys = [];
+        for (let i = 0; i < frames; i++) {
+            const linearT = i / (frames - 1);
+            const t = curve(linearT);
+            let position = from.slice();
+            let rotation = rot.slice();
+
+            if (move.space === 'camera') {
+                const yaw = rot[0] * P_DEG;
+                const v = move.translate;
+                const step = [v[0] * Math.cos(yaw) + v[2] * Math.sin(yaw), v[1], -v[0] * Math.sin(yaw) + v[2] * Math.cos(yaw)];
+                position = position.map((p, a) => p + step[a] * intensity * t);
+            } else if (move.space === 'world') {
+                position = position.map((p, a) => p + move.translate[a] * intensity * t);
+            } else if (move.space === 'subject') {
+                const angle = startAngle + (move.orbitDegrees || 0) * intensity * t * P_DEG;
+                position = [target[0] + Math.sin(angle) * radius, from[1], target[2] + Math.cos(angle) * radius];
+                rotation = [rot[0] + (move.orbitDegrees || 0) * intensity * t, rot[1], rot[2]];
+            }
+            if (move.space !== 'subject') {
+                rotation = rotation.map((r, a) => r + move.rotate[a] * intensity * t);
+            }
+            keys.push({ t, position, rotation, focalMm: blocking.camera.focalMm * Math.pow(move.focalScale, intensity * t) });
+        }
+        return keys;
+    }
+
+    /** Sample the leg list, carrying the camera state from one leg to the next. */
+    function previsSampleSequence(blocking) {
+        const groups = [];
+        PREVIS.moves.forEach(leg => {
+            if (leg.with && groups.length) groups[groups.length - 1].push(leg);
+            else groups.push([leg]);
+        });
+        const frames = Math.max(2, Math.round(48 / Math.max(1, groups.length)));
+        let cursor = JSON.parse(JSON.stringify(blocking));
+        const all = [];
+
+        for (let i = 0; i < groups.length; i++) {
+            const legKeys = previsSampleGroup(cursor, groups[i], frames);
+            all.push(...(i === 0 ? legKeys : legKeys.slice(1)));
+            const last = legKeys[legKeys.length - 1];
+            cursor.camera.position = last.position;
+            cursor.camera.rotation = last.rotation;
+            cursor.camera.focalMm = last.focalMm;
+        }
+        return all.map((k, i) => ({ ...k, t: all.length < 2 ? 0 : i / (all.length - 1) }));
+    }
+
+    /**
+     * Several legs at once: sample each from the same start pose and compose
+     * their deltas. Composing deltas rather than chaining poses is what makes a
+     * dolly-zoom come out right — chaining would zoom a camera that had already
+     * moved, which is a different shot.
+     */
+    function previsSampleGroup(blocking, group, frames) {
+        if (group.length === 1) return previsSampleLeg(blocking, group[0], frames);
+        const perLeg = group.map(leg => previsSampleLeg(blocking, leg, frames));
+        const base = perLeg[0][0];
+        return perLeg[0].map((_, f) => {
+            const position = base.position.slice();
+            const rotation = base.rotation.slice();
+            let focalMm = base.focalMm;
+            for (const keys of perLeg) {
+                const k = keys[f];
+                for (let a = 0; a < 3; a++) {
+                    position[a] += k.position[a] - base.position[a];
+                    rotation[a] += k.rotation[a] - base.rotation[a];
+                }
+                if (base.focalMm) focalMm *= k.focalMm / base.focalMm;
+            }
+            return { t: perLeg[0][f].t, position, rotation, focalMm };
+        });
+    }
+
+    /** One leg, at the magnitude it states rather than at an abstract intensity. */
+    const PREVIS_EASINGS = {
+        'linear': t => t,
+        'ease-in': t => t * t,
+        'ease-out': t => 1 - (1 - t) * (1 - t),
+        'ease-in-out': t => (t < 0.5) ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2,
+    };
+
+    function previsSampleLeg(blocking, leg, frames) {
+        const move = PREVIS.taxonomy.movements[leg.movement];
+        const curve = PREVIS_EASINGS[leg.ease] || PREVIS_EASINGS.linear;
+        const amount = (typeof leg.amount === 'number') ? leg.amount : move.defaultAmount;
+        const scale = move.defaultAmount > 0 ? amount / move.defaultAmount : 1;
+        const translate = move.translate.map(v => v * scale);
+        const rotateBy = move.rotate.map(v => v * scale);
+        const orbitDeg = (move.orbitDegrees || 0) * scale;
+        const focalScale = move.unit === 'ratio' ? amount : move.focalScale;
+
+        const from = blocking.camera.position;
+        const rot = blocking.camera.rotation;
+        const target = blocking.subject.position;
+        const radius = Math.hypot(from[0] - target[0], from[2] - target[2]);
+        const startAngle = Math.atan2(from[0] - target[0], from[2] - target[2]);
+
+        const keys = [];
+        for (let i = 0; i < frames; i++) {
+            const linearT = i / (frames - 1);
+            const t = curve(linearT);
+            let position = from.slice();
+            let rotation = rot.slice();
+
+            if (move.space === 'camera') {
+                const yaw = rot[0] * P_DEG;
+                const v = translate;
+                const step = [v[0] * Math.cos(yaw) + v[2] * Math.sin(yaw), v[1], -v[0] * Math.sin(yaw) + v[2] * Math.cos(yaw)];
+                position = position.map((p, a) => p + step[a] * t);
+            } else if (move.space === 'world') {
+                position = position.map((p, a) => p + translate[a] * t);
+            } else if (move.space === 'subject') {
+                const angle = startAngle + orbitDeg * t * P_DEG;
+                position = [target[0] + Math.sin(angle) * radius, from[1], target[2] + Math.cos(angle) * radius];
+                rotation = [rot[0] + orbitDeg * t, rot[1], rot[2]];
+            }
+            if (move.space !== 'subject') rotation = rotation.map((r, a) => r + rotateBy[a] * t);
+            keys.push({ t: linearT, position, rotation, focalMm: blocking.camera.focalMm * Math.pow(focalScale, t) });
+        }
+        return keys;
+    }
+
+    /** Print the numbers a director acts on. */
+    function previsShowOptics(blocking, sensor) {
+        const f = blocking.camera.focalMm;
+        const N = blocking.camera.fStop;
+        const c = sensor.circleOfConfusionMm;
+        const fov = previsDeliveredFov(f, sensor);
+        const d = Math.max(0.05, blocking.camera.focusDistanceM) * 1000;
+
+        const H = (f * f / (N * c) + f) / 1000;
+        const spread = N * c * (d - f);
+        const near = ((d * f * f) / (f * f + spread)) / 1000;
+        const far = (d / 1000) >= H * (1 - 1e-9) ? Infinity : ((d * f * f) / (f * f - spread)) / 1000;
+        // Vertical coverage of the DELIVERED frame, which is the number that
+        // answers "does her head fit" once the crop is taken.
+        const coverage = 2 * (d / 1000) * Math.tan(fov.v * P_DEG / 2);
+        // What the GATE sees, before the delivery crop. Shown alongside because
+        // solveShot frames against the sensor: a close-up solved for 0.45m of
+        // subject delivers only 0.25m once a 2.39 extraction is taken, and a
+        // director reading one number would frame the shot loose.
+        const gateCoverage = (d / 1000) * sensor.heightMm / f;
+
+        const readout = document.getElementById('previsCameraReadout');
+        if (readout) {
+            readout.innerHTML =
+                `<span><b>${f}mm</b> f/${N}</span>` +
+                `<span>${fov.h.toFixed(1)}&deg; &times; ${fov.v.toFixed(1)}&deg;</span>` +
+                `<span>frames <b>${coverage.toFixed(2)}m</b>${gateCoverage > coverage * 1.02 ? ` <span style="opacity:.6">(gate ${gateCoverage.toFixed(2)}m)</span>` : ''}</span>` +
+                `<span>focus <b>${near.toFixed(2)}&ndash;${Number.isFinite(far) ? far.toFixed(2) : '∞'}m</b></span>`;
+        }
+
+        const rig = PREVIS.taxonomy.rigs[blocking.rig];
+        const warn = document.getElementById('previsWarnings');
+        if (warn) {
+            const problems = [];
+            if (rig && !rig.affords.includes(blocking.movement)) {
+                problems.push(`A ${rig.label} cannot perform &ldquo;${blocking.movement}&rdquo;.`);
+            }
+            if (rig && rig.heightRangeM) {
+                const hgt = blocking.camera.position[1];
+                if (hgt < rig.heightRangeM[0] || hgt > rig.heightRangeM[1]) {
+                    problems.push(`A ${rig.label} sits between ${rig.heightRangeM[0]}m and ${rig.heightRangeM[1]}m.`);
+                }
+            }
+            warn.innerHTML = problems.map(p => `<div class="previs-warn">${p}</div>`).join('');
+        }
+    }
+
+    /** Ask the server where to stand for the chosen framing. */
+    async function previsSolve() {
+        if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
+        const shotType = document.getElementById('previsShotType').value;
+        try {
+            const res = await api(`/shots/${PREVIS.shotId}/previs/solve`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    shot_type: shotType,
+                    focal_mm: parseFloat(document.getElementById('previsFocal').value),
+                    sensor_id: document.getElementById('previsSensor').value,
+                    f_stop: parseFloat(document.getElementById('previsAperture').value),
+                    // Carried so a framing solve does not reset a rig that was
+                    // deliberately chosen. Only a shot type that REQUIRES a rig
+                    // (aerial needs a drone) is allowed to override it.
+                    rig: document.getElementById('previsRig').value,
+                }),
+            });
+            document.getElementById('previsDistance').value = res.solution.distanceM.toFixed(3);
+            document.getElementById('previsHeight').value = res.solution.position[1].toFixed(3);
+            if (res.solution.rig) document.getElementById('previsRig').value = res.solution.rig;
+            previsStatus(`${shotType}: stand ${res.solution.distanceM.toFixed(2)}m out on the ${res.solution.focalMm}mm.`);
+            previsRefresh();
+        } catch (err) {
+            previsStatus('Solve failed: ' + err.message);
+        }
+    }
+
+    async function previsSave() {
+        if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
+        try {
+            const res = await api(`/shots/${PREVIS.shotId}/previs`, {
+                method: 'PUT', body: JSON.stringify(previsReadInspector()),
+            });
+            PREVIS.blocking = res.blocking;
+            const warnings = (res.warnings || []).join(' ');
+            previsStatus('Blocking saved.' + (warnings ? ' ' + warnings : ''));
+        } catch (err) {
+            previsStatus('Save failed: ' + err.message);
+        }
+    }
+
+    /** Walk the playhead across the sampled path, painting both views. */
+    function previsPlay() {
+        if (!PREVIS.path.length) return;
+        const started = performance.now();
+        // The pace the move was actually set to, not a constant: playing every
+        // shot back at two and a half seconds hides the thing being decided.
+        const durationMs = Math.max(200, (parseFloat(document.getElementById('previsDuration').value) || 4) * 1000);
+        const step = () => {
+            const t = Math.min(1, (performance.now() - started) / durationMs);
+            PREVIS.playhead = t;
+            previsRefresh();
+            if (t < 1) requestAnimationFrame(step);
+            else { PREVIS.playhead = null; previsRefresh(); }
+        };
+        requestAnimationFrame(step);
+    }
+
+    /**
+     * Fit everything back in view.
+     *
+     * Orbiting away from a scene is one gesture; orbiting back is a minute of
+     * scrubbing. Frames the bounding sphere of every object AND the shot
+     * camera, because framing the subject while the thing being blocked sits
+     * off screen is not a reframe.
+     */
+    function previsReframe() {
+        const blocking = previsReadInspector();
+        const points = [];
+        for (const o of PREVIS.objects) {
+            try { points.push(...previsObjectGeometry(o).vertices); } catch (_) { /* skip */ }
+        }
+        points.push(blocking.camera.position);
+        if (!PREVIS.objects.length) points.push(blocking.subject.position);
+
+        const min = [0,1,2].map(a => Math.min(...points.map(p => p[a])));
+        const max = [0,1,2].map(a => Math.max(...points.map(p => p[a])));
+        const centre = [0,1,2].map(a => (min[a] + max[a]) / 2);
+
+        let radius = 1;
+        for (const p of points) radius = Math.max(radius, Math.hypot(p[0]-centre[0], p[1]-centre[1], p[2]-centre[2]));
+
+        PREVIS.viewCentre = centre;
+        PREVIS.orbit.distance = Math.max(3, Math.min(80, radius / Math.tan(22.5 * P_DEG) * 1.15));
+        previsRefresh();
+    }
+
+    /** Snap to a named orthodox angle. Front, side and top are the three a
+     *  floor plan is read in, and getting back to one by dragging is guesswork. */
+    function previsViewFrom(which) {
+        const angles = {
+            front: { yaw: 0, pitch: 0.18 },
+            side: { yaw: Math.PI / 2, pitch: 0.18 },
+            top: { yaw: 0, pitch: 1.3 },
+        };
+        const a = angles[which];
+        if (!a) return;
+        PREVIS.orbit.yaw = a.yaw;
+        PREVIS.orbit.pitch = a.pitch;
+        previsRefresh();
+    }
+
+    /**
+     * Start a drag by recording where the cursor sits relative to the object's
+     * BASE on screen.
+     *
+     * The drag used to unproject the cursor itself onto the floor. Grab a 1.7m
+     * figure by the head and that cursor is high in the frame, near the horizon,
+     * where the ray-plane intersection is steep and wildly non-linear — a few
+     * pixels of mouse became metres of floor, and the taller the object the
+     * worse it got. So the figure was the worst case and a low box felt fine.
+     *
+     * Unprojecting the BASE's screen position instead keeps the maths on the
+     * well-conditioned part of the plane, and the object tracks the cursor one
+     * for one however tall it is and wherever you grabbed it.
+     */
+    function previsGrab(index, position, at, pr) {
+        const anchor = pr(position);
+        return anchor
+            ? { index, offsetX: at.x - anchor.x, offsetY: at.y - anchor.y }
+            : { index, offsetX: 0, offsetY: 0 };
+    }
+
+    /** Orbit the stage view. The camera pane is never dragged — it is a result. */
+    function previsBindStage() {
+        const pane = document.getElementById('previsStagePane');
+        const canvas = document.getElementById('previsStage');
+        if (!canvas || canvas.dataset.bound) return;
+        canvas.dataset.bound = '1';
+
+        // Mouse down on an OBJECT drags it; on empty floor it orbits. Pressing
+        // on a thing and having the world spin instead is the single most
+        // confusing thing a 3D view can do, so the pick decides the gesture.
+        const local = e => {
+            const r = canvas.getBoundingClientRect();
+            return { x: (e.clientX - r.left) * canvas.width / r.width, y: (e.clientY - r.top) * canvas.height / r.height };
+        };
+        const stageProjector = () => {
+            const blocking = previsReadInspector();
+            const eye = previsStageEye(blocking);
+            const focus = previsStageFocus(blocking);
+            const view = previsFullView(canvas);
+            return { pr: pt => previsProject(pt, eye, focus, 45, view), eye, focus, view };
+        };
+
+        canvas.addEventListener('mousedown', e => {
+            const at = local(e);
+            const { pr, eye, focus, view } = stageProjector();
+            // The lift knob wins over everything: it is drawn on top of the
+            // object it belongs to, so a click there must not select through it.
+            const chosen = PREVIS.objects[PREVIS.selected];
+            if (chosen) {
+                const knob = pr(previsYHandlePoint(chosen));
+                if (knob && Math.hypot(at.x - knob.x, at.y - knob.y) < 14) {
+                    // Pixels per metre at this object's depth, so the knob keeps
+                    // up with the cursor whatever the zoom.
+                    const a = pr([chosen.position[0], chosen.position[1], chosen.position[2]]);
+                    const b = pr([chosen.position[0], chosen.position[1] + 1, chosen.position[2]]);
+                    const perMetre = (a && b) ? (a.y - b.y) : 60;
+                    PREVIS.yDrag = { index: PREVIS.selected, startY: at.y, startHeight: chosen.position[1], perMetre: perMetre || 60 };
+                    return;
+                }
+            }
+
+            const hit = previsPick(at.x, at.y, pr);
+
+            if (hit === SUBJECT_SEL) {
+                PREVIS.selected = SUBJECT_SEL;
+                PREVIS.objectDrag = previsGrab(SUBJECT_SEL, PREVIS.subjectPos, at, pr);
+                previsRenderObjects();
+                previsRefresh();
+                return;
+            }
+
+            if (hit >= 0) {
+                PREVIS.selected = hit;
+                PREVIS.objectDrag = previsGrab(hit, PREVIS.objects[hit].position, at, pr);
+                previsRenderObjects();
+                previsRefresh();
+                return;
+            }
+
+            PREVIS.selected = -1;
+            PREVIS.drag = { x: e.clientX, y: e.clientY };
+            pane.classList.add('dragging');
+            previsRenderObjects();
+            previsRefresh();
+        });
+
+        window.addEventListener('mousemove', e => {
+            if (PREVIS.yDrag) {
+                const at = local(e);
+                const o = PREVIS.objects[PREVIS.yDrag.index];
+                if (o) {
+                    const lifted = PREVIS.yDrag.startHeight + (PREVIS.yDrag.startY - at.y) / PREVIS.yDrag.perMetre;
+                    // Never below the floor: an object buried in the ground is
+                    // not a thing anyone is trying to express.
+                    o.position[1] = Math.max(0, +lifted.toFixed(3));
+                    previsRefresh();
+                }
+                return;
+            }
+            if (PREVIS.objectDrag) {
+                const at = local(e);
+                const { eye, focus, view } = stageProjector();
+                // Unproject where the object's BASE should now be, not where the
+                // cursor is. See previsGrab.
+                const ground = previsGroundPoint(
+                    at.x - PREVIS.objectDrag.offsetX, at.y - PREVIS.objectDrag.offsetY,
+                    eye, focus, 45, view);
+                if (ground) {
+                    const target = PREVIS.objectDrag.index === SUBJECT_SEL
+                        ? { position: PREVIS.subjectPos } : PREVIS.objects[PREVIS.objectDrag.index];
+                    if (target) {
+                        target.position[0] = +ground[0].toFixed(3);
+                        target.position[2] = +ground[2].toFixed(3);
+                        previsRefresh();
+                    }
+                }
+                return;
+            }
+            if (!PREVIS.drag) return;
+            PREVIS.orbit.yaw -= (e.clientX - PREVIS.drag.x) * 0.008;
+            PREVIS.orbit.pitch = Math.max(-0.2, Math.min(1.3, PREVIS.orbit.pitch + (e.clientY - PREVIS.drag.y) * 0.005));
+            PREVIS.drag = { x: e.clientX, y: e.clientY };
+            previsRefresh();
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (PREVIS.yDrag) { PREVIS.yDrag = null; previsRenderObjects(); }
+            if (PREVIS.objectDrag) { PREVIS.objectDrag = null; previsRenderObjects(); }
+            PREVIS.drag = null;
+            pane.classList.remove('dragging');
+        });
+
+        // Double-click empty floor to place; Delete removes the selection.
+        canvas.addEventListener('dblclick', e => {
+            const at = local(e);
+            const { pr, eye, focus, view } = stageProjector();
+            if (previsPick(at.x, at.y, pr) >= 0) return;
+            const ground = previsGroundPoint(at.x, at.y, eye, focus, 45, view);
+            if (ground) previsAddObject(ground);
+        });
+
+        window.addEventListener('keydown', e => {
+            if (state.currentPage !== 'previs' || PREVIS.selected === -1) return;
+            if (/^(INPUT|SELECT|TEXTAREA)$/.test((e.target.tagName || ''))) return;
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                e.preventDefault();
+                // The subject is what the shot is of; deleting it would leave
+                // solveShot and the orbit with nothing to aim at.
+                if (PREVIS.selected === SUBJECT_SEL) {
+                    previsStatus('The framing subject cannot be deleted — drag it, or change its height.');
+                    return;
+                }
+                previsRemoveObject(PREVIS.selected);
+            }
+        });
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            PREVIS.orbit.distance = Math.max(2, Math.min(80, PREVIS.orbit.distance + e.deltaY * 0.02));
+            previsRefresh();
+        }, { passive: false });
+    }
+
+
+    /**
+     * Reorder the sidebar into production phases.
+     *
+     * The existing nav buttons are MOVED rather than rebuilt: every tooltip,
+     * icon and handler already in the markup survives, and only the grouping
+     * and the order come from the server. Rebuilding them would mean a second
+     * copy of the nav, and two copies drift.
+     *
+     * Order comes from GET /film/nav-flow, which derives it from the same
+     * PROJECT_PHASES the status machine advances a project through — so the
+     * menu and the phase a project reports itself in cannot disagree.
+     */
+    async function applyNavFlow() {
+        const host = document.querySelector('#sidebarProjectNav .sidebar-content');
+        if (!host || host.dataset.flowApplied) return;
+
+        let flow;
+        try { flow = await api('/nav-flow'); } catch (err) { return; }   // leave the old sidebar alone
+
+        const buttons = new Map();
+        host.querySelectorAll('.nav-item[data-page]').forEach(b => buttons.set(b.dataset.page, b));
+
+        const built = document.createDocumentFragment();
+
+        const addGroup = (label, pages, pinned) => {
+            const present = pages.map(p => buttons.get(p)).filter(Boolean);
+            if (!present.length) return;
+            const group = document.createElement('div');
+            group.className = 'nav-group' + (pinned ? ' nav-group-pinned' : '');
+            const heading = document.createElement('div');
+            heading.className = 'nav-group-label';
+            heading.innerHTML = `<span>${escapeHtml(label)}</span><span class="nav-group-count">${present.length}</span>`;
+            group.appendChild(heading);
+            present.forEach(b => group.appendChild(b));
+            built.appendChild(group);
+        };
+
+        addGroup('Project', flow.always, true);
+        for (const phase of flow.phases) addGroup(phase.label, phase.pages, false);
+
+        // Anything the map has not heard of keeps a home rather than vanishing.
+        const placed = new Set([...flow.always, ...flow.phases.flatMap(p => p.pages)]);
+        const strays = [...buttons.keys()].filter(p => !placed.has(p));
+        addGroup('Other', strays, false);
+
+        host.innerHTML = '';
+        host.appendChild(built);
+        host.dataset.flowApplied = '1';
+    }
+
     function navigateTo(page) {
+        applyNavFlow();
         state.currentPage = page;
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -7238,6 +9073,7 @@
             exportpage: loadExportPage,
             pipeline: loadPipeline,
             flows: loadFlowsPage,
+            previs: loadPrevisPage,
             settings: loadSettings,
             acts: loadActs,
             continuity: loadContinuity,

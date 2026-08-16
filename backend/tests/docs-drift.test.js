@@ -91,6 +91,11 @@ test('no lib module referenced by CLAUDE.md has been deleted', () => {
         // existing rather than for being undocumented.
         ...jsFiles(BACKEND),
         'index.html', 'app.json',
+        // Libraries whose NAME ends in .js. The pattern above cannot tell
+        // "Three.js" the project from "three.js" the file, and prose that
+        // weighs up a dependency has to be able to name it. Extend only for a
+        // library's actual name, never to excuse a missing file.
+        'Three.js', 'Node.js', 'Next.js', 'Vue.js', 'D3.js',
     ]);
 
     const dangling = [...new Set(referenced)].filter(f => !known.has(f));

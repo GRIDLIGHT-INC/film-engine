@@ -1,0 +1,261 @@
+/**
+ * Phase 3 — previs reaches the generator.
+ *
+ * Exit criterion, in two halves, and the second is the one that matters:
+ *
+ *   BLOCKED   a blocked shot emits a camera_control whose `type` is exactly the
+ *             one CAMERA_CONTROL_MAP already sends for that movement, plus the
+ *             sampled path.
+ *   UNBLOCKED byte-identical output to before this phase existed.
+ *
+ * The second is checked against a GOLDEN FIXTURE captured from the code as it
+ * stood before phase 3 was written — 54 payloads across every movement and
+ * three framings. Asserting "the new code agrees with the new code" would be
+ * worthless; the whole claim is that nothing changed for shots nobody has
+ * blocked, and that can only be proven against a record of what the old code
+ * actually produced. Regenerating the fixture to make this pass would be
+ * deleting the guarantee, so don't.
+ *
+ * Previs that stops at a diagram is a drawing tool bolted to a film engine.
+ * This is the phase that makes blocking mean something downstream.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+
+process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
+    || path.join(os.tmpdir(), 'film-engine-tovideo-' + crypto.randomUUID().slice(0, 8));
+
+const { db, generateId } = require('../db/database');
+const { ensureSchema } = require('../db/schema');
+ensureSchema();
+
+const { buildVideoPayload, CAMERA_CONTROL_MAP } = require('../lib/video-prompt');
+const { VALID_CAMERA_MOVES } = require('../lib/scene-card-schema');
+const { defaultBlocking, samplePath, MOVEMENTS } = require('../lib/previs-blocking');
+const { CAPABILITY_BUILDERS, loadShotContext } = require('../lib/capability-payloads');
+const { handlePrevis } = require('../routes/previs');
+
+const GOLDEN = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'video-payload-golden.json'), 'utf8'));
+
+// Exactly the inputs the fixture was captured with.
+function goldenCall(movement, shotType) {
+    const card = {
+        shot_code: 'SH01', action: 'Maya wipes the counter', duration_ms: 4000,
+        camera: { shot_type: shotType, movement, lens: '50mm' },
+        lighting: { type: 'neon' },
+        characters: ['MAYA'],
+    };
+    return [card, [{ name: 'MAYA', appearance_prompt: 'tired, 30s' }],
+        { name: 'DINER', lighting_default: 'neon' }, 'noir', { seed: 12345 }];
+}
+
+// ── The guarantee: nothing changes for unblocked shots ──────────────────────
+
+test('the golden fixture covers every movement', () => {
+    const covered = new Set(Object.keys(GOLDEN).map(k => k.split('|')[0]));
+    const missing = VALID_CAMERA_MOVES.filter(m => !covered.has(m));
+    assert.deepStrictEqual(missing, [], `fixture does not pin: ${missing.join(', ')}`);
+    assert.strictEqual(Object.keys(GOLDEN).length, VALID_CAMERA_MOVES.length * 3);
+});
+
+test('an unblocked shot produces byte-identical output to before phase 3', () => {
+    const drift = [];
+    for (const [key, expected] of Object.entries(GOLDEN)) {
+        const [movement, shotType] = key.split('|');
+        const actual = buildVideoPayload(...goldenCall(movement, shotType));
+        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            drift.push({ key, expected: expected.camera_control, actual: actual.camera_control });
+        }
+    }
+    assert.deepStrictEqual(drift, [],
+        `phase 3 changed output for shots with no blocking:\n${JSON.stringify(drift.slice(0, 3), null, 1)}`);
+});
+
+test('no previs key leaks into an unblocked payload', () => {
+    // Not covered by the golden comparison alone: an added key with an
+    // undefined value serialises away in some shapes and not others.
+    for (const movement of VALID_CAMERA_MOVES) {
+        const payload = buildVideoPayload(...goldenCall(movement, 'wide'));
+        assert.deepStrictEqual(Object.keys(payload.camera_control).sort(), ['intensity', 'type'],
+            `${movement}: camera_control grew a key without blocking`);
+        assert.ok(!('previs' in payload), `${movement}: previs key on an unblocked payload`);
+    }
+});
+
+// ── The feature: a blocked shot carries its path ────────────────────────────
+
+test('every movement carries its sampled path when the shot is blocked', () => {
+    const wrong = [];
+    for (const movement of VALID_CAMERA_MOVES) {
+        const [card, chars, loc, style, opts] = goldenCall(movement, 'wide');
+        const blocking = { ...defaultBlocking(), movement };
+        const payload = buildVideoPayload(card, chars, loc, style, { ...opts, previs: blocking });
+        const cc = payload.camera_control;
+
+        if (cc.type !== CAMERA_CONTROL_MAP[movement].type) {
+            wrong.push(`${movement}: type ${cc.type} != ${CAMERA_CONTROL_MAP[movement].type}`);
+        }
+        if (cc.intensity !== CAMERA_CONTROL_MAP[movement].intensity) {
+            wrong.push(`${movement}: previs changed the intensity`);
+        }
+        if (!Array.isArray(cc.path) || cc.path.length < 2) wrong.push(`${movement}: no sampled path`);
+        if (!cc.rig) wrong.push(`${movement}: no rig recorded`);
+    }
+    assert.deepStrictEqual(wrong, [], wrong.slice(0, 5).join('; '));
+});
+
+test('the path a blocked payload carries is the one the blocking stored', () => {
+    // Not resampled at payload time: the stored path is what was seen and
+    // approved, and recomputing it would silently re-tune an approved shot.
+    const blocking = { ...defaultBlocking(), movement: 'orbit' };
+    const stored = samplePath('orbit', blocking, { frames: 24 });
+    const [card, chars, loc, style, opts] = goldenCall('orbit', 'wide');
+
+    const payload = buildVideoPayload(card, chars, loc, style,
+        { ...opts, previs: { ...blocking, path: stored } });
+
+    assert.strictEqual(payload.camera_control.path.length, stored.length);
+    assert.deepStrictEqual(
+        payload.camera_control.path[0].position.map(v => +v.toFixed(4)),
+        stored[0].position.map(v => +v.toFixed(4)));
+});
+
+test('blocking only ever adds to camera_control, never rewrites it', () => {
+    for (const movement of VALID_CAMERA_MOVES) {
+        const [card, chars, loc, style, opts] = goldenCall(movement, 'wide');
+        const plain = buildVideoPayload(card, chars, loc, style, opts);
+        const blocked = buildVideoPayload(card, chars, loc, style,
+            { ...opts, previs: { ...defaultBlocking(), movement } });
+
+        for (const key of Object.keys(plain.camera_control)) {
+            assert.strictEqual(blocked.camera_control[key], plain.camera_control[key],
+                `${movement}: blocking changed camera_control.${key}`);
+        }
+        // Everything outside camera_control is untouched.
+        const stripped = { ...blocked, camera_control: plain.camera_control };
+        assert.deepStrictEqual(stripped, plain, `${movement}: blocking changed the rest of the payload`);
+    }
+});
+
+// ── Through the one payload path ────────────────────────────────────────────
+
+function makeBlockedShot(movement) {
+    const projectId = generateId();
+    const sceneId = generateId();
+    const shotId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Phase 3');
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)').run(sceneId, projectId, '1');
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+        .run(shotId, sceneId, 'SH01', JSON.stringify({
+            shot_code: 'SH01', action: 'x', duration_ms: 4000,
+            camera: { shot_type: 'wide', movement, lens: '50mm' },
+        }));
+    return { projectId, sceneId, shotId };
+}
+
+function callRoute(method, urlPath, body) {
+    return new Promise(resolve => {
+        const parts = urlPath.split('/').filter(Boolean);
+        const res = {
+            statusCode: 200,
+            writeHead(c) { this.statusCode = c; return this; },
+            end(p) { let b = p; try { b = JSON.parse(p); } catch (_) {} resolve({ status: this.statusCode, body: b }); },
+        };
+        Promise.resolve(handlePrevis({ method, body: body || {} }, res, parts, {}))
+            .catch(e => resolve({ status: 500, body: { error: e.message } }));
+    });
+}
+
+test('loadShotContext carries blocking so every caller sees it', () => {
+    // The Phase 0 discipline: one payload path. If blocking only reached the
+    // per-domain route, the orchestrator would generate a different shot.
+    const { shotId } = makeBlockedShot('dolly-in');
+    const before = loadShotContext(shotId);
+    assert.strictEqual(before.previs, null, 'unblocked context should say so plainly');
+
+    db.prepare(`INSERT INTO film_previs_blocking (id, shot_id, camera_json, subject_json, stage_json, rig, movement, path_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(generateId(), shotId, JSON.stringify(defaultBlocking().camera),
+            JSON.stringify(defaultBlocking().subject), JSON.stringify(defaultBlocking().stage),
+            'dolly', 'dolly-in', JSON.stringify(samplePath('dolly-in', defaultBlocking(), { frames: 8 })));
+
+    const after = loadShotContext(shotId);
+    assert.ok(after.previs, 'blocking did not reach the shot context');
+    assert.strictEqual(after.previs.movement, 'dolly-in');
+    assert.strictEqual(after.previs.path.length, 8);
+});
+
+test('the shared video builder emits the path for a blocked shot', () => {
+    const { shotId } = makeBlockedShot('crane-up');
+    db.prepare(`INSERT INTO film_previs_blocking (id, shot_id, camera_json, subject_json, stage_json, rig, movement, path_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(generateId(), shotId, JSON.stringify(defaultBlocking().camera),
+            JSON.stringify(defaultBlocking().subject), JSON.stringify(defaultBlocking().stage),
+            'crane', 'crane-up', JSON.stringify(samplePath('crane-up', defaultBlocking(), { frames: 12 })));
+
+    const ctx = loadShotContext(shotId);
+    const payload = CAPABILITY_BUILDERS.video(ctx);
+    assert.strictEqual(payload.camera_control.type, CAMERA_CONTROL_MAP['crane-up'].type);
+    assert.strictEqual(payload.camera_control.path.length, 12);
+    assert.strictEqual(payload.camera_control.rig, 'crane');
+});
+
+test('the shared video builder is untouched for an unblocked shot', () => {
+    const { shotId } = makeBlockedShot('pan-left');
+    const payload = CAPABILITY_BUILDERS.video(loadShotContext(shotId));
+    assert.deepStrictEqual(Object.keys(payload.camera_control).sort(), ['intensity', 'type']);
+});
+
+// ── The route ───────────────────────────────────────────────────────────────
+
+test('to-video returns the payload the generator would receive', async () => {
+    const { shotId } = makeBlockedShot('tracking-left');
+    await callRoute('PUT', `/film/shots/${shotId}/previs`,
+        { ...defaultBlocking(), rig: 'dolly', movement: 'tracking-left' });
+
+    const res = await callRoute('POST', `/film/shots/${shotId}/previs/to-video`, {});
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.strictEqual(res.body.camera_control.type, 'tracking-left');
+    assert.ok(res.body.camera_control.path.length >= 2);
+    assert.ok(typeof res.body.prompt === 'string' && res.body.prompt.length > 0,
+        'the preview should show the whole payload, not just the camera');
+});
+
+test('to-video on an unblocked shot says so rather than inventing a path', async () => {
+    const { shotId } = makeBlockedShot('static');
+    const res = await callRoute('POST', `/film/shots/${shotId}/previs/to-video`, {});
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.blocked, false);
+    assert.ok(!res.body.camera_control.path, 'an unblocked shot must not carry a path');
+});
+
+test('every movement survives the whole route round trip', async () => {
+    const failures = [];
+    for (const movement of VALID_CAMERA_MOVES) {
+        const { shotId } = makeBlockedShot(movement);
+        const rig = MOVEMENTS[movement].rigs[0];
+        const saved = await callRoute('PUT', `/film/shots/${shotId}/previs`,
+            { ...defaultBlocking(), rig, movement });
+        if (saved.status !== 200) { failures.push(`${movement}: save ${saved.status}`); continue; }
+
+        const res = await callRoute('POST', `/film/shots/${shotId}/previs/to-video`, {});
+        if (res.status !== 200) { failures.push(`${movement}: to-video ${res.status}`); continue; }
+        if (res.body.camera_control.type !== CAMERA_CONTROL_MAP[movement].type) {
+            failures.push(`${movement}: type ${res.body.camera_control.type}`);
+        }
+        if (!res.body.blocked) failures.push(`${movement}: not reported as blocked`);
+    }
+    assert.deepStrictEqual(failures, [], failures.slice(0, 5).join('; '));
+});
+
+test('the plan records phase 3 as built', () => {
+    const t = JSON.parse(fs.readFileSync(
+        path.join(__dirname, '..', '..', 'docs', 'plans', 'previs-camera-taxonomy.json'), 'utf8'));
+    const unbuilt = t.plan.modules.filter(m => m.phase === 3 && m.status === 'new');
+    assert.deepStrictEqual(unbuilt.map(m => m.path), []);
+});

@@ -1,0 +1,11 @@
+-- Phase 6: a camera move has a length.
+--
+-- The path said where the camera goes and never how long it takes, so a 1.5m
+-- push and a 1.5m creep were the same record. Duration is what makes one a
+-- lunge and the other a drift, and it is the only thing that turns a path into
+-- a shot with a pace.
+--
+-- Defaults to 0, meaning "not set" — the routes then fall back to the SHOT's own
+-- duration_ms, so a move inherits the length of the thing it belongs to rather
+-- than a constant nobody chose.
+ALTER TABLE film_previs_blocking ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;

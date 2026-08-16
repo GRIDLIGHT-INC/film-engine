@@ -1,0 +1,1352 @@
+{
+  "static|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "static",
+      "intensity": 0
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "static|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "static",
+      "intensity": 0
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "static|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "static",
+      "intensity": 0
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "pan-left|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, camera panning left, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "pan-left",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "pan-left|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, camera panning left, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "pan-left",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "pan-left|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, camera panning left, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "pan-left",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "pan-right|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, camera panning right, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "pan-right",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "pan-right|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, camera panning right, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "pan-right",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "pan-right|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, camera panning right, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "pan-right",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tilt-up|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, camera tilting up, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tilt-up",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tilt-up|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, camera tilting up, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tilt-up",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tilt-up|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, camera tilting up, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tilt-up",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tilt-down|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, camera tilting down, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tilt-down",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tilt-down|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, camera tilting down, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tilt-down",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tilt-down|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, camera tilting down, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tilt-down",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "dolly-in|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, camera moving closer, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "dolly-in",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "dolly-in|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, camera moving closer, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "dolly-in",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "dolly-in|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, camera moving closer, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "dolly-in",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "dolly-out|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, camera pulling away, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "dolly-out",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "dolly-out|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, camera pulling away, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "dolly-out",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "dolly-out|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, camera pulling away, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "dolly-out",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "zoom-in|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, zooming in, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "zoom-in",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "zoom-in|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, zooming in, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "zoom-in",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "zoom-in|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, zooming in, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "zoom-in",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "zoom-out|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, zooming out, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "zoom-out",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "zoom-out|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, zooming out, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "zoom-out",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "zoom-out|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, zooming out, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "zoom-out",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-left|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, tracking left, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-left",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-left|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, tracking left, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-left",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-left|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, tracking left, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-left",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-right|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, tracking right, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-right",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-right|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, tracking right, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-right",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-right|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, tracking right, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-right",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-forward|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, tracking forward, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-forward",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-forward|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, tracking forward, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-forward",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-forward|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, tracking forward, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-forward",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-back|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, tracking backward, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-back",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-back|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, tracking backward, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-back",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "tracking-back|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, tracking backward, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "tracking-back",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "crane-up|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, crane moving up, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "crane-up",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "crane-up|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, crane moving up, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "crane-up",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "crane-up|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, crane moving up, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "crane-up",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "crane-down|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, crane moving down, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "crane-down",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "crane-down|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, crane moving down, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "crane-down",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "crane-down|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, crane moving down, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "crane-down",
+      "intensity": 0.6
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "orbit|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, orbiting around subject, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "orbit",
+      "intensity": 0.7
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "orbit|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, orbiting around subject, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "orbit",
+      "intensity": 0.7
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "orbit|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, orbiting around subject, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "orbit",
+      "intensity": 0.7
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "push-in|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, pushing in toward subject, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "push-in",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "push-in|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, pushing in toward subject, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "push-in",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "push-in|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, pushing in toward subject, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "push-in",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "pull-out|wide": {
+    "prompt": "tired, 30s, Maya wipes the counter, wide angle shot, 50mm lens, pulling out from subject, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "pull-out",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "pull-out|close-up": {
+    "prompt": "tired, 30s, Maya wipes the counter, close-up shot, detailed face, 50mm lens, pulling out from subject, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "pull-out",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  },
+  "pull-out|medium": {
+    "prompt": "tired, 30s, Maya wipes the counter, medium shot, 50mm lens, pulling out from subject, neon lighting, vibrant colors, film noir, black and white, high contrast, dramatic shadows, masterpiece, high quality",
+    "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo, color, vibrant, cartoon, anime, cheerful",
+    "model": "animatediff-sdxl",
+    "width": 1024,
+    "height": 576,
+    "num_frames": 16,
+    "fps": 8,
+    "duration_s": 4,
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "seed": 12345,
+    "strength": 0.75,
+    "camera_control": {
+      "type": "pull-out",
+      "intensity": 0.5
+    },
+    "interpolation": {
+      "enabled": true,
+      "target_fps": 24,
+      "method": "rife"
+    },
+    "output_format": "mp4",
+    "stream": true
+  }
+}

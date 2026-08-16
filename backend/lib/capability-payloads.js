@@ -156,6 +156,11 @@ const CAPABILITY_BUILDERS = {
             negative_additions: cc.negative_additions,
             reference_images: cc.references,
             input_refs: cc.input_refs,
+            // Phase 3: previs travels the ONE payload path, so the orchestrator
+            // and the per-domain route cannot describe the same shot
+            // differently. Undefined when unblocked, which is what keeps the
+            // payload byte-identical for every shot nobody has blocked.
+            previs: ctx.previs || undefined,
         });
     },
 
@@ -351,10 +356,28 @@ function loadShotContext(shotId) {
         consistencyContext = consistency().buildShotReferencePayload(shot, scene, project);
     } catch (_) { consistencyContext = null; }
 
+    // 3D blocking, when the shot has any. Null rather than absent so a caller
+    // can tell "not blocked" from "context built before previs existed".
+    let previs = null;
+    try {
+        const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+        if (row) {
+            previs = {
+                camera: JSON.parse(row.camera_json || '{}'),
+                subject: JSON.parse(row.subject_json || '{}'),
+                stage: JSON.parse(row.stage_json || '{}'),
+                rig: row.rig,
+                movement: row.movement,
+                path: JSON.parse(row.path_json || '[]'),
+            };
+        }
+    } catch (_) { previs = null; }
+
     return {
         shot, scene, project, sceneCard, characters, location, voiceProfiles,
         keyframeAsset, videoAsset, audioAsset, musicCue, initImage,
         consistency: consistencyContext,
+        previs,
         overrides: {},
     };
 }
