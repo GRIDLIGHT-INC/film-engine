@@ -7363,6 +7363,7 @@
         objects: [],     // staged primitives
         images: [],      // project images an image card can show
         textures: {},    // url -> HTMLImageElement, loaded once
+        dragView: null,          // the projection a gesture started in, frozen for its duration
         viewCentre: null,        // set by Reframe; null means follow the subject
         yDrag: null,             // lifting an object off the floor
         subjectPos: [0, 0, 0],   // the framing subject; SUBJECT_SEL selects it
@@ -8872,7 +8873,15 @@
 
         canvas.addEventListener('mousedown', e => {
             const at = local(e);
-            const { pr, eye, focus, view } = stageProjector();
+            // FROZEN for the whole gesture. The orbit focuses on the framing
+            // subject, and the subject is now one of the staged objects — so
+            // dragging the target moved the camera, which changed the
+            // unprojection, which moved the object further. Equal mouse steps
+            // produced 0.45m, 0.88m, 1.30m, 1.70m, 2.08m: a positive feedback
+            // loop, not a sensitivity problem. A gesture has to be interpreted
+            // through the view it started in.
+            PREVIS.dragView = stageProjector();
+            const { pr, eye, focus, view } = PREVIS.dragView;
             // The lift knob wins over everything: it is drawn on top of the
             // object it belongs to, so a click there must not select through it.
             const chosen = PREVIS.objects[PREVIS.selected];
@@ -8916,7 +8925,7 @@
 
         window.addEventListener('mousemove', e => {
             if (PREVIS.yDrag) {
-                const at = local(e);
+                const at = local(e);   // scaled by the pixels-per-metre frozen at grab time
                 const o = PREVIS.objects[PREVIS.yDrag.index];
                 if (o) {
                     const lifted = PREVIS.yDrag.startHeight + (PREVIS.yDrag.startY - at.y) / PREVIS.yDrag.perMetre;
@@ -8929,7 +8938,7 @@
             }
             if (PREVIS.objectDrag) {
                 const at = local(e);
-                const { eye, focus, view } = stageProjector();
+                const { eye, focus, view } = PREVIS.dragView || stageProjector();
                 // Unproject where the object's BASE should now be, not where the
                 // cursor is. See previsGrab.
                 const ground = previsGroundPoint(
@@ -8954,6 +8963,7 @@
         });
 
         window.addEventListener('mouseup', () => {
+            PREVIS.dragView = null;
             if (PREVIS.yDrag) { PREVIS.yDrag = null; previsRenderObjects(); }
             if (PREVIS.objectDrag) { PREVIS.objectDrag = null; previsRenderObjects(); }
             PREVIS.drag = null;

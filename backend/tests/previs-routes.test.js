@@ -439,3 +439,21 @@ test('the SPA script parses', () => {
     });
     assert.deepStrictEqual(broken, [], broken.join('; '));
 });
+
+test('a drag is interpreted through the view it started in', () => {
+    // The orbit focuses on the framing subject, and the subject is one of the
+    // staged objects — so dragging the target moved the camera, which changed
+    // the unprojection, which moved the object further. Equal mouse steps gave
+    // 0.45m, 0.88m, 1.30m, 1.70m, 2.08m. A gesture must be read through a
+    // frozen projection or it feeds back on itself.
+    const html = fs.readFileSync(INDEX_HTML, 'utf8');
+    const bind = html.slice(html.indexOf('function previsBindStage'), html.length);
+    const handler = bind.slice(0, bind.indexOf('\n    }\n'));
+
+    assert.ok(/PREVIS\.dragView = stageProjector\(\)/.test(handler),
+        'mousedown does not freeze the projection');
+    assert.ok(/PREVIS\.dragView \|\| stageProjector\(\)/.test(handler),
+        'mousemove recomputes the projection instead of reusing the frozen one');
+    assert.ok(/PREVIS\.dragView = null/.test(handler),
+        'the frozen projection is never released');
+});
