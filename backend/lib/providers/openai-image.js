@@ -342,6 +342,11 @@ const adapter = {
     label: 'OpenAI',
     requiresKey: true,
     capabilities: ['llm', 'image'],
+    // The image builder reads p.reference_images and forwards them as edit
+    // inputs, so a tag has a picture behind it.
+    supportsReferenceImages: true,
+    // Forwarded as edit inputs; there is no tag syntax to address them with.
+    supportsReferenceTags: false,
 
     connection: {
         instructions: 'OpenAI has no OAuth for API access — paste an API key. Click "Get your key" to open the OpenAI keys page, create a key, and paste it here.',

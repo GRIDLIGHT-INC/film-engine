@@ -668,8 +668,21 @@ async function generateStoryboard(req, res, projectId, query) {
         }
 
         // Build prompt
-        const shotRefs = gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCard.props);
-        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset, { references: shotRefs });
+        // Only tag when the provider that will actually run can receive the
+        // pictures. Meshy's text-to-image has no reference field, so emitting
+        // "@maya" there replaced 240 characters of appearance with a token
+        // meaning nothing — eight frames of a different woman each time.
+        // Attach pictures when the provider can receive them; NAME them only
+        // when it can address them from the prompt. Runway takes { uri, tag }
+        // and reads @tag; Meshy takes a plain array and cannot, so it needs the
+        // prose kept alongside the images.
+        const leadProvider = imageProviderChain(providerConfigOf(project))[0];
+        const canAttach = !!(leadProvider && leadProvider.supportsReferenceImages);
+        const canTag = !!(leadProvider && leadProvider.supportsReferenceTags);
+        const shotRefs = canAttach
+            ? gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCard.props)
+            : [];
+        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset, { references: shotRefs, tagged: canTag });
 
         // Update shot status
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shot.shot_id);
@@ -864,8 +877,21 @@ async function generateStoryboardStream(req, res, projectId, query) {
             styleParams.ip_adapter_weight = consistencyPrimary.weight || 0.7;
         }
 
-        const shotRefs = gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCard.props);
-        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset, { references: shotRefs });
+        // Only tag when the provider that will actually run can receive the
+        // pictures. Meshy's text-to-image has no reference field, so emitting
+        // "@maya" there replaced 240 characters of appearance with a token
+        // meaning nothing — eight frames of a different woman each time.
+        // Attach pictures when the provider can receive them; NAME them only
+        // when it can address them from the prompt. Runway takes { uri, tag }
+        // and reads @tag; Meshy takes a plain array and cannot, so it needs the
+        // prose kept alongside the images.
+        const leadProvider = imageProviderChain(providerConfigOf(project))[0];
+        const canAttach = !!(leadProvider && leadProvider.supportsReferenceImages);
+        const canTag = !!(leadProvider && leadProvider.supportsReferenceTags);
+        const shotRefs = canAttach
+            ? gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCard.props)
+            : [];
+        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset, { references: shotRefs, tagged: canTag });
 
         sendEvent({
             type: 'progress',

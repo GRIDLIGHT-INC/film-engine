@@ -366,6 +366,12 @@ const adapter = {
     label: 'Runway',
     requiresKey: true,
     capabilities: ['video', 'image'],
+    // gen4_image takes up to three { uri, tag } references and lets the prompt
+    // name them, which is what makes @tags meaningful here.
+    supportsReferenceImages: true,
+    // { uri, tag } — the prompt addresses them as @tag.
+    supportsReferenceTags: true,
+    maxReferenceImages: 3,
 
     connection: {
         instructions: 'Create an API key in the Runway developer portal and paste it here. Runway bills API generations from developer-portal credits, which are separate from a Runway app subscription.',

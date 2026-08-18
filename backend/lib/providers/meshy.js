@@ -32,6 +32,8 @@ const DEFAULT_BASE_URL = 'https://api.meshy.ai';
 // the NLE rather than being silently delivered square.
 const IMAGE_MODELS = ['nano-banana-pro', 'nano-banana-2', 'nano-banana', 'gpt-image-2'];
 const DEFAULT_IMAGE_MODEL = process.env.MESHY_IMAGE_MODEL || 'nano-banana-pro';
+// image-to-image accepts 1-5; a sixth is a validation failure, not a trim.
+const MAX_REFERENCE_IMAGES = 5;
 const IMAGE_RATIOS = {
     'gpt-image-2': ['1:1', '3:2', '2:3'],
     _default: ['1:1', '16:9', '9:16', '4:3', '3:4'],
@@ -74,6 +76,15 @@ function buildImageRequest(payload) {
         ? `${p.width}:${p.height}`
         : (p.aspect_ratio || p.ratio);
 
+    // 1-5 references, as publicly reachable URLs or base64 data URIs. Present
+    // means image-to-image; absent means text-to-image. Selecting the endpoint
+    // from the payload keeps one entry point for callers.
+    const refs = (Array.isArray(p.reference_images) ? p.reference_images : [])
+        .map(r => (typeof r === 'string' ? r : (r && (r.uri || r.url || r.image_url))))
+        .filter(Boolean)
+        .slice(0, MAX_REFERENCE_IMAGES);
+    if (refs.length) body.reference_image_urls = refs;
+
     // aspect_ratio is rejected alongside multi-view, so only one is ever sent.
     if (p.generate_multi_view || p.multi_view) body.generate_multi_view = true;
     else body.aspect_ratio = snapMeshyRatio(requested, model);
@@ -105,6 +116,11 @@ const OPERATIONS = {
     // declared `model3d` alone, so a funded Meshy account sat unusable while
     // the image stage was blocked on two exhausted providers.
     text_to_image: { path: '/openapi/v1/text-to-image', phase: null },
+    // Reference-conditioned 2D generation: 1-5 images as URLs or base64 data
+    // URIs. Unlike Runway's { uri, tag } form these are a plain array with no
+    // names, so the prompt must still DESCRIBE the subject — the pictures
+    // condition it rather than being addressable from the text.
+    image_to_image: { path: '/openapi/v1/image-to-image', phase: null },
     animate: { path: '/openapi/v1/animation', phase: null },
 };
 
@@ -381,7 +397,9 @@ async function runImage(payload) {
     const body = buildImageRequest(payload);
     if (!body.prompt) return { ok: false, status: 400, error: 'meshy: prompt is required' };
 
-    const path = OPERATIONS.text_to_image.path;
+    const path = body.reference_image_urls
+        ? OPERATIONS.image_to_image.path
+        : OPERATIONS.text_to_image.path;
     const created = await call('POST', path, apiKey, body);
     if (!created.ok) return created;
 
@@ -454,6 +472,13 @@ const adapter = {
     label: 'Meshy (3D + image)',
     requiresKey: true,
     capabilities: ['model3d', 'image'],
+    // image-to-image takes 1-5 reference images as a plain array, so pictures
+    // DO condition the result — but they carry no names, so the prompt must
+    // keep describing the subject. Emitting "@maya" here replaced 240
+    // characters of appearance with a token meaning nothing.
+    supportsReferenceImages: true,
+    supportsReferenceTags: false,
+    maxReferenceImages: MAX_REFERENCE_IMAGES,
 
     connection: {
         instructions: 'Meshy uses API keys, not OAuth. Create a key in your Meshy account settings and paste it here.',

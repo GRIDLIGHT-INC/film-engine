@@ -116,6 +116,11 @@ const gridlightAdapter = {
     label: 'Gridlight',
     requiresKey: false, // uses GRIDLIGHT_API_KEY from env; no per-provider key entry
     capabilities: Object.keys(ENDPOINTS),
+    // Gridlight receives the capability payload verbatim, including
+    // reference_images and ip_adapter_image, so references survive the hop.
+    supportsReferenceImages: true,
+    // reference_images / ip_adapter_image condition the result; no tag syntax.
+    supportsReferenceTags: false,
 
     supports(capability) {
         return capability in ENDPOINTS;

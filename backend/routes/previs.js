@@ -20,8 +20,11 @@ const {
     RIGS, MOVEMENTS, SHOT_TYPES,
     solveShot, samplePath, sampleSequence, rigCanPerform, defaultBlocking, resolveTarget,
     legTimings, DEFAULT_MOVE_MS,
+    DEFAULT_EYE_HEIGHT_M, DEFAULT_SUBJECT_HEIGHT_M,
 } = require('../lib/previs-blocking');
 const { PRIMITIVES, primitiveGeometry } = require('../lib/previs-primitives');
+const crypto = require('crypto');
+const { validateSceneCards } = require('../lib/scene-card-schema');
 const {
     SENSORS, LENS_KIT, APERTURES,
     sensorFor, fieldOfView, depthOfField, frameCoverage,
@@ -166,7 +169,12 @@ function validateBlocking(body) {
 function getBlocking(req, res, shotId) {
     const shot = db.prepare('SELECT id FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) return json(res, 404, { error: 'Shot not found' });
-    return json(res, 200, { shot_id: shotId, blocking: loadBlocking(shotId) });
+    return json(res, 200, {
+        shot_id: shotId,
+        blocking: loadBlocking(shotId),
+        keyframe: shotKeyframe(shotId),
+        approval: approvalState(shotId),
+    });
 }
 
 function putBlocking(req, res, shotId) {
@@ -330,6 +338,9 @@ function toVideo(req, res, shotId) {
     const shot = db.prepare('SELECT id FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) return json(res, 404, { error: 'Shot not found' });
 
+    const stale = staleApproval(req, shotId);
+    if (stale) return json(res, 409, stale);
+
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
     const ctx = loadShotContext(shotId);
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
@@ -471,6 +482,287 @@ function servePrevisMedia(req, res, projectId, fileName) {
 
 // ── Router ──────────────────────────────────────────────────────────────────
 
+/**
+ * Write the blocking back onto the scene card.
+ *
+ * The missing half of the round trip. /solve turns a written shot into a camera
+ * position; without this, everything discovered by moving that camera stayed in
+ * the previs table and the card still described the shot as first written. A
+ * director could stage a better angle and the rest of the pipeline would never
+ * hear about it.
+ *
+ * The card is updated, not replaced: only the camera facets the stage actually
+ * determines are touched, so description, characters and dialogue survive.
+ */
+function applyBlockingToCard(req, res, shotId) {
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+
+    const blocking = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    if (!blocking) return json(res, 409, { error: 'Shot has no blocking to apply' });
+
+    let card = {};
+    try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
+
+    let camera = {};
+    try { camera = JSON.parse(blocking.camera_json || '{}'); } catch (_) { camera = {}; }
+
+    const before = { ...(card.camera || {}) };
+    card.camera = { ...(card.camera || {}) };
+
+    // Only what the stage decides. shot_type comes from the solved framing,
+    // lens from the actual focal length, movement from what was blocked.
+    if (blocking.shot_type) card.camera.shot_type = blocking.shot_type;
+    if (Number(camera.focal_mm) > 0) card.camera.lens = `${Math.round(Number(camera.focal_mm))}mm`;
+    if (blocking.movement) card.camera.movement = blocking.movement;
+    if (camera.sensor) card.camera.sensor = camera.sensor;
+    if (Number(camera.f_stop) > 0) card.camera.aperture = Number(camera.f_stop);
+    if (Number(camera.height_m) > 0) card.camera.height_m = Number(camera.height_m);
+
+    const validation = validateSceneCards([card]);
+    if (!validation.valid) {
+        return json(res, 400, { error: 'Blocking produced an invalid scene card', details: validation.errors });
+    }
+
+    db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?')
+        .run(JSON.stringify(card), shotId);
+
+    return json(res, 200, {
+        shot_id: shotId,
+        shot_code: shot.shot_code,
+        camera_before: before,
+        camera_after: card.camera,
+        applied: true,
+    });
+}
+
+/**
+ * The image payload a blocked shot would generate — the mirror of /to-video.
+ *
+ * Previews rather than generates, so a director can see how the blocking reads
+ * as a prompt before spending a credit on it.
+ */
+function toStoryboard(req, res, shotId) {
+    const stale = staleApproval(req, shotId);
+    if (stale) return json(res, 409, stale);
+
+    const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
+    let ctx;
+    try { ctx = loadShotContext(shotId); } catch (err) {
+        return json(res, 400, { error: err.message, code: err.code || undefined });
+    }
+    if (!ctx) return json(res, 404, { error: 'Shot not found' });
+
+    try {
+        const { payload, meta } = buildCapabilityPayload('image', ctx);
+        return json(res, 200, {
+            shot_id: shotId,
+            blocked: !!ctx.previs,
+            previs: ctx.previs || null,
+            payload,
+            meta: meta || undefined,
+        });
+    } catch (err) {
+        return json(res, 400, { error: err.message, code: err.code || undefined });
+    }
+}
+
+/**
+ * The shot's own generated frame, ready to stand in the stage.
+ *
+ * The `imageplane` primitive has always been able to hold a picture — it reads
+ * `o.src` — but nothing ever told the viewer where this shot's picture lives,
+ * so the one image most worth standing next to the camera was the one you had
+ * to go and find. Restaging against the frame you actually generated is the
+ * whole point of iterating between the two views.
+ */
+function shotKeyframe(shotId) {
+    const row = db.prepare(
+        `SELECT a.id, a.file_name, a.project_id FROM film_assets a
+          WHERE a.shot_id = ? AND a.asset_type = 'storyboard'
+       ORDER BY a.version DESC, a.created_at DESC LIMIT 1`).get(shotId);
+    if (!row) return null;
+    return {
+        asset_id: row.id,
+        file_name: row.file_name,
+        // The URL the viewer can actually paint from, same route the
+        // storyboard pane uses. Serving a disk path here would draw nothing.
+        src: `/film/storyboards/${row.project_id}/${row.file_name}`,
+    };
+}
+
+/**
+ * What was approved, reduced to a value that changes when the shot does.
+ *
+ * Only the things that alter the frame: where the camera is, what it is
+ * looking through, what it is mounted on, how it moves, and what is staged.
+ * Deliberately NOT the sampled path — a path is derived from the movement, so
+ * including it would make a re-sample read as a creative change.
+ */
+function blockingFingerprint(shotId) {
+    const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    if (!row) return null;
+    const shot = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
+    let card = {};
+    try { card = JSON.parse((shot && shot.scene_card_yaml) || '{}'); } catch (_) { card = {}; }
+    const material = JSON.stringify({
+        camera: parse(row.camera_json, {}),
+        subjects: parse(row.subjects_json, []),
+        subject: parse(row.subject_json, {}),
+        rig: row.rig,
+        movement: row.movement,
+        moves: parse(row.moves_json, []),
+        camera_card: card.camera || {},
+    });
+    return crypto.createHash('sha256').update(material).digest('hex').slice(0, 32);
+}
+
+/**
+ * Approval state for a shot, and whether it still describes what is there now.
+ *
+ * A shot that was never approved returns `approved: false, stale: false` — it
+ * is not pending judgement, it is simply outside this workflow, and must
+ * generate exactly as it did before any of this existed.
+ */
+function approvalState(shotId) {
+    const row = db.prepare(
+        'SELECT approved_fingerprint, approved_at FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    if (!row || !row.approved_fingerprint) return { approved: false, stale: false, approved_at: null };
+    const now = blockingFingerprint(shotId);
+    return {
+        approved: true,
+        stale: now !== row.approved_fingerprint,
+        approved_at: row.approved_at,
+    };
+}
+
+/**
+ * Sign off the blocking as it stands.
+ *
+ * Records the fingerprint rather than a flag, so "approved" can later be
+ * distinguished from "approved, then changed" — which is the distinction the
+ * whole iterate-until-happy loop turns on.
+ */
+function approveBlocking(req, res, shotId) {
+    const shot = db.prepare('SELECT id FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+
+    const fingerprint = blockingFingerprint(shotId);
+    if (!fingerprint) return json(res, 409, { error: 'Shot has no blocking to approve' });
+
+    db.prepare('UPDATE film_previs_blocking SET approved_fingerprint = ?, approved_at = datetime(\'now\') WHERE shot_id = ?')
+        .run(fingerprint, shotId);
+    // The status enum has always had this value; nothing ever wrote it.
+    db.prepare("UPDATE film_shots SET status = 'approved' WHERE id = ?").run(shotId);
+
+    return json(res, 200, { shot_id: shotId, approved: true, fingerprint });
+}
+
+/** Withdraw an approval so the shot can be iterated on freely again. */
+function unapproveBlocking(req, res, shotId) {
+    const shot = db.prepare('SELECT id FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+    db.prepare('UPDATE film_previs_blocking SET approved_fingerprint = NULL, approved_at = NULL WHERE shot_id = ?')
+        .run(shotId);
+    db.prepare("UPDATE film_shots SET status = 'pending' WHERE id = ? AND status = 'approved'").run(shotId);
+    return json(res, 200, { shot_id: shotId, approved: false });
+}
+
+/**
+ * Refuse to generate from a sign-off that no longer describes the shot.
+ *
+ * Returns an error response body when the run should stop, or null to proceed.
+ * Overridable exactly the way the budget gate is: a fingerprint that has gone
+ * stale for a reason the director does not care about must not make the shot
+ * ungeneratable, but they have to say so.
+ */
+function staleApproval(req, shotId) {
+    const body = req.body || {};
+    if (body.ignore_approval) return null;
+    const state = approvalState(shotId);
+    if (!state.approved || !state.stale) return null;
+    return {
+        error: 'The blocking changed after it was approved',
+        code: 'STALE_APPROVAL',
+        detail: 'This shot was signed off, then restaged. Generating now would shoot a frame nobody approved. '
+            + 'Re-approve it, or pass ignore_approval to generate anyway.',
+        approved_at: state.approved_at,
+    };
+}
+
+/**
+ * Seed the stage from what was written.
+ *
+ * The loop's missing entry edge. /solve computes a camera position but takes
+ * shot_type and focal_mm from the REQUEST, so a shot whose card already says
+ * "close-up on a 50" made the director retype both before the 3D view showed
+ * anything — and any typo silently previewed a different shot than the one the
+ * screenplay breakdown produced.
+ *
+ * Refuses to overwrite by default. Blocking is hand-made work, and re-seeding
+ * from the card is exactly the action that would discard it.
+ */
+function fromCard(req, res, shotId) {
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+
+    const body = req.body || {};
+    const existing = db.prepare('SELECT id FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    if (existing && !body.overwrite) {
+        return json(res, 409, {
+            error: 'Shot is already blocked',
+            detail: 'Pass overwrite to replace the existing blocking with one seeded from the scene card.',
+        });
+    }
+
+    let card = {};
+    try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
+    const cam = card.camera || {};
+
+    const shotType = SHOT_TYPES[cam.shot_type] ? cam.shot_type : 'medium';
+    const movement = MOVEMENTS[cam.movement] ? cam.movement : 'static';
+    // "50mm", "50 mm", 50 — the card's lens is a free string by design, so it
+    // is parsed rather than trusted, and an unparseable one falls back instead
+    // of failing: a card that says "anamorphic" should still open a stage.
+    const focalMm = (() => {
+        const raw = cam.focal_mm !== undefined ? cam.focal_mm : cam.lens;
+        const n = typeof raw === 'number' ? raw : parseFloat(String(raw || '').replace(/[^0-9.]/g, ''));
+        return Number.isFinite(n) && n > 0 ? n : 50;
+    })();
+    const sensorId = SENSORS[cam.sensor] ? cam.sensor : 'super35';
+    const fStop = Number(cam.aperture) > 0 ? Number(cam.aperture) : 2.8;
+    const heightM = Number(cam.height_m) > 0 ? Number(cam.height_m) : DEFAULT_EYE_HEIGHT_M;
+
+    const sensor = sensorFor(sensorId);
+    const subject = { position: [0, 0, 0], heightM: DEFAULT_SUBJECT_HEIGHT_M };
+    const solution = solveShot({ shotType, focalMm, sensor, subject });
+
+    const camera = {
+        position: [0, heightM, solution.distanceM],
+        rotation: [0, 0, 0],
+        focalMm,
+        sensorId,
+        fStop,
+        focusDistanceM: solution.distanceM,
+    };
+
+    const blocking = {
+        camera,
+        subject,
+        stage: { widthM: 12, depthM: 12 },
+        rig: solution.rig || 'dolly',
+        movement,
+        durationMs: shot.duration_ms || 0,
+        subjects: [],
+        moves: [],
+    };
+
+    // Saved through the same validator and sampler the editor writes through,
+    // so a seeded blocking is indistinguishable from a hand-made one.
+    req.body = blocking;
+    return putBlocking(req, res, shotId);
+}
+
 function handlePrevis(req, res, urlParts) {
     // /film/nav-flow — the sidebar order, from the status machine.
     if (urlParts[1] === 'nav-flow' && req.method === 'GET') {
@@ -499,6 +791,23 @@ function handlePrevis(req, res, urlParts) {
         if (urlParts[4] === 'to-video') {
             if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
             return toVideo(req, res, shotId);
+        }
+        if (urlParts[4] === 'from-card') {
+            if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+            return fromCard(req, res, shotId);
+        }
+        if (urlParts[4] === 'approve') {
+            if (req.method === 'POST') return approveBlocking(req, res, shotId);
+            if (req.method === 'DELETE') return unapproveBlocking(req, res, shotId);
+            return json(res, 405, { error: 'Method not allowed' });
+        }
+        if (urlParts[4] === 'apply') {
+            if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+            return applyBlockingToCard(req, res, shotId);
+        }
+        if (urlParts[4] === 'to-storyboard') {
+            if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+            return toStoryboard(req, res, shotId);
         }
         if (urlParts[4] === 'solve') {
             if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });

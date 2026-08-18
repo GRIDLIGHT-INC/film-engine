@@ -153,7 +153,10 @@ const CAPABILITY_BUILDERS = {
         const overrides = ctx.overrides || {};
         const cc = ctx.consistency || null;
 
-        const base = buildStoryboardPrompt(ctx.sceneCard, ctx.characters, ctx.location, ctx.project.style_preset);
+        // Blocking shapes the keyframe, not only the clip. Passing it here is
+        // what makes the frame a director approves the frame they staged.
+        const base = buildStoryboardPrompt(ctx.sceneCard, ctx.characters, ctx.location,
+            ctx.project.style_preset, { previs: ctx.previs || undefined });
 
         const payload = imageRequestPayload({
             prompt: base.prompt,
@@ -166,6 +169,7 @@ const CAPABILITY_BUILDERS = {
             guidance_scale: overrides.guidance_scale,
             ip_adapter_image: overrides.ip_adapter_image,
             ip_adapter_weight: overrides.ip_adapter_weight,
+            aspect_ratio: ctx.project.aspect_ratio,
         });
 
         return cc ? applyConsistencyToImagePayload(payload, cc) : payload;

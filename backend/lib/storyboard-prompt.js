@@ -171,12 +171,57 @@ const STYLE_ALLOWANCE = 140;
  */
 const MAX_PROMPT_CHARS = 1000;
 
+const { previsFacets } = require('./previs-blocking');
+
+/**
+ * Blocking, expressed in the prompt's own vocabulary.
+ *
+ * Previs already reaches the VIDEO payload as camera_control. It did not reach
+ * the image at all, so a director could solve a close-up on a 50 — a camera
+ * 1.21m from the subject — and then generate a keyframe from the scene card's
+ * text as though none of that had happened. The frame they approved was not the
+ * frame they blocked, and the difference only surfaced in the video pass.
+ */
+function previsPromptParts(rawPrevis) {
+    const previs = previsFacets(rawPrevis);
+    if (!previs) return null;
+    const parts = [];
+
+    const framing = previs.shot_type || previs.framing;
+    if (framing && SHOT_TYPE_MAP[framing]) parts.push(SHOT_TYPE_MAP[framing]);
+
+    const focal = Number(previs.focal_mm);
+    if (Number.isFinite(focal) && focal > 0) parts.push(`${Math.round(focal)}mm lens`);
+
+    // Camera height against a standing eyeline IS the angle. Derived rather
+    // than stored, because the stage already knows where the camera is and a
+    // separate field could disagree with it.
+    const h = Number(previs.camera_height_m);
+    if (Number.isFinite(h)) {
+        if (h <= 0.9) parts.push('low angle, camera looking up');
+        else if (h >= 2.2) parts.push('high angle, camera looking down');
+    }
+
+    if (previs.movement && MOVEMENT_MAP[previs.movement]) parts.push(MOVEMENT_MAP[previs.movement]);
+
+    // A solved distance is what makes framing a measurement rather than a word.
+    const d = Number(previs.distance_m);
+    if (Number.isFinite(d) && d > 0) parts.push(`camera ${d.toFixed(1)}m from subject`);
+
+    return parts.length ? parts : null;
+}
+
 function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, options) {
     const opts = options || {};
     // Subjects the caller has attached a reference image for. Empty map when
     // there are none, so the prose path below is unchanged for every project
     // that has not generated plates yet.
-    const tagFor = opts.references
+    // Two different questions. `references` means pictures are attached;
+    // `tagged` means the provider lets the PROMPT address them as @tag. Meshy
+    // conditions on a plain array with no names, so its prompt must keep
+    // describing the subject — emitting "@maya" there replaced 240 characters
+    // of appearance with a token meaning nothing to the model.
+    const tagFor = (opts.references && opts.tagged !== false)
         ? require('./reference-images').taggedNames(opts.references)
         : new Map();
     const parts = [];
@@ -218,23 +263,55 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
         parts.push(trimToAllowance(subject, opts.actionAllowance || ACTION_ALLOWANCE));
     }
 
+    // 3-5. Camera: the blocking when the shot has been staged, otherwise the
+    // scene card. Blocking WINS — the card is what was written, the blocking is
+    // what was staged and approved, and generating the card's version would
+    // show the director the shot they already moved past.
+    // Merged PER FACET, not all-or-nothing. Blocking wins wherever it has an
+    // opinion; the card fills the rest. Swapping the whole group looks
+    // equivalent and is not: stored blocking knows its movement long before it
+    // can derive a framing, so an all-or-nothing swap on a shot that was merely
+    // staged dropped the card's framing AND lens and described the shot by its
+    // movement alone — a blocked shot generated a vaguer frame than an
+    // unblocked one, which is the exact opposite of the feature.
+    const facets = previsFacets(opts.previs) || {};
+    const cardCamera = sceneCard.camera || {};
+
     // 3. Camera shot type
-    const shotType = sceneCard.camera && sceneCard.camera.shot_type;
+    const blockedFraming = facets.shot_type || facets.framing;
+    const shotType = (blockedFraming && SHOT_TYPE_MAP[blockedFraming])
+        ? blockedFraming : cardCamera.shot_type;
     if (shotType && SHOT_TYPE_MAP[shotType]) {
         parts.push(SHOT_TYPE_MAP[shotType]);
     }
 
-    // 4. Lens
-    const lens = sceneCard.camera && sceneCard.camera.lens;
-    if (lens) {
-        parts.push(`${lens} lens`);
+    // 4. Lens — the staged focal length, else whatever the card called it.
+    const blockedFocal = Number(facets.focal_mm);
+    if (Number.isFinite(blockedFocal) && blockedFocal > 0) {
+        parts.push(`${Math.round(blockedFocal)}mm lens`);
+    } else if (cardCamera.lens) {
+        parts.push(`${cardCamera.lens} lens`);
+    }
+
+    // 4b. Camera height against a standing eyeline IS the angle. Derived rather
+    // than stored, because the stage already knows where the camera is and a
+    // separate field could disagree with it.
+    const h = Number(facets.camera_height_m);
+    if (Number.isFinite(h)) {
+        if (h <= 0.9) parts.push('low angle, camera looking up');
+        else if (h >= 2.2) parts.push('high angle, camera looking down');
     }
 
     // 5. Camera movement
-    const movement = sceneCard.camera && sceneCard.camera.movement;
+    const movement = facets.movement || cardCamera.movement;
     if (movement && MOVEMENT_MAP[movement]) {
         parts.push(MOVEMENT_MAP[movement]);
     }
+
+    // 5b. A solved distance is what makes framing a measurement rather than a
+    // word. Blocking only — a card has never held one.
+    const d = Number(facets.distance_m);
+    if (Number.isFinite(d) && d > 0) parts.push(`camera ${d.toFixed(1)}m from subject`);
 
     // 6. Lighting
     const lightType = sceneCard.lighting && sceneCard.lighting.type;
@@ -356,6 +433,7 @@ function applyStyleLock(baseSeed, shotIndex, options) {
 }
 
 module.exports = {
+    previsPromptParts,
     trimToAllowance,
     MAX_PROMPT_CHARS,
     ACTION_ALLOWANCE,

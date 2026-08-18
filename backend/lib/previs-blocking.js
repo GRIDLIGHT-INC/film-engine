@@ -29,7 +29,7 @@
  * here, where they would render identically if magnitude and rig did not differ.
  */
 
-const { SENSORS, sensorFor, framingDistance, framingDistanceForWidth } = require('./previs-camera');
+const { SENSORS, sensorFor, framingDistance, framingDistanceForWidth, frameCoverage } = require('./previs-camera');
 
 // ── Rigs ────────────────────────────────────────────────────────────────────
 //
@@ -693,10 +693,76 @@ function toCameraControl(blocking, movement) {
     };
 }
 
+/**
+ * Stored blocking → the flat facts a prompt can be written from.
+ *
+ * The two halves of previs speak different shapes. What is SAVED is geometry —
+ * a camera position, a focal length, a sensor id — because that is what the
+ * viewer draws and what "recreate this shot exactly" needs. What a PROMPT wants
+ * is words: a framing, an angle, a distance. Nothing converted between them, so
+ * the prompt builder read `previs.focal_mm` off an object that only ever had
+ * `previs.camera.focalMm`, found nothing, and silently described a shot by its
+ * movement alone.
+ *
+ * Framing is DERIVED rather than stored, and that is the point: it is whatever
+ * the lens actually covers at the distance the camera actually stands. A stored
+ * label would go stale the moment someone dragged the camera, which in an
+ * iterative loop is constantly.
+ */
+function previsFacets(blocking) {
+    if (!blocking || typeof blocking !== 'object') return null;
+
+    // Already flat (a caller passing facts directly, and every test that was
+    // written against this shape before the geometry existed).
+    if (blocking.focal_mm !== undefined || blocking.shot_type !== undefined
+        || blocking.distance_m !== undefined || blocking.camera_height_m !== undefined) {
+        return { ...blocking };
+    }
+
+    const camera = blocking.camera || {};
+    const focalMm = Number(camera.focalMm);
+    const position = Array.isArray(camera.position) ? camera.position : null;
+
+    const facets = {};
+    if (blocking.movement) facets.movement = blocking.movement;
+    if (Number.isFinite(focalMm) && focalMm > 0) facets.focal_mm = focalMm;
+    if (position && Number.isFinite(Number(position[1]))) facets.camera_height_m = Number(position[1]);
+
+    const target = resolveTarget(blocking);
+    if (position && target && Array.isArray(target.position)) {
+        const dx = Number(position[0]) - Number(target.position[0]);
+        const dy = Number(position[1]) - Number(target.position[1]);
+        const dz = Number(position[2]) - Number(target.position[2]);
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (Number.isFinite(distance) && distance > 0) facets.distance_m = distance;
+    }
+
+    // Invert the framing out of the optics. `subjectHeightM` on each framing IS
+    // the vertical coverage it means, so the nearest one is the honest name for
+    // what this camera sees.
+    if (facets.distance_m && facets.focal_mm) {
+        const sensor = sensorFor(camera.sensorId || camera.sensor);
+        const coverage = frameCoverage(facets.distance_m, facets.focal_mm, sensor);
+        if (coverage && Number.isFinite(coverage.heightM)) {
+            facets.coverage_height_m = coverage.heightM;
+            let best = null;
+            for (const [id, def] of Object.entries(SHOT_TYPES)) {
+                if (def.axis !== 'framing' || !Number.isFinite(def.subjectHeightM)) continue;
+                const delta = Math.abs(def.subjectHeightM - coverage.heightM);
+                if (!best || delta < best.delta) best = { id, delta };
+            }
+            if (best) facets.shot_type = best.id;
+        }
+    }
+
+    return Object.keys(facets).length ? facets : null;
+}
+
 module.exports = {
     RIGS, MOVEMENTS, SHOT_TYPES, SENSORS,
     DEFAULT_EYE_HEIGHT_M, DEFAULT_SUBJECT_HEIGHT_M,
     defaultBlocking, solveShot, samplePath, sampleSequence, moveAmount, resolveTarget,
     rigCanPerform, toCameraControl, legTimings, movePace, groupLegs, DEFAULT_MOVE_MS,
     poseAt, EASINGS, easeT,
+    previsFacets,
 };
