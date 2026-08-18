@@ -313,7 +313,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/projects/:id/breakdown[/stream]
-        if (parts[1] === 'projects' && parts[2] && parts[3] === 'breakdown') {
+        if (parts[1] === 'projects' && parts[2] && (parts[3] === 'breakdown' || parts[3] === 'entities')) {
             return await handleBreakdown(req, res, parts);
         }
 

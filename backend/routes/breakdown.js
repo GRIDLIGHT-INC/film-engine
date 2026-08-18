@@ -74,11 +74,134 @@ function handleBreakdown(req, res, urlParts) {
     }
 
     const sub = urlParts[4]; // 'stream' for SSE mode
+
+    // POST /film/projects/:id/entities/describe
+    if (urlParts[3] === 'entities' && sub === 'describe') {
+        return describeEntities(req, res, projectId);
+    }
+
     if (sub === 'stream') {
         return breakdownStream(req, res, projectId);
     }
 
     return breakdownSync(req, res, projectId);
+}
+
+/**
+ * Describe the entities a screenplay introduced.
+ *
+ * The breakdown has always READ appearance_prompt to enrich its scene cards
+ * and never written one, so entities arrived at generation as bare names.
+ * buildStoryboardPrompt then looked a character up, found nothing to inject,
+ * and every keyframe invented its own person — which is how one production got
+ * a different dragon in each of eight frames while the location, which did have
+ * a description, stayed rock solid across all of them.
+ *
+ * A separate pass rather than more fields on the scene-card call: card parsing
+ * is load-bearing and adding entity output to it would put both behind one
+ * fragile response. This one is also re-runnable, which matters because
+ * entities keep appearing as a script is revised.
+ *
+ * Only fills what is EMPTY. A description someone wrote by hand is a decision,
+ * and silently improving it is how a production loses the look it chose.
+ */
+const DESCRIBE_SYSTEM_PROMPT = `You are a film production designer. For each entity below, write a short visual description usable directly as an image-generation prompt.
+
+RULES:
+- Describe only what a camera would see: age, build, hair, wardrobe, materials, period, wear, colour.
+- No story, no personality, no camera directions, no lighting direction.
+- 25-45 words each. Concrete nouns over adjectives.
+- Stay consistent with the screenplay. Invent only what it leaves unsaid.
+- Reply with STRICT JSON only, no prose, no code fences:
+  {"entities":[{"name":"<exact name given>","kind":"character|location|prop","description":"..."}]}`;
+
+async function describeEntities(req, res, projectId) {
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Project not found' }));
+    }
+
+    const force = !!(req.body && req.body.force);
+    const blank = v => !String(v || '').trim();
+
+    const characters = db.prepare('SELECT id, name, appearance_prompt FROM film_characters WHERE project_id = ?')
+        .all(projectId).filter(c => force || blank(c.appearance_prompt));
+    const locations = db.prepare('SELECT id, name, description FROM film_locations WHERE project_id = ?')
+        .all(projectId).filter(l => force || blank(l.description));
+    const props = db.prepare('SELECT id, name, visual_prompt FROM film_props WHERE project_id = ?')
+        .all(projectId).filter(p => force || blank(p.visual_prompt));
+
+    const targets = [
+        ...characters.map(c => ({ kind: 'character', id: c.id, name: c.name })),
+        ...locations.map(l => ({ kind: 'location', id: l.id, name: l.name })),
+        ...props.map(p => ({ kind: 'prop', id: p.id, name: p.name })),
+    ];
+
+    if (!targets.length) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ project_id: projectId, described: [], message: 'Every entity already has a description.' }));
+    }
+
+    const script = db.prepare('SELECT fountain_content, content FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1').get(projectId);
+    const screenplay = String((script && (script.fountain_content || script.content)) || '').slice(0, 12000);
+
+    const styleNote = project.style_preset
+        ? `\n\nThe production's look is: ${project.style_preset}. Do NOT restate it in each description — it is applied separately. Describe only the subject itself.`
+        : '';
+
+    const question = DESCRIBE_SYSTEM_PROMPT + styleNote
+        + '\n\nSCREENPLAY:\n' + screenplay
+        + '\n\nENTITIES TO DESCRIBE:\n'
+        + targets.map(t => `- ${t.name} (${t.kind})`).join('\n');
+
+    const aiResult = await callProjectLLM(project, { question, stream: false });
+    if (!aiResult.ok) {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'AI service error', details: aiResult.error, provider: aiResult.provider }));
+    }
+
+    let parsed;
+    try {
+        const raw = String(aiResult.answer || '');
+        const start = raw.indexOf('{');
+        const end = raw.lastIndexOf('}');
+        parsed = JSON.parse(start >= 0 ? raw.slice(start, end + 1) : raw);
+    } catch (err) {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Could not parse entity descriptions', raw: String(aiResult.answer || '').slice(0, 400) }));
+    }
+
+    const byName = new Map(targets.map(t => [t.name.toUpperCase(), t]));
+    const update = {
+        character: db.prepare('UPDATE film_characters SET appearance_prompt = ? WHERE id = ?'),
+        location: db.prepare('UPDATE film_locations SET description = ? WHERE id = ?'),
+        prop: db.prepare('UPDATE film_props SET visual_prompt = ? WHERE id = ?'),
+    };
+
+    const described = [];
+    const tx = db.transaction(() => {
+        for (const e of (parsed.entities || [])) {
+            const target = byName.get(String(e.name || '').toUpperCase());
+            const text = String(e.description || '').trim();
+            if (!target || !text) continue;
+            update[target.kind].run(text, target.id);
+            described.push({ kind: target.kind, name: target.name, description: text });
+        }
+    });
+    tx();
+
+    const missed = targets.filter(t => !described.some(d => d.name === t.name)).map(t => t.name);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        project_id: projectId,
+        described,
+        described_count: described.length,
+        // Named rather than swallowed: an entity that stays blank generates a
+        // bare name, and that must not look like success.
+        still_blank: missed,
+        provider: aiResult.provider,
+    }));
 }
 
 async function breakdownSync(req, res, projectId) {

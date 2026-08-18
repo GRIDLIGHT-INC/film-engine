@@ -55,6 +55,11 @@ function handleScripts(req, res, urlParts, query) {
         return getScreenplaySuggestions(req, res, projectId);
     }
 
+    // POST /film/projects/:id/screenplay/suggestions/apply — create the rows.
+    if (req.method === 'POST' && sub === 'screenplay' && versionOrKeyword === 'suggestions' && subPath === 'apply') {
+        return applyScreenplaySuggestions(req, res, projectId);
+    }
+
     // GET /film/projects/:id/script/latest/fountain
     if (req.method === 'GET' && sub === 'script' && versionOrKeyword === 'latest' && subPath === 'fountain') {
         return getLatestFountain(req, res, projectId);
@@ -863,6 +868,175 @@ function getScript(req, res, projectId, version) {
 }
 
 /**
+ * Words that arrive in caps inside an action line and are not people.
+ *
+ * Screenplays introduce a character by putting their name in caps the first
+ * time they appear — including characters who never speak. Detection keyed on
+ * dialogue cues therefore misses exactly the ones a storyboard most needs
+ * described: the creature, the corpse, the double. On Wingfall this was the
+ * DRAGON, i.e. the title character, and the result was a different animal in
+ * every frame.
+ *
+ * Caps in action are also used for sluglines, transitions, sounds and camera
+ * instructions, so the pattern needs a stoplist rather than a cleverer regex.
+ * Wrong inclusions here are cheap — a suggestion a user declines — while a
+ * miss is a subject that gets re-invented per shot, so this leans permissive.
+ */
+const ACTION_CAPS_STOPWORDS = new Set([
+    'INT', 'EXT', 'INT./EXT', 'EXT./INT', 'I/E', 'EST',
+    'DAY', 'NIGHT', 'DUSK', 'DAWN', 'MORNING', 'AFTERNOON', 'EVENING', 'MIDNIGHT', 'NOON',
+    'CONTINUOUS', 'LATER', 'MOMENTS', 'SAME', 'PRESENT', 'FLASHBACK', 'MONTAGE', 'INTERCUT',
+    'CUT', 'FADE', 'DISSOLVE', 'SMASH', 'MATCH', 'JUMP', 'IRIS', 'TO', 'IN', 'OUT', 'ON', 'UP',
+    'ANGLE', 'POV', 'SUPER', 'TITLE', 'INSERT', 'CLOSE', 'WIDE', 'PAN', 'TILT', 'ZOOM',
+    'CONTD', "CONT'D", 'OS', 'VO', 'OC', 'BEAT', 'THE', 'AND', 'BUT', 'FOR', 'NOT',
+    'END', 'THE END', 'CREDITS', 'BLACK', 'WHITE',
+]);
+
+const ACTION_CAPS_RE = /\b([A-Z][A-Z''\-]{2,}(?:\s+[A-Z][A-Z''\-]{2,})?)\b/g;
+
+/**
+ * Character names introduced in action lines.
+ *
+ * Returns a map keyed the same way dialogue-cue detection is, so the two
+ * merge without either side knowing about the other.
+ */
+function actionIntroducedCharacters(parsed, knownLocations) {
+    const found = {};
+    let sceneNum = 0;
+    for (const el of parsed.elements || []) {
+        if (el.type === 'scene_heading') { sceneNum++; continue; }
+        if (el.type !== 'action') continue;
+
+        const text = String(el.text || '');
+        let m;
+        ACTION_CAPS_RE.lastIndex = 0;
+        while ((m = ACTION_CAPS_RE.exec(text)) !== null) {
+            const name = m[1].trim();
+            if (ACTION_CAPS_STOPWORDS.has(name)) continue;
+            // A location already named by a slugline is a place, not a person.
+            if (knownLocations.has(name.toUpperCase())) continue;
+            // A whole line in caps is a shout or a slug, not an introduction.
+            if (text.trim() === text.trim().toUpperCase() && text.trim().length > name.length + 4) continue;
+            if (!found[name]) found[name] = { name, mention_count: 0, first_scene: sceneNum, introduced_in: 'action' };
+            found[name].mention_count++;
+        }
+    }
+    return found;
+}
+
+/**
+ * Turn the suggestions into rows.
+ *
+ * The suggestions endpoint has always returned `suggested_action: 'create'`
+ * and then done nothing about it: INSERT INTO film_characters lives only in
+ * the manual CRUD route and the demo seeder. So a screenplay upload produced
+ * no entities at all, every one had to be typed, and whatever the user forgot
+ * was silently re-invented by the image model on each shot — which is how a
+ * production shipped eight frames with a different dragon in each.
+ *
+ * Creation is idempotent on name, so applying twice after a script revision
+ * adds what is new instead of duplicating what is there. Descriptions are NOT
+ * invented here: a skeleton with an honest empty description is filled by the
+ * breakdown, and inventing one at this layer would produce exactly the
+ * plausible-but-unauthored placeholder text this is meant to replace.
+ *
+ * The body may carry entities the pattern cannot see — props especially, which
+ * come from reading the action rather than matching a slug — so an agent or the
+ * breakdown can hand them in through the same path.
+ */
+const PROP_CATEGORIES = new Set([
+    'generic', 'weapon', 'vehicle', 'technology', 'food',
+    'document', 'furniture', 'clothing-accessory', 'musical-instrument', 'other',
+]);
+
+function applyScreenplaySuggestions(req, res, projectId) {
+    const body = req.body || {};
+
+    // Reuse the detector rather than reimplementing it: two lists of what a
+    // screenplay contains would drift, and the drift would be invisible.
+    let detected = { unmatched_characters: [], unmatched_locations: [] };
+    const capture = {
+        writeHead() { return this; },
+        setHeader() {},
+        end(payload) { try { detected = JSON.parse(payload); } catch (_) { /* leave empty */ } },
+    };
+    getScreenplaySuggestions(req, capture, projectId);
+
+    const wanted = {
+        character: Array.isArray(body.characters) ? body.characters : (detected.unmatched_characters || []),
+        location: Array.isArray(body.locations) ? body.locations : (detected.unmatched_locations || []),
+        prop: Array.isArray(body.props) ? body.props : [],
+    };
+
+    const created = { character: [], location: [], prop: [] };
+    const skipped = { character: [], location: [], prop: [] };
+
+    const exists = {
+        character: db.prepare('SELECT id FROM film_characters WHERE project_id = ? AND UPPER(name) = UPPER(?)'),
+        location: db.prepare('SELECT id FROM film_locations WHERE project_id = ? AND UPPER(name) = UPPER(?)'),
+        prop: db.prepare('SELECT id FROM film_props WHERE project_id = ? AND UPPER(name) = UPPER(?)'),
+    };
+
+    const insert = {
+        character: db.prepare(`INSERT INTO film_characters (id, project_id, name, description, appearance_prompt, age_range)
+                               VALUES (?, ?, ?, ?, ?, ?)`),
+        location: db.prepare(`INSERT INTO film_locations (id, project_id, name, description, lighting_default, time_of_day_default)
+                              VALUES (?, ?, ?, ?, ?, ?)`),
+        prop: db.prepare(`INSERT INTO film_props (id, project_id, name, description, visual_prompt, category)
+                          VALUES (?, ?, ?, ?, ?, ?)`),
+    };
+
+    const tx = db.transaction(() => {
+        for (const item of wanted.character) {
+            const name = String((item && item.name) || '').trim();
+            if (!name) continue;
+            if (exists.character.get(projectId, name)) { skipped.character.push(name); continue; }
+            const id = generateId();
+            insert.character.run(id, projectId, name, String(item.description || ''),
+                String(item.appearance_prompt || ''), String(item.age_range || ''));
+            created.character.push({ id, name, introduced_in: item.introduced_in || 'dialogue' });
+        }
+        for (const item of wanted.location) {
+            const name = String((item && item.name) || '').trim();
+            if (!name) continue;
+            if (exists.location.get(projectId, name)) { skipped.location.push(name); continue; }
+            const id = generateId();
+            // Deliberately NOT "EXT location (3 mentions in screenplay)". That
+            // string was being written as a description and reaching the image
+            // prompt as though it described a place.
+            insert.location.run(id, projectId, name, String(item.description || ''),
+                String(item.lighting_default || ''), String(item.time_of_day || ''));
+            created.location.push({ id, name });
+        }
+        for (const item of wanted.prop) {
+            const name = String((item && item.name) || '').trim();
+            if (!name) continue;
+            if (exists.prop.get(projectId, name)) { skipped.prop.push(name); continue; }
+            const id = generateId();
+            // category is CHECK-constrained. An unrecognised one is the
+            // caller's guess at a taxonomy they cannot see, so it falls back
+            // rather than failing the whole apply: losing one prop's category
+            // is recoverable, losing the batch is not.
+            const category = PROP_CATEGORIES.has(String(item.category || '')) ? item.category : 'generic';
+            insert.prop.run(id, projectId, name, String(item.description || ''),
+                String(item.visual_prompt || ''), category);
+            created.prop.push({ id, name, category });
+        }
+    });
+    tx();
+
+    const total = created.character.length + created.location.length + created.prop.length;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        project_id: projectId,
+        created, skipped, created_count: total,
+        // Said plainly, because a skeleton that never gets described generates
+        // a bare name and looks like it worked.
+        next: total ? 'Run the breakdown to describe these before generating.' : 'Nothing new to create.',
+    }));
+}
+
+/**
  * FILM-121: Get screenplay entity suggestions
  * Analyzes the latest script and returns unmatched characters/locations
  */
@@ -922,6 +1096,19 @@ function getScreenplaySuggestions(req, res, projectId) {
                 };
             }
             locationMentions[loc].mention_count++;
+        }
+    }
+
+    // Characters who are introduced in action and never speak. Merged after
+    // locations are collected, because a slugline location also appears in caps
+    // and must not be offered as a person.
+    const knownLocationNames = new Set(Object.keys(locationMentions));
+    for (const [name, rec] of Object.entries(actionIntroducedCharacters(parsed, knownLocationNames))) {
+        const key = name.toUpperCase();
+        if (characterMentions[key]) {
+            characterMentions[key].mention_count += rec.mention_count;
+        } else {
+            characterMentions[key] = { ...rec, name: key };
         }
     }
 

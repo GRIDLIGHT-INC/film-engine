@@ -37,6 +37,7 @@ const { handleShots } = require('../routes/shots');
 const { handleCharacters } = require('../routes/characters');
 const { handleLocations } = require('../routes/locations');
 const { handleStoryboard } = require('../routes/storyboard');
+const { handleBreakdown } = require('../routes/breakdown');
 
 const NODE_TOOL_PREFIX = 'node_';
 
@@ -295,6 +296,79 @@ const PRODUCTION_TOOLS = [
             cards: { type: 'array', description: 'Scene card objects.', items: { type: 'object' } },
         },
         required: ['scene_id', 'cards'],
+    },
+    {
+        name: 'entities_create',
+        handler: handleScripts, method: 'POST',
+        description: 'Create every character, location and prop the screenplay introduces, in one call. A parsed screenplay creates NO entity rows on its own, so without this an agent can describe entities it has no way to bring into existence. Includes characters introduced in action who never speak — the creature, the corpse, the double — which dialogue-cue detection misses. Idempotent on name: safe to re-run after a script revision. Pass props explicitly; they come from reading the action, not from a pattern.',
+        path: a => `/film/projects/${a.project_id}/screenplay/suggestions/apply`,
+        body: a => {
+            const { project_id, ...rest } = a || {};
+            return rest;
+        },
+        schema: {
+            project_id: { type: 'string' },
+            props: { type: 'array', description: 'Props read out of the action: [{ name, visual_prompt, category }]' },
+            characters: { type: 'array', description: 'Override detection: [{ name, appearance_prompt, age_range }]' },
+            locations: { type: 'array', description: 'Override detection: [{ name, description, lighting_default }]' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'entities_describe',
+        handler: handleBreakdown, method: 'POST',
+        description: 'Write a visual description for every entity that has none, from the screenplay, using the LLM. Run this after entities_create and BEFORE generating anything: an entity with no description reaches the image prompt as a bare name and every frame then invents its own version of it. Only fills blanks unless force is set. Reports still_blank for anything it could not describe.',
+        path: a => `/film/projects/${a.project_id}/entities/describe`,
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        schema: {
+            project_id: { type: 'string' },
+            force: { type: 'boolean', description: 'Also rewrite descriptions that already exist. Off by default: a hand-written description is a decision.' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'character_create',
+        handler: handleCharacters, method: 'POST',
+        description: 'Create one character. Fill appearance_prompt at the same time: a character row with an empty appearance_prompt reaches the image prompt as a bare name, and every frame then invents its own person.',
+        path: a => `/film/projects/${a.project_id}/characters`,
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        schema: {
+            project_id: { type: 'string' },
+            name: { type: 'string' },
+            appearance_prompt: { type: 'string', description: 'What this person looks like, in prompt terms.' },
+            description: { type: 'string' },
+            age_range: { type: 'string' },
+        },
+        required: ['project_id', 'name'],
+    },
+    {
+        name: 'location_create',
+        handler: handleLocations, method: 'POST',
+        description: 'Create one location with a real description. Do not write "EXT location (3 mentions)" — that placeholder used to reach image prompts as though it described a place.',
+        path: a => `/film/projects/${a.project_id}/locations`,
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        schema: {
+            project_id: { type: 'string' },
+            name: { type: 'string' },
+            description: { type: 'string', description: 'What the place looks like: period, materials, wear, light.' },
+            lighting_default: { type: 'string' },
+        },
+        required: ['project_id', 'name'],
+    },
+    {
+        name: 'prop_create',
+        handler: handleLocations, method: 'POST',
+        description: 'Create one prop. visual_prompt is what reaches the image prompt and what a prop plate is generated from.',
+        path: a => `/film/projects/${a.project_id}/props`,
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        schema: {
+            project_id: { type: 'string' },
+            name: { type: 'string' },
+            visual_prompt: { type: 'string' },
+            description: { type: 'string' },
+            category: { type: 'string' },
+        },
+        required: ['project_id', 'name'],
     },
     {
         name: 'character_list',

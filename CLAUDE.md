@@ -135,6 +135,7 @@ film-engine/
 │       ├── reference-capability.test.js # Tags only reach providers that can read them
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop
+│       ├── screenplay-to-entities.test.js # A screenplay creates the entities generation reads
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -319,6 +320,17 @@ All three formats support dynamic project settings (resolution, fps, aspect rati
 
 ### Project Settings
 Per-project technical settings: resolution (8 presets + custom), frame rate (8 options including 23.976, 29.97), aspect ratio (12 presets including IMAX 1.43:1/1.90:1, anamorphic 2.39:1, Univisium 2:1), color space (sRGB, Rec.709, DCI-P3, Rec.2020, ACES), and 6 delivery presets (Theatrical DCP, IMAX, Streaming HD/4K, Social Media, Broadcast).
+
+### Screenplay → Entities (the step that was never wired)
+A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
+
+Worse, detection only read **dialogue cues** (`el.type === 'character'`). A character introduced in an action line in caps — which is exactly how screenplays introduce one — was invisible. On Wingfall that was the DRAGON, the title creature: never suggested, never created, no description, and therefore a different animal in each of eight frames while the location, which did have a description, stayed rock solid across all of them. The project's `style_preset` contained the words "anatomical beast", which filled the vacuum with a flayed quadruped in the establishing shot the scene card describes as "Empty, ordinary, still."
+
+Three routes close it. `actionIntroducedCharacters()` finds caps entities in action, behind a stoplist rather than a cleverer regex (sluglines, transitions, sounds and camera instructions are also caps); it leans permissive, because a wrong suggestion is declined in a second while a miss is a subject re-invented per shot. `POST /projects/:id/screenplay/suggestions/apply` creates the rows, idempotent on name so a script revision adds what is new rather than duplicating what is there, and it deliberately does **not** invent descriptions — a plausible-but-unauthored placeholder is the thing it exists to replace (`"EXT location (3 mentions in screenplay)"` was reaching image prompts as though it described a place). `POST /projects/:id/entities/describe` then writes what is blank, via the LLM, from the screenplay: a separate pass rather than more fields on the scene-card call, because card parsing is load-bearing and re-runnable matters as a script is revised. It fills **only empty** fields unless forced — a hand-written description is a decision — and reports `still_blank`, since an entity that stays blank generates a bare name and must not look like success.
+
+MCP gains `entities_create`, `entities_describe`, `character_create`, `location_create` and `prop_create` (57 tools). `character_update` and `location_update` both required an existing id and nothing created one, so an agent host could describe entities it was powerless to bring into existence — the reason the manual data entry happened in the first place.
+
+`tests/screenplay-to-entities.test.js` is set-based over the three entity kinds a storyboard prompt reads, because the failure was per-kind and partial: locations worked, characters were half-done, props were absent entirely, and a test written against "the dragon" passes the moment one row exists.
 
 ### Storyboard Generation
 Transforms scene cards into SDXL-optimized image prompts via the prompt engineering module (`lib/storyboard-prompt.js`). Maps shot types, camera movements, and lighting from scene cards to descriptive prompt tokens. Supports character LoRA/TI injection, style presets (cinematic, noir, anime, documentary, horror, fantasy), and style locking (deterministic seed variation per scene for visual consistency). Images generated via ImageGen API (`POST http://localhost:8080/image`) and stored at `data/storyboards/{project_id}/{shot_code}.png`.
@@ -650,6 +662,7 @@ node --test backend/tests/image-fallback.test.js
 node --test backend/tests/reference-capability.test.js
 node --test backend/tests/previs-storyboard.test.js
 node --test backend/tests/previs-loop.test.js
+node --test backend/tests/screenplay-to-entities.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js
