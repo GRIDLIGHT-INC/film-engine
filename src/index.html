@@ -17782,13 +17782,37 @@ ${fountainText.slice(0, 50000)}`;
                                 <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')">Regen</button>
                             </div>
                             ${f.camera && f.camera.shot_type ? '<span class="tag">' + esc(f.camera.shot_type) + '</span>' : (typeof f.camera === 'string' && f.camera ? '<span class="tag">' + esc(f.camera) + '</span>' : '')}
+                            ${f.camera && f.camera.lens ? '<span class="tag">' + esc(f.camera.lens) + '</span>' : ''}
+                            ${f.camera && f.camera.movement ? '<span class="tag">' + esc(f.camera.movement) + '</span>' : ''}
                             ${f.lighting && f.lighting.type ? '<span class="tag">' + esc(f.lighting.type) + '</span>' : (typeof f.lighting === 'string' && f.lighting ? '<span class="tag">' + esc(f.lighting) + '</span>' : '')}
-                            ${f.description ? '<p class="text-sm text-muted" style="margin-top:6px;">' + esc(f.description.slice(0, 80)) + '</p>' : ''}
+                            ${f.duration_ms ? '<span class="tag">' + (f.duration_ms / 1000).toFixed(1) + 's</span>' : ''}
+                            ${f.description ? '<p class="text-sm" style="margin-top:6px;line-height:1.45;">' + esc(f.description) + '</p>' : ''}
+                            ${storyboardDialogueHtml(f.dialogue)}
                         </div>
                     </div>`).join('');
             }
             setStatus(frames.length + ' storyboard frame(s)');
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // Dialogue under a storyboard frame, the way a board is actually read:
+    // character in caps, line beneath. The API has always returned this and the
+    // panel dropped it, which left the board unable to answer "who says what
+    // here" — the question a storyboard exists to answer alongside the picture.
+    function storyboardDialogueHtml(lines) {
+        if (!Array.isArray(lines) || !lines.length) return '';
+        const rows = lines.map(d => {
+            const who = esc(String((d && (d.character || d.speaker)) || '').toUpperCase());
+            const text = esc(String((d && (d.line || d.text || d.dialogue)) || (typeof d === 'string' ? d : '')));
+            if (!text) return '';
+            return '<div style="margin-top:6px;">'
+                + (who ? '<div class="text-sm" style="font-weight:600;letter-spacing:.04em;">' + who + '</div>' : '')
+                + '<div class="text-sm text-muted" style="font-style:italic;">&ldquo;' + text + '&rdquo;</div>'
+                + '</div>';
+        }).filter(Boolean).join('');
+        if (!rows) return '';
+        return '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--gl-border,rgba(255,255,255,.12));">'
+            + rows + '</div>';
     }
 
     async function generateAllStoryboards() {

@@ -428,13 +428,20 @@ const REFSHEET_VIEWS = ['front', 'side', 'back'];
  */
 function buildRefSheetPrompt(character, view, stylePreset) {
     const parts = [];
-    parts.push('character reference sheet');
+    const style = stylePreset && String(stylePreset).trim();
+
+    // The MEDIUM leads. Appending the look last left "character reference
+    // sheet, front view, full body, T-pose, plain seamless background" to
+    // decide what kind of picture this is, and that phrasing asks for a stock
+    // asset-library render: MAYA came back as a flat vector cutout with a
+    // shrug emoji, and every shot referencing her inherited the cartoon.
+    // With no project style there is still an explicit medium, because the
+    // absence of one is what the model fills in with clip art.
+    parts.push(style ? `${style}. Character reference sheet` : 'photoreal cinematic character reference sheet');
     parts.push(`${view} view`);
-    // 'clean lines' only when nothing else defines the medium; with a style it
-    // fights the look the project asked for.
-    parts.push(stylePreset && String(stylePreset).trim()
+    parts.push(style
         ? 'full body, T-pose, neutral expression, plain seamless background'
-        : 'full body, T-pose, white background, clean lines');
+        : 'full body, T-pose, plain seamless background');
 
     if (character.appearance_prompt) parts.push(character.appearance_prompt);
     if (character.gender) parts.push(character.gender);
@@ -447,8 +454,6 @@ function buildRefSheetPrompt(character, view, stylePreset) {
     // Add LoRA/TI tokens if available
     if (character.lora_id) parts.push(`<lora:${character.lora_id}:0.8>`);
     if (character.ti_token) parts.push(character.ti_token);
-
-    if (stylePreset && String(stylePreset).trim()) parts.push(String(stylePreset).trim());
 
     return parts.join(', ');
 }
@@ -594,4 +599,4 @@ function getRefSheetStatus(req, res, charId) {
     }));
 }
 
-module.exports = { handleCharacters };
+module.exports = { handleCharacters, buildRefSheetPrompt };

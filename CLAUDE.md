@@ -136,6 +136,7 @@ film-engine/
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop
 │       ├── screenplay-to-entities.test.js # A screenplay creates the entities generation reads
+│       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -320,6 +321,17 @@ All three formats support dynamic project settings (resolution, fps, aspect rati
 
 ### Project Settings
 Per-project technical settings: resolution (8 presets + custom), frame rate (8 options including 23.976, 29.97), aspect ratio (12 presets including IMAX 1.43:1/1.90:1, anamorphic 2.39:1, Univisium 2:1), color space (sRGB, Rec.709, DCI-P3, Rec.2020, ACES), and 6 delivery presets (Theatrical DCP, IMAX, Streaming HD/4K, Social Media, Broadcast).
+
+### Storyboard Prerequisites (plate medium, panel, exploring angles)
+Three gaps sat between "entities exist" and "a board a director can work from".
+
+**The plate builders decided the medium before the look was mentioned.** Both `buildRefSheetPrompt` and `buildPlatePrompt` appended `style_preset` **last**, behind their own boilerplate — `character reference sheet, front view, full body, T-pose, plain seamless background` leads, and that phrasing asks for a stock asset-library render. MAYA came back a flat vector cutout with a shrug emoji beside her head, and because a plate defines a subject's medium for every frame that references it, `@maya` then dragged whole photoreal streets into cartoon. The location plate had the same bug with weaker boilerplate and came out photoreal, which is why the fault looked like a character problem rather than an ordering one. The style now **leads** in all three builders, and a project with no style still names an explicit medium (`photoreal cinematic …`) — the absence of one is exactly what a model fills in with clip art.
+
+**The panel was a contact sheet.** `GET /projects/:id/storyboard` has always returned `description` and `dialogue` per frame; the viewer rendered the action truncated to **80 characters** and dropped the dialogue entirely. A board that cannot answer "what happens here, and who says what" is not doing the job a board exists for. The frame card now carries the full action, the dialogue (character in caps, line beneath), lens, movement and duration.
+
+**Blocking was unreachable from an agent.** `routes/previs.js` has seven director-facing operations and the MCP surface exposed **none** of them, so the explore-angles loop — the whole point of previs — could only be driven by hand. Seven tools now cover it (`previs_from_card`, `previs_solve`, `previs_set`, `previs_to_storyboard`, `previs_apply`, `previs_approve`, `previs_get`), which makes the iteration loop a conversation: seed the stage from the card, try an angle, preview the payload **without spending anything**, keep the one you want with `previs_apply`, and sign it off with `previs_approve` so a later restage cannot silently ship a frame nobody approved.
+
+`tests/storyboard-prerequisites.test.js` is set-based over three registries — the plate builders, the panel fields, and the previs operations — because each failed partially: locations plated well while characters produced clip art, description reached the panel while dialogue did not.
 
 ### Screenplay → Entities (the step that was never wired)
 A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
@@ -663,6 +675,7 @@ node --test backend/tests/reference-capability.test.js
 node --test backend/tests/previs-storyboard.test.js
 node --test backend/tests/previs-loop.test.js
 node --test backend/tests/screenplay-to-entities.test.js
+node --test backend/tests/storyboard-prerequisites.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js

@@ -56,7 +56,15 @@ function buildPlatePrompt(kind, subject, stylePreset) {
     const spec = PLATE_KINDS[kind];
     if (!spec) throw new Error(`reference-plates: unknown kind '${kind}'`);
 
-    const parts = [`${kind} reference plate`, spec.framing];
+    // Same ordering rule as the character sheet: the look decides the medium,
+    // so it leads. "location reference plate, wide establishing" trailing a
+    // style meant the plate's kind was settled before the film's look was
+    // mentioned — survivable for a street, fatal for a person.
+    const style = stylePreset && String(stylePreset).trim();
+    const parts = [
+        style ? `${style}. ${kind} reference plate` : `photoreal cinematic ${kind} reference plate`,
+        spec.framing,
+    ];
 
     if (subject.name) parts.push(String(subject.name).toLowerCase());
     if (subject.description) parts.push(subject.description);
@@ -68,8 +76,6 @@ function buildPlatePrompt(kind, subject, stylePreset) {
         if (subject.time_of_day_default) parts.push(subject.time_of_day_default);
     }
     if (kind === 'prop' && subject.category) parts.push(subject.category);
-
-    if (stylePreset && String(stylePreset).trim()) parts.push(String(stylePreset).trim());
 
     return parts.filter(Boolean).join(', ');
 }

@@ -38,6 +38,7 @@ const { handleCharacters } = require('../routes/characters');
 const { handleLocations } = require('../routes/locations');
 const { handleStoryboard } = require('../routes/storyboard');
 const { handleBreakdown } = require('../routes/breakdown');
+const { handlePrevis } = require('../routes/previs');
 
 const NODE_TOOL_PREFIX = 'node_';
 
@@ -313,6 +314,84 @@ const PRODUCTION_TOOLS = [
             locations: { type: 'array', description: 'Override detection: [{ name, description, lighting_default }]' },
         },
         required: ['project_id'],
+    },
+    {
+        name: 'previs_get',
+        handler: handlePrevis, method: 'GET',
+        description: 'Read a shot\'s 3D blocking: camera position, lens, sensor, rig, movement and the sampled path. Also returns the shot\'s generated keyframe (so it can stand in the stage as a reference card) and its approval state.',
+        path: a => `/film/shots/${a.shot_id}/previs`,
+        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+    },
+    {
+        name: 'previs_from_card',
+        handler: handlePrevis, method: 'POST',
+        description: 'Seed the 3D stage from what the scene card already says — shot type, lens, movement — instead of retyping it. Start here when exploring a shot. Refuses to clobber existing blocking unless overwrite is set.',
+        path: a => `/film/shots/${a.shot_id}/previs/from-card`,
+        body: a => ({ overwrite: !!a.overwrite }),
+        schema: {
+            shot_id: { type: 'string' },
+            overwrite: { type: 'boolean', description: 'Replace hand-made blocking. Off by default.' },
+        },
+        required: ['shot_id'],
+    },
+    {
+        name: 'previs_solve',
+        handler: handlePrevis, method: 'POST',
+        description: 'Work out where the camera must stand for a given framing on a given lens — "close-up on a 50" becomes a distance in metres, with field of view and depth of field. Solves only; does not save.',
+        path: a => `/film/shots/${a.shot_id}/previs/solve`,
+        body: a => { const { shot_id, ...rest } = a || {}; return rest; },
+        schema: {
+            shot_id: { type: 'string' },
+            shot_type: { type: 'string', description: 'close-up, medium, wide, two-shot, over-the-shoulder, low-angle, high-angle, …' },
+            focal_mm: { type: 'number' },
+            f_stop: { type: 'number' },
+            sensor_id: { type: 'string', description: 'super35, full-frame, …' },
+            rig: { type: 'string', description: 'dolly, crane, steadicam, handheld, …' },
+        },
+        required: ['shot_id', 'shot_type'],
+    },
+    {
+        name: 'previs_set',
+        handler: handlePrevis, method: 'PUT',
+        description: 'Save blocking for a shot: camera {position,rotation,focalMm,sensorId,fStop}, subject, stage, rig, movement. This is how you try a different angle — set it, preview the frame with previs_to_storyboard, and set it again. Errors block a save; warnings (a slider asked to crane) do not.',
+        path: a => `/film/shots/${a.shot_id}/previs`,
+        body: a => { const { shot_id, ...rest } = a || {}; return rest; },
+        schema: {
+            shot_id: { type: 'string' },
+            camera: { type: 'object', description: '{ position:[x,y,z], rotation:[x,y,z], focalMm, sensorId, fStop, focusDistanceM }' },
+            subject: { type: 'object', description: '{ position:[x,y,z], heightM }' },
+            stage: { type: 'object' },
+            rig: { type: 'string' },
+            movement: { type: 'string' },
+            subjects: { type: 'array', description: 'Staged objects: figures, boxes, image cards.' },
+        },
+        required: ['shot_id'],
+    },
+    {
+        name: 'previs_to_storyboard',
+        handler: handlePrevis, method: 'POST',
+        description: 'Preview the exact image payload this blocking would generate, WITHOUT generating it or spending anything. Use between angles to see how a framing reads as a prompt before committing a credit to it.',
+        path: a => `/film/shots/${a.shot_id}/previs/to-storyboard`,
+        body: a => ({ ignore_approval: !!a.ignore_approval }),
+        schema: {
+            shot_id: { type: 'string' },
+            ignore_approval: { type: 'boolean', description: 'Generate even though the blocking changed after it was approved.' },
+        },
+        required: ['shot_id'],
+    },
+    {
+        name: 'previs_apply',
+        handler: handlePrevis, method: 'POST',
+        description: 'Write the staged camera back onto the scene card — shot type, lens, movement, sensor, aperture, height. Only the camera facets the stage determines; description, characters and dialogue survive. Do this when an angle is the one you want to keep.',
+        path: a => `/film/shots/${a.shot_id}/previs/apply`,
+        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+    },
+    {
+        name: 'previs_approve',
+        handler: handlePrevis, method: 'POST',
+        description: 'Sign off the blocking as it stands. Stores a fingerprint of the camera and card, so if the shot is restaged afterwards, generation refuses with 409 STALE_APPROVAL rather than shooting a frame nobody approved. This is what "I am happy with this angle" means to the pipeline.',
+        path: a => `/film/shots/${a.shot_id}/previs/approve`,
+        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
     },
     {
         name: 'entities_describe',
