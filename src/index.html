@@ -4748,6 +4748,8 @@
                     <select id="previsShotSelect" style="min-width:220px;" onchange="previsOpenShot(this.value)"></select>
                     <button class="btn btn-secondary" onclick="previsSolve()">Solve framing</button>
                     <button class="btn btn-secondary" onclick="previsPlay()" id="previsPlayBtn">Play move</button>
+                    <button class="btn btn-secondary" onclick="previsExportFrame()" id="previsFrameBtn">Save frame</button>
+                    <button class="btn btn-secondary" onclick="previsExportMove()" id="previsRecBtn">Record move</button>
                     <button class="btn btn-primary" onclick="previsSave()" id="previsSaveBtn">Save blocking</button>
                 </div>
             </div>
@@ -8764,6 +8766,100 @@
             previsStatus('Blocking saved.' + (warnings ? ' ' + warnings : ''));
         } catch (err) {
             previsStatus('Save failed: ' + err.message);
+        }
+    }
+
+    /**
+     * Save what the camera sees as a still.
+     *
+     * The camera pane only, not the stage: the stage is a working view, and
+     * what is worth keeping is the frame. Rendered in the browser because the
+     * projection lives here — rebuilding it server-side would be a second
+     * renderer that could disagree with the one just approved.
+     */
+    async function previsExportFrame() {
+        if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
+        const canvas = document.getElementById('previsCamera');
+        try {
+            const data = canvas.toDataURL('image/png');
+            const res = await api(`/shots/${PREVIS.shotId}/previs/export`, {
+                method: 'POST', body: JSON.stringify({ kind: 'frame', data }),
+            });
+            previsStatus(`Frame saved as ${res.file_name}. It is a composition reference, not an init image.`);
+        } catch (err) {
+            previsStatus('Could not save the frame: ' + err.message);
+        }
+    }
+
+    /**
+     * Record the move as an animatic.
+     *
+     * captureStream + MediaRecorder are native, so this needs no encoder and no
+     * dependency — which matters against a single-file SPA with no bundler.
+     * A still cannot carry timing, and timing is most of what a move is.
+     */
+    async function previsExportMove() {
+        if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
+        if (!PREVIS.path.length) return previsStatus('Add a move first.');
+        if (typeof MediaRecorder === 'undefined') return previsStatus('This browser cannot record a canvas.');
+
+        const canvas = document.getElementById('previsCamera');
+        const button = document.getElementById('previsRecBtn');
+        const durationMs = Math.max(200, (parseFloat(document.getElementById('previsDuration').value) || 4) * 1000);
+
+        try {
+            const stream = canvas.captureStream(30);
+            const chunks = [];
+            const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+            recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+
+            const finished = new Promise(resolve => { recorder.onstop = resolve; });
+            recorder.start();
+            button.textContent = 'Recording…';
+
+            // Driven by the same playhead the Play button uses, so the
+            // recording is the move as it plays rather than a second timeline.
+            //
+            // Stepped on a TIMER, not requestAnimationFrame. rAF is throttled
+            // to a stop in a tab that is not foregrounded, so a user who
+            // switched away mid-record would leave the button reading
+            // "Recording…" for ever and never get a file.
+            const started = performance.now();
+            await new Promise(resolve => {
+                const step = () => {
+                    const t = Math.min(1, (performance.now() - started) / durationMs);
+                    PREVIS.playhead = t;
+                    previsRefresh();
+                    if (t < 1) setTimeout(step, 1000 / 30);
+                    else resolve();
+                };
+                step();
+            });
+            PREVIS.playhead = null;
+            previsRefresh();
+
+            recorder.stop();
+            // A recorder that never fires onstop must not hang the button.
+            await Promise.race([finished, new Promise(r => setTimeout(r, 4000))]);
+            button.textContent = 'Record move';
+
+            const blob = new Blob(chunks, { type: 'video/webm' });
+            const data = await new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+            });
+
+            const res = await api(`/shots/${PREVIS.shotId}/previs/export`, {
+                method: 'POST', body: JSON.stringify({ kind: 'move', data }),
+            });
+            previsStatus(`Move recorded as ${res.file_name} (${(blob.size / 1024).toFixed(0)}KB).`);
+        } catch (err) {
+            previsStatus('Could not record the move: ' + err.message);
+        } finally {
+            // Whatever happened, the control goes back to being usable.
+            button.textContent = 'Record move';
+            PREVIS.playhead = null;
         }
     }
 

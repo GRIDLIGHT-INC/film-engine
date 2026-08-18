@@ -29,6 +29,7 @@ const { NODE_TYPES } = require('../lib/flow-node-types');
 const { list: listHandlers } = require('../lib/node-handlers');
 const {
     listTools, hasTool, callTool, toolNameForNodeType, NODE_TOOL_PREFIX, ROUTE_TOOLS, SSE_EXCEPTION,
+    PRODUCTION_TOOLS, presentResult, isFailure,
 } = require('../lib/mcp-tools');
 
 const TOOLS = listTools();
@@ -243,4 +244,60 @@ test('a failing tool reports isError rather than a JSON-RPC error', async () => 
     const called = messages.find(m => m.id === 4);
     assert.ok(called && called.result, 'a tool failure became a protocol error');
     assert.strictEqual(called.result.isError, true);
+});
+
+// ── Pre-production surface ──────────────────────────────────────────────────
+//
+// These exist because a flows-only surface let an agent RUN generation while
+// being unable to give it anything to be consistent about: a parsed screenplay
+// leaves appearance_prompt empty, and nothing on the old surface could fill it,
+// so every keyframe invented its own character on its own street. Iterated
+// rather than spot-checked, so a tool added without a handler, or wired to the
+// wrong verb, fails here rather than at the first tools/call.
+
+test('every production tool names a real handler and a legal method', () => {
+    const bad = [];
+    for (const t of PRODUCTION_TOOLS) {
+        if (typeof t.handler !== 'function') bad.push(`${t.name}: handler is not a function`);
+        if (!['GET', 'POST', 'PUT', 'DELETE'].includes(t.method)) bad.push(`${t.name}: method '${t.method}'`);
+        if (typeof t.path !== 'function') bad.push(`${t.name}: path is not a builder`);
+        if (!t.description || t.description.length < 20) bad.push(`${t.name}: description too thin to route on`);
+    }
+    assert.deepStrictEqual(bad, [], bad.join('; '));
+});
+
+test('every production tool is advertised on the surface', () => {
+    const advertised = new Set(listTools().map(t => t.name));
+    const missing = PRODUCTION_TOOLS.map(t => t.name).filter(n => !advertised.has(n));
+    assert.deepStrictEqual(missing, [], `defined but not advertised: ${missing.join(', ')}`);
+});
+
+test('the surface covers the whole pre-production chain, not just part of it', () => {
+    // Continuity needs every link. A surface with shot_create but no
+    // character_update lets an agent build a shot list and still produce
+    // unrelated-looking frames — which is exactly what happened.
+    const REQUIRED = [
+        'script_get',                            // read the source
+        'scene_list',                            // what scenes exist
+        'character_list', 'character_update',    // who is in them, and what they look like
+        'location_list', 'location_update',      // where, and what it looks like
+        'shot_create', 'shot_list',              // the shot list
+        'project_update',                        // the look
+        'storyboard_generate',                   // and only then, generate
+    ];
+    const have = new Set(listTools().map(t => t.name));
+    const missing = REQUIRED.filter(n => !have.has(n));
+    assert.deepStrictEqual(missing, [], `pre-production chain incomplete: ${missing.join(', ')}`);
+});
+
+test('a read tool returns data rather than an HTTP envelope', async () => {
+    const shown = presentResult(await callTool('project_list', {}));
+    assert.ok(shown && typeof shown === 'object', 'presentResult returned nothing usable');
+    assert.ok(!('_status' in shown), 'the HTTP envelope leaked to the model');
+    assert.ok(Array.isArray(shown.projects), 'project_list did not return a projects array');
+});
+
+test('a missing required argument fails the tool instead of half-running it', async () => {
+    assert.ok(isFailure(await callTool('character_update', {})),
+        'an update with no character_id reported success');
 });

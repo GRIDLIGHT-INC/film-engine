@@ -18,6 +18,8 @@ const { buildStoryboardPrompt, applyStyleLock } = require('../lib/storyboard-pro
 const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
 const { buildShotReferencePayload, applyConsistencyToImagePayload, recordConsistencyCheck, auditProjectReadiness } = require('../lib/consistency-context');
 const { resolveGenerator } = require('../lib/providers');
+const { selectReferences } = require('../lib/reference-images');
+const { generateImageWithFallback, imageProviderChain } = require('../lib/image-fallback');
 const { endpointFor: gridlightEndpointFor } = require('../lib/providers/gridlight-adapter');
 const { extractMediaUrl, resolveMediaUrl, isGatewayUrl } = require('../lib/provider-media');
 const { imageRequestPayload, providerConfigOf } = require('../lib/capability-payloads');
@@ -115,18 +117,34 @@ async function callImageGen(prompt, negativePrompt, seed, options, projectConfig
         seed: seed || null,
     });
 
-    const provider = resolveGenerator('image', projectConfig || {});
-    const result = await provider.generate('image', requestBody, { timeout: 300000 });
+    // Walk the credentialed image providers rather than betting the shot on
+    // one. Runway's moderation is non-deterministic on this material — the same
+    // prompt for the same shot passed and then failed minutes apart — so a
+    // refusal is a condition to route around, not a verdict on the shot.
+    const result = await generateImageWithFallback(requestBody, projectConfig || {}, { timeout: 300000 });
 
     if (!result || !result.ok) {
-        const detail = (result && result.error) || 'unknown error';
-        const err = new Error(`ImageGen error: ${detail}`);
+        const tried = (result && result._chain || [])
+            .map(a => `${a.provider}: ${a.error}`).join(' | ') || (result && result.error) || 'unknown error';
+        const err = new Error(`ImageGen error: ${tried}`);
         err.status = result && result.status;
-        err.providerId = provider.id;
+        err.providerChain = result && result._chain;
         throw err;
     }
 
-    return imageResultToBuffer(result.data);
+    // Return provenance alongside the bytes. The render ledger exists to make a
+    // frame reproducible, and it was recording the REQUESTED payload defaults
+    // (`sdxl`, steps 30, guidance 7.5) rather than what ran -- parameters the
+    // provider never received, naming a model it had rejected. A ledger that
+    // cannot recreate its own output is worse than none, because it is trusted.
+    return {
+        // await matters: imageResultToBuffer is async (it may have to fetch a
+        // provider URL). Returning it unawaited inside an object stores a
+        // Promise where the caller expects bytes.
+        buffer: await imageResultToBuffer(result.data),
+        provider: result.provider || provider.id,
+        model: result.provider_model || requestBody.model,
+    };
 }
 
 /**
@@ -143,16 +161,20 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
     });
     payload.stream = true;
 
-    const provider = resolveGenerator('image', projectConfig || {});
+    const chain = imageProviderChain(projectConfig || {});
+    const provider = chain[0] || resolveGenerator('image', projectConfig || {});
 
     // The progress-SSE contract parsed below is Gridlight's. Any other provider
     // generates non-streaming and reports a single completed step — the point
     // being that selecting Runway or OpenAI for `image` must actually reach
     // them, where before this whole function posted to Gridlight regardless.
     if (provider.id !== 'gridlight') {
-        const buffer = await callImageGen(prompt, negativePrompt, seed, options, projectConfig);
+        const { buffer, model } = await callImageGen(prompt, negativePrompt, seed, options, projectConfig);
         if (onProgress) onProgress({ type: 'progress', step: 1, total_steps: 1 });
-        return { buffer, metadata: { provider: provider.id, seed: payload.seed } };
+        return {
+            buffer,
+            metadata: { provider: provider.id, provider_model: model, seed: payload.seed },
+        };
     }
 
     const headers = { 'Content-Type': 'application/json' };
@@ -287,11 +309,13 @@ function logToRenderLedger(shotId, params) {
     db.prepare(`
         INSERT INTO render_ledger (id, shot_id, version, step, model_id, seed, steps, guidance,
             lora_ids, prompt, negative_prompt, camera_params, lighting_params,
-            output_path, resolution, mode)
-        VALUES (?, ?, ?, 'keyframe', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            output_path, resolution, mode, extra_params)
+        VALUES (?, ?, ?, 'keyframe', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
         id, shotId, version,
-        params.model || 'sdxl',
+        // What RAN, not what was asked for. Defaulting to 'sdxl' here is how
+        // the ledger came to name a model the provider had rejected.
+        params.model || 'unrecorded',
         params.seed || -1,
         params.steps || 30,
         params.guidance || 7.5,
@@ -302,7 +326,8 @@ function logToRenderLedger(shotId, params) {
         JSON.stringify(params.lighting_params || {}),
         params.output_path || '',
         params.resolution || '1024x1024',
-        params.mode || 'creative'
+        params.mode || 'creative',
+        JSON.stringify({ provider: params.provider || null })
     );
 
     return { id, version };
@@ -321,13 +346,86 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
     const version = existing ? (existing.version || 0) + 1 : 1;
     const id = generateId();
 
+    // Read the dimensions off the file rather than asserting 1024x1024, which
+    // was wrong for every project that is not square -- and silently so, since
+    // nothing downstream re-measures. A PNG's IHDR width/height are big-endian
+    // uint32s at fixed offsets 16 and 20.
+    let width = null, height = null;
+    try {
+        const head = Buffer.alloc(24);
+        const fd = fs.openSync(filePath, 'r');
+        try { fs.readSync(fd, head, 0, 24, 0); } finally { fs.closeSync(fd); }
+        if (head.slice(1, 4).toString('ascii') === 'PNG') {
+            width = head.readUInt32BE(16);
+            height = head.readUInt32BE(20);
+        }
+    } catch (_) { /* leave null rather than record a guess */ }
+
     db.prepare(`
         INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name,
-            format, mime_type, width, height, version, input_refs)
-        VALUES (?, ?, ?, 'storyboard', ?, ?, 'png', 'image/png', 1024, 1024, ?, ?)
-    `).run(id, projectId, shotId, filePath, fileName, version, JSON.stringify(opts.input_refs || []));
+            format, mime_type, width, height, version, input_refs, provider, provider_model)
+        VALUES (?, ?, ?, 'storyboard', ?, ?, 'png', 'image/png', ?, ?, ?, ?, ?, ?)
+    `).run(id, projectId, shotId, filePath, fileName, width, height, version,
+        JSON.stringify(opts.input_refs || []), opts.provider || null, opts.provider_model || null);
 
     return { id, version };
+}
+
+/**
+ * Reference plates for one shot.
+ *
+ * Continuity by picture: an approved plate of Maya is exact where 240
+ * characters describing her cardigan are approximate, and it costs the prompt
+ * ~6 characters instead of ~240. Candidates are ranked and capped by
+ * lib/reference-images (identity before place, three maximum), and a subject
+ * with no plate simply falls back to its prose description — so a project that
+ * has never generated a reference sheet behaves exactly as before.
+ */
+function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCardProps) {
+    const candidates = [];
+
+    for (const ch of matchedChars || []) {
+        if (!ch || !ch.id) continue;
+        const plate = db.prepare(
+            `SELECT file_path, file_name FROM film_assets
+             WHERE project_id = ? AND character_id = ?
+               AND asset_type IN ('character_sheet', 'reference_image')
+             ORDER BY version DESC, created_at DESC LIMIT 1`
+        ).get(projectId, ch.id);
+        if (plate) candidates.push({ name: ch.name, kind: 'character', file_path: plate.file_path });
+    }
+
+    if (matchedLocation && matchedLocation.id) {
+        const plate = db.prepare(
+            `SELECT file_path, file_name FROM film_assets
+             WHERE project_id = ? AND location_id = ?
+               AND asset_type IN ('reference_image', 'character_sheet')
+             ORDER BY version DESC, created_at DESC LIMIT 1`
+        ).get(projectId, matchedLocation.id);
+        if (plate) candidates.push({ name: matchedLocation.name, kind: 'location', file_path: plate.file_path });
+    }
+
+    // Props named on the scene card. Ranked below character and location by
+    // lib/reference-images, so with the 3-reference cap they only claim a slot
+    // when there is one free — a prop displacing the actor would be the wrong
+    // trade every time.
+    const propNames = Array.isArray(sceneCardProps) ? sceneCardProps : [];
+    for (const raw of propNames) {
+        const name = typeof raw === 'string' ? raw : (raw && raw.name);
+        if (!name) continue;
+        const prop = db.prepare(
+            'SELECT id, name FROM film_props WHERE project_id = ? AND UPPER(name) = UPPER(?) LIMIT 1'
+        ).get(projectId, name);
+        if (!prop) continue;
+        const plate = db.prepare(
+            `SELECT file_path FROM film_assets
+             WHERE project_id = ? AND prop_id = ? AND asset_type IN ('reference_image', 'character_sheet')
+             ORDER BY version DESC, created_at DESC LIMIT 1`
+        ).get(projectId, prop.id);
+        if (plate) candidates.push({ name: prop.name, kind: 'prop', file_path: plate.file_path });
+    }
+
+    return selectReferences(candidates);
 }
 
 // ── Route Handler ───────────────────────────────────────────────────
@@ -426,7 +524,7 @@ function serveStoryboardImage(res, projectId, filename) {
 // ── FILM-019: Get Storyboard ───────────────────────────────────────
 
 function getStoryboard(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -480,7 +578,7 @@ function getStoryboard(req, res, projectId, query) {
 // ── FILM-017: Generate Storyboard (Sync) ───────────────────────────
 
 async function generateStoryboard(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -570,7 +668,8 @@ async function generateStoryboard(req, res, projectId, query) {
         }
 
         // Build prompt
-        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset);
+        const shotRefs = gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCard.props);
+        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset, { references: shotRefs });
 
         // Update shot status
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shot.shot_id);
@@ -582,8 +681,17 @@ async function generateStoryboard(req, res, projectId, query) {
                 seed: styleParams.seed,
                 ip_adapter_image: styleParams.ip_adapter_image,
                 ip_adapter_weight: styleParams.ip_adapter_weight,
+                // The frame the project actually delivers. Without this the
+                // payload falls back to a fixed 1024x1024, so a 2.39:1
+                // production got square keyframes -- and a keyframe is the
+                // init_image for the video pass, so the wrong shape propagates
+                // into every clip.
+                aspect_ratio: project.aspect_ratio,
+                // Paired with the @tags buildStoryboardPrompt just emitted.
+                reference_images: shotRefs,
             }, consistencyContext);
-            const imageBuffer = await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
+            const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
+                await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
 
             // Save image to disk
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
@@ -592,6 +700,8 @@ async function generateStoryboard(req, res, projectId, query) {
             // Register asset
             const asset = registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`, {
                 input_refs: consistencyContext.input_refs,
+                provider: usedProvider,
+                provider_model: usedModel,
             });
             recordConsistencyCheck(
                 { ...shot, id: shot.shot_id },
@@ -602,6 +712,8 @@ async function generateStoryboard(req, res, projectId, query) {
 
             // Log to render ledger
             logToRenderLedger(shot.shot_id, {
+                model: usedModel,
+                provider: usedProvider,
                 seed: styleParams.seed,
                 prompt: imagePayload.prompt,
                 negative_prompt: imagePayload.negative_prompt,
@@ -663,7 +775,7 @@ async function generateStoryboard(req, res, projectId, query) {
 // ── FILM-017: Generate Storyboard (SSE Stream) ─────────────────────
 
 async function generateStoryboardStream(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -752,7 +864,8 @@ async function generateStoryboardStream(req, res, projectId, query) {
             styleParams.ip_adapter_weight = consistencyPrimary.weight || 0.7;
         }
 
-        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset);
+        const shotRefs = gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCard.props);
+        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset, { references: shotRefs });
 
         sendEvent({
             type: 'progress',
@@ -774,6 +887,14 @@ async function generateStoryboardStream(req, res, projectId, query) {
                 seed: styleParams.seed,
                 ip_adapter_image: styleParams.ip_adapter_image,
                 ip_adapter_weight: styleParams.ip_adapter_weight,
+                // The frame the project actually delivers. Without this the
+                // payload falls back to a fixed 1024x1024, so a 2.39:1
+                // production got square keyframes -- and a keyframe is the
+                // init_image for the video pass, so the wrong shape propagates
+                // into every clip.
+                aspect_ratio: project.aspect_ratio,
+                // Paired with the @tags buildStoryboardPrompt just emitted.
+                reference_images: shotRefs,
             }, consistencyContext);
             const { buffer: imageBuffer, metadata } = await callImageGenStream(
                 imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
@@ -797,6 +918,8 @@ async function generateStoryboardStream(req, res, projectId, query) {
 
             const asset = registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`, {
                 input_refs: consistencyContext.input_refs,
+                provider: metadata && metadata.provider,
+                provider_model: metadata && metadata.provider_model,
             });
             recordConsistencyCheck(
                 { ...shot, id: shot.shot_id },
@@ -807,6 +930,8 @@ async function generateStoryboardStream(req, res, projectId, query) {
 
             const actualSeed = (metadata && metadata.seed) || styleParams.seed;
             logToRenderLedger(shot.shot_id, {
+                model: metadata && metadata.provider_model,
+                provider: metadata && metadata.provider,
                 seed: actualSeed,
                 prompt: imagePayload.prompt,
                 negative_prompt: imagePayload.negative_prompt,
@@ -894,7 +1019,7 @@ async function regenerateShot(req, res, shotId) {
         return json(res, 404, { error: 'Scene not found' });
     }
 
-    const project = db.prepare('SELECT id, title, style_preset FROM film_projects WHERE id = ?').get(scene.project_id);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio FROM film_projects WHERE id = ?').get(scene.project_id);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -943,18 +1068,24 @@ async function regenerateShot(req, res, shotId) {
             seed,
             ip_adapter_image: primaryRef && (primaryRef.file_path || primaryRef.file_name),
             ip_adapter_weight: primaryRef && primaryRef.weight,
+            aspect_ratio: project.aspect_ratio,
         }, consistencyContext);
-        const imageBuffer = await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
+        const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
+            await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         fs.writeFileSync(imgPath, imageBuffer);
 
         const asset = registerStoryboardAsset(project.id, shotId, imgPath, `${shot.shot_code}.png`, {
             input_refs: consistencyContext.input_refs,
+            provider: usedProvider,
+            provider_model: usedModel,
         });
         recordConsistencyCheck(shot, scene, project, { context: consistencyContext, output_asset_id: asset.id, scorer: 'stub' });
 
         logToRenderLedger(shotId, {
+            model: usedModel,
+            provider: usedProvider,
             seed: imagePayload.seed,
             prompt: imagePayload.prompt,
             negative_prompt: imagePayload.negative_prompt,

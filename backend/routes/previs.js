@@ -14,6 +14,7 @@
  */
 
 const { db, generateId } = require('../db/database');
+const { saveFile, serveFile } = require('../lib/file-storage');
 const { EASINGS } = require('../lib/previs-blocking');
 const {
     RIGS, MOVEMENTS, SHOT_TYPES,
@@ -346,6 +347,128 @@ function toVideo(req, res, shotId) {
     return json(res, 200, { shot_id: shotId, blocked: !!ctx.previs, ...payload });
 }
 
+/**
+ * Save what the previs looks like.
+ *
+ * Two kinds, and they are good for different things:
+ *
+ *   frame  a still of the camera pane. NOT an init_image — a grey-box render
+ *          fed to a video model produces grey boxes. Its value is as a
+ *          composition reference: the exact framing, lens and blocking that a
+ *          storyboard or a generated shot should match, and a structural guide
+ *          for anything that conditions on layout.
+ *   move   the camera pane recorded across the path. An animatic: it carries
+ *          the timing and the pace, which a still cannot.
+ *
+ * The pixels are rendered in the browser, because the projection lives there
+ * and re-implementing it server-side would be a second renderer that could
+ * disagree with the one the user approved.
+ */
+const EXPORT_KINDS = {
+    frame: { mime: /^image\/(png|jpeg|webp)$/, ext: { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' } },
+    move: { mime: /^video\/(webm|mp4)$/, ext: { 'video/webm': 'webm', 'video/mp4': 'mp4' } },
+};
+
+// A canvas recording is easily tens of megabytes; the ceiling is here so a
+// runaway recording cannot fill the disk. Checked on the STRING, before the
+// base64 is decoded into a buffer twice its size.
+const MAX_EXPORT_CHARS = 64 * 1024 * 1024;
+
+function exportPrevis(req, res, shotId) {
+    const shot = db.prepare('SELECT id, scene_id, shot_code FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+    const scene = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    if (!scene) return json(res, 404, { error: 'Scene not found' });
+
+    const body = req.body || {};
+    const spec = EXPORT_KINDS[body.kind];
+    if (!spec) return json(res, 400, { error: `kind must be one of: ${Object.keys(EXPORT_KINDS).join(', ')}` });
+
+    const data = body.data;
+    if (typeof data !== 'string' || !data.startsWith('data:')) {
+        return json(res, 400, { error: 'data must be a data: URL of the rendered previs' });
+    }
+    if (data.length > MAX_EXPORT_CHARS) {
+        return json(res, 413, { error: `export is larger than ${Math.round(MAX_EXPORT_CHARS / 1024 / 1024)}MB` });
+    }
+
+    const match = data.match(/^data:([\w/+.-]+);base64,(.*)$/);
+    if (!match) return json(res, 400, { error: 'data must be base64-encoded' });
+
+    const mime = match[1];
+    if (!spec.mime.test(mime)) {
+        return json(res, 400, { error: `a '${body.kind}' export must be ${spec.mime.source}, got ${mime}` });
+    }
+
+    let buffer;
+    try { buffer = Buffer.from(match[2], 'base64'); } catch (err) { buffer = null; }
+    if (!buffer || !buffer.length) return json(res, 400, { error: 'the data could not be decoded' });
+
+    const ext = spec.ext[mime] || 'bin';
+    // Named for the shot, not for the clock: re-exporting replaces, so a shot
+    // has one current previs frame rather than a pile of near-identical ones.
+    const safeCode = String(shot.shot_code || shot.id).replace(/[^\w.-]/g, '_');
+    const fileName = `${safeCode}_previs_${body.kind}.${ext}`;
+
+    let filePath;
+    try {
+        filePath = saveFile(scene.project_id, 'previs', fileName, buffer);
+    } catch (err) {
+        return json(res, 500, { error: `could not store the export: ${err.message}` });
+    }
+
+    // The blocking that produced it, so the frame is reproducible rather than
+    // a picture nobody can get back to.
+    const blocking = loadBlocking(shotId) || {};
+    const camera = blocking.camera || {};
+    const metadata = {
+        kind: `previs_${body.kind}`,
+        movement: blocking.movement || null,
+        rig: blocking.rig || null,
+        focal_mm: camera.focalMm || null,
+        sensor_id: camera.sensorId || null,
+        f_stop: camera.fStop || null,
+        duration_ms: blocking.durationMs || null,
+    };
+
+    const existing = db.prepare(
+        "SELECT id FROM film_assets WHERE shot_id = ? AND asset_type = 'other' AND file_name = ?"
+    ).get(shotId, fileName);
+    const assetId = existing ? existing.id : generateId();
+
+    // asset_type 'other' with a metadata discriminator: the registry's CHECK
+    // cannot be widened in place (SQLite cannot ALTER a CHECK, and the
+    // migration runner cannot disable FK enforcement inside its transaction),
+    // which is the same reason lib/threed-prompt.js registers meshes this way.
+    if (existing) {
+        db.prepare('UPDATE film_assets SET file_path = ?, mime_type = ?, format = ?, metadata = ? WHERE id = ?')
+            .run(filePath, mime, ext, JSON.stringify(metadata), assetId);
+    } else {
+        db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, version, metadata)
+                    VALUES (?, ?, ?, 'other', ?, ?, ?, ?, 1, ?)`)
+            .run(assetId, scene.project_id, shotId, filePath, fileName, ext, mime, JSON.stringify(metadata));
+    }
+
+    return json(res, 200, {
+        shot_id: shotId, asset_id: assetId, file_name: fileName, file_path: filePath,
+        url: `/film/previs/media/${scene.project_id}/${encodeURIComponent(fileName)}`,
+        metadata,
+    });
+}
+
+/**
+ * Serve a saved previs frame or recording.
+ *
+ * Delegated to lib/file-storage.serveFile, which already sanitises the name and
+ * checks containment against the resolved path. Hand-rolling that here would be
+ * a second, less audited copy of a check that guards the filesystem.
+ */
+function servePrevisMedia(req, res, projectId, fileName) {
+    let decoded = fileName;
+    try { decoded = decodeURIComponent(fileName); } catch (err) { /* serveFile will reject it */ }
+    return serveFile(res, projectId, 'previs', decoded);
+}
+
 // ── Router ──────────────────────────────────────────────────────────────────
 
 function handlePrevis(req, res, urlParts) {
@@ -358,6 +481,9 @@ function handlePrevis(req, res, urlParts) {
     // /film/previs/taxonomy
     if (urlParts[1] === 'previs') {
         if (urlParts[2] === 'taxonomy' && req.method === 'GET') return taxonomy(req, res);
+        if (urlParts[2] === 'media' && urlParts[3] && urlParts[4] && req.method === 'GET') {
+            return servePrevisMedia(req, res, urlParts[3], urlParts[4]);
+        }
         return json(res, 404, { error: 'Not found' });
     }
 
@@ -366,6 +492,10 @@ function handlePrevis(req, res, urlParts) {
         const shotId = urlParts[2];
         if (!UUID_RE.test(shotId)) return json(res, 400, { error: 'Invalid shot ID' });
 
+        if (urlParts[4] === 'export') {
+            if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+            return exportPrevis(req, res, shotId);
+        }
         if (urlParts[4] === 'to-video') {
             if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
             return toVideo(req, res, shotId);

@@ -1,124 +1,271 @@
 /**
- * Pipeline consistency-readiness gate (routes/pipeline.js):
- * strict mode blocks a scene→final run when a referenced character/location has
- * no locked consistency profile; non-strict runs but surfaces the readiness.
+ * Is the pipeline ready to take a screenplay to a finished shot?
+ *
+ * The acceptance this is judged against is a 30-second screenplay driven
+ * through every stage. That fails today for a reason no error message states:
+ * a NEW project is created with an empty provider_config, so every capability
+ * falls through resolveId() to DEFAULT_PROVIDER — Gridlight — whether or not
+ * Gridlight is running and whether or not a credentialed alternative is sitting
+ * right there in the registry.
+ *
+ * providers/index.js already has the mechanism for this. PREFERRED_WHEN_CONFIGURED
+ * is consulted on every resolve, is documented, and is an empty object, so it
+ * has never once fired.
+ *
+ * Set-based over CAPABILITIES and over the adapter registry, because the
+ * failure is per-capability: getting image and llm right while voice silently
+ * points at a dead service is exactly the half-fix that reads as done and dies
+ * on the day.
  */
-const { describe, it, before, after } = require('node:test');
-const assert = require('node:assert/strict');
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
+
+const test = require('node:test');
+const assert = require('node:assert');
 const os = require('os');
+const path = require('path');
 const crypto = require('crypto');
-const http = require('http');
 
-const TEST_DIR = path.join(os.tmpdir(), 'film-engine-pready-' + crypto.randomUUID().slice(0, 8));
-const TEST_PORT = 18700 + Math.floor(Math.random() * 600);
-const BASE_URL = `http://localhost:${TEST_PORT}`;
-let serverProcess, mockGateway;
+process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
+    || path.join(os.tmpdir(), 'film-engine-ready-' + crypto.randomUUID().slice(0, 8));
 
-function request(urlPath, opts = {}) {
-    const method = opts.method || 'GET';
-    const body = opts.body ? JSON.stringify(opts.body) : null;
-    return new Promise((resolve, reject) => {
-        const req = http.request(`${BASE_URL}${urlPath}`, {
-            method, headers: { 'Content-Type': 'application/json', ...(body ? { 'Content-Length': Buffer.byteLength(body) } : {}) },
-        }, (res) => {
-            let data = ''; res.on('data', c => data += c);
-            res.on('end', () => { let p; try { p = JSON.parse(data); } catch { p = data; } resolve({ status: res.statusCode, data: p }); });
-        });
-        req.on('error', reject);
-        if (body) req.write(body);
-        req.end();
-    });
+const { ensureSchema } = require('../db/schema');
+ensureSchema();
+
+const { db } = require('../db/database');
+const { CAPABILITIES, DEFAULT_PROVIDER } = require('../lib/providers/base');
+const providers = require('../lib/providers');
+const { PREFERRED_WHEN_CONFIGURED } = require('../lib/providers');
+const { stages } = require('../lib/e2e-preflight');
+
+// Credentials for every key-requiring adapter. Without these the resolve test
+// below skips every capability and passes vacuously — which is precisely the
+// shape of not-really-testing this standard exists to catch.
+for (const adapter of providers.list()) {
+    if (!adapter.requiresKey) continue;
+    db.prepare(`INSERT INTO film_provider_credentials (provider, api_key, meta, updated_at)
+                VALUES (?, ?, '{}', datetime('now'))
+                ON CONFLICT(provider) DO UPDATE SET api_key = excluded.api_key`)
+        .run(adapter.id, 'test-key-' + adapter.id);
 }
 
-async function waitForServer(n = 40) {
-    for (let i = 0; i < n; i++) {
-        try { const r = await request('/api/health'); if (r.status === 200) return; } catch { /* retry */ }
-        await new Promise(r => setTimeout(r, 200));
+/** Adapters that serve a capability, are not the fallback, and need a key. */
+function alternativesFor(capability) {
+    return providers.list()
+        .filter(a => a.id !== DEFAULT_PROVIDER)
+        .filter(a => a.supports && a.supports(capability));
+}
+
+// ── The preference table must be real ───────────────────────────────────────
+
+test('every capability with a hosted alternative names a preferred provider', () => {
+    // Derived from the registry: whichever capabilities have a non-Gridlight
+    // adapter must have a preference, or an unconfigured project silently
+    // resolves them to a local service instead of the hosted one.
+    const missing = CAPABILITIES
+        .filter(c => alternativesFor(c).length > 0)
+        .filter(c => !PREFERRED_WHEN_CONFIGURED[c]);
+
+    assert.deepStrictEqual(missing, [],
+        `capabilities that fall to '${DEFAULT_PROVIDER}' despite having a hosted adapter: ${missing.join(', ')}`);
+});
+
+test('every preferred provider exists and serves the capability it is named for', () => {
+    const wrong = [];
+    for (const [capability, id] of Object.entries(PREFERRED_WHEN_CONFIGURED)) {
+        if (!CAPABILITIES.includes(capability)) { wrong.push(`${capability} is not a capability`); continue; }
+        const adapter = providers.get(id);
+        if (!adapter) { wrong.push(`${capability} -> '${id}' is not registered`); continue; }
+        if (!adapter.supports || !adapter.supports(capability)) wrong.push(`${capability} -> '${id}' does not serve it`);
+        if (id === DEFAULT_PROVIDER) wrong.push(`${capability} -> naming the fallback as the preference is a no-op`);
     }
-    throw new Error('Server did not start');
-}
+    assert.deepStrictEqual(wrong, [], wrong.join('; '));
+});
 
-describe('Pipeline consistency readiness', () => {
-    let projectId, shotId, sceneId, mockPort;
+test('a project with no configuration resolves to the credentialed provider', () => {
+    // THE acceptance condition. A project created tomorrow has an empty
+    // provider_config; every capability that can be served by a configured
+    // hosted adapter must resolve to it with no setup at all.
+    const wrong = [];
+    const checked = [];
+    for (const capability of CAPABILITIES) {
+        const configured = alternativesFor(capability).filter(a => providers.isProviderConfigured(a.id));
+        if (!configured.length) continue;                 // nothing to prefer
+        checked.push(capability);
 
-    before(async () => {
-        fs.mkdirSync(TEST_DIR, { recursive: true });
-        // Mock gateway so non-strict runs complete fast (each step succeeds).
-        mockGateway = http.createServer((req, res) => {
-            let raw = ''; req.on('data', c => raw += c);
-            req.on('end', () => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true })); });
+        const resolved = providers.resolveId(capability, {});
+        if (resolved === DEFAULT_PROVIDER) {
+            wrong.push(`${capability}: fell to '${DEFAULT_PROVIDER}' with ${configured.map(a => a.id).join('/')} available`);
+        }
+    }
+    assert.ok(checked.length >= 5,
+        `only ${checked.length} capabilities had a credentialed alternative — this test is passing vacuously`);
+    assert.deepStrictEqual(wrong, [], wrong.join('; '));
+});
+
+test('an explicit project choice still wins over the preference', () => {
+    // The preference is a default, not a policy. Choosing Gridlight back has to
+    // keep working or the setting is a lie.
+    for (const capability of Object.keys(PREFERRED_WHEN_CONFIGURED)) {
+        assert.strictEqual(providers.resolveId(capability, { [capability]: DEFAULT_PROVIDER }), DEFAULT_PROVIDER,
+            `${capability}: an explicit choice was overridden by the preference`);
+    }
+});
+
+test('an uncredentialed preference does not hijack the capability', () => {
+    // isProviderConfigured guards this: preferring a provider whose key is
+    // absent would swap a reachable service for an unusable one.
+    const runway = providers.get('runway');
+    assert.ok(runway, 'runway is no longer registered; this check needs rewriting');
+    if (!providers.isProviderConfigured('runway')) {
+        assert.notStrictEqual(providers.resolveId('video', {}), 'runway',
+            'video preferred runway with no credential stored');
+    }
+});
+
+// ── Coverage of the pipeline the acceptance names ───────────────────────────
+
+test('every capability the E2E path needs is either served or explicitly handed off', () => {
+    // "Screenplay to final movie" is the acceptance. Each stage must resolve to
+    // something, or be a stage we have deliberately handed to the NLE.
+    const HANDED_OFF = new Set(['lipsync', 'post']);
+    const needed = stages().map(s => s.capability).filter(Boolean);
+    assert.ok(needed.length >= 8, `only ${needed.length} generating stages found`);
+
+    const orphans = [...new Set(needed)]
+        .filter(c => !HANDED_OFF.has(c))
+        .filter(c => alternativesFor(c).length === 0);
+
+    assert.deepStrictEqual(orphans, [],
+        `capabilities with no hosted adapter and no handoff: ${orphans.join(', ')}`);
+});
+
+test('the readiness check can audit every project, not just the newest', () => {
+    // The preflight picked the most recently updated project and said nothing
+    // about that choice, so it audited a demo project while the real one sat
+    // configured and unexamined.
+    const cli = require('fs').readFileSync(path.join(__dirname, '..', 'preflight.js'), 'utf8');
+    assert.ok(/--all/.test(cli), 'preflight cannot audit every project');
+    assert.ok(/ORDER BY updated_at DESC/.test(cli), 'preflight no longer has a project selection to reason about');
+});
+
+test('a fresh project is created with a usable provider configuration', () => {
+    // Belt and braces alongside the resolve-time preference: the row itself
+    // should say what it will use, so the Provider Settings panel shows the
+    // truth rather than an empty object.
+    const { defaultProviderConfig } = require('../lib/providers');
+    assert.strictEqual(typeof defaultProviderConfig, 'function', 'no defaultProviderConfig()');
+
+    const cfg = defaultProviderConfig();
+    const wrong = Object.entries(cfg).filter(([cap, id]) => {
+        const adapter = providers.get(id);
+        return !CAPABILITIES.includes(cap) || !adapter || !adapter.supports(cap);
+    });
+    assert.deepStrictEqual(wrong, [], `bad entries: ${JSON.stringify(wrong)}`);
+});
+
+// ── Provider choice has to survive the SQL that fetches it ──────────────────
+
+test('every route that reads a project provider config actually SELECTs it', () => {
+    // providerConfigOf(project) reads project.provider_config. A narrow SELECT
+    // that omits the column returns undefined, providerConfigOf falls back to
+    // {}, resolveGenerator picks the global default, and the project's provider
+    // choice is silently ignored — with every layer above looking correct.
+    //
+    // That is exactly what happened to storyboards: the resolution was wired up
+    // and documented as fixed, but `SELECT id, title, style_preset` meant the
+    // fix could never take effect, so every storyboard rendered on whichever
+    // provider the global preference named.
+    //
+    // Scanned rather than listed: the next route to call providerConfigOf gets
+    // the same guard without anyone remembering to add it here.
+    const fs = require('fs');
+    const routesDir = path.join(__dirname, '..', 'routes');
+
+    const offenders = [];
+    for (const file of fs.readdirSync(routesDir).filter(f => f.endsWith('.js'))) {
+        const src = fs.readFileSync(path.join(routesDir, file), 'utf8');
+        if (!src.includes('providerConfigOf')) continue;
+
+        src.split('\n').forEach((line, i) => {
+            if (!/FROM\s+film_projects/i.test(line)) return;
+            const select = line.match(/SELECT\s+([\s\S]*?)\s+FROM\s+film_projects/i);
+            if (!select) return;
+            const cols = select[1].trim();
+            if (cols === '*' || /provider_config/.test(cols)) return;
+            offenders.push(`${file}:${i + 1} — SELECT ${cols}`);
         });
-        await new Promise(r => mockGateway.listen(0, '127.0.0.1', r));
-        mockPort = mockGateway.address().port;
+    }
 
-        serverProcess = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
-            env: { ...process.env, PORT: String(TEST_PORT), FILM_DATA_DIR: TEST_DIR, GRIDLIGHT_URL: `http://127.0.0.1:${mockPort}`, GRIDLIGHT_API_KEY: 't', RATE_LIMIT_MAX_GENERATION: '1000' },
-            stdio: 'pipe',
-        });
-        serverProcess.stderr.on('data', () => {});
-        serverProcess.stdout.on('data', () => {});
-        await waitForServer();
+    assert.deepStrictEqual(offenders, [],
+        'these fetch a project for provider resolution but never select provider_config:\n  '
+        + offenders.join('\n  '));
+});
 
-        // project → character in registry → scene → shot referencing the character (no locked profile).
-        const proj = await request('/film/projects', { method: 'POST', body: { title: 'Readiness', logline: 'x' } });
-        projectId = proj.data.id;
-        await request(`/film/projects/${projectId}/characters`, { method: 'POST', body: { name: 'Jax', appearance_prompt: 'bounty hunter' } });
-        await request(`/film/projects/${projectId}/script`, { method: 'POST', body: { content: 'Title: R\n\nINT. OFFICE - DAY\n\nJax stands.\n', format: 'fountain' } });
-        const scenes = await request(`/film/projects/${projectId}/scenes`);
-        sceneId = (scenes.data.scenes || [])[0].id;
-        const shots = await request('/film/shots', {
-            method: 'POST',
-            body: { scene_id: sceneId, cards: [{ shot_code: '1A', camera: { shot_type: 'medium' }, characters: [{ name: 'Jax' }] }] },
-        });
-        shotId = (shots.data.shots || [])[0].id;
+test('no storyboard path writes a raw callImageGen result to disk', () => {
+    // callImageGen returns { buffer, provider, model } so provenance survives.
+    // One call site kept `const imageBuffer = await callImageGen(...)` and wrote
+    // the whole object to fs.writeFileSync, which fails at runtime with an
+    // unhelpful type error — and only on the regenerate path, so a batch run
+    // looked fine. Scanned rather than spot-checked: the next call site added
+    // has to destructure too.
+    const src = require('fs').readFileSync(
+        path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
+
+    const undestructured = src.split('\n')
+        .map((line, i) => ({ line, n: i + 1 }))
+        .filter(({ line }) => /await callImageGen\(/.test(line))
+        .filter(({ line }) => !/^\s*(const\s*\{|await callImageGen)/.test(line.trim()) === false
+            ? false
+            : !/\{\s*buffer/.test(line))
+        // a call whose own line lacks `{ buffer` and is not a continuation
+        .filter(({ line }) => /const\s+\w+\s*=\s*await callImageGen\(/.test(line));
+
+    assert.deepStrictEqual(undestructured.map(u => `storyboard.js:${u.n}`), [],
+        'these assign callImageGen() straight to a variable and will write an object to disk');
+});
+
+test('every storyboard image payload carries the project aspect ratio', () => {
+    // dimensionsForAspect only helps if the route actually passes the project's
+    // frame. Three paths build this payload — batch, stream and regenerate —
+    // and each was written separately, so a fix applied to two of them leaves
+    // the third quietly producing squares for a scope film.
+    const src = require('fs').readFileSync(
+        path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
+
+    const payloadStarts = [...src.matchAll(/applyConsistencyToImagePayload\(\{/g)].map(m => m.index);
+    assert.ok(payloadStarts.length >= 3, `expected 3 payload sites, found ${payloadStarts.length}`);
+
+    const missing = [];
+    payloadStarts.forEach((start, i) => {
+        const block = src.slice(start, src.indexOf('}, consistencyContext)', start));
+        if (!/aspect_ratio/.test(block)) missing.push(`payload site #${i + 1}`);
     });
+    assert.deepStrictEqual(missing, [],
+        `these build an image payload without the project aspect: ${missing.join(', ')}`);
+});
 
-    after(() => {
-        if (serverProcess) serverProcess.kill('SIGTERM');
-        if (mockGateway) mockGateway.close();
-        try { fs.rmSync(TEST_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
-    });
+test('no storyboard path reads a variable its own scope never binds', () => {
+    // `metadata` is bound only in the SSE path; the batch and regenerate paths
+    // bind usedProvider/usedModel. A blanket edit crossed them, and the result
+    // was a ReferenceError that failed all eight shots with "metadata is not
+    // defined" — after generation had already been paid for.
+    //
+    // Cheap structural check: each block that destructures callImageGen must
+    // then use those names, not the stream path's.
+    const src = require('fs').readFileSync(
+        path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
+    const lines = src.split('\n');
 
-    it('strict mode blocks the run when a character has no locked profile', async () => {
-        const res = await request(`/film/shots/${shotId}/pipeline/run`, { method: 'POST', body: { strict: true } });
-        assert.equal(res.status, 409);
-        assert.equal(res.data.readiness.ready, false);
-        assert.ok(res.data.readiness.missing.some(m => /Jax/.test(m)), 'missing should mention the unlocked character');
+    const offenders = [];
+    lines.forEach((line, i) => {
+        if (!/provider:\s*metadata\s*&&/.test(line)) return;
+        // Walk back to whichever destructuring opened this scope.
+        for (let j = i; j >= 0 && j > i - 60; j--) {
+            if (/const \{ buffer: imageBuffer, provider: usedProvider/.test(lines[j])) {
+                offenders.push(`storyboard.js:${i + 1} reads metadata in a usedProvider scope`);
+                break;
+            }
+            if (/await callImageGenStream\(/.test(lines[j])) break;   // correct scope
+        }
     });
-
-    it('non-strict run proceeds but reports readiness', async () => {
-        const res = await request(`/film/shots/${shotId}/pipeline/run`, { method: 'POST', body: {} });
-        assert.equal(res.status, 200);
-        assert.ok(res.data.readiness, 'response carries a readiness field');
-        assert.equal(res.data.readiness.ready, false);
-        assert.ok(['complete', 'completed_with_errors'].includes(res.data.status));
-    });
-
-    it('shot audit endpoint agrees the shot is not ready', async () => {
-        const res = await request(`/film/shots/${shotId}/consistency/audit`);
-        assert.equal(res.status, 200);
-        assert.equal(res.data.ready, false);
-        assert.ok(res.data.missing.length >= 1);
-    });
-
-    it('strict SCENE run 409s when a contained shot is not ready', async () => {
-        const res = await request(`/film/scenes/${sceneId}/pipeline/run`, { method: 'POST', body: { strict: true } });
-        assert.equal(res.status, 409);
-        assert.equal(res.data.readiness.ready, false);
-    });
-
-    it('strict PROJECT run 409s when any shot is not ready', async () => {
-        const res = await request(`/film/projects/${projectId}/pipeline/run`, { method: 'POST', body: { strict: true } });
-        assert.equal(res.status, 409);
-        assert.equal(res.data.readiness.ready, false);
-    });
-
-    it('non-strict scene run proceeds (202) with readiness', async () => {
-        const res = await request(`/film/scenes/${sceneId}/pipeline/run`, { method: 'POST', body: {} });
-        assert.equal(res.status, 202);
-        assert.ok(res.data.readiness);
-    });
+    assert.deepStrictEqual(offenders, [], offenders.join('\n  '));
 });

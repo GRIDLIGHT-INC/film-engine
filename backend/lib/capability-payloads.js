@@ -77,14 +77,42 @@ function preconditionError(message) {
  * Shape an /image request. Shared by the `image` capability builder and by the
  * storyboard route, so there is exactly one definition of the request body.
  */
+/**
+ * Pixel dimensions for a project's delivery aspect, at roughly the pixel count
+ * IMAGE_DEFAULTS was tuned for.
+ *
+ * The defaults were a fixed 1024x1024, so a 2.39:1 production got square
+ * keyframes -- and a keyframe is the init_image for the video pass, so the
+ * wrong frame shape propagates into every clip. A storyboard's whole job is to
+ * show what will be in frame, which a square cannot do for a scope film.
+ */
+function dimensionsForAspect(aspect, fallbackW, fallbackH) {
+    const m = String(aspect || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/i);
+    if (!m) return { width: fallbackW, height: fallbackH };
+    const ratio = Number(m[1]) / Number(m[2]);
+    if (!Number.isFinite(ratio) || ratio <= 0) return { width: fallbackW, height: fallbackH };
+
+    const targetPixels = fallbackW * fallbackH;
+    const round8 = n => Math.max(256, Math.round(n / 8) * 8);
+    return {
+        width: round8(Math.sqrt(targetPixels * ratio)),
+        height: round8(Math.sqrt(targetPixels / ratio)),
+    };
+}
+
 function imageRequestPayload(fields) {
     const f = fields || {};
+    // An explicit width/height still wins; otherwise follow the project's frame.
+    const dims = (f.width && f.height)
+        ? { width: f.width, height: f.height }
+        : dimensionsForAspect(f.aspect_ratio, IMAGE_DEFAULTS.width, IMAGE_DEFAULTS.height);
+
     const payload = {
         prompt: f.prompt,
         negative_prompt: f.negative_prompt,
         model: f.model || IMAGE_DEFAULTS.model,
-        width: f.width || IMAGE_DEFAULTS.width,
-        height: f.height || IMAGE_DEFAULTS.height,
+        width: dims.width,
+        height: dims.height,
         steps: f.steps || IMAGE_DEFAULTS.steps,
         guidance_scale: f.guidance_scale || IMAGE_DEFAULTS.guidance_scale,
         seed: f.seed === undefined ? null : f.seed,
@@ -413,6 +441,8 @@ async function persistCapabilityResult(capability, result, ctx, filename) {
 }
 
 module.exports = {
+    dimensionsForAspect,
+    IMAGE_DEFAULTS,
     CAPABILITY_BUILDERS,
     preconditionError,
     buildCapabilityPayload,
@@ -421,5 +451,6 @@ module.exports = {
     imageRequestPayload,
     providerConfigOf,
     IMAGE_DEFAULTS,
+    dimensionsForAspect,
     DEFAULT_POST_JOB_TYPE,
 };

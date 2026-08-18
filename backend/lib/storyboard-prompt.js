@@ -120,8 +120,65 @@ const DEFAULT_NEGATIVE_PROMPT = 'blurry, low quality, distorted, deformed, ugly,
  * @param {string} [stylePreset] - Style preset name (cinematic, noir, etc.)
  * @returns {{ prompt: string, negative_prompt: string }}
  */
+/**
+ * Providers cap the prompt. Runway's text_to_image rejects anything over ~1000
+ * characters, and a well-described character plus a well-described location
+ * plus an auteur style runs past 2,000 before the shot action is added -- so
+ * every frame failed, and the fields that caused it were the ones a director
+ * had just spent care writing.
+ *
+ * Trimming the assembled string would cut whatever happened to land last.
+ * Instead each long descriptive field gets an allowance, cut on a sentence or
+ * clause boundary so it degrades into a shorter description rather than a
+ * severed phrase. Short structural parts (framing, lens, movement) are never
+ * touched: they cost little and carry the shot.
+ */
+function trimToAllowance(text, allowance) {
+    const t = String(text || '').trim();
+    if (!allowance || t.length <= allowance) return t;
+
+    const cut = t.slice(0, allowance);
+    // Prefer a sentence end, then a clause, then a word.
+    for (const boundary of [/[.!?]\s[^.!?]*$/, /,\s[^,]*$/, /\s\S*$/]) {
+        const m = cut.match(boundary);
+        if (m && m.index > allowance * 0.5) {
+            return cut.slice(0, m.index + (boundary === /[.!?]\s[^.!?]*$/ ? 1 : 0)).trim().replace(/[,;]$/, '');
+        }
+    }
+    return cut.trim();
+}
+
+// Character continuity outranks location continuity: a viewer notices a
+// different face before a different porch. Both are generous enough to carry
+// wardrobe and palette, and together they leave room for action and style.
+// These sum to 880. With framing, lens, movement, lighting and the quality
+// tail (~90) that leaves headroom under a 1000-char ceiling, so the final
+// trim is a backstop rather than the thing that decides what survives. Sized
+// so no single field can starve the rest: an unbounded action line was eating
+// the budget and amputating location and style entirely.
+const ACTION_ALLOWANCE = 300;
+const APPEARANCE_ALLOWANCE = 240;
+const LOCATION_ALLOWANCE = 200;
+const STYLE_ALLOWANCE = 140;
+
+/**
+ * Last-resort ceiling.
+ *
+ * The per-field allowances handle the normal case, but a long action line can
+ * still push the total over. 1000 is Runway text_to_image's limit and the
+ * strictest of the providers wired here; a degraded prompt beats eight failed
+ * generations. Overridable per call for a provider with more room.
+ */
+const MAX_PROMPT_CHARS = 1000;
+
 function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, options) {
     const opts = options || {};
+    // Subjects the caller has attached a reference image for. Empty map when
+    // there are none, so the prose path below is unchanged for every project
+    // that has not generated plates yet.
+    const tagFor = opts.references
+        ? require('./reference-images').taggedNames(opts.references)
+        : new Map();
     const parts = [];
     const loraParts = [];
 
@@ -142,15 +199,23 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
         if (dbChar.ti_token) {
             loraParts.push(dbChar.ti_token);
         }
-        if (dbChar.appearance_prompt) {
-            parts.push(dbChar.appearance_prompt);
+        // A reference image beats a paragraph: `@maya` IS the wardrobe, where
+        // 240 characters of prose only approximates it. Carrying both would
+        // spend the character budget describing what the picture already shows,
+        // and the two can disagree — at which point the model is being asked to
+        // reconcile them.
+        const charTag = tagFor.get(String(charName).toUpperCase());
+        if (charTag) {
+            parts.push(`@${charTag}`);
+        } else if (dbChar.appearance_prompt) {
+            parts.push(trimToAllowance(dbChar.appearance_prompt, opts.appearanceAllowance || APPEARANCE_ALLOWANCE));
         }
     }
 
     // 2. Subject / action description
     const subject = sceneCard.action || sceneCard.description || '';
     if (subject) {
-        parts.push(subject);
+        parts.push(trimToAllowance(subject, opts.actionAllowance || ACTION_ALLOWANCE));
     }
 
     // 3. Camera shot type
@@ -183,8 +248,11 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
 
     // 7. Location context
     if (location) {
-        if (location.description) {
-            parts.push(location.description);
+        const locTag = location.name && tagFor.get(String(location.name).toUpperCase());
+        if (locTag) {
+            parts.push(`@${locTag}`);
+        } else if (location.description) {
+            parts.push(trimToAllowance(location.description, opts.locationAllowance || LOCATION_ALLOWANCE));
         }
         if (location.lighting_default && !lightType) {
             parts.push(`${location.lighting_default} lighting`);
@@ -192,9 +260,19 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
     }
 
     // 8. Style preset
+    //
+    // STYLE_PRESETS is a six-key lookup, and film_projects.style_preset is a
+    // free-text column. Anything outside those six -- "Guillermo del Toro
+    // gothic: teal/amber, wet streets, anamorphic" -- missed the lookup and was
+    // SILENTLY DROPPED: no error, no warning, just a prompt with no look in it.
+    // A named preset still wins (it carries a matched negative prompt too);
+    // anything else is passed through verbatim, because a director describing
+    // their own film is the more useful case and the column already allowed it.
     const preset = stylePreset && STYLE_PRESETS[stylePreset];
     if (preset) {
         parts.push(preset.suffix);
+    } else if (typeof stylePreset === 'string' && stylePreset.trim()) {
+        parts.push(trimToAllowance(stylePreset, opts.styleAllowance || STYLE_ALLOWANCE));
     }
 
     // 9. Scene card style overrides
@@ -216,7 +294,11 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
 
     // Assemble prompt
     const loraPrefix = loraParts.length > 0 ? loraParts.join(' ') + ', ' : '';
-    const prompt = loraPrefix + parts.filter(Boolean).join(', ');
+    const assembled = loraPrefix + parts.filter(Boolean).join(', ');
+    const ceiling = opts.maxPromptChars || MAX_PROMPT_CHARS;
+    const prompt = assembled.length <= ceiling
+        ? assembled
+        : trimToAllowance(assembled, ceiling);
 
     // Build negative prompt
     const negParts = [DEFAULT_NEGATIVE_PROMPT];
@@ -274,6 +356,12 @@ function applyStyleLock(baseSeed, shotIndex, options) {
 }
 
 module.exports = {
+    trimToAllowance,
+    MAX_PROMPT_CHARS,
+    ACTION_ALLOWANCE,
+    APPEARANCE_ALLOWANCE,
+    LOCATION_ALLOWANCE,
+    STYLE_ALLOWANCE,
     buildStoryboardPrompt,
     applyStyleLock,
     SHOT_TYPE_MAP,

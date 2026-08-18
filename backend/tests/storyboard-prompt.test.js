@@ -10,6 +10,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
     buildStoryboardPrompt,
+    MAX_PROMPT_CHARS,
     applyStyleLock,
     SHOT_TYPE_MAP,
     MOVEMENT_MAP,
@@ -308,5 +309,109 @@ describe('applyStyleLock', () => {
     it('handles no options argument', () => {
         const result = applyStyleLock(42, 5);
         assert.equal(result.seed, 47);
+    });
+});
+
+describe('style reaches the prompt (regression)', () => {
+    // film_projects.style_preset is a free-text column; STYLE_PRESETS is a
+    // six-key lookup. A director who set "Guillermo del Toro gothic: teal/amber,
+    // wet streets, anamorphic" got a prompt with NO look in it at all — the
+    // lookup missed and the string was dropped with no error. Every frame then
+    // rendered in whatever default the model reached for, which is one of the
+    // reasons a set of storyboards can look like eight different films.
+    const CUSTOM = 'Guillermo del Toro gothic: teal/amber, wet streets, mist, anamorphic, grain';
+    const card = {
+        shot_code: '1A',
+        description: 'A dragon over a suburban street.',
+        camera: { shot_type: 'wide', movement: 'static', lens: '35mm' },
+        lighting: { type: 'dramatic' },
+    };
+
+    it('a custom style string appears verbatim in the prompt', () => {
+        const { prompt } = buildStoryboardPrompt(card, [], null, CUSTOM);
+        assert.ok(prompt.includes(CUSTOM),
+            'the custom style was dropped — the prompt carries no look');
+    });
+
+    it('every built-in preset still contributes its own suffix', () => {
+        // Set-based: a named preset must never be replaced by the pass-through,
+        // because presets also carry a matched negative prompt.
+        for (const [name, def] of Object.entries(STYLE_PRESETS)) {
+            const { prompt } = buildStoryboardPrompt(card, [], null, name);
+            assert.ok(prompt.includes(def.suffix), `preset '${name}' lost its suffix`);
+            // Not asserting the key is absent: 'cinematic' legitimately appears
+            // inside its own suffix. The real risk is the pass-through firing
+            // for a known preset, which would append the bare key AND skip the
+            // matched negative prompt — so check the negative side instead.
+            assert.ok(buildStoryboardPrompt(card, [], null, name).negative_prompt.includes(def.negative),
+                `preset '${name}' lost its negative prompt — the pass-through fired instead`);
+        }
+    });
+
+    it('a preset still contributes its negative prompt; a custom style adds none', () => {
+        const preset = buildStoryboardPrompt(card, [], null, 'noir');
+        assert.ok(preset.negative_prompt.includes(STYLE_PRESETS.noir.negative));
+
+        const custom = buildStoryboardPrompt(card, [], null, CUSTOM);
+        assert.ok(!custom.negative_prompt.includes(CUSTOM),
+            'a free-text style must not be pushed into the negative prompt');
+    });
+
+    it('an empty or missing style adds nothing', () => {
+        for (const empty of ['', '   ', null, undefined]) {
+            const { prompt } = buildStoryboardPrompt(card, [], null, empty);
+            assert.ok(!/,\s*,/.test(prompt), `'${empty}' produced an empty prompt segment`);
+        }
+    });
+});
+
+describe('prompt fits the provider (regression)', () => {
+    // Runway's text_to_image rejects prompts over ~1000 characters. A described
+    // character (~800) plus a described location (~900) plus an auteur style
+    // (~400) totalled well over 2,000 before the shot action was added, so
+    // every frame failed at once — and the fields responsible were exactly the
+    // ones written to FIX continuity. Long inputs must degrade into shorter
+    // descriptions, not into a provider rejection.
+    const LONG_CHAR = { name: 'MAYA', appearance_prompt: 'A '.repeat(400) + 'woman.' };
+    const LONG_LOC = { name: 'STREET', description: 'B '.repeat(400) + 'street.' };
+    const LONG_STYLE = 'C '.repeat(300) + 'gothic';
+    const card = {
+        shot_code: '1A',
+        description: 'D '.repeat(200) + 'happens.',
+        camera: { shot_type: 'wide', movement: 'static', lens: '35mm' },
+        lighting: { type: 'dramatic' },
+        characters: [{ name: 'MAYA' }],
+    };
+
+    it('a maximally long input still produces a usable prompt', () => {
+        const { prompt } = buildStoryboardPrompt(card, [LONG_CHAR], LONG_LOC, LONG_STYLE);
+        assert.ok(prompt.length <= MAX_PROMPT_CHARS,
+            `prompt was ${prompt.length} chars — the provider would reject it`);
+        assert.ok(prompt.length > 200, 'trimmed so hard the prompt says nothing');
+    });
+
+    it('the shot action survives — it is what the frame is of', () => {
+        const modest = { name: 'MAYA', appearance_prompt: 'Woman, 30s, rust cardigan.' };
+        const { prompt } = buildStoryboardPrompt(
+            { ...card, description: 'A dragon shears the roofline off a house.' },
+            [modest], { name: 'S', description: 'A wet suburban street.' }, 'noir');
+        assert.ok(prompt.includes('dragon shears the roofline'),
+            'the action was trimmed away in favour of description');
+    });
+
+    it('each long field is capped independently, so one cannot starve the others', () => {
+        const { prompt } = buildStoryboardPrompt(card, [LONG_CHAR], LONG_LOC, LONG_STYLE);
+        // If only a tail-trim were applied, the first field would consume
+        // everything and later ones would vanish entirely.
+        assert.ok(prompt.includes('A A'), 'character appearance is absent');
+        assert.ok(prompt.includes('B B'), 'location description is absent — starved by the character');
+    });
+
+    it('a caller with more room can raise the ceiling', () => {
+        const tight = buildStoryboardPrompt(card, [LONG_CHAR], LONG_LOC, LONG_STYLE);
+        const roomy = buildStoryboardPrompt(card, [LONG_CHAR], LONG_LOC, LONG_STYLE,
+            { maxPromptChars: 4000, appearanceAllowance: 1500, locationAllowance: 1500 });
+        assert.ok(roomy.prompt.length > tight.prompt.length,
+            'the ceiling is not overridable, so a roomier provider is held to Runway limits');
     });
 });

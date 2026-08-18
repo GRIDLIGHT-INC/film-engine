@@ -53,10 +53,28 @@ describe('providers/gridlight-adapter', () => {
 });
 
 describe('providers/registry resolve', () => {
-    it('defaults every capability to gridlight when unconfigured', () => {
+    it('falls back to gridlight only when nothing credentialed can serve the capability', () => {
+        // This used to assert gridlight for ALL eleven, which pinned the bug it
+        // was meant to document: an unconfigured project pointed every
+        // capability at a local service even when a credentialed hosted adapter
+        // was registered beside it. PREFERRED_WHEN_CONFIGURED exists for
+        // exactly that and was an empty object, so it had never fired.
+        //
+        // The fallback is still correct where there is genuinely nothing else,
+        // which is what this now asserts — derived from the registry rather
+        // than from a list, so adding an adapter cannot silently invalidate it.
         for (const cap of CAPABILITIES) {
-            assert.equal(providers.resolveId(cap, {}), 'gridlight');
-            assert.equal(providers.resolve(cap, {}).id, 'gridlight');
+            const alternative = providers.list().some(a =>
+                a.id !== 'gridlight' && a.supports && a.supports(cap) && providers.isProviderConfigured(a.id));
+
+            const resolved = providers.resolveId(cap, {});
+            if (alternative) {
+                assert.notEqual(resolved, 'gridlight',
+                    `${cap} fell to gridlight despite a credentialed alternative`);
+            } else {
+                assert.equal(resolved, 'gridlight', `${cap} should fall back to gridlight`);
+                assert.equal(providers.resolve(cap, {}).id, 'gridlight');
+            }
         }
     });
 

@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (58 migrations)
+│   │   └── migrations/     # SQL migration files (59 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -76,6 +76,9 @@ film-engine/
 │   │   ├── screenplay-parser.js   # INT./EXT. scene heading parser
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
+│   │   ├── reference-images.js    # Tagged reference plates: data URIs, tags, ≤3 selection
+│   │   ├── reference-plates.js    # Location + prop plate generation (shared implementation)
+│   │   ├── image-fallback.js      # Walk credentialed image providers on refusal
 │   │   ├── gridlight-client.js    # Shared HTTP client + request queue + 429 retry
 │   │   ├── file-storage.js        # Shared file storage utilities
 │   │   ├── dialogue-builder.js    # Dialogue extraction + voice payloads
@@ -126,6 +129,9 @@ film-engine/
 │   └── tests/
 │       ├── nle-export.test.js          # NLE export unit tests
 │       ├── storyboard-prompt.test.js   # Storyboard prompt unit tests
+│       ├── reference-images.test.js    # Tag safety, data URIs, reference selection
+│       ├── reference-plates.test.js    # Every referenceable kind can produce a plate
+│       ├── image-fallback.test.js      # Image generation survives a provider refusal
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -145,6 +151,8 @@ film-engine/
 │       ├── previs-routes.test.js         # Previs API + single-file viewer guarantees (Phase 2)
 │       ├── previs-to-video.test.js        # Blocking reaches camera_control; unblocked byte-identical (Phase 3)
 │       ├── previs-moves.test.js           # Move amounts, sequences, stage primitives (Phase 5)
+│       ├── pipeline-readiness.test.js     # Unconfigured projects resolve to credentialed providers
+│       ├── readiness-brief.test.js        # The readiness brief covers every capability and stage
 │       ├── previs-pick.test.js            # Project/unproject round trip, hit testing (Phase 6)
 │       ├── nav-flow.test.js               # Every page in exactly one production phase (Phase 6)
 │       ├── previs-camera.test.js         # Optics vs published lens charts (Phase 0)
@@ -170,6 +178,7 @@ film-engine/
 │       ├── providers-api.test.js         # Provider settings/credentials API
 │       ├── providers-runway.test.js      # Runway adapter (mock server)
 │       ├── providers-openai-image.test.js # OpenAI image adapter (mock server)
+│       ├── providers-anthropic.test.js   # Anthropic adapter (mock server)
 │       ├── providers-elevenlabs.test.js  # ElevenLabs adapter (mock server)
 │       ├── consistency-context.test.js   # Consistency context assembly
 │       ├── consistency-routes.test.js    # Consistency profiles API
@@ -212,6 +221,7 @@ All routes prefixed with `/film`:
 | Shots | `POST /shots`, `GET /projects/:id/shotlist` |
 | Characters | `GET/POST /projects/:id/characters`, `GET/PUT/DELETE /characters/:id` |
 | Locations | `GET/POST /projects/:id/locations`, `GET/PUT/DELETE /locations/:id` |
+| Plates | `POST/GET /locations/:id/plate[/generate]`, `POST/GET /props/:id/plate[/generate]` |
 | Props | `GET/POST /projects/:id/props`, `GET/PUT/DELETE /props/:id` |
 | Notes | `GET/POST /shots/:id/notes`, `PUT/DELETE /notes/:id`, `POST /shots/:id/review` |
 | Assets | `GET/POST /projects/:id/assets`, `GET/DELETE /assets/:id` |
@@ -312,6 +322,21 @@ Transforms scene cards into SDXL-optimized image prompts via the prompt engineer
 
 **Env vars:** `IMAGEGEN_URL` (default `http://localhost:8080`), `IMAGEGEN_API_KEY` (Bearer token)
 
+### Reference Images (continuity by picture)
+`lib/reference-images.js` carries continuity as **plates** rather than paragraphs. A screenplay upload creates character and location rows that are name skeletons, so every keyframe invented its own subject; filling them with prose helped and then hit Runway's ~1000-character prompt cap, where a described character plus a described location plus an auteur style exceeds 2,000 before the shot action is added. Compressing prose is a treadmill, and the thing being compressed *is* the continuity information.
+
+`gen4_image` takes up to **three** `{uri, tag}` references and lets the prompt name them, so `@maya` replaces 240 characters of wardrobe — exact instead of approximate, and the prompt drops from ~500 to ~270 characters. Three constraints shape the module: **three references maximum** (a fourth is a validation failure, so a whole batch fails together); **the provider cannot read our disk**, so local plates are inlined as base64 data URIs; and **tags are substituted into prompt text**, so they are bare lowercase words with collisions resolved centrally — two characters slugging to `maya` would make one silently shadow the other, which is the same wrong-subject bug one level down.
+
+Selection ranks identity before place before everything else, because a viewer notices a different face long before a different porch. A subject with no plate falls back to its prose description, so a project that has never generated a reference sheet behaves exactly as before. `applyConsistencyToImagePayload` defers to references the route already attached rather than replacing them — a prompt carrying `@maya` with no matching image is strictly worse than having used prose.
+
+Plates are generated per subject: characters through `POST /characters/:id/refsheet/generate` (a three-view turnaround — front/side/back — because identity needs one), locations and props through `POST /{locations,props}/:id/plate/generate` (a single establishing or product plate; a location has no side view). Locations and props share **one** implementation in `lib/reference-plates.js` — duplicating a generator per subject type is how the character path acquired a moderation fallback and a style fix the others would not have inherited. Migration 061 adds `film_assets.prop_id`, without which a prop plate had nowhere to link and the gather query could never find one.
+
+A project's `style_preset` is applied to plates and **dropped on a provider moderation refusal**, reported as `style_applied: false` rather than silently: a look written for the film can be refused when it lands beside a literal subject description, and a director told nothing would believe their look was anchored when it was not. A location plate is framed deliberately empty of people — the plate defines the place, and a figure in it would be re-described by every shot that references it.
+
+`lib/image-fallback.js` walks the credentialed image providers instead of betting a shot on one. Three adapters serve `image` (gridlight, openai, runway) and the pipeline used whichever `resolveGenerator` returned — so when Runway declined a prompt on moderation, all eight shots failed together while two other providers sat untried. That refusal is **not deterministic**: the same prompt for the same shot passed and then failed minutes apart, which makes "the provider said no" a condition to route around rather than a verdict on the shot, and is why this is a chain rather than a retry — re-sending to the same provider bets on a coin flip.
+
+The project's explicit choice always leads (the chain never re-decides which provider a production uses), each provider is tried at most once so worst-case spend is bounded by the registry rather than a retry count, and a **malformed** request is never replayed — a 400 on a bad ratio is ours and would buy three identical failures and three bills. Exhaustion wording differs per provider ("no credits remaining" vs "do not have enough credits"), so matching one phrasing stopped the chain at the first empty account; `isRefusal` is pinned against every wording seen in practice. Failures report the whole walk, so a blocked shot names what each provider needs rather than only the first.
+
 ### Voice & Dialogue Pipeline
 Extracts dialogue from scene cards, matches characters to voice profiles, and generates speech audio via `POST /voice`. Supports per-shot and batch generation with SSE streaming. Audio stored at `data/audio/{project_id}/{shot_code}_{character}_{index}.wav`.
 
@@ -364,10 +389,14 @@ Test screenplay for an end-to-end run: `backend/tests/fixtures/thirty-second.fou
 ### MCP Server
 `backend/mcp-server.js` exposes the flows engine to agents over MCP (stdio, JSON-RPC). Run it with `node backend/mcp-server.js` — a client spawns it; it does not talk to a human.
 
-The tool list is **generated, never enumerated** (`lib/mcp-tools.js`), in two sets:
+The tool list is **generated, never enumerated** (`lib/mcp-tools.js`), in three sets:
 
 - **One tool per node type** — `node_<type>`, e.g. `node_gen_image`, built by iterating `NODE_TYPES` in `lib/flow-node-types.js`, the same registry the canvas palette reads. Input schemas are derived from each node's declared ports, so a new node type becomes a correctly-typed MCP tool with no edit here. Execution goes straight to `handlerFor(type).execute()`, with context from the run routes' own `runContext()`.
 - **One tool per shipped flows route** — `flow_list`, `flow_run`, `flow_estimate`, and so on, dispatched *through* `handleFlows` via an in-process request shim rather than reimplemented. One budget gate, one validator, one set of bugs. `runFlowStreamRoute` is the single deliberate omission (`SSE_EXCEPTION`): a `tools/call` returns one result, so a stream has nothing to add over `flow_run`.
+
+- **One tool per pre-production route** — `script_get`, `scene_list`, `shot_create`, `character_update`, `location_update`, `project_update`, `storyboard_generate` and the rest (`PRODUCTION_TOOLS`, 12). These exist because a flows-only surface let an agent **run** generation while being unable to give it anything to be consistent about: a parsed screenplay leaves `appearance_prompt` as an empty string and a location's description as `"EXT location (3 mentions)"`, so `buildStoryboardPrompt` looks both up, finds nothing to inject, and every keyframe invents its own character on its own street. The fix is filling those records before generating — agent work the flows tools could not reach. Dispatch is the same in-process shim, generalised to take the route handler, so validation, scene-card checking and asset registration behave exactly as they do over HTTP.
+
+This is also how the LLM reaches the pipeline **without an API key**: an agent host (Claude Desktop, claude.ai, ChatGPT) connects to this server, and the model's own subscription does the reasoning while Film Engine keeps ownership of the data and the media. There is no Claude or ChatGPT MCP server exposing *inference* — those are MCP clients — so the connection only works in this direction, which is also the one that keeps assets in `film_assets` rather than in a chat.
 
 `tests/mcp-tools.test.js` iterates both registries in both directions — a node type without a tool, a tool without a registry entry, a router handler without a tool, or a tool whose route does not actually dispatch all fail. Route results are unwrapped before reaching the model (`presentResult`), keeping the HTTP status only when it explains a refusal, since a 402 budget rejection a model reads as "failed" is a call it will retry unchanged.
 
@@ -376,11 +405,19 @@ The tool list is **generated, never enumerated** (`lib/mcp-tools.js`), in two se
 **Env vars:** `FILM_DATA_DIR` — the database the server reads/writes; defaults to the HTTP server's, so both see one project set.
 
 ### Providers (pluggable generation backends)
-Capabilities (`llm`, `image`, `video`, `music`, `voice`, `sfx`, `ambient`, `lipsync`, `post`, `model3d`, `stock`) each resolve to a provider adapter: per-project `provider_config` → `PROVIDER_<CAP>` env → Gridlight default. Adapters live in `lib/providers/` and are auto-loaded by filename, so adding one never means editing the registry.
+Capabilities (`llm`, `image`, `video`, `music`, `voice`, `sfx`, `ambient`, `lipsync`, `post`, `model3d`, `stock`) each resolve to a provider adapter: per-project `provider_config` → `PROVIDER_<CAP>` env → **`PREFERRED_WHEN_CONFIGURED`** → Gridlight default.
+
+That preference table was consulted on every resolve, documented, and **empty**, so it never fired: a project created with no config pointed all eleven capabilities at a local Gridlight service whether or not it was running and whether or not a credentialed hosted adapter sat in the registry beside it. The only symptom was a connection refused at generation time, per capability. It is now populated for the eight capabilities that have a hosted adapter, applies only when that provider actually holds a credential, and is still overridden by an explicit per-project choice. `defaultProviderConfig()` writes the same choice into new projects so Provider Settings shows what generation will really use. Adapters live in `lib/providers/` and are auto-loaded by filename, so adding one never means editing the registry.
 
 **Runway** (`lib/providers/runway.js`) serves `video` + `image`. Unlike the other generators it is asynchronous: `POST /v1/{image_to_video,text_to_video,text_to_image}` returns a task id, and the adapter polls `GET /v1/tasks/:id` to completion so routes still see a finished asset. Video defaults to `gen4.5` (2–10s, ratio snapped to a documented value), images to `gen4_image`.
 
 **Env vars:** `RUNWAY_API_KEY` (or Runway's own `RUNWAYML_API_SECRET`), `RUNWAY_BASE_URL` (default `https://api.dev.runwayml.com/v1`), `RUNWAY_VIDEO_MODEL`, `RUNWAY_IMAGE_MODEL`, `RUNWAY_POLL_INTERVAL_MS`
+
+**Anthropic** (`lib/providers/anthropic.js`) serves `llm` — `POST /v1/messages`, auth by `x-api-key` plus a pinned `anthropic-version` (not a Bearer token), default model `claude-opus-5`. Raw `fetch` rather than `@anthropic-ai/sdk`: the Messages API is one endpoint and the backend has exactly one dependency, so an SDK for a single adapter would reverse a deliberate stance ([ADR-002](docs/adr/002-vanilla-http-no-framework.md)). It lifts the system prompt into the API's own `system` field rather than concatenating it into the question, and treats `stop_reason: "refusal"` — an HTTP 200 with empty or partial `content` — as a result rather than reading `content[0]` blindly.
+
+`llm` is preferred here while Gridlight's `/chat/intelligent` is unusable: that endpoint routes every question through `build_unified_query`, and all six of its routes reach Qdrant or Neo4j before a model, so with no vector store running it 500s on `vector length 768 != expected 0` regardless of payload.
+
+**Env vars:** `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_LLM_MODEL`
 
 **ElevenLabs** (`lib/providers/elevenlabs.js`) serves `voice` + `sfx` + `ambient` + `music` — `POST /text-to-speech/:voiceId`, `POST /sound-generation` (one-shot), `POST /sound-generation` with `loop: true` on `eleven_text_to_sound_v2` (ambient beds), and `POST /music` (`music_v2`, 3s–10min, instrumental by default since film cues are underscore). All return raw audio bytes, so results are Buffers written straight to disk.
 
@@ -486,7 +523,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (58 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (59 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -596,6 +633,9 @@ node --test backend/tests/*.test.js
 # Run individual test files
 node --test backend/tests/nle-export.test.js
 node --test backend/tests/storyboard-prompt.test.js
+node --test backend/tests/reference-images.test.js
+node --test backend/tests/reference-plates.test.js
+node --test backend/tests/image-fallback.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js
@@ -619,6 +659,9 @@ node --test backend/tests/previs-blocking.test.js
 node --test backend/tests/previs-routes.test.js
 node --test backend/tests/previs-to-video.test.js
 node --test backend/tests/previs-moves.test.js
+node --test backend/tests/pipeline-readiness.test.js
+node --test backend/tests/readiness-brief.test.js
+node --test backend/tests/providers-anthropic.test.js
 node --test backend/tests/previs-pick.test.js
 node --test backend/tests/nav-flow.test.js
 

@@ -31,9 +31,67 @@ const RUNWAY_VERSION = '2024-11-06';
 const DEFAULT_VIDEO_MODEL = process.env.RUNWAY_VIDEO_MODEL || 'gen4.5';
 const DEFAULT_IMAGE_MODEL = process.env.RUNWAY_IMAGE_MODEL || 'gen4_image';
 
+/**
+ * Model names this adapter will forward.
+ *
+ * capability-payloads builds ONE payload per capability for every provider, and
+ * its image default is `sdxl` -- a Gridlight-era name that means nothing here.
+ * Forwarding it unchecked made Runway reject every storyboard with
+ * "model: Invalid", because `p.model || DEFAULT` lets a foreign name win over
+ * the adapter's own default.
+ *
+ * An adapter should never hand its API a model it does not recognise. Anything
+ * outside these sets falls back to the configured default instead, so a generic
+ * payload works and an explicit Runway model is still honoured.
+ */
+const KNOWN_VIDEO_MODELS = new Set(['gen4.5', 'gen4_turbo', 'gen4', 'gen3a_turbo', 'veo3', 'act_two']);
+const KNOWN_IMAGE_MODELS = new Set(['gen4_image', 'gen4_image_turbo', 'gemini_2.5_flash']);
+
+function pickModel(requested, known, fallback) {
+    const name = String(requested || '').trim();
+    return known.has(name) ? name : fallback;
+}
+
 // Ratios each generation mode documents. Sending anything else is a 400, so the
 // builder snaps to the nearest documented ratio rather than forwarding whatever
 // width/height the scene card happened to carry.
+/**
+ * Accepted text_to_image ratios.
+ *
+ * `ratio` is REQUIRED on text_to_image. This adapter used to omit it whenever
+ * the caller passed anything other than an explicit width/height pair, so every
+ * image generation failed validation before reaching a model -- invisible to
+ * the mock-server tests, because a mock cannot know the real API demands a
+ * field. The list below is the one Runway's validator returns.
+ */
+const IMAGE_RATIOS = [
+    '1024:1024', '1080:1080', '1168:880', '1360:768', '1440:1080', '1080:1440',
+    '1808:768', '1920:1080', '1080:1920', '2112:912', '1280:720', '720:1280',
+    '720:720', '960:720', '720:960', '1680:720',
+];
+const DEFAULT_IMAGE_RATIO = '1920:1080';
+
+/** "1920:1080" and "16:9" both mean 1.777…; callers send either. */
+function aspectOf(value) {
+    const m = String(value || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/i);
+    if (!m) return null;
+    const w = Number(m[1]), h = Number(m[2]);
+    return h > 0 ? w / h : null;
+}
+
+/** Nearest accepted ratio by aspect, so a 16:9 request is not simply dropped. */
+function snapImageRatio(requested) {
+    if (IMAGE_RATIOS.includes(requested)) return requested;
+    const want = aspectOf(requested);
+    if (want === null) return DEFAULT_IMAGE_RATIO;
+    let best = DEFAULT_IMAGE_RATIO, bestGap = Infinity;
+    for (const candidate of IMAGE_RATIOS) {
+        const gap = Math.abs(aspectOf(candidate) - want);
+        if (gap < bestGap) { bestGap = gap; best = candidate; }
+    }
+    return best;
+}
+
 const VIDEO_RATIOS = {
     image_to_video: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '672:1584', '960:960'],
     text_to_video: ['1280:720', '720:1280'],
@@ -171,7 +229,7 @@ function buildVideoRequest(payload) {
     const mode = promptImage ? 'image_to_video' : 'text_to_video';
 
     const body = {
-        model: p.model || DEFAULT_VIDEO_MODEL,
+        model: pickModel(p.model, KNOWN_VIDEO_MODELS, DEFAULT_VIDEO_MODEL),
         promptText: p.promptText || p.prompt || '',
         ratio: pickRatio(p.width, p.height, mode),
         duration: clampDuration(p.duration_s !== undefined ? p.duration_s : p.duration),
@@ -187,12 +245,15 @@ function buildVideoRequest(payload) {
 function buildImageRequest(payload) {
     const p = payload || {};
     const body = {
-        model: p.model || DEFAULT_IMAGE_MODEL,
+        model: pickModel(p.model, KNOWN_IMAGE_MODELS, DEFAULT_IMAGE_MODEL),
         promptText: p.promptText || p.prompt || '',
     };
-    // Image ratios are model-dependent and not enumerated in the docs the way
-    // video ratios are, so pass through what the caller asked for.
-    if (Number(p.width) > 0 && Number(p.height) > 0) body.ratio = `${Number(p.width)}:${Number(p.height)}`;
+    // ratio is required, so it is always sent. Precedence: an explicit pixel
+    // pair, then whatever ratio/aspect the caller named, then the default.
+    const requested = (Number(p.width) > 0 && Number(p.height) > 0)
+        ? `${Number(p.width)}:${Number(p.height)}`
+        : (p.ratio || p.aspect_ratio || p.aspectRatio || DEFAULT_IMAGE_RATIO);
+    body.ratio = snapImageRatio(requested);
 
     const refs = normalizeReferenceImages(p.reference_images || p.referenceImages);
     if (refs) body.referenceImages = refs;
@@ -366,6 +427,11 @@ const adapter = {
 };
 
 module.exports = {
+    KNOWN_VIDEO_MODELS,
+    KNOWN_IMAGE_MODELS,
+    pickModel,
+    IMAGE_RATIOS,
+    snapImageRatio,
     adapter,
     buildVideoRequest,
     buildImageRequest,

@@ -43,7 +43,13 @@ function applyConsistencyToImagePayload(payload, context) {
     }
     if (shouldUseLockedSeed(p.seed) && ctx.locked_seed !== null && ctx.locked_seed !== undefined) p.seed = ctx.locked_seed;
     if (ctx.references && ctx.references.length) {
-        p.reference_images = ctx.references;
+        // Do not clobber references the caller already attached. The storyboard
+        // route selects TAGGED plates per shot and emits matching @tags in the
+        // prompt; replacing them here would leave those tags referring to
+        // nothing, which is strictly worse than having used prose.
+        if (!Array.isArray(p.reference_images) || p.reference_images.length === 0) {
+            p.reference_images = ctx.references;
+        }
         p.input_refs = ctx.input_refs || [];
         if (!p.ip_adapter_image) {
             const primary = ctx.references[0];

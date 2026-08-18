@@ -25,6 +25,63 @@
 const { getCredential } = require('./credentials');
 
 const DEFAULT_BASE_URL = 'https://api.meshy.ai';
+
+// Meshy's own naming. gpt-image-2 supports only 1:1, 3:2 and 2:3; the
+// nano-banana family adds 16:9, 9:16, 4:3 and 3:4 — neither offers a scope
+// ratio, so a 2.39:1 production gets the widest available and is cropped in
+// the NLE rather than being silently delivered square.
+const IMAGE_MODELS = ['nano-banana-pro', 'nano-banana-2', 'nano-banana', 'gpt-image-2'];
+const DEFAULT_IMAGE_MODEL = process.env.MESHY_IMAGE_MODEL || 'nano-banana-pro';
+const IMAGE_RATIOS = {
+    'gpt-image-2': ['1:1', '3:2', '2:3'],
+    _default: ['1:1', '16:9', '9:16', '4:3', '3:4'],
+};
+
+/** Nearest supported ratio by aspect — never silently square. */
+function snapMeshyRatio(requested, model) {
+    const allowed = IMAGE_RATIOS[model] || IMAGE_RATIOS._default;
+    const parse = v => {
+        const m = String(v || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/);
+        return m && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : null;
+    };
+    const want = parse(requested);
+    if (want === null) return allowed[0];
+    let best = allowed[0], gap = Infinity;
+    for (const r of allowed) {
+        const d = Math.abs(parse(r) - want);
+        if (d < gap) { gap = d; best = r; }
+    }
+    return best;
+}
+
+/**
+ * Our image payload -> Meshy's text-to-image body.
+ *
+ * Two Meshy features map straight onto reference plates: `pose_mode: 't-pose'`
+ * is exactly what a character turnaround wants, and `generate_multi_view`
+ * produces several angles in one image — the thing the character refsheet route
+ * currently spends three separate generations on.
+ */
+function buildImageRequest(payload) {
+    const p = payload || {};
+    const model = IMAGE_MODELS.includes(p.model) ? p.model : DEFAULT_IMAGE_MODEL;
+    const body = {
+        ai_model: model,
+        prompt: p.prompt || p.promptText || '',
+    };
+
+    const requested = (Number(p.width) > 0 && Number(p.height) > 0)
+        ? `${p.width}:${p.height}`
+        : (p.aspect_ratio || p.ratio);
+
+    // aspect_ratio is rejected alongside multi-view, so only one is ever sent.
+    if (p.generate_multi_view || p.multi_view) body.generate_multi_view = true;
+    else body.aspect_ratio = snapMeshyRatio(requested, model);
+
+    if (p.pose_mode === 't-pose' || p.pose_mode === 'a-pose') body.pose_mode = p.pose_mode;
+
+    return body;
+}
 const DEFAULT_TEXT_MODEL = 'meshy-5';
 
 // Polling. Mesh generation is slow — minutes, not seconds — so the ceiling is
@@ -43,10 +100,16 @@ const OPERATIONS = {
     text_to_mesh: { path: '/openapi/v2/text-to-3d', phase: 'preview' },
     image_to_mesh: { path: '/openapi/v1/image-to-3d', phase: null },
     rig: { path: '/openapi/v1/rigging', phase: null },
+    // Meshy is not 3D-only: it exposes 2D generation too, and fronts the
+    // nano-banana family and gpt-image-2 through its own API. This adapter
+    // declared `model3d` alone, so a funded Meshy account sat unusable while
+    // the image stage was blocked on two exhausted providers.
+    text_to_image: { path: '/openapi/v1/text-to-image', phase: null },
     animate: { path: '/openapi/v1/animation', phase: null },
 };
 
 function supports(capability) {
+    if (capability === 'image') return true;
     return capability === 'model3d';
 }
 
@@ -304,10 +367,54 @@ async function run(payload, onProgress) {
     };
 }
 
+/**
+ * Generate a 2D image and poll it to completion.
+ *
+ * Same async shape as the 3D operations — POST returns a task id, the adapter
+ * owns the polling so routes still see a finished asset. Kept beside them
+ * rather than in a second module for that reason.
+ */
+async function runImage(payload) {
+    const { apiKey } = getCredential('meshy');
+    if (!apiKey) return missingKey();
+
+    const body = buildImageRequest(payload);
+    if (!body.prompt) return { ok: false, status: 400, error: 'meshy: prompt is required' };
+
+    const path = OPERATIONS.text_to_image.path;
+    const created = await call('POST', path, apiKey, body);
+    if (!created.ok) return created;
+
+    const taskId = (created.data && (created.data.result || created.data.id)) || null;
+    if (!taskId) return { ok: false, status: 502, error: 'meshy: no task id returned for text-to-image' };
+
+    const done = await pollTask(path, taskId, apiKey);
+    if (!done.ok) return done;
+
+    const task = done.data || {};
+    // Meshy reports the finished image under image_url(s); accept either so a
+    // response-shape tweak degrades to "no image" rather than a crash.
+    const url = task.image_url
+        || (Array.isArray(task.image_urls) && task.image_urls[0])
+        || (task.result && task.result.image_url)
+        || null;
+    if (!url) return { ok: false, status: 502, error: 'meshy: task succeeded but returned no image URL' };
+
+    return {
+        ok: true,
+        status: 200,
+        data: { image_url: url, raw: task },
+        provider: 'meshy',
+        provider_model: body.ai_model,
+        provider_job_id: taskId,
+    };
+}
+
 async function generate(capability, payload) {
     if (!supports(capability)) {
         return { ok: false, status: 400, error: `meshy: unsupported capability "${capability}"` };
     }
+    if (capability === 'image') return runImage(payload);
     return run(payload);
 }
 
@@ -344,9 +451,9 @@ async function health() {
 const adapter = {
     id: 'meshy',
     kind: 'generator',
-    label: 'Meshy (3D)',
+    label: 'Meshy (3D + image)',
     requiresKey: true,
-    capabilities: ['model3d'],
+    capabilities: ['model3d', 'image'],
 
     connection: {
         instructions: 'Meshy uses API keys, not OAuth. Create a key in your Meshy account settings and paste it here.',
@@ -359,9 +466,9 @@ const adapter = {
     health,
 
     // Exported for tests.
-    _internal: { buildRequest, pickModelUrl, pollTask, OPERATIONS, MODEL_FORMAT_PREFERENCE },
+    _internal: { buildRequest, buildImageRequest, runImage, snapMeshyRatio, pickModelUrl, pollTask, OPERATIONS, MODEL_FORMAT_PREFERENCE, IMAGE_MODELS },
 };
 
 // Named `adapter` because providers/index.js autoloads on `mod.adapter` —
 // exporting the object directly would register nothing, silently.
-module.exports = { adapter, buildRequest, pickModelUrl };
+module.exports = { adapter, buildRequest, buildImageRequest, snapMeshyRatio, pickModelUrl, IMAGE_MODELS };

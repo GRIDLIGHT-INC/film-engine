@@ -25,6 +25,19 @@ const { NODE_TYPES, PORT_TYPES, nodeType } = require('./flow-node-types');
 const { handlerFor } = require('./node-handlers');
 const { handleFlows, runContext } = require('../routes/flows');
 
+// Pre-production routes. These are what let an agent do the work that has to
+// happen BEFORE any image is generated: read the screenplay, describe the
+// characters and locations, write the shot list, choose the look. Exposing the
+// flows engine alone left an agent able to run generation and unable to give it
+// anything to be consistent about.
+const { handleProjects } = require('../routes/projects');
+const { handleScripts } = require('../routes/scripts');
+const { handleScenes } = require('../routes/scenes');
+const { handleShots } = require('../routes/shots');
+const { handleCharacters } = require('../routes/characters');
+const { handleLocations } = require('../routes/locations');
+const { handleStoryboard } = require('../routes/storyboard');
+
 const NODE_TOOL_PREFIX = 'node_';
 
 /**
@@ -52,7 +65,7 @@ const _nodeTypeByToolName = new Map(
  * Same shape as the shims in tests/flows-routes.test.js: handleFlows only ever
  * touches method/body on the request and writeHead/end on the response.
  */
-function callRoute(method, urlPath, body) {
+function callRoute(method, urlPath, body, handler) {
     return new Promise(resolve => {
         const parts = urlPath.split('?')[0].split('/').filter(Boolean);
         const req = { method, body: body || {}, url: urlPath, headers: {} };
@@ -76,7 +89,17 @@ function callRoute(method, urlPath, body) {
         };
 
         try {
-            handleFlows(req, res, parts, {});
+            // Production tools name their own handler; flow tools keep the
+            // default. Every route handler in this codebase has the same
+            // (req, res, parts, query) shape, which is what makes one shim
+            // enough -- see ADR-002.
+            const route = handler || handleFlows;
+            const returned = route(req, res, parts, {});
+            // Several handlers are async; an unhandled rejection would hang the
+            // tool call rather than fail it.
+            if (returned && typeof returned.catch === 'function') {
+                returned.catch(err => finish(500, JSON.stringify({ error: err.message })));
+            }
         } catch (err) {
             finish(500, JSON.stringify({ error: err.message }));
         }
@@ -192,6 +215,143 @@ async function callNodeTool(nodeTypeId, args) {
 //
 // `handler` names the function in routes/flows.js this tool reaches, and the
 // test asserts the mapping is total in both directions.
+
+/**
+ * Set 3: the pre-production surface.
+ *
+ * The continuity failure these exist to prevent: a screenplay upload creates
+ * character and location rows that are NAME SKELETONS -- `appearance_prompt` is
+ * an empty string, a location's description is "EXT location (3 mentions)".
+ * buildStoryboardPrompt looks both up, finds nothing to inject, and every
+ * keyframe invents its own Maya on its own street. The fix is not a better
+ * prompt; it is filling those records before generating, and that is exactly
+ * the work an agent is good at and the flows tools could not reach.
+ *
+ * Same dispatch as ROUTE_TOOLS -- through the real handler, so validation,
+ * scene-card checking and asset registration behave identically to HTTP.
+ */
+const PRODUCTION_TOOLS = [
+    {
+        name: 'project_list',
+        handler: handleProjects, method: 'GET',
+        description: 'List every project. Start here to find the one you are working on and its id.',
+        path: () => '/film/projects',
+        schema: {}, required: [],
+    },
+    {
+        name: 'project_get',
+        handler: handleProjects, method: 'GET',
+        description: 'Read one project: title, logline, genre, style_preset, aspect_ratio, fps, resolution and provider choices.',
+        path: a => `/film/projects/${a.project_id}`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'project_update',
+        handler: handleProjects, method: 'PUT',
+        description: 'Update a project. Use style_preset to set the look for every generated frame, and aspect_ratio to set the delivery frame (e.g. "2.39:1").',
+        path: a => `/film/projects/${a.project_id}`,
+        body: a => {
+            const { project_id, ...rest } = a || {};
+            return rest;
+        },
+        schema: {
+            project_id: { type: 'string' },
+            style_preset: { type: 'string', description: 'The visual look applied to every prompt.' },
+            aspect_ratio: { type: 'string', description: 'Delivery frame, e.g. "2.39:1", "16:9".' },
+            logline: { type: 'string' },
+            genre: { type: 'string' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'script_get',
+        handler: handleScripts, method: 'GET',
+        description: 'Read the screenplay. Returns the Fountain source and its parsed elements — read this before writing any shot list.',
+        path: a => `/film/projects/${a.project_id}/scripts`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'scene_list',
+        handler: handleScenes, method: 'GET',
+        description: 'List the scenes parsed from the screenplay, with INT/EXT, location and time of day.',
+        path: a => `/film/projects/${a.project_id}/scenes`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'shot_list',
+        handler: handleShots, method: 'GET',
+        description: 'The full shot list with each shot\u2019s scene card.',
+        path: a => `/film/projects/${a.project_id}/shotlist`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'shot_create',
+        handler: handleShots, method: 'POST',
+        description: 'Create shots for one scene from an array of scene cards. Each card needs shot_code plus camera {shot_type, movement, lens}, lighting {type}, description, duration_seconds, and characters/dialogue where present. Name every character that appears — that is how their appearance reaches the prompt.',
+        path: () => '/film/shots',
+        body: a => ({ scene_id: a.scene_id, cards: a.cards }),
+        schema: {
+            scene_id: { type: 'string' },
+            cards: { type: 'array', description: 'Scene card objects.', items: { type: 'object' } },
+        },
+        required: ['scene_id', 'cards'],
+    },
+    {
+        name: 'character_list',
+        handler: handleCharacters, method: 'GET',
+        description: 'List characters. A newly parsed screenplay leaves appearance_prompt EMPTY — check this before generating anything.',
+        path: a => `/film/projects/${a.project_id}/characters`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'character_update',
+        handler: handleCharacters, method: 'PUT',
+        description: 'Describe a character so every frame draws the same person. appearance_prompt is the field that reaches the image prompt: age, build, hair, wardrobe, distinguishing features.',
+        path: a => `/film/characters/${a.character_id}`,
+        body: a => {
+            const { character_id, ...rest } = a || {};
+            return rest;
+        },
+        schema: {
+            character_id: { type: 'string' },
+            appearance_prompt: { type: 'string', description: 'What this person looks like, in prompt terms.' },
+            description: { type: 'string' },
+            age_range: { type: 'string' },
+        },
+        required: ['character_id'],
+    },
+    {
+        name: 'location_list',
+        handler: handleLocations, method: 'GET',
+        description: 'List locations with their lighting defaults.',
+        path: a => `/film/projects/${a.project_id}/locations`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'location_update',
+        handler: handleLocations, method: 'PUT',
+        description: 'Describe a location so every scene set there looks like the same place — architecture, palette, era, condition.',
+        path: a => `/film/locations/${a.location_id}`,
+        body: a => {
+            const { location_id, ...rest } = a || {};
+            return rest;
+        },
+        schema: {
+            location_id: { type: 'string' },
+            description: { type: 'string', description: 'What this place looks like, in prompt terms.' },
+            lighting_default: { type: 'string' },
+        },
+        required: ['location_id'],
+    },
+    {
+        name: 'storyboard_generate',
+        handler: handleStoryboard, method: 'POST',
+        description: 'Generate a keyframe for every shot. Run this only AFTER characters and locations are described, or each frame invents its own.',
+        path: a => `/film/projects/${a.project_id}/storyboard/generate`,
+        body: () => ({}),
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+];
 
 const ROUTE_TOOLS = [
     {
@@ -389,21 +549,164 @@ function routeToolDefinition(t) {
 }
 
 async function callRouteTool(t, args) {
-    const body = {};
-    for (const key of t.bodyKeys || []) {
-        if (args[key] !== undefined) body[key] = args[key];
+    // Production tools build their body from the args they were given, minus
+    // the path parameters; flow tools enumerate bodyKeys. Both end up at the
+    // same shim so there is still one dispatch path.
+    let body;
+    if (typeof t.body === 'function') {
+        body = t.body(args);
+    } else {
+        body = {};
+        for (const key of t.bodyKeys || []) {
+            if (args[key] !== undefined) body[key] = args[key];
+        }
     }
-    return callRoute(t.method, t.path(args), body);
+    return callRoute(t.method, t.path(args), body, t.handler || undefined);
 }
+
+// ── Set 4: batch tools ──────────────────────────────────────────────────────
+//
+// Every MCP tool call is a permission prompt. The fine-grained surface made a
+// pre-production pass cost roughly ten of them — list, update, list, update,
+// create, create, create, generate — which is an artefact of how the tools were
+// cut, not of the work. These collapse the repetitive middle into one call each
+// while leaving the two that SPEND MONEY (plate generation, storyboard
+// generation) individually gated, because that is where the friction earns its
+// keep.
+//
+// They compose the same route handlers rather than reimplementing anything, so
+// scene-card validation, provider resolution and asset registration behave
+// exactly as they do over HTTP.
+
+const BATCH_TOOLS = [
+    {
+        name: 'production_describe',
+        description:
+            'Describe a whole production in one call: the project look plus every character and location. '
+            + 'This is the step that makes frames look like one film — a parsed screenplay leaves appearance_prompt EMPTY, '
+            + 'and an undescribed character is redrawn from scratch in every shot. Match by name (case-insensitive) or id.',
+        schema: {
+            project_id: { type: 'string' },
+            style_preset: { type: 'string', description: 'The look applied to every generated frame.' },
+            characters: {
+                type: 'array',
+                description: 'Each { name or id, appearance_prompt, description?, age_range? }.',
+                items: { type: 'object' },
+            },
+            locations: {
+                type: 'array',
+                description: 'Each { name or id, description, lighting_default? }.',
+                items: { type: 'object' },
+            },
+        },
+        required: ['project_id'],
+        async run(a) {
+            const out = { project_id: a.project_id, style_preset: null, characters: [], locations: [] };
+
+            if (a.style_preset !== undefined) {
+                const r = await callRoute('PUT', `/film/projects/${a.project_id}`,
+                    { style_preset: a.style_preset }, handleProjects);
+                out.style_preset = r._status < 400 ? 'updated' : `failed: ${JSON.stringify(r.body)}`;
+            }
+
+            // Resolve names to ids once, so the caller can describe by name.
+            const byKind = {
+                characters: { list: `/film/projects/${a.project_id}/characters`, key: 'characters', handler: handleCharacters, base: '/film/characters' },
+                locations: { list: `/film/projects/${a.project_id}/locations`, key: 'locations', handler: handleLocations, base: '/film/locations' },
+            };
+
+            for (const kind of ['characters', 'locations']) {
+                const items = Array.isArray(a[kind]) ? a[kind] : [];
+                if (!items.length) continue;
+
+                const spec = byKind[kind];
+                const listed = await callRoute('GET', spec.list, {}, spec.handler);
+                const existing = (listed.body && listed.body[spec.key]) || [];
+
+                for (const item of items) {
+                    const match = item.id
+                        ? existing.find(e => e.id === item.id)
+                        : existing.find(e => String(e.name || '').toUpperCase() === String(item.name || '').toUpperCase());
+
+                    if (!match) {
+                        out[kind].push({ name: item.name || item.id, status: 'not found' });
+                        continue;
+                    }
+                    const { id, name, ...fields } = item;
+                    const r = await callRoute('PUT', `${spec.base}/${match.id}`, fields, spec.handler);
+                    out[kind].push({
+                        name: match.name,
+                        id: match.id,
+                        status: r._status < 400 ? 'updated' : `failed: ${JSON.stringify(r.body)}`,
+                    });
+                }
+            }
+            return out;
+        },
+    },
+    {
+        name: 'plate_generate_all',
+        description:
+            'Generate the reference plates every shot will attach: a three-view sheet per character, an establishing plate per location, '
+            + 'a product plate per prop. SPENDS CREDITS — roughly 5 per image. Run once after descriptions are written, before storyboards. '
+            + 'Reports style_applied per subject: a look can be refused by provider moderation beside a literal subject description.',
+        schema: {
+            project_id: { type: 'string' },
+            kinds: {
+                type: 'array',
+                description: "Which to generate; defaults to all. Any of 'character', 'location', 'prop'.",
+                items: { type: 'string' },
+            },
+        },
+        required: ['project_id'],
+        async run(a) {
+            const kinds = Array.isArray(a.kinds) && a.kinds.length ? a.kinds : ['character', 'location', 'prop'];
+            const out = { project_id: a.project_id, generated: [], failed: [] };
+
+            const sources = [
+                { kind: 'character', list: `/film/projects/${a.project_id}/characters`, key: 'characters', handler: handleCharacters, path: id => `/film/characters/${id}/refsheet/generate`, routeHandler: handleCharacters },
+                { kind: 'location', list: `/film/projects/${a.project_id}/locations`, key: 'locations', handler: handleLocations, path: id => `/film/locations/${id}/plate/generate`, routeHandler: handleLocations },
+                { kind: 'prop', list: `/film/projects/${a.project_id}/props`, key: 'props', handler: handleLocations, path: id => `/film/props/${id}/plate/generate`, routeHandler: handleLocations },
+            ].filter(src => kinds.includes(src.kind));
+
+            for (const src of sources) {
+                const listed = await callRoute('GET', src.list, {}, src.handler);
+                const subjects = (listed.body && listed.body[src.key]) || [];
+                for (const subject of subjects) {
+                    const r = await callRoute('POST', src.path(subject.id), {}, src.routeHandler);
+                    const entry = { kind: src.kind, name: subject.name, id: subject.id };
+                    if (r._status < 400) {
+                        entry.style_applied = r.body && (r.body.style_applied
+                            ?? (Array.isArray(r.body.views) && r.body.views[0] && r.body.views[0].style_applied));
+                        out.generated.push(entry);
+                    } else {
+                        entry.error = (r.body && (r.body.details || r.body.error)) || `HTTP ${r._status}`;
+                        out.failed.push(entry);
+                    }
+                }
+            }
+            return out;
+        },
+    },
+];
 
 // ── The surface ─────────────────────────────────────────────────────────────
 
+const ALL_ROUTE_TOOLS = [...ROUTE_TOOLS, ...PRODUCTION_TOOLS];
+
 const _tools = [
     ...Object.entries(NODE_TYPES).map(([id, def]) => nodeToolFor(id, def)),
-    ...ROUTE_TOOLS.map(routeToolDefinition),
+    ...ALL_ROUTE_TOOLS.map(routeToolDefinition),
+    ...BATCH_TOOLS.map(t => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: { type: 'object', properties: t.schema, ...(t.required.length ? { required: t.required } : {}) },
+        _kind: 'batch',
+    })),
 ];
+const _batchByName = new Map(BATCH_TOOLS.map(t => [t.name, t]));
 const _byName = new Map(_tools.map(t => [t.name, t]));
-const _routeByName = new Map(ROUTE_TOOLS.map(t => [t.name, t]));
+const _routeByName = new Map(ALL_ROUTE_TOOLS.map(t => [t.name, t]));
 
 /** Tool definitions as MCP wants them (internal `_` fields stripped). */
 function listTools() {
@@ -426,6 +729,13 @@ async function callTool(name, args) {
     if (!tool) return { unknownTool: true, error: `unknown tool '${name}'` };
 
     const a = args || {};
+    if (tool._kind === 'batch') {
+        try {
+            return await _batchByName.get(name).run(a);
+        } catch (err) {
+            return { error: `${name}: ${err.message}` };
+        }
+    }
     if (tool._kind === 'route') return callRouteTool(_routeByName.get(name), a);
     return callNodeTool(_nodeTypeByToolName.get(name), a);
 }
@@ -457,5 +767,5 @@ function isFailure(result) {
 module.exports = {
     listTools, hasTool, callTool, isFailure, presentResult,
     toolNameForNodeType, normalizeInputs, callRoute,
-    NODE_TOOL_PREFIX, ROUTE_TOOLS, SSE_EXCEPTION,
+    NODE_TOOL_PREFIX, ROUTE_TOOLS, PRODUCTION_TOOLS, BATCH_TOOLS, ALL_ROUTE_TOOLS, SSE_EXCEPTION,
 };

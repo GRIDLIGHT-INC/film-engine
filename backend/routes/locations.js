@@ -14,6 +14,7 @@ const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const { resolve } = require('../lib/providers');
+const { generatePlate } = require('../lib/reference-plates');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IMAGE_ENDPOINT = '/image';
@@ -22,6 +23,63 @@ function parseProjectConfig(projectId) {
     const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
     if (!row) return {};
     try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
+}
+
+/**
+ * Generate the reference plate for one location or prop.
+ *
+ * Characters have had this since FILM-014; locations and props never did, so
+ * lib/reference-images.js could rank them as referenceable kinds while nothing
+ * was able to produce a plate to rank. Both kinds share one implementation in
+ * lib/reference-plates.js — a second copy is how the character path acquired a
+ * moderation fallback the others would not have inherited.
+ */
+async function generateSubjectPlate(req, res, kind, subjectId) {
+    const { PLATE_KINDS } = require('../lib/reference-plates');
+    const spec = PLATE_KINDS[kind];
+    const subject = db.prepare(`SELECT * FROM ${spec.table} WHERE id = ?`).get(subjectId);
+    if (!subject) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: `${kind} not found` }));
+    }
+
+    const project = db.prepare('SELECT id, style_preset, aspect_ratio FROM film_projects WHERE id = ?')
+        .get(subject.project_id);
+    if (!project) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Project not found' }));
+    }
+
+    const provider = resolve('image', parseProjectConfig(subject.project_id));
+    const result = await generatePlate({
+        projectId: project.id,
+        kind,
+        subject,
+        stylePreset: project.style_preset,
+        aspectRatio: project.aspect_ratio,
+        provider,
+    });
+
+    if (!result.ok) {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Plate generation failed', details: result.error, kind, [`${kind}_id`]: subjectId }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ kind, [`${kind}_id`]: subjectId, name: subject.name, ...result }));
+}
+
+/** The current plate, if one has been generated. */
+function getSubjectPlate(res, kind, subjectId) {
+    const { PLATE_KINDS } = require('../lib/reference-plates');
+    const spec = PLATE_KINDS[kind];
+    const asset = db.prepare(
+        `SELECT id, file_name, provider, provider_model, metadata, created_at
+         FROM film_assets WHERE ${spec.fkColumn} = ? AND asset_type = ?
+         ORDER BY created_at DESC LIMIT 1`
+    ).get(subjectId, spec.assetType);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ kind, [`${kind}_id`]: subjectId, plate: asset || null }));
 }
 
 function handleLocations(req, res, urlParts, query) {
@@ -39,6 +97,23 @@ function handleLocations(req, res, urlParts, query) {
         if (!UUID_RE.test(projectId)) return badReq(res, 'Invalid project ID');
         if (req.method === 'GET') return listProps(req, res, projectId);
         if (req.method === 'POST') return createProp(req, res, projectId);
+    }
+
+    // /film/locations/:id/plate/generate — the canonical reference plate a shot
+    // attaches as an image, distinct from /image which is a one-off render.
+    if (urlParts[1] === 'locations' && urlParts[2] && urlParts[3] === 'plate') {
+        const locId = urlParts[2];
+        if (!UUID_RE.test(locId)) return badReq(res, 'Invalid location ID');
+        if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'location', locId);
+        if (req.method === 'GET') return getSubjectPlate(res, 'location', locId);
+    }
+
+    // /film/props/:id/plate/generate
+    if (urlParts[1] === 'props' && urlParts[2] && urlParts[3] === 'plate') {
+        const propId = urlParts[2];
+        if (!UUID_RE.test(propId)) return badReq(res, 'Invalid prop ID');
+        if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'prop', propId);
+        if (req.method === 'GET') return getSubjectPlate(res, 'prop', propId);
     }
 
     // /film/locations/:id/image[/generate]
@@ -159,7 +234,9 @@ function createLocation(req, res, projectId) {
         (body.description || '').slice(0, 5000),
         (body.reference_prompt || '').slice(0, 2000),
         JSON.stringify(body.reference_images || []),
-        (body.lighting_default || 'natural').slice(0, 50),
+        // 500, not 50: this reaches the prompt, and a lighting note worth
+        // writing does not fit in fifty characters.
+        (body.lighting_default || 'natural').slice(0, 500),
         (body.time_of_day_default || '').slice(0, 50),
         (body.atmosphere_notes || '').slice(0, 2000),
         (body.sound_notes || '').slice(0, 2000),

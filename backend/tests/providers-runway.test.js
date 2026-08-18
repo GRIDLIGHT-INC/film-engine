@@ -267,3 +267,64 @@ test('adapter refuses unsupported capabilities and missing credentials cleanly',
     assert.equal(bad.status, 400);
     assert.match(bad.error, /unsupported capability/);
 });
+
+describe('runway image ratio (regression)', () => {
+    // `ratio` is REQUIRED on text_to_image, and this adapter shipped omitting it
+    // for every caller that did not pass an explicit width/height pair -- so
+    // every image generation 400'd before reaching a model. The mock-server
+    // tests could not see it: a mock accepts whatever body it is handed, and
+    // only the real validator knows the field is mandatory. That is the gap
+    // this closes, and why the assertion is "always present and always legal"
+    // rather than a check of one example payload.
+    const { buildImageRequest, IMAGE_RATIOS, snapImageRatio } = runway;
+
+    // Every shape a caller in this codebase actually produces: nothing at all,
+    // a pixel pair, a Runway ratio, a project aspect_ratio preset, and junk.
+    const CALLER_SHAPES = [
+        { prompt: 'x' },
+        { prompt: 'x', ratio: '1280:720' },
+        { prompt: 'x', ratio: '1920:1080' },
+        { prompt: 'x', ratio: '16:9' },
+        { prompt: 'x', ratio: '9:16' },
+        { prompt: 'x', ratio: '2.39:1' },
+        { prompt: 'x', ratio: '1:1' },
+        { prompt: 'x', aspect_ratio: '4:3' },
+        { prompt: 'x', width: 1080, height: 1920 },
+        { prompt: 'x', width: 1920, height: 1080 },
+        { prompt: 'x', ratio: '' },
+        { prompt: 'x', ratio: 'garbage' },
+        { prompt: 'x', ratio: null },
+    ];
+
+    it('every caller shape yields a ratio Runway will accept', () => {
+        const bad = [];
+        for (const shape of CALLER_SHAPES) {
+            const { ratio } = buildImageRequest(shape).body;
+            if (!ratio) bad.push(`${JSON.stringify(shape)} -> no ratio at all (400s on the real API)`);
+            else if (!IMAGE_RATIOS.includes(ratio)) bad.push(`${JSON.stringify(shape)} -> '${ratio}' is not accepted`);
+        }
+        assert.deepStrictEqual(bad, [], bad.join('\n'));
+    });
+
+    it('an explicitly accepted ratio is passed through untouched', () => {
+        for (const ratio of IMAGE_RATIOS) {
+            assert.strictEqual(buildImageRequest({ prompt: 'x', ratio }).body.ratio, ratio,
+                `${ratio} is documented as accepted but was rewritten`);
+        }
+    });
+
+    it('a named aspect snaps to the nearest accepted ratio, not the default', () => {
+        // The failure worth catching is silently collapsing everything to 16:9:
+        // a portrait or scope request would then be delivered as landscape.
+        assert.strictEqual(snapImageRatio('9:16'), '1080:1920', 'portrait collapsed to landscape');
+        assert.strictEqual(snapImageRatio('1:1'), '1024:1024', 'square collapsed to landscape');
+        assert.strictEqual(snapImageRatio('2.39:1'), '1808:768', 'scope collapsed to 16:9');
+    });
+
+    it('the accepted set is the one Runway publishes, and is non-empty', () => {
+        assert.ok(Array.isArray(IMAGE_RATIOS) && IMAGE_RATIOS.length >= 16);
+        for (const r of IMAGE_RATIOS) {
+            assert.match(r, /^\d+:\d+$/, `'${r}' is not a WIDTH:HEIGHT pair`);
+        }
+    });
+});

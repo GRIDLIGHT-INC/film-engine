@@ -129,6 +129,21 @@ async function checkCapability(capability, projectConfig, cache) {
 
     const out = { capability, requested, configured, effective, verdict: 'go', reasons: [], fixes: [] };
 
+    // A provider that exists but does not serve this capability falls back just
+    // as silently as a deleted one -- and is harder to spot, because the
+    // fallback target may itself be perfectly healthy. Checking only the
+    // EFFECTIVE adapter (below) misses it entirely: point video at meshy and
+    // the report reads 'go' as long as gridlight happens to be up.
+    const requestedAdapter = requested ? getAdapter(requested) : null;
+    const requestedServes = !requestedAdapter
+        || (requestedAdapter.supports && requestedAdapter.supports(capability));
+
+    if (requested && requestedExists && !requestedServes) {
+        out.verdict = 'blocked';
+        out.reasons.push(`provider '${requested}' is configured for '${capability}' but does not serve it; requests silently fall back to '${effective}'`);
+        out.fixes.push(`repoint ${capability} at a provider that serves it`);
+    }
+
     if (requested && !requestedExists) {
         out.verdict = 'blocked';
         out.reasons.push(`provider '${requested}' is configured but is not registered; requests silently fall back to '${effective}'`);

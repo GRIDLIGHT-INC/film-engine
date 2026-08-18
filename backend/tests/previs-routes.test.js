@@ -52,16 +52,27 @@ function call(method, urlPath, body) {
     return new Promise(resolve => {
         const parts = urlPath.split('?')[0].split('/').filter(Boolean);
         const req = { method, body: body || {} };
-        const res = {
-            statusCode: 200,
-            writeHead(code) { this.statusCode = code; return this; },
-            end(payload) {
-                let parsed = payload;
-                try { parsed = JSON.parse(payload); } catch (_) { /* keep raw */ }
-                resolve({ status: this.statusCode, body: parsed });
-            },
-        };
-        Promise.resolve(handlePrevis(req, res, parts, {})).catch(err => resolve({ status: 500, body: { error: err.message } }));
+
+        // A real Writable, not an object with an end(). Routes that serve a
+        // file stream it with pipe(), which needs a stream — a hand-rolled
+        // stub throws "dest.on is not a function" and reads as a broken route.
+        const { Writable } = require('stream');
+        const chunks = [];
+        const res = new Writable({
+            write(chunk, _enc, next) { chunks.push(chunk); next(); },
+        });
+        res.statusCode = 200;
+        res.writeHead = function (code) { this.statusCode = code; return this; };
+        res.setHeader = function () {};
+        res.on('finish', () => {
+            const raw = Buffer.concat(chunks).toString();
+            let parsed = raw;
+            try { parsed = JSON.parse(raw); } catch (_) { /* binary or plain */ }
+            resolve({ status: res.statusCode, body: parsed, bytes: Buffer.concat(chunks).length });
+        });
+
+        Promise.resolve(handlePrevis(req, res, parts, {}))
+            .catch(err => resolve({ status: 500, body: { error: err.message } }));
     });
 }
 
@@ -456,4 +467,103 @@ test('a drag is interpreted through the view it started in', () => {
         'mousemove recomputes the projection instead of reusing the frozen one');
     assert.ok(/PREVIS\.dragView = null/.test(handler),
         'the frozen projection is never released');
+});
+
+// ── Exporting the previs ────────────────────────────────────────────────────
+
+// A 1x1 PNG, base64. Small enough to inline, real enough to decode.
+const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const TINY_WEBM = 'data:video/webm;base64,GkXfo0AgQoaBAULygQRC84EIQoKEd2VibUKHgQRChoECGFOAZwEAAAAAAAHTEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHGTbuMU6uEElTDZ1OsggEXTbuMU6uEHFO7a1OsggG97AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+
+test('both previs exports round-trip to disk and to the registry', async () => {
+    const kinds = [
+        { kind: 'frame', data: TINY_PNG, ext: 'png' },
+        { kind: 'move', data: TINY_WEBM, ext: 'webm' },
+    ];
+    const failures = [];
+
+    for (const { kind, data, ext } of kinds) {
+        const { shotId, projectId } = makeShot();
+        const res = await call('POST', `/film/shots/${shotId}/previs/export`, { kind, data });
+        if (res.status !== 200) { failures.push(`${kind}: ${res.status} ${JSON.stringify(res.body)}`); continue; }
+
+        if (!res.body.file_name || !res.body.file_name.endsWith(`.${ext}`)) {
+            failures.push(`${kind}: filename ${res.body.file_name}`);
+        }
+        if (!fs.existsSync(res.body.file_path)) failures.push(`${kind}: nothing written to disk`);
+
+        const asset = db.prepare('SELECT * FROM film_assets WHERE id = ?').get(res.body.asset_id);
+        if (!asset) { failures.push(`${kind}: no asset registered`); continue; }
+        if (asset.project_id !== projectId) failures.push(`${kind}: asset on the wrong project`);
+        if (asset.shot_id !== shotId) failures.push(`${kind}: asset not linked to the shot`);
+
+        // The registry's CHECK cannot be widened in place, so previs media is
+        // typed 'other' with a metadata discriminator — the same shape the 3D
+        // work uses. Anything else would fail the constraint at insert.
+        let meta = {};
+        try { meta = JSON.parse(asset.metadata || '{}'); } catch (_) { /* */ }
+        if (meta.kind !== `previs_${kind}`) failures.push(`${kind}: metadata.kind is ${meta.kind}`);
+    }
+    assert.deepStrictEqual(failures, [], failures.join('; '));
+});
+
+test('re-exporting replaces rather than piling up versions', async () => {
+    const { shotId } = makeShot();
+    await call('POST', `/film/shots/${shotId}/previs/export`, { kind: 'frame', data: TINY_PNG });
+    await call('POST', `/film/shots/${shotId}/previs/export`, { kind: 'frame', data: TINY_PNG });
+
+    const rows = db.prepare(
+        "SELECT COUNT(*) n FROM film_assets WHERE shot_id = ? AND asset_type = 'other'").get(shotId);
+    assert.strictEqual(rows.n, 1, 'a second export left two rows for one frame');
+});
+
+test('an export names the blocking it came from', async () => {
+    // A frame with no record of the lens and move that produced it is a picture
+    // nobody can reproduce.
+    const { shotId } = makeShot();
+    await call('PUT', `/film/shots/${shotId}/previs`, { ...blockingFixture(), movement: 'push-in', rig: 'dolly' });
+    const res = await call('POST', `/film/shots/${shotId}/previs/export`, { kind: 'frame', data: TINY_PNG });
+
+    const asset = db.prepare('SELECT metadata FROM film_assets WHERE id = ?').get(res.body.asset_id);
+    const meta = JSON.parse(asset.metadata || '{}');
+    assert.strictEqual(meta.movement, 'push-in');
+    assert.strictEqual(meta.rig, 'dolly');
+    assert.ok(meta.focal_mm > 0, 'no lens recorded');
+    assert.ok(meta.sensor_id, 'no sensor recorded');
+});
+
+test('rubbish is refused rather than written', async () => {
+    const { shotId } = makeShot();
+    const cases = [
+        [{ kind: 'hologram', data: TINY_PNG }, /kind/i],
+        [{ kind: 'frame', data: 'not-a-data-url' }, /data/i],
+        [{ kind: 'frame', data: 'data:text/html;base64,PGh0bWw+' }, /image|video|type/i],
+        [{ kind: 'frame' }, /data/i],
+    ];
+    for (const [body, pattern] of cases) {
+        const res = await call('POST', `/film/shots/${shotId}/previs/export`, body);
+        assert.strictEqual(res.status, 400, `accepted ${JSON.stringify(body).slice(0, 50)}`);
+        assert.ok(pattern.test(JSON.stringify(res.body)), `unhelpful error: ${JSON.stringify(res.body)}`);
+    }
+});
+
+test('an oversized payload is refused before it is decoded', async () => {
+    // A canvas recording can be tens of megabytes; the limit exists so a
+    // runaway recording cannot fill the disk.
+    const { shotId } = makeShot();
+    const huge = 'data:image/png;base64,' + 'A'.repeat(80 * 1024 * 1024);
+    const res = await call('POST', `/film/shots/${shotId}/previs/export`, { kind: 'frame', data: huge });
+    assert.strictEqual(res.status, 413);
+});
+
+test('previs media is served, and cannot escape its project directory', async () => {
+    const { shotId, projectId } = makeShot();
+    const saved = await call('POST', `/film/shots/${shotId}/previs/export`, { kind: 'frame', data: TINY_PNG });
+
+    const ok = await call('GET', `/film/previs/media/${projectId}/${saved.body.file_name}`);
+    assert.notStrictEqual(ok.status, 404, 'the media route does not dispatch');
+
+    const escape = await call('GET', `/film/previs/media/${projectId}/..%2F..%2Fetc%2Fpasswd`);
+    assert.ok(escape.status === 400 || escape.status === 404,
+        `path traversal returned ${escape.status}`);
 });

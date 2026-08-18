@@ -3,6 +3,7 @@
  * POST/GET/PUT/DELETE /film/projects
  */
 const { db, generateId } = require('../db/database');
+const { defaultProviderConfig } = require('../lib/providers');
 const { validateProjectSettings, resolveDeliveryPreset } = require('../lib/project-presets');
 
 // UUID v4 format check
@@ -143,7 +144,12 @@ function createProject(req, res) {
     const title = body.title.trim().slice(0, 500);
     const logline = (body.logline || '').trim().slice(0, 2000);
     const genre = (body.genre || '').trim().slice(0, 100);
-    const style_preset = (body.style_preset || '').trim().slice(0, 100);
+    // 2000, not 100. style_preset stopped being an enum key the moment the
+    // prompt builder began passing unknown values through verbatim: a director
+    // describing their own look ("Guillermo del Toro gothic: teal/amber, wet
+    // streets, anamorphic...") was silently cut mid-word and the fragment baked
+    // into every frame. The column is TEXT; the cap was never a storage limit.
+    const style_preset = (body.style_preset || '').trim().slice(0, 2000);
     const status = VALID_STATUSES.includes(body.status) ? body.status : 'concept';
     const target_resolution = settingsFields.target_resolution || '1920x1080';
     const target_fps = settingsFields.target_fps !== undefined ? Number(settingsFields.target_fps) : 24;
@@ -157,11 +163,17 @@ function createProject(req, res) {
     db.prepare(`
         INSERT INTO film_projects (id, title, logline, genre, style_preset, status,
             target_resolution, target_fps, aspect_ratio, aspect_ratio_custom,
-            color_space, delivery_format, timecode_start, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            color_space, delivery_format, timecode_start, provider_config, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, title, logline, genre, style_preset, status,
         target_resolution, target_fps, aspect_ratio, aspect_ratio_custom,
-        color_space, delivery_format, timecode_start, now, now);
+        color_space, delivery_format, timecode_start,
+        // Written at creation rather than left empty. Resolve-time
+        // preference already makes a blank config work, but a blank column
+        // shows the user nothing in Provider Settings while generation
+        // quietly uses something else.
+        JSON.stringify(defaultProviderConfig()),
+        now, now);
 
     const row = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(id);
 
@@ -194,7 +206,7 @@ function updateProject(req, res, id) {
     }
     if (body.style_preset !== undefined) {
         fields.push('style_preset = ?');
-        values.push(String(body.style_preset).trim().slice(0, 100));
+        values.push(String(body.style_preset).trim().slice(0, 2000));
     }
     if (body.status !== undefined && VALID_STATUSES.includes(body.status)) {
         fields.push('status = ?');

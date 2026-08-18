@@ -416,11 +416,25 @@ function createCostume(req, res, charId) {
 
 const REFSHEET_VIEWS = ['front', 'side', 'back'];
 
-function buildRefSheetPrompt(character, view) {
+/**
+ * @param {string} [stylePreset] the project's look
+ *
+ * The sheet is the continuity ANCHOR: once it exists, every shot references it,
+ * so whatever look it happens to render in propagates to the whole film. Left
+ * styleless it came back as flat cartoon illustration — correct wardrobe,
+ * wrong medium — and referencing that would have pulled a live-action gothic
+ * piece toward line art. 'clean lines' made it worse: a drawing instruction in
+ * a prompt meant to describe a person.
+ */
+function buildRefSheetPrompt(character, view, stylePreset) {
     const parts = [];
     parts.push('character reference sheet');
     parts.push(`${view} view`);
-    parts.push('full body, T-pose, white background, clean lines');
+    // 'clean lines' only when nothing else defines the medium; with a style it
+    // fights the look the project asked for.
+    parts.push(stylePreset && String(stylePreset).trim()
+        ? 'full body, T-pose, neutral expression, plain seamless background'
+        : 'full body, T-pose, white background, clean lines');
 
     if (character.appearance_prompt) parts.push(character.appearance_prompt);
     if (character.gender) parts.push(character.gender);
@@ -433,6 +447,8 @@ function buildRefSheetPrompt(character, view) {
     // Add LoRA/TI tokens if available
     if (character.lora_id) parts.push(`<lora:${character.lora_id}:0.8>`);
     if (character.ti_token) parts.push(character.ti_token);
+
+    if (stylePreset && String(stylePreset).trim()) parts.push(String(stylePreset).trim());
 
     return parts.join(', ');
 }
@@ -461,7 +477,10 @@ async function generateRefSheet(req, res, charId) {
     const imageProvider = resolve('image', parseProjectConfig(ch.project_id));
 
     for (const view of views) {
-        const prompt = buildRefSheetPrompt(ch, view);
+        const project = db.prepare('SELECT style_preset FROM film_projects WHERE id = ?').get(ch.project_id);
+        const projectStyle = project && project.style_preset;
+        let styleApplied = !!(projectStyle && String(projectStyle).trim());
+        const prompt = buildRefSheetPrompt(ch, view, projectStyle);
         const negativePrompt = 'blurry, low quality, distorted, multiple characters, background clutter';
 
         const payload = {
@@ -476,7 +495,24 @@ async function generateRefSheet(req, res, charId) {
         };
 
         try {
-            const result = await imageProvider.generate('image', payload, { timeout: 300000 });
+            let result = await imageProvider.generate('image', payload, { timeout: 300000 });
+
+            // A style written for the FILM can be refused on a reference sheet:
+            // it lands beside a full-body physical description, and the pair
+            // trips provider moderation where either alone passes. The sheet's
+            // job is identity — wardrobe, face, build — and the look can come
+            // from the shot prompt at generation time, so a styleless sheet is
+            // far better than no sheet. Retried once, and reported: silently
+            // dropping the style is how a director ends up anchoring a whole
+            // film to a look nobody chose.
+            if (!result.ok && styleApplied && /moderation/i.test(String(result.error || ''))) {
+                result = await imageProvider.generate('image', {
+                    ...payload,
+                    prompt: buildRefSheetPrompt(ch, view, null),
+                }, { timeout: 300000 });
+                if (result.ok) styleApplied = false;
+            }
+
             if (!result.ok) {
                 results.push({ view, status: 'failed', error: result.error });
                 continue;
@@ -494,17 +530,23 @@ async function generateRefSheet(req, res, charId) {
 
             const assetId = generateId();
             db.prepare(
+                // character_id goes in its own column, not only in metadata.
+                // The column existed and was left NULL, so anything selecting
+                // "this character's reference plates" found nothing — including
+                // the storyboard route's reference lookup, which would then
+                // silently fall back to prose and lose the continuity the sheet
+                // was generated to provide.
                 `INSERT INTO film_assets (
-                    id, project_id, asset_type, file_path, file_name, format, mime_type, version, metadata,
+                    id, project_id, character_id, asset_type, file_path, file_name, format, mime_type, version, metadata,
                     provider, provider_model, provider_job_id, license_source, license_status
                  )
-                 VALUES (?, ?, 'character_sheet', ?, ?, 'png', 'image/png', 1, ?, ?, ?, ?, 'generated', 'generated')`
+                 VALUES (?, ?, ?, 'character_sheet', ?, ?, 'png', 'image/png', 1, ?, ?, ?, ?, 'generated', 'generated')`
             ).run(
-                assetId, ch.project_id, filePath, filename, JSON.stringify({ character_id: charId, view }),
+                assetId, ch.project_id, charId, filePath, filename, JSON.stringify({ character_id: charId, view }),
                 result.provider || imageProvider.id, result.provider_model || '', result.provider_job_id || ''
             );
 
-            results.push({ view, status: 'complete', image_url: getFileUrl('refsheets', ch.project_id, filename) });
+            results.push({ view, status: 'complete', style_applied: styleApplied, image_url: getFileUrl('refsheets', ch.project_id, filename) });
         } catch (err) {
             if (err.message.includes('ECONNREFUSED')) {
                 db.prepare('UPDATE film_refsheet_jobs SET status = ?, error_message = ? WHERE id = ?')

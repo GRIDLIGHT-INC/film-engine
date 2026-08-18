@@ -69,7 +69,57 @@ function list() {
  * because resolveId() still honours it the moment a catalog provider is added
  * back, and an entry naming an unregistered provider would silently do nothing.
  */
-const PREFERRED_WHEN_CONFIGURED = {};
+/**
+ * What a capability resolves to when a project has said nothing.
+ *
+ * This table existed, was consulted on every resolve, was documented, and was
+ * EMPTY -- so it had never once fired. Every unconfigured capability fell to
+ * DEFAULT_PROVIDER, meaning a project created today pointed all eleven at a
+ * local Gridlight service whether or not it was running and whether or not a
+ * credentialed hosted adapter was sitting in the registry beside it. The only
+ * symptom was a connection refused, at generation time, per capability.
+ *
+ * A preference only applies when the named provider actually holds a
+ * credential (see resolveId), so this cannot swap a working local service for
+ * an unusable hosted one. An explicit per-project choice still wins over it,
+ * including choosing Gridlight back.
+ *
+ * Only capabilities with a non-Gridlight adapter appear. lipsync, post and
+ * stock have none, which is a gap in coverage rather than a gap in this table
+ * -- tests/pipeline-readiness.test.js asserts that distinction from the
+ * registry rather than from this comment.
+ */
+const PREFERRED_WHEN_CONFIGURED = {
+    // Text goes to Claude while Gridlight's /chat/intelligent is unusable: its
+    // routing sends every question through Qdrant or Neo4j before it reaches a
+    // model, so with no vector store up it 500s regardless of payload.
+    llm: 'anthropic',
+    image: 'openai',
+    video: 'runway',
+    music: 'elevenlabs',
+    voice: 'elevenlabs',
+    sfx: 'elevenlabs',
+    ambient: 'elevenlabs',
+    model3d: 'meshy',
+};
+
+/**
+ * The configuration a new project should be created with.
+ *
+ * Resolve-time preference already makes an empty config work, but an empty
+ * column also makes the Provider Settings panel show nothing while generation
+ * quietly uses something -- so the row is written with what it will actually
+ * do. Derived from the same table, filtered to what is credentialed now, so a
+ * project created before a key is added does not claim a provider it cannot
+ * reach.
+ */
+function defaultProviderConfig() {
+    const config = {};
+    for (const [capability, id] of Object.entries(PREFERRED_WHEN_CONFIGURED)) {
+        if (isProviderConfigured(id)) config[capability] = id;
+    }
+    return config;
+}
 
 function resolveId(capability, projectConfig) {
     const cfg = projectConfig || {};
@@ -156,4 +206,4 @@ function resolveGenerator(capability, projectConfig) {
 register(gridlightAdapter);
 _autoload();
 
-module.exports = { register, get, list, resolve, resolveId, resolveGenerator, isProviderConfigured, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };
+module.exports = { register, get, list, resolve, resolveId, resolveGenerator, isProviderConfigured, defaultProviderConfig, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };
