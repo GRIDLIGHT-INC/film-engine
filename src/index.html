@@ -4746,7 +4746,12 @@
                 <h2>Previs</h2>
                 <div style="display:flex;gap:8px;align-items:center;">
                     <select id="previsShotSelect" style="min-width:220px;" onchange="previsOpenShot(this.value)"></select>
+                    <span id="previsApprovalBadge" class="tag" style="display:none;"></span>
+                    <button class="btn btn-secondary" onclick="previsFromCard()" data-tooltip="Set the stage from what the scene card already says — framing, lens, movement" data-tooltip-pos="bottom">From card</button>
                     <button class="btn btn-secondary" onclick="previsSolve()">Solve framing</button>
+                    <button class="btn btn-secondary" onclick="previsPreviewFrame()" data-tooltip="See the prompt this angle would generate. Costs nothing." data-tooltip-pos="bottom">Preview frame</button>
+                    <button class="btn btn-secondary" onclick="previsApplyToCard()" data-tooltip="Write this angle back onto the scene card" data-tooltip-pos="bottom">Apply to card</button>
+                    <button class="btn btn-secondary" onclick="previsApprove()" id="previsApproveBtn" data-tooltip="Sign off this angle. Restaging afterwards blocks generation until you re-approve." data-tooltip-pos="bottom">Approve</button>
                     <button class="btn btn-secondary" onclick="previsPlay()" id="previsPlayBtn">Play move</button>
                     <button class="btn btn-secondary" onclick="previsExportFrame()" id="previsFrameBtn">Save frame</button>
                     <button class="btn btn-secondary" onclick="previsExportMove()" id="previsRecBtn">Record move</button>
@@ -4771,6 +4776,13 @@
                     <canvas id="previsCamera"></canvas>
                     <div class="previs-label">Camera</div>
                     <div class="previs-readout" id="previsCameraReadout"></div>
+                    <!-- The frame that was actually generated, over the frame
+                         being blocked. Comparing them is the whole question:
+                         is the shot I staged the shot I got? -->
+                    <div id="previsKeyframePanel" style="display:none;position:absolute;right:8px;bottom:8px;width:38%;max-width:280px;">
+                        <img id="previsKeyframeImg" style="width:100%;display:block;border:1px solid var(--gl-border,rgba(255,255,255,.2));border-radius:4px;">
+                        <div class="text-sm text-muted" style="text-align:center;">generated frame</div>
+                    </div>
                 </div>
 
                 <aside class="previs-inspector">
@@ -4843,6 +4855,10 @@
                     </div>
 
                     <div id="previsWarnings"></div>
+                    <div class="card mt-16" id="previsPreviewCard" style="display:none;">
+                        <h3 class="mb-8" style="font-size:13px;">Frame preview</h3>
+                        <div id="previsPreviewBody" class="text-sm"></div>
+                    </div>
                     <div class="text-sm text-muted mt-16" id="previsStatus"></div>
                 </aside>
             </div>
@@ -7466,11 +7482,152 @@
             t.apertures.map(a => `<option value="${a}"${a === 2.8 ? ' selected' : ''}>f/${a}</option>`).join('');
     }
 
+    /**
+     * Seed the stage from what was written.
+     *
+     * The entry point of the loop. /previs/solve computes a camera position but
+     * takes the framing and lens from the INSPECTOR, so a shot whose card
+     * already says "close-up on a 50" made you retype both before the 3D view
+     * showed anything true. Overwrite is asked for, never assumed: blocking is
+     * hand-made work and re-seeding is exactly the action that would bin it.
+     */
+    async function previsFromCard() {
+        if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
+        let overwrite = false;
+        try {
+            const res = await api(`/shots/${PREVIS.shotId}/previs/from-card`, {
+                method: 'POST', body: JSON.stringify({ overwrite: false }),
+            });
+            PREVIS.blocking = res.blocking;
+        } catch (err) {
+            if (!/already blocked/i.test(err.message)) return previsStatus('From card failed: ' + err.message);
+            if (!confirm('This shot is already blocked. Replace it with the scene card version?')) return;
+            overwrite = true;
+            try {
+                await api(`/shots/${PREVIS.shotId}/previs/from-card`, {
+                    method: 'POST', body: JSON.stringify({ overwrite: true }),
+                });
+            } catch (e2) { return previsStatus('From card failed: ' + e2.message); }
+        }
+        await previsOpenShot(PREVIS.shotId);
+        previsStatus(overwrite ? 'Stage reseeded from the scene card.' : 'Stage set from the scene card.');
+    }
+
+    /**
+     * The frame this angle would generate — as a prompt, not as a picture.
+     *
+     * Costs nothing, which is the point: trying the 85 and then the 24 should
+     * be free until you have decided. Generating each candidate to find out is
+     * how exploring a shot becomes something you ration.
+     */
+    async function previsPreviewFrame() {
+        if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
+        const card = document.getElementById('previsPreviewCard');
+        const body = document.getElementById('previsPreviewBody');
+        try {
+            const res = await api(`/shots/${PREVIS.shotId}/previs/to-storyboard`, {
+                method: 'POST', body: JSON.stringify({}),
+            });
+            const p = (res.payload || {});
+            card.style.display = '';
+            body.innerHTML = '<p style="line-height:1.5;">' + esc(p.prompt || '(no prompt)') + '</p>'
+                + '<p class="text-muted" style="margin-top:8px;">'
+                + (res.blocked ? 'Built from your blocking.' : 'No blocking — built from the scene card.')
+                + ' ' + String(p.prompt || '').length + ' chars.</p>';
+            previsStatus('Frame preview built. Nothing was generated.');
+        } catch (err) {
+            if (/STALE_APPROVAL|changed after it was approved/i.test(err.message)) {
+                card.style.display = '';
+                body.innerHTML = '<p class="text-muted">This shot was approved and then restaged. '
+                    + 'Re-approve it, or generate anyway from the shot page.</p>';
+                return previsStatus('Approved angle no longer matches the stage.');
+            }
+            previsStatus('Preview failed: ' + err.message);
+        }
+    }
+
+    /**
+     * Keep this angle: write it back onto the scene card.
+     *
+     * Only the camera facets the stage determines. The action, characters and
+     * dialogue are what the scene IS, and previs has no opinion about them.
+     */
+    async function previsApplyToCard() {
+        if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
+        try {
+            const res = await api(`/shots/${PREVIS.shotId}/previs/apply`, { method: 'POST', body: JSON.stringify({}) });
+            const a = res.camera_after || {};
+            previsStatus(`Card updated — ${[a.shot_type, a.lens, a.movement].filter(Boolean).join(', ')}.`);
+        } catch (err) {
+            previsStatus('Apply failed: ' + err.message);
+        }
+    }
+
+    /**
+     * "This is the one."
+     *
+     * Stores a fingerprint rather than a flag, so restaging afterwards is
+     * detectable. Toggles, because withdrawing a sign-off is a normal part of
+     * changing your mind and should not need a different screen.
+     */
+    async function previsApprove() {
+        if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
+        const approved = PREVIS.approval && PREVIS.approval.approved;
+        try {
+            await api(`/shots/${PREVIS.shotId}/previs/approve`, {
+                method: approved ? 'DELETE' : 'POST',
+                body: approved ? undefined : JSON.stringify({}),
+            });
+            const res = await api(`/shots/${PREVIS.shotId}/previs`);
+            PREVIS.approval = res.approval || null;
+            previsRenderApproval();
+            previsStatus(approved ? 'Approval withdrawn — explore freely.' : 'Angle approved.');
+        } catch (err) {
+            previsStatus('Approve failed: ' + err.message);
+        }
+    }
+
+    /** The badge, and what the Approve button offers next. */
+    function previsRenderApproval() {
+        const badge = document.getElementById('previsApprovalBadge');
+        const btn = document.getElementById('previsApproveBtn');
+        const a = PREVIS.approval || { approved: false, stale: false };
+        if (!badge || !btn) return;
+        if (!a.approved) {
+            badge.style.display = 'none';
+            btn.textContent = 'Approve';
+            return;
+        }
+        badge.style.display = '';
+        // Stale is the state worth shouting about: it looks approved and
+        // generation will refuse it.
+        badge.textContent = a.stale ? 'approved · stage changed since' : 'approved';
+        badge.style.background = a.stale ? 'rgba(245,158,11,.18)' : 'rgba(34,197,94,.18)';
+        btn.textContent = a.stale ? 'Re-approve' : 'Withdraw approval';
+    }
+
+    /** The generated frame, shown over the camera pane for comparison. */
+    function previsKeyframe(keyframe) {
+        const panel = document.getElementById('previsKeyframePanel');
+        const img = document.getElementById('previsKeyframeImg');
+        if (!panel || !img) return;
+        if (keyframe && keyframe.src) {
+            img.src = API_BASE + keyframe.src;
+            panel.style.display = '';
+        } else {
+            panel.style.display = 'none';
+        }
+    }
+
     async function previsOpenShot(shotId) {
         PREVIS.shotId = shotId;
         PREVIS.playhead = null;
         try {
             const res = await api(`/shots/${shotId}/previs`);
+            PREVIS.approval = res.approval || null;
+            PREVIS.keyframe = res.keyframe || null;
+            previsRenderApproval();
+            previsKeyframe(res.keyframe);
             if (res.blocking) {
                 PREVIS.blocking = res.blocking;
                 const c = res.blocking.camera || {};

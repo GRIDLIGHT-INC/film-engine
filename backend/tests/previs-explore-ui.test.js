@@ -1,0 +1,136 @@
+/**
+ * Exploring shots on the Previs page, the way you would on set.
+ *
+ * The blocking loop was built and then reachable only two ways: raw HTTP, or
+ * an MCP tool from an agent host. Both are conversations about a shot. Neither
+ * is standing at the monitor trying the 85 and then the 24 and knowing, in your
+ * eye, which one is the shot.
+ *
+ * Seven operations exist in routes/previs.js and the page offered two of them —
+ * solve and save. So a director could compute a framing and store it, and could
+ * not: seed the stage from what was written, see the frame the blocking would
+ * generate, keep an angle by writing it back to the card, or say "this one" in
+ * a way the pipeline respects. The interesting half of the tool had no surface.
+ *
+ * Set-based over the operations rather than over "the page works", because the
+ * page DID work — for the two it had. A screenshot test, or any check written
+ * against solve, passes in exactly the state this is meant to catch.
+ *
+ * Structural, like previs-routes.test.js: what breaks a single-file SPA is not
+ * visible in a screenshot. A handler wired to nothing, or a button calling a
+ * function that was never defined, looks identical to a working page until
+ * clicked.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+
+const INDEX_HTML = path.join(__dirname, '..', '..', 'src', 'index.html');
+const html = fs.readFileSync(INDEX_HTML, 'utf8');
+
+/**
+ * The previs operations, and what each has to look like on the page.
+ *
+ * `endpoint` is what the SPA must actually call — a button that does not reach
+ * the route is the failure mode this file exists for. `control` is the thing
+ * a director clicks.
+ */
+const EXPLORE_OPS = [
+    {
+        id: 'from-card',
+        why: 'start from what was written instead of retyping the shot',
+        endpoint: /previs\/from-card/,
+        control: /previsFromCard\s*\(/,
+    },
+    {
+        id: 'solve',
+        why: 'turn a framing and a lens into a camera position',
+        endpoint: /previs\/solve/,
+        control: /previsSolve\s*\(/,
+    },
+    {
+        id: 'save',
+        why: 'keep an angle while trying others',
+        endpoint: /`\/shots\/\$\{PREVIS\.shotId\}\/previs`/,
+        control: /previsSave\s*\(/,
+    },
+    {
+        id: 'to-storyboard',
+        why: 'see the frame this blocking would generate, before spending on it',
+        endpoint: /previs\/to-storyboard/,
+        control: /previsPreviewFrame\s*\(/,
+    },
+    {
+        id: 'apply',
+        why: 'write the angle you chose back onto the scene card',
+        endpoint: /previs\/apply/,
+        control: /previsApplyToCard\s*\(/,
+    },
+    {
+        id: 'approve',
+        why: 'say "this is the one" in a way generation respects',
+        endpoint: /previs\/approve/,
+        control: /previsApprove\s*\(/,
+    },
+    {
+        id: 'keyframe',
+        why: 'compare the frame you blocked against the frame you generated',
+        endpoint: /res\.keyframe|PREVIS\.keyframe/,
+        control: /previsKeyframe/,
+    },
+];
+
+test('the explore registry covers every director-facing previs operation', () => {
+    const routeSrc = fs.readFileSync(path.join(__dirname, '..', 'routes', 'previs.js'), 'utf8');
+    // Anything the route dispatches that a director drives must be listed here,
+    // so adding a route without a control fails rather than going unnoticed.
+    const dispatched = ['from-card', 'solve', 'apply', 'approve', 'to-storyboard'];
+    const missing = dispatched.filter(op => !routeSrc.includes(`'${op}'`));
+    assert.deepStrictEqual(missing, [], `route no longer dispatches: ${missing.join(', ')}`);
+    for (const op of dispatched) {
+        assert.ok(EXPLORE_OPS.some(e => e.id === op), `${op} is dispatched but has no UI control listed`);
+    }
+});
+
+test('every previs operation has a control on the page', () => {
+    const missing = EXPLORE_OPS.filter(op => !op.control.test(html))
+        .map(op => `${op.id} — cannot ${op.why}`);
+    assert.deepStrictEqual(missing, [], `\n  ${missing.join('\n  ')}`);
+});
+
+test('every control actually reaches its route', () => {
+    // A button wired to a function that calls nothing is the specific bug that
+    // shipped once already in the flows work: declared, never dispatched.
+    const missing = EXPLORE_OPS.filter(op => !op.endpoint.test(html))
+        .map(op => op.id);
+    assert.deepStrictEqual(missing, [], `controls that never call their endpoint: ${missing.join(', ')}`);
+});
+
+test('every control is bound to something clickable', () => {
+    const unbound = EXPLORE_OPS.filter(op => {
+        const name = (op.control.source.match(/[A-Za-z]+/) || [''])[0];
+        if (!name) return true;
+        // Defined AND referenced from markup or another handler.
+        const defined = new RegExp(`function\\s+${name}\\s*\\(`).test(html);
+        const used = new RegExp(`${name}\\s*\\(`, 'g');
+        return !defined || (html.match(used) || []).length < 2;
+    }).map(op => op.id);
+    assert.deepStrictEqual(unbound, [],
+        `defined but never wired to a button: ${unbound.join(', ')}`);
+});
+
+test('approval state is shown, not just sent', () => {
+    // A gate the director cannot see is a gate that surprises them at
+    // generation time with a 409 they did not know they had earned.
+    assert.ok(/previsApprovalBadge/.test(html),
+        'no approval badge on the page, so a restaged shot looks approved until generation 409s');
+});
+
+test('the page is still one file with no build step', () => {
+    // Same guarantee previs-routes.test.js protects: gridlight.json pins
+    // build.target single-html.
+    const external = html.match(/<script[^>]+src=["'](?!data:)[^"']+["']/g) || [];
+    assert.deepStrictEqual(external, [], `external scripts reintroduce a build step: ${external.join(', ')}`);
+});

@@ -137,6 +137,7 @@ film-engine/
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop
 │       ├── screenplay-to-entities.test.js # A screenplay creates the entities generation reads
 │       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
+│       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -321,6 +322,15 @@ All three formats support dynamic project settings (resolution, fps, aspect rati
 
 ### Project Settings
 Per-project technical settings: resolution (8 presets + custom), frame rate (8 options including 23.976, 29.97), aspect ratio (12 presets including IMAX 1.43:1/1.90:1, anamorphic 2.39:1, Univisium 2:1), color space (sRGB, Rec.709, DCI-P3, Rec.2020, ACES), and 6 delivery presets (Theatrical DCP, IMAX, Streaming HD/4K, Social Media, Broadcast).
+
+### Exploring Shots on the Previs Page
+The blocking loop was reachable two ways — raw HTTP, or an MCP tool from an agent host — and both are *conversations about* a shot. Neither is standing at the monitor trying the 85 and then the 24 and knowing, in your eye, which one is the shot. Seven operations existed in `routes/previs.js`; the page offered **two**, solve and save. So a director could compute a framing and store it, and could not seed the stage from what was written, see the frame an angle would generate, keep an angle, or say "this one" in a way the pipeline respects. The interesting half of the tool had no surface.
+
+The toolbar now runs the loop in the order you use it: **From card** (seed the stage from the scene card, asking before it overwrites hand-made blocking — re-seeding is exactly the action that would bin it) → **Solve framing** → **Preview frame** → **Apply to card** → **Approve**. `previsPreviewFrame()` shows the prompt this blocking would generate and **spends nothing**, which is what keeps exploration from being rationed: generating each candidate to find out is how trying three lenses becomes a budget decision. A stale approval is caught here and explained, rather than surfacing later as a 409 the director did not know they had earned.
+
+The generated keyframe is shown over the camera pane, because the question previs exists to answer is whether the shot you staged is the shot you got. An approval badge reads `approved` or `approved · stage changed since`, and the button becomes **Re-approve** or **Withdraw approval** — withdrawing is a normal part of changing your mind and should not need a different screen.
+
+`tests/previs-explore-ui.test.js` is set-based over the operations and checks three separate things per operation: a control exists, it reaches its route, and it is bound to something clickable. The page *did* work for the two it had, so any check written against solve passes in exactly the state this catches — and a handler wired to nothing looks identical to a working page until clicked, which is the bug the flows work shipped once already.
 
 ### Storyboard Prerequisites (plate medium, panel, exploring angles)
 Three gaps sat between "entities exist" and "a board a director can work from".
@@ -676,6 +686,7 @@ node --test backend/tests/previs-storyboard.test.js
 node --test backend/tests/previs-loop.test.js
 node --test backend/tests/screenplay-to-entities.test.js
 node --test backend/tests/storyboard-prerequisites.test.js
+node --test backend/tests/previs-explore-ui.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js
