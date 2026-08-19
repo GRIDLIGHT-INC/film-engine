@@ -4256,12 +4256,27 @@
                 </div>
             </div>
             <div class="card mb-16">
-                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
-                    <div><label>Facet</label><select id="moodKind"></select></div>
-                    <div style="flex:1;min-width:200px;"><label>Note</label><input id="moodNote" placeholder="teal shadows, amber sodium practicals"></div>
-                    <div><label>Spec</label><select id="moodSpecKind" onchange="moodSpecValues()"><option value="">—</option></select></div>
-                    <div><label>Value</label><select id="moodSpecValue"></select></div>
-                    <button class="btn btn-secondary" onclick="moodBoardAdd()">Add</button>
+                <!-- form-group is what makes a label block in this app; a bare
+                     div leaves it inline, which put the caption on the same
+                     line as its field and collapsed the field to nothing. And
+                     the width rule is keyed on input[type], so an input without
+                     one is never sized. -->
+                <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+                    <div class="form-group" style="margin-bottom:0;min-width:140px;">
+                        <label>Facet</label><select id="moodKind"></select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;flex:1 1 260px;">
+                        <label>Note</label>
+                        <input type="text" id="moodNote" placeholder="teal shadows, amber sodium practicals">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;min-width:150px;">
+                        <label>Spec</label>
+                        <select id="moodSpecKind" onchange="moodSpecValues()"><option value="">&mdash;</option></select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;min-width:130px;">
+                        <label>Value</label><select id="moodSpecValue"></select>
+                    </div>
+                    <button class="btn btn-secondary" onclick="moodBoardAdd()" style="height:36px;">Add</button>
                 </div>
             </div>
             <div id="moodComposed" class="card mb-16" style="display:none;"></div>
