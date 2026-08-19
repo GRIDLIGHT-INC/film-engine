@@ -224,6 +224,7 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
     const tagFor = (opts.references && opts.tagged !== false)
         ? require('./reference-images').taggedNames(opts.references)
         : new Map();
+
     const parts = [];
     const loraParts = [];
 

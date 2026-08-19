@@ -426,6 +426,18 @@ const REFSHEET_VIEWS = ['front', 'side', 'back'];
  * piece toward line art. 'clean lines' made it worse: a drawing instruction in
  * a prompt meant to describe a person.
  */
+/**
+ * What a plate must not contain.
+ *
+ * The old negative said "text, watermark" and nothing about labels, charts,
+ * annotations or handwriting — which is most of what actually turned up on the
+ * first real plate. A reference that carries printed matter teaches every frame
+ * that references it to carry printed matter too.
+ */
+const REFSHEET_NEGATIVE = 'blurry, low quality, distorted, multiple characters, background clutter, '
+    + 'text, label, labels, annotation, annotations, caption, handwriting, chart, colour chart, '
+    + 'swatch, swatches, watermark, logo, arrows, callouts, measurement marks, collage, multiple views';
+
 function buildRefSheetPrompt(character, view, stylePreset) {
     const parts = [];
     const style = stylePreset && String(stylePreset).trim();
@@ -437,11 +449,19 @@ function buildRefSheetPrompt(character, view, stylePreset) {
     // shrug emoji, and every shot referencing her inherited the cartoon.
     // With no project style there is still an explicit medium, because the
     // absence of one is what the model fills in with clip art.
-    parts.push(style ? `${style}. Character reference sheet` : 'photoreal cinematic character reference sheet');
-    parts.push(`${view} view`);
+    // NOT "reference sheet". An image model takes that literally and renders
+    // the sheet: the first real plate came back with a handwritten "FRONT /
+    // mid 30s" caption, a colour-swatch chart labelled in gibberish and a strip
+    // of tape. The person underneath was right; the document around them was
+    // not. A plate conditions every frame its subject appears in, so anything
+    // printed on it bleeds into all of them.
+    parts.push(style ? `${style}. Full-body studio photograph` : 'photoreal cinematic full-body studio photograph');
+    // The view still has to be named, or three plates are three unrelated
+    // pictures rather than a turnaround.
+    parts.push(`${view} view of the subject`);
     parts.push(style
-        ? 'full body, T-pose, neutral expression, plain seamless background'
-        : 'full body, T-pose, plain seamless background');
+        ? 'standing, arms slightly away from body, neutral expression, plain seamless backdrop'
+        : 'standing, arms slightly away from body, plain seamless backdrop');
 
     if (character.appearance_prompt) parts.push(character.appearance_prompt);
     if (character.gender) parts.push(character.gender);
@@ -486,7 +506,7 @@ async function generateRefSheet(req, res, charId) {
         const projectStyle = project && project.style_preset;
         let styleApplied = !!(projectStyle && String(projectStyle).trim());
         const prompt = buildRefSheetPrompt(ch, view, projectStyle);
-        const negativePrompt = 'blurry, low quality, distorted, multiple characters, background clutter';
+        const negativePrompt = REFSHEET_NEGATIVE;
 
         const payload = {
             prompt,
@@ -605,4 +625,4 @@ function getRefSheetStatus(req, res, charId) {
     }));
 }
 
-module.exports = { handleCharacters, buildRefSheetPrompt };
+module.exports = { handleCharacters, buildRefSheetPrompt, REFSHEET_NEGATIVE };

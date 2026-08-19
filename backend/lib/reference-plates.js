@@ -62,7 +62,9 @@ function buildPlatePrompt(kind, subject, stylePreset) {
     // mentioned — survivable for a street, fatal for a person.
     const style = stylePreset && String(stylePreset).trim();
     const parts = [
-        style ? `${style}. ${kind} reference plate` : `photoreal cinematic ${kind} reference plate`,
+        // "reference plate" reads as a document to an image model the same way
+        // "reference sheet" does. Ask for the photograph itself.
+        style ? `${style}. Photograph of the ${kind}` : `photoreal cinematic photograph of the ${kind}`,
         spec.framing,
     ];
 
@@ -85,7 +87,12 @@ function buildPlatePrompt(kind, subject, stylePreset) {
     return parts.filter(Boolean).join(', ');
 }
 
-const NEGATIVE = 'blurry, low quality, distorted, text, watermark, multiple angles, collage';
+// A plate is a photograph of a subject, not a page about it. "text, watermark"
+// was too narrow: what actually appeared on the first real plate was captions,
+// a colour-swatch chart and handwriting, none of which those two words cover.
+const NEGATIVE = 'blurry, low quality, distorted, multiple angles, collage, '
+    + 'text, label, labels, annotation, annotations, caption, handwriting, chart, colour chart, '
+    + 'swatch, swatches, watermark, logo, arrows, callouts, measurement marks';
 
 /**
  * Generate, store and register one plate.

@@ -158,6 +158,7 @@ film-engine/
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
 │       ├── project-delete.test.js      # A worked-on project deletes, and takes every child with it
+│       ├── prompt-budget.test.js       # Plates are photographs, not documents; prose drops only where tags bind
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -442,6 +443,13 @@ Migration 067 rebuilds the table with `ON DELETE CASCADE` — a refsheet job rec
 `tests/project-delete.test.js` is set-based over the nine tables a worked-on project accumulates, because a delete is only safe if *every* child goes with it — one that leaves rows behind is a slow leak surfacing much later as orphaned assets.
 
 **The warning now states the stakes.** "This cannot be undone" tells the reader the rule, not what they are about to lose; the confirm names the scenes, shots, characters and generated assets that go with it, and says plainly that generated media cost money and cannot be recovered. If the counts cannot be read it warns *harder*, not softer. A failed delete now says nothing was removed, rather than surfacing a generic error that leaves the user unsure whether half of it went.
+
+### A Plate Is a Photograph, Not a Document
+The first real plate generated after the medium fix came back photoreal, correctly dressed — and covered in **sheet furniture**: a handwritten `FRONT / mid 30s` caption, a colour-swatch chart labelled in gibberish, a strip of tape. The person underneath was right; the document drawn around them was not. The cause is the phrase itself — `character reference sheet` is an instruction an image model follows literally — and the negative said only `text, watermark`, which covers almost none of what actually appeared.
+
+All three builders now ask for the photograph (`Full-body studio photograph`, `Photograph of the location`) and refuse the furniture explicitly: labels, annotations, captions, handwriting, charts, swatches, arrows, callouts, measurement marks. The **view is still named**, because without it three plates are three unrelated pictures rather than a turnaround. This matters more than a cosmetic blemish: a plate conditions every frame its subject appears in, so anything printed on it bleeds into all of them.
+
+**And a correction, caught by a test rather than by reasoning.** The obvious next move — "a picture is attached, so drop the paragraph describing it" — is right for a provider that reads `@tags` and **wrong** for one that takes an untagged array. With two references and no names, nothing tells the model which picture is the woman and which is the street, so the prose is the only thing carrying identity; dropping it trades a redundancy for a wrong subject. That distinction was already correct in the code and this nearly broke it. `tests/reference-capability.test.js` is what stopped it.
 
 ### Screenplay → Entities (the step that was never wired)
 A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
@@ -798,6 +806,7 @@ node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js
 node --test backend/tests/project-delete.test.js
+node --test backend/tests/prompt-budget.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js
