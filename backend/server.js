@@ -314,7 +314,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/projects/:id/breakdown[/stream]
-        if (parts[1] === 'projects' && parts[2] && parts[3] === 'staleness') {
+        if (parts[1] === 'projects' && parts[2] && ['staleness', 'sides', 'dood'].includes(parts[3])) {
             return await handleStaleness(req, res, parts);
         }
 

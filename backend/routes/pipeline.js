@@ -197,6 +197,29 @@ async function executeStep(stepId, shot, scene, project) {
         return { ok: false, error: `Unknown pipeline step '${stepId}'` };
     }
 
+    // Refuse to build on a rotten foundation.
+    //
+    // Generating a clip from a keyframe that no longer matches its character,
+    // or a lip-sync from a clip that was regenerated afterwards, spends money
+    // to produce something already known to be wrong. This fires ONLY when a
+    // dependency was stamped and its inputs have since changed, so a project
+    // that predates fingerprinting is never gated and generates exactly as
+    // before. Overridable the way the budget gate is — a wrong fingerprint must
+    // not make a shot ungeneratable, but you have to say so.
+    if (!(project && project.ignore_stale)) {
+        const stale = require('../lib/artefact-fingerprint').staleInputs(stepId, { shotId: shot && shot.id });
+        if (stale.length) {
+            return {
+                ok: false,
+                code: 'STALE_INPUTS',
+                error: `${stepId} would be generated from ${stale.length} input(s) that changed after they were made: `
+                    + stale.map(s => s.kind).join(', ')
+                    + '. Regenerate those first, or pass ignore_stale.',
+                stale,
+            };
+        }
+    }
+
     const config = providerConfigOf(project);
 
     // Build the SAME payload the per-domain route would build. This used to be

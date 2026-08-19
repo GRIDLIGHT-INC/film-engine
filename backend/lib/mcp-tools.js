@@ -403,6 +403,20 @@ const PRODUCTION_TOOLS = [
         required: ['project_id'],
     },
     {
+        name: 'sides_report',
+        handler: handleStaleness, method: 'GET',
+        description: 'Each character\u2019s own lines, scene by scene \u2014 what a director reviews before spending on voice generation. Characters with no dialogue are listed with line_count 0 rather than omitted, so "has no lines" is distinguishable from "is not in this film".',
+        path: a => `/film/projects/${a.project_id}/sides`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'dood_report',
+        handler: handleStaleness, method: 'GET',
+        description: 'Day-out-of-days: which scenes and how many shots each character is committed to, and whether it has a reference plate yet. `needs_plate` is the actionable half \u2014 a character in 40 shots with no plate is 40 frames that will each invent their own version of them.',
+        path: a => `/film/projects/${a.project_id}/dood`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
         name: 'entities_describe',
         handler: handleBreakdown, method: 'POST',
         description: 'Write a visual description for every entity that has none, from the screenplay, using the LLM. Run this after entities_create and BEFORE generating anything: an entity with no description reaches the image prompt as a bare name and every frame then invents its own version of it. Only fills blanks unless force is set. Reports still_blank for anything it could not describe.',

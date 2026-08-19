@@ -242,3 +242,70 @@ test('propagation follows PIPELINE_STEPS.depends, not a second hand-written grap
             `${kind} declares different dependencies than PIPELINE_STEPS`);
     }
 });
+
+
+// ── PAR-006: the gate ──────────────────────────────────────────────────────
+
+test('dependencies are DERIVED from PIPELINE_STEPS, never hand-declared', () => {
+    // Written after the hand-written list drifted from the orchestrator on its
+    // first day: video depends on keyframe (it is the init_image) and the
+    // registry did not say so, which meant a video generated from a stale
+    // keyframe would have passed any gate built on it.
+    const { PIPELINE_STEPS } = require('../lib/pipeline-engine');
+    const wrong = [];
+    for (const step of PIPELINE_STEPS) {
+        const spec = fp.ARTEFACT_KINDS[step.id];
+        if (!spec) continue;   // assembly has no artefact
+        const declared = (spec.dependsOn || []).slice().sort();
+        const actual = step.depends.slice().sort();
+        if (JSON.stringify(declared) !== JSON.stringify(actual)) {
+            wrong.push(`${step.id}: registry says [${declared}], PIPELINE_STEPS says [${actual}]`);
+        }
+    }
+    assert.deepStrictEqual(wrong, [], `\n  ${wrong.join('\n  ')}`);
+});
+
+test('generating on top of a stale input is refused, per dependent kind', () => {
+    // Set-based over every kind that has dependencies, because gating one of
+    // them proves nothing about the rest — and the expensive mistake is
+    // building a clip on a keyframe that no longer matches its character.
+    const dependent = Object.entries(fp.ARTEFACT_KINDS).filter(([, s]) => (s.dependsOn || []).length);
+    assert.ok(dependent.length >= 3, `expected several dependent kinds, found ${dependent.length}`);
+
+    const broken = [];
+    for (const [kind, spec] of dependent) {
+        const ids = makeProject();
+        // Stamp one asset per dependency so there is something to go stale.
+        for (const dep of spec.dependsOn) {
+            const assetId = generateId();
+            db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name)
+                        VALUES (?, ?, ?, 'other', '/tmp/x', 'x')`).run(assetId, ids.projectId, ids.shotId);
+            fp.stampAsset(assetId, dep, ids);
+        }
+        if (fp.staleInputs(kind, ids).length) {
+            broken.push(`${kind}: reported stale inputs while everything was freshly stamped`);
+            continue;
+        }
+        // Now change something every dependency is built from.
+        db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?')
+            .run(JSON.stringify({ shot_code: '1A', description: 'Rewritten.', camera: { shot_type: 'wide' } }), ids.shotId);
+        const stale = fp.staleInputs(kind, ids);
+        if (!stale.length) broken.push(`${kind}: its inputs changed and it would generate anyway`);
+    }
+    assert.deepStrictEqual(broken, [], `\n  ${broken.join('\n  ')}`);
+});
+
+test('a kind whose inputs were never stamped is never gated', () => {
+    // The guarantee that keeps every existing project generating unchanged.
+    const ids = makeProject();
+    assert.deepStrictEqual(fp.staleInputs('lipsync', ids), [],
+        'a shot with no stamped assets was gated, which would break every project that predates this');
+});
+
+test('the gate is reachable from generation, not just computable', () => {
+    // A gate nothing calls is a library. Checked structurally: the orchestrator
+    // is the one path every orchestrated capability goes through.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'pipeline.js'), 'utf8');
+    assert.ok(/staleInputs\(/.test(src), 'routes/pipeline.js never consults the stale gate');
+    assert.ok(/ignore_stale/.test(src), 'the gate has no override, so a wrong fingerprint is unrecoverable');
+});

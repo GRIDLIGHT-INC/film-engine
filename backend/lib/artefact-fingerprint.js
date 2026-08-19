@@ -55,16 +55,62 @@ const ARTEFACT_KINDS = {
     keyframe:        { capability: 'image',   scope: 'shot' },
     video:           { capability: 'video',   scope: 'shot' },
     voice:           { capability: 'voice',   scope: 'shot' },
-    lipsync:         { capability: 'lipsync', scope: 'shot', dependsOn: ['video', 'voice'] },
+    lipsync:         { capability: 'lipsync', scope: 'shot' },
     music:           { capability: 'music',   scope: 'scene' },
     sfx:             { capability: 'sfx',     scope: 'shot' },
     ambient:         { capability: 'ambient', scope: 'scene' },
-    post:            { capability: 'post',    scope: 'shot', dependsOn: ['lipsync'] },
+    post:            { capability: 'post',    scope: 'shot' },
     character_plate: { capability: null,      scope: 'character' },
     location_plate:  { capability: null,      scope: 'location' },
     prop_plate:      { capability: null,      scope: 'prop' },
     scene_card:      { capability: null,      scope: 'shot' },
 };
+
+// Dependencies are DERIVED, never written here. The first version of this file
+// hand-declared them and was wrong within a day: video takes the keyframe as
+// its init_image and the list said it had no inputs at all, so a clip built on
+// a stale frame would have passed any gate. PIPELINE_STEPS is the orchestrator's
+// own graph; there is no second one.
+for (const step of require('./pipeline-engine').PIPELINE_STEPS) {
+    if (ARTEFACT_KINDS[step.id]) ARTEFACT_KINDS[step.id].dependsOn = step.depends.slice();
+}
+
+/**
+ * Which of this kind's inputs are no longer what they were generated from.
+ *
+ * Returns [] when nothing is stale AND when nothing was ever stamped — an
+ * unstamped project is outside the workflow, not suspect. That is what lets
+ * this be wired into generation without changing behaviour for anyone who has
+ * not opted in by generating since the feature landed.
+ *
+ * Reads only. A gate that mutates is a gate you cannot run twice.
+ */
+function staleInputs(kind, ids) {
+    const spec = ARTEFACT_KINDS[kind];
+    if (!spec || !(spec.dependsOn || []).length) return [];
+    const db = database();
+    const stale = [];
+
+    for (const dep of spec.dependsOn) {
+        const rows = db.prepare(
+            `SELECT id, input_fingerprint, artefact_kind, file_name FROM film_assets
+              WHERE artefact_kind = ? AND shot_id = ? AND input_fingerprint IS NOT NULL`)
+            .all(dep, ids.shotId || null);
+        if (!rows.length) continue;   // never stamped: not our business
+
+        let current = null;
+        try { current = fingerprintFor(dep, ids); } catch (_) { current = null; }
+        for (const row of rows) {
+            if (current === null) {
+                stale.push({ kind: dep, asset_id: row.id, reason: 'its own inputs could not be read' });
+            } else if (isStale(row, current)) {
+                stale.push({ kind: dep, asset_id: row.id, file_name: row.file_name,
+                    reason: 'changed since it was generated' });
+            }
+        }
+    }
+    return stale;
+}
 
 /** The payload a capability would send, or null when it cannot be built yet. */
 function payloadFor(capability, shotId) {
@@ -178,4 +224,4 @@ function stampAsset(assetId, kind, ids) {
     return fingerprint;
 }
 
-module.exports = { ARTEFACT_KINDS, fingerprintFor, isStale, stampAsset, hash, canonical };
+module.exports = { ARTEFACT_KINDS, fingerprintFor, isStale, staleInputs, stampAsset, hash, canonical };

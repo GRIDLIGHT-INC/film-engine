@@ -115,6 +115,7 @@ film-engine/
 │   │   ├── e2e-preflight.js      # Screenplay→final-shot readiness, derived from PIPELINE_STEPS
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
+│   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
@@ -141,6 +142,7 @@ film-engine/
 │       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
 │       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
+│       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -356,6 +358,15 @@ Nothing recorded what a generated artefact was made from. Edit a character's app
 `GET /projects/:id/staleness` and the `staleness_report` MCP tool (65 tools) report **stale / fresh / unknown** as three distinct answers. Unknown is named rather than folded into fresh, because an unstamped asset is a gap in coverage and hiding it would make the report look better than it is. An artefact whose inputs can no longer be read — a deleted character — is reported stale, since something it was built from is gone.
 
 Two real defects surfaced while writing the set-based test, both invisible to an example: `buildPlatePrompt` never read a prop's `visual_prompt`, so the one field written for generation never reached the plate generated from it; and scene presence was keyed on **dialogue cues only**, so a character introduced in action was present in no scene — on Wingfall that made the DRAGON, the title creature, invisible to every report built on presence. Presence now reads action through the same detector the entity suggestions use, wrapped rather than duplicated so the two cannot disagree about who is in a screenplay.
+
+### The Stale Gate, Sides and DOOD (Phase 1 close-out + Phase 2 start)
+**The gate refuses to build on a rotten foundation.** `staleInputs(kind, ids)` asks whether the artefacts a step is generated *from* still match what they were made from, and `executeStep` refuses with `STALE_INPUTS` when they do not — generating a clip from a keyframe that no longer matches its character, or a lip-sync from a clip regenerated afterwards, spends money to produce something already known to be wrong. It fires **only** when a dependency was stamped and its inputs have since changed, so a project that predates fingerprinting is never gated; `ignore_stale` overrides it exactly as `ignore_budget` does.
+
+Writing that gate caught the design flaw it was built on. Dependencies were **hand-declared** in the artefact registry and were already wrong on their first day: `video` takes the keyframe as its `init_image` and the list said it had no inputs at all, so a clip built on a stale frame would have passed the gate silently. They are now **derived from `PIPELINE_STEPS.depends`** at module load — the orchestrator's own graph, never a second copy — and a test asserts the two agree for every step.
+
+**Sides and DOOD** (`lib/production-reports.js`) are the two reports StudioBinder names and the first Phase 2 work, unblocked by the presence repair. Sides are what a director reviews before spending on voice generation; DOOD answers which subjects need a reference plate and how many shots each commits us to. A character with no dialogue still gets a sides entry with `line_count: 0`, because omitting them makes "has no lines" indistinguishable from "is not in this film" — and the non-speaking case is exactly what the old dialogue-only presence lost. DOOD's `needs_plate` is the actionable line: a character in 40 shots with no plate is 40 frames that will each invent their own version of them. Both unions scene presence with what the shot cards name, since either source alone has been wrong. Scene numbers are normalised to strings because `film_scenes.scene_number` has INTEGER affinity and returns `2` for `'2'` but `'2A'` for `'2A'` — one column, two types, which a report should absorb rather than pass on.
+
+Served at `GET /projects/:id/{staleness,sides,dood}` and as three MCP tools (67 total).
 
 ### Screenplay → Entities (the step that was never wired)
 A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
@@ -702,6 +713,7 @@ node --test backend/tests/screenplay-to-entities.test.js
 node --test backend/tests/storyboard-prerequisites.test.js
 node --test backend/tests/previs-explore-ui.test.js
 node --test backend/tests/artefact-staleness.test.js
+node --test backend/tests/production-reports.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js

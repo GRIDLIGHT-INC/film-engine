@@ -15,6 +15,7 @@
 
 const { db } = require('../db/database');
 const { ARTEFACT_KINDS, fingerprintFor, isStale } = require('../lib/artefact-fingerprint');
+const { buildSides, buildDOOD } = require('../lib/production-reports');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -79,6 +80,20 @@ function projectStaleness(req, res, projectId) {
 }
 
 function handleStaleness(req, res, urlParts) {
+    // Sides and DOOD live here rather than in their own module: all three are
+    // read-only reports over a project's own data, and a route file per report
+    // would be ceremony.
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'sides') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        return json(res, 200, buildSides(urlParts[2]));
+    }
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'dood') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        return json(res, 200, buildDOOD(urlParts[2]));
+    }
+
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'staleness') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
