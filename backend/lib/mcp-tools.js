@@ -39,6 +39,7 @@ const { handleLocations } = require('../routes/locations');
 const { handleStoryboard } = require('../routes/storyboard');
 const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
+const { handleStaleness } = require('../routes/staleness');
 
 const NODE_TOOL_PREFIX = 'node_';
 
@@ -392,6 +393,14 @@ const PRODUCTION_TOOLS = [
         description: 'Sign off the blocking as it stands. Stores a fingerprint of the camera and card, so if the shot is restaged afterwards, generation refuses with 409 STALE_APPROVAL rather than shooting a frame nobody approved. This is what "I am happy with this angle" means to the pipeline.',
         path: a => `/film/shots/${a.shot_id}/previs/approve`,
         schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+    },
+    {
+        name: 'staleness_report',
+        handler: handleStaleness, method: 'GET',
+        description: 'Which generated artefacts no longer match the inputs they were made from. Run this BEFORE generating: a frame built from an old character description or an old plate looks valid forever and nothing else will tell you. Reports stale (inputs changed), fresh (verified current) and unknown (generated before fingerprinting existed \u2014 not a claim either way).',
+        path: a => `/film/projects/${a.project_id}/staleness`,
+        schema: { project_id: { type: 'string' } },
+        required: ['project_id'],
     },
     {
         name: 'entities_describe',

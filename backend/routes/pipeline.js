@@ -166,6 +166,17 @@ async function persistStepResult(stepId, capability, result, ctx) {
             JSON.stringify({ source: 'pipeline', step: stepId })
         );
 
+        // Record what this was generated FROM, so a later edit to the card,
+        // a character or the style preset can mark it stale instead of leaving
+        // it looking current forever. Capability maps 1:1 onto the artefact
+        // kind registry, so no second mapping is introduced here.
+        const KIND_FOR_CAPABILITY = {
+            image: 'keyframe', video: 'video', voice: 'voice', lipsync: 'lipsync',
+            music: 'music', sfx: 'sfx', ambient: 'ambient', post: 'post',
+        };
+        require('../lib/artefact-fingerprint')
+            .stampAsset(assetId, KIND_FOR_CAPABILITY[capability], { shotId: (shot && shot.id) || null });
+
         return { ok: true, assetId, path: saved.path };
     } catch (err) {
         return { ok: false, error: `could not persist ${capability} output: ${err.message}` };

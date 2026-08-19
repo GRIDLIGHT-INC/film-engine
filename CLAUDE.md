@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (60 migrations)
+│   │   └── migrations/     # SQL migration files (61 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -60,6 +60,7 @@ film-engine/
 │   │   ├── backups.js          # Auto-backup system (Phase 18)
 │   │   ├── flows.js            # Flow CRUD + graph validation (Phase 1)
 │   │   ├── previs.js           # Previs blocking CRUD + framing solve (Phase 2)
+│   │   ├── staleness.js        # Which generated artefacts no longer match their inputs
 │   │   ├── providers.js        # Provider registry, credentials, OAuth connect
 │   │   ├── consistency.js      # Consistency profiles, locking, readiness audit
 │   │   ├── takes.js            # Takes & selects (circle-take workflow)
@@ -113,6 +114,7 @@ film-engine/
 │   │   ├── nav-flow.js           # Sidebar order, derived from PROJECT_PHASES (Phase 6)
 │   │   ├── e2e-preflight.js      # Screenplay→final-shot readiness, derived from PIPELINE_STEPS
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
+│   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
@@ -138,6 +140,7 @@ film-engine/
 │       ├── screenplay-to-entities.test.js # A screenplay creates the entities generation reads
 │       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
 │       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
+│       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -342,6 +345,17 @@ Three gaps sat between "entities exist" and "a board a director can work from".
 **Blocking was unreachable from an agent.** `routes/previs.js` has seven director-facing operations and the MCP surface exposed **none** of them, so the explore-angles loop — the whole point of previs — could only be driven by hand. Seven tools now cover it (`previs_from_card`, `previs_solve`, `previs_set`, `previs_to_storyboard`, `previs_apply`, `previs_approve`, `previs_get`), which makes the iteration loop a conversation: seed the stage from the card, try an angle, preview the payload **without spending anything**, keep the one you want with `previs_apply`, and sign it off with `previs_approve` so a later restage cannot silently ship a frame nobody approved.
 
 `tests/storyboard-prerequisites.test.js` is set-based over three registries — the plate builders, the panel fields, and the previs operations — because each failed partially: locations plated well while characters produced clip art, description reached the panel while dialogue did not.
+
+### Artefact Staleness (Phase 1 of the parity epic)
+Nothing recorded what a generated artefact was made from. Edit a character's appearance, a location description, a style preset or a scene card, and every frame already generated from the old version stays valid-looking forever — the only signal is a director noticing. That is affordable at eight shots and impossible at fifteen hundred, and it already cost once: a character plate generated in a stock clip-art style survived the fix to its own builder by fourteen hours, because it was cached and nothing knew it was out of date.
+
+**The payload is the fingerprint.** Every generated artefact already has one honest description of what it will be — the payload the provider would receive, from the single construction path in `capability-payloads.js`. If that payload changes the output would change; if it does not, it would not. Hashing it means there is no second enumeration of "the inputs" to drift from the first, which is exactly how a hand-written input list rots. Two kinds cannot use their payload and say so: `lipsync` and `post` build from artefacts that may not exist yet, so their builder throws `PRECONDITION` rather than describing anything — they fingerprint their **dependencies** instead, which is the right semantics anyway, since a lip-synced clip is stale exactly when its video or its dialogue is. Those dependencies are read from `PIPELINE_STEPS.depends`, never re-declared.
+
+`lib/artefact-fingerprint.js` registers the **12 generated kinds**: the 8 orchestrated capabilities, 3 plate kinds, and the scene card. Migration 063 adds `input_fingerprint` / `artefact_kind` / `fingerprinted_at` to `film_assets`, NULL-defaulted — and **NULL means "outside the workflow", not "stale"**. Treating an absent fingerprint as stale would retroactively invalidate every asset in every existing project, which is both wrong and the fastest route to the feature being switched off; it is also what keeps the byte-identical golden fixture true. `stampAsset()` never throws: a fingerprint that cannot be computed must not fail a generation that already succeeded and cost money.
+
+`GET /projects/:id/staleness` and the `staleness_report` MCP tool (65 tools) report **stale / fresh / unknown** as three distinct answers. Unknown is named rather than folded into fresh, because an unstamped asset is a gap in coverage and hiding it would make the report look better than it is. An artefact whose inputs can no longer be read — a deleted character — is reported stale, since something it was built from is gone.
+
+Two real defects surfaced while writing the set-based test, both invisible to an example: `buildPlatePrompt` never read a prop's `visual_prompt`, so the one field written for generation never reached the plate generated from it; and scene presence was keyed on **dialogue cues only**, so a character introduced in action was present in no scene — on Wingfall that made the DRAGON, the title creature, invisible to every report built on presence. Presence now reads action through the same detector the entity suggestions use, wrapped rather than duplicated so the two cannot disagree about who is in a screenplay.
 
 ### Screenplay → Entities (the step that was never wired)
 A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
@@ -568,7 +582,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (60 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (61 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -687,6 +701,7 @@ node --test backend/tests/previs-loop.test.js
 node --test backend/tests/screenplay-to-entities.test.js
 node --test backend/tests/storyboard-prerequisites.test.js
 node --test backend/tests/previs-explore-ui.test.js
+node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js

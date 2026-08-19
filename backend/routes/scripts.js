@@ -256,6 +256,13 @@ function extractScenesFromFountain(parsed, projectId) {
             if (el.type === 'character') {
                 charactersSeen.add(el.text);
             } else if (el.type === 'action') {
+                // Presence from ACTION as well as dialogue cues. Keying on cues
+                // alone means a character who never speaks is present in no
+                // scene — which on Wingfall made the DRAGON, the title
+                // creature, invisible to every report and every consistency
+                // check downstream. Same detector the entity suggestions use,
+                // so the two cannot disagree about who is in a screenplay.
+                for (const name of Object.keys(actionCapsInLine(el.text))) charactersSeen.add(name);
                 if (currentScene.description) {
                     currentScene.description += '\n' + el.text;
                 } else {
@@ -1034,6 +1041,19 @@ function applyScreenplaySuggestions(req, res, projectId) {
         // a bare name and looks like it worked.
         next: total ? 'Run the breakdown to describe these before generating.' : 'Nothing new to create.',
     }));
+}
+
+/**
+ * Caps names in one action line, using the same stoplist as entity detection.
+ *
+ * Wrapped rather than duplicated: two lists of "what a caps word in action
+ * means" would drift, and the drift would be invisible — one surface would
+ * suggest the DRAGON as a character while another reported it present in no
+ * scene.
+ */
+function actionCapsInLine(text) {
+    return actionIntroducedCharacters(
+        { elements: [{ type: 'action', text: String(text || '') }] }, new Set());
 }
 
 /**

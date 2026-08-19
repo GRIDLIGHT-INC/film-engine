@@ -368,6 +368,10 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
     `).run(id, projectId, shotId, filePath, fileName, width, height, version,
         JSON.stringify(opts.input_refs || []), opts.provider || null, opts.provider_model || null);
 
+    // Same kind the orchestrator records for its keyframe step, so a frame is
+    // stale on the same terms however it was generated.
+    require('../lib/artefact-fingerprint').stampAsset(id, 'keyframe', { shotId });
+
     return { id, version };
 }
 

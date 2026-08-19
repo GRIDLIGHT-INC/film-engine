@@ -207,3 +207,26 @@ test('no entity reaches generation as a bare name or a placeholder', async () =>
     }
     assert.deepStrictEqual(bad, [], `\n  ${bad.join('\n  ')}`);
 });
+
+
+test('a non-speaking character is present in the scene it appears in', async () => {
+    // PAR-008. Presence was keyed on dialogue cues, so on Wingfall the scenes
+    // read ["MAYA"], [], ["MAYA"] and the DRAGON — the title creature — was
+    // present in no scene at all. Every report built on presence (sides, DOOD,
+    // continuity) inherits that hole, which is why it is repaired before the
+    // reports are written rather than after.
+    const projectId = await projectWithScript();
+    const scenes = db.prepare('SELECT scene_number, characters_present FROM film_scenes WHERE project_id = ? ORDER BY scene_number')
+        .all(projectId);
+    assert.ok(scenes.length, 'no scenes were created from the screenplay');
+
+    const everyone = new Set();
+    for (const sc of scenes) {
+        let list = [];
+        try { list = JSON.parse(sc.characters_present || '[]'); } catch (_) { list = []; }
+        for (const n of list) everyone.add(String(n).toUpperCase());
+    }
+    assert.ok(everyone.has('MAYA'), 'the speaking character is missing from presence');
+    assert.ok(everyone.has('DRAGON'),
+        `the non-speaking character is present in no scene; found: ${[...everyone].join(', ') || '(none)'}`);
+});

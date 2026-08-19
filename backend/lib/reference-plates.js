@@ -67,6 +67,11 @@ function buildPlatePrompt(kind, subject, stylePreset) {
     ];
 
     if (subject.name) parts.push(String(subject.name).toLowerCase());
+    // visual_prompt is the generation-facing field for a prop — it is what
+    // prop_create documents as "what reaches the image prompt" — and the plate
+    // builder only ever read `description`, so the one field written for
+    // generation never reached the plate generated from it.
+    if (subject.visual_prompt) parts.push(subject.visual_prompt);
     if (subject.description) parts.push(subject.description);
 
     // Locations carry their lighting on the row; a plate that ignores it would
@@ -152,6 +157,12 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         JSON.stringify({ kind: `${kind}_plate`, style_applied: styleApplied }),
         result.provider || provider.id || null,
         result.provider_model || null);
+
+    // A plate defines a subject's medium for every frame that references it,
+    // which is exactly why a stale one is so damaging: the clip-art character
+    // plate poisoned every shot it appeared in and nothing knew.
+    require('./artefact-fingerprint').stampAsset(assetId, `${kind}_plate`,
+        kind === 'location' ? { locId: subject.id } : { propId: subject.id });
 
     return {
         ok: true,

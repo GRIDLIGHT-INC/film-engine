@@ -551,6 +551,12 @@ async function generateRefSheet(req, res, charId) {
                 result.provider || imageProvider.id, result.provider_model || '', result.provider_job_id || ''
             );
 
+            // The plate that started all of this: generated in a stock clip-art
+            // style, fixed fourteen hours later, and still referenced by every
+            // frame with this character in it because nothing recorded what it
+            // had been made from.
+            require('../lib/artefact-fingerprint').stampAsset(assetId, 'character_plate', { charId });
+
             results.push({ view, status: 'complete', style_applied: styleApplied, image_url: getFileUrl('refsheets', ch.project_id, filename) });
         } catch (err) {
             if (err.message.includes('ECONNREFUSED')) {
