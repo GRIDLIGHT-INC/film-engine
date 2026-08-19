@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (64 migrations)
+│   │   └── migrations/     # SQL migration files (65 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -157,6 +157,7 @@ film-engine/
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
+│       ├── project-delete.test.js      # A worked-on project deletes, and takes every child with it
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -433,6 +434,15 @@ One translation is load-bearing: `resolution` is picked as a preset **id** (`"10
 
 **Planning is pure and separate from executing**, which is what makes the feature testable at all: conforming needs a media tool this repo deliberately does not depend on, and ffmpeg is not installed on the machine this was written on. `availableExecutors()` probes rather than assumes — local ffmpeg, or the provider stitch path — and reports why each is unavailable. `buildFfmpegArgs` returns an argument **array**, never a shell string, since file paths and titles come from the database.
 
+### Deleting a Project (and a bug that hid behind empty ones)
+`DELETE /projects/:id` returned **500 on any project that had generated a character reference sheet**. `film_refsheet_jobs` declared both foreign keys with no `ON DELETE` action, so removing a character it referenced was refused, and the refusal cascaded up to the project delete. It stayed invisible because the only projects ever deleted were empty ones — the first attempt on a project with real work in it hit it immediately, and the failure mode was the bad kind: the rename meant to accompany the delete succeeded, leaving two projects with the same name and no way to remove either.
+
+Migration 067 rebuilds the table with `ON DELETE CASCADE` — a refsheet job records an attempt to draw a particular character, so without the character it is a row that can never be interpreted again rather than an orphan worth keeping (both columns are `NOT NULL`, so `SET NULL` could not be honoured anyway). It hits the same trap 057 documented: `film_unified_generation_jobs` SELECTs from the table, so the view is dropped and **recreated verbatim from 057's own definition** rather than retyped, since a rebuilt view that differs from the one it replaced is a silent behaviour change.
+
+`tests/project-delete.test.js` is set-based over the nine tables a worked-on project accumulates, because a delete is only safe if *every* child goes with it — one that leaves rows behind is a slow leak surfacing much later as orphaned assets.
+
+**The warning now states the stakes.** "This cannot be undone" tells the reader the rule, not what they are about to lose; the confirm names the scenes, shots, characters and generated assets that go with it, and says plainly that generated media cost money and cannot be recovered. If the counts cannot be read it warns *harder*, not softer. A failed delete now says nothing was removed, rather than surfacing a generic error that leaves the user unsure whether half of it went.
+
 ### Screenplay → Entities (the step that was never wired)
 A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
 
@@ -658,7 +668,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (64 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (65 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -787,6 +797,7 @@ node --test backend/tests/storyboard-annotation.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js
+node --test backend/tests/project-delete.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js

@@ -9650,9 +9650,35 @@
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
+    /**
+     * Confirm a project deletion by naming what it destroys.
+     *
+     * "This cannot be undone" is a speed bump — it tells the reader the rule,
+     * not the stakes. A project with a screenplay, eight shots and twenty-six
+     * generated frames that cost real money to make deserves to say so before
+     * it goes, and an empty one should not demand the same ceremony.
+     */
+    async function confirmProjectDelete(id, title) {
+        let lost = '';
+        try {
+            const d = await api('/projects/' + id + '/dashboard');
+            const s = d.stats || {};
+            const bits = [];
+            if (s.scenes && s.scenes.total) bits.push(`${s.scenes.total} scene(s)`);
+            if (s.shots && s.shots.total) bits.push(`${s.shots.total} shot(s)`);
+            if (s.characters) bits.push(`${s.characters} character(s)`);
+            if (s.assets && s.assets.total) bits.push(`${s.assets.total} generated asset(s)`);
+            lost = bits.length ? '\n\nThis permanently removes:\n  \u2022 ' + bits.join('\n  \u2022 ') : '';
+        } catch (_) {
+            // If the counts cannot be read, warn harder rather than softer.
+            lost = '\n\nIts contents could not be read, so the scale of this is unknown.';
+        }
+        return confirm(`Delete "${title}"?${lost}\n\nGenerated media cost money to produce and cannot be recovered.`);
+    }
+
     async function deleteCurrentProject() {
         if (!state.currentProject) return;
-        if (!confirm('Delete "' + state.currentProject.title + '"? This cannot be undone.')) return;
+        if (!await confirmProjectDelete(state.currentProject.id, state.currentProject.title)) return;
         try {
             await api('/projects/' + state.currentProject.id, { method: 'DELETE' });
             backToProjectList();
@@ -9661,12 +9687,17 @@
     }
 
     async function deleteProjectById(id, title) {
-        if (!confirm('Delete "' + title + '"? This cannot be undone.')) return;
+        if (!await confirmProjectDelete(id, title)) return;
         try {
             await api('/projects/' + id, { method: 'DELETE' });
             await loadProjects();
             setStatus('Project deleted');
-        } catch (err) { setStatus('Error: ' + err.message); }
+        } catch (err) {
+            // Say plainly that nothing was removed. A failed delete that reads
+            // like a generic error leaves the user unsure whether half of it
+            // went.
+            setStatus('Could not delete the project — nothing was removed. ' + err.message);
+        }
     }
 
     async function deleteAllProjects() {
