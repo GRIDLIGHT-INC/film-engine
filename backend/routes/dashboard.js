@@ -108,6 +108,15 @@ function getDashboard(req, res, projectId) {
             locations,
             assets: { total: totalAssets, by_type: assetsByType },
             unresolved_notes: unresolvedNotes,
+            // How much of the film has been blocked in 3D. The dashboard's
+            // progress strip reports a Block stage, and without this it would
+            // report "not started" forever however much was staged — a wrong
+            // answer stated confidently.
+            previs_blocked: db.prepare(
+                `SELECT COUNT(*) AS n FROM film_previs_blocking b
+                   JOIN film_shots sh ON sh.id = b.shot_id
+                   JOIN film_scenes sc ON sc.id = sh.scene_id
+                  WHERE sc.project_id = ?`).get(projectId).n,
             estimated_duration_ms: totalDuration,
             estimated_duration_formatted: formatDuration(totalDuration)
         },

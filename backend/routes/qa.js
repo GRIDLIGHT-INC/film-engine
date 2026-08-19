@@ -162,12 +162,24 @@ function buildBroadcastChecks(projectId, project) {
     const provenanceRows = db.prepare('SELECT COUNT(*) AS count FROM film_provenance_manifests WHERE project_id = ?').get(projectId).count || 0;
     const blockedRights = db.prepare("SELECT COUNT(*) AS count FROM film_rights WHERE project_id = ? AND status IN ('blocked', 'expired', 'restricted', 'unknown')").get(projectId).count || 0;
 
+    // The conformed film, distinguished by metadata.kind because
+    // film_assets.asset_type could not be widened in place (migration 042).
+    const projectMaster = db.prepare(
+        `SELECT file_name FROM film_assets
+          WHERE project_id = ? AND asset_type = 'video_final' AND metadata LIKE '%"kind":"project_master"%'
+       ORDER BY version DESC, created_at DESC LIMIT 1`).get(projectId);
+
     return [
         {
             key: 'video_master',
             label: 'Final video master registered',
-            status: videoCount > 0 ? 'pass' : 'fail',
-            detail: videoCount > 0 ? `${videoCount} final/synced video asset(s)` : 'No final or synced video asset is registered.',
+            // The PROJECT master, not a count of per-shot clips. Counting made
+            // this pass on shot 1 of N: a project with one finished shot and
+            // ninety-nine missing reported a registered master.
+            status: projectMaster ? 'pass' : 'fail',
+            detail: projectMaster
+                ? `Conformed film registered (${projectMaster.file_name}).`
+                : `No conformed film. ${videoCount} per-shot video asset(s) exist; run the conform to produce the master.`,
         },
         {
             key: 'audio_master',

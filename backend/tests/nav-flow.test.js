@@ -99,12 +99,18 @@ test('every navigable page has a panel to show', () => {
 
 // ── The flow makes sense as a flow ──────────────────────────────────────────
 
-test('previs sits in pre-production, before the storyboard it informs', () => {
-    // The concrete complaint that prompted this: previs was below Export.
-    const previs = phaseOf('previs');
-    assert.strictEqual(previs, 'pre-production');
-    assert.ok(PROJECT_PHASES.indexOf(previs) < PROJECT_PHASES.indexOf(phaseOf('storyboard')),
-        'previs is ordered after storyboarding');
+test('previs sits with the storyboard, because they are one loop', () => {
+    // This originally asserted previs came BEFORE the storyboard, on the
+    // reasoning that blocking informs the frame. That was true when the two
+    // were a hand-off. They are now a loop — a blocking shapes the keyframe,
+    // the keyframe is blocked against, and /previs/apply writes the result back
+    // to the card — so separating them by a phase boundary describes a
+    // workflow nobody has any more. The original complaint (previs stranded
+    // below Export) is still guarded: it must not fall after the board.
+    assert.strictEqual(phaseOf('previs'), phaseOf('storyboard'),
+        'previs and the storyboard are the same decision seen twice and belong together');
+    assert.ok(PROJECT_PHASES.indexOf(phaseOf('previs')) <= PROJECT_PHASES.indexOf(phaseOf('production')),
+        'previs is ordered after the shoot it is supposed to plan');
 });
 
 test('you write before you shoot, and shoot before you finish', () => {

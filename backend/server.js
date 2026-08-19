@@ -326,7 +326,7 @@ const server = http.createServer(async (req, res) => {
             return await handleMoodBoard(req, res, parts, query);
         }
 
-        if (parts[1] === 'projects' && parts[2] && ['staleness', 'sides', 'dood', 'run-plan', 'breakdown-summary', 'elements-list', 'run-report', 'board-groups', 'setups'].includes(parts[3])) {
+        if (parts[1] === 'projects' && parts[2] && ['staleness', 'sides', 'dood', 'run-plan', 'breakdown-summary', 'elements-list', 'run-report', 'board-groups', 'setups', 'conform'].includes(parts[3])) {
             return await handleProductionReports(req, res, parts, query);
         }
 

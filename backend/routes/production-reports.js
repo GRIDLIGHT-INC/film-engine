@@ -22,6 +22,7 @@ const { ARTEFACT_KINDS, fingerprintFor, isStale } = require('../lib/artefact-fin
 const { buildSides, buildDOOD, buildBreakdownSummary, buildElementsList, buildRunReport } = require('../lib/production-reports');
 const { buildRunPlan } = require('../lib/run-plan');
 const { groupFrames, buildSetups, GROUP_AXES } = require('../lib/board-grouping');
+const { planConform, runConform, availableExecutors } = require('../lib/conform');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -98,6 +99,22 @@ function handleProductionReports(req, res, urlParts, query) {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
         return json(res, 200, buildDOOD(urlParts[2]));
+    }
+
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'conform') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        // GET plans and costs nothing; POST actually produces the file. A
+        // director should be able to see what a conform would do before it runs
+        // for half an hour.
+        if (req.method === 'GET') {
+            const plan = planConform(urlParts[2]);
+            return json(res, plan.ok ? 200 : 409, { ...plan, executors: availableExecutors().executors });
+        }
+        if (req.method === 'POST') {
+            return runConform(urlParts[2], req.body || {}).then(result =>
+                json(res, result.ok ? 201 : 409, result));
+        }
+        return json(res, 405, { error: 'Method not allowed' });
     }
 
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'board-groups') {

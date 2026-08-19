@@ -187,9 +187,20 @@ async function persistStepResult(stepId, capability, result, ctx) {
 persistStepResult.supports = capability => !!PERSIST_EXT[capability];
 
 async function executeStep(stepId, shot, scene, project) {
-    // Assembly is handled locally (NLE export), not an external generation call.
+    // Assembly conforms the shots into one film. It used to return a hardcoded
+    // success with a message telling the caller to go and do it themselves, so
+    // an orchestrated run reported complete and produced no movie — the single
+    // line standing between this product and its own acceptance criterion.
     if (stepId === 'assembly') {
-        return { ok: true, message: 'Assembly step: use export endpoints to finalize' };
+        const { runConform } = require('../lib/conform');
+        const projectId = (scene && scene.project_id) || (project && project.id);
+        const result = await runConform(projectId);
+        if (result.ok) {
+            return { ok: true, message: `Conformed ${result.plan.clips.length} shots`, assetId: result.asset_id, output: result.output };
+        }
+        // A conform that could not run is a FAILED step, not a quiet success.
+        // The previous behaviour is exactly what let a run look finished.
+        return { ok: false, code: result.state, error: result.error, plan: result.plan };
     }
 
     const capability = STEP_CAPABILITY[stepId];

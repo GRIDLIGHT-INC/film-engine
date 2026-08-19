@@ -37,43 +37,42 @@ const ALWAYS_AVAILABLE = ['dashboard', 'settings', 'jobsqueue'];
  * empty rather than deleted, so the map stays comparable to PROJECT_PHASES.
  */
 const NAV_FLOW = {
-    'concept': { label: 'Concept', pages: [] },
+    // Ordered the way a shoot actually runs, not the way the tables were
+    // written. The previous grouping put nine unrelated pages under
+    // "pre-production" — previs beside budget beside 3D — while "concept" held
+    // nothing at all, which is a bucket rather than a progression.
+    concept: { label: 'Concept', pages: ['moodboard'] },
 
-    'script': { label: 'Script', pages: ['screenplay', 'scenes', 'acts'] },
+    script: { label: 'Script', pages: ['screenplay', 'scenes'] },
 
+    // Breaking a script down is its own act of work and was buried in the
+    // pre-production bucket.
     'pre-production': {
-        label: 'Pre-Production',
-        // Everything decided before a frame is generated: who and where, what
-        // they look like from shot to shot, where the camera goes, and what it
-        // will cost.
-        pages: ['characters', 'locations', 'props', 'previs', 'consistency', 'continuity', 'threed', 'budget', 'milestones'],
+        label: 'Breakdown & Design',
+        pages: ['characters', 'locations', 'props', 'consistency', 'continuity', 'threed'],
     },
 
-    'storyboard': { label: 'Storyboard', pages: ['storyboard', 'shotboard'] },
+    storyboard: { label: 'Board & Block', pages: ['storyboard', 'shotboard', 'previs'] },
 
-    'production': {
-        label: 'Production',
-        // Generating picture and sound.
-        pages: ['videoshots', 'music', 'pipeline', 'flows'],
+    // One page for the ten read-only surfaces built in phases 2 and 3. They
+    // are all project-level reads — run plan, sides, DOOD, elements, setups,
+    // staleness — and ten sidebar entries for ten panels is how a sidebar
+    // becomes unusable.
+    production: {
+        label: 'Plan & Shoot',
+        pages: ['production', 'videoshots', 'music', 'pipeline', 'flows', 'budget', 'milestones'],
     },
 
     'post-production': {
-        label: 'Post-Production',
+        label: 'Post',
         pages: ['colorgrading', 'colorpipeline', 'musiccues', 'dubbing'],
     },
 
-    'review': {
-        label: 'Review',
-        // Watching it back and deciding what is good.
-        pages: ['playback', 'selects', 'notes', 'broadcastqc', 'renderhistory'],
-    },
+    review: { label: 'Review', pages: ['playback', 'selects', 'notes', 'broadcastqc', 'renderhistory'] },
 
-    'export': {
-        label: 'Delivery',
-        pages: ['exportpage', 'assets', 'rights', 'provenance'],
-    },
+    export: { label: 'Deliver', pages: ['exportpage', 'assets', 'rights', 'provenance'] },
 
-    'complete': { label: 'Complete', pages: [] },
+    complete: { label: 'Complete', pages: [] },
 };
 
 /** Which phase owns this page, or null when it is always available. */

@@ -168,4 +168,69 @@ function availableExecutors() {
     return { executors, any: executors.some(e => e.available) };
 }
 
-module.exports = { planConform, buildFfmpegArgs, availableExecutors, VIDEO_PRECEDENCE };
+/**
+ * Actually produce the film.
+ *
+ * Returns a RESULT, never throws for a missing tool: "nothing installed can do
+ * this" is an answer a director needs, and a stack trace is not one. The three
+ * states — produced, refused, no executor — stay distinct, because collapsing
+ * any of them into success is the exact defect this replaces.
+ */
+async function runConform(projectId, options) {
+    const opts = options || {};
+    const plan = planConform(projectId);
+    if (!plan.ok) return { ok: false, state: 'missing_shots', plan, error: plan.error };
+
+    const probe = availableExecutors();
+    const executor = probe.executors.find(e => e.available);
+    if (!executor) {
+        return {
+            ok: false, state: 'no_executor', plan, executors: probe.executors,
+            error: 'Nothing available can conform the film: '
+                + probe.executors.map(e => `${e.id} (${e.reason})`).join('; '),
+        };
+    }
+
+    if (executor.id !== 'local-ffmpeg') {
+        // The provider path exists in the registry but no adapter implements a
+        // whole-film stitch today. Saying so beats pretending to try.
+        return {
+            ok: false, state: 'no_executor', plan, executors: probe.executors,
+            error: 'Only a provider executor is available, and no provider adapter implements a '
+                + 'whole-film conform yet. Install ffmpeg to conform locally.',
+        };
+    }
+
+    const path = require('path');
+    const fs = require('fs');
+    const { getProjectDir } = require('./file-storage');
+    const dir = typeof getProjectDir === 'function'
+        ? getProjectDir('video', projectId)
+        : path.join(process.env.FILM_DATA_DIR || 'data', 'video', projectId);
+    fs.mkdirSync(dir, { recursive: true });
+
+    const outputPath = path.join(dir, `${opts.filename || 'film_master'}.mp4`);
+    const cmd = buildFfmpegArgs(plan, outputPath);
+
+    try {
+        execFileSync(cmd.bin, cmd.args, { stdio: 'pipe', timeout: opts.timeoutMs || 30 * 60 * 1000 });
+    } catch (err) {
+        return { ok: false, state: 'failed', plan, error: `ffmpeg failed: ${String(err.stderr || err.message).slice(0, 400)}` };
+    }
+
+    const db = database();
+    const { generateId } = require('../db/database');
+    const assetId = generateId();
+    // asset_type must be a value the CHECK permits; the project master is
+    // distinguished by metadata.kind, the same discriminator the 3D work uses
+    // because the CHECK cannot be widened in place.
+    db.prepare(
+        `INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, version, metadata)
+         VALUES (?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1, ?)`)
+        .run(assetId, projectId, outputPath, path.basename(outputPath),
+            JSON.stringify({ kind: 'project_master', clips: plan.clips.length, duration_ms: plan.total_duration_ms }));
+
+    return { ok: true, state: 'produced', plan, asset_id: assetId, output: outputPath, executor: executor.id };
+}
+
+module.exports = { planConform, buildFfmpegArgs, availableExecutors, runConform, VIDEO_PRECEDENCE };

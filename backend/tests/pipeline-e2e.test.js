@@ -96,17 +96,40 @@ describe('Pipeline end-to-end (scene → final, mock gateway)', () => {
         try { fs.rmSync(TEST_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
     });
 
-    it('runs the full shot pipeline through to assembly', async () => {
+    it('runs every generation step against the mock gateway', async () => {
         const res = await request(`/film/shots/${shotId}/pipeline/run`, { method: 'POST', body: {} });
         assert.equal(res.status, 200);
-        assert.equal(res.data.status, 'complete', `expected complete, got ${res.data.status} (failed: ${JSON.stringify(res.data.steps_failed)})`);
         const done = res.data.steps_completed;
-        // Dialogue present → nothing auto-skipped: all 9 steps run.
-        for (const step of ['keyframe', 'video', 'voice', 'lipsync', 'music', 'sfx', 'ambient', 'post', 'assembly']) {
+        // Dialogue present → nothing auto-skipped: all 8 generation steps run.
+        for (const step of ['keyframe', 'video', 'voice', 'lipsync', 'music', 'sfx', 'ambient', 'post']) {
             assert.ok(done.includes(step), `step '${step}' should have completed`);
         }
-        assert.equal(res.data.steps_failed.length, 0);
-        assert.equal(res.data.progress_pct, 100);
+    });
+
+    it('assembly reports honestly when it cannot produce a film', async () => {
+        // This assertion used to read `status === 'complete'` with zero failed
+        // steps, and it passed because assembly returned a hardcoded success
+        // and made nothing. The mock gateway can serve every generation step
+        // and cannot conform a film — conforming needs a media tool, and this
+        // machine has none — so the honest outcome is a run that says so.
+        //
+        // The test now pins the DISTINCTION rather than the old happy answer:
+        // whatever assembly does, it must never claim a film it did not make.
+        const res = await request(`/film/shots/${shotId}/pipeline/run`, { method: 'POST', body: {} });
+        const made = (res.data.steps_completed || []).includes('assembly');
+        const failed = (res.data.steps_failed || []).includes('assembly');
+        assert.ok(made !== failed, 'assembly is both completed and failed, or neither');
+
+        if (made) {
+            // A conform really ran: there must be a master to show for it.
+            const assets = await request(`/film/projects/${projectId}/assets`);
+            const master = (assets.data.assets || []).some(a =>
+                String(a.metadata || '').includes('project_master'));
+            assert.ok(master, 'assembly completed without registering a conformed film');
+        } else {
+            assert.ok(['completed_with_errors', 'failed'].includes(res.data.status),
+                `assembly failed but the run reported ${res.data.status}`);
+        }
     });
 
     it('records the pipeline run row as complete', async () => {
@@ -122,10 +145,10 @@ describe('Pipeline end-to-end (scene → final, mock gateway)', () => {
         });
         const id = (noDlg.data.shots || [])[0].id;
         const res = await request(`/film/shots/${id}/pipeline/run`, { method: 'POST', body: {} });
-        assert.equal(res.data.status, 'complete');
+        // The auto-skip is what this test is about; whether the conform can run
+        // depends on the machine and is covered above.
         assert.ok(!res.data.steps_completed.includes('voice'), 'voice should be skipped');
         assert.ok(!res.data.steps_completed.includes('lipsync'), 'lipsync should be skipped');
         assert.ok(res.data.steps_completed.includes('keyframe'));
-        assert.ok(res.data.steps_completed.includes('assembly'));
     });
 });

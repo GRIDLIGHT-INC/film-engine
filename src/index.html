@@ -3757,11 +3757,14 @@
                 <button class="nav-item" data-page="shotboard" onclick="navigateTo('shotboard')" data-tooltip="Kanban board of shots organized by scene with scene cards" data-tooltip-pos="right">
                     <span class="nav-icon">&#127919;</span> Shot Board
                 </button>
+                <button class="nav-item" data-page="production" onclick="navigateTo('production')" data-tooltip="Run plan, staleness, sides, DOOD, setups and the film master \u2014 every project-level read on one page" data-tooltip-pos="right">
+                    <span class="nav-icon">&#128203;</span> Plan &amp; Shoot
+                </button>
+                <button class="nav-item" data-page="moodboard" onclick="navigateTo('moodboard')" data-tooltip="Decide the look before generating: references, palette, lens and delivery specs" data-tooltip-pos="right">
+                    <span class="nav-icon">&#127912;</span> Look
+                </button>
                 <button class="nav-item" data-page="storyboard" onclick="navigateTo('storyboard')" data-tooltip="AI-generated visual keyframes for each shot in your project" data-tooltip-pos="right">
                     <span class="nav-icon">&#128444;</span> Storyboard
-                </button>
-                <button class="nav-item" data-page="acts" onclick="navigateTo('acts')" data-tooltip="Organize scenes into acts and sequences for narrative structure" data-tooltip-pos="right">
-                    <span class="nav-icon">&#127917;</span> Acts
                 </button>
                 <div class="sidebar-divider"></div>
                 <div class="nav-section">Elements</div>
@@ -3894,6 +3897,14 @@
                 <button class="btn btn-secondary btn-sm" onclick="navigateTo('storyboard')" data-tooltip="View and generate AI storyboard keyframes" data-tooltip-pos="bottom">Storyboard</button>
                 <button class="btn btn-secondary btn-sm" onclick="navigateTo('pipeline')" data-tooltip="Run automated production pipeline on shots" data-tooltip-pos="bottom">Pipeline</button>
                 <button class="btn btn-secondary btn-sm" onclick="navigateTo('exportpage')" data-tooltip="Export project to NLE timeline formats" data-tooltip-pos="bottom">Export</button>
+            </div>
+            <!-- Where the project actually is, phase by phase, with a way
+                 into each. The dashboard previously reported counts and left
+                 the reader to work out what to do next and where it lived. -->
+            <div class="card mb-16">
+                <div class="flex-between mb-8"><strong>Production progress</strong>
+                    <span class="text-sm text-muted" id="dashPhaseHint"></span></div>
+                <div id="dashProgress" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
             </div>
             <div class="dashboard-grid" id="dashStats"></div>
             <div class="flex-between mb-8">
@@ -4222,6 +4233,41 @@
         </div>
 
         <!-- ── 6. STORYBOARD ────────────────────────────────────── -->
+        <div class="page" id="page-production">
+            <div class="flex-between mb-16">
+                <h2>Plan &amp; Shoot</h2>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary" onclick="loadProductionPage()">Refresh</button>
+                    <button class="btn btn-primary" onclick="productionConform()" data-tooltip="Conform every shot into one film" data-tooltip-pos="bottom">Conform film</button>
+                </div>
+            </div>
+            <!-- Ten project-level reads on one page. They were built as ten
+                 endpoints and would have been ten sidebar entries, which is how
+                 a sidebar stops being navigable. -->
+            <div id="productionPanels" class="entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));"></div>
+        </div>
+
+        <div class="page" id="page-moodboard">
+            <div class="flex-between mb-16">
+                <h2>Look</h2>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary" onclick="moodBoardCompose(false)">Preview style</button>
+                    <button class="btn btn-primary" onclick="moodBoardCompose(true)" data-tooltip="Write this look onto the project" data-tooltip-pos="bottom">Apply look</button>
+                </div>
+            </div>
+            <div class="card mb-16">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+                    <div><label>Facet</label><select id="moodKind"></select></div>
+                    <div style="flex:1;min-width:200px;"><label>Note</label><input id="moodNote" placeholder="teal shadows, amber sodium practicals"></div>
+                    <div><label>Spec</label><select id="moodSpecKind" onchange="moodSpecValues()"><option value="">—</option></select></div>
+                    <div><label>Value</label><select id="moodSpecValue"></select></div>
+                    <button class="btn btn-secondary" onclick="moodBoardAdd()">Add</button>
+                </div>
+            </div>
+            <div id="moodComposed" class="card mb-16" style="display:none;"></div>
+            <div id="moodEntries" class="entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
+        </div>
+
         <div class="page" id="page-storyboard">
             <div class="flex-between mb-16">
                 <h2>Storyboard</h2>
@@ -7403,6 +7449,123 @@
 
     const P_DEG = Math.PI / 180;
 
+    // ── Plan & Shoot: the project-level reads, on one page ─────────────────
+    //
+    // Ten endpoints were built in phases 2 and 3 and none had a surface, so
+    // none of the work was usable from the app. Ten sidebar entries for ten
+    // read-only panels is the other failure mode, so they share a page.
+
+    const PRODUCTION_PANELS = [
+        { id: 'run-plan',          title: 'Run plan',        render: p => `${p.total_items} item(s) in ${p.strips.length} strip(s) · ${p.model_switches} model switch(es) · $${(p.projected_cost || 0).toFixed(2)}${p.refused ? ' · REFUSED (over budget)' : ''}`, go: 'pipeline' },
+        { id: 'staleness',         title: 'Staleness',       render: p => `${p.summary.stale} stale · ${p.summary.fresh} current · ${p.summary.unknown} unknown`, go: 'storyboard' },
+        { id: 'conform',           title: 'Film master',     render: p => p.ok ? `Ready: ${p.clips.length} clip(s), ${Math.round((p.total_duration_ms || 0) / 1000)}s` : (p.error || 'not ready') },
+        { id: 'dood',              title: 'Day out of days', render: p => `${p.characters.length} character(s) · ${p.needs_plate.length} still need a plate`, go: 'characters' },
+        { id: 'sides',             title: 'Sides',           render: p => `${p.speaking} speaking · ${p.non_speaking.length} non-speaking`, go: 'screenplay' },
+        { id: 'elements-list',     title: 'Elements',        render: p => `${p.elements.characters.length} characters · ${p.elements.locations.length} locations · ${p.elements.props.length} props · ${p.undescribed.length} undescribed`, go: 'props' },
+        { id: 'breakdown-summary', title: 'Breakdown',       render: p => `${p.totals.scenes} scene(s) · ${p.totals.shots} shot(s) · ${p.totals.dialogue_lines} line(s)`, go: 'scenes' },
+        { id: 'setups',            title: 'Setups',          render: p => `${p.setups.length} setup(s) · ${p.reused_shots} shot(s) reuse another\u2019s conditioning`, go: 'shotboard' },
+        { id: 'board-groups',      title: 'Board',           render: p => `${p.groups.length} group(s) by ${p.axis}`, go: 'storyboard' },
+        { id: 'run-report',        title: 'Runs',            render: p => `${p.summary.total} run(s) · ${p.summary.failed} failed · $${(p.spend.recorded || 0).toFixed(2)} spent`, go: 'jobsqueue' },
+    ];
+
+    async function loadProductionPage() {
+        if (!state.currentProject) return;
+        const grid = document.getElementById('productionPanels');
+        grid.innerHTML = '<div class="text-muted">Loading…</div>';
+        const cards = [];
+        for (const panel of PRODUCTION_PANELS) {
+            let body, ok = true;
+            try {
+                const data = await api(`/projects/${state.currentProject.id}/${panel.id}`);
+                body = esc(panel.render(data));
+            } catch (err) {
+                // A panel that cannot load says so. Ten silent empties would
+                // read as "nothing to report", which is a different claim.
+                ok = false; body = esc(err.message || 'unavailable');
+            }
+            cards.push(`<div class="card">
+                <div class="flex-between"><strong>${esc(panel.title)}</strong>
+                ${panel.go ? `<button class="btn btn-sm" onclick="navigateTo('${panel.go}')">Open</button>` : ''}</div>
+                <p class="text-sm ${ok ? '' : 'text-muted'}" style="margin-top:6px;">${body}</p>
+            </div>`);
+        }
+        grid.innerHTML = cards.join('');
+        setStatus('Plan & Shoot loaded');
+    }
+
+    async function productionConform() {
+        if (!state.currentProject) return;
+        setStatus('Conforming…');
+        try {
+            const res = await api(`/projects/${state.currentProject.id}/conform`, { method: 'POST', body: JSON.stringify({}) });
+            setStatus(res.ok ? `Film conformed: ${res.output}` : (res.error || 'Conform refused'));
+        } catch (err) { setStatus('Conform: ' + err.message); }
+        loadProductionPage();
+    }
+
+    // ── Look board ─────────────────────────────────────────────────────────
+
+    let MOOD_SPECS = {};
+
+    async function loadMoodBoardPage() {
+        if (!state.currentProject) return;
+        const board = await api(`/projects/${state.currentProject.id}/mood-board`);
+        const kinds = ['palette', 'lighting', 'lens', 'framing', 'texture', 'image'];
+        document.getElementById('moodKind').innerHTML = kinds.map(k => `<option value="${k}">${k}</option>`).join('');
+
+        // Spec vocabularies come from the server, so the board can never offer
+        // a lens or a ratio the engine would refuse.
+        const composed = await api(`/projects/${state.currentProject.id}/mood-board/compose`, { method: 'POST', body: JSON.stringify({}) });
+        MOOD_SPECS = composed.spec_kinds || {};
+        document.getElementById('moodSpecKind').innerHTML = '<option value="">—</option>'
+            + Object.entries(MOOD_SPECS).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join('');
+        moodSpecValues();
+
+        document.getElementById('moodEntries').innerHTML = (board.entries || []).map(e => `
+            <div class="card">
+                <div class="flex-between"><strong>${esc(e.spec_kind || e.kind)}</strong>
+                    <button class="btn btn-sm" onclick="moodBoardDelete('${e.id}')">Remove</button></div>
+                ${e.image_path ? `<img src="${API_BASE}${esc(e.image_path)}" style="width:100%;margin-top:6px;border-radius:4px;" onerror="this.style.display='none'">` : ''}
+                <p class="text-sm" style="margin-top:6px;">${esc(e.spec_value || e.note || '')}</p>
+            </div>`).join('') || '<div class="text-muted">Nothing on the board yet.</div>';
+        setStatus(`${(board.entries || []).length} board entr(ies)`);
+    }
+
+    function moodSpecValues() {
+        const kind = document.getElementById('moodSpecKind').value;
+        const spec = MOOD_SPECS[kind];
+        document.getElementById('moodSpecValue').innerHTML =
+            (spec ? spec.allowed : []).map(v => `<option value="${esc(String(v))}">${esc(String(v))}</option>`).join('');
+    }
+
+    async function moodBoardAdd() {
+        const body = { kind: document.getElementById('moodKind').value, note: document.getElementById('moodNote').value };
+        const specKind = document.getElementById('moodSpecKind').value;
+        if (specKind) { body.spec_kind = specKind; body.spec_value = document.getElementById('moodSpecValue').value; }
+        try {
+            await api(`/projects/${state.currentProject.id}/mood-board`, { method: 'POST', body: JSON.stringify(body) });
+            document.getElementById('moodNote').value = '';
+            loadMoodBoardPage();
+        } catch (err) { setStatus('Could not add: ' + err.message); }
+    }
+
+    async function moodBoardDelete(id) {
+        try { await api(`/mood-board/${id}`, { method: 'DELETE' }); loadMoodBoardPage(); }
+        catch (err) { setStatus('Could not remove: ' + err.message); }
+    }
+
+    async function moodBoardCompose(apply) {
+        const res = await api(`/projects/${state.currentProject.id}/mood-board/compose`,
+            { method: 'POST', body: JSON.stringify({ apply: !!apply }) });
+        const el = document.getElementById('moodComposed');
+        el.style.display = '';
+        el.innerHTML = `<strong>${apply ? 'Applied' : 'Would apply'}</strong>
+            <p class="text-sm" style="margin-top:6px;">${esc(res.style_preset || res.message || '')}</p>
+            ${res.warning ? `<p class="text-sm" style="color:var(--gl-warning,#f59e0b);margin-top:6px;">${esc(res.warning.detail)}</p>` : ''}
+            ${(res.applied_specs || []).length ? `<p class="text-sm text-muted" style="margin-top:6px;">Settings written: ${res.applied_specs.map(s => esc(s.kind)).join(', ')}</p>` : ''}`;
+        setStatus(apply ? 'Look applied' : 'Look previewed — not applied');
+    }
+
     async function loadPrevisPage() {
         if (!state.currentProject) return;
         try {
@@ -9383,6 +9546,8 @@
             exportpage: loadExportPage,
             pipeline: loadPipeline,
             flows: loadFlowsPage,
+            production: loadProductionPage,
+            moodboard: loadMoodBoardPage,
             previs: loadPrevisPage,
             settings: loadSettings,
             acts: loadActs,
@@ -9531,11 +9696,58 @@
     // ══════════════════════════════════════════════════════════════
     // DASHBOARD
     // ══════════════════════════════════════════════════════════════
+    /**
+     * The production, phase by phase: what is done, and a way in.
+     *
+     * The dashboard reported counts and left the reader to work out both what
+     * to do next and which of thirty-odd pages it lived on. Each step here
+     * answers "is this done" from real data and navigates straight to the page
+     * that does it.
+     */
+    const DASH_STEPS = [
+        { label: 'Look',       page: 'moodboard',  done: d => (d.stats.assets.total || 0) > 0 || !!d.project.style_preset },
+        { label: 'Script',     page: 'screenplay', done: d => (d.stats.scenes.total || 0) > 0 },
+        { label: 'Breakdown',  page: 'characters', done: d => (d.stats.characters || 0) > 0 && (d.stats.locations || 0) > 0 },
+        { label: 'Shots',      page: 'shotboard',  done: d => (d.stats.shots.total || 0) > 0 },
+        { label: 'Board',      page: 'storyboard', done: d => byType(d, 'storyboard') > 0 || byType(d, 'keyframe') > 0 },
+        { label: 'Block',      page: 'previs',     done: d => (d.stats.previs_blocked || 0) > 0 },
+        { label: 'Plan',       page: 'production', done: d => true },
+        { label: 'Shoot',      page: 'videoshots', done: d => byType(d, 'video_raw') > 0 },
+        { label: 'Post',       page: 'colorgrading', done: d => byType(d, 'video_final') > 0 },
+        { label: 'Deliver',    page: 'exportpage', done: d => byType(d, 'fcpxml') > 0 || byType(d, 'premiere_xml') > 0 },
+    ];
+
+    function byType(d, type) {
+        const rows = (d.stats.assets && d.stats.assets.by_type) || [];
+        const hit = rows.find(r => r.asset_type === type);
+        return hit ? hit.count : 0;
+    }
+
+    function renderDashProgress(data) {
+        const el = document.getElementById('dashProgress');
+        if (!el) return;
+        let firstUndone = null;
+        el.innerHTML = DASH_STEPS.map(step => {
+            let done = false;
+            try { done = !!step.done(data); } catch (_) { done = false; }
+            if (!done && !firstUndone) firstUndone = step;
+            // Done is stated, not implied by colour alone — a colour-only
+            // signal is unreadable to a third of people looking at it.
+            return `<button class="btn btn-sm" onclick="navigateTo('${step.page}')"
+                        style="border-color:${done ? 'var(--gl-success,#22c55e)' : 'var(--gl-border,rgba(255,255,255,.2))'};"
+                        title="${done ? 'done' : 'not started'} — open ${esc(step.label)}">
+                        ${done ? '&#10003;' : '&#9675;'} ${esc(step.label)}</button>`;
+        }).join('');
+        const hint = document.getElementById('dashPhaseHint');
+        if (hint) hint.textContent = firstUndone ? `Next: ${firstUndone.label}` : 'Every stage has output';
+    }
+
     async function loadDashboard() {
         if (!state.currentProject) return;
         try {
             const data = await api('/projects/' + state.currentProject.id + '/dashboard');
             state.dashboard = data;
+            renderDashProgress(data);
             const s = data.stats;
 
             document.getElementById('dashStats').innerHTML = [

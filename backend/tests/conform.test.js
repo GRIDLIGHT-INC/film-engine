@@ -174,3 +174,36 @@ test('executors are probed and reported, never assumed', () => {
         if (!e.available) assert.ok(e.reason, `${e.id}: unavailable with no reason given`);
     }
 });
+
+
+// ── Wiring: assembly must stop lying ───────────────────────────────────────
+
+const fs = require('fs');
+
+test('assembly no longer returns a hardcoded success', () => {
+    // The line this whole task exists to delete:
+    //   { ok: true, message: 'Assembly step: use export endpoints to finalize' }
+    // An orchestrated run reported complete and produced no film at all.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'pipeline.js'), 'utf8');
+    assert.ok(!/Assembly step: use export endpoints to finalize/.test(src),
+        'assembly still returns the placeholder, so a run reports a film it did not make');
+    assert.ok(/conform/i.test(src), 'assembly never mentions the conform');
+});
+
+test('a conform that cannot run says so instead of reporting success', () => {
+    // The three states must stay distinguishable. Collapsing "nothing
+    // happened" into ok:true is the original defect.
+    const { projectId } = makeFilm([{ code: '1A', assets: [] }]);
+    const plan = conform.planConform(projectId);
+    assert.strictEqual(plan.ok, false);
+    assert.ok(plan.error, 'a refusal with no reason is indistinguishable from a bug');
+    assert.ok(plan.missing.length, 'refused without naming what is missing');
+});
+
+test('the conform is reachable as its own route, not only as a pipeline step', () => {
+    // A director conforms a cut far more often than they run the whole
+    // pipeline, and making them run nine steps to get one file is what gets
+    // worked around with ffmpeg by hand.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'production-reports.js'), 'utf8');
+    assert.ok(/conform/.test(src), 'no conform route');
+});
