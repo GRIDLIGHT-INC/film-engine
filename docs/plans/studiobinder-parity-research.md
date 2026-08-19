@@ -132,8 +132,9 @@ Verdicts: **HAVE** (comparable or better) · **PARTIAL** (exists, materially sho
 | 41 | Activity feed | MISSING | AI reading: a run/spend audit trail, partly latent in `render_ledger`. |
 | 42 | SSO / whitelabel / mobile | MISSING | Enterprise-tier concerns; lowest priority. |
 
-**Tally: 8 HAVE · 9 PARTIAL · 25 MISSING** (1 of the 25 — weather/hospitals — is deliberately
-out of scope for AI production).
+**Tally: 8 HAVE (6 comparable + 2 beyond) · 7 PARTIAL · 27 MISSING** — counted off the matrix
+rows, not estimated. One of the 27 (weather/hospitals) is deliberately out of scope for AI
+production, so the real target is 26.
 
 ---
 
