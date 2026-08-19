@@ -44,7 +44,7 @@ that close the creative loop (P3), and identity only if it is asked for (P4). It
 
 | Component | Current State |
 |---|---|
-| Derived-artefact staleness | **None.** No artefact records what it was generated from. Editing a scene card, a description or a plate leaves every downstream frame valid-looking. The only fingerprint anywhere is `film_previs_blocking.approved_fingerprint` (migration 062), scoped to previs approval alone |
+| Derived-artefact staleness | **None.** No artefact records what it was generated from (`grep -rl input_fingerprint` → 0 files). Editing a scene card, a description or a plate leaves every downstream frame valid-looking. Two hashing mechanisms exist and neither does this: `graphFingerprint` identifies a flow graph, and `film_previs_blocking.approved_fingerprint` (migration 062) detects a restaged previs approval. The second is the right shape and the wrong scope |
 | Generated artefact kinds | 12: the 8 orchestrated capabilities in `STEP_CAPABILITY` (image, video, voice, lipsync, music, sfx, ambient, post) + 3 plate kinds (character sheet, location plate, prop plate) + the scene card itself |
 | Generation job tracking | 12 `*_jobs` tables; `film_assets` with 22 types. Jobs record status and output path, never inputs |
 | Scene/character presence | **Broken and partly dead.** `film_scene_characters` and `film_scene_props` have **0 INSERT sites and 0 rows**. Presence lives in `film_scenes.characters_present`, populated from **dialogue cues only** — on Wingfall it reads `["MAYA"], [], ["MAYA"]`, so the DRAGON appears in no scene |
