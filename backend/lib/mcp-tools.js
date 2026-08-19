@@ -930,7 +930,11 @@ async function callRouteTool(t, args) {
             if (args[key] !== undefined) body[key] = args[key];
         }
     }
-    return callRoute(t.method, t.path(args), body, t.handler || undefined);
+    // A tool whose handler depends on its arguments — plate_generate routes to
+    // characters or to locations depending on the kind — resolves it here.
+    // Without this the dispatcher would send a prop to the character router.
+    const handler = typeof t.handlerFor === 'function' ? t.handlerFor(args) : t.handler;
+    return callRoute(t.method, t.path(args), body, handler || undefined);
 }
 
 // ── Set 4: batch tools ──────────────────────────────────────────────────────
@@ -1012,6 +1016,27 @@ const BATCH_TOOLS = [
             }
             return out;
         },
+    },
+    {
+        name: 'plate_generate',
+        handler: handleCharacters, method: 'POST',
+        description: 'Generate the reference plate for ONE subject. SPENDS CREDITS. Use this rather than plate_generate_all when some subjects already have a plate worth keeping \u2014 generating a plate DELETES the existing one for that subject, so a batch run replaces work you may want to keep. kind is character, location or prop.',
+        path: a => {
+            const kind = String(a.kind || 'character');
+            if (kind === 'location') return `/film/locations/${a.subject_id}/plate/generate`;
+            if (kind === 'prop') return `/film/props/${a.subject_id}/plate/generate`;
+            return `/film/characters/${a.subject_id}/refsheet/generate`;
+        },
+        // Routed per kind, because characters live in one handler and
+        // locations and props in another.
+        handlerFor: a => (String(a.kind || 'character') === 'character' ? handleCharacters : handleLocations),
+        body: a => (a.views ? { views: a.views } : {}),
+        schema: {
+            subject_id: { type: 'string' },
+            kind: { type: 'string', description: 'character | location | prop' },
+            views: { type: 'array', description: 'Characters only: which of front, side, back. Defaults to all three.' },
+        },
+        required: ['subject_id', 'kind'],
     },
     {
         name: 'plate_generate_all',
