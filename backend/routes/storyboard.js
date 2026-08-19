@@ -409,6 +409,17 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
         if (plate) candidates.push({ name: matchedLocation.name, kind: 'location', file_path: plate.file_path });
     }
 
+    // The film's look, as a picture. lib/reference-images has had a `style`
+    // rank since it was written and nothing ever filled it, so a frame pinned
+    // to the mood board changed no output anywhere. Ranked below character and
+    // location, so with three slots a look plate never displaces the actor — a
+    // viewer notices a different face long before a different grade.
+    try {
+        for (const ref of require('../lib/look-development').styleReferences(db, projectId, 1)) {
+            candidates.push(ref);
+        }
+    } catch (_) { /* a project with no board generates exactly as before */ }
+
     // Props named on the scene card. Ranked below character and location by
     // lib/reference-images, so with the 3-reference cap they only claim a slot
     // when there is one free — a prop displacing the actor would be the wrong

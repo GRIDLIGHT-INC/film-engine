@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (63 migrations)
+│   │   └── migrations/     # SQL migration files (64 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -121,6 +121,7 @@ film-engine/
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
 │   │   ├── board-grouping.js      # Board groups for reading, setups for working
+│   │   ├── conform.js             # Shots → one film: pure plan, probed executors
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
@@ -154,6 +155,8 @@ film-engine/
 │       ├── mood-board.test.js          # The board composes a style preset, and warns about subjects
 │       ├── storyboard-annotation.test.js # Every shape round-trips; markup survives regeneration
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
+│       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
+│       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -412,6 +415,24 @@ A separate table from `film_continuity_refs` on purpose: continuity refs answer 
 
 Served at `GET /projects/:id/{board-groups,setups}`, `GET|POST /shots/:id/annotations`, `DELETE /annotations/:id`, and as three more MCP tools (77 total).
 
+### The Mood Board, Properly (words + images + specs)
+The first version was a text composer with a photo album bolted on — its own comment admitted that "image-only entries contribute nothing to the words", so a frame pinned to the board changed no output anywhere, and every technical choice on it was free text that could reach a prompt string and nothing else. It now produces **three** outputs, each wired to the subsystem it belongs to.
+
+**Words** compose into `style_preset`, as before, with the subject check.
+
+**Images become style references on generation.** `lib/reference-images.js` has had a `KIND_RANK` of `style: 3` since it was written and **nothing ever filled it**. Board images now do, through `gatherShotReferences`, so a pinned frame conditions every keyframe rather than describing one. Ranked below character and location deliberately: with three reference slots, a look plate displacing the actor would be the wrong trade every time, because a viewer notices a different face long before a different grade.
+
+**Specs are picked from the engine's own registries and land somewhere real.** Eight kinds, each declaring a target: `lens`/`sensor`/`aperture` → **previs** (so a card that specifies nothing opens on the film's own optics rather than a generic 50mm super35), `aspect_ratio`/`resolution`/`frame_rate`/`colour_space` → **project settings** (the same columns the settings UI writes, so a look decided here and one typed there cannot disagree about what is delivered), and `style_preset` → the prompt. The registries are *referenced*, never copied — a local list of focal lengths would drift from `LENS_KIT` the first time a lens was added, and the drift would surface as a lens the board offers and previs refuses.
+
+One translation is load-bearing: `resolution` is picked as a preset **id** (`"1080p"`) and stored as **dimensions** (`"1920x1080"`), because `target_resolution` is what every exporter parses. Writing the id would pass validation and break the export.
+
+### Conform: shots into a film
+`assembly` has been a no-op since it was written, returning `"use export endpoints to finalize"` — so an orchestrated run reports success and there is no movie, and the `video_master` QA check goes green on shot 1 of N.
+
+`lib/conform.js` plans the film: which cut of each shot ships (`video_final` > `video_synced` > `video_raw`, so a graded shot is never conformed from its raw clip), in timeline order, with the project audio mix as master when one exists and the clips' own audio when it does not — inventing a silent track would deliver a mute film that looks successful. **A missing shot refuses the conform**: a film that renders while missing shot 7 plays fine and is wrong, and nobody finds out until somebody watches all of it.
+
+**Planning is pure and separate from executing**, which is what makes the feature testable at all: conforming needs a media tool this repo deliberately does not depend on, and ffmpeg is not installed on the machine this was written on. `availableExecutors()` probes rather than assumes — local ffmpeg, or the provider stitch path — and reports why each is unavailable. `buildFfmpegArgs` returns an argument **array**, never a shell string, since file paths and titles come from the database.
+
 ### Screenplay → Entities (the step that was never wired)
 A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
 
@@ -637,7 +658,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (63 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (64 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -764,6 +785,8 @@ node --test backend/tests/shot-tagger.test.js
 node --test backend/tests/mood-board.test.js
 node --test backend/tests/storyboard-annotation.test.js
 node --test backend/tests/board-grouping.test.js
+node --test backend/tests/look-specs.test.js
+node --test backend/tests/conform.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js

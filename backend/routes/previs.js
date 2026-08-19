@@ -719,6 +719,19 @@ function fromCard(req, res, shotId) {
     try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
     const cam = card.camera || {};
 
+    // The film's own optics, chosen once on the mood board. Without these a
+    // card that says nothing opens on a 50mm super35 default that belongs to
+    // no production in particular.
+    let filmDefaults = {};
+    try {
+        const owner = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(shot.scene_id);
+        const board = db.prepare(
+            'SELECT spec_kind, spec_value FROM film_mood_board WHERE project_id = ? AND spec_kind IS NOT NULL')
+            .all(owner ? owner.project_id : null)
+            .map(r => ({ kind: r.spec_kind, value: r.spec_value }));
+        filmDefaults = require('../lib/look-development').previsDefaults(board);
+    } catch (_) { filmDefaults = {}; }
+
     const shotType = SHOT_TYPES[cam.shot_type] ? cam.shot_type : 'medium';
     const movement = MOVEMENTS[cam.movement] ? cam.movement : 'static';
     // "50mm", "50 mm", 50 — the card's lens is a free string by design, so it
@@ -727,10 +740,13 @@ function fromCard(req, res, shotId) {
     const focalMm = (() => {
         const raw = cam.focal_mm !== undefined ? cam.focal_mm : cam.lens;
         const n = typeof raw === 'number' ? raw : parseFloat(String(raw || '').replace(/[^0-9.]/g, ''));
-        return Number.isFinite(n) && n > 0 ? n : 50;
+        if (Number.isFinite(n) && n > 0) return n;
+        return Number(filmDefaults.focalMm) > 0 ? Number(filmDefaults.focalMm) : 50;
     })();
-    const sensorId = SENSORS[cam.sensor] ? cam.sensor : 'super35';
-    const fStop = Number(cam.aperture) > 0 ? Number(cam.aperture) : 2.8;
+    const sensorId = SENSORS[cam.sensor] ? cam.sensor
+        : (SENSORS[filmDefaults.sensorId] ? filmDefaults.sensorId : 'super35');
+    const fStop = Number(cam.aperture) > 0 ? Number(cam.aperture)
+        : (Number(filmDefaults.fStop) > 0 ? Number(filmDefaults.fStop) : 2.8);
     const heightM = Number(cam.height_m) > 0 ? Number(cam.height_m) : DEFAULT_EYE_HEIGHT_M;
 
     const sensor = sensorFor(sensorId);

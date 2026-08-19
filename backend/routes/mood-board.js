@@ -18,7 +18,7 @@
  */
 
 const { db, generateId } = require('../db/database');
-const { validateStylePreset } = require('../lib/look-development');
+const { validateStylePreset, SPEC_KINDS, allowedSpecValues, validateSpec, applyProjectSpecs } = require('../lib/look-development');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -55,17 +55,27 @@ function addEntry(req, res, projectId) {
     const imagePath = String(body.image_path || '').trim();
     // An entry with neither words nor a picture is not a reference, it is a
     // blank row that will later look like a lost one.
-    if (!note && !imagePath && !body.asset_id) {
-        return json(res, 400, { error: 'An entry needs a note, an image, or an asset' });
+    if (!note && !imagePath && !body.asset_id && body.spec_kind === undefined) {
+        return json(res, 400, { error: 'An entry needs a note, an image, an asset, or a spec' });
+    }
+
+    // A spec is picked from the engine's own registry, never typed. Rejecting
+    // an unknown value here is what makes the board able to reach previs and
+    // the delivery settings at all — free text can only reach a prompt.
+    if (body.spec_kind !== undefined) {
+        const check = validateSpec(String(body.spec_kind), body.spec_value);
+        if (!check.ok) return json(res, 400, { error: check.error, allowed: allowedSpecValues(String(body.spec_kind)) });
     }
 
     const id = generateId();
     const next = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM film_mood_board WHERE project_id = ?')
         .get(projectId).n;
     db.prepare(
-        `INSERT INTO film_mood_board (id, project_id, kind, note, asset_id, image_path, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .run(id, projectId, kind, note, body.asset_id || null, imagePath, next);
+        `INSERT INTO film_mood_board (id, project_id, kind, note, asset_id, image_path, sort_order, spec_kind, spec_value)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, projectId, kind, note, body.asset_id || null, imagePath, next,
+            body.spec_kind ? String(body.spec_kind) : null,
+            body.spec_value !== undefined ? String(body.spec_value) : null);
 
     return json(res, 201, { entry: db.prepare('SELECT * FROM film_mood_board WHERE id = ?').get(id) });
 }
@@ -116,9 +126,21 @@ function compose(req, res, projectId) {
     }
 
     const check = validateStylePreset(style);
+
+    // The specs on the board, and where each one lands. Reported whether or not
+    // they are applied, so composing answers "what would this do" completely.
+    const specs = entries
+        .filter(e => e.spec_kind && SPEC_KINDS[e.spec_kind])
+        .map(e => ({ kind: e.spec_kind, value: e.spec_value, target: SPEC_KINDS[e.spec_kind].target }));
+
     let applied = false;
+    let appliedSpecs = [];
     if (req.body && req.body.apply) {
         db.prepare('UPDATE film_projects SET style_preset = ? WHERE id = ?').run(style, projectId);
+        // Written through the same columns the settings UI uses, so a look
+        // decided here and one typed into settings cannot disagree about what
+        // is delivered.
+        appliedSpecs = applyProjectSpecs(db, projectId, specs);
         applied = true;
     }
 
@@ -127,6 +149,10 @@ function compose(req, res, projectId) {
         style_preset: style,
         applied,
         contributing_entries: parts.length,
+        specs,
+        applied_specs: appliedSpecs,
+        spec_kinds: Object.fromEntries(Object.entries(SPEC_KINDS)
+            .map(([k, v]) => [k, { target: v.target, label: v.label, allowed: allowedSpecValues(k) }])),
         // Warned at the moment the look is decided, rather than after the
         // frames come back with something nobody wrote.
         warning: check.ok ? null : { subjects: check.subjects, detail: check.detail },
