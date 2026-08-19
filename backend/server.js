@@ -73,6 +73,7 @@ const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
 const { handleBreakdown } = require('./routes/breakdown');
 const { handleProductionReports } = require('./routes/production-reports');
+const { handleMoodBoard } = require('./routes/mood-board');
 const { handleScreenplayAI } = require('./routes/screenplay-ai');
 const { handleCharacters } = require('./routes/characters');
 const { handleActs } = require('./routes/acts');
@@ -314,6 +315,11 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/projects/:id/breakdown[/stream]
+        if ((parts[1] === 'projects' && parts[2] && parts[3] === 'mood-board')
+            || (parts[1] === 'mood-board' && parts[2])) {
+            return await handleMoodBoard(req, res, parts, query);
+        }
+
         if (parts[1] === 'projects' && parts[2] && ['staleness', 'sides', 'dood', 'run-plan', 'breakdown-summary', 'elements-list', 'run-report'].includes(parts[3])) {
             return await handleProductionReports(req, res, parts, query);
         }
@@ -802,6 +808,10 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/scripts/:id/comments
+        if (parts[1] === 'scripts' && parts[2] && parts[3] === 'tag') {
+            return handleComments(req, res, parts, query);
+        }
+
         if (parts[1] === 'scripts' && parts[2] && parts[3] === 'comments') {
             return handleComments(req, res, parts, query);
         }

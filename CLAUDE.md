@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (61 migrations)
+│   │   └── migrations/     # SQL migration files (62 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -60,7 +60,8 @@ film-engine/
 │   │   ├── backups.js          # Auto-backup system (Phase 18)
 │   │   ├── flows.js            # Flow CRUD + graph validation (Phase 1)
 │   │   ├── previs.js           # Previs blocking CRUD + framing solve (Phase 2)
-│   │   ├── production-reports.js # Staleness, sides, DOOD, run plan (project-level reports)
+│   │   ├── production-reports.js # Staleness, sides, DOOD, run plan, breakdown summary (reports)
+│   │   ├── mood-board.js       # Look development: references → style preset
 │   │   ├── providers.js        # Provider registry, credentials, OAuth connect
 │   │   ├── consistency.js      # Consistency profiles, locking, readiness audit
 │   │   ├── takes.js            # Takes & selects (circle-take workflow)
@@ -147,6 +148,8 @@ film-engine/
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
 │       ├── run-plan.test.js            # Strip ordering, dependency safety, cost, budget refusal
 │       ├── look-development.test.js    # A style preset naming a subject is caught, real styles are not
+│       ├── shot-tagger.test.js         # A screenplay line becomes a shot, with who is in it
+│       ├── mood-board.test.js          # The board composes a style preset, and warns about subjects
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -387,6 +390,15 @@ A style preset is appended to **every** image prompt in a production, is a free-
 
 Tested against a corpus rather than examples: 8 real styles that must all pass (noir, Portra, cyberpunk, documentary, golden hour…) and 5 subject-carrying ones that must all fail — including the exact string that shipped the defect.
 
+### Shot Tagger and the Mood Board (Phase 3)
+**`POST /scripts/:id/tag`** turns selected screenplay lines into shots — the fastest path from a script to a shot list, and the one that was missing: shots were created by hand, or by an agent composing a scene card from scratch. Selecting the line is quicker *and* more faithful, since the line **is** the description and nothing is paraphrased on the way. It also captures presence at the only moment anyone is actually looking at the line; deriving "who is in this shot" later from the scene as a whole is what produced a DRAGON that appeared in no scene. Only `action` and `dialogue` become shots — refusing sluglines and transitions is the feature, because a tagger that accepts everything produces a list a director has to clean up, which is worse than typing it. Idempotent per element (the card records `source_element_id`), so clicking a line twice means "did that work", not "make another".
+
+**The mood board** (`routes/mood-board.js`, migration 064) is where a look is decided before anything generates, and its **output is the style preset** — a board that sits beside generation is a scrapbook; one whose output feeds generation is look development. Entries carry a `kind` (palette, lighting, lens, framing, texture, image) and a `note`, and composing orders them by facet rather than by insertion: medium and palette lead, grain trails, the same front-to-back rule the plate builders learned when appending the look last let boilerplate decide the medium. Image-only entries contribute no words, and say so, rather than silently dropping out of a style that claims to represent the board.
+
+Composing **does not apply**. Previewing a look and committing to it are different decisions, and applying silently would rewrite every future frame from something the director was only trying out; `apply: true` commits. An empty board composes `''` with a message rather than writing an empty style, since applying that would strip the look from a project that already had one. And composing runs the style check, so the "anatomical beast" class of defect is caught **at the moment the look is decided** rather than after eight frames have been paid for.
+
+A separate table from `film_continuity_refs` on purpose: continuity refs answer "did this match what we already shot" — a question about the past — while a mood board answers "what should this look like", a question about work not yet done. Same shape, opposite direction, and conflating them would make both queries lie.
+
 ### Screenplay → Entities (the step that was never wired)
 A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
 
@@ -612,7 +624,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (61 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (62 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -735,6 +747,8 @@ node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js
 node --test backend/tests/run-plan.test.js
 node --test backend/tests/look-development.test.js
+node --test backend/tests/shot-tagger.test.js
+node --test backend/tests/mood-board.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js

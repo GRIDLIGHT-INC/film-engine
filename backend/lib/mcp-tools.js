@@ -37,6 +37,8 @@ const { handleShots } = require('../routes/shots');
 const { handleCharacters } = require('../routes/characters');
 const { handleLocations } = require('../routes/locations');
 const { handleStoryboard } = require('../routes/storyboard');
+const { handleComments } = require('../routes/scripts');
+const { handleMoodBoard } = require('../routes/mood-board');
 const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
 const { handleProductionReports } = require('../routes/production-reports');
@@ -418,6 +420,44 @@ const PRODUCTION_TOOLS = [
             ignore_budget: { type: 'boolean', description: 'Plan anyway when it would exceed the budget.' },
         },
         required: ['project_id'],
+    },
+    {
+        name: 'mood_board_add',
+        handler: handleMoodBoard, method: 'POST',
+        description: 'Add a reference to the look board: kind is palette, lighting, lens, framing, texture or image, and `note` is the words that will reach the style preset. Assemble the look here BEFORE generating \u2014 the board composes into the style preset, which is appended to every image prompt in the production.',
+        path: a => `/film/projects/${a.project_id}/mood-board`,
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        schema: {
+            project_id: { type: 'string' },
+            kind: { type: 'string', description: 'palette | lighting | lens | framing | texture | image' },
+            note: { type: 'string', description: 'The words that reach the style preset.' },
+            image_path: { type: 'string' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'mood_board_compose',
+        handler: handleMoodBoard, method: 'POST',
+        description: 'Compose the board into a style preset and check it. Returns the composed string WITHOUT applying it \u2014 pass apply:true to commit. Warns when the board names a subject rather than a look: a style is appended to every prompt, so a creature named here is drawn into frames nobody wrote it into.',
+        path: a => `/film/projects/${a.project_id}/mood-board/compose`,
+        body: a => ({ apply: !!a.apply }),
+        schema: {
+            project_id: { type: 'string' },
+            apply: { type: 'boolean', description: 'Write the composed style onto the project.' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'shot_tag',
+        handler: handleComments, method: 'POST',
+        description: 'Turn selected screenplay lines into shots. The line becomes the shot description verbatim \u2014 nothing is paraphrased on the way \u2014 and the characters named in it are captured onto the card, including ones who never speak. Only action and dialogue lines become shots; sluglines and transitions are refused. Idempotent per line: tagging the same line twice does not make two shots. Get element ids from script_get.',
+        path: a => `/film/scripts/${a.script_id}/tag`,
+        body: a => ({ element_ids: a.element_ids || [] }),
+        schema: {
+            script_id: { type: 'string' },
+            element_ids: { type: 'array', description: 'Ids of the script elements to turn into shots.' },
+        },
+        required: ['script_id', 'element_ids'],
     },
     {
         name: 'breakdown_summary',

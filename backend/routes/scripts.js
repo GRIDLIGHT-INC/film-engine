@@ -1057,6 +1057,167 @@ function actionCapsInLine(text) {
 }
 
 /**
+ * Turn selected script lines into shots.
+ *
+ * POST /film/scripts/:id/tag  { element_ids: [...] }
+ *
+ * The fastest path from a screenplay to a shot list, and the one that was
+ * missing: shots were created by hand, or by an agent composing a scene card
+ * from scratch. Selecting the line is both quicker and more faithful — the line
+ * IS the shot description, so nothing is paraphrased on the way.
+ *
+ * It also captures presence at the only moment anyone is actually looking at
+ * the line. Deriving "who is in this shot" later, from the scene as a whole, is
+ * what produced a DRAGON that appeared in no scene at all.
+ *
+ * Idempotent per element. A director clicking a line again means "did that
+ * work", not "make another one", and a tagger that answers the second produces
+ * a list they have to clean up — which is worse than typing it.
+ */
+const TAGGABLE_ELEMENTS = new Set(['action', 'dialogue']);
+
+function tagShots(req, res, scriptId) {
+    const script = db.prepare('SELECT id, project_id FROM film_scripts WHERE id = ?').get(scriptId);
+    if (!script) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Script not found' }));
+    }
+
+    const ids = Array.isArray(req.body && req.body.element_ids) ? req.body.element_ids : [];
+    if (!ids.length) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'element_ids is required' }));
+    }
+
+    const placeholders = ids.map(() => '?').join(',');
+    const elements = db.prepare(
+        `SELECT * FROM film_script_elements WHERE script_id = ? AND id IN (${placeholders})
+          ORDER BY element_index`).all(scriptId, ...ids);
+
+    const created = [], skipped = [];
+
+    const tx = db.transaction(() => {
+        for (const el of elements) {
+            if (!TAGGABLE_ELEMENTS.has(el.element_type)) {
+                // A transition is not a shot and neither is a slugline. Refusing
+                // is the feature: a tagger that accepts everything produces a
+                // shot list nobody can use.
+                skipped.push({ element_id: el.id, type: el.element_type, reason: 'not a shot' });
+                continue;
+            }
+
+            const scene = sceneForElement(script.project_id, el);
+            if (!scene) { skipped.push({ element_id: el.id, reason: 'no scene for this line' }); continue; }
+
+            // Already tagged? The card records which element it came from, so
+            // this is a fact rather than a guess about similar text.
+            const existing = db.prepare(
+                `SELECT id, shot_code FROM film_shots WHERE scene_id = ? AND scene_card_yaml LIKE ?`)
+                .get(scene.id, `%"source_element_id":"${el.id}"%`);
+            if (existing) {
+                skipped.push({ element_id: el.id, reason: 'already tagged', shot_code: existing.shot_code });
+                continue;
+            }
+
+            const card = cardFromElement(el, script.project_id, scene);
+            const shotId = generateId();
+            const shotCode = nextShotCode(scene);
+            card.shot_code = shotCode;
+
+            db.prepare(
+                `INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml, sort_order)
+                 VALUES (?, ?, ?, ?, ?)`)
+                .run(shotId, scene.id, shotCode, JSON.stringify(card), el.element_index);
+
+            created.push({ shot_id: shotId, shot_code: shotCode, element_id: el.id, scene_id: scene.id });
+        }
+    });
+    tx();
+
+    res.writeHead(created.length ? 201 : 200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        script_id: scriptId,
+        created,
+        // Said out loud rather than swallowed: a line that produced nothing is
+        // something the director chose and deserves an answer about.
+        skipped,
+        created_count: created.length,
+    }));
+}
+
+/** The scene a line sits in, by its recorded scene_number. */
+function sceneForElement(projectId, el) {
+    if (el.scene_number) {
+        const byNumber = db.prepare(
+            'SELECT * FROM film_scenes WHERE project_id = ? AND CAST(scene_number AS TEXT) = CAST(? AS TEXT)')
+            .get(projectId, el.scene_number);
+        if (byNumber) return byNumber;
+    }
+    // Fall back to the scene whose heading most recently preceded this line.
+    const prior = db.prepare(
+        `SELECT scene_number FROM film_script_elements
+          WHERE script_id = ? AND element_type = 'scene_heading' AND element_index < ?
+       ORDER BY element_index DESC LIMIT 1`).get(el.script_id, el.element_index);
+    const heading = db.prepare(
+        `SELECT COUNT(*) AS n FROM film_script_elements
+          WHERE script_id = ? AND element_type = 'scene_heading' AND element_index < ?`)
+        .get(el.script_id, el.element_index);
+    const ordinal = (heading && heading.n) || 1;
+    const scenes = db.prepare(
+        'SELECT * FROM film_scenes WHERE project_id = ? ORDER BY CAST(scene_number AS INTEGER), scene_number')
+        .all(projectId);
+    void prior;
+    return scenes[Math.max(0, ordinal - 1)] || scenes[0] || null;
+}
+
+/** The scene card a line implies. */
+function cardFromElement(el, projectId, scene) {
+    const card = {
+        description: '',
+        camera: {},
+        characters: [],
+        dialogue: [],
+        // Recorded so tagging is idempotent, and so a shot can say which line
+        // of the screenplay it came from — which is also what a later staleness
+        // check would compare against.
+        source_element_id: el.id,
+    };
+
+    if (el.element_type === 'dialogue') {
+        // The speaker is the character cue immediately above the line.
+        const cue = db.prepare(
+            `SELECT text FROM film_script_elements
+              WHERE script_id = ? AND element_type = 'character' AND element_index < ?
+           ORDER BY element_index DESC LIMIT 1`).get(el.script_id, el.element_index);
+        const speaker = cue ? String(cue.text).replace(/\s*\(.*\)\s*$/, '').trim().toUpperCase() : '';
+        card.description = speaker ? `${speaker} speaks.` : 'Dialogue.';
+        card.dialogue = [{ character: speaker || 'UNKNOWN', line: String(el.text || '').trim() }];
+        if (speaker) card.characters = [speaker];
+        return card;
+    }
+
+    card.description = String(el.text || '').trim();
+    // Who the line names, using the SAME detector entity suggestions and scene
+    // presence use — three surfaces, one answer about who is in a screenplay.
+    const named = Object.keys(actionCapsInLine(card.description));
+    if (named.length) card.characters = named;
+    void projectId; void scene;
+    return card;
+}
+
+/** The next code in this scene, keeping a scene's shots in one series. */
+function nextShotCode(scene) {
+    const n = db.prepare('SELECT COUNT(*) AS n FROM film_shots WHERE scene_id = ?').get(scene.id).n || 0;
+    const sceneNo = String(scene.scene_number || '1');
+    // 1A, 1B, … then 1AA once a scene runs past 26 shots, which a long dialogue
+    // scene genuinely can.
+    const letter = n < 26
+        ? String.fromCharCode(65 + n)
+        : String.fromCharCode(65 + Math.floor(n / 26) - 1) + String.fromCharCode(65 + (n % 26));
+    return `${sceneNo}${letter}`;
+}
+
+/**
  * FILM-121: Get screenplay entity suggestions
  * Analyzes the latest script and returns unmatched characters/locations
  */
@@ -1178,6 +1339,15 @@ function getScreenplaySuggestions(req, res, projectId) {
  *   DELETE /film/comments/:id — delete
  */
 function handleComments(req, res, urlParts, query) {
+    // /film/scripts/:id/tag — turn selected lines into shots.
+    if (urlParts[1] === 'scripts' && urlParts[2] && urlParts[3] === 'tag') {
+        if (req.method !== 'POST') {
+            res.writeHead(405, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Method not allowed' }));
+        }
+        return tagShots(req, res, urlParts[2]);
+    }
+
     // /film/scripts/:id/comments
     if (urlParts[1] === 'scripts' && urlParts[2] && urlParts[3] === 'comments') {
         const scriptId = urlParts[2];
