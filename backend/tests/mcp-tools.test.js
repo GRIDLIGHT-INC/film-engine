@@ -29,7 +29,7 @@ const { NODE_TYPES } = require('../lib/flow-node-types');
 const { list: listHandlers } = require('../lib/node-handlers');
 const {
     listTools, hasTool, callTool, toolNameForNodeType, NODE_TOOL_PREFIX, ROUTE_TOOLS, SSE_EXCEPTION,
-    PRODUCTION_TOOLS, presentResult, isFailure,
+    PRODUCTION_TOOLS, presentResult, isFailure, ALL_ROUTE_TOOLS,
 } = require('../lib/mcp-tools');
 
 const TOOLS = listTools();
@@ -300,4 +300,65 @@ test('a read tool returns data rather than an HTTP envelope', async () => {
 test('a missing required argument fails the tool instead of half-running it', async () => {
     assert.ok(isFailure(await callTool('character_update', {})),
         'an update with no character_id reported success');
+});
+
+
+/**
+ * Anything an agent can create, it can remove.
+ *
+ * The surface grew to 77 tools with exactly ONE delete among them
+ * (flow_delete). An agent could create characters, locations, props, shots,
+ * mood board entries and annotations, and un-create none of them — so its only
+ * recovery from its own mistake was to ask a human to click a button. That is
+ * the same asymmetry that made entity creation impossible before
+ * character_create existed, seen from the other end.
+ *
+ * Set-based over the CREATE tools rather than a list of deletes, because the
+ * pairing is the invariant: adding a new create tool without its delete should
+ * fail here rather than be noticed months later by someone stuck with a typo
+ * they cannot remove.
+ */
+const CREATE_DELETE_PAIRS = [
+    { create: 'character_create',  remove: 'character_delete' },
+    { create: 'location_create',   remove: 'location_delete' },
+    { create: 'prop_create',       remove: 'prop_delete' },
+    { create: 'shot_create',       remove: 'shot_delete' },
+    { create: 'mood_board_add',    remove: 'mood_board_remove' },
+    { create: 'shot_annotate',     remove: 'annotation_delete' },
+    { create: 'flow_create',       remove: 'flow_delete' },
+];
+
+test('the pair list covers every create tool on the surface', () => {
+    const tools = listTools().map(t => t.name);
+    // A create tool with no entry here is a kind whose removability nobody
+    // decided on.
+    const creates = tools.filter(n => /_create$|_add$|_annotate$/.test(n)
+        && !['flow_create_from_template', 'entities_create'].includes(n));
+    const uncovered = creates.filter(c => !CREATE_DELETE_PAIRS.some(p => p.create === c));
+    assert.deepStrictEqual(uncovered, [],
+        `create tools with no delete decision: ${uncovered.join(', ')}`);
+});
+
+test('everything an agent can create, it can also remove', () => {
+    const tools = new Set(listTools().map(t => t.name));
+    const missing = CREATE_DELETE_PAIRS
+        .filter(p => tools.has(p.create) && !tools.has(p.remove))
+        .map(p => `${p.create} exists but ${p.remove} does not`);
+    assert.deepStrictEqual(missing, [], `\n  ${missing.join('\n  ')}`);
+});
+
+test('every delete tool actually dispatches to a route', () => {
+    // A delete tool wired to nothing is worse than none: the agent believes the
+    // thing is gone.
+    const tools = listTools();
+    const broken = [];
+    for (const pair of CREATE_DELETE_PAIRS) {
+        const tool = tools.find(t => t.name === pair.remove);
+        if (!tool) continue;
+        const spec = ALL_ROUTE_TOOLS.find(t => t.name === pair.remove);
+        if (!spec) { broken.push(`${pair.remove}: not a route tool`); continue; }
+        if (spec.method !== 'DELETE') broken.push(`${pair.remove}: method is ${spec.method}, not DELETE`);
+        if (typeof spec.path !== 'function') broken.push(`${pair.remove}: no path`);
+    }
+    assert.deepStrictEqual(broken, [], `\n  ${broken.join('\n  ')}`);
 });

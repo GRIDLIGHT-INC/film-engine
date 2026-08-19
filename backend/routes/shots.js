@@ -19,10 +19,38 @@ const VALID_TRANSITIONS = [
     'wipe-left', 'wipe-right', 'dip-to-black', 'dip-to-white',
 ];
 
+/**
+ * Remove a shot.
+ *
+ * Reports what went with it rather than a bare {deleted:true}. A shot can carry
+ * generated frames and clips that cost money to make, and a caller — human or
+ * agent — deserves to know whether it removed a placeholder or a day's work.
+ * Assets fall away by foreign key; the count is read first so it can be said.
+ */
+function deleteShot(req, res, shotId) {
+    const shot = db.prepare('SELECT id, shot_code FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Shot not found' }));
+    }
+
+    const assets = db.prepare('SELECT COUNT(*) AS n FROM film_assets WHERE shot_id = ?').get(shotId).n;
+    db.prepare('DELETE FROM film_shots WHERE id = ?').run(shotId);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ deleted: true, shot_id: shotId, shot_code: shot.shot_code, assets_affected: assets }));
+}
+
 function handleShots(req, res, urlParts, query) {
     // POST /film/shots — parts: ['film', 'shots']
     if (urlParts[1] === 'shots' && !urlParts[2] && req.method === 'POST') {
         return createShots(req, res);
+    }
+
+    // DELETE /film/shots/:id — a shot could be created and never removed, by
+    // the UI or by an agent. Every other entity had one.
+    if (urlParts[1] === 'shots' && urlParts[2] && !urlParts[3] && req.method === 'DELETE') {
+        return deleteShot(req, res, urlParts[2]);
     }
 
     // PUT /film/shots/:id/order
