@@ -5231,6 +5231,16 @@
          ════════════════════════════════════════════════════════════ -->
 
     <!-- New Project -->
+    <div class="modal-overlay" id="entityInspectModal">
+        <div class="modal" style="max-width:900px;width:92vw;">
+            <div class="modal-header">
+                <h3 id="entityInspectTitle">Details</h3>
+                <button class="modal-close" onclick="closeModal('entityInspectModal')">&times;</button>
+            </div>
+            <div class="modal-body" id="entityInspectBody"></div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="newProjectModal">
         <div class="modal">
             <div class="modal-header"><h3>New Project</h3><button class="modal-close" onclick="closeModal('newProjectModal')">&times;</button></div>
@@ -15318,6 +15328,92 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // CHARACTERS
     // ══════════════════════════════════════════════════════════════
+    // ── Entity inspector ───────────────────────────────────────────────────
+    //
+    // A card shows a 48px avatar, which cannot answer the question anyone
+    // actually has about a generated plate: is this the right person, in the
+    // right clothes, in the right medium. The plate is the thing that
+    // conditions every frame the subject appears in, so it is worth seeing at
+    // size, next to the text it was generated from.
+
+    /** Which fields matter per kind, and what each is FOR. */
+    const ENTITY_FIELDS = {
+        character: [
+            { key: 'appearance_prompt', label: 'Appearance', note: 'This is what reaches the image prompt and what the plate is generated from.' },
+            { key: 'description', label: 'Description' },
+            { key: 'age_range', label: 'Age' }, { key: 'gender', label: 'Gender' },
+            { key: 'build', label: 'Build' }, { key: 'hair', label: 'Hair' },
+            { key: 'ethnicity', label: 'Ethnicity' }, { key: 'distinguishing', label: 'Distinguishing' },
+            { key: 'personality_notes', label: 'Personality' },
+        ],
+        location: [
+            { key: 'description', label: 'Description', note: 'This is what reaches the image prompt and what the plate is generated from.' },
+            { key: 'reference_prompt', label: 'Reference prompt' },
+            { key: 'lighting_default', label: 'Lighting' },
+            { key: 'time_of_day_default', label: 'Time of day' },
+            { key: 'atmosphere_notes', label: 'Atmosphere' }, { key: 'sound_notes', label: 'Sound' },
+        ],
+        prop: [
+            { key: 'visual_prompt', label: 'Visual prompt', note: 'This is what reaches the image prompt and what the plate is generated from.' },
+            { key: 'description', label: 'Description' },
+            { key: 'category', label: 'Category' }, { key: 'notes', label: 'Notes' },
+        ],
+    };
+
+    async function inspectEntity(kind, id) {
+        const modal = document.getElementById('entityInspectModal');
+        const body = document.getElementById('entityInspectBody');
+        document.getElementById('entityInspectTitle').textContent = 'Loading…';
+        body.innerHTML = '';
+        modal.classList.add('open');
+
+        let row;
+        try {
+            const list = kind === 'character' ? state.characters
+                : kind === 'location' ? state.locations : state.props;
+            row = (list || []).find(x => x.id === id);
+            if (!row) {
+                const path = kind === 'character' ? 'characters' : kind === 'location' ? 'locations' : 'props';
+                const res = await api(`/projects/${state.currentProject.id}/${path}`);
+                row = (res[path] || []).find(x => x.id === id);
+            }
+        } catch (err) {
+            body.innerHTML = `<p class="text-muted">Could not load: ${esc(err.message)}</p>`;
+            return;
+        }
+        if (!row) { body.innerHTML = '<p class="text-muted">Not found.</p>'; return; }
+
+        document.getElementById('entityInspectTitle').textContent = row.name || 'Details';
+        const img = row.reference_image_url || row.image_url || row.plate_url;
+
+        const fields = (ENTITY_FIELDS[kind] || [])
+            .map(f => {
+                const v = String(row[f.key] || '').trim();
+                if (!v) return '';
+                // The character count is shown because it is the number that
+                // decides how much survives into a keyframe prompt.
+                return `<div style="margin-bottom:12px;">
+                    <div class="section-label" style="margin-bottom:4px;">${esc(f.label)}
+                        <span class="text-muted" style="text-transform:none;letter-spacing:0;">· ${v.length} chars</span></div>
+                    <div class="text-sm" style="line-height:1.5;">${esc(v)}</div>
+                    ${f.note ? `<div class="text-sm text-muted" style="margin-top:4px;">${esc(f.note)}</div>` : ''}
+                </div>`;
+            }).filter(Boolean).join('');
+
+        body.innerHTML = `
+            <div style="display:flex;gap:20px;flex-wrap:wrap;">
+                <div style="flex:1 1 340px;min-width:280px;">
+                    ${img
+                        ? `<img src="${API_BASE}${esc(img)}" style="width:100%;border-radius:6px;display:block;"
+                             onerror="this.parentElement.innerHTML='<p class=text-muted>The plate file is missing.</p>'">`
+                        : '<p class="text-sm text-muted">No plate generated yet. Generate one so every frame with this subject draws the same thing.</p>'}
+                </div>
+                <div style="flex:1 1 340px;min-width:280px;">
+                    ${fields || '<p class="text-sm text-muted">Nothing described yet. An entity with no description reaches the image prompt as a bare name, and every frame invents its own version of it.</p>'}
+                </div>
+            </div>`;
+    }
+
     async function loadCharacters() {
         if (!state.currentProject) return;
         try {
@@ -15328,7 +15424,7 @@ ${fountainText.slice(0, 50000)}`;
                 el.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#128100;</div><h3>No characters</h3><p>Add characters for your film production.</p></div>`;
             } else {
                 el.innerHTML = state.characters.map(c => `
-                    <div class="entity-card">
+                    <div class="entity-card" style="cursor:pointer;" onclick="inspectEntity('character', '${c.id}')" title="Open details and the full-size plate">
                         <div class="entity-card-header">
                             ${c.reference_image_url
                                 ? '<img src="' + API_BASE + c.reference_image_url + '" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML=\'<div class=entity-avatar>' + esc(c.name.charAt(0)) + '</div>\'">'
@@ -15345,9 +15441,9 @@ ${fountainText.slice(0, 50000)}`;
                             ${c.lora_id ? '<span class="tag">LoRA</span>' : ''}
                         </div>
                         <div class="card-actions">
-                            <button class="btn btn-secondary btn-sm" onclick="generateCharacterImage('${c.id}')" title="Generate reference image">${c.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
-                            <button class="btn btn-secondary btn-sm" onclick="editCharacter('${c.id}')">Edit</button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteCharacter('${c.id}')">Delete</button>
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generateCharacterImage('${c.id}')" title="Generate reference image">${c.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editCharacter('${c.id}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteCharacter('${c.id}')">Delete</button>
                         </div>
                     </div>`).join('');
             }
@@ -15442,7 +15538,7 @@ ${fountainText.slice(0, 50000)}`;
                 el.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#128205;</div><h3>No locations</h3><p>Add filming locations.</p></div>`;
             } else {
                 el.innerHTML = state.locations.map(l => `
-                    <div class="entity-card">
+                    <div class="entity-card" style="cursor:pointer;" onclick="inspectEntity('location', '${l.id}')" title="Open details and the full-size plate">
                         ${l.reference_image_url
                             ? '<img src="' + API_BASE + l.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;" onerror="this.style.display=\'none\'">'
                             : ''}
@@ -15459,9 +15555,9 @@ ${fountainText.slice(0, 50000)}`;
                             ${l.time_of_day_default ? '<span class="tag">' + esc(l.time_of_day_default) + '</span>' : ''}
                         </div>
                         <div class="card-actions">
-                            <button class="btn btn-secondary btn-sm" onclick="generateLocationImage('${l.id}')" title="Generate reference image">${l.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
-                            <button class="btn btn-secondary btn-sm" onclick="editLocation('${l.id}')">Edit</button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteLocation('${l.id}')">Delete</button>
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generateLocationImage('${l.id}')" title="Generate reference image">${l.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editLocation('${l.id}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteLocation('${l.id}')">Delete</button>
                         </div>
                     </div>`).join('');
             }
@@ -15563,7 +15659,7 @@ ${fountainText.slice(0, 50000)}`;
                 el.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#127917;</div><h3>No props</h3><p>Add props used in your production.</p></div>`;
             } else {
                 el.innerHTML = filtered.map(p => `
-                    <div class="entity-card">
+                    <div class="entity-card" style="cursor:pointer;" onclick="inspectEntity('prop', '${p.id}')" title="Open details and the full-size plate">
                         ${p.reference_image_url
                             ? '<img src="' + API_BASE + p.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;" onerror="this.style.display=\'none\'">'
                             : ''}
@@ -15576,9 +15672,9 @@ ${fountainText.slice(0, 50000)}`;
                         </div>
                         <p>${esc(p.description || 'No description')}</p>
                         <div class="card-actions">
-                            <button class="btn btn-secondary btn-sm" onclick="generatePropImage('${p.id}')" title="Generate reference image">${p.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
-                            <button class="btn btn-secondary btn-sm" onclick="editProp('${p.id}')">Edit</button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteProp('${p.id}')">Delete</button>
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generatePropImage('${p.id}')" title="Generate reference image">${p.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editProp('${p.id}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteProp('${p.id}')">Delete</button>
                         </div>
                     </div>`).join('');
             }
