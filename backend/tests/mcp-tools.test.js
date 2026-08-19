@@ -362,3 +362,53 @@ test('every delete tool actually dispatches to a route', () => {
     }
     assert.deepStrictEqual(broken, [], `\n  ${broken.join('\n  ')}`);
 });
+
+
+/**
+ * Every entity kind gets the same three verbs, and creating a duplicate is
+ * refused rather than done.
+ *
+ * props had create and delete and no UPDATE, while characters and locations had
+ * all three. So an agent asked to rewrite a prop description did the only thing
+ * available — called prop_create again — and got a SECOND "Grocery bag" row
+ * beside the first. Two rows with the same name is worse than an error: the
+ * gather query picks one by created_at and the other silently rots, so a plate
+ * is generated from a description nobody is reading.
+ *
+ * Set-based over the entity kinds and the verbs, because the gap was exactly
+ * one cell of that grid and nothing was checking the grid.
+ */
+const ENTITY_VERBS = ['create', 'update', 'delete'];
+const ENTITY_KINDS = ['character', 'location', 'prop'];
+
+test('every entity kind has create, update and delete', () => {
+    const tools = new Set(listTools().map(t => t.name));
+    const missing = [];
+    for (const kind of ENTITY_KINDS) {
+        for (const verb of ENTITY_VERBS) {
+            if (!tools.has(`${kind}_${verb}`)) missing.push(`${kind}_${verb}`);
+        }
+    }
+    assert.deepStrictEqual(missing, [],
+        `an agent can create these and not correct them: ${missing.join(', ')}`);
+});
+
+test('creating an entity that already exists is refused, not duplicated', async () => {
+    // The failure this exists for: a second row with the same name, which the
+    // gather query resolves by picking one, so the other is invisible work.
+    const { db, generateId } = require('../db/database');
+    const projectId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Dup Test');
+
+    for (const kind of ENTITY_KINDS) {
+        const first = await callTool(`${kind}_create`, { project_id: projectId, name: 'Grocery bag' });
+        assert.ok(!isFailure(first), `${kind}_create failed outright: ${JSON.stringify(first).slice(0, 160)}`);
+
+        const second = await callTool(`${kind}_create`, { project_id: projectId, name: 'Grocery bag' });
+        assert.ok(isFailure(second),
+            `${kind}_create made a duplicate instead of refusing: ${JSON.stringify(second).slice(0, 160)}`);
+        // And it must say what to do instead, or the agent just tries again.
+        assert.match(JSON.stringify(second), new RegExp(`${kind}_update`),
+            `${kind}_create refused a duplicate without naming the update tool`);
+    }
+});

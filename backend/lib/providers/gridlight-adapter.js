@@ -115,6 +115,11 @@ const gridlightAdapter = {
     kind: 'generator',
     label: 'Gridlight',
     requiresKey: false, // uses GRIDLIGHT_API_KEY from env; no per-provider key entry
+    // A local gateway whose image agent is swappable, so its real ceiling
+    // depends on whatever model is loaded. Held at the strict default rather
+    // than guessed upward: over-guessing produces a rejected request at the
+    // provider, which is worse than trimming here where it can be reported.
+    promptLimit: 1000,
     capabilities: Object.keys(ENDPOINTS),
     // Gridlight receives the capability payload verbatim, including
     // reference_images and ip_adapter_image, so references survive the hop.

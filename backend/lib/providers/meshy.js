@@ -471,6 +471,12 @@ const adapter = {
     kind: 'generator',
     label: 'Meshy (3D + image)',
     requiresKey: true,
+
+        // Meshy's text-to-image documents no prompt limit, and it routes to
+    // nano-banana and gpt-image-2 underneath — models that take long
+    // prompts. 4000 matches those rather than inventing a ceiling Meshy
+    // never stated; raise it if a longer prompt is ever seen to work.
+    promptLimit: 4000,
     capabilities: ['model3d', 'image'],
     // image-to-image takes 1-5 reference images as a plain array, so pictures
     // DO condition the result — but they carry no names, so the prompt must

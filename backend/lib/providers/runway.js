@@ -365,6 +365,10 @@ const adapter = {
     kind: 'generator',
     label: 'Runway',
     requiresKey: true,
+
+        // Runway's text_to_image caps the prompt at 1000 characters. This is the
+    // number the engine used to impose on everyone.
+    promptLimit: 1000,
     capabilities: ['video', 'image'],
     // gen4_image takes up to three { uri, tag } references and lets the prompt
     // name them, which is what makes @tags meaningful here.

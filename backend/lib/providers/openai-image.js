@@ -341,6 +341,9 @@ const adapter = {
     kind: 'generator',
     label: 'OpenAI',
     requiresKey: true,
+
+        // The Images API documents a 4000-character prompt for gpt-image-1.
+    promptLimit: 4000,
     capabilities: ['llm', 'image'],
     // The image builder reads p.reference_images and forwards them as edit
     // inputs, so a tag has a picture behind it.

@@ -216,6 +216,9 @@ function createLocation(req, res, projectId) {
             error: 'Location "' + existing.name + '" already exists in this project.',
             code: 'duplicate_name',
             existing,
+            // Named, or a caller with nothing else to try simply tries again —
+            // which is exactly how props ended up duplicated.
+            hint: 'Use location_update to change it, or location_delete to remove it first.',
         }));
         return;
     }
@@ -437,6 +440,25 @@ function getProp(req, res, propId) {
 function createProp(req, res, projectId) {
     const body = req.body;
     if (!body.name || !body.name.trim()) return badReq(res, 'Prop name is required');
+
+    // Characters and locations have refused a duplicate name since they were
+    // written; props never did, and props were the only kind that duplicated.
+    // Two rows with one name is worse than an error: the gather query resolves
+    // it by picking one, so the other silently rots and a plate is generated
+    // from a description nobody is reading.
+    const existing = db.prepare(
+        'SELECT id, name FROM film_props WHERE project_id = ? AND UPPER(name) = UPPER(?)')
+        .get(projectId, body.name.trim());
+    if (existing) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: `Prop "${existing.name}" already exists in this project.`,
+            code: 'duplicate_name',
+            existing,
+            // Named, or a caller with nothing else to try simply tries again.
+            hint: 'Use prop_update to change it, or prop_delete to remove it first.',
+        }));
+    }
 
     const id = generateId();
     const now = new Date().toISOString();

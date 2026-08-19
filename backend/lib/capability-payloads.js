@@ -147,6 +147,26 @@ function projectIdOf(ctx) {
 // ── Builders ────────────────────────────────────────────────────────────
 // Each takes ctx and returns a payload (or an array of payloads).
 
+/**
+ * How much prompt the provider that will run this project's images accepts.
+ *
+ * Undeclared providers fall back to the strict default rather than to
+ * unlimited: guessing high produces a rejected request or a silent truncation
+ * at the provider's end, which is worse than trimming here where it can be
+ * reported.
+ */
+function imagePromptLimit(project) {
+    try {
+        const { resolveGenerator } = require('./providers');
+        let config = {};
+        try { config = JSON.parse((project && project.provider_config) || '{}'); } catch (_) { config = {}; }
+        const adapter = resolveGenerator('image', config);
+        return (adapter && Number(adapter.promptLimit) > 0) ? Number(adapter.promptLimit) : undefined;
+    } catch (_) {
+        return undefined;
+    }
+}
+
 const CAPABILITY_BUILDERS = {
     image(ctx) {
         requireCtx(ctx, ['sceneCard', 'project'], 'image');
@@ -156,7 +176,13 @@ const CAPABILITY_BUILDERS = {
         // Blocking shapes the keyframe, not only the clip. Passing it here is
         // what makes the frame a director approves the frame they staged.
         const base = buildStoryboardPrompt(ctx.sceneCard, ctx.characters, ctx.location,
-            ctx.project.style_preset, { previs: ctx.previs || undefined });
+            ctx.project.style_preset, {
+                previs: ctx.previs || undefined,
+                // Resolved here rather than passed in, so the orchestrator and
+                // the per-domain route cannot disagree about how much prompt a
+                // provider accepts — the same reason this file exists at all.
+                maxPromptChars: imagePromptLimit(ctx.project),
+            });
 
         const payload = imageRequestPayload({
             prompt: base.prompt,

@@ -159,6 +159,7 @@ film-engine/
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
 │       ├── project-delete.test.js      # A worked-on project deletes, and takes every child with it
 │       ├── prompt-budget.test.js       # Plates are photographs, not documents; prose drops only where tags bind
+│       ├── provider-prompt-limit.test.js # Each provider's own ceiling; allowances scale with it
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -450,6 +451,15 @@ The first real plate generated after the medium fix came back photoreal, correct
 All three builders now ask for the photograph (`Full-body studio photograph`, `Photograph of the location`) and refuse the furniture explicitly: labels, annotations, captions, handwriting, charts, swatches, arrows, callouts, measurement marks. The **view is still named**, because without it three plates are three unrelated pictures rather than a turnaround. This matters more than a cosmetic blemish: a plate conditions every frame its subject appears in, so anything printed on it bleeds into all of them.
 
 **And a correction, caught by a test rather than by reasoning.** The obvious next move — "a picture is attached, so drop the paragraph describing it" — is right for a provider that reads `@tags` and **wrong** for one that takes an untagged array. With two references and no names, nothing tells the model which picture is the woman and which is the street, so the prose is the only thing carrying identity; dropping it trades a redundancy for a wrong subject. That distinction was already correct in the code and this nearly broke it. `tests/reference-capability.test.js` is what stopped it.
+
+### The Prompt Ceiling Belongs to the Provider
+`MAX_PROMPT_CHARS` was a single constant — 1000, chosen as "the strictest of the providers wired here", which is **Runway's** `text_to_image` cap. Every prompt in the product was cut to it regardless of who was generating. A production running on **Meshy** — whose text-to-image documents no prompt limit at all, and which routes to `nano-banana` and `gpt-image-2` underneath — had its character descriptions trimmed to fit a ceiling belonging to a provider it never called.
+
+Each image adapter now declares its own `promptLimit`, with the reason attached: runway 1000 (documented, and the number the old constant was really about), openai 4000 (the Images API's documented prompt length), meshy 4000 (no stated limit, matched to the models it proxies rather than invented), gridlight 1000 (a swappable local agent, held strict rather than guessed upward — over-guessing produces a rejected request at the provider, which is worse than trimming here where it can be reported). An adapter that declares nothing falls back to the strict default, never to unlimited.
+
+The per-field allowances had the same problem one level down. 240 for an appearance and 200 for a location were never facts about appearances and locations; they were a **carve-up of that 1000**. Held fixed, a provider with four times the room received exactly as much of what the director wrote and the extra went unused. `allowancesFor(ceiling)` makes them shares — the old numbers divided by the old ceiling — so at 1000 they reproduce exactly and no existing project's prompts change shape. The remaining 12% is the fixed vocabulary (shot type, lens, movement, lighting, quality tags), which does not scale because it is a phrase list rather than prose.
+
+**Descriptions themselves were never limited** and still are not: a plate prompt carries the full `appearance_prompt` or `description` untrimmed, which is the point of a plate. Only the *keyframe* prompt trims, because there the description is one ingredient among action, camera, lighting and style that must all fit one request.
 
 ### Screenplay → Entities (the step that was never wired)
 A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
@@ -807,6 +817,7 @@ node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js
 node --test backend/tests/project-delete.test.js
 node --test backend/tests/prompt-budget.test.js
+node --test backend/tests/provider-prompt-limit.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js

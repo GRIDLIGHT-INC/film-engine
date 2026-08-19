@@ -171,6 +171,34 @@ const STYLE_ALLOWANCE = 140;
  */
 const MAX_PROMPT_CHARS = 1000;
 
+/**
+ * The allowances as a share of the ceiling, not as fixed numbers.
+ *
+ * 240 for an appearance and 200 for a location were never facts about
+ * appearances and locations — they were a carve-up of MAX_PROMPT_CHARS, which
+ * was Runway's 1000. Held fixed, a provider with four times the room received
+ * exactly as much of what the director wrote, and the extra went unused.
+ *
+ * The shares are the old numbers divided by the old ceiling, so at 1000 this
+ * reproduces them exactly and no existing project's prompts change shape. The
+ * remaining 12% is the fixed vocabulary — shot type, lens, movement, lighting,
+ * quality tags — which does not grow with the ceiling because it is a phrase
+ * list rather than prose.
+ */
+const ALLOWANCE_SHARE = {
+    action: ACTION_ALLOWANCE / MAX_PROMPT_CHARS,
+    appearance: APPEARANCE_ALLOWANCE / MAX_PROMPT_CHARS,
+    location: LOCATION_ALLOWANCE / MAX_PROMPT_CHARS,
+    style: STYLE_ALLOWANCE / MAX_PROMPT_CHARS,
+};
+
+function allowancesFor(ceiling) {
+    const c = Number(ceiling) > 0 ? Number(ceiling) : MAX_PROMPT_CHARS;
+    const out = {};
+    for (const [field, share] of Object.entries(ALLOWANCE_SHARE)) out[field] = Math.round(share * c);
+    return out;
+}
+
 const { previsFacets } = require('./previs-blocking');
 
 /**
@@ -213,6 +241,11 @@ function previsPromptParts(rawPrevis) {
 
 function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, options) {
     const opts = options || {};
+    // Everything downstream measures against the ceiling actually in play, so a
+    // roomier provider receives more of what was written rather than the same
+    // truncation with headroom to spare.
+    const ceiling = opts.maxPromptChars || MAX_PROMPT_CHARS;
+    const allow = allowancesFor(ceiling);
     // Subjects the caller has attached a reference image for. Empty map when
     // there are none, so the prose path below is unchanged for every project
     // that has not generated plates yet.
@@ -254,14 +287,14 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
         if (charTag) {
             parts.push(`@${charTag}`);
         } else if (dbChar.appearance_prompt) {
-            parts.push(trimToAllowance(dbChar.appearance_prompt, opts.appearanceAllowance || APPEARANCE_ALLOWANCE));
+            parts.push(trimToAllowance(dbChar.appearance_prompt, opts.appearanceAllowance || allow.appearance));
         }
     }
 
     // 2. Subject / action description
     const subject = sceneCard.action || sceneCard.description || '';
     if (subject) {
-        parts.push(trimToAllowance(subject, opts.actionAllowance || ACTION_ALLOWANCE));
+        parts.push(trimToAllowance(subject, opts.actionAllowance || allow.action));
     }
 
     // 3-5. Camera: the blocking when the shot has been staged, otherwise the
@@ -330,7 +363,7 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
         if (locTag) {
             parts.push(`@${locTag}`);
         } else if (location.description) {
-            parts.push(trimToAllowance(location.description, opts.locationAllowance || LOCATION_ALLOWANCE));
+            parts.push(trimToAllowance(location.description, opts.locationAllowance || allow.location));
         }
         if (location.lighting_default && !lightType) {
             parts.push(`${location.lighting_default} lighting`);
@@ -350,7 +383,7 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
     if (preset) {
         parts.push(preset.suffix);
     } else if (typeof stylePreset === 'string' && stylePreset.trim()) {
-        parts.push(trimToAllowance(stylePreset, opts.styleAllowance || STYLE_ALLOWANCE));
+        parts.push(trimToAllowance(stylePreset, opts.styleAllowance || allow.style));
     }
 
     // 9. Scene card style overrides
@@ -373,7 +406,6 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
     // Assemble prompt
     const loraPrefix = loraParts.length > 0 ? loraParts.join(' ') + ', ' : '';
     const assembled = loraPrefix + parts.filter(Boolean).join(', ');
-    const ceiling = opts.maxPromptChars || MAX_PROMPT_CHARS;
     const prompt = assembled.length <= ceiling
         ? assembled
         : trimToAllowance(assembled, ceiling);
@@ -434,6 +466,8 @@ function applyStyleLock(baseSeed, shotIndex, options) {
 }
 
 module.exports = {
+    allowancesFor,
+    ALLOWANCE_SHARE,
     previsPromptParts,
     trimToAllowance,
     MAX_PROMPT_CHARS,

@@ -697,7 +697,12 @@ async function generateStoryboard(req, res, projectId, query) {
         const shotRefs = canAttach
             ? gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCard.props)
             : [];
-        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset, { references: shotRefs, tagged: canTag });
+        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
+            // The ceiling of the provider that will actually run, not a
+            // constant. Meshy documents no prompt limit and routes to models
+            // that take long ones; imposing Runway's 1000 on it threw away
+            // description nobody asked to lose.
+            { references: shotRefs, tagged: canTag, maxPromptChars: leadProvider && leadProvider.promptLimit });
 
         // Update shot status
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shot.shot_id);
@@ -906,7 +911,12 @@ async function generateStoryboardStream(req, res, projectId, query) {
         const shotRefs = canAttach
             ? gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCard.props)
             : [];
-        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset, { references: shotRefs, tagged: canTag });
+        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
+            // The ceiling of the provider that will actually run, not a
+            // constant. Meshy documents no prompt limit and routes to models
+            // that take long ones; imposing Runway's 1000 on it threw away
+            // description nobody asked to lose.
+            { references: shotRefs, tagged: canTag, maxPromptChars: leadProvider && leadProvider.promptLimit });
 
         sendEvent({
             type: 'progress',

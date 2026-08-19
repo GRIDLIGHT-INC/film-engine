@@ -602,6 +602,21 @@ const PRODUCTION_TOOLS = [
         schema: { location_id: { type: 'string' } }, required: ['location_id'],
     },
     {
+        name: 'prop_update',
+        handler: handleLocations, method: 'PUT',
+        description: 'Change a prop. visual_prompt is the field that reaches the image prompt and that a prop plate is generated from. Use this rather than prop_create when the prop already exists \u2014 creating one twice is refused.',
+        path: a => `/film/props/${a.prop_id}`,
+        body: a => { const { prop_id, ...rest } = a || {}; return rest; },
+        schema: {
+            prop_id: { type: 'string' },
+            visual_prompt: { type: 'string', description: 'What this object looks like, in prompt terms.' },
+            description: { type: 'string' },
+            category: { type: 'string' },
+            name: { type: 'string' },
+        },
+        required: ['prop_id'],
+    },
+    {
         name: 'prop_delete',
         handler: handleLocations, method: 'DELETE',
         description: 'Remove a prop and anything generated for it.',

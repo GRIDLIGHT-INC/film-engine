@@ -144,6 +144,9 @@ function createCharacter(req, res, projectId) {
             error: 'Character "' + existing.name + '" already exists in this project.',
             code: 'duplicate_name',
             existing,
+            // Named, or a caller with nothing else to try simply tries again —
+            // which is exactly how props ended up duplicated.
+            hint: 'Use character_update to change it, or character_delete to remove it first.',
         }));
         return;
     }
