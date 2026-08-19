@@ -14,7 +14,7 @@ const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const { resolve } = require('../lib/providers');
-const { generatePlate } = require('../lib/reference-plates');
+const { generatePlate, PLATE_KINDS } = require('../lib/reference-plates');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IMAGE_ENDPOINT = '/image';
@@ -172,7 +172,13 @@ function listLocations(req, res, projectId) {
         const count = db.prepare("SELECT COUNT(*) AS count FROM film_scenes WHERE project_id = ? AND location = ?").get(projectId, loc.name);
         loc.scene_count = count.count;
         const refAsset = refImageQuery.get(loc.id);
-        loc.reference_image_url = refAsset ? getFileUrl('loc-refs', refAsset.project_id, refAsset.file_name) : null;
+        // The subdir comes from the plate builder's own registry, never a
+        // literal. These two lists each hardcoded their own directory while the
+        // builder wrote somewhere else, so the row was found, a URL was
+        // returned, and it pointed at a directory the file was not in — a plate
+        // that existed, was correctly linked, and rendered as nothing.
+        loc.reference_image_url = refAsset
+            ? getFileUrl(PLATE_KINDS.location.subdir, refAsset.project_id, refAsset.file_name) : null;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -406,12 +412,18 @@ function listProps(req, res, projectId) {
     const rows = db.prepare('SELECT * FROM film_props WHERE project_id = ? ORDER BY name').all(projectId);
 
     // Attach reference image per prop
+    // The prop_id COLUMN, not a LIKE against metadata. Migration 061 added the
+    // column precisely so a prop plate had somewhere to link, and the plate
+    // builder writes it — but this query still searched the metadata blob,
+    // where nothing puts a prop_id. So a generated prop plate existed, was
+    // correctly linked, and was invisible.
     const refImageQuery = db.prepare(
-        "SELECT file_name, project_id FROM film_assets WHERE asset_type = 'reference_image' AND metadata LIKE ? ORDER BY created_at DESC LIMIT 1"
+        "SELECT file_name, project_id FROM film_assets WHERE asset_type = 'reference_image' AND prop_id = ? ORDER BY created_at DESC LIMIT 1"
     );
     for (const prop of rows) {
-        const refAsset = refImageQuery.get(`%"prop_id":"${prop.id}"%`);
-        prop.reference_image_url = refAsset ? getFileUrl('prop-refs', refAsset.project_id, refAsset.file_name) : null;
+        const refAsset = refImageQuery.get(prop.id);
+        prop.reference_image_url = refAsset
+            ? getFileUrl(PLATE_KINDS.prop.subdir, refAsset.project_id, refAsset.file_name) : null;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });

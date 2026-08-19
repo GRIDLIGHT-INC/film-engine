@@ -160,3 +160,53 @@ test('the UI generates plates through the plate builder, not the old path', () =
         assert.ok(re.test(html), `${kind} has no button reaching the plate builder`);
     }
 });
+
+/**
+ * A generated plate is findable by the list that displays it.
+ *
+ * Both halves of this were broken and neither failed loudly. The list built
+ * URLs pointing at 'loc-refs' and 'prop-refs' while the plate builder wrote to
+ * 'refsheets', so a URL came back and pointed at a directory the file was not
+ * in. And the prop lookup searched the METADATA blob for a prop_id, while
+ * migration 061 added a prop_id COLUMN precisely so a prop plate had somewhere
+ * to link — which is what the builder writes. So a plate that existed, and was
+ * correctly linked, rendered as nothing.
+ *
+ * Set-based over the plate kinds because the two faults were in different
+ * kinds: locations had the wrong directory, props had the wrong column.
+ */
+test('the list reads plates from where the builder writes them', () => {
+    const fs = require('fs');
+    const { PLATE_KINDS } = require('../lib/reference-plates');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'locations.js'), 'utf8');
+
+    // Scoped to the LIST functions, which are what the UI displays from. The
+    // older generateLocationImage / generatePropImage still use their own
+    // directory; they are unreachable from the UI now and are a duplicate that
+    // should go, but they are not what this invariant is about.
+    const listBodies = ['listLocations', 'listProps'].map(fn => {
+        const i = src.indexOf(`function ${fn}(`);
+        assert.ok(i > 0, `${fn} is gone`);
+        return src.slice(i, src.indexOf('\n}', i));
+    }).join('\n');
+
+    for (const stale of ["'loc-refs'", "'prop-refs'"]) {
+        assert.ok(!listBodies.includes(stale),
+            `a list still builds a URL with ${stale}, which is not where plates are written`);
+    }
+    assert.ok(/PLATE_KINDS\.location\.subdir/.test(src) && /PLATE_KINDS\.prop\.subdir/.test(src),
+        'the subdir is a literal again and can drift from the builder');
+
+    // Props link by column, not by a LIKE against metadata — scoped to the
+    // list for the same reason as above.
+    assert.ok(!/metadata LIKE/.test(listBodies),
+        'the prop plate lookup still searches metadata for a prop_id');
+    assert.ok(/reference_image' AND prop_id = \?/.test(listBodies),
+        'the prop plate lookup does not use the prop_id column');
+
+    // And both kinds still agree with the builder about the asset type.
+    for (const kind of ['location', 'prop']) {
+        assert.strictEqual(PLATE_KINDS[kind].assetType, 'reference_image',
+            `${kind} plates are no longer written as reference_image`);
+    }
+});
