@@ -7576,7 +7576,9 @@
         el.style.display = '';
         el.innerHTML = `<strong>${apply ? 'Applied' : 'Would apply'}</strong>
             <p class="text-sm" style="margin-top:6px;">${esc(res.style_preset || res.message || '')}</p>
-            ${res.warning ? `<p class="text-sm" style="color:var(--gl-warning,#f59e0b);margin-top:6px;">${esc(res.warning.detail)}</p>` : ''}
+            ${(res.warnings || []).map(w => `<p class="text-sm" style="color:var(--gl-warning,#f59e0b);margin-top:6px;">${esc(w.detail)}</p>`).join('')}
+            ${res.effective_style && res.effective_style !== res.style_preset
+                ? `<p class="text-sm" style="margin-top:8px;"><strong>What actually reaches a prompt:</strong><br>${esc(res.effective_style)}</p>` : ''}
             ${(res.applied_specs || []).length ? `<p class="text-sm text-muted" style="margin-top:6px;">Settings written: ${res.applied_specs.map(s => esc(s.kind)).join(', ')}</p>` : ''}`;
         setStatus(apply ? 'Look applied' : 'Look previewed — not applied');
     }

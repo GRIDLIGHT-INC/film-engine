@@ -125,7 +125,34 @@ function compose(req, res, projectId) {
         });
     }
 
+    // Two independent ways a composed style can be wrong, reported together.
+    // Returning only the first found would hide the other, and a board can
+    // easily be both too long AND naming a creature.
+    const warnings = [];
+
     const check = validateStylePreset(style);
+    if (!check.ok) warnings.push({ type: 'subject', subjects: check.subjects, detail: check.detail });
+
+    // How much of this will actually reach a provider. buildStoryboardPrompt
+    // trims the style to STYLE_ALLOWANCE, because a style is appended to every
+    // image prompt and the whole prompt has to fit a provider cap — so a board
+    // can compose 1654 careful characters and have 140 of them survive, with
+    // nothing anywhere saying so. Imported rather than hardcoded: a warning
+    // quoting a number the prompt builder no longer uses is worse than none.
+    const { STYLE_ALLOWANCE, trimToAllowance } = require('../lib/storyboard-prompt');
+    const effective = trimToAllowance(style, STYLE_ALLOWANCE);
+    if (style.length > STYLE_ALLOWANCE) {
+        const lost = Math.round((1 - STYLE_ALLOWANCE / style.length) * 100);
+        warnings.push({
+            type: 'length',
+            composed: style.length,
+            allowance: STYLE_ALLOWANCE,
+            detail: `This style is ${style.length} characters and only the first ${STYLE_ALLOWANCE} reach an image `
+                + `prompt — about ${lost}% of it is discarded before anything is generated. A style is appended to `
+                + `every prompt in the production, and the whole prompt has to fit the provider's cap. `
+                + `Shorten the notes to terse phrases; what survives is shown as effective_style.`,
+        });
+    }
 
     // The specs on the board, and where each one lands. Reported whether or not
     // they are applied, so composing answers "what would this do" completely.
@@ -149,13 +176,17 @@ function compose(req, res, projectId) {
         style_preset: style,
         applied,
         contributing_entries: parts.length,
+        // What a provider would actually receive. "92% is discarded" is a
+        // statistic; the surviving sentence is the thing to judge.
+        effective_style: effective,
         specs,
         applied_specs: appliedSpecs,
         spec_kinds: Object.fromEntries(Object.entries(SPEC_KINDS)
             .map(([k, v]) => [k, { target: v.target, label: v.label, allowed: allowedSpecValues(k) }])),
         // Warned at the moment the look is decided, rather than after the
-        // frames come back with something nobody wrote.
-        warning: check.ok ? null : { subjects: check.subjects, detail: check.detail },
+        // frames come back with something nobody wrote — or with nine tenths
+        // of the look silently missing.
+        warnings,
     });
 }
 

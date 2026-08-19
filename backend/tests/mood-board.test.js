@@ -101,6 +101,63 @@ test('the board composes a style preset from what is on it', async () => {
     }
 });
 
+/**
+ * The independent ways a composed style can be wrong.
+ *
+ * Two problems, two causes, and they can happen together — a long style that
+ * also names a creature. Reporting only the first found would hide the other,
+ * so the check is set-based over the warning types rather than over one
+ * example of one of them.
+ */
+const WARNING_TYPES = ['subject', 'length'];
+
+test('the warning registry matches what compose can actually raise', async () => {
+    const projectId = makeProject();
+    await call('POST', `/film/projects/${projectId}/mood-board`,
+        { kind: 'texture', note: 'anatomical beast, ' + 'wet stone and cold light, '.repeat(12) });
+    const r = await call('POST', `/film/projects/${projectId}/mood-board/compose`);
+    const raised = (r.body.warnings || []).map(w => w.type).sort();
+    assert.deepStrictEqual(raised, WARNING_TYPES.slice().sort(),
+        `a style that is both too long AND names a subject raised only: ${JSON.stringify(raised)}`);
+});
+
+test('composing says how much of the style will actually reach a prompt', async () => {
+    // The trap this exists for: a board composed 1654 characters of careful
+    // look development, and STYLE_ALLOWANCE trims it to 140 at prompt-build
+    // time. Ninety-two per cent was discarded silently, so the director was
+    // generating against roughly the first sentence and a half of what they
+    // wrote — and nothing anywhere said so.
+    const { STYLE_ALLOWANCE } = require('../lib/storyboard-prompt');
+    const projectId = makeProject();
+    await call('POST', `/film/projects/${projectId}/mood-board`,
+        { kind: 'palette', note: 'teal and amber with sodium practicals, '.repeat(10) });
+
+    const r = await call('POST', `/film/projects/${projectId}/mood-board/compose`);
+    const lengthWarning = (r.body.warnings || []).find(w => w.type === 'length');
+    assert.ok(lengthWarning, 'an over-long style composed with no warning at all');
+    assert.strictEqual(lengthWarning.allowance, STYLE_ALLOWANCE,
+        'the warning quotes an allowance that is not the one the prompt builder uses');
+    assert.ok(lengthWarning.composed > STYLE_ALLOWANCE);
+    assert.ok(/\d+%/.test(lengthWarning.detail), 'the warning does not say how much is lost');
+
+    // And it shows the text that survives, because "92% is discarded" is a
+    // statistic while the surviving sentence is the thing to judge.
+    assert.ok(r.body.effective_style, 'no effective style returned');
+    assert.ok(r.body.effective_style.length <= STYLE_ALLOWANCE + 3,
+        `effective style is ${r.body.effective_style.length}, above the allowance`);
+    assert.ok(r.body.style_preset.startsWith(r.body.effective_style.slice(0, 40)),
+        'the effective style is not the head of the composed one');
+});
+
+test('a style that fits raises no length warning', async () => {
+    // A warning that fires on everything is a warning nobody reads.
+    const projectId = makeProject();
+    await call('POST', `/film/projects/${projectId}/mood-board`, { kind: 'palette', note: 'teal and amber, anamorphic' });
+    const r = await call('POST', `/film/projects/${projectId}/mood-board/compose`);
+    assert.ok(!(r.body.warnings || []).some(w => w.type === 'length'),
+        'a 26-character style was warned about for length');
+});
+
 test('composing warns when the board would put a subject in every frame', async () => {
     // The exact defect that shipped, caught at the moment the look is decided
     // rather than after eight frames have been paid for.
@@ -109,9 +166,10 @@ test('composing warns when the board would put a subject in every frame', async 
         { kind: 'texture', note: 'anatomical beast, wet stone' });
     const composed = await call('POST', `/film/projects/${projectId}/mood-board/compose`);
     assert.strictEqual(composed.status, 200, 'composing was blocked rather than warned');
-    assert.ok(composed.body.warning, 'no warning about the subject on the board');
-    assert.ok((composed.body.warning.subjects || []).some(w => /beast/i.test(w)),
-        `the offending word was not named: ${JSON.stringify(composed.body.warning)}`);
+    const subject = (composed.body.warnings || []).find(w => w.type === 'subject');
+    assert.ok(subject, 'no warning about the subject on the board');
+    assert.ok((subject.subjects || []).some(w => /beast/i.test(w)),
+        `the offending word was not named: ${JSON.stringify(subject)}`);
 });
 
 test('composing does not apply the style until asked', async () => {

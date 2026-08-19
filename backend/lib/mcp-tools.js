@@ -471,7 +471,7 @@ const PRODUCTION_TOOLS = [
     {
         name: 'mood_board_compose',
         handler: handleMoodBoard, method: 'POST',
-        description: 'Compose the board into a style preset and check it. Returns the composed string WITHOUT applying it \u2014 pass apply:true to commit. Warns when the board names a subject rather than a look: a style is appended to every prompt, so a creature named here is drawn into frames nobody wrote it into.',
+        description: 'Compose the board into a style preset and check it. Returns the composed string WITHOUT applying it \u2014 pass apply:true to commit. Two warnings: `subject` when the board names a thing rather than a look (a style is appended to every prompt, so a creature named here is drawn into frames nobody wrote it into), and `length` when the style exceeds what a prompt can carry. `effective_style` is what a provider would actually receive \u2014 check it, because a long style is trimmed and most of it never arrives.',
         path: a => `/film/projects/${a.project_id}/mood-board/compose`,
         body: a => ({ apply: !!a.apply }),
         schema: {
