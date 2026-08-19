@@ -3069,6 +3069,37 @@
             display: flex; justify-content: space-between; align-items: center;
             z-index: 100;
         }
+
+        /* Generation takes minutes and the only sign of it was 10px of grey
+           text at the bottom of the screen. While work is in flight the bar
+           grows, brightens, and shows a moving stripe. */
+        .status-bar.busy {
+            padding: 12px 20px 14px;
+            font-size: 13px;
+            color: var(--gl-text-primary);
+            border-top-color: var(--gl-brand-pink, #ec4899);
+        }
+        .status-bar.busy #statusText { font-weight: 600; }
+
+        /* INDETERMINATE on purpose. A plate is one blocking request to a
+           provider that reports no progress, so a percentage would be invented.
+           A moving stripe says "still working" without claiming to know how
+           much is left. */
+        .status-progress {
+            position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+            overflow: hidden; display: none; background: rgba(255,255,255,.06);
+        }
+        .status-bar.busy .status-progress { display: block; }
+        .status-progress::after {
+            content: ''; position: absolute; top: 0; height: 100%; width: 35%;
+            background: linear-gradient(90deg, transparent, var(--gl-brand-pink, #ec4899), transparent);
+            animation: status-sweep 1.1s ease-in-out infinite;
+        }
+        @keyframes status-sweep {
+            0%   { left: -35%; }
+            100% { left: 100%; }
+        }
+        .status-elapsed { font-variant-numeric: tabular-nums; opacity: .75; margin-left: 8px; }
         .status-dot-online { color: var(--gl-success); }
         .status-dot-offline { color: var(--gl-error); }
 
@@ -5221,9 +5252,10 @@
     <!-- ════════════════════════════════════════════════════════════
          STATUS BAR
          ════════════════════════════════════════════════════════════ -->
-    <div class="status-bar">
-        <span id="statusText">Ready</span>
+    <div class="status-bar" id="statusBar">
+        <span><span id="statusText">Ready</span><span class="status-elapsed" id="statusElapsed"></span></span>
         <span id="statusConnection">Connecting...</span>
+        <div class="status-progress"></div>
     </div>
 
     <!-- ════════════════════════════════════════════════════════════
@@ -7520,7 +7552,7 @@
 
     async function productionConform() {
         if (!state.currentProject) return;
-        setStatus('Conforming…');
+        setStatus('Conforming…', true);
         try {
             const res = await api(`/projects/${state.currentProject.id}/conform`, { method: 'POST', body: JSON.stringify({}) });
             setStatus(res.ok ? `Film conformed: ${res.output}` : (res.error || 'Conform refused'));
@@ -15558,7 +15590,7 @@ ${fountainText.slice(0, 50000)}`;
 
     async function generateCharacterImage(charId) {
         if (!confirm('Generate reference image for this character? This calls the image generation service.')) return;
-        setStatus('Generating character reference image...');
+        setStatus('Generating character reference image...', true);
         try {
             const result = await api('/characters/' + charId + '/refsheet/generate', {
                 method: 'POST',
@@ -15674,7 +15706,7 @@ ${fountainText.slice(0, 50000)}`;
 
     async function generateLocationImage(locId) {
         if (!confirm('Generate reference image for this location?')) return;
-        setStatus('Generating location reference image...');
+        setStatus('Generating location reference image...', true);
         try {
             const result = await api('/locations/' + locId + '/plate/generate', { method: 'POST' });  // plate/generate, not image/generate: the latter is a second,
             // older generator that never inherited the plate fixes.
@@ -15768,7 +15800,7 @@ ${fountainText.slice(0, 50000)}`;
 
     async function generatePropImage(propId) {
         if (!confirm('Generate reference image for this prop?')) return;
-        setStatus('Generating prop reference image...');
+        setStatus('Generating prop reference image...', true);
         try {
             const result = await api('/props/' + propId + '/plate/generate', { method: 'POST' });
             setStatus('Prop image generated');
@@ -18075,7 +18107,7 @@ ${fountainText.slice(0, 50000)}`;
     async function generateModelFor(kind, id, btn) {
         const path = '/' + (kind === 'prop' ? 'props' : 'characters') + '/' + id + '/model/generate';
         if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
-        setStatus('Generating 3D model...');
+        setStatus('Generating 3D model...', true);
         try {
             const res = await api(path, { method: 'POST', body: JSON.stringify({}) });
             setStatus(res.status === 'generating' ? '3D job queued' : '3D model generated');
@@ -18205,7 +18237,7 @@ ${fountainText.slice(0, 50000)}`;
 
     async function generateVideoFor(shotId, btn) {
         if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
-        setStatus('Generating video...');
+        setStatus('Generating video...', true);
         try {
             const res = await api('/shots/' + shotId + '/video/generate', { method: 'POST', body: JSON.stringify({}) });
             setStatus(res.status === 'complete' ? 'Video generated' : 'Video job queued');
@@ -19984,7 +20016,43 @@ ${fountainText.slice(0, 50000)}`;
         return [];
     }
 
-    function setStatus(text) { document.getElementById('statusText').textContent = text; }
+    /**
+     * Say what is happening, and show that it still is.
+     *
+     * `busy` grows the bar and starts a moving stripe. The stripe is
+     * INDETERMINATE on purpose: a plate is one blocking request to a provider
+     * that reports no progress, so any percentage would be invented, and an
+     * invented percentage that sticks at 60% for two minutes is worse than
+     * none. The elapsed counter is the honest version — it is a fact, and it
+     * is what tells you the difference between slow and hung.
+     */
+    let STATUS_TIMER = null;
+    let STATUS_STARTED = 0;
+
+    function setStatus(text, busy) {
+        const el = document.getElementById('statusText');
+        if (el) el.textContent = text;
+        const bar = document.getElementById('statusBar');
+        const elapsed = document.getElementById('statusElapsed');
+        if (!bar) return;
+
+        if (busy) {
+            bar.classList.add('busy');
+            STATUS_STARTED = Date.now();
+            clearInterval(STATUS_TIMER);
+            STATUS_TIMER = setInterval(() => {
+                const s = Math.round((Date.now() - STATUS_STARTED) / 1000);
+                if (elapsed) elapsed.textContent = s >= 60
+                    ? `· ${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`
+                    : `· ${s}s`;
+            }, 1000);
+        } else {
+            bar.classList.remove('busy');
+            clearInterval(STATUS_TIMER);
+            STATUS_TIMER = null;
+            if (elapsed) elapsed.textContent = '';
+        }
+    }
 
     function formatBytes(bytes) {
         if (!bytes) return '0 B';
