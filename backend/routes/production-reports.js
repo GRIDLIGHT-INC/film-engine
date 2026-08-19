@@ -19,7 +19,7 @@
 
 const { db } = require('../db/database');
 const { ARTEFACT_KINDS, fingerprintFor, isStale } = require('../lib/artefact-fingerprint');
-const { buildSides, buildDOOD } = require('../lib/production-reports');
+const { buildSides, buildDOOD, buildBreakdownSummary, buildElementsList, buildRunReport } = require('../lib/production-reports');
 const { buildRunPlan } = require('../lib/run-plan');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -97,6 +97,17 @@ function handleProductionReports(req, res, urlParts, query) {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
         return json(res, 200, buildDOOD(urlParts[2]));
+    }
+
+    const simple = {
+        'breakdown-summary': buildBreakdownSummary,
+        'elements-list': buildElementsList,
+        'run-report': buildRunReport,
+    };
+    if (urlParts[1] === 'projects' && urlParts[2] && simple[urlParts[3]]) {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        return json(res, 200, simple[urlParts[3]](urlParts[2], query || {}));
     }
 
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'run-plan') {

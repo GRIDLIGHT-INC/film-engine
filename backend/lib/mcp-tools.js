@@ -420,6 +420,31 @@ const PRODUCTION_TOOLS = [
         required: ['project_id'],
     },
     {
+        name: 'breakdown_summary',
+        handler: handleProductionReports, method: 'GET',
+        description: 'What each scene contains, scene by scene: characters, props, shot count, dialogue lines, duration. The document a first AD reads, answering which subjects a scene commits you to.',
+        path: a => `/film/projects/${a.project_id}/breakdown-summary`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'elements_list',
+        handler: handleProductionReports, method: 'GET',
+        description: 'Every element grouped by type (characters, locations, props) with the scene count for each. `undescribed` is the actionable line: an element with no description reaches generation as a bare name, and every frame then invents its own version of it.',
+        path: a => `/film/projects/${a.project_id}/elements-list`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'run_report',
+        handler: handleProductionReports, method: 'GET',
+        description: 'What recent generation runs did: status, failed steps named individually, and recorded spend against budget. This is the call sheet reinterpreted \u2014 there is no crew to notify, but a director still needs to know whether the day happened and what went wrong. Read it after a run.',
+        path: a => `/film/projects/${a.project_id}/run-report${a.limit ? `?limit=${encodeURIComponent(a.limit)}` : ''}`,
+        schema: {
+            project_id: { type: 'string' },
+            limit: { type: 'number', description: 'How many recent runs to report (default 10, max 50).' },
+        },
+        required: ['project_id'],
+    },
+    {
         name: 'sides_report',
         handler: handleProductionReports, method: 'GET',
         description: 'Each character\u2019s own lines, scene by scene \u2014 what a director reviews before spending on voice generation. Characters with no dialogue are listed with line_count 0 rather than omitted, so "has no lines" is distinguishable from "is not in this film".',

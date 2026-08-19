@@ -117,6 +117,7 @@ film-engine/
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
+│   │   ├── look-development.js    # Style presets carry a look, not a subject
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
@@ -145,6 +146,7 @@ film-engine/
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
 │       ├── run-plan.test.js            # Strip ordering, dependency safety, cost, budget refusal
+│       ├── look-development.test.js    # A style preset naming a subject is caught, real styles are not
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -374,7 +376,16 @@ The ordering is not tuned — it falls out. Strips are steps in topological orde
 
 Two orders, and the trade is real rather than a preference: on 8 shots, `order=model` costs **5 model switches** and `order=shot` costs **47**, for identical work at identical cost — shot-major buys a finished shot early with 42 extra model loads. Cost is summed **per item from that item's own step**, never from the strip's: a shot-major strip walks a shot through every step, and pricing it at the first step's rate made the same work cost different amounts depending on how it was ordered. An estimate that moves when you reorder the plan is not an estimate. Swaps are counted over the flattened item sequence for the same reason. Over budget, the plan returns **HTTP 402** with `refused: true` before anything generates, overridable with `ignore_budget`; an unset budget is unlimited, never a ceiling of zero.
 
-Served at `GET /projects/:id/{staleness,sides,dood,run-plan}` and as four MCP tools (68 total).
+**Breakdown summary, elements list and run report** complete the set. The elements list unions the locations table with what the scene headings name, because a heading whose row was never created is exactly the state a fresh screenplay upload leaves — reporting only the table would silently omit locations the film shoots in. `undescribed` is its actionable line, and `has_record` distinguishes "no row" (needs `entities_create`) from "row with no description" (needs `entities_describe`). The **run report** is the call sheet reinterpreted: there is no crew to notify and no mail dependency to add, but a director still needs to know whether the day happened, what failed and what it cost. Failed steps are **named individually** rather than counted — "3 steps failed" sends you to the database.
+
+Served at `GET /projects/:id/{staleness,sides,dood,run-plan,breakdown-summary,elements-list,run-report}` and as seven MCP tools (71 total).
+
+### Look Development (Phase 3)
+A style preset is appended to **every** image prompt in a production, is a free-text column, and was validated nowhere. So `"…teal/amber, wet streets, mist, anatomical beast, anamorphic, grain"` put a flayed quadruped in the establishing shot whose scene card reads *"Empty, ordinary, still."*, and a gargoyle at the base of a sprinkler insert. Nobody wrote those shots; the style did, in every frame, silently.
+
+`lib/look-development.js` catches a style that names a **subject** rather than a look, and the asymmetry drives the design: a validator that rejects real cinematographic vocabulary gets switched off within a day and then protects nothing, so it matches bare words and simple plurals against a short concrete list (creatures, people, animals, drawn objects) with an exception set — substring matching turns "grainy" into "rain" and every style into a failure. It **warns, never blocks**, on the precedent previs set: a creature film may genuinely want a creature in every frame, and refusing the save would overrule the author. The warning names the offending word, since "your style may contain a subject" just sends the director back to re-read their own string. Wired into `POST`/`PUT /projects`, returned as `style_warning`.
+
+Tested against a corpus rather than examples: 8 real styles that must all pass (noir, Portra, cyberpunk, documentary, golden hour…) and 5 subject-carrying ones that must all fail — including the exact string that shipped the defect.
 
 ### Screenplay → Entities (the step that was never wired)
 A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
@@ -723,6 +734,7 @@ node --test backend/tests/previs-explore-ui.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js
 node --test backend/tests/run-plan.test.js
+node --test backend/tests/look-development.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js

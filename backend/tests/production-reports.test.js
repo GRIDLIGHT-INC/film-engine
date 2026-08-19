@@ -79,11 +79,46 @@ const REPORTS = [
         build: projectId => reports.buildDOOD(projectId),
         mustCover: ['MAYA', 'DRAGON'],
     },
+    {
+        id: 'breakdown_summary',
+        build: projectId => reports.buildBreakdownSummary(projectId),
+        mustCover: ['MAYA', 'DRAGON', 'SUBURBAN STREET'],
+    },
+    {
+        id: 'elements_list',
+        build: projectId => reports.buildElementsList(projectId),
+        mustCover: ['MAYA', 'DRAGON', 'SUBURBAN STREET'],
+    },
 ];
 
-test('the report registry covers what the epic named', () => {
+test('the report registry covers the four StudioBinder names', () => {
     const ids = REPORTS.map(r => r.id).sort();
-    assert.deepStrictEqual(ids, ['dood', 'sides']);
+    assert.deepStrictEqual(ids, ['breakdown_summary', 'dood', 'elements_list', 'sides']);
+});
+
+test('the elements list groups by element type, not one flat bag', () => {
+    // The point of an elements list is answering "what props do we need" in one
+    // look. A single undifferentiated array is a database dump.
+    const { projectId } = makeProduction();
+    const el = reports.buildElementsList(projectId);
+    for (const type of ['characters', 'locations', 'props']) {
+        assert.ok(Array.isArray(el.elements[type]), `elements list has no ${type} group`);
+    }
+    const names = el.elements.characters.map(c => c.name);
+    assert.ok(names.includes('DRAGON'), 'the non-speaking character is missing from the elements list');
+});
+
+test('the breakdown summary counts per scene, and covers every scene', () => {
+    const { projectId } = makeProduction();
+    const bs = reports.buildBreakdownSummary(projectId);
+    const sceneCount = db.prepare('SELECT COUNT(*) c FROM film_scenes WHERE project_id = ?').get(projectId).c;
+    assert.strictEqual(bs.scenes.length, sceneCount, 'a scene is missing from the breakdown summary');
+    for (const sc of bs.scenes) {
+        assert.ok(typeof sc.shot_count === 'number', `scene ${sc.scene}: no shot count`);
+        assert.ok(Array.isArray(sc.characters), `scene ${sc.scene}: no character list`);
+    }
+    const s2 = bs.scenes.find(x => x.scene === '2');
+    assert.ok(s2.characters.includes('DRAGON'), 'scene 2 does not list the creature that is in it');
 });
 
 test('every report generates with no manual data entry', () => {

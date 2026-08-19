@@ -178,7 +178,23 @@ function createProject(req, res) {
     const row = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(id);
 
     res.writeHead(201, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(row));
+    res.end(JSON.stringify(withStyleWarning(row)));
+}
+
+/**
+ * Attach a warning when the style preset names a subject.
+ *
+ * A style preset is appended to EVERY image prompt, so a thing named here gets
+ * drawn into frames nobody wrote it into — which is how an establishing shot
+ * described as "empty, ordinary, still" came back with a creature standing in
+ * the road. Warned, never refused: a creature film may mean it, and a tool that
+ * blocks the save is overruling its author.
+ */
+function withStyleWarning(row) {
+    if (!row) return row;
+    const check = require('../lib/look-development').validateStylePreset(row.style_preset);
+    if (check.ok) return row;
+    return { ...row, style_warning: { subjects: check.subjects, detail: check.detail } };
 }
 
 function updateProject(req, res, id) {
@@ -255,7 +271,7 @@ function updateProject(req, res, id) {
     const row = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(id);
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(row));
+    res.end(JSON.stringify(withStyleWarning(row)));
 }
 
 function deleteProject(req, res, id) {
