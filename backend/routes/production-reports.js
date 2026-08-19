@@ -21,6 +21,7 @@ const { db } = require('../db/database');
 const { ARTEFACT_KINDS, fingerprintFor, isStale } = require('../lib/artefact-fingerprint');
 const { buildSides, buildDOOD, buildBreakdownSummary, buildElementsList, buildRunReport } = require('../lib/production-reports');
 const { buildRunPlan } = require('../lib/run-plan');
+const { groupFrames, buildSetups, GROUP_AXES } = require('../lib/board-grouping');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -97,6 +98,28 @@ function handleProductionReports(req, res, urlParts, query) {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
         return json(res, 200, buildDOOD(urlParts[2]));
+    }
+
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'board-groups') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        const axis = (query && query.axis) || 'scene';
+        return json(res, 200, {
+            project_id: urlParts[2], axis, axes: GROUP_AXES,
+            groups: groupFrames(urlParts[2], axis),
+        });
+    }
+
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'setups') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        const setups = buildSetups(urlParts[2]);
+        return json(res, 200, {
+            project_id: urlParts[2], setups,
+            // The line that makes it worth reading: how much of the board
+            // reuses conditioning rather than paying for its own.
+            reused_shots: setups.filter(s => s.shots.length > 1).reduce((n, s) => n + s.shots.length - 1, 0),
+        });
     }
 
     const simple = {

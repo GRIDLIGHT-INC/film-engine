@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (62 migrations)
+│   │   └── migrations/     # SQL migration files (63 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -62,6 +62,7 @@ film-engine/
 │   │   ├── previs.js           # Previs blocking CRUD + framing solve (Phase 2)
 │   │   ├── production-reports.js # Staleness, sides, DOOD, run plan, breakdown summary (reports)
 │   │   ├── mood-board.js       # Look development: references → style preset
+│   │   ├── annotations.js      # Markup on a storyboard frame (arrows, shapes, notes)
 │   │   ├── providers.js        # Provider registry, credentials, OAuth connect
 │   │   ├── consistency.js      # Consistency profiles, locking, readiness audit
 │   │   ├── takes.js            # Takes & selects (circle-take workflow)
@@ -119,6 +120,7 @@ film-engine/
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
+│   │   ├── board-grouping.js      # Board groups for reading, setups for working
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
@@ -150,6 +152,8 @@ film-engine/
 │       ├── look-development.test.js    # A style preset naming a subject is caught, real styles are not
 │       ├── shot-tagger.test.js         # A screenplay line becomes a shot, with who is in it
 │       ├── mood-board.test.js          # The board composes a style preset, and warns about subjects
+│       ├── storyboard-annotation.test.js # Every shape round-trips; markup survives regeneration
+│       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -399,6 +403,15 @@ Composing **does not apply**. Previewing a look and committing to it are differe
 
 A separate table from `film_continuity_refs` on purpose: continuity refs answer "did this match what we already shot" — a question about the past — while a mood board answers "what should this look like", a question about work not yet done. Same shape, opposite direction, and conflating them would make both queries lie.
 
+### Storyboard Markup and Grouping (Phase 3 close-out)
+**Markup** (`routes/annotations.js`, migration 065) puts a director's fastest notation on a frame: arrow, line, rect, ellipse, freehand, text. Two decisions carry it. Geometry is stored **normalised** — `[[x,y], …]` in 0..1 of the frame, never pixels — so a frame regenerated at another resolution, or a board read on a phone, keeps every arrow on the thing it points at; a pixel coordinate sent by mistake is **refused** rather than stored silently to draw nowhere. And markup attaches to the **shot, not the asset**: a note is about the shot and the PNG is one attempt at it, so keying it to an asset id would erase the direction at the exact moment it was acted on. Whether markup should later *feed* the next generation is PAR-026, gated on an open question and deliberately not answered here. The board draws it on a hand-rolled overlay canvas, same as previs and the flows canvas.
+
+**Panel grouping and setups are different questions that look alike.** Grouping by scene, location or time of day is for *reading* — a flat grid of two hundred frames is a contact sheet. Every frame lands in exactly one group, and frames missing the axis value collect under an explicit `(no location)` rather than vanishing, since a frame that disappears when you change how you read the board looks like data loss.
+
+**Setups are for working, and the set metaphor has to be translated rather than copied.** On a set you group by camera position because *moving* is what costs. Here nothing moves — the cost is conditioning, so a setup is shots sharing a location plate, a framing and a lens, which reuse the same references and the same look. Location leads the key because the plate is the most expensive thing to be wrong about. The key is deliberately narrow: widening it would merge shots whose frames genuinely differ and claim a reuse that does not exist, and `reused_shots` is a number a run plan is meant to trust.
+
+Served at `GET /projects/:id/{board-groups,setups}`, `GET|POST /shots/:id/annotations`, `DELETE /annotations/:id`, and as three more MCP tools (77 total).
+
 ### Screenplay → Entities (the step that was never wired)
 A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
 
@@ -624,7 +637,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (62 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (63 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -749,6 +762,8 @@ node --test backend/tests/run-plan.test.js
 node --test backend/tests/look-development.test.js
 node --test backend/tests/shot-tagger.test.js
 node --test backend/tests/mood-board.test.js
+node --test backend/tests/storyboard-annotation.test.js
+node --test backend/tests/board-grouping.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js

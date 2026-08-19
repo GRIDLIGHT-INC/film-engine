@@ -17931,7 +17931,9 @@ ${fountainText.slice(0, 50000)}`;
                     <div class="card" style="padding:0;overflow:hidden;">
                         <div style="position:relative;background:var(--surface-alt,var(--gl-bg-surface));min-height:160px;">
                             <img src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(f.shot_code)}.png"
-                                 style="width:100%;display:block;" onerror="this.style.display='none'">
+                                 style="width:100%;display:block;" onerror="this.style.display='none'"
+                                 onload="storyboardDrawAnnotations('${f.shot_id}')">
+                            <canvas id="annot-${f.shot_id}" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
                         </div>
                         <div style="padding:10px;">
                             <div class="flex-between">
@@ -17945,6 +17947,11 @@ ${fountainText.slice(0, 50000)}`;
                             ${f.duration_ms ? '<span class="tag">' + (f.duration_ms / 1000).toFixed(1) + 's</span>' : ''}
                             ${f.description ? '<p class="text-sm" style="margin-top:6px;line-height:1.45;">' + esc(f.description) + '</p>' : ''}
                             ${storyboardDialogueHtml(f.dialogue)}
+                            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;">
+                                ${['arrow', 'rect', 'ellipse', 'text'].map(k =>
+                                    `<button class="btn btn-sm" onclick="storyboardAnnotate('${f.shot_id}','${k}')" title="draw ${k} on this frame">${k}</button>`).join('')}
+                                <button class="btn btn-sm" onclick="storyboardClearAnnotations('${f.shot_id}')" title="remove all markup from this frame">clear</button>
+                            </div>
                         </div>
                     </div>`).join('');
             }
@@ -17956,6 +17963,140 @@ ${fountainText.slice(0, 50000)}`;
     // character in caps, line beneath. The API has always returned this and the
     // panel dropped it, which left the board unable to answer "who says what
     // here" — the question a storyboard exists to answer alongside the picture.
+    // ── Storyboard markup ──────────────────────────────────────────────────
+    //
+    // A director's fastest note is an arrow, not a sentence. Geometry is stored
+    // NORMALISED (0..1 of the frame), so markup stays on the thing it points at
+    // when the frame is regenerated at another size or the board is read on a
+    // phone — pixels would drift the moment either happened.
+
+    const ANNOT = { shotId: null, kind: null, points: [] };
+
+    /** Arm the next click(s) on a frame to draw a shape. */
+    async function storyboardAnnotate(shotId, kind) {
+        const canvas = document.getElementById('annot-' + shotId);
+        if (!canvas) return;
+        ANNOT.shotId = shotId; ANNOT.kind = kind; ANNOT.points = [];
+        // Only the armed frame accepts clicks, so drawing on one card cannot
+        // land markup on another.
+        canvas.style.pointerEvents = 'auto';
+        canvas.style.cursor = 'crosshair';
+        canvas.onclick = ev => storyboardAnnotClick(ev, shotId, kind);
+        setStatus(kind === 'text'
+            ? 'Click where the note goes.'
+            : `Click twice to place the ${kind}.`);
+    }
+
+    async function storyboardAnnotClick(ev, shotId, kind) {
+        const canvas = ev.currentTarget;
+        const r = canvas.getBoundingClientRect();
+        // Normalise here, once, at the only place that knows the frame size.
+        const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
+        const y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
+        ANNOT.points.push([x, y]);
+
+        const needed = kind === 'text' ? 1 : 2;
+        if (ANNOT.points.length < needed) return;
+
+        let text = '';
+        if (kind === 'text') {
+            text = prompt('Note for this frame:') || '';
+            if (!text.trim()) { storyboardDisarm(shotId); return; }
+        }
+
+        try {
+            await api(`/shots/${shotId}/annotations`, {
+                method: 'POST',
+                body: JSON.stringify({ kind, points: ANNOT.points, text }),
+            });
+            setStatus('Note added.');
+        } catch (err) {
+            setStatus('Could not save the note: ' + err.message);
+        }
+        storyboardDisarm(shotId);
+        storyboardDrawAnnotations(shotId);
+    }
+
+    function storyboardDisarm(shotId) {
+        const canvas = document.getElementById('annot-' + shotId);
+        if (canvas) { canvas.style.pointerEvents = 'none'; canvas.onclick = null; }
+        ANNOT.shotId = null; ANNOT.kind = null; ANNOT.points = [];
+    }
+
+    /** Paint a frame's markup. Called on image load and after every change. */
+    async function storyboardDrawAnnotations(shotId) {
+        const canvas = document.getElementById('annot-' + shotId);
+        if (!canvas) return;
+        let annotations = [];
+        try {
+            const res = await api(`/shots/${shotId}/annotations`);
+            annotations = res.annotations || [];
+        } catch (_) { return; }
+
+        // Match the backing store to the displayed size, or every stroke draws
+        // at the wrong scale on a high-DPI screen.
+        const r = canvas.getBoundingClientRect();
+        canvas.width = Math.max(1, Math.round(r.width));
+        canvas.height = Math.max(1, Math.round(r.height));
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const px = p => [p[0] * canvas.width, p[1] * canvas.height];
+        for (const a of annotations) {
+            ctx.strokeStyle = a.color || '#f59e0b';
+            ctx.fillStyle = a.color || '#f59e0b';
+            ctx.lineWidth = 2;
+            const pts = (a.points || []).map(px);
+            if (!pts.length) continue;
+
+            if (a.kind === 'text') {
+                ctx.font = '600 13px system-ui, sans-serif';
+                // A dark plate behind the text, because a note that lands on a
+                // bright sky is a note nobody reads.
+                const w = ctx.measureText(a.text).width;
+                ctx.fillStyle = 'rgba(0,0,0,.6)';
+                ctx.fillRect(pts[0][0] - 4, pts[0][1] - 14, w + 8, 19);
+                ctx.fillStyle = a.color || '#f59e0b';
+                ctx.fillText(a.text, pts[0][0], pts[0][1]);
+                continue;
+            }
+            if (a.kind === 'rect') {
+                ctx.strokeRect(pts[0][0], pts[0][1], pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
+                continue;
+            }
+            if (a.kind === 'ellipse') {
+                ctx.beginPath();
+                ctx.ellipse((pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2,
+                    Math.abs(pts[1][0] - pts[0][0]) / 2, Math.abs(pts[1][1] - pts[0][1]) / 2, 0, 0, Math.PI * 2);
+                ctx.stroke();
+                continue;
+            }
+            ctx.beginPath();
+            ctx.moveTo(pts[0][0], pts[0][1]);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+            ctx.stroke();
+            if (a.kind === 'arrow' && pts.length >= 2) {
+                const [x1, y1] = pts[pts.length - 2], [x2, y2] = pts[pts.length - 1];
+                const ang = Math.atan2(y2 - y1, x2 - x1), head = 10;
+                ctx.beginPath();
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 - head * Math.cos(ang - Math.PI / 6), y2 - head * Math.sin(ang - Math.PI / 6));
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 - head * Math.cos(ang + Math.PI / 6), y2 - head * Math.sin(ang + Math.PI / 6));
+                ctx.stroke();
+            }
+        }
+    }
+
+    async function storyboardClearAnnotations(shotId) {
+        try {
+            const res = await api(`/shots/${shotId}/annotations`);
+            for (const a of (res.annotations || [])) await api(`/annotations/${a.id}`, { method: 'DELETE' });
+            setStatus('Markup cleared.');
+        } catch (err) { setStatus('Could not clear: ' + err.message); }
+        storyboardDrawAnnotations(shotId);
+    }
+
     function storyboardDialogueHtml(lines) {
         if (!Array.isArray(lines) || !lines.length) return '';
         const rows = lines.map(d => {

@@ -39,6 +39,7 @@ const { handleLocations } = require('../routes/locations');
 const { handleStoryboard } = require('../routes/storyboard');
 const { handleComments } = require('../routes/scripts');
 const { handleMoodBoard } = require('../routes/mood-board');
+const { handleAnnotations } = require('../routes/annotations');
 const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
 const { handleProductionReports } = require('../routes/production-reports');
@@ -420,6 +421,38 @@ const PRODUCTION_TOOLS = [
             ignore_budget: { type: 'boolean', description: 'Plan anyway when it would exceed the budget.' },
         },
         required: ['project_id'],
+    },
+    {
+        name: 'board_groups',
+        handler: handleProductionReports, method: 'GET',
+        description: 'Read the storyboard grouped by scene, location or time of day instead of as a flat grid. Every frame lands in exactly one group; frames missing the axis value collect under an explicit "(no location)" rather than vanishing.',
+        path: a => `/film/projects/${a.project_id}/board-groups${a.axis ? `?axis=${encodeURIComponent(a.axis)}` : ''}`,
+        schema: {
+            project_id: { type: 'string' },
+            axis: { type: 'string', description: 'scene | location | time_of_day' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'setups',
+        handler: handleProductionReports, method: 'GET',
+        description: 'Shots grouped into setups \u2014 same location, framing and lens, so they reuse the same plate and look. On a set you group by camera position because MOVING costs; here nothing moves, so the cost is conditioning, and this is what makes a run cheap and a look consistent. `reused_shots` is how much of the board rides on another shot\u2019s setup.',
+        path: a => `/film/projects/${a.project_id}/setups`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'shot_annotate',
+        handler: handleAnnotations, method: 'POST',
+        description: 'Draw a note on a storyboard frame: arrow, line, rect, ellipse, freehand or text. Geometry is NORMALISED \u2014 points are [[x,y],...] with x and y between 0 and 1 of the frame \u2014 so markup survives the frame being regenerated at another size. Attached to the shot, not the image, so regenerating does not erase the note that asked for it.',
+        path: a => `/film/shots/${a.shot_id}/annotations`,
+        body: a => { const { shot_id, ...rest } = a || {}; return rest; },
+        schema: {
+            shot_id: { type: 'string' },
+            kind: { type: 'string', description: 'arrow | line | rect | ellipse | freehand | text' },
+            points: { type: 'array', description: '[[x,y], ...] normalised 0..1.' },
+            text: { type: 'string', description: 'Required for a text note.' },
+        },
+        required: ['shot_id', 'kind', 'points'],
     },
     {
         name: 'mood_board_add',
