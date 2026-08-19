@@ -1,7 +1,11 @@
 /**
- * Which generated artefacts no longer match their inputs.
+ * The project-level reports: what is stale, who is in the film, and what a run
+ * would cost.
  *
  * GET /film/projects/:id/staleness
+ * GET /film/projects/:id/sides
+ * GET /film/projects/:id/dood
+ * GET /film/projects/:id/run-plan
  *
  * A gate the director cannot see is a gate that ambushes them at generation
  * time. The fingerprint work makes staleness knowable; this makes it visible,
@@ -16,6 +20,7 @@
 const { db } = require('../db/database');
 const { ARTEFACT_KINDS, fingerprintFor, isStale } = require('../lib/artefact-fingerprint');
 const { buildSides, buildDOOD } = require('../lib/production-reports');
+const { buildRunPlan } = require('../lib/run-plan');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -79,7 +84,7 @@ function projectStaleness(req, res, projectId) {
     });
 }
 
-function handleStaleness(req, res, urlParts) {
+function handleProductionReports(req, res, urlParts, query) {
     // Sides and DOOD live here rather than in their own module: all three are
     // read-only reports over a project's own data, and a route file per report
     // would be ceremony.
@@ -94,6 +99,16 @@ function handleStaleness(req, res, urlParts) {
         return json(res, 200, buildDOOD(urlParts[2]));
     }
 
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'run-plan') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        const q = query || {};
+        const plan = buildRunPlan(urlParts[2], { order: q.order, ignore_budget: q.ignore_budget === 'true' });
+        // 402 when refused, matching the flow budget guard: a plan that would
+        // overspend must not read as a successful plan you happened not to run.
+        return json(res, plan.refused ? 402 : 200, plan);
+    }
+
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'staleness') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
@@ -102,4 +117,4 @@ function handleStaleness(req, res, urlParts) {
     return json(res, 404, { error: 'Not found' });
 }
 
-module.exports = { handleStaleness, projectStaleness };
+module.exports = { handleProductionReports, projectStaleness };

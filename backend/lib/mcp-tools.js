@@ -39,7 +39,7 @@ const { handleLocations } = require('../routes/locations');
 const { handleStoryboard } = require('../routes/storyboard');
 const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
-const { handleStaleness } = require('../routes/staleness');
+const { handleProductionReports } = require('../routes/production-reports');
 
 const NODE_TOOL_PREFIX = 'node_';
 
@@ -396,22 +396,39 @@ const PRODUCTION_TOOLS = [
     },
     {
         name: 'staleness_report',
-        handler: handleStaleness, method: 'GET',
+        handler: handleProductionReports, method: 'GET',
         description: 'Which generated artefacts no longer match the inputs they were made from. Run this BEFORE generating: a frame built from an old character description or an old plate looks valid forever and nothing else will tell you. Reports stale (inputs changed), fresh (verified current) and unknown (generated before fingerprinting existed \u2014 not a claim either way).',
         path: a => `/film/projects/${a.project_id}/staleness`,
         schema: { project_id: { type: 'string' } },
         required: ['project_id'],
     },
     {
+        name: 'run_plan',
+        handler: handleProductionReports, method: 'GET',
+        description: 'What a generation run would do, in what order, and what it would cost \u2014 BEFORE spending anything. Skips work that is already current, so re-running after a small edit costs a small amount. order=model loads each model once (cheapest, nothing finished until the end); order=shot walks one shot through every step (a finished shot early, at the cost of reloading models per shot). Returns HTTP 402 and refused:true when the projected cost would exceed the project budget.',
+        path: a => {
+            const q = [];
+            if (a.order) q.push(`order=${encodeURIComponent(a.order)}`);
+            if (a.ignore_budget) q.push('ignore_budget=true');
+            return `/film/projects/${a.project_id}/run-plan${q.length ? '?' + q.join('&') : ''}`;
+        },
+        schema: {
+            project_id: { type: 'string' },
+            order: { type: 'string', description: '"model" (default) or "shot".' },
+            ignore_budget: { type: 'boolean', description: 'Plan anyway when it would exceed the budget.' },
+        },
+        required: ['project_id'],
+    },
+    {
         name: 'sides_report',
-        handler: handleStaleness, method: 'GET',
+        handler: handleProductionReports, method: 'GET',
         description: 'Each character\u2019s own lines, scene by scene \u2014 what a director reviews before spending on voice generation. Characters with no dialogue are listed with line_count 0 rather than omitted, so "has no lines" is distinguishable from "is not in this film".',
         path: a => `/film/projects/${a.project_id}/sides`,
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
         name: 'dood_report',
-        handler: handleStaleness, method: 'GET',
+        handler: handleProductionReports, method: 'GET',
         description: 'Day-out-of-days: which scenes and how many shots each character is committed to, and whether it has a reference plate yet. `needs_plate` is the actionable half \u2014 a character in 40 shots with no plate is 40 frames that will each invent their own version of them.',
         path: a => `/film/projects/${a.project_id}/dood`,
         schema: { project_id: { type: 'string' } }, required: ['project_id'],

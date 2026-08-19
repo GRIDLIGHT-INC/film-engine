@@ -60,7 +60,7 @@ film-engine/
 │   │   ├── backups.js          # Auto-backup system (Phase 18)
 │   │   ├── flows.js            # Flow CRUD + graph validation (Phase 1)
 │   │   ├── previs.js           # Previs blocking CRUD + framing solve (Phase 2)
-│   │   ├── staleness.js        # Which generated artefacts no longer match their inputs
+│   │   ├── production-reports.js # Staleness, sides, DOOD, run plan (project-level reports)
 │   │   ├── providers.js        # Provider registry, credentials, OAuth connect
 │   │   ├── consistency.js      # Consistency profiles, locking, readiness audit
 │   │   ├── takes.js            # Takes & selects (circle-take workflow)
@@ -116,6 +116,7 @@ film-engine/
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
+│   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
@@ -143,6 +144,7 @@ film-engine/
 │       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
+│       ├── run-plan.test.js            # Strip ordering, dependency safety, cost, budget refusal
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -366,7 +368,13 @@ Writing that gate caught the design flaw it was built on. Dependencies were **ha
 
 **Sides and DOOD** (`lib/production-reports.js`) are the two reports StudioBinder names and the first Phase 2 work, unblocked by the presence repair. Sides are what a director reviews before spending on voice generation; DOOD answers which subjects need a reference plate and how many shots each commits us to. A character with no dialogue still gets a sides entry with `line_count: 0`, because omitting them makes "has no lines" indistinguishable from "is not in this film" — and the non-speaking case is exactly what the old dialogue-only presence lost. DOOD's `needs_plate` is the actionable line: a character in 40 shots with no plate is 40 frames that will each invent their own version of them. Both unions scene presence with what the shot cards name, since either source alone has been wrong. Scene numbers are normalised to strings because `film_scenes.scene_number` has INTEGER affinity and returns `2` for `'2'` but `'2A'` for `'2A'` — one column, two types, which a report should absorb rather than pass on.
 
-Served at `GET /projects/:id/{staleness,sides,dood}` and as three MCP tools (67 total).
+**The run plan** (`lib/run-plan.js`) is the stripboard, rotated. A shooting schedule minimises travel and cast idle time; this minimises **model swaps, plate re-generation and spend**. It **sits above the orchestrator and never replaces it** — the open question the epic refused to assume. `PIPELINE_STEPS` orders steps within one shot and the flows engine orders nodes within one graph; neither orders shots against each other, so this is a genuinely empty slot rather than a third sequencer. The plan emits ordered `(shot, step)` work items that the existing `executeStep` consumes unchanged, and generates nothing itself.
+
+The ordering is not tuned — it falls out. Strips are steps in topological order, each covering every shot needing that step; since `STEP_MODELS` is keyed per step, **one strip is one model**, so the arrangement that satisfies dependencies is the same one that minimises swaps. Two objectives, one answer. Work already fresh is skipped (which is why Phase 1 came first — a plan that cannot tell what is current re-generates everything or nothing), and skipped work is *reported*, since a plan that hides its savings looks more expensive than it is.
+
+Two orders, and the trade is real rather than a preference: on 8 shots, `order=model` costs **5 model switches** and `order=shot` costs **47**, for identical work at identical cost — shot-major buys a finished shot early with 42 extra model loads. Cost is summed **per item from that item's own step**, never from the strip's: a shot-major strip walks a shot through every step, and pricing it at the first step's rate made the same work cost different amounts depending on how it was ordered. An estimate that moves when you reorder the plan is not an estimate. Swaps are counted over the flattened item sequence for the same reason. Over budget, the plan returns **HTTP 402** with `refused: true` before anything generates, overridable with `ignore_budget`; an unset budget is unlimited, never a ceiling of zero.
+
+Served at `GET /projects/:id/{staleness,sides,dood,run-plan}` and as four MCP tools (68 total).
 
 ### Screenplay → Entities (the step that was never wired)
 A screenplay upload created **no entity rows at all**. `GET /projects/:id/screenplay/suggestions` detected characters and locations and returned `suggested_action: 'create'`, and nothing ever acted on it — `INSERT INTO film_characters` existed only in the manual CRUD route and the demo seeder. So every character, location and prop had to be typed by hand, and whatever the user forgot was re-invented by the image model on each shot, silently.
@@ -714,6 +722,7 @@ node --test backend/tests/storyboard-prerequisites.test.js
 node --test backend/tests/previs-explore-ui.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js
+node --test backend/tests/run-plan.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js
