@@ -76,9 +76,12 @@ const EXPLORE_OPS = [
     },
     {
         id: 'keyframe',
-        why: 'compare the frame you blocked against the frame you generated',
-        endpoint: /res\.keyframe|PREVIS\.keyframe/,
-        control: /previsKeyframe/,
+        // Not "compare": the frame is painted INSIDE the delivered frame,
+        // behind the geometry, so the blocking moves on it. A corner thumbnail
+        // could be compared to and could not be worked against.
+        why: 'block against the frame you generated, in the frame',
+        endpoint: /res\.keyframe|PREVIS\.keyframeUrl/,
+        control: /previsDrawKeyframeBackdrop/,
     },
 ];
 
@@ -133,4 +136,21 @@ test('the page is still one file with no build step', () => {
     // build.target single-html.
     const external = html.match(/<script[^>]+src=["'](?!data:)[^"']+["']/g) || [];
     assert.deepStrictEqual(external, [], `external scripts reintroduce a build step: ${external.join(', ')}`);
+});
+
+
+test('the generated frame is painted in the delivered frame, not beside it', () => {
+    // It shipped as a 38%-wide thumbnail pinned to the corner of the camera
+    // pane, which you could look at and could not work against. The point of
+    // having it here is that the wireframe draws ON it, so changing the lens or
+    // the camera height moves your blocking against the shot you are matching.
+    assert.ok(/previsDrawKeyframeBackdrop\(ctx, view\)/.test(html),
+        'the keyframe is not composited into the camera view');
+    assert.ok(!/previsKeyframePanel/.test(html),
+        'the corner thumbnail is still there, so there are two answers to where the frame lives');
+    // Cover, not stretch: the keyframe and the delivered aspect rarely match,
+    // and a stretched reference misleads every framing judgement made on it.
+    assert.ok(/Math\.max\(view\.w \/ img\.width, view\.h \/ img\.height\)/.test(html),
+        'the frame is stretched to the delivery aspect rather than cropped');
+    assert.ok(/previsKeyframeOpacity/.test(html), 'no way to fade the reference under the geometry');
 });

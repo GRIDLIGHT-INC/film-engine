@@ -4776,12 +4776,17 @@
                     <canvas id="previsCamera"></canvas>
                     <div class="previs-label">Camera</div>
                     <div class="previs-readout" id="previsCameraReadout"></div>
-                    <!-- The frame that was actually generated, over the frame
-                         being blocked. Comparing them is the whole question:
-                         is the shot I staged the shot I got? -->
-                    <div id="previsKeyframePanel" style="display:none;position:absolute;right:8px;bottom:8px;width:38%;max-width:280px;">
-                        <img id="previsKeyframeImg" style="width:100%;display:block;border:1px solid var(--gl-border,rgba(255,255,255,.2));border-radius:4px;">
-                        <div class="text-sm text-muted" style="text-align:center;">generated frame</div>
+                    <!-- The generated frame sits INSIDE the delivered frame,
+                         behind the wireframe, so moving the camera changes the
+                         blocking against the picture you are trying to match.
+                         A corner thumbnail could be compared to; this can be
+                         worked against. -->
+                    <div id="previsKeyframeBar" style="display:none;position:absolute;left:8px;bottom:8px;display:flex;gap:8px;align-items:center;background:rgba(0,0,0,.55);padding:4px 8px;border-radius:4px;">
+                        <label class="text-sm" style="display:flex;gap:4px;align-items:center;margin:0;">
+                            <input type="checkbox" id="previsKeyframeOn" checked onchange="previsRefresh()"> frame
+                        </label>
+                        <input type="range" id="previsKeyframeOpacity" min="0" max="100" value="55"
+                               oninput="previsRefresh()" style="width:90px;" title="how strongly the generated frame shows through">
                     </div>
                 </div>
 
@@ -7381,6 +7386,7 @@
         objects: [],     // staged primitives
         images: [],      // project images an image card can show
         textures: {},    // url -> HTMLImageElement, loaded once
+        keyframeUrl: null, // this shot's generated frame, painted in-frame
         dragView: null,          // the projection a gesture started in, frozen for its duration
         viewCentre: null,        // set by Reframe; null means follow the subject
         yDrag: null,             // lifting an object off the floor
@@ -7606,17 +7612,51 @@
         btn.textContent = a.stale ? 'Re-approve' : 'Withdraw approval';
     }
 
-    /** The generated frame, shown over the camera pane for comparison. */
+    /**
+     * Remember this shot's generated frame, and show the controls for it.
+     *
+     * The frame itself is painted by previsDrawKeyframeBackdrop, inside the
+     * camera's delivered frame. It used to be a thumbnail pinned to the corner,
+     * which you could compare to and could not work against — the point of
+     * having it here is that the blocking moves ON it.
+     */
     function previsKeyframe(keyframe) {
-        const panel = document.getElementById('previsKeyframePanel');
-        const img = document.getElementById('previsKeyframeImg');
-        if (!panel || !img) return;
-        if (keyframe && keyframe.src) {
-            img.src = API_BASE + keyframe.src;
-            panel.style.display = '';
-        } else {
-            panel.style.display = 'none';
-        }
+        const bar = document.getElementById('previsKeyframeBar');
+        PREVIS.keyframeUrl = (keyframe && keyframe.src) ? API_BASE + keyframe.src : null;
+        if (bar) bar.style.display = PREVIS.keyframeUrl ? 'flex' : 'none';
+        previsRefresh();
+    }
+
+    /**
+     * Paint the generated frame inside the delivered frame.
+     *
+     * COVER, not stretch: the keyframe and the delivered aspect rarely match
+     * (a 16:9 generation against a 2.39:1 delivery), and stretching would show
+     * a distorted picture that quietly misleads every framing judgement made
+     * against it. Cropping is the honest distortion — it is what the delivery
+     * does to the frame anyway.
+     */
+    function previsDrawKeyframeBackdrop(ctx, view) {
+        if (!PREVIS.keyframeUrl) return;
+        const on = document.getElementById('previsKeyframeOn');
+        if (on && !on.checked) return;
+        const img = previsTexture(PREVIS.keyframeUrl);
+        if (!img) return;                    // still loading, or failed
+
+        const slider = document.getElementById('previsKeyframeOpacity');
+        const alpha = slider ? Number(slider.value) / 100 : 0.55;
+        if (alpha <= 0) return;
+
+        const scale = Math.max(view.w / img.width, view.h / img.height);
+        const w = img.width * scale, h = img.height * scale;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(view.x, view.y, view.w, view.h);
+        ctx.clip();
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(img, view.x + (view.w - w) / 2, view.y + (view.h - h) / 2, w, h);
+        ctx.restore();
     }
 
     async function previsOpenShot(shotId) {
@@ -8614,6 +8654,13 @@
         const target = previsAim(pose);
         const view = previsFrameView(canvas);
         const pr = pt => previsProject(pt, eye, target, fov.v, view);
+
+        // The generated frame, inside the delivered frame and behind the
+        // geometry. This is what makes the pane workable rather than
+        // decorative: the wireframe draws ON the picture, so changing the lens
+        // or the camera height moves your blocking against the shot you are
+        // trying to match.
+        previsDrawKeyframeBackdrop(ctx, view);
 
         // Everything outside the frame is drawn AFTER the scene, so the mask is
         // a real edge rather than a tint.
