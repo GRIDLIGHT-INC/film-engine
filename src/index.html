@@ -3761,7 +3761,7 @@
                     <span class="nav-icon">&#128203;</span> Plan &amp; Shoot
                 </button>
                 <button class="nav-item" data-page="moodboard" onclick="navigateTo('moodboard')" data-tooltip="Decide the look before generating: references, palette, lens and delivery specs" data-tooltip-pos="right">
-                    <span class="nav-icon">&#127912;</span> Look
+                    <span class="nav-icon">&#127912;</span> Mood Board
                 </button>
                 <button class="nav-item" data-page="storyboard" onclick="navigateTo('storyboard')" data-tooltip="AI-generated visual keyframes for each shot in your project" data-tooltip-pos="right">
                     <span class="nav-icon">&#128444;</span> Storyboard
@@ -4249,7 +4249,7 @@
 
         <div class="page" id="page-moodboard">
             <div class="flex-between mb-16">
-                <h2>Look</h2>
+                <h2>Mood Board</h2>
                 <div style="display:flex;gap:8px;">
                     <button class="btn btn-secondary" onclick="moodBoardCompose(false)">Preview style</button>
                     <button class="btn btn-primary" onclick="moodBoardCompose(true)" data-tooltip="Write this look onto the project" data-tooltip-pos="bottom">Apply look</button>
@@ -9736,7 +9736,7 @@
      * that does it.
      */
     const DASH_STEPS = [
-        { label: 'Look',       page: 'moodboard',  done: d => (d.stats.assets.total || 0) > 0 || !!d.project.style_preset },
+        { label: 'Mood board', page: 'moodboard',  done: d => (d.stats.assets.total || 0) > 0 || !!d.project.style_preset },
         { label: 'Script',     page: 'screenplay', done: d => (d.stats.scenes.total || 0) > 0 },
         { label: 'Breakdown',  page: 'characters', done: d => (d.stats.characters || 0) > 0 && (d.stats.locations || 0) > 0 },
         { label: 'Shots',      page: 'shotboard',  done: d => (d.stats.shots.total || 0) > 0 },
