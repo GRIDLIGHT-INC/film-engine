@@ -9541,6 +9541,46 @@
         host.dataset.flowApplied = '1';
     }
 
+    // ── Staying current without a refresh ──────────────────────────────────
+    //
+    // This SPA has no framework and no reconciliation: a page fetches its data
+    // once, when you navigate to it. That was fine when the only writer was the
+    // person looking at the screen. It stopped being fine when an agent started
+    // writing to the same database over MCP — you tab away, Claude rewrites
+    // every description, you tab back and see the old ones with nothing
+    // indicating they are stale.
+    //
+    // Reloading on FOCUS rather than polling: the moment you look at the window
+    // is exactly the moment the answer needs to be current, and a timer would
+    // spend requests all day for the same result. Throttled, because focus
+    // fires on every alt-tab and some pages fetch ten endpoints.
+
+    let PAGE_RELOAD = null;
+    let LAST_RELOAD = 0;
+    const RELOAD_THROTTLE_MS = 3000;
+
+    function refreshCurrentPage(reason) {
+        if (!PAGE_RELOAD || !state.currentProject) return;
+        const now = Date.now();
+        if (now - LAST_RELOAD < RELOAD_THROTTLE_MS) return;
+        LAST_RELOAD = now;
+        try {
+            const out = PAGE_RELOAD();
+            if (out && typeof out.catch === 'function') {
+                // A background refresh that fails must not replace whatever the
+                // user is reading with an error; it is not something they asked
+                // for.
+                out.catch(() => {});
+            }
+        } catch (_) { /* same reasoning */ }
+        void reason;
+    }
+
+    window.addEventListener('focus', () => refreshCurrentPage('focus'));
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) refreshCurrentPage('visible');
+    });
+
     function navigateTo(page) {
         applyNavFlow();
         state.currentPage = page;
@@ -9589,6 +9629,10 @@
             selects: loadSelects,
             // ==== CLAUDE:END ====
         };
+        // Remembered so the page can reload itself without a navigation —
+        // the data changes underneath us whenever an agent writes through MCP,
+        // and there is no framework here to notice.
+        PAGE_RELOAD = loaders[page] || null;
         if (loaders[page]) loaders[page]();
         // Several pages build their cards from data, so re-wire after the
         // loader has had a chance to render. Idempotent by design.

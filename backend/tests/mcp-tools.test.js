@@ -412,3 +412,29 @@ test('creating an entity that already exists is refused, not duplicated', async 
             `${kind}_create refused a duplicate without naming the update tool`);
     }
 });
+
+
+/**
+ * Anything an agent can delete by id, it can find the id of.
+ *
+ * mood_board_remove takes an entry_id and there was no tool that listed board
+ * entries, so an agent could only remove entries it had created in the same
+ * session — it knew those ids from its own add responses. Asked to clear a
+ * board someone else built, it correctly reported that it could not, three
+ * times, and was right each time.
+ *
+ * That is the create/delete asymmetry one level along: having the verb is not
+ * the same as being able to aim it. Set-based over the delete tools, because
+ * three of seven had this hole and nothing was looking.
+ */
+test('every delete tool has a way to discover what to delete', () => {
+    const tools = listTools().map(t => t.name);
+    const blind = [];
+    for (const name of tools.filter(n => /_delete$|_remove$/.test(n))) {
+        const base = name.replace(/_delete$|_remove$/, '');
+        const discovers = tools.some(n => n === `${base}_list` || n === `${base}_get`);
+        if (!discovers) blind.push(name);
+    }
+    assert.deepStrictEqual(blind, [],
+        `these can delete by id and cannot find one: ${blind.join(', ')}`);
+});

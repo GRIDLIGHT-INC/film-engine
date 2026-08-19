@@ -602,6 +602,27 @@ const PRODUCTION_TOOLS = [
         schema: { location_id: { type: 'string' } }, required: ['location_id'],
     },
     {
+        name: 'prop_list',
+        handler: handleLocations, method: 'GET',
+        description: 'List props with their ids and visual_prompt. Needed before prop_update or prop_delete \u2014 both take an id, and without this there is no way to learn one.',
+        path: a => `/film/projects/${a.project_id}/props`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'mood_board_list',
+        handler: handleMoodBoard, method: 'GET',
+        description: 'List every entry on the look board with its id, kind, note and spec. Needed before mood_board_remove, which takes an entry_id \u2014 without this an agent can only remove entries it created itself in the same session.',
+        path: a => `/film/projects/${a.project_id}/mood-board`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'annotation_list',
+        handler: handleAnnotations, method: 'GET',
+        description: 'List the markup notes on a storyboard frame with their ids. Needed before annotation_delete.',
+        path: a => `/film/shots/${a.shot_id}/annotations`,
+        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+    },
+    {
         name: 'prop_update',
         handler: handleLocations, method: 'PUT',
         description: 'Change a prop. visual_prompt is the field that reaches the image prompt and that a prop plate is generated from. Use this rather than prop_create when the prop already exists \u2014 creating one twice is refused.',
