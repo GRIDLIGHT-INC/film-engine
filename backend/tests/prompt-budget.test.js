@@ -24,6 +24,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const path = require('path');
 
 const { NEGATIVE, buildPlatePrompt } = require('../lib/reference-plates');
 const { buildRefSheetPrompt, REFSHEET_NEGATIVE } = require('../routes/characters');
@@ -133,4 +134,29 @@ test('a subject with no plate still gets described', () => {
     // working exactly as before.
     const prompt = sp.buildStoryboardPrompt(CARD, CHARS, LOCATION, 'teal and amber', {}).prompt;
     assert.ok(prompt.includes('A'.repeat(50)), 'a character with no plate lost its description');
+});
+
+/**
+ * One generator per subject kind, and the UI uses it.
+ *
+ * Locations and props had TWO image generators: lib/reference-plates.js, which
+ * carries the style-leads ordering, the sheet-furniture negative, the prop
+ * visual_prompt and the staleness stamp — and an older pair,
+ * generateLocationImage / generatePropImage, which had none of them. The MCP
+ * tool called the first; the button in the UI called the second. So the same
+ * click produced a materially worse plate depending on where you clicked it.
+ *
+ * CLAUDE.md already warns about exactly this in the note explaining why
+ * locations and props share one implementation. A second one existed anyway.
+ */
+test('the UI generates plates through the plate builder, not the old path', () => {
+    const fs = require('fs');
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    const old = (html.match(/\/image\/generate/g) || []).length;
+    assert.strictEqual(old, 0,
+        'the UI still calls image/generate, a second generator that never inherited the plate fixes');
+    for (const kind of ['locations', 'props', 'characters']) {
+        const re = new RegExp(`/${kind}/'?\\s*\\+[^;]*(plate|refsheet)/generate`);
+        assert.ok(re.test(html), `${kind} has no button reaching the plate builder`);
+    }
 });

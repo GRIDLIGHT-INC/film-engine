@@ -15676,7 +15676,8 @@ ${fountainText.slice(0, 50000)}`;
         if (!confirm('Generate reference image for this location?')) return;
         setStatus('Generating location reference image...');
         try {
-            const result = await api('/locations/' + locId + '/image/generate', { method: 'POST' });
+            const result = await api('/locations/' + locId + '/plate/generate', { method: 'POST' });  // plate/generate, not image/generate: the latter is a second,
+            // older generator that never inherited the plate fixes.
             setStatus('Location image generated');
             loadLocations();
         } catch (err) { setStatus('Error generating image: ' + err.message); }
@@ -15769,7 +15770,7 @@ ${fountainText.slice(0, 50000)}`;
         if (!confirm('Generate reference image for this prop?')) return;
         setStatus('Generating prop reference image...');
         try {
-            const result = await api('/props/' + propId + '/image/generate', { method: 'POST' });
+            const result = await api('/props/' + propId + '/plate/generate', { method: 'POST' });
             setStatus('Prop image generated');
             loadProps();
         } catch (err) { setStatus('Error generating image: ' + err.message); }
