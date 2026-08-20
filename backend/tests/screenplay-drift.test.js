@@ -171,3 +171,25 @@ test('the board warns where the frames are, not on a page of its own', () => {
     assert.ok(/function screenplayDriftTag\(/.test(html), 'no per-frame mark, so the banner points nowhere');
     assert.ok(/loadScreenplayDrift\(\)/.test(html), 'the board never asks which shots are behind');
 });
+
+test('a first stamp is a baseline, not a change', () => {
+    // Setting the timestamp on the first stamp makes every scene in an existing
+    // project claim it was rewritten at the moment tracking was switched on.
+    // That is what it looked like in practice: three scenes stamped 14:27,
+    // keyframes generated at 11:42, and a report correctly saying nothing was
+    // behind — leaving the reader to decide which to believe. A timestamp that
+    // has to be explained is worse than no timestamp.
+    const s = seed();
+    db.prepare('UPDATE film_scenes SET source_fingerprint = NULL, source_changed_at = NULL WHERE id = ?')
+        .run(s.sceneId);
+
+    stampScene(s.sceneId);
+    const first = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(s.sceneId);
+    assert.ok(first.source_fingerprint, 'the first stamp recorded no fingerprint');
+    assert.strictEqual(first.source_changed_at, null,
+        'starting to track a scene was reported as the scene having changed');
+
+    rewrite(s.sceneId, 'Now it actually changes.');
+    const second = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(s.sceneId);
+    assert.ok(second.source_changed_at, 'a real change left no timestamp');
+});

@@ -298,7 +298,18 @@ const PRODUCTION_TOOLS = [
     {
         name: 'script_get',
         handler: handleScripts, method: 'GET',
-        description: 'Read the screenplay. Returns the Fountain source and its parsed elements — read this before writing any shot list.',
+        description: 'Read the screenplay itself — the complete Fountain source of the latest version. Read this before writing any shot list, and before any rewrite: script_write takes the whole document, so you need the whole document.',
+        // The LIST endpoint, which this used to point at, returns versions and
+        // word counts and no screenplay. The description promised the source
+        // and the route could not supply it, which is a worse failure than a
+        // missing tool: the model believes it has read the script.
+        path: a => `/film/projects/${a.project_id}/script/latest/fountain`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'script_versions',
+        handler: handleScripts, method: 'GET',
+        description: 'List the saved versions of the screenplay with their word and scene counts. Use it to confirm a rewrite was saved as a new version, and that the previous draft is still there.',
         path: a => `/film/projects/${a.project_id}/scripts`,
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
@@ -308,6 +319,25 @@ const PRODUCTION_TOOLS = [
         description: 'List the scenes parsed from the screenplay, with INT/EXT, location and time of day.',
         path: a => `/film/projects/${a.project_id}/scenes`,
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'scene_get',
+        handler: handleScenes, method: 'GET',
+        description: 'Read one scene: its heading, its text, and who is in it.',
+        path: a => `/film/scenes/${a.scene_id}`,
+        schema: { scene_id: { type: 'string' } }, required: ['scene_id'],
+    },
+    {
+        name: 'scene_update',
+        handler: handleScenes, method: 'PUT',
+        description: 'Rewrite ONE scene in the screenplay, leaving every other scene byte-identical. Send the complete replacement scene starting with its own heading (INT./EXT. LOCATION - TIME). This is the surgical edit: it splices into the Fountain and saves a new version, so scene ids and the shots hanging off them survive, and no other scene is marked as behind. Prefer this over script_write whenever you are changing one scene — a whole-document rewrite makes you reproduce every other scene faithfully, and one stray reflow marks work as needing redoing that does not. Shots are NOT re-derived: fix them with shot_update, or delete and recreate them with shot_create.',
+        path: a => `/film/scenes/${a.scene_id}`,
+        body: a => ({ fountain: a.fountain }),
+        schema: {
+            scene_id: { type: 'string' },
+            fountain: { type: 'string', description: 'The complete scene in Fountain, heading first, action and dialogue beneath.' },
+        },
+        required: ['scene_id', 'fountain'],
     },
     {
         name: 'shot_list',
@@ -796,7 +826,7 @@ const PRODUCTION_TOOLS = [
     {
         name: 'shot_get',
         handler: handleShots, method: 'GET',
-        description: 'Read one shot\u2019s scene card — the exact words a keyframe and a clip are generated from.',
+        description: 'Read one shot: its scene card, and the screenplay text the card was derived from. ONLY the card reaches the image prompt, so anything in scene_text the card does not restate will not appear in the frame — read both before editing.',
         path: a => `/film/shots/${a.shot_id}`,
         schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
     },

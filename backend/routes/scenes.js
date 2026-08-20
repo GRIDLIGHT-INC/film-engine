@@ -6,6 +6,7 @@
  * POST /film/projects/:id/scenes/delete — delete several scenes at once
  */
 const { db } = require('../db/database');
+const { spliceScene } = require('../lib/scene-splice');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -33,6 +34,7 @@ function handleScenes(req, res, urlParts, query) {
             return;
         }
         if (req.method === 'GET') return getScene(req, res, sceneId);
+        if (req.method === 'PUT') return updateScene(req, res, sceneId);
         if (req.method === 'DELETE') return deleteScene(req, res, sceneId);
     }
 
@@ -162,6 +164,84 @@ function deleteScenes(req, res, projectId) {
         shots_deleted: shots,
         assets_unlinked: unlinked,
     }));
+}
+
+/**
+ * Rewrite one scene, in the screenplay, leaving every other byte alone.
+ *
+ * The screenplay is the source and `film_scenes` is a projection of it, so
+ * writing a scene's description directly would put the two out of step
+ * immediately — the row would say one thing and the document another, and every
+ * report built on either would be right about the wrong text.
+ *
+ * Requiring a whole-document rewrite instead is its own bug, though: the caller
+ * has to reproduce every OTHER scene faithfully, and the cost of one stray
+ * reflow is silent — scene 1's shots get marked as behind and a director redoes
+ * work nobody asked for. So this splices the new scene into the Fountain and
+ * saves the result through the same path a full rewrite uses: one new version,
+ * scenes reconciled, ids preserved, shots intact.
+ *
+ * PUT /film/scenes/:id  { fountain: "EXT. STREET - DUSK\n\n..." }
+ */
+function updateScene(req, res, sceneId) {
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!scene) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Scene not found' }));
+    }
+
+    const text = String((req.body && req.body.fountain) || '').trim();
+    if (!text) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: 'fountain is required: the replacement scene, starting with its own scene heading',
+        }));
+    }
+
+    const script = db.prepare(
+        'SELECT * FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1').get(scene.project_id);
+    if (!script || !script.fountain_content) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: 'This project has no Fountain screenplay to edit. Upload one with script_write first.',
+        }));
+    }
+
+    // Position, not id. The document knows scenes by order; the row knows them
+    // by number, and film_scenes.scene_number has INTEGER affinity so it may
+    // come back as 2 or '2A'. Ordering the rows the same way the reconciler
+    // matched them is the only mapping that cannot drift.
+    const ordered = db.prepare(
+        `SELECT id FROM film_scenes WHERE project_id = ? AND status != 'removed'
+          ORDER BY CAST(scene_number AS INTEGER), scene_number`).all(scene.project_id);
+    const index = ordered.findIndex(r => r.id === sceneId);
+    if (index < 0) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'That scene has been removed from the screenplay.' }));
+    }
+
+    let next;
+    try {
+        next = spliceScene(script.fountain_content, index, text);
+    } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: err.message, code: err.code }));
+    }
+
+    if (next === script.fountain_content) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            scene_id: sceneId, changed: false,
+            note: 'That is what the scene already says. No version was saved, and nothing is now behind.',
+        }));
+    }
+
+    // Straight through the same save a full rewrite takes, so there is one
+    // reconciler, one versioning rule and one set of bugs.
+    const { handleScripts } = require('./scripts');
+    return handleScripts(
+        { method: 'POST', body: { fountain_content: next, sync_scenes: true } },
+        res, ['film', 'projects', scene.project_id, 'script'], {});
 }
 
 module.exports = { handleScenes };

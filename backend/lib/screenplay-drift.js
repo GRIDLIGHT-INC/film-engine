@@ -28,6 +28,14 @@ function database() {
     return require('../db/database').db;
 }
 
+/** Whether this database can answer the question at all. */
+function tracking(db) {
+    try {
+        return db.prepare("SELECT COUNT(*) c FROM pragma_table_info('film_shots') WHERE name = 'scene_fingerprint'")
+            .get().c > 0;
+    } catch (_) { return false; }
+}
+
 function hash(value) {
     return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 32);
 }
@@ -62,11 +70,22 @@ function stampScene(sceneId) {
         const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
         if (!scene) return null;
         const fp = sceneFingerprint(scene);
-        // The timestamp moves only when the fingerprint does, so "changed at"
-        // means the text changed rather than the row was rewritten.
         if (scene.source_fingerprint === fp) return fp;
-        db.prepare("UPDATE film_scenes SET source_fingerprint = ?, source_changed_at = datetime('now') WHERE id = ?")
-            .run(fp, sceneId);
+
+        // A FIRST stamp is a baseline, not a change. Setting the timestamp here
+        // makes every scene in an existing project claim it was rewritten at the
+        // moment tracking was switched on — which is exactly what it looked
+        // like: three scenes stamped 14:27, keyframes generated at 11:42, and a
+        // report correctly saying nothing was behind. The reader is then left
+        // deciding which of the two to believe, and a timestamp that has to be
+        // explained is worse than no timestamp.
+        const firstEver = !scene.source_fingerprint;
+        if (firstEver) {
+            db.prepare('UPDATE film_scenes SET source_fingerprint = ? WHERE id = ?').run(fp, sceneId);
+        } else {
+            db.prepare("UPDATE film_scenes SET source_fingerprint = ?, source_changed_at = datetime('now') WHERE id = ?")
+                .run(fp, sceneId);
+        }
         return fp;
     } catch (_) { return null; }
 }
@@ -93,6 +112,17 @@ function stampShot(shotId, sceneId) {
  */
 function drift(projectId) {
     const db = database();
+
+    // A warning system that cannot tell you it is switched off is worse than
+    // no warning system. Without these columns every shot reads as "no draft
+    // recorded", which the report renders as a confident all-clear — the one
+    // answer it must never give when it does not know.
+    if (!tracking(db)) {
+        const err = new Error('Screenplay drift tracking is not installed on this database (migration 069).');
+        err.code = 'NOT_TRACKED';
+        throw err;
+    }
+
     const scenes = db.prepare(
         "SELECT * FROM film_scenes WHERE project_id = ? AND status != 'removed' ORDER BY scene_number").all(projectId);
 
@@ -183,4 +213,4 @@ function adoptBaseline(projectId) {
     return { shots_stamped: stamped, scenes_touched: scenes.size };
 }
 
-module.exports = { sceneFingerprint, stampScene, stampShot, drift, adoptBaseline };
+module.exports = { sceneFingerprint, stampScene, stampShot, drift, adoptBaseline, tracking };

@@ -82,8 +82,17 @@ function impact(projectId) {
     const steps = chain();
 
     const sceneBehind = new Set();
-    for (const scene of drift(projectId)) {
-        for (const s of scene.shots_behind) sceneBehind.add(s.shot_id);
+    let scriptTracked = true;
+    try {
+        for (const scene of drift(projectId)) {
+            for (const s of scene.shots_behind) sceneBehind.add(s.shot_id);
+        }
+    } catch (err) {
+        // The artefact half of the chain still works without the screenplay
+        // half, so report what can be reported and say what is missing rather
+        // than returning a clean bill of health for a question not asked.
+        if (err.code !== 'NOT_TRACKED') throw err;
+        scriptTracked = false;
     }
 
     const shots = db.prepare(
@@ -162,6 +171,7 @@ function impact(projectId) {
     }
 
     return {
+        script_tracked: scriptTracked,
         chain: steps.map(s => s.id),
         shots_affected: out.length,
         redo_now: out.reduce((n, s) => n + s.stages.filter(r => r.state === 'redo').length, 0),

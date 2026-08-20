@@ -102,3 +102,41 @@ test('the removal is explained where someone would re-add it', () => {
     assert.ok(/agent host/i.test(src) || /AGENT HOST/.test(src),
         'nothing on the page says why a server-side LLM tool is wrong here');
 });
+
+/**
+ * A tool that promises the screenplay has to return the screenplay.
+ *
+ * `script_get` pointed at the LIST endpoint, which returns versions and word
+ * counts and no source at all, while its description promised "the Fountain
+ * source and its parsed elements". That is worse than a missing tool: the model
+ * believes it has read the script, and then rewrites it from the summary it was
+ * handed. It surfaced as an agent stopping mid-revision to ask where the text
+ * was, which is the good outcome and not the likely one.
+ *
+ * Set-based over the tools whose descriptions promise content, because the
+ * failure is a mismatch between what a description claims and what a path
+ * returns, and nothing else in the suite compares those two.
+ */
+const CONTENT_TOOLS = [
+    { name: 'script_get', promises: /Fountain source/i, path: /script\/latest\/fountain/ },
+    { name: 'shot_get', promises: /scene card/i, path: /\/shots\/\$\{a\.shot_id\}/ },
+];
+
+test('a tool that promises content points at a route that returns it', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'mcp-tools.js'), 'utf8');
+    const broken = [];
+    for (const t of CONTENT_TOOLS) {
+        const tool = PRODUCTION_TOOLS.find(x => x.name === t.name);
+        if (!tool) { broken.push(`${t.name} is missing`); continue; }
+        if (!t.promises.test(tool.description)) {
+            broken.push(`${t.name} no longer describes what it returns`);
+            continue;
+        }
+        const built = String(tool.path({ project_id: 'P', shot_id: 'S' }));
+        const expected = t.name === 'script_get' ? /script\/latest\/fountain/ : /\/shots\/S$/;
+        if (!expected.test(built)) broken.push(`${t.name} promises content and fetches ${built}`);
+    }
+    assert.deepStrictEqual(broken, [], broken.join('; '));
+    assert.ok(/script_versions/.test(src),
+        'the version list has no tool, so confirming a rewrite was saved is impossible');
+});

@@ -145,7 +145,8 @@ function cardVocabulary(req, res) {
  */
 function getShot(req, res, shotId) {
     const shot = db.prepare(
-        `SELECT s.*, sc.scene_number, sc.location, sc.time_of_day
+        `SELECT s.*, sc.scene_number, sc.location, sc.time_of_day,
+                sc.description AS scene_description
            FROM film_shots s LEFT JOIN film_scenes sc ON sc.id = s.scene_id
           WHERE s.id = ?`).get(shotId);
     if (!shot) {
@@ -160,6 +161,17 @@ function getShot(req, res, shotId) {
         scene_number: shot.scene_number, location: shot.location, time_of_day: shot.time_of_day,
         status: shot.status, duration_ms: shot.duration_ms, sort_order: shot.sort_order,
         card,
+        // The screenplay this shot came from, alongside the card it became.
+        //
+        // Only the CARD reaches the prompt — `sceneCard.action || .description`
+        // and nothing else — so any nuance the card did not restate is invisible
+        // to generation. That is the right rule (a card is this shot, and
+        // pasting the whole scene would describe things out of frame), but it
+        // makes the card the only place the nuance can live, and whoever edits
+        // one was working blind. Returning the source next to the card is what
+        // lets an editor see what it is meant to be honouring.
+        scene_text: shot.scene_description || '',
+        note: 'Only `card` reaches the image prompt. `scene_text` is the screenplay it was derived from — anything in it the card does not say will not appear in the frame.',
     }));
 }
 

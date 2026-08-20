@@ -120,6 +120,7 @@ film-engine/
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
 │   │   ├── screenplay-drift.js    # Which shots a rewrite left behind, and what was built on them
 │   │   ├── impact.js              # One change, all the way down: redo now vs waiting on something above
+│   │   ├── scene-splice.js        # Replace one scene in a screenplay, byte-identical elsewhere
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
@@ -157,6 +158,7 @@ film-engine/
 │       ├── screenplay-drift.test.js    # A rewrite flags the shots written from the old draft
 │       ├── impact.test.js              # A changed frame warns that the footage built on it is behind
 │       ├── mcp-no-server-llm.test.js   # No MCP tool hands the reasoning back to a server-side LLM
+│       ├── scene-edit.test.js          # One scene changes; every other scene survives byte-identical
 │       ├── app-settings.test.js        # Author is set once; the title page is printed, not edited inline
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
@@ -256,7 +258,7 @@ All routes prefixed with `/film`:
 |----------|-----------|
 | Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id` |
 | Scripts | `POST /projects/:id/script`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
-| Scenes | `GET /projects/:id/scenes`, `GET /scenes/:id` |
+| Scenes | `GET /projects/:id/scenes`, `GET/PUT /scenes/:id` |
 | Shots | `POST /shots`, `GET /projects/:id/shotlist`, `GET/PUT/DELETE /shots/:id`, `GET /card-vocabulary` |
 | Characters | `GET/POST /projects/:id/characters`, `GET/PUT/DELETE /characters/:id` |
 | Locations | `GET/POST /projects/:id/locations`, `GET/PUT/DELETE /locations/:id` |
@@ -518,7 +520,21 @@ Without that split, one rewritten scene reports forty red items and reads as "st
 
 The chain is derived from `PIPELINE_STEPS.depends`, with `scene_card` prepended as the root — nothing generates a card, a person writes it, so it is not in the orchestrator's graph, but it is what every generated stage ultimately reads. Steps with no pipeline dependency are wired to the card rather than left rootless, which is what makes a screenplay revision reach the whole shot.
 
-Served at `GET /projects/:id/impact` and as `impact_report` (**99 tools**). The board shows both reports in one banner and marks each affected frame, because a director does not care which subsystem noticed.
+Served at `GET /projects/:id/impact` and as `impact_report` (**102 tools**). The board shows both reports in one banner and marks each affected frame, because a director does not care which subsystem noticed.
+
+### Editing One Scene
+The screenplay is the source and `film_scenes` is a projection of it, so writing a scene's description directly puts the two out of step: the row says one thing, the document another, and every report built on either is right about the wrong text. But requiring a whole-document rewrite to change one scene is its own bug, and a quiet one — the caller has to reproduce every *other* scene faithfully from memory, and the cost of one stray reflow is invisible: scene 1's shots get marked as behind and a director redoes work nobody asked for.
+
+`PUT /film/scenes/:id` splices. `lib/scene-splice.js` finds the scene's span in the Fountain, swaps those lines, and hands the whole document to the same reconciler a full rewrite uses — one new version, scenes reconciled, ids preserved, shots intact, and every other byte identical, so the drift report stays honest because it is comparing text that genuinely did not move. On a real edit to scene 3 of an 8-shot project: `drift → scene 3: 3A, 3B`, `impact → scene_card: redo, keyframe: waiting`, and scenes 1 and 2 untouched.
+
+Three details are load-bearing. The title page is **not** a scene, or scene 1 could not be spliced without destroying it. A leading `.` forces a heading and `..` escapes a line that genuinely starts with a full stop — backwards, that splits a scene mid-dialogue. And the old scene's **trailing blank lines are put back exactly**: trimming and appending a fixed separator looks tidier and is wrong at the end of a document, where the last scene's trailing newline vanishes, so re-saving a scene with the text it already has produces a new version and a false warning. *Did that apply?* has to be a free question — an unchanged save returns `changed: false` and writes nothing.
+
+Scenes reach MCP as `scene_get` and `scene_update`, and `script_get` now returns the **screenplay** rather than the version list it used to fetch while its description promised the source — worse than a missing tool, because the model believes it has read the script and rewrites from a summary. The listing moved to `script_versions`.
+
+### What Actually Reaches an Image Prompt
+`buildStoryboardPrompt` reads `sceneCard.action || sceneCard.description` and **nothing else** from the writing. The scene's screenplay text is loaded into context and never used. That is the right rule — a card is *this shot*, and pasting the whole scene would describe things out of frame and spend the prompt budget on them — but it makes the card the only place a nuance can live, and whoever edits one was working blind.
+
+`GET /shots/:id` now returns `scene_text` beside `card`, with the rule stated in the response: only the card reaches the prompt, so anything the screenplay says that the card does not restate will not appear in the frame.
 
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
@@ -952,6 +968,7 @@ node --test backend/tests/script-revision.test.js
 node --test backend/tests/screenplay-drift.test.js
 node --test backend/tests/impact.test.js
 node --test backend/tests/mcp-no-server-llm.test.js
+node --test backend/tests/scene-edit.test.js
 node --test backend/tests/app-settings.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js
