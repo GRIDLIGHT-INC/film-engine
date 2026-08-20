@@ -533,6 +533,13 @@ const PRODUCTION_TOOLS = [
         required: ['asset_id'],
     },
     {
+        name: 'scale_check',
+        handler: handleProductionReports, method: 'GET',
+        description: 'Which characters and props have no declared size, and how many shots each appears in. An image model has no sense of scale, and a reference plate makes it WORSE — a plate is a close-up filling its own frame, so conditioning on one without a size reproduces what it was shown, which is how a 30cm sprinkler comes out the size of a car. Run this before generating and fill every gap with character_update / prop_update.',
+        path: a => `/film/projects/${a.project_id}/scale-check`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
         name: 'impact_report',
         handler: handleProductionReports, method: 'GET',
         description: 'What one change has broken, all the way down the chain: screenplay to scene card to keyframe to clip to lip-sync to post. Run it after ANY change and before generating anything. Each stage is either "redo" — out of date with everything it is built from current, so do it now — or "waiting", meaning it is only out of date because something above it is, and regenerating it now would build on the same old inputs and cost money to produce something still wrong. Do the redo items first, top to bottom.',
@@ -695,13 +702,15 @@ const PRODUCTION_TOOLS = [
         path: a => `/film/projects/${a.project_id}/characters`,
         body: a => { const { project_id, ...rest } = a || {}; return rest; },
         schema: {
+            height_m: { type: 'number', description: 'Height in metres, e.g. 1.7.' },
             project_id: { type: 'string' },
             name: { type: 'string' },
             appearance_prompt: { type: 'string', description: 'What this person looks like, in prompt terms.' },
             description: { type: 'string' },
             age_range: { type: 'string' },
         },
-        required: ['project_id', 'name'],
+        height_m: { type: 'number', description: 'Height in metres, e.g. 1.7.' },
+            required: ['project_id', 'name'],
     },
     {
         name: 'location_create',
@@ -724,13 +733,18 @@ const PRODUCTION_TOOLS = [
         path: a => `/film/projects/${a.project_id}/props`,
         body: a => { const { project_id, ...rest } = a || {}; return rest; },
         schema: {
+            height_m: { type: 'number', description: 'Height in metres. Required in practice: nothing else tells the model how big this is.' },
+            width_m: { type: 'number', description: 'Width in metres.' },
+            length_m: { type: 'number', description: 'Length in metres.' },
             project_id: { type: 'string' },
             name: { type: 'string' },
             visual_prompt: { type: 'string' },
             description: { type: 'string' },
             category: { type: 'string' },
         },
-        required: ['project_id', 'name'],
+        height_m: { type: 'number', description: 'Height in metres.' },
+            width_m: { type: 'number', description: 'Width in metres.' },
+            required: ['project_id', 'name'],
     },
     {
         name: 'character_delete',
@@ -774,13 +788,16 @@ const PRODUCTION_TOOLS = [
         path: a => `/film/props/${a.prop_id}`,
         body: a => { const { prop_id, ...rest } = a || {}; return rest; },
         schema: {
+            height_m: { type: 'number', description: 'Height in metres.' },
+            width_m: { type: 'number', description: 'Width in metres.' },
+            length_m: { type: 'number', description: 'Length in metres.' },
+            bible_section: { type: 'string', description: 'The story bible section these words were written from.' },
             prop_id: { type: 'string' },
             visual_prompt: { type: 'string', description: 'What this object looks like, in prompt terms.' },
             description: { type: 'string' },
             category: { type: 'string' },
             name: { type: 'string' },
         },
-        bible_section: { type: 'string', description: 'The story bible section these words were written from, so a later revision to it can find this.' },
             required: ['prop_id'],
     },
     {
@@ -828,12 +845,13 @@ const PRODUCTION_TOOLS = [
             return rest;
         },
         schema: {
+            height_m: { type: 'number', description: 'Height in metres, e.g. 1.7. Nothing else tells the model how big this character is.' },
+            bible_section: { type: 'string', description: 'The story bible section these words were written from.' },
             character_id: { type: 'string' },
             appearance_prompt: { type: 'string', description: 'What this person looks like, in prompt terms.' },
             description: { type: 'string' },
             age_range: { type: 'string' },
         },
-        bible_section: { type: 'string', description: 'The story bible section these words were written from, so a later revision to it can find this.' },
             required: ['character_id'],
     },
     {
@@ -853,11 +871,11 @@ const PRODUCTION_TOOLS = [
             return rest;
         },
         schema: {
+            bible_section: { type: 'string', description: 'The story bible section these words were written from.' },
             location_id: { type: 'string' },
             description: { type: 'string', description: 'What this place looks like, in prompt terms.' },
             lighting_default: { type: 'string' },
         },
-        bible_section: { type: 'string', description: 'The story bible section these words were written from, so a later revision to it can find this.' },
             required: ['location_id'],
     },
     {

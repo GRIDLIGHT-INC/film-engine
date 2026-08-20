@@ -338,7 +338,7 @@ const server = http.createServer(async (req, res) => {
             return handleStoryBible(req, res, parts);
         }
 
-        if (parts[1] === 'projects' && parts[2] && ['staleness', 'screenplay-drift', 'impact', 'sides', 'dood', 'run-plan', 'breakdown-summary', 'elements-list', 'run-report', 'board-groups', 'setups', 'conform'].includes(parts[3])) {
+        if (parts[1] === 'projects' && parts[2] && ['staleness', 'screenplay-drift', 'impact', 'scale-check', 'sides', 'dood', 'run-plan', 'breakdown-summary', 'elements-list', 'run-report', 'board-groups', 'setups', 'conform'].includes(parts[3])) {
             return await handleProductionReports(req, res, parts, query);
         }
 

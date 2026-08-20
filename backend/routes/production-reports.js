@@ -217,6 +217,26 @@ function handleProductionReports(req, res, urlParts, query) {
         return json(res, plan.refused ? 402 : 200, plan);
     }
 
+    // GET /film/projects/:id/scale-check — subjects with no declared size.
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'scale-check') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        const { missingSizes } = require('../lib/subject-scale');
+        const missing = missingSizes(db, urlParts[2]);
+        const platedShots = missing.filter(m => m.plated).reduce((n, m) => n + m.shots, 0);
+        return json(res, 200, {
+            project_id: urlParts[2],
+            missing_count: missing.length,
+            shots_at_risk: platedShots,
+            missing,
+            note: missing.length
+                ? 'An image model has no sense of scale, and a reference plate makes it worse — a plate is a '
+                  + 'close-up filling its own frame, so conditioning on one without a declared size reproduces '
+                  + 'what it was shown. Set height_m (and width_m / length_m for props) on each of these.'
+                : 'Every character and prop declares a size.',
+        });
+    }
+
     // GET /film/projects/:id/impact — one change, all the way down the chain.
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'impact') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });

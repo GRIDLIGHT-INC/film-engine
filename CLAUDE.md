@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (68 migrations)
+│   │   └── migrations/     # SQL migration files (69 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -124,6 +124,7 @@ film-engine/
 │   │   ├── impact.js              # One change, all the way down: redo now vs waiting on something above
 │   │   ├── scene-splice.js        # Replace one scene in a screenplay, byte-identical elsewhere
 │   │   ├── story-bible.js         # Bible sections, and the link back from what was written from them
+│   │   ├── subject-scale.js       # How big a thing is, said so an image model can act on it
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
@@ -164,6 +165,7 @@ film-engine/
 │       ├── scene-edit.test.js          # One scene changes; every other scene survives byte-identical
 │       ├── live-events.test.js         # Another process's write reaches the page; our own does not
 │       ├── story-bible.test.js         # A section revised flags only what was written from it
+│       ├── subject-scale.test.js       # Nothing is invented; every surface can set a size
 │       ├── app-settings.test.js        # Author is set once; the title page is printed, not edited inline
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
@@ -532,7 +534,7 @@ Without that split, one rewritten scene reports forty red items and reads as "st
 
 The chain is derived from `PIPELINE_STEPS.depends`, with `scene_card` prepended as the root — nothing generates a card, a person writes it, so it is not in the orchestrator's graph, but it is what every generated stage ultimately reads. Steps with no pipeline dependency are wired to the card rather than left rootless, which is what makes a screenplay revision reach the whole shot.
 
-Served at `GET /projects/:id/impact` and as `impact_report` (**111 tools**). The board shows both reports in one banner and marks each affected frame, because a director does not care which subsystem noticed.
+Served at `GET /projects/:id/impact` and as `impact_report` (**113 tools**). The board shows both reports in one banner and marks each affected frame, because a director does not care which subsystem noticed.
 
 ### Editing One Scene
 The screenplay is the source and `film_scenes` is a projection of it, so writing a scene's description directly puts the two out of step: the row says one thing, the document another, and every report built on either is right about the wrong text. But requiring a whole-document rewrite to change one scene is its own bug, and a quiet one — the caller has to reproduce every *other* scene faithfully from memory, and the cost of one stray reflow is invisible: scene 1's shots get marked as behind and a director redoes work nobody asked for.
@@ -586,6 +588,15 @@ Three symptoms, one cause, and every one of them looked like the model misbehavi
 The flat `prompt_additions` array is left untouched alongside `prompt_addition_items`, because the video path and `routes/video-gen.js` read it — established by auditing the consumers before changing anything.
 
 **But this is a safety net, not the plan.** The engine can hold a ceiling; it cannot decide what matters. Cutting at a clause boundary has no way of knowing that *"one wheel trim missing"* is worth keeping and *"bench seats in cracked tan vinyl"* is not — whoever is composing does. `GET /shots/:id/prompt` (`shot_prompt`) hands over the whole picture and **spends nothing**: the assembled prompt, the ceiling, the headroom, which plates travel as images, and every contributor with how much it wrote and how much survived. `storyboard_regenerate` takes that composition back as `prompt_override`. A subject whose picture is attached needs **naming, not describing at length** — which is where most of the room was going.
+
+### How Big Is It
+An image model has no metric understanding — nothing in it knows a lawn sprinkler is thirty centimetres. A reference plate makes this **worse rather than better**: a plate is a close-up filling its own frame, and conditioning transfers appearance rather than size, so the model reproduces what it was shown. The sprinkler plate produced a sprinkler the size of the car beside it. The plate was doing its job; nothing was telling the model how big the thing is.
+
+Three levers work, in descending order of strength. **Frame fraction** — *"about one 25th of the frame width"* — is strongest, because it is a statement about composition rather than about the world; it needs a lens and a distance, which is what previs supplies, and it applies to the **framed subject only**: everything else is at some other distance, and pricing a mid-ground car at the subject's coverage said a five-metre car fills most of a seven-metre frame. **An anchor** — *"roughly 1.4 times smaller than a car tyre"* — works on any shot. **A plain measure** is the floor. A person is the anchor everything else is measured against, so a person is given a height and not compared to a doorframe.
+
+Migration 071 adds `height_m` to characters and `height_m`/`width_m`/`length_m` to props, NULL by default — and **undeclared means the prompt says nothing about scale** rather than guessing, because an invented default is indistinguishable from a deliberate one and would be wrong silently. The negative is built from the size too, and names a **tight** bound: things come out too big, never too small, and *"larger than a house"* is a bound a wrong image can satisfy.
+
+`GET /projects/:id/scale-check` (`scale_check`) reports the gap as work rather than as a status — each subject with the number of shots it appears in, ordered by that count, and flagged harder when it has a plate, since plate-without-size is the exact combination that fails. On Wingfall it opened at **6 subjects, 28 shot appearances at risk**, every one of them plated.
 
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
@@ -897,7 +908,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (68 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (69 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -1026,6 +1037,7 @@ node --test backend/tests/mcp-no-server-llm.test.js
 node --test backend/tests/scene-edit.test.js
 node --test backend/tests/live-events.test.js
 node --test backend/tests/story-bible.test.js
+node --test backend/tests/subject-scale.test.js
 node --test backend/tests/app-settings.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js

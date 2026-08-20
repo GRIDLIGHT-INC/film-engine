@@ -192,6 +192,47 @@ const ALLOWANCE_SHARE = {
     style: STYLE_ALLOWANCE / MAX_PROMPT_CHARS,
 };
 
+/**
+ * Scale sentences for the subjects a card names.
+ *
+ * `opts.props` carries the prop rows, because the builder has never been given
+ * them — props reach the prompt through the consistency contract, which has no
+ * dimensions on it. `opts.frameCoverageWidthM` is what the lens covers at the
+ * camera's distance, available only when a shot has been blocked, and applies
+ * to the FRAMED subject alone: everything else in the shot is at some other
+ * distance, and pricing it at the subject's coverage said a five-metre car
+ * fills most of a seven-metre frame.
+ */
+function scaleNotesFor(sceneCard, characters, opts) {
+    const { scalePhrase } = require('./subject-scale');
+    const notes = [];
+    const framed = String((opts && opts.framedSubject) || '').trim().toLowerCase();
+    const coverage = Number(opts && opts.frameCoverageWidthM) > 0
+        ? Number(opts.frameCoverageWidthM) : null;
+
+    const named = new Set((Array.isArray(sceneCard.characters) ? sceneCard.characters : [])
+        .map(n => String(n || '').trim().toLowerCase()));
+
+    for (const ch of characters || []) {
+        const name = String((ch && ch.name) || '').trim();
+        if (!name || !named.has(name.toLowerCase())) continue;
+        const note = scalePhrase(name, 'character', ch,
+            name.toLowerCase() === framed ? coverage : null);
+        if (note) notes.push(note);
+    }
+
+    const cardProps = new Set((Array.isArray(sceneCard.props) ? sceneCard.props : [])
+        .map(n => String(n || '').trim().toLowerCase()));
+    for (const prop of (opts && opts.props) || []) {
+        const name = String((prop && prop.name) || '').trim();
+        if (!name || !cardProps.has(name.toLowerCase())) continue;
+        const note = scalePhrase(name, 'prop', prop,
+            name.toLowerCase() === framed ? coverage : null);
+        if (note) notes.push(note);
+    }
+    return notes;
+}
+
 function allowancesFor(ceiling) {
     const c = Number(ceiling) > 0 ? Number(ceiling) : MAX_PROMPT_CHARS;
     const out = {};
@@ -326,6 +367,20 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
             parts.push(trimToAllowance(dbChar.appearance_prompt, opts.appearanceAllowance || allow.appearance));
         }
     }
+
+    // 1b. How big everything is, relative to the frame and to each other.
+    //
+    // A diffusion model has no metric understanding, and a reference plate makes
+    // it worse: a plate is a close-up filling its own frame, so conditioning on
+    // one without a declared size reproduces what it was shown. That is how a
+    // thirty-centimetre lawn sprinkler came out the size of the car beside it.
+    //
+    // Emitted right after the subjects and before the action, so the model reads
+    // "who is here and how big they are" as one statement. Nothing is emitted
+    // for a subject with no declared size — a guessed default is
+    // indistinguishable from a deliberate one and would be wrong silently.
+    const scaleParts = scaleNotesFor(sceneCard, characters, opts);
+    if (scaleParts.length) parts.push(scaleParts.join('; '));
 
     // 2. Subject / action description
     const subject = sceneCard.action || sceneCard.description || '';
@@ -505,6 +560,7 @@ function applyStyleLock(baseSeed, shotIndex, options) {
 
 module.exports = {
     allowancesFor,
+    scaleNotesFor,
     ALLOWANCE_SHARE,
     previsPromptParts,
     trimToAllowance,

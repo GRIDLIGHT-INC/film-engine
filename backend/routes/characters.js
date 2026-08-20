@@ -219,6 +219,17 @@ function updateCharacter(req, res, charId) {
         }
     }
 
+    // Height in metres. Validated as a number rather than a length-capped
+    // string: it is the one field here the prompt divides by.
+    if (body.height_m !== undefined) {
+        const n = Number(body.height_m);
+        if (!Number.isFinite(n) || n <= 0) {
+            return badRequest(res, 'height_m must be a positive number of metres');
+        }
+        fields.push('height_m = ?');
+        values.push(n);
+    }
+
     if (body.reference_images !== undefined) {
         fields.push('reference_images = ?');
         values.push(JSON.stringify(body.reference_images));

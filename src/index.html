@@ -5604,6 +5604,14 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <div class="form-group"><label>Name</label><input type="text" data-field="name" placeholder="Character name"></div>
                 <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="Brief description..."></textarea></div>
                 <div class="form-group"><label>Appearance Prompt</label><textarea data-field="appearance_prompt" rows="2" placeholder="Visual appearance for AI generation..."></textarea></div>
+                <div class="form-group">
+                    <label>Height &mdash; metres</label>
+                    <input type="number" step="0.01" min="0" data-field="height_m" placeholder="1.7">
+                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                        Nothing else tells the model how big this character is, and it is what everything
+                        else in frame is measured against.
+                    </p>
+                </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                     <div class="form-group"><label>Age Range</label><input type="text" data-field="age_range" placeholder="20s, 30-40"></div>
                     <div class="form-group"><label>Gender</label><input type="text" data-field="gender" placeholder="Male, Female, etc."></div>
@@ -5652,6 +5660,15 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <div class="form-group"><label>Name</label><input type="text" data-field="name" placeholder="Prop name"></div>
                 <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="Describe this prop..."></textarea></div>
                 <div class="form-group"><label>Visual Prompt</label><textarea data-field="visual_prompt" rows="2" placeholder="Visual description for AI..."></textarea></div>
+                <div class="form-group">
+                    <label>Real size &mdash; metres</label>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+                        <input type="number" step="0.01" min="0" data-field="height_m" placeholder="height">
+                        <input type="number" step="0.01" min="0" data-field="width_m" placeholder="width">
+                        <input type="number" step="0.01" min="0" data-field="length_m" placeholder="length">
+                    </div>
+                </div>
+                <p class="text-sm text-muted" style="margin:-4px 0 10px;line-height:1.5;">An image model has no sense of scale, and a reference plate makes it worse &mdash; a plate is a close-up filling its own frame, so conditioning on one without a size reproduces what it was shown. This is how a 30cm sprinkler comes out the size of a car.</p>
                 <div class="form-group"><label>Category</label>
                     <select data-field="category">
                         <option value="generic">Generic</option>

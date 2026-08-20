@@ -192,6 +192,9 @@ const CAPABILITY_BUILDERS = {
                 maxPromptChars: imagePromptLimit(ctx.project),
                 // The production's own optics, for shots nobody has blocked.
                 filmOptics: filmOpticsFor(ctx.project),
+                // Declared dimensions, so the prompt can say how big things are
+                // relative to the frame and to each other.
+                props: ctx.props || [],
             });
 
         const payload = imageRequestPayload({
@@ -396,6 +399,14 @@ function loadShotContext(shotId) {
 
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
     const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(scene.project_id);
+
+    // Prop rows, for their declared dimensions. The prompt builder has never
+    // been handed props — they reach the prompt through the consistency
+    // contract, which carries no measurements — so nothing could say how big
+    // an object in the frame is.
+    let props = [];
+    try { props = db.prepare('SELECT * FROM film_props WHERE project_id = ?').all(scene.project_id); }
+    catch (_) { props = []; }
     const location = scene.location_id
         ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id)
         : null;
@@ -450,7 +461,7 @@ function loadShotContext(shotId) {
     } catch (_) { previs = null; }
 
     return {
-        shot, scene, project, sceneCard, characters, location, voiceProfiles,
+        shot, scene, project, sceneCard, characters, location, voiceProfiles, props,
         keyframeAsset, videoAsset, audioAsset, musicCue, initImage,
         consistency: consistencyContext,
         previs,

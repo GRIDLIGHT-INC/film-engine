@@ -527,6 +527,19 @@ function updateProp(req, res, propId) {
     const fields = [];
     const values = [];
 
+    // Dimensions in metres. Validated as numbers rather than length-capped
+    // strings: a size is the one field here that has to survive as a number,
+    // because the prompt divides by it.
+    for (const field of ['height_m', 'width_m', 'length_m']) {
+        if (body[field] === undefined) continue;
+        const n = Number(body[field]);
+        if (!Number.isFinite(n) || n <= 0) {
+            return badReq(res, `${field} must be a positive number of metres`);
+        }
+        fields.push(`${field} = ?`);
+        values.push(n);
+    }
+
     for (const [field, maxLen] of Object.entries({ name: 200, description: 2000, visual_prompt: 2000, category: 50, notes: 2000 })) {
         if (body[field] !== undefined) {
             fields.push(`${field} = ?`);

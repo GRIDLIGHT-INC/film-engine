@@ -756,7 +756,14 @@ async function generateStoryboard(req, res, projectId, query) {
             // constant. Meshy documents no prompt limit and routes to models
             // that take long ones; imposing Runway's 1000 on it threw away
             // description nobody asked to lose.
-            { references: shotRefs, tagged: canTag, maxPromptChars: leadProvider && leadProvider.promptLimit });
+            {
+                references: shotRefs, tagged: canTag,
+                maxPromptChars: leadProvider && leadProvider.promptLimit,
+                // Prop rows, for their declared dimensions. The builder has
+                // never been handed props — they reach the prompt through the
+                // consistency contract, which carries no measurements.
+                props,
+            });
 
         // Update shot status
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shot.shot_id);
@@ -974,7 +981,14 @@ async function generateStoryboardStream(req, res, projectId, query) {
             // constant. Meshy documents no prompt limit and routes to models
             // that take long ones; imposing Runway's 1000 on it threw away
             // description nobody asked to lose.
-            { references: shotRefs, tagged: canTag, maxPromptChars: leadProvider && leadProvider.promptLimit });
+            {
+                references: shotRefs, tagged: canTag,
+                maxPromptChars: leadProvider && leadProvider.promptLimit,
+                // Prop rows, for their declared dimensions. The builder has
+                // never been handed props — they reach the prompt through the
+                // consistency contract, which carries no measurements.
+                props,
+            });
 
         sendEvent({
             type: 'progress',
@@ -1245,9 +1259,11 @@ async function regenerateShot(req, res, shotId) {
         const matchedChars = matchCharacters(sceneCard.characters, characters);
         const matchedLocation = matchLocation(scene.location, locations);
 
+        const props = db.prepare('SELECT * FROM film_props WHERE project_id = ?').all(scene.project_id);
         const result = buildStoryboardPrompt(
             sceneCard, matchedChars, matchedLocation,
-            body.style_override || project.style_preset
+            body.style_override || project.style_preset,
+            { props }
         );
         prompt = result.prompt;
         negative_prompt = result.negative_prompt;
