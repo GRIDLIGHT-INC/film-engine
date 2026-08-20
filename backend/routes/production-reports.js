@@ -18,7 +18,7 @@
  */
 
 const { db } = require('../db/database');
-const { ARTEFACT_KINDS, fingerprintFor, isStale } = require('../lib/artefact-fingerprint');
+const { ARTEFACT_KINDS, fingerprintFor, isStale, acceptAsCurrent } = require('../lib/artefact-fingerprint');
 const { buildSides, buildDOOD, buildBreakdownSummary, buildElementsList, buildRunReport } = require('../lib/production-reports');
 const { buildRunPlan } = require('../lib/run-plan');
 const { groupFrames, buildSetups, GROUP_AXES } = require('../lib/board-grouping');
@@ -99,6 +99,31 @@ function handleProductionReports(req, res, urlParts, query) {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
         return json(res, 200, buildDOOD(urlParts[2]));
+    }
+
+    // POST /film/assets/:id/accept — this output is still right for its
+    // current inputs. The alternative was regenerating, which spends money to
+    // replace something the director chose and, since generation is not
+    // deterministic, may not reproduce it.
+    if (urlParts[1] === 'assets' && urlParts[2] && urlParts[3] === 'accept') {
+        if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+        const row = db.prepare(
+            `SELECT id, artefact_kind, shot_id, character_id, location_id, prop_id, file_name
+               FROM film_assets WHERE id = ?`).get(urlParts[2]);
+        if (!row) return json(res, 404, { error: 'Asset not found' });
+
+        const kind = (req.body && req.body.kind) || row.artefact_kind;
+        if (!kind || !ARTEFACT_KINDS[kind]) {
+            return json(res, 400, {
+                error: 'This asset has no artefact kind, so there is nothing to accept it against',
+                hint: 'Pass kind explicitly: ' + Object.keys(ARTEFACT_KINDS).join(', '),
+            });
+        }
+        const stamped = acceptAsCurrent(row.id, kind, idsForAsset(row));
+        if (!stamped) return json(res, 409, { error: 'Could not read this artefact\'s inputs, so it cannot be accepted' });
+        return json(res, 200, {
+            asset_id: row.id, file_name: row.file_name, kind, accepted: true, fingerprint: stamped,
+        });
     }
 
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'conform') {

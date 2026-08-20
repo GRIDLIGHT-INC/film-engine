@@ -309,3 +309,63 @@ test('the gate is reachable from generation, not just computable', () => {
     assert.ok(/staleInputs\(/.test(src), 'routes/pipeline.js never consults the stale gate');
     assert.ok(/ignore_stale/.test(src), 'the gate has no override, so a wrong fingerprint is unrecoverable');
 });
+
+// ── Accepting what is still good ───────────────────────────────────────────
+
+/**
+ * A stale artefact can be blessed instead of rebuilt.
+ *
+ * Staleness detection had exactly one remedy: regenerate. But "the inputs
+ * changed" is not the same as "the output is now wrong" — a character
+ * description can be rewritten in ways a good plate still satisfies, and
+ * regenerating then spends money to replace something the director already
+ * chose. Worse, it replaces it with a different image: generation is not
+ * deterministic, so "just regenerate it" is a coin flip against a plate you
+ * liked.
+ *
+ * Accepting re-stamps the fingerprint against the CURRENT inputs, which is the
+ * honest record of what happened: a human looked at this output beside those
+ * inputs and said it still holds.
+ *
+ * Set-based over the artefact kinds, because a remedy that works for a
+ * character plate and not a location one leaves the director hand-editing rows.
+ */
+test('every artefact kind can be accepted as current without regenerating', () => {
+    const broken = [];
+    for (const kind of Object.keys(fp.ARTEFACT_KINDS)) {
+        const ids = makeProject();
+        const assetId = generateId();
+        db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name)
+                    VALUES (?, ?, ?, 'other', '/tmp/x', 'x')`).run(assetId, ids.projectId, ids.shotId);
+        if (!fp.stampAsset(assetId, kind, ids)) continue;   // kind not applicable to this fixture
+
+        // Change an input every kind reads, then accept.
+        db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?')
+            .run(JSON.stringify({ shot_code: '1A', description: 'Rewritten entirely.', camera: {} }), ids.shotId);
+        db.prepare('UPDATE film_characters SET appearance_prompt = ? WHERE id = ?').run('someone else', ids.charId);
+
+        const before = db.prepare('SELECT file_name, input_fingerprint FROM film_assets WHERE id = ?').get(assetId);
+        const accepted = fp.acceptAsCurrent(assetId, kind, ids);
+        const after = db.prepare('SELECT file_name, input_fingerprint FROM film_assets WHERE id = ?').get(assetId);
+
+        if (!accepted) { broken.push(`${kind}: accept did nothing`); continue; }
+        if (after.file_name !== before.file_name) broken.push(`${kind}: accepting replaced the file`);
+        let current = null;
+        try { current = fp.fingerprintFor(kind, ids); } catch (_) { current = null; }
+        if (current && fp.isStale(after, current)) broken.push(`${kind}: still stale after being accepted`);
+    }
+    assert.deepStrictEqual(broken, [], `\n  ${broken.join('\n  ')}`);
+});
+
+test('accepting an artefact that was never stamped does nothing', () => {
+    // It is outside the workflow, not stale, so blessing it would be inventing
+    // a claim nobody made.
+    const ids = makeProject();
+    const assetId = generateId();
+    db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name)
+                VALUES (?, ?, ?, 'other', '/tmp/x', 'x')`).run(assetId, ids.projectId, ids.shotId);
+    const row = () => db.prepare('SELECT input_fingerprint FROM film_assets WHERE id = ?').get(assetId);
+    assert.strictEqual(row().input_fingerprint, null);
+    fp.acceptAsCurrent(assetId, 'keyframe', ids);
+    assert.ok(row().input_fingerprint, 'accepting an unstamped asset should stamp it, or say why not');
+});

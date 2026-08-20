@@ -398,6 +398,18 @@ const PRODUCTION_TOOLS = [
         schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
     },
     {
+        name: 'artefact_accept',
+        handler: handleProductionReports, method: 'POST',
+        description: 'Mark a generated artefact as still correct for its current inputs, WITHOUT regenerating it. Use this when staleness_report flags something whose output is still good \u2014 a description can be rewritten in ways a plate still satisfies, and regenerating spends money to replace an image someone chose, with no guarantee of reproducing it.',
+        path: a => `/film/assets/${a.asset_id}/accept`,
+        body: a => (a.kind ? { kind: a.kind } : {}),
+        schema: {
+            asset_id: { type: 'string' },
+            kind: { type: 'string', description: 'Only needed if the asset has no recorded artefact kind.' },
+        },
+        required: ['asset_id'],
+    },
+    {
         name: 'staleness_report',
         handler: handleProductionReports, method: 'GET',
         description: 'Which generated artefacts no longer match the inputs they were made from. Run this BEFORE generating: a frame built from an old character description or an old plate looks valid forever and nothing else will tell you. Reports stale (inputs changed), fresh (verified current) and unknown (generated before fingerprinting existed \u2014 not a claim either way).',

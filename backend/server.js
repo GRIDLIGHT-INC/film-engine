@@ -316,6 +316,10 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/projects/:id/breakdown[/stream]
+        if (parts[1] === 'assets' && parts[2] && parts[3] === 'accept') {
+            return await handleProductionReports(req, res, parts, query);
+        }
+
         if ((parts[1] === 'shots' && parts[2] && parts[3] === 'annotations')
             || (parts[1] === 'annotations' && parts[2])) {
             return await handleAnnotations(req, res, parts, query);

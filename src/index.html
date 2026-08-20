@@ -15476,7 +15476,31 @@ ${fountainText.slice(0, 50000)}`;
                 </div>`;
             }).filter(Boolean).join('');
 
+        // Whether this subject's plate still matches the text beside it. The
+        // detection existed and had one remedy — regenerate — which spends
+        // money to replace an image someone chose, and cannot promise to
+        // reproduce it. "Still right" needed to be sayable.
+        let staleBanner = '';
+        try {
+            const rep = await api(`/projects/${state.currentProject.id}/staleness`);
+            const hit = (rep.stale || []).find(x => x.shot_id === undefined
+                && String(x.file_name || '').toLowerCase().includes(String(row.name || '').toLowerCase().replace(/\s+/g, '_')));
+            if (hit) {
+                staleBanner = `<div class="card" style="margin-bottom:12px;border-color:var(--gl-warning,#f59e0b);">
+                    <strong>Plate is out of date</strong>
+                    <p class="text-sm" style="margin:6px 0;">${esc(hit.reason || 'inputs changed since it was generated')}</p>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-secondary btn-sm" onclick="acceptPlate('${hit.asset_id}','${kind}')"
+                                title="Keep this image and record it as current">Still correct</button>
+                        <button class="btn btn-secondary btn-sm" onclick="regeneratePlate('${kind}','${id}')"
+                                title="Generate a new plate — replaces this one and costs credits">Regenerate</button>
+                    </div>
+                </div>`;
+            }
+        } catch (_) { /* the banner is information, not a gate */ }
+
         body.innerHTML = `
+            ${staleBanner}
             <div style="display:flex;gap:20px;flex-wrap:wrap;">
                 <div style="flex:1 1 340px;min-width:280px;">
                     ${img
@@ -15488,6 +15512,24 @@ ${fountainText.slice(0, 50000)}`;
                     ${fields || '<p class="text-sm text-muted">Nothing described yet. An entity with no description reaches the image prompt as a bare name, and every frame invents its own version of it.</p>'}
                 </div>
             </div>`;
+    }
+
+    /** Keep the image, record it as current for the inputs it now sits beside. */
+    async function acceptPlate(assetId, kind) {
+        try {
+            await api(`/assets/${assetId}/accept`, { method: 'POST', body: JSON.stringify({ kind: kind + '_plate' }) });
+            setStatus('Plate accepted as current — nothing was regenerated.');
+            closeModal('entityInspectModal');
+        } catch (err) { setStatus('Could not accept: ' + err.message); }
+    }
+
+    /** The other remedy, named so the cost is visible before it is chosen. */
+    async function regeneratePlate(kind, id) {
+        if (!confirm('Generate a new plate? This replaces the current image, costs credits, and may not reproduce it.')) return;
+        closeModal('entityInspectModal');
+        if (kind === 'character') return generateCharacterImage(id);
+        if (kind === 'location') return generateLocationImage(id);
+        return generatePropImage(id);
     }
 
     async function loadCharacters() {

@@ -224,4 +224,22 @@ function stampAsset(assetId, kind, ids) {
     return fingerprint;
 }
 
-module.exports = { ARTEFACT_KINDS, fingerprintFor, isStale, staleInputs, stampAsset, hash, canonical };
+/**
+ * Bless an artefact as still correct for its current inputs.
+ *
+ * Staleness had exactly one remedy: regenerate. But "the inputs changed" is not
+ * the same as "the output is now wrong" — a description can be rewritten in
+ * ways a good plate still satisfies, and regenerating then spends money to
+ * replace something the director already chose. Worse, generation is not
+ * deterministic, so "just regenerate it" is a coin flip against an image they
+ * liked.
+ *
+ * Re-stamping is the honest record of what happened: a human looked at this
+ * output beside those inputs and said it still holds. It never touches the
+ * file — accepting is a statement about the artefact, not a new one.
+ */
+function acceptAsCurrent(assetId, kind, ids) {
+    return stampAsset(assetId, kind, ids);
+}
+
+module.exports = { ARTEFACT_KINDS, fingerprintFor, isStale, staleInputs, stampAsset, acceptAsCurrent, hash, canonical };
