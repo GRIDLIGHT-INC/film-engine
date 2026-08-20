@@ -286,7 +286,7 @@ test('a trimmed description keeps its opening, which is what the thing IS', () =
  * sprinkler the same descriptive weight as the street it sits in, so it was
  * drawn the size of the car parked beside it.
  */
-const { identify, hasReference } = require('../lib/consistency-apply');
+const { hasReference } = require('../lib/consistency-apply');
 
 const PLATED = {
     prompt_addition_items: [
@@ -295,23 +295,6 @@ const PLATED = {
     ],
     references: [{ subject_name: 'SEDAN', profile_type: 'prop' }],
 };
-
-test('a plated subject contributes an identifier, not its whole description', () => {
-    const out = fitAdditions('', PLATED, { maxPromptChars: 4000 });
-    assert.strictEqual(out.length, 1);
-    assert.ok(out[0].length < 140, `still describing at length: ${out[0].length} chars`);
-    assert.ok(out[0].startsWith('SEDAN:'), 'the identifier does not name the subject');
-    assert.ok(/four-door sedan/.test(out[0]), 'the identifier does not say what the thing is');
-    assert.ok(!/tan vinyl/.test(out[0]), 'detail the picture already shows survived into the prompt');
-});
-
-test('shortening happens even when there is room, because it is not about room', () => {
-    // Describing a picture at length is wrong whether or not it fits.
-    const roomy = fitAdditions('', PLATED, { maxPromptChars: 100000 });
-    const none = fitAdditions('', PLATED, {});
-    assert.ok(roomy[0].length < 140, 'a huge ceiling brought the full description back');
-    assert.ok(none[0].length < 140, 'no ceiling brought the full description back');
-});
 
 test('an unplated subject keeps its full description', () => {
     // The prose exists for exactly this: a subject with no picture, and a
@@ -330,8 +313,28 @@ test('a reference for a different subject does not shorten this one', () => {
     assert.ok(/tan vinyl/.test(fitAdditions('', other, { maxPromptChars: 4000 })[0]));
 });
 
-test('the identifier is not doubled when the description already opens with the name', () => {
-    const item = { text: 'MAYA, a woman in her mid-thirties. Lean and angular.',
-                   profile_type: 'character', subject_name: 'MAYA' };
-    assert.ok(!identify(item).startsWith('MAYA: MAYA'), 'the subject name was prepended twice');
+
+/**
+ * A subject travels as a picture AND its description. Both, always.
+ *
+ * Shortening a described subject to a name because its plate is attached was
+ * tried and reverted. The reasoning was sound — a plate shows what a subject
+ * looks like, so describing it again is redundant — and it was wrong in
+ * practice for one reason: the picture does not always arrive. A provider takes
+ * three references and a shot can want five, and one generation path was
+ * attaching none at all. Every time the picture was missing, the shortened
+ * subject travelled with neither words nor image, and the model built whatever
+ * was still described at length — which is how an establishing shot came back
+ * as a product photograph of a car on grey seamless.
+ *
+ * A redundant description costs room. A missing one costs the shot.
+ */
+test('a subject with a plate keeps its full description', () => {
+    const items = [{ text: `A green four-door sedan. ${'C'.repeat(900)}`,
+                     profile_type: 'prop', subject_name: 'SEDAN' }];
+    const plated = { prompt_addition_items: items,
+                     references: [{ subject_name: 'SEDAN', profile_type: 'prop' }] };
+    const out = fitAdditions('', plated, { maxPromptChars: 4000 });
+    assert.ok(out[0].length > 500,
+        'a description was dropped because a picture was attached; the picture does not always arrive');
 });

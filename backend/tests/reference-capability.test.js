@@ -263,36 +263,3 @@ test('a composed prompt is the whole prompt, not a prefix', () => {
  * cut for room. That is the failure that turned an establishing shot into a
  * product shot, repeated on the shots that can least afford it.
  */
-test('a subject whose reference did not make the cut keeps its description', () => {
-    const { fitAdditions } = require('../lib/consistency-apply');
-    const items = [
-        { text: `MAYA, a woman in her mid-thirties. ${'M'.repeat(700)}`,
-          profile_type: 'character', subject_name: 'MAYA' },
-        { text: `A green four-door sedan. ${'C'.repeat(1900)}`,
-          profile_type: 'prop', subject_name: 'SEDAN' },
-    ];
-    // Only MAYA's plate survived selection.
-    const out = fitAdditions('', { prompt_addition_items: items,
-        references: [{ subject_name: 'MAYA', profile_type: 'character' }] }, { maxPromptChars: 4000 });
-
-    assert.ok(out[0].length < 140, 'a plated subject was still described at length');
-    assert.ok(out[1].length > 500,
-        'a subject with no attached picture was reduced to a name, so it travels as neither');
-});
-
-test('the decision reads the payload, not the profile list', () => {
-    const { applyConsistencyToImagePayload } = require('../lib/consistency-apply');
-    const ctx = {
-        prompt_additions: ['x'],
-        prompt_addition_items: [{ text: `A green sedan. ${'C'.repeat(900)}`,
-            profile_type: 'prop', subject_name: 'SEDAN' }],
-        // The profile exists...
-        references: [{ subject_name: 'SEDAN', profile_type: 'prop' }],
-    };
-    // ...but the caller attached a different set, and the sedan is not in it.
-    const p = applyConsistencyToImagePayload(
-        { prompt: 'shot', reference_images: [{ subject_name: 'MAYA', profile_type: 'character' }] },
-        ctx, { maxPromptChars: 4000 });
-    assert.ok(p.prompt.length > 500,
-        'the sedan was shortened against a reference list the provider never received');
-});

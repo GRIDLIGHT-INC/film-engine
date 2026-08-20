@@ -120,10 +120,17 @@ function fitAdditions(basePrompt, ctx, opts) {
 
     items.sort((a, b) => (ADDITION_RANK[a.profile_type] ?? 5) - (ADDITION_RANK[b.profile_type] ?? 5));
 
-    // Plated subjects shrink to an identifier BEFORE any budgeting, because
-    // this is not a space-saving measure — describing a picture at length is
-    // wrong even when there is room for it.
-    const sized = items.map(i => (hasReference(ctx, i) ? { ...i, text: identify(i) } : i));
+    // NOT shortened because a picture is attached.
+    //
+    // That was tried and reverted. The reasoning was sound — a plate shows what
+    // a subject looks like, so describing it again is redundant — and it was
+    // wrong in practice for one reason: the picture does not always arrive. A
+    // provider takes three references and a shot can want five; one generation
+    // path was attaching none at all. Every time the picture was missing, the
+    // shortened subject travelled with neither words nor image, and the model
+    // built whatever was still described at length. A redundant description
+    // costs room. A missing one costs the shot.
+    const sized = items;
 
     const ceiling = Number(opts && opts.maxPromptChars) > 0 ? Number(opts.maxPromptChars) : 0;
     if (!ceiling) return sized.map(i => i.text);
