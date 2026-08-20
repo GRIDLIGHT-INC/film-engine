@@ -72,6 +72,7 @@ const { handleScripts, handleComments } = require('./routes/scripts');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
 const { handleAppSettings } = require('./routes/app-settings');
+const { handleEvents } = require('./routes/events');
 const { handleBreakdown } = require('./routes/breakdown');
 const { handleProductionReports } = require('./routes/production-reports');
 const { handleMoodBoard } = require('./routes/mood-board');
@@ -897,6 +898,12 @@ const server = http.createServer(async (req, res) => {
             if (sub === 'order' || sub === 'transition') {
                 return await handleShots(req, res, parts, query);
             }
+        }
+
+        // Route: /film/events — an SSE stream that fires when another process
+        // (the MCP server) has written to the database.
+        if (parts[1] === 'events' && !parts[2]) {
+            return handleEvents(req, res);
         }
 
         // Route: /film/settings — who is using the app, not what they are making.

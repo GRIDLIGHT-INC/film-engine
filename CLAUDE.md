@@ -70,6 +70,7 @@ film-engine/
 │   │   ├── jobs.js             # Unified job queue view across pipelines
 │   │   ├── budget-estimate.js  # Pre-flight cost estimation
 │   │   ├── app-settings.js     # Settings that belong to the person, not the project
+│   │   ├── events.js           # SSE: tell the page when another process wrote to the database
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
@@ -159,6 +160,7 @@ film-engine/
 │       ├── impact.test.js              # A changed frame warns that the footage built on it is behind
 │       ├── mcp-no-server-llm.test.js   # No MCP tool hands the reasoning back to a server-side LLM
 │       ├── scene-edit.test.js          # One scene changes; every other scene survives byte-identical
+│       ├── live-events.test.js         # Another process's write reaches the page; our own does not
 │       ├── app-settings.test.js        # Author is set once; the title page is printed, not edited inline
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
@@ -520,7 +522,7 @@ Without that split, one rewritten scene reports forty red items and reads as "st
 
 The chain is derived from `PIPELINE_STEPS.depends`, with `scene_card` prepended as the root — nothing generates a card, a person writes it, so it is not in the orchestrator's graph, but it is what every generated stage ultimately reads. Steps with no pipeline dependency are wired to the card rather than left rootless, which is what makes a screenplay revision reach the whole shot.
 
-Served at `GET /projects/:id/impact` and as `impact_report` (**102 tools**). The board shows both reports in one banner and marks each affected frame, because a director does not care which subsystem noticed.
+Served at `GET /projects/:id/impact` and as `impact_report` (**104 tools**). The board shows both reports in one banner and marks each affected frame, because a director does not care which subsystem noticed.
 
 ### Editing One Scene
 The screenplay is the source and `film_scenes` is a projection of it, so writing a scene's description directly puts the two out of step: the row says one thing, the document another, and every report built on either is right about the wrong text. But requiring a whole-document rewrite to change one scene is its own bug, and a quiet one — the caller has to reproduce every *other* scene faithfully from memory, and the cost of one stray reflow is invisible: scene 1's shots get marked as behind and a director redoes work nobody asked for.
@@ -535,6 +537,18 @@ Scenes reach MCP as `scene_get` and `scene_update`, and `script_get` now returns
 `buildStoryboardPrompt` reads `sceneCard.action || sceneCard.description` and **nothing else** from the writing. The scene's screenplay text is loaded into context and never used. That is the right rule — a card is *this shot*, and pasting the whole scene would describe things out of frame and spend the prompt budget on them — but it makes the card the only place a nuance can live, and whoever edits one was working blind.
 
 `GET /shots/:id` now returns `scene_text` beside `card`, with the rule stated in the response: only the card reaches the prompt, so anything the screenplay says that the card does not restate will not appear in the frame.
+
+### The Page Follows the Database
+The SPA went stale whenever an agent wrote through MCP, and the obvious diagnosis — *it has no framework* — is wrong. React re-renders when state in the **same process** changes; these writes come from a different process against the same SQLite file, which no client framework can observe. What was missing is a transport, and the codebase already speaks one: every long generation streams over SSE.
+
+`PRAGMA data_version` is the whole mechanism, and its asymmetry is the design. SQLite moves it when **another** connection commits and leaves it alone for the connection doing the writing — so the SPA's own POSTs, which go through this server, raise no event (it already knows about those, and echoing them back would fight the user's typing), while an MCP write does. Cost is a header-page read, not a query.
+
+The alternatives were worse. Browser polling spends a request per client per interval to learn nothing, almost always. A file watcher on the `.db` is unreliable under WAL, where commits land in the `-wal` and the main file may go untouched for minutes.
+
+`GET /film/events` streams `hello` then `change`. Saying the current version first matters: a client that cannot tell *here is where we are* from *something just happened* reloads on every reconnect, which on a flaky connection never settles. A refresh that arrives while a modal is open or a field is focused is **deferred, not dropped** — dropping it leaves the page wrong for as long as the modal is, and the user closes it expecting to see what they just did.
+
+### Locking a Subject Is Not the Same as Plating One
+Generating a plate does **not** create a consistency profile, and that is deliberate: a plate is evidence of what a subject looks like, a profile is the commitment that generation conditions on. But there was no way to create one from an agent — `consistency_list`, `consistency_lock` and `consistency_unlock` existed with nothing to lock, so an agent that plated a new prop reached step "now lock it" and found the profile it needed did not exist and could not be made. `consistency_create` closes it, idempotent per subject so a second call returns the first profile rather than a duplicate.
 
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
@@ -969,6 +983,7 @@ node --test backend/tests/screenplay-drift.test.js
 node --test backend/tests/impact.test.js
 node --test backend/tests/mcp-no-server-llm.test.js
 node --test backend/tests/scene-edit.test.js
+node --test backend/tests/live-events.test.js
 node --test backend/tests/app-settings.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js

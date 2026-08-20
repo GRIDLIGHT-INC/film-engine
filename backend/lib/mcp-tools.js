@@ -876,6 +876,32 @@ const PRODUCTION_TOOLS = [
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
+        name: 'consistency_create',
+        handler: handleConsistency, method: 'POST',
+        description: 'Create a consistency profile for a subject, so generation can be told to keep it the same thing in every frame. Generating a plate does NOT create one — a plate is evidence of what a subject looks like and a profile is the commitment to it, and they are separate on purpose. Create it, then lock it with consistency_lock. Idempotent per subject: creating one that already exists returns the existing profile rather than a second.',
+        path: a => `/film/projects/${a.project_id}/consistency/profiles`,
+        body: a => {
+            const { project_id, ...rest } = a || {};
+            return rest;
+        },
+        schema: {
+            project_id: { type: 'string' },
+            profile_type: { type: 'string', description: 'character, location, prop, style or voice.' },
+            subject_id: { type: 'string', description: 'The id of the character, location or prop this is about.' },
+            subject_name: { type: 'string', description: 'Its name, as it reads on the board.' },
+            canonical_asset_id: { type: 'string', description: 'The plate that defines it, if one has been generated.' },
+            notes: { type: 'string' },
+        },
+        required: ['project_id', 'profile_type'],
+    },
+    {
+        name: 'consistency_delete',
+        handler: handleConsistency, method: 'DELETE',
+        description: 'Remove a consistency profile. Generation stops conditioning on that subject entirely — the plate stays, but nothing is committed to it any more.',
+        path: a => `/film/consistency/profiles/${a.profile_id}`,
+        schema: { profile_id: { type: 'string' } }, required: ['profile_id'],
+    },
+    {
         name: 'consistency_lock',
         handler: handleConsistency, method: 'POST',
         description: 'Lock a consistency profile so generation conditions on it. Lock a subject once you are happy with its plate — that is what keeps it the same object in every frame it appears in.',

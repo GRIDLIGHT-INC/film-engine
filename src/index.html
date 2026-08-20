@@ -14466,6 +14466,67 @@ THREE.GLTFLoader = GLTFLoader;
         void reason;
     }
 
+    /**
+     * Follow the database, not just the window.
+     *
+     * Refresh-on-focus covers the case where you looked away. It does nothing
+     * while you are watching the page and an agent is working in it, which is
+     * exactly when a stale board is most misleading — the run reports success
+     * and the screen still shows the previous story.
+     *
+     * A framework would not have fixed this. React re-renders when state in the
+     * SAME process changes; the writes here come from another process entirely,
+     * so what is missing is a transport rather than a rendering model. The
+     * server watches SQLite's own data_version — which moves only when a
+     * DIFFERENT connection commits — and says so over SSE. Our own POSTs raise
+     * no event, which is what stops the page fighting the user's typing.
+     */
+    let LIVE = { source: null, pending: false, seen: null };
+
+    function liveConnect() {
+        if (LIVE.source || typeof EventSource === 'undefined') return;
+        let stream;
+        try { stream = new EventSource(API_BASE + '/film/events'); } catch (_) { return; }
+        LIVE.source = stream;
+
+        stream.onmessage = ev => {
+            let msg = null;
+            try { msg = JSON.parse(ev.data); } catch (_) { return; }
+            if (msg.type === 'hello') { LIVE.seen = msg.v; return; }
+            if (msg.type !== 'change' || msg.v === LIVE.seen) return;
+            LIVE.seen = msg.v;
+            liveRefresh();
+        };
+        // EventSource reconnects on its own; the only thing worth doing here is
+        // not leaving a dead handle behind that liveConnect would refuse to
+        // replace.
+        stream.onerror = () => { if (stream.readyState === 2) { LIVE.source = null; } };
+    }
+
+    /** True when reloading the page underneath the user would lose their work. */
+    function liveBusy() {
+        const el = document.activeElement;
+        if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return true;
+        if (el && el.isContentEditable) return true;
+        if (document.querySelector('.modal-overlay.open, .modal-overlay.active')) return true;
+        return false;
+    }
+
+    function liveRefresh() {
+        // Deferred rather than dropped. A refresh skipped because a modal was
+        // open is a page that stays wrong for as long as the modal is, and the
+        // user closes it expecting to see the result of what they just did.
+        if (liveBusy()) { LIVE.pending = true; return; }
+        LIVE.pending = false;
+        LAST_RELOAD = 0;                 // an external write outranks the throttle
+        refreshCurrentPage('live');
+        setStatus('Updated — changed elsewhere.');
+    }
+
+    // Whatever ends the busy state is the moment to catch up.
+    document.addEventListener('focusout', () => { if (LIVE.pending) setTimeout(liveRefresh, 150); });
+    document.addEventListener('click', () => { if (LIVE.pending) setTimeout(liveRefresh, 150); }, true);
+
     window.addEventListener('focus', () => refreshCurrentPage('focus'));
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) refreshCurrentPage('visible');
@@ -25988,6 +26049,7 @@ ${fountainText.slice(0, 50000)}`;
     initCollapsibleNav();
     checkHealth();
     loadProjects();
+    liveConnect();
     </script>
 </body>
 </html>
