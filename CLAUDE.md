@@ -462,6 +462,15 @@ The board showed `establishing · 40mm anamorphic · push-in · blue-hour` and o
 
 Camera and lighting **merge** into what the card already holds rather than being rebuilt from the four visible fields — a card carries sensor, aperture and height the editor does not show, and rebuilding would drop whatever previs wrote the last time the shot was blocked. A value the card carries that the current list does not is kept and labelled, never silently reset.
 
+### Revising a Story From an Agent (98 tools)
+The MCP surface could generate a film and could not **change** one. `script_get` existed with no write, so a screenplay was readable and immutable; there was no breakdown tool, so even a screenplay edited by hand could not be re-derived into scenes and shots; and `shot_create`/`shot_delete` existed while the scene card — the thing every frame is generated from — had no update. An agent could build a production from scratch and then had to watch a human revise it.
+
+Nine tools close it, all dispatching through the existing routes rather than reimplementing them: `script_write` (a new **version**, so the previous draft survives a rewrite), `breakdown_run`, `shot_get`, `shot_update`, `card_vocabulary`, `storyboard_regenerate` (one frame, not the board), and `consistency_list` / `consistency_lock` / `consistency_unlock`.
+
+Two descriptions carry warnings the tool cannot enforce, because both failures are silent. `script_write` says plainly that editing the screenplay does **not** update the scenes, shots or frames derived from it — an agent that rewrites a draft and stops has left a shot list describing the previous story. And `consistency_list` says a **locked** profile is what generation conditions on while a draft one reaches nothing, since "I created a profile" and "the subject is now consistent" look identical from the outside.
+
+`storyboard_regenerate` is per-shot on purpose. The only regeneration tool was project-wide, so changing one line of one card meant paying to regenerate every frame in the film.
+
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
 
@@ -542,7 +551,7 @@ Worse, detection only read **dialogue cues** (`el.type === 'character'`). A char
 
 Three routes close it. `actionIntroducedCharacters()` finds caps entities in action, behind a stoplist rather than a cleverer regex (sluglines, transitions, sounds and camera instructions are also caps); it leans permissive, because a wrong suggestion is declined in a second while a miss is a subject re-invented per shot. `POST /projects/:id/screenplay/suggestions/apply` creates the rows, idempotent on name so a script revision adds what is new rather than duplicating what is there, and it deliberately does **not** invent descriptions — a plausible-but-unauthored placeholder is the thing it exists to replace (`"EXT location (3 mentions in screenplay)"` was reaching image prompts as though it described a place). `POST /projects/:id/entities/describe` then writes what is blank, via the LLM, from the screenplay: a separate pass rather than more fields on the scene-card call, because card parsing is load-bearing and re-runnable matters as a script is revised. It fills **only empty** fields unless forced — a hand-written description is a decision — and reports `still_blank`, since an entity that stays blank generates a bare name and must not look like success.
 
-MCP gains `entities_create`, `entities_describe`, `character_create`, `location_create` and `prop_create` (57 tools). `character_update` and `location_update` both required an existing id and nothing created one, so an agent host could describe entities it was powerless to bring into existence — the reason the manual data entry happened in the first place.
+MCP gains `entities_create`, `entities_describe`, `character_create`, `location_create` and `prop_create` (57 tools at the time). `character_update` and `location_update` both required an existing id and nothing created one, so an agent host could describe entities it was powerless to bring into existence — the reason the manual data entry happened in the first place.
 
 `tests/screenplay-to-entities.test.js` is set-based over the three entity kinds a storyboard prompt reads, because the failure was per-kind and partial: locations worked, characters were half-done, props were absent entirely, and a test written against "the dragon" passes the moment one row exists.
 

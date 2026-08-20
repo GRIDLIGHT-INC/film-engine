@@ -43,6 +43,7 @@ const { handleAnnotations } = require('../routes/annotations');
 const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
 const { handleProductionReports } = require('../routes/production-reports');
+const { handleConsistency } = require('../routes/consistency');
 
 const NODE_TOOL_PREFIX = 'node_';
 
@@ -731,6 +732,95 @@ const PRODUCTION_TOOLS = [
         path: a => `/film/projects/${a.project_id}/storyboard/generate`,
         body: () => ({}),
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'script_write',
+        handler: handleScripts, method: 'POST',
+        description: 'Save a NEW version of the screenplay from Fountain source. This is how a story is revised: read it with script_get, rewrite it whole, save it back. Versioned, so the previous draft is never lost. Editing the screenplay does NOT update the scenes, shots or frames that were derived from it — run breakdown_run afterwards.',
+        path: a => `/film/projects/${a.project_id}/script`,
+        body: a => ({ fountain_content: a.fountain_content, title: a.title }),
+        schema: {
+            project_id: { type: 'string' },
+            fountain_content: { type: 'string', description: 'The COMPLETE screenplay in Fountain markup, not a patch. Scene headings as INT./EXT. LOCATION - TIME.' },
+            title: { type: 'string' },
+        },
+        required: ['project_id', 'fountain_content'],
+    },
+    {
+        name: 'breakdown_run',
+        handler: handleBreakdown, method: 'POST',
+        description: 'Break the current screenplay down into scenes and shots with scene cards. Run this after script_write, or the shot list still describes the previous draft. Slow — it calls the LLM once per scene.',
+        path: a => `/film/projects/${a.project_id}/breakdown`,
+        body: () => ({}),
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'shot_get',
+        handler: handleShots, method: 'GET',
+        description: 'Read one shot\u2019s scene card — the exact words a keyframe and a clip are generated from.',
+        path: a => `/film/shots/${a.shot_id}`,
+        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+    },
+    {
+        name: 'shot_update',
+        handler: handleShots, method: 'PUT',
+        description: 'Edit a shot\u2019s scene card. MERGES: send only the fields you are changing and the rest survive. Use card_vocabulary for the values camera.shot_type, camera.movement and lighting.type accept. Anything already generated from this card becomes stale.',
+        path: a => `/film/shots/${a.shot_id}`,
+        body: a => {
+            const { shot_id, ...rest } = a || {};
+            return rest;
+        },
+        schema: {
+            shot_id: { type: 'string' },
+            description: { type: 'string', description: 'What is in frame. This is the prompt. Describe the effect, not the object.' },
+            action: { type: 'string' },
+            camera: { type: 'object', description: '{shot_type, movement, lens} — lens is free text ("40mm anamorphic").' },
+            lighting: { type: 'object', description: '{type, notes}' },
+            characters: { type: 'array', items: { type: 'string' }, description: 'Everyone in the shot, by name. This is how their appearance reaches the prompt.' },
+            props: { type: 'array', items: { type: 'string' }, description: 'Objects in the shot, by name. A prop named here attaches its plate.' },
+            dialogue: { type: 'array', items: { type: 'object' } },
+            duration_seconds: { type: 'number' },
+            notes: { type: 'string' },
+        },
+        required: ['shot_id'],
+    },
+    {
+        name: 'card_vocabulary',
+        handler: handleShots, method: 'GET',
+        description: 'The values a scene card may use for camera.shot_type, camera.movement and lighting.type. Read this before writing a card — a value outside these lists is refused by the validator.',
+        path: () => '/film/card-vocabulary',
+        schema: {}, required: [],
+    },
+    {
+        name: 'storyboard_regenerate',
+        handler: handleStoryboard, method: 'POST',
+        description: 'Generate ONE shot\u2019s keyframe again from its current card. Costs credits. Use this after shot_update rather than regenerating the whole board.',
+        path: a => `/film/shots/${a.shot_id}/storyboard/regenerate`,
+        body: () => ({}),
+        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+    },
+    {
+        name: 'consistency_list',
+        handler: handleConsistency, method: 'GET',
+        description: 'List the consistency profiles for a project, with which are locked. A LOCKED profile is what storyboard and video generation actually condition on; a draft one is exploratory and reaches nothing.',
+        path: a => `/film/projects/${a.project_id}/consistency/profiles`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'consistency_lock',
+        handler: handleConsistency, method: 'POST',
+        description: 'Lock a consistency profile so generation conditions on it. Lock a subject once you are happy with its plate — that is what keeps it the same object in every frame it appears in.',
+        path: a => `/film/consistency/profiles/${a.profile_id}/lock`,
+        body: () => ({}),
+        schema: { profile_id: { type: 'string' } }, required: ['profile_id'],
+    },
+    {
+        name: 'consistency_unlock',
+        handler: handleConsistency, method: 'POST',
+        description: 'Return a locked profile to draft, so it can be changed. Generation stops conditioning on it until it is locked again.',
+        path: a => `/film/consistency/profiles/${a.profile_id}/unlock`,
+        body: () => ({}),
+        schema: { profile_id: { type: 'string' } }, required: ['profile_id'],
     },
 ];
 
