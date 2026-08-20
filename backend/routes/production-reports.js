@@ -185,6 +185,20 @@ function handleProductionReports(req, res, urlParts, query) {
         return json(res, plan.refused ? 402 : 200, plan);
     }
 
+    // GET /film/projects/:id/impact — one change, all the way down the chain.
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'impact') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        const { impact } = require('../lib/impact');
+        const report = impact(urlParts[2]);
+        return json(res, 200, {
+            project_id: urlParts[2], ...report,
+            note: report.shots_affected
+                ? 'Do the "redo" items first. The "waiting" ones are only out of date because something above them is — regenerating one now would build on the same old inputs and cost money to produce something still wrong.'
+                : 'Nothing downstream is behind.',
+        });
+    }
+
     // GET /film/projects/:id/screenplay-drift — the work a rewrite left behind.
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'screenplay-drift') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });

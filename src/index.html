@@ -23346,6 +23346,7 @@ ${fountainText.slice(0, 50000)}`;
             // the board rather than on a page of its own, because the moment a
             // director needs to know is while they are looking at the frames.
             await loadScreenplayDrift();
+            await loadImpact();
             const grid = document.getElementById('storyboardGrid');
             if (frames.length === 0) {
                 grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
@@ -23356,7 +23357,7 @@ ${fountainText.slice(0, 50000)}`;
             } else {
                 // Kept so the viewer can step between shots without the grid.
                 FRAME_VIEWER.frames = frames;
-                grid.innerHTML = screenplayDriftBanner() + frames.map(f => `
+                grid.innerHTML = screenplayDriftBanner() + impactBanner() + frames.map(f => `
                     <div class="card" style="padding:0;overflow:hidden;">
                         <div style="position:relative;background:var(--surface-alt,var(--gl-bg-surface));min-height:160px;">
                             <img id="img-${f.shot_id}" src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(f.shot_code)}.png"
@@ -23839,7 +23840,7 @@ ${fountainText.slice(0, 50000)}`;
                      onclick="editShotCard('${f.shot_id}')">+ ${missing} unset</span>`
             : '';
         const dur = f.duration_ms ? `<span class="tag">${(f.duration_ms / 1000).toFixed(1)}s</span>` : '';
-        return screenplayDriftTag(f) + tags + add + dur + storyboardPrevisTag(f);
+        return screenplayDriftTag(f) + impactTag(f) + tags + add + dur + storyboardPrevisTag(f);
     }
 
     /**
@@ -23932,6 +23933,68 @@ ${fountainText.slice(0, 50000)}`;
         return `<span class="tag" style="cursor:pointer;border-color:var(--gl-warning,#f59e0b);color:var(--gl-warning,#f59e0b);"
             title="scene ${esc(d.scene)} was rewritten after this card — ${esc(made)}"
             onclick="editShotCard('${f.shot_id}')">script changed</span>`;
+    }
+
+    /**
+     * What a change has broken, all the way down the chain.
+     *
+     * Drift covers screenplay → card. This covers everything below it: card →
+     * keyframe → clip → lip-sync → post. The two are separate reports and one
+     * banner, because a director does not care which subsystem noticed.
+     */
+    let IMPACT = { shots: {}, redo_now: 0, waiting: 0 };
+
+    async function loadImpact() {
+        IMPACT = { shots: {}, redo_now: 0, waiting: 0 };
+        if (!state.currentProject) return;
+        try {
+            const res = await api(`/projects/${state.currentProject.id}/impact`);
+            IMPACT.redo_now = res.redo_now || 0;
+            IMPACT.waiting = res.waiting || 0;
+            for (const shot of (res.shots || [])) IMPACT.shots[shot.shot_id] = shot;
+        } catch (_) { /* the board still renders; this is additive */ }
+    }
+
+    /**
+     * The mark on a frame whose downstream work is behind.
+     *
+     * Says the stage and which of the two states it is in, because "redo the
+     * keyframe" and "the clip will need redoing after that" are different
+     * instructions and a single red dot conflates them.
+     */
+    function impactTag(f) {
+        const shot = IMPACT.shots[f.shot_id];
+        if (!shot) return '';
+        // The card's own state is already carried by the drift tag; showing it
+        // twice on the same frame reads as two separate problems.
+        const stages = shot.stages.filter(st => st.stage !== 'scene_card');
+        if (!stages.length) return '';
+        const redo = stages.filter(st => st.state === 'redo');
+        const waiting = stages.filter(st => st.state === 'waiting');
+        const label = redo.length
+            ? `redo ${redo.map(r => esc(r.stage)).join(', ')}`
+            : `${waiting.length} stage(s) waiting`;
+        const why = stages.map(st => `${st.stage}: ${st.why}`).join(' \u00b7 ');
+        const colour = redo.length ? 'var(--gl-danger,#ef4444)' : 'var(--gl-text-muted,#94a3b8)';
+        return `<span class="tag" style="cursor:default;border-color:${colour};color:${colour};"
+            title="${esc(why)}">${label}</span>`;
+    }
+
+    /** One banner for both reports, ordered as the work is done. */
+    function impactBanner() {
+        if (!IMPACT.redo_now && !IMPACT.waiting) return '';
+        const parts = [];
+        if (IMPACT.redo_now) parts.push(`<strong>${IMPACT.redo_now}</strong> to regenerate now`);
+        if (IMPACT.waiting) parts.push(`<strong>${IMPACT.waiting}</strong> waiting on ${IMPACT.redo_now ? 'those' : 'work above them'}`);
+        return `<div class="card" style="grid-column:1/-1;border-color:var(--gl-danger,#ef4444);
+                     background:rgba(239,68,68,.06);padding:12px 14px;">
+            <strong style="color:var(--gl-danger,#ef4444);">Generated work is behind what it was made from</strong>
+            <p class="text-sm" style="margin:6px 0 0;line-height:1.55;">
+                ${parts.join(', ')}. Do the <em>regenerate now</em> items first &mdash; the waiting ones are
+                only behind because something above them is, and regenerating one now would build on the same
+                old inputs and cost money to produce something that is still wrong.
+            </p>
+        </div>`;
     }
 
     let SHOT_CARD = { shotId: null, card: null, vocab: null };

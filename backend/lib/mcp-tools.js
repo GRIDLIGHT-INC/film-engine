@@ -411,6 +411,13 @@ const PRODUCTION_TOOLS = [
         required: ['asset_id'],
     },
     {
+        name: 'impact_report',
+        handler: handleProductionReports, method: 'GET',
+        description: 'What one change has broken, all the way down the chain: screenplay to scene card to keyframe to clip to lip-sync to post. Run it after ANY change and before generating anything. Each stage is either "redo" — out of date with everything it is built from current, so do it now — or "waiting", meaning it is only out of date because something above it is, and regenerating it now would build on the same old inputs and cost money to produce something still wrong. Do the redo items first, top to bottom.',
+        path: a => `/film/projects/${a.project_id}/impact`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
         name: 'screenplay_drift',
         handler: handleProductionReports, method: 'GET',
         description: 'Which shots were written from an EARLIER draft of their scene, and what has been generated from them. Run this after any screenplay change: revising a scene does not update the shot cards derived from it, so those cards keep describing the previous story with nothing to show for it. Reports per scene with the next action for each. Warns only — nothing is blocked.',

@@ -119,6 +119,7 @@ film-engine/
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
 │   │   ├── screenplay-drift.js    # Which shots a rewrite left behind, and what was built on them
+│   │   ├── impact.js              # One change, all the way down: redo now vs waiting on something above
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
@@ -154,6 +155,7 @@ film-engine/
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale
 │       ├── script-revision.test.js     # Revising a story does not cascade the production away
 │       ├── screenplay-drift.test.js    # A rewrite flags the shots written from the old draft
+│       ├── impact.test.js              # A changed frame warns that the footage built on it is behind
 │       ├── app-settings.test.js        # Author is set once; the title page is printed, not edited inline
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
@@ -500,6 +502,22 @@ Four decisions carry it. The fingerprint covers only `int_ext`/`location`/`time_
 The report is per scene, because the work is per scene — you re-read the new text once and then fix every shot in it — and each shot names **what was generated from it**, since "this card is out of date" and "and a frame and a blocking were built on it" are different sizes of problem. The board carries it where the frames are: a banner naming the scenes, and a `script changed` tag on each affected frame that opens its card.
 
 `tests/screenplay-drift.test.js` is set-based over the ways a shot can be created, and asserts no `INSERT INTO film_shots` exists outside that list — one unstamped path is a class of shots that can never be flagged, and the gap shows up as the report cheerfully saying nothing is wrong.
+
+### One Change, All the Way Down
+Every link in **screenplay → scene card → keyframe → clip → lip-sync → post** was already tracked, and none of them were tracked *together*. `staleInputs` looks exactly one level up, and only at generation time, so it answers *may I generate this* and never *you just changed the storyboard, and 1B's footage was built on the old frame*.
+
+One level is not enough, for a precise reason. Change a keyframe and the clip's inputs are visibly stale — but the lip-sync's are **not**, because its input is the clip, and the clip has not been regenerated yet, so its fingerprint has not moved. Every stage below the second looks current right up until you fix the one above it, at which point the next warning appears. A director discovers the work one layer at a time, in the worst possible order, having already re-run half of it.
+
+`lib/impact.js` walks it transitively and reports **two states**, which is the whole value of the thing:
+
+- **redo** — out of date, and everything it is built from is current. Do it now.
+- **waiting** — out of date *only* because something above it is. Regenerating now would build on the same old inputs and cost money to produce something still wrong.
+
+Without that split, one rewritten scene reports forty red items and reads as "start again" — which is wrong, and the fastest route to the warnings being switched off. Stages that were never generated are not reported at all, since an absent clip is not behind; and an unstamped artefact is outside the workflow rather than suspect, the same rule every other fingerprint here follows.
+
+The chain is derived from `PIPELINE_STEPS.depends`, with `scene_card` prepended as the root — nothing generates a card, a person writes it, so it is not in the orchestrator's graph, but it is what every generated stage ultimately reads. Steps with no pipeline dependency are wired to the card rather than left rootless, which is what makes a screenplay revision reach the whole shot.
+
+Served at `GET /projects/:id/impact` and as `impact_report` (**101 tools**). The board shows both reports in one banner and marks each affected frame, because a director does not care which subsystem noticed.
 
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
@@ -929,6 +947,7 @@ node --test backend/tests/spec-consumption.test.js
 node --test backend/tests/shot-card-edit.test.js
 node --test backend/tests/script-revision.test.js
 node --test backend/tests/screenplay-drift.test.js
+node --test backend/tests/impact.test.js
 node --test backend/tests/app-settings.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js
