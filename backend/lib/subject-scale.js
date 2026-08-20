@@ -231,7 +231,11 @@ function missingSizes(db, projectId) {
 }
 
 /** Sentences in a subject's own text that mention a measurement. */
-const UNIT_RE = /(metre|meter|centimetre|centimeter|millimetre|\bcm\b|\bmm\b|\bm\b|inch|inches|foot|feet)/i;
+// Units as words, and units stuck to a digit. `\bm\b` does not match the m in
+// "0.7m", because the character before it is a digit and there is no word
+// boundary there — so a description written in figures surfaced nothing while
+// one written in words surfaced fine.
+const UNIT_RE = /(metre|meter|centimetre|centimeter|millimetre|millimeter|inch|inches|foot|feet)|\d\s?(?:cm|mm|m|ft|in)\b/i;
 
 function statedSizes(row) {
     const text = [row && row.visual_prompt, row && row.appearance_prompt, row && row.description]

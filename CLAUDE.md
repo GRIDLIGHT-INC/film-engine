@@ -596,6 +596,8 @@ Three levers work, in descending order of strength. **Frame fraction** — *"abo
 
 Migration 071 adds `height_m` to characters and `height_m`/`width_m`/`length_m` to props, NULL by default — and **undeclared means the prompt says nothing about scale** rather than guessing, because an invented default is indistinguishable from a deliberate one and would be wrong silently. The negative is built from the size too, and names a **tight** bound: things come out too big, never too small, and *"larger than a house"* is a bound a wrong image can satisfy.
 
+**The size is usually already written down.** Every prop on the first production that needed this stated its own size in its description — *"about forty centimetres tall"*, *"roughly seventy centimetres across"*, *"about five and a half metres nose to tail"* — and nothing was reading them, so the person filling the field was being asked to invent a number that sat two lines above. `scale_check` surfaces those sentences per subject, in words or in figures. **Surfaced, not parsed**: word-numbers, ranges and mixed units make a parser that is right most of the time, and a size that is silently wrong is worse than one that is absent, because it reaches every frame the subject appears in looking deliberate. Whoever reads the report converts it in one step.
+
 `GET /projects/:id/scale-check` (`scale_check`) reports the gap as work rather than as a status — each subject with the number of shots it appears in, ordered by that count, and flagged harder when it has a plate, since plate-without-size is the exact combination that fails. On Wingfall it opened at **6 subjects, 28 shot appearances at risk**, every one of them plated.
 
 ### A Prop In The Shot Gets Its Plate
