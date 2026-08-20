@@ -179,3 +179,25 @@ test('a project with no screenplay says so rather than inventing one', async () 
     assert.strictEqual(res.status, 409);
     assert.match(res.body.error, /no Fountain screenplay/i);
 });
+
+test('the sync report counts scenes that moved, not rows it wrote', async () => {
+    // Editing one scene reported "3 updated", because the reconciler counts
+    // every scene it matched. A careful reader has to disprove that with a
+    // second call before trusting the surgical claim; a careless one reads it
+    // as the whole screenplay having been rewritten.
+    const s = await seed();
+    const res = await call(handleScenes, 'PUT', `/film/scenes/${s.scenes[1].id}`,
+        { fountain: 'INT. HOUSE - NIGHT\n\nShe stops waiting and runs for the door.' });
+    assert.strictEqual(res.status, 201, JSON.stringify(res.body));
+
+    assert.strictEqual(res.body.sync.scenes_updated, 1,
+        `editing one scene reported ${res.body.sync.scenes_updated} updated`);
+    assert.strictEqual(res.body.sync.scenes_unchanged, 2,
+        'the scenes that did not move are not accounted for');
+    assert.strictEqual(res.body.sync.scenes_removed, 0);
+    assert.strictEqual(res.body.sync.scenes_added, 0);
+
+    // And the count has to agree with what drift says, or one of them is lying.
+    assert.strictEqual(drift(s.projectId).length, res.body.sync.scenes_updated,
+        'the sync count and the drift report disagree about how many scenes changed');
+});

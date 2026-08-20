@@ -299,10 +299,23 @@ function syncScenesWithScreenplay(projectId, parsedFountain) {
 
     const report = {
         scenes_added: 0,
+        // Scenes whose text actually MOVED, not scenes the reconciler wrote a
+        // row for. Counting every match as an update reported "3 updated" after
+        // an edit to one scene, which a careful reader has to disprove with a
+        // second call before trusting the surgical claim — and a careless one
+        // reads as "it rewrote the whole screenplay".
         scenes_updated: 0,
+        scenes_unchanged: 0,
         scenes_removed: 0,
         characters_found: new Set()
     };
+
+    /** Did this row's text change, in the fields a shot is built from? */
+    const moved = (before, after) =>
+        (before.int_ext || '') !== (after.int_ext || '')
+        || (before.location || '') !== (after.location || '')
+        || (before.time_of_day || '') !== (after.time_of_day || '')
+        || (before.description || '') !== (after.description || '').slice(0, 10000);
 
     // Track which existing scenes were matched
     const matchedExistingIds = new Set();
@@ -344,7 +357,8 @@ function syncScenesWithScreenplay(projectId, parsedFountain) {
             // The scene's text is what a card is built from, so this is the
             // moment every shot in it may have fallen behind.
             stampScene(match.id);
-            report.scenes_updated++;
+            if (moved(match, newScene)) report.scenes_updated++;
+            else report.scenes_unchanged++;
         }
     }
 
@@ -389,7 +403,8 @@ function syncScenesWithScreenplay(projectId, parsedFountain) {
                 match.id
             );
             stampScene(match.id);
-            report.scenes_updated++;
+            if (moved(match, newScene)) report.scenes_updated++;
+            else report.scenes_unchanged++;
         }
     }
 
