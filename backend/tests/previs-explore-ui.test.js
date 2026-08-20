@@ -184,3 +184,24 @@ test('a generated .glb can be staged in previs', () => {
     const external = html.match(/<script[^>]+src=["'](?!data:)[^"']+["']/g) || [];
     assert.deepStrictEqual(external, [], `a renderer library crept in: ${external.join(', ')}`);
 });
+
+
+test('the textured view is real three.js, vendored inline', () => {
+    // The wireframe stage answers "where does it stand" and stays hand-rolled.
+    // This pane answers "is that the character", and a real material cannot be
+    // faked with a 4x4 matrix and a polygon painter.
+    assert.ok(/THREE\.WebGLRenderer/.test(html), 'no WebGL renderer, so nothing is textured');
+    assert.ok(/THREE\.GLTFLoader/.test(html), 'no GLTF loader, so a .glb cannot be shown with materials');
+    assert.ok(/previsSolidLoad/.test(html), 'the pane is never given a model');
+
+    // Vendored, not linked: build.target is single-html, and an external file
+    // would reintroduce a build step.
+    const external = html.match(/<script[^>]+src=["'](?!data:)[^"']+["']/g) || [];
+    assert.deepStrictEqual(external, [], `an external script crept in: ${external.join(', ')}`);
+
+    // The viewer needs the file itself; the geometry endpoint strips materials
+    // by design.
+    const routes = fs.readFileSync(path.join(__dirname, '..', 'routes', 'threed.js'), 'utf8');
+    assert.ok(/'file'/.test(routes), 'no route serves the .glb to the viewer');
+    assert.ok(/geometry/.test(routes), 'no route serves decimated geometry to the stage');
+});

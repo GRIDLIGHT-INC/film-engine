@@ -250,8 +250,30 @@ function styleReferences(db, projectId, limit) {
     return out;
 }
 
+/**
+ * The optics this production shoots on, from the board.
+ *
+ * These were only ever read by previs/from-card, so they applied to whichever
+ * shots someone had opened the 3D stage for — one of eight, in practice — and
+ * the other seven generated on a generic 50mm super35 default belonging to no
+ * production. A spec a director deliberately chose was decoration.
+ *
+ * Blocking is optional; the lens the film shoots on is not. Returns {} when
+ * nothing is chosen, never an invented default: a made-up lens here would be
+ * indistinguishable from a deliberate one and would override the scene card.
+ */
+function filmOptics(db, projectId) {
+    let rows = [];
+    try {
+        rows = db.prepare(
+            'SELECT spec_kind, spec_value FROM film_mood_board WHERE project_id = ? AND spec_kind IS NOT NULL')
+            .all(projectId);
+    } catch (_) { return {}; }
+    return previsDefaults(rows.map(r => ({ kind: r.spec_kind, value: r.spec_value })));
+}
+
 module.exports = {
     validateStylePreset, SUBJECT_WORDS, LOOK_EXCEPTIONS,
     SPEC_KINDS, allowedSpecValues, validateSpec,
-    applyProjectSpecs, previsDefaults, styleReferences,
+    applyProjectSpecs, previsDefaults, styleReferences, filmOptics,
 };

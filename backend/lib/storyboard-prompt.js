@@ -319,12 +319,18 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
         parts.push(SHOT_TYPE_MAP[shotType]);
     }
 
-    // 4. Lens — the staged focal length, else whatever the card called it.
+    // 4. Lens — staged, else what the card called it, else what the production
+    // shoots on. That last fallback is the whole point of choosing a lens on
+    // the board: without it the choice only reached shots someone had opened
+    // the 3D stage for.
+    const film = opts.filmOptics || {};
     const blockedFocal = Number(facets.focal_mm);
     if (Number.isFinite(blockedFocal) && blockedFocal > 0) {
         parts.push(`${Math.round(blockedFocal)}mm lens`);
     } else if (cardCamera.lens) {
         parts.push(`${cardCamera.lens} lens`);
+    } else if (Number(film.focalMm) > 0) {
+        parts.push(`${Math.round(Number(film.focalMm))}mm lens`);
     }
 
     // 4b. Camera height against a standing eyeline IS the angle. Derived rather

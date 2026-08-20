@@ -155,6 +155,14 @@ function projectIdOf(ctx) {
  * at the provider's end, which is worse than trimming here where it can be
  * reported.
  */
+/** The optics chosen on this project's look board, or {} if none. */
+function filmOpticsFor(project) {
+    try {
+        const { filmOptics } = require('./look-development');
+        return filmOptics(require('../db/database').db, project && project.id);
+    } catch (_) { return {}; }
+}
+
 function imagePromptLimit(project) {
     try {
         const { resolveGenerator } = require('./providers');
@@ -182,6 +190,8 @@ const CAPABILITY_BUILDERS = {
                 // the per-domain route cannot disagree about how much prompt a
                 // provider accepts — the same reason this file exists at all.
                 maxPromptChars: imagePromptLimit(ctx.project),
+                // The production's own optics, for shots nobody has blocked.
+                filmOptics: filmOpticsFor(ctx.project),
             });
 
         const payload = imageRequestPayload({

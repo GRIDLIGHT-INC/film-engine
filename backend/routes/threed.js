@@ -97,6 +97,15 @@ function handleThreeD(req, res, urlParts, query) {
         return serveFile(res, urlParts[2], SUBDIR, urlParts[3]);
     }
 
+    // /film/models/:assetId/file — the .glb itself, for the textured viewer.
+    // The geometry endpoint below strips materials by design; three.js needs
+    // the actual file to show one.
+    if (urlParts[1] === 'models' && urlParts[2] && urlParts[3] === 'file') {
+        const asset = db.prepare('SELECT project_id, file_name FROM film_assets WHERE id = ?').get(urlParts[2]);
+        if (!asset) return json(res, 404, { error: 'Model asset not found' });
+        return serveFile(res, asset.project_id, SUBDIR, asset.file_name);
+    }
+
     // /film/models/:assetId/geometry — parsed, decimated, ready to stage.
     if (urlParts[1] === 'models' && urlParts[2] && urlParts[3] === 'geometry') {
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });

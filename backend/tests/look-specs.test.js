@@ -184,3 +184,58 @@ test('the three outputs are wired to the three destinations, not just computed',
     assert.ok(/applyProjectSpecs\(/.test(at('routes/mood-board.js')),
         'the delivery specs are never applied to the project');
 });
+
+/**
+ * The film's optics reach a shot whether or not anyone opened the 3D stage.
+ *
+ * lens 40 / super35 / T2.8 were on the board, validated, and reached nothing.
+ * They were only consulted by previs/from-card, so they applied to the one shot
+ * of eight that happened to be blocked. Seven shots generated on a generic 50mm
+ * super35 default that belongs to no production, and the specs a director had
+ * deliberately chosen were decoration.
+ *
+ * Blocking is optional. The lens the film shoots on is not. So the precedence
+ * is: what was STAGED beats what was WRITTEN beats what the PRODUCTION shoots
+ * on — and the last of those has to exist as a fallback, or choosing it
+ * achieves nothing until someone blocks every shot by hand.
+ */
+test('a shot with no blocking still gets the film\'s chosen optics', () => {
+    const projectId = makeProject();
+    for (const [kind, value] of [['lens', 40], ['sensor', 'super35'], ['aperture', 2.8]]) {
+        db.prepare(`INSERT INTO film_mood_board (id, project_id, kind, note, spec_kind, spec_value)
+                    VALUES (?, ?, 'lens', '', ?, ?)`).run(generateId(), projectId, kind, String(value));
+    }
+
+    const defaults = look.filmOptics(db, projectId);
+    assert.strictEqual(defaults.focalMm, 40, 'the chosen lens does not reach a shot');
+    assert.strictEqual(defaults.sensorId, 'super35');
+    assert.strictEqual(defaults.fStop, 2.8);
+});
+
+test('a project with no specs gets nothing rather than an invented lens', () => {
+    // Falling back to a made-up default here would be indistinguishable from a
+    // deliberate choice, and would override the scene card.
+    const projectId = makeProject();
+    assert.deepStrictEqual(look.filmOptics(db, projectId), {});
+});
+
+test('the precedence is staged, then written, then the production default', () => {
+    const sp = require('../lib/storyboard-prompt');
+    const card = {
+        shot_code: '1A', description: 'She stops.', lighting: { type: 'natural' },
+        camera: { shot_type: 'medium', lens: '85mm' },
+    };
+    // Written wins over the production default...
+    const written = sp.buildStoryboardPrompt(card, [], null, null, { filmOptics: { focalMm: 40 } }).prompt;
+    assert.ok(/85\s*mm/.test(written), `the card's own lens was overridden: ${written}`);
+
+    // ...and the production default fills in when the card says nothing.
+    const blank = sp.buildStoryboardPrompt({ ...card, camera: { shot_type: 'medium' } }, [], null, null,
+        { filmOptics: { focalMm: 40 } }).prompt;
+    assert.ok(/40\s*mm/.test(blank), `the film's lens never reached a card that specified none: ${blank}`);
+
+    // ...and blocking still beats both.
+    const staged = sp.buildStoryboardPrompt(card, [], null, null,
+        { filmOptics: { focalMm: 40 }, previs: { focal_mm: 100, shot_type: 'close-up' } }).prompt;
+    assert.ok(/100\s*mm/.test(staged), `what was staged lost to something else: ${staged}`);
+});
