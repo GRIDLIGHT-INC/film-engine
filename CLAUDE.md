@@ -149,6 +149,7 @@ film-engine/
 │       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
 │       ├── glb-parser.test.js          # A synthetic .glb parses, transforms apply, decimation bounds hold
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
+│       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
 │       ├── run-plan.test.js            # Strip ordering, dependency safety, cost, budget refusal
@@ -426,6 +427,15 @@ A style preset is appended to **every** image prompt in a production, is a free-
 `lib/look-development.js` catches a style that names a **subject** rather than a look, and the asymmetry drives the design: a validator that rejects real cinematographic vocabulary gets switched off within a day and then protects nothing, so it matches bare words and simple plurals against a short concrete list (creatures, people, animals, drawn objects) with an exception set — substring matching turns "grainy" into "rain" and every style into a failure. It **warns, never blocks**, on the precedent previs set: a creature film may genuinely want a creature in every frame, and refusing the save would overrule the author. The warning names the offending word, since "your style may contain a subject" just sends the director back to re-read their own string. Wired into `POST`/`PUT /projects`, returned as `style_warning`.
 
 Tested against a corpus rather than examples: 8 real styles that must all pass (noir, Portra, cyberpunk, documentary, golden hour…) and 5 subject-carrying ones that must all fail — including the exact string that shipped the defect.
+
+### Revising a Shot, Not Just Producing One
+Three things a director could not do in the app, all found by using it.
+
+**The scene card could not be edited.** `PUT /shots/:id/order` and `/transition` existed; the card itself — what every keyframe, clip and report is built from — could only be written by whoever created the shot. So a frame that came back wrong could be regenerated from exactly the same words, forever. `PUT /shots/:id` **merges** rather than replaces, because a card is a whole document and a swap would drop the dialogue every time someone fixed a typo in the action, and it validates like every other write, since an edit route that skipped validation would be the one way to get a broken card in. Editing correctly makes what was generated from it stale.
+
+**The markup buttons worked and looked like they didn't.** Arming a shape set `pointer-events` and wrote a line to the status bar at the bottom of the screen, so pressing one appeared to do nothing. The frame you are about to draw on now says so, where you are looking.
+
+**Previs stopped one step short.** You could stage an angle, preview the prompt and write the camera back to the card — then had to leave previs, find the shot on the board and press Regen. The question previs exists to answer is *how would this look*, and it could only be answered somewhere else. **Render this angle** saves, applies and regenerates in that order (regenerating before applying would generate from the previous angle) and reloads the pane, so the answer is the new picture rather than the one it replaced.
 
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
@@ -852,6 +862,7 @@ node --test backend/tests/storyboard-prerequisites.test.js
 node --test backend/tests/previs-explore-ui.test.js
 node --test backend/tests/glb-parser.test.js
 node --test backend/tests/spec-consumption.test.js
+node --test backend/tests/shot-card-edit.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js
 node --test backend/tests/run-plan.test.js

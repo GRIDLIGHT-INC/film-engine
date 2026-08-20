@@ -41,10 +41,72 @@ function deleteShot(req, res, shotId) {
     res.end(JSON.stringify({ deleted: true, shot_id: shotId, shot_code: shot.shot_code, assets_affected: assets }));
 }
 
+/**
+ * Edit a shot's scene card.
+ *
+ * There was no way to. PUT /shots/:id/order and /transition existed; the card
+ * itself — the description every keyframe, clip and report is built from —
+ * could only be written by whoever created the shot. So a director looking at a
+ * frame that came back wrong had no way to change what it was generated from,
+ * and the only remedy inside Film Engine was to regenerate from the same words.
+ *
+ * MERGES, never replaces. A card is a whole document; a PUT that swapped it
+ * would quietly drop the dialogue every time someone fixed a typo in the
+ * action.
+ *
+ * Validated like every other write to a card, because an edit route that
+ * skipped validation would be the one way to get a broken card into the
+ * database.
+ */
+function updateShotCard(req, res, shotId) {
+    const shot = db.prepare('SELECT id, scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Shot not found' }));
+    }
+
+    let card = {};
+    try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
+
+    const body = req.body || {};
+    const EDITABLE = ['description', 'action', 'camera', 'lighting', 'characters', 'props', 'dialogue',
+        'sfx_cues', 'duration_seconds', 'notes'];
+    const changed = [];
+    for (const key of EDITABLE) {
+        if (body[key] === undefined) continue;
+        card[key] = body[key];
+        changed.push(key);
+    }
+    if (!changed.length) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: `Nothing to change. Editable: ${EDITABLE.join(', ')}` }));
+    }
+
+    const validation = validateSceneCards([card]);
+    if (!validation.valid) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'That would make the scene card invalid', details: validation.errors }));
+    }
+
+    db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?').run(JSON.stringify(card), shotId);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        shot_id: shotId, changed, card,
+        // Said plainly: anything generated from the old words no longer matches.
+        note: 'Anything generated from this card is now stale. Check staleness before generating.',
+    }));
+}
+
 function handleShots(req, res, urlParts, query) {
     // POST /film/shots — parts: ['film', 'shots']
     if (urlParts[1] === 'shots' && !urlParts[2] && req.method === 'POST') {
         return createShots(req, res);
+    }
+
+    // PUT /film/shots/:id — edit the scene card.
+    if (urlParts[1] === 'shots' && urlParts[2] && !urlParts[3] && req.method === 'PUT') {
+        return updateShotCard(req, res, urlParts[2]);
     }
 
     // DELETE /film/shots/:id — a shot could be created and never removed, by

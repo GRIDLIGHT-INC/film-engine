@@ -63,6 +63,12 @@ const EXPLORE_OPS = [
         control: /previsPreviewFrame\s*\(/,
     },
     {
+        id: 'render',
+        why: 'see how this angle actually looks, without leaving previs',
+        endpoint: /storyboard\/regenerate/,
+        control: /previsRenderShot\s*\(/,
+    },
+    {
         id: 'apply',
         why: 'write the angle you chose back onto the scene card',
         endpoint: /previs\/apply/,
@@ -90,6 +96,8 @@ test('the explore registry covers every director-facing previs operation', () =>
     // Anything the route dispatches that a director drives must be listed here,
     // so adding a route without a control fails rather than going unnoticed.
     const dispatched = ['from-card', 'solve', 'apply', 'approve', 'to-storyboard'];
+    // 'render' is a composition of save + apply + regenerate rather than a
+    // route of its own, so it is not in this list.
     const missing = dispatched.filter(op => !routeSrc.includes(`'${op}'`));
     assert.deepStrictEqual(missing, [], `route no longer dispatches: ${missing.join(', ')}`);
     for (const op of dispatched) {

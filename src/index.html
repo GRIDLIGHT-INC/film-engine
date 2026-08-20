@@ -4843,6 +4843,7 @@
                     <button class="btn btn-secondary" onclick="previsSolve()">Solve framing</button>
                     <button class="btn btn-secondary" onclick="previsPreviewFrame()" data-tooltip="See the prompt this angle would generate. Costs nothing." data-tooltip-pos="bottom">Preview frame</button>
                     <button class="btn btn-secondary" onclick="previsApplyToCard()" data-tooltip="Write this angle back onto the scene card" data-tooltip-pos="bottom">Apply to card</button>
+                    <button class="btn btn-primary" onclick="previsRenderShot()" data-tooltip="Apply this blocking and regenerate the frame — costs credits" data-tooltip-pos="bottom">Render this angle</button>
                     <button class="btn btn-secondary" onclick="previsApprove()" id="previsApproveBtn" data-tooltip="Sign off this angle. Restaging afterwards blocks generation until you re-approve." data-tooltip-pos="bottom">Approve</button>
                     <button class="btn btn-secondary" onclick="previsPlay()" id="previsPlayBtn">Play move</button>
                     <button class="btn btn-secondary" onclick="previsExportFrame()" id="previsFrameBtn">Save frame</button>
@@ -12628,6 +12629,38 @@ THREE.GLTFLoader = GLTFLoader;
         const assetId = sel && sel.kind === 'mesh' ? sel.assetId : null;
         const model = assetId && (PREVIS.models || []).find(m => m.id === assetId);
         previsSolidLoad(model ? `${API_BASE}/film/models/${assetId}/file` : null);
+    }
+
+    /**
+     * Apply this blocking and generate the frame from it.
+     *
+     * The loop stopped one step short. You could stage an angle, preview the
+     * prompt it would produce, and write the camera back to the card — and then
+     * had to leave previs, find the shot on the board and press Regen there.
+     * The question previs exists to answer is "how would this look", and until
+     * this button it could only be answered somewhere else.
+     *
+     * Save, apply, regenerate, reload — in that order, because regenerating
+     * before applying would generate from the previous angle.
+     */
+    async function previsRenderShot() {
+        if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
+        if (!confirm('Apply this blocking to the scene card and generate the frame?\n\n'
+            + 'This replaces the existing keyframe and costs credits.')) return;
+
+        setStatus('Rendering this angle...', true);
+        try {
+            await api(`/shots/${PREVIS.shotId}/previs`, { method: 'PUT', body: JSON.stringify(previsReadInspector()) });
+            await api(`/shots/${PREVIS.shotId}/previs/apply`, { method: 'POST', body: JSON.stringify({}) });
+            await api(`/shots/${PREVIS.shotId}/storyboard/regenerate`, { method: 'POST' });
+            setStatus('Frame regenerated from this blocking.');
+            // Reload so the pane shows what was just made rather than what it
+            // replaced — otherwise the answer to "how would this look" is the
+            // old picture.
+            await previsOpenShot(PREVIS.shotId);
+        } catch (err) {
+            setStatus('Could not render this angle: ' + err.message);
+        }
     }
 
     function previsRenderAddButtons() {
@@ -23118,7 +23151,10 @@ ${fountainText.slice(0, 50000)}`;
                         <div style="padding:10px;">
                             <div class="flex-between">
                                 <strong>Sc${f.scene_number} / ${esc(f.shot_code)}</strong>
-                                <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')">Regen</button>
+                                <div style="display:flex;gap:4px;">
+                                    <button class="btn btn-secondary btn-sm" onclick="editShotCard('${f.shot_id}')" title="Change what this frame is generated from">Edit</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again — costs credits">Regen</button>
+                                </div>
                             </div>
                             ${f.camera && f.camera.shot_type ? '<span class="tag">' + esc(f.camera.shot_type) + '</span>' : (typeof f.camera === 'string' && f.camera ? '<span class="tag">' + esc(f.camera) + '</span>' : '')}
                             ${f.camera && f.camera.lens ? '<span class="tag">' + esc(f.camera.lens) + '</span>' : ''}
@@ -23161,6 +23197,13 @@ ${fountainText.slice(0, 50000)}`;
         // land markup on another.
         canvas.style.pointerEvents = 'auto';
         canvas.style.cursor = 'crosshair';
+        // Visible, not just functional. Arming set pointer-events and a status
+        // line at the bottom of the screen, so pressing the button looked like
+        // nothing had happened — the frame you are about to draw on has to say
+        // so where you are looking.
+        canvas.style.outline = '2px solid var(--gl-brand-pink, #ec4899)';
+        canvas.style.outlineOffset = '-2px';
+        canvas.style.background = 'rgba(236,72,153,.08)';
         canvas.onclick = ev => storyboardAnnotClick(ev, shotId, kind);
         setStatus(kind === 'text'
             ? 'Click where the note goes.'
@@ -23199,7 +23242,12 @@ ${fountainText.slice(0, 50000)}`;
 
     function storyboardDisarm(shotId) {
         const canvas = document.getElementById('annot-' + shotId);
-        if (canvas) { canvas.style.pointerEvents = 'none'; canvas.onclick = null; }
+        if (canvas) {
+            canvas.style.pointerEvents = 'none';
+            canvas.onclick = null;
+            canvas.style.outline = '';
+            canvas.style.background = '';
+        }
         ANNOT.shotId = null; ANNOT.kind = null; ANNOT.points = [];
     }
 
@@ -23324,6 +23372,33 @@ ${fountainText.slice(0, 50000)}`;
         if (ev.key === 'ArrowLeft') frameViewerStep(-1);
         if (ev.key === 'Escape') closeModal('frameViewerModal');
     });
+
+    /**
+     * Change what a frame is generated from.
+     *
+     * The card is the only thing a regeneration reads, so a frame that came
+     * back wrong could not be fixed inside the app at all: you could regenerate
+     * it from exactly the same words, forever. This is the loop closing — look
+     * at the frame, change the description, generate again.
+     */
+    async function editShotCard(shotId) {
+        const f = (FRAME_VIEWER.frames || []).find(x => x.shot_id === shotId);
+        const current = f ? (f.description || '') : '';
+        const next = prompt(
+            'What happens in this shot? This is what the frame is generated from.\n\n'
+            + 'Describe the EFFECT you want, not the object: "light drops across the house fronts as '
+            + 'something passes overhead" reads differently to "a winged shadow".',
+            current);
+        if (next === null || next.trim() === current.trim()) return;
+
+        try {
+            await api(`/shots/${shotId}`, { method: 'PUT', body: JSON.stringify({ description: next.trim() }) });
+            setStatus('Card updated. The existing frame is now stale — regenerate to see the change.');
+            loadStoryboard();
+        } catch (err) {
+            setStatus('Could not save the card: ' + err.message);
+        }
+    }
 
     function storyboardDialogueHtml(lines) {
         if (!Array.isArray(lines) || !lines.length) return '';
