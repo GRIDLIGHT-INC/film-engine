@@ -209,3 +209,24 @@ test('an empty board composes nothing rather than an empty style', async () => {
     assert.strictEqual(composed.body.style_preset, '', 'an empty board invented a style');
     assert.ok(composed.body.message, 'no explanation of why nothing was composed');
 });
+
+
+test('the length warning quotes the allowance THIS project actually gets', () => {
+    // It quoted the base constant — the share at the 1000-char ceiling, which
+    // is Runway's. A project generating on Meshy has a 4000 ceiling and a 560
+    // allowance, so the warning claimed 140 and told a director nine tenths of
+    // their look was being discarded when almost all of it survived. A warning
+    // that is wrong in the alarming direction is how a warning gets ignored.
+    const { allowancesFor } = require('../lib/storyboard-prompt');
+    const { imagePromptLimit } = require('../lib/capability-payloads');
+
+    const projectId = makeProject();
+    db.prepare("UPDATE film_projects SET provider_config = ? WHERE id = ?")
+        .run(JSON.stringify({ image: 'meshy' }), projectId);
+
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
+    const limit = imagePromptLimit(project);
+    assert.strictEqual(limit, 4000, `meshy should give 4000, got ${limit}`);
+    assert.strictEqual(allowancesFor(limit).style, 560,
+        'the style allowance at meshy\'s ceiling is not what the warning should quote');
+});

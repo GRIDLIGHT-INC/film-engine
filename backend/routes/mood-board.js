@@ -139,15 +139,26 @@ function compose(req, res, projectId) {
     // can compose 1654 careful characters and have 140 of them survive, with
     // nothing anywhere saying so. Imported rather than hardcoded: a warning
     // quoting a number the prompt builder no longer uses is worse than none.
-    const { STYLE_ALLOWANCE, trimToAllowance } = require('../lib/storyboard-prompt');
-    const effective = trimToAllowance(style, STYLE_ALLOWANCE);
-    if (style.length > STYLE_ALLOWANCE) {
-        const lost = Math.round((1 - STYLE_ALLOWANCE / style.length) * 100);
+    // The allowance THIS project gets, not the base constant.
+    //
+    // This read STYLE_ALLOWANCE directly, which is the share at the 1000-char
+    // ceiling — Runway's. The project generates on Meshy, whose ceiling is
+    // 4000, so the real allowance is 560 and the warning was quoting 140:
+    // under-reporting by a factor of four and telling a director that nine
+    // tenths of their look was being discarded when almost all of it survived.
+    // A warning that is wrong in the alarming direction is how a warning gets
+    // ignored.
+    const { allowancesFor, trimToAllowance } = require('../lib/storyboard-prompt');
+    const { imagePromptLimit } = require('../lib/capability-payloads');
+    const allowance = allowancesFor(imagePromptLimit(project)).style;
+    const effective = trimToAllowance(style, allowance);
+    if (style.length > allowance) {
+        const lost = Math.round((1 - allowance / style.length) * 100);
         warnings.push({
             type: 'length',
             composed: style.length,
-            allowance: STYLE_ALLOWANCE,
-            detail: `This style is ${style.length} characters and only the first ${STYLE_ALLOWANCE} reach an image `
+            allowance,
+            detail: `This style is ${style.length} characters and only the first ${allowance} reach an image `
                 + `prompt — about ${lost}% of it is discarded before anything is generated. A style is appended to `
                 + `every prompt in the production, and the whole prompt has to fit the provider's cap. `
                 + `Shorten the notes to terse phrases; what survives is shown as effective_style.`,

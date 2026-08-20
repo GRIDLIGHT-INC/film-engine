@@ -64,6 +64,26 @@ const PRIMITIVES = {
         acceptsImage: true,
         note: 'A generated image as a standing card. Flat on purpose: it goes edge-on as you orbit, which is the truth about a cutout.',
     },
+
+    /**
+     * A generated .glb, staged as real geometry.
+     *
+     * The card above is a cutout and goes edge-on; this is the thing itself, so
+     * a director can orbit a character and see the silhouette change. Drawn as
+     * a wireframe by the same projection everything else uses — previs is
+     * grey-box, and what is being judged is where the subject stands and how it
+     * reads in frame, which a silhouette answers completely. Materials and
+     * textures are deliberately not loaded: they would change how it looks and
+     * not what it tells you.
+     *
+     * defaultSizeM is a placeholder; a loaded mesh is scaled to its own bounds
+     * so a two-metre dragon stages as two metres.
+     */
+    mesh: {
+        id: 'mesh', label: '3D model', defaultSizeM: [1.0, 1.8, 1.0],
+        acceptsModel: true,
+        note: 'A generated .glb staged as geometry. Wireframe, no textures: previs judges placement and silhouette, not surface.',
+    },
 };
 
 const D2R = Math.PI / 180;

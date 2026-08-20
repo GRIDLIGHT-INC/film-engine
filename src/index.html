@@ -7488,7 +7488,9 @@
         moves: [],       // compound move legs; empty means the single movement
         objects: [],     // staged primitives
         images: [],      // project images an image card can show
+        models: [],      // .glb assets this project has generated
         textures: {},    // url -> HTMLImageElement, loaded once
+        meshes: {},      // asset id -> parsed geometry, fetched once
         keyframeUrl: null, // this shot's generated frame, painted in-frame
         dragView: null,          // the projection a gesture started in, frozen for its duration
         viewCentre: null,        // set by Reframe; null means follow the subject
@@ -7625,7 +7627,21 @@
         setStatus(apply ? 'Look applied' : 'Look previewed — not applied');
     }
 
+    /** The .glb models this project has generated, for the stage picker. */
+    async function previsLoadModels() {
+        try {
+            const res = await api(`/projects/${state.currentProject.id}/models`);
+            PREVIS.models = (res.models || []).map(m => ({
+                id: m.asset_id || m.id,
+                label: `${m.subject_name || m.name || 'model'}${m.kind ? ' · ' + m.kind : ''}`,
+            })).filter(m => m.id);
+        } catch (_) { PREVIS.models = []; }
+    }
+
     async function loadPrevisPage() {
+        // The stage's model picker needs to know what exists before a mesh
+        // can be pointed at anything.
+        previsLoadModels();
         if (!state.currentProject) return;
         try {
             if (!PREVIS.taxonomy) PREVIS.taxonomy = await api('/previs/taxonomy');
@@ -8108,6 +8124,16 @@
             // A project with nothing generated yet still needs to be able to
             // stand a picture in the scene, so a file from disk works too.
             const known = PREVIS.images.some(img => img.url === o.src);
+            // A mesh needs to know WHICH model. Without this the primitive
+            // exists, stages as its bounding box, and there is no way to say
+            // what it is — which reads as the feature not working.
+            const modelPicker = spec.acceptsModel
+                ? `<select onchange="previsSetObject(${i},'assetId',this.value)" style="font-size:10px;margin-top:3px;width:100%;">
+                       <option value="">— choose a 3D model —</option>
+                       ${(PREVIS.models || []).map(m => `<option value="${escapeHtml(m.id)}"${m.id === o.assetId ? ' selected' : ''}>${escapeHtml(m.label)}</option>`).join('')}
+                   </select>${(PREVIS.models || []).length ? '' : '<div class="text-sm text-muted" style="font-size:10px;">No models generated yet.</div>'}`
+                : '';
+
             const picker = spec.acceptsImage
                 ? `<select onchange="previsSetObject(${i},'src',this.value)" style="font-size:10px;margin-top:3px;width:100%;">
                        <option value="">— choose an image —</option>
@@ -8138,6 +8164,7 @@
                     ${['yaw', 'tilt', 'roll'].map((ax, a) => `<input type="number" step="5" value="${(o.rotationDeg || [0,0,0])[a]}" title="${ax} (deg)"
                         onchange="previsSetObjectVec(${i},'rotationDeg',${a},parseFloat(this.value))" style="font-size:10px;">`).join('')}
                 </div>
+                ${modelPicker}
                 ${spec.acceptsImage ? `<button class="btn btn-sm btn-secondary" style="font-size:10px;margin-top:3px;width:100%;"
                         onclick="previsRollCard(${i})">Rotate 90&deg; (portrait &harr; wide)</button>` : ''}
                 ${picker}
@@ -8254,7 +8281,67 @@
         });
     }
 
+    /**
+     * Geometry for staged .glb models, fetched once and cached by asset id.
+     *
+     * Parsed and decimated on the SERVER: the browser has no bundler to parse
+     * binary glTF with, and a hundred-thousand-triangle character would have to
+     * cross the wire in full before being thrown away. What arrives is what
+     * gets drawn.
+     */
+    function previsMesh(assetId) {
+        if (!assetId) return null;
+        if (PREVIS.meshes[assetId] !== undefined) return PREVIS.meshes[assetId];
+        PREVIS.meshes[assetId] = null;                  // in flight
+        api(`/models/${assetId}/geometry?budget=2500`)
+            .then(g => { PREVIS.meshes[assetId] = g; previsRefresh(); })
+            .catch(err => {
+                PREVIS.meshes[assetId] = false;         // failed; drawn as its box
+                previsStatus('Model could not be staged: ' + err.message);
+            });
+        return null;
+    }
+
     function previsObjectGeometry(o) {
+        if (o.kind === 'mesh') {
+            const mesh = previsMesh(o.assetId);
+            // Until it arrives — or if it never does — the object is drawn as
+            // its bounding box, so it still occupies space and can be placed.
+            // A model that silently vanishes would read as a failed click.
+            if (!mesh || !mesh.vertices || !mesh.vertices.length) {
+                return previsBoxGeometry(o);
+            }
+            // Scaled to the object's own size and stood on the floor, the same
+            // rule every other primitive follows.
+            const src = mesh.size || [1, 1, 1];
+            const want = o.sizeM || [1, 1.8, 1];
+            const k = Math.min(
+                src[0] > 1e-6 ? want[0] / src[0] : 1,
+                src[1] > 1e-6 ? want[1] / src[1] : 1,
+                src[2] > 1e-6 ? want[2] / src[2] : 1);
+            const min = (mesh.bounds && mesh.bounds.min) || [0, 0, 0];
+            const [px, py, pz] = o.position;
+            const verts = mesh.vertices.map(v => [
+                px + (v[0] - min[0]) * k - (src[0] * k) / 2,
+                py + (v[1] - min[1]) * k,
+                pz + (v[2] - min[2]) * k - (src[2] * k) / 2,
+            ]);
+            // Triangles become edges: the painter draws lines, and a wireframe
+            // is what previs wants anyway.
+            const edges = [];
+            for (const t of (mesh.triangles || [])) {
+                edges.push([t[0], t[1]], [t[1], t[2]], [t[2], t[0]]);
+            }
+            return { vertices: previsSpin(verts, [px, py + want[1] / 2, pz], o.rotationDeg), edges };
+        }
+        return previsObjectGeometryBase(o);
+    }
+
+    function previsBoxGeometry(o) {
+        return previsObjectGeometryBase({ ...o, kind: 'cube' });
+    }
+
+    function previsObjectGeometryBase(o) {
         const box = (centre, size) => {
             const [w, h, d] = size.map(v => v / 2);
             const vertices = [

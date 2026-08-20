@@ -471,6 +471,7 @@ async function persistCapabilityResult(capability, result, ctx, filename) {
 }
 
 module.exports = {
+    imagePromptLimit,
     dimensionsForAspect,
     IMAGE_DEFAULTS,
     CAPABILITY_BUILDERS,

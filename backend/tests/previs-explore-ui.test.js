@@ -154,3 +154,33 @@ test('the generated frame is painted in the delivered frame, not beside it', () 
         'the frame is stretched to the delivery aspect rather than cropped');
     assert.ok(/previsKeyframeOpacity/.test(html), 'no way to fade the reference under the geometry');
 });
+
+
+test('a generated .glb can be staged in previs', () => {
+    // The one previs phase that was designed and never built. It stayed unbuilt
+    // because loading a mesh looked like it required Three.js, which would have
+    // meant a bundler and the end of build.target: single-html. It did not:
+    // previs already has the projection and the polygon painter, and the only
+    // missing piece was something to turn glb bytes into points and triangles.
+    const { PRIMITIVES } = require('../lib/previs-primitives');
+    assert.ok(PRIMITIVES.mesh, 'no mesh primitive, so a model cannot be placed at all');
+    assert.strictEqual(PRIMITIVES.mesh.acceptsModel, true);
+
+    // Parsed and decimated server-side, because the browser has no bundler to
+    // read binary glTF with.
+    assert.ok(/models\/\$\{assetId\}\/geometry/.test(html),
+        'the stage never asks the server for a model\'s geometry');
+    assert.ok(/PREVIS\.meshes/.test(html), 'fetched geometry is not cached, so it refetches every repaint');
+
+    // A model that has not arrived, or failed, still occupies space: vanishing
+    // silently reads as a failed click.
+    assert.ok(/previsBoxGeometry/.test(html),
+        'a model that has not loaded draws as nothing rather than as its bounds');
+
+    // And the director has to be able to say WHICH model.
+    assert.ok(/acceptsModel/.test(html), 'no picker for choosing a model');
+
+    // Still one file.
+    const external = html.match(/<script[^>]+src=["'](?!data:)[^"']+["']/g) || [];
+    assert.deepStrictEqual(external, [], `a renderer library crept in: ${external.join(', ')}`);
+});

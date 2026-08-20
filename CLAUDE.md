@@ -147,6 +147,7 @@ film-engine/
 │       ├── screenplay-to-entities.test.js # A screenplay creates the entities generation reads
 │       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
 │       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
+│       ├── glb-parser.test.js          # A synthetic .glb parses, transforms apply, decimation bounds hold
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
 │       ├── run-plan.test.js            # Strip ordering, dependency safety, cost, budget refusal
@@ -521,7 +522,9 @@ Three edges closed the loop. `POST /shots/:id/previs/from-card` seeds the stage 
 
 `tests/previs-loop.test.js` is set-based over the loop's eight **directed** edges, because direction is the identity: `blocking → card` existing says nothing about `card → blocking`, and it was the second that was missing while the pair was called a round trip.
 
-`lib/nav-flow.js` regroups all 34 pages into the nine `PROJECT_PHASES` the status machine already declares, so the sidebar and the phase a project reports itself in cannot disagree. Served over `GET /film/nav-flow`; the SPA **moves** the existing buttons rather than rebuilding them, keeping every tooltip and handler. Phase 4 (`.glb` subjects) remains designed only.
+`lib/nav-flow.js` regroups all 34 pages into the nine `PROJECT_PHASES` the status machine already declares, so the sidebar and the phase a project reports itself in cannot disagree. Served over `GET /film/nav-flow`; the SPA **moves** the existing buttons rather than rebuilding them, keeping every tooltip and handler. **Phase 4 is built: a generated `.glb` can be staged.** It stayed unbuilt because loading a mesh looked like it required Three.js, which would have meant a bundler and the end of `build.target: single-html`. It did not. Previs already had the 4×4 projection and the polygon painter; the only missing piece was something to turn GLB bytes into points and triangles, and that is `lib/glb-parser.js` — glTF 2.0's positions, indices and node transforms, and nothing else. Materials, textures, normals, UVs, skins and animation are all skipped deliberately: previs is grey-box, what a director judges is where a subject stands and how it reads in frame, and a silhouette answers that completely.
+
+Parsed and decimated **server-side** (`GET /models/:assetId/geometry`), because the browser has no bundler to read binary glTF with and a hundred-thousand-triangle character would otherwise cross the wire in full before being thrown away. Decimation samples evenly rather than taking the first N — the first N of an exported mesh is usually one limb, while an even stride keeps the whole silhouette — and it reports what it dropped. Vertices are kept whole so the bounds, and therefore where the model stands and how big it reads, do not move with the budget. A model that has not arrived or failed to parse draws as its bounding box rather than vanishing, since a silent disappearance reads as a failed click.
 
 Design: [`docs/plans/previs-camera-implementation-plan.md`](docs/plans/previs-camera-implementation-plan.md), [`previs-camera-research.md`](docs/plans/previs-camera-research.md), machine-readable taxonomy in [`previs-camera-taxonomy.json`](docs/plans/previs-camera-taxonomy.json), conformance enforced by `tests/previs-plan.test.js`.
 
@@ -805,6 +808,7 @@ node --test backend/tests/previs-loop.test.js
 node --test backend/tests/screenplay-to-entities.test.js
 node --test backend/tests/storyboard-prerequisites.test.js
 node --test backend/tests/previs-explore-ui.test.js
+node --test backend/tests/glb-parser.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js
 node --test backend/tests/run-plan.test.js

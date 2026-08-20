@@ -46,10 +46,61 @@ function safeName(name) {
 
 // ── Route Handler ───────────────────────────────────────────────────────
 
+/**
+ * A generated model's geometry, ready for the previs stage.
+ *
+ * Parsed and decimated on the SERVER. The browser could do neither without a
+ * bundler — and a hundred-thousand-triangle character would have to cross the
+ * wire in full before being thrown away. This sends what previs will actually
+ * draw, and says how much it dropped rather than quietly simplifying.
+ */
+function getModelGeometry(req, res, assetId, query) {
+    const asset = db.prepare('SELECT id, project_id, file_path, file_name FROM film_assets WHERE id = ?').get(assetId);
+    if (!asset) return json(res, 404, { error: 'Model asset not found' });
+
+    const fs = require('fs');
+    let bytes;
+    try {
+        bytes = fs.readFileSync(asset.file_path);
+    } catch (err) {
+        return json(res, 404, { error: `The model file is missing: ${asset.file_name}` });
+    }
+
+    const { parseGlb, decimate } = require('../lib/glb-parser');
+    let geometry;
+    try {
+        geometry = parseGlb(bytes);
+    } catch (err) {
+        // A generator can return something that is not a glb, and "not a glb"
+        // is a usable answer where a stack trace is not.
+        return json(res, 422, { error: err.message, file_name: asset.file_name });
+    }
+
+    const budget = Math.max(50, Math.min(20000, Number((query && query.budget) || 2500)));
+    const drawn = decimate(geometry, budget);
+
+    return json(res, 200, {
+        asset_id: asset.id,
+        file_name: asset.file_name,
+        vertices: drawn.vertices,
+        triangles: drawn.triangles,
+        bounds: drawn.bounds,
+        size: drawn.size,
+        triangles_total: geometry.triangles.length,
+        triangles_dropped: drawn.dropped,
+    });
+}
+
 function handleThreeD(req, res, urlParts, query) {
     // /film/3d/:projectId/:filename — serve model files
     if (urlParts[1] === '3d' && urlParts[2] && urlParts[3]) {
         return serveFile(res, urlParts[2], SUBDIR, urlParts[3]);
+    }
+
+    // /film/models/:assetId/geometry — parsed, decimated, ready to stage.
+    if (urlParts[1] === 'models' && urlParts[2] && urlParts[3] === 'geometry') {
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        return getModelGeometry(req, res, urlParts[2], query);
     }
 
     // /film/characters|props/:id/model[/generate|from-image[/stream]]
