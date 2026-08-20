@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (67 migrations)
+│   │   └── migrations/     # SQL migration files (68 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -71,6 +71,7 @@ film-engine/
 │   │   ├── budget-estimate.js  # Pre-flight cost estimation
 │   │   ├── app-settings.js     # Settings that belong to the person, not the project
 │   │   ├── events.js           # SSE: tell the page when another process wrote to the database
+│   │   ├── story-bible.js      # What things ARE, and which entity was written from which section
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
@@ -122,6 +123,7 @@ film-engine/
 │   │   ├── screenplay-drift.js    # Which shots a rewrite left behind, and what was built on them
 │   │   ├── impact.js              # One change, all the way down: redo now vs waiting on something above
 │   │   ├── scene-splice.js        # Replace one scene in a screenplay, byte-identical elsewhere
+│   │   ├── story-bible.js         # Bible sections, and the link back from what was written from them
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
@@ -161,6 +163,7 @@ film-engine/
 │       ├── mcp-no-server-llm.test.js   # No MCP tool hands the reasoning back to a server-side LLM
 │       ├── scene-edit.test.js          # One scene changes; every other scene survives byte-identical
 │       ├── live-events.test.js         # Another process's write reaches the page; our own does not
+│       ├── story-bible.test.js         # A section revised flags only what was written from it
 │       ├── app-settings.test.js        # Author is set once; the title page is printed, not edited inline
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
@@ -260,7 +263,8 @@ All routes prefixed with `/film`:
 |----------|-----------|
 | Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id` |
 | Scripts | `POST /projects/:id/script`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
-| Scenes | `GET /projects/:id/scenes`, `GET/PUT /scenes/:id` |
+| Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id` |
+| Bible | `GET/PUT /projects/:id/bible`, `DELETE /projects/:id/bible/:section`, `GET /projects/:id/bible-drift` |
 | Shots | `POST /shots`, `GET /projects/:id/shotlist`, `GET/PUT/DELETE /shots/:id`, `GET /card-vocabulary` |
 | Characters | `GET/POST /projects/:id/characters`, `GET/PUT/DELETE /characters/:id` |
 | Locations | `GET/POST /projects/:id/locations`, `GET/PUT/DELETE /locations/:id` |
@@ -526,7 +530,7 @@ Without that split, one rewritten scene reports forty red items and reads as "st
 
 The chain is derived from `PIPELINE_STEPS.depends`, with `scene_card` prepended as the root — nothing generates a card, a person writes it, so it is not in the orchestrator's graph, but it is what every generated stage ultimately reads. Steps with no pipeline dependency are wired to the card rather than left rootless, which is what makes a screenplay revision reach the whole shot.
 
-Served at `GET /projects/:id/impact` and as `impact_report` (**107 tools**). The board shows both reports in one banner and marks each affected frame, because a director does not care which subsystem noticed.
+Served at `GET /projects/:id/impact` and as `impact_report` (**111 tools**). The board shows both reports in one banner and marks each affected frame, because a director does not care which subsystem noticed.
 
 ### Editing One Scene
 The screenplay is the source and `film_scenes` is a projection of it, so writing a scene's description directly puts the two out of step: the row says one thing, the document another, and every report built on either is right about the wrong text. But requiring a whole-document rewrite to change one scene is its own bug, and a quiet one — the caller has to reproduce every *other* scene faithfully from memory, and the cost of one stray reflow is invisible: scene 1's shots get marked as behind and a director redoes work nobody asked for.
@@ -553,6 +557,15 @@ The alternatives were worse. Browser polling spends a request per client per int
 
 ### Locking a Subject Is Not the Same as Plating One
 Generating a plate does **not** create a consistency profile, and that is deliberate: a plate is evidence of what a subject looks like, a profile is the commitment that generation conditions on. But there was no way to create one from an agent — `consistency_list`, `consistency_lock` and `consistency_unlock` existed with nothing to lock, so an agent that plated a new prop reached step "now lock it" and found the profile it needed did not exist and could not be made. `consistency_create` closes it, idempotent per subject so a second call returns the first profile rather than a duplicate.
+
+### The Story Bible Is a Source, Not a Notes Field
+A bible is prose and **no prose reaches an image model**. Four fields do — a character's `appearance_prompt`, a location's `description`, a prop's `visual_prompt`, and the project's `style_preset` — and everything else in this database is decoration as far as a generated frame is concerned. A place that merely *stores* a bible would repeat the mood board's first mistake: collect writing nobody reads, call it a feature, and let a director paste sixty pages in believing their frames are now conditioned on it. Every response and every tool description says so outright.
+
+What earns it a table is the **link back**. `film_story_bible` (migration 070) holds sections keyed by heading, and a character, location or prop records which section its description was written from — passed on the update by whoever wrote the words, because only they know which section they were reading. Revising that section then flags the entity *and reports whether a plate was generated from it*, since "MAYA's section changed" and "and her plate was built from the previous version" are different sizes of problem.
+
+Sectioned rather than one document, and that is the whole reason it is usable: a single fingerprint over the bible would mark every character in the film as behind the moment someone fixed a typo in the world rules. Writing **merges**, so fixing one section cannot lose a chapter to a retry. NULL means *not written from the bible*, never stale. And deleting a section does **not** unlink what came from it — the entity keeps saying where it came from and the report names the deletion, because losing the record that a description came from something that no longer exists is worse than the gap itself.
+
+`bible_get`, `bible_write`, `bible_delete`, `bible_drift`, plus `bible_section` on the three entity update tools.
 
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
@@ -862,7 +875,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (67 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (68 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -990,6 +1003,7 @@ node --test backend/tests/impact.test.js
 node --test backend/tests/mcp-no-server-llm.test.js
 node --test backend/tests/scene-edit.test.js
 node --test backend/tests/live-events.test.js
+node --test backend/tests/story-bible.test.js
 node --test backend/tests/app-settings.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js

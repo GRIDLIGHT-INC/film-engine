@@ -10,6 +10,7 @@
  * GET  /film/props/:id/image               — Get prop image status
  */
 const { db, generateId } = require('../db/database');
+const { stampSubject } = require('../lib/story-bible');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
@@ -258,6 +259,15 @@ function createLocation(req, res, projectId) {
 }
 
 function updateLocation(req, res, locId) {
+    // Which part of the story bible this description was written from.
+    //
+    // Recorded here rather than inferred later, because only the person writing
+    // the words knows which section they were reading. Without it a bible
+    // revision can say "something changed" and never "and MAYA's appearance came
+    // from it", which is the difference between a note and an instruction.
+    if (req.body && req.body.bible_section) {
+        stampSubject('location', locId, String(req.body.bible_section));
+    }
     const body = req.body;
     const propagateToScreenplay = body.propagate_to_screenplay !== false;
 
@@ -289,6 +299,14 @@ function updateLocation(req, res, locId) {
         values.push(JSON.stringify(body.reference_images));
     }
 
+    // Recording where a description came from is a change in itself, and does
+    // not require rewriting the description to say it. Refusing a link-only
+    // update would mean an agent that has just read the bible has to touch the
+    // text to record that it did.
+    if (fields.length === 0 && req.body && req.body.bible_section) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ linked: true, bible_section: String(req.body.bible_section) }));
+    }
     if (fields.length === 0) return badReq(res, 'No valid fields to update');
 
     fields.push("updated_at = datetime('now')");
@@ -496,6 +514,15 @@ function createProp(req, res, projectId) {
 }
 
 function updateProp(req, res, propId) {
+    // Which part of the story bible this description was written from.
+    //
+    // Recorded here rather than inferred later, because only the person writing
+    // the words knows which section they were reading. Without it a bible
+    // revision can say "something changed" and never "and MAYA's appearance came
+    // from it", which is the difference between a note and an instruction.
+    if (req.body && req.body.bible_section) {
+        stampSubject('prop', propId, String(req.body.bible_section));
+    }
     const body = req.body;
     const fields = [];
     const values = [];
@@ -509,6 +536,14 @@ function updateProp(req, res, propId) {
     if (body.reference_images !== undefined) {
         fields.push('reference_images = ?');
         values.push(JSON.stringify(body.reference_images));
+    }
+    // Recording where a description came from is a change in itself, and does
+    // not require rewriting the description to say it. Refusing a link-only
+    // update would mean an agent that has just read the bible has to touch the
+    // text to record that it did.
+    if (fields.length === 0 && req.body && req.body.bible_section) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ linked: true, bible_section: String(req.body.bible_section) }));
     }
     if (fields.length === 0) return badReq(res, 'No valid fields to update');
 

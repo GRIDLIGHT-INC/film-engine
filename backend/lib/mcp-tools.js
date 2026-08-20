@@ -44,6 +44,7 @@ const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
 const { handleProductionReports } = require('../routes/production-reports');
 const { handleConsistency } = require('../routes/consistency');
+const { handleStoryBible } = require('../routes/story-bible');
 
 const NODE_TOOL_PREFIX = 'node_';
 
@@ -323,6 +324,43 @@ const PRODUCTION_TOOLS = [
             genre: { type: 'string' },
         },
         required: ['project_id'],
+    },
+    {
+        name: 'bible_get',
+        handler: handleStoryBible, method: 'GET',
+        description: 'Read the story bible: what the people, places and things ARE, as opposed to what happens. Also reports which entities were written from which section. A bible reaches no image model by itself — read it, then write a character\u2019s appearance_prompt, a location\u2019s description or a prop\u2019s visual_prompt from it, or the project\u2019s style_preset, which is what generation actually uses.',
+        path: a => `/film/projects/${a.project_id}/bible`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'bible_write',
+        handler: handleStoryBible, method: 'PUT',
+        description: 'Write story bible sections, keyed by heading — a character name, a place, "World", "Tone". MERGES: send only the sections you are changing and the rest survive. Sectioned rather than one document on purpose, so revising one character does not flag every entity in the film. Returns anything that has fallen behind as a result.',
+        path: a => `/film/projects/${a.project_id}/bible`,
+        body: a => ({ sections: a.sections }),
+        schema: {
+            project_id: { type: 'string' },
+            sections: { type: 'object', description: 'An object of { "SECTION NAME": "body text" }.' },
+        },
+        required: ['project_id', 'sections'],
+    },
+    {
+        name: 'bible_delete',
+        handler: handleStoryBible, method: 'DELETE',
+        description: 'Remove one bible section. Entities written from it keep saying so and are reported as behind, rather than being quietly unlinked — losing the record that a description came from something that no longer exists is worse than the gap itself.',
+        path: a => `/film/projects/${a.project_id}/bible/${encodeURIComponent(a.section)}`,
+        schema: {
+            project_id: { type: 'string' },
+            section: { type: 'string' },
+        },
+        required: ['project_id', 'section'],
+    },
+    {
+        name: 'bible_drift',
+        handler: handleStoryBible, method: 'GET',
+        description: 'Which entity descriptions were written from a bible section that has since changed, and whether a plate was generated from each. Run it after bible_write. Warns only; nothing is blocked.',
+        path: a => `/film/projects/${a.project_id}/bible-drift`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
         name: 'script_get',
@@ -742,7 +780,8 @@ const PRODUCTION_TOOLS = [
             category: { type: 'string' },
             name: { type: 'string' },
         },
-        required: ['prop_id'],
+        bible_section: { type: 'string', description: 'The story bible section these words were written from, so a later revision to it can find this.' },
+            required: ['prop_id'],
     },
     {
         name: 'prop_delete',
@@ -794,7 +833,8 @@ const PRODUCTION_TOOLS = [
             description: { type: 'string' },
             age_range: { type: 'string' },
         },
-        required: ['character_id'],
+        bible_section: { type: 'string', description: 'The story bible section these words were written from, so a later revision to it can find this.' },
+            required: ['character_id'],
     },
     {
         name: 'location_list',
@@ -817,7 +857,8 @@ const PRODUCTION_TOOLS = [
             description: { type: 'string', description: 'What this place looks like, in prompt terms.' },
             lighting_default: { type: 'string' },
         },
-        required: ['location_id'],
+        bible_section: { type: 'string', description: 'The story bible section these words were written from, so a later revision to it can find this.' },
+            required: ['location_id'],
     },
     {
         name: 'storyboard_generate',

@@ -73,6 +73,7 @@ const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
 const { handleAppSettings } = require('./routes/app-settings');
 const { handleEvents } = require('./routes/events');
+const { handleStoryBible } = require('./routes/story-bible');
 const { handleBreakdown } = require('./routes/breakdown');
 const { handleProductionReports } = require('./routes/production-reports');
 const { handleMoodBoard } = require('./routes/mood-board');
@@ -330,6 +331,11 @@ const server = http.createServer(async (req, res) => {
         if ((parts[1] === 'projects' && parts[2] && parts[3] === 'mood-board')
             || (parts[1] === 'mood-board' && parts[2])) {
             return await handleMoodBoard(req, res, parts, query);
+        }
+
+        // Route: /film/projects/:id/bible[/:section] and /bible-drift
+        if (parts[1] === 'projects' && parts[2] && (parts[3] === 'bible' || parts[3] === 'bible-drift')) {
+            return handleStoryBible(req, res, parts);
         }
 
         if (parts[1] === 'projects' && parts[2] && ['staleness', 'screenplay-drift', 'impact', 'sides', 'dood', 'run-plan', 'breakdown-summary', 'elements-list', 'run-report', 'board-groups', 'setups', 'conform'].includes(parts[3])) {
