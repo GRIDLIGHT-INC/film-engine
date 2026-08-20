@@ -249,7 +249,7 @@ All routes prefixed with `/film`:
 | Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id` |
 | Scripts | `POST /projects/:id/script`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
 | Scenes | `GET /projects/:id/scenes`, `GET /scenes/:id` |
-| Shots | `POST /shots`, `GET /projects/:id/shotlist` |
+| Shots | `POST /shots`, `GET /projects/:id/shotlist`, `GET/PUT/DELETE /shots/:id` |
 | Characters | `GET/POST /projects/:id/characters`, `GET/PUT/DELETE /characters/:id` |
 | Locations | `GET/POST /projects/:id/locations`, `GET/PUT/DELETE /locations/:id` |
 | Plates | `POST/GET /locations/:id/plate[/generate]`, `POST/GET /props/:id/plate[/generate]` |
@@ -436,6 +436,17 @@ Three things a director could not do in the app, all found by using it.
 **The markup buttons worked and looked like they didn't.** Arming a shape set `pointer-events` and wrote a line to the status bar at the bottom of the screen, so pressing one appeared to do nothing. The frame you are about to draw on now says so, where you are looking.
 
 **Previs stopped one step short.** You could stage an angle, preview the prompt and write the camera back to the card — then had to leave previs, find the shot on the board and press Regen. The question previs exists to answer is *how would this look*, and it could only be answered somewhere else. **Render this angle** saves, applies and regenerates in that order (regenerating before applying would generate from the previous angle) and reloads the pane, so the answer is the new picture rather than the one it replaced.
+
+### Drawing On a Frame, and Seeing the Camera Move
+Three things that looked broken and were, in different ways.
+
+**The markup buttons drew nothing because the gesture was wrong.** Arming a shape waited for two separate clicks with no feedback in between, so the first click appeared to do nothing and the second placed a shape you had never seen. It is a drag now — press where the arrow starts, release where it points, with the shape drawn live under the cursor — and the release position is the end point rather than the last position the mouse happened to report on its way there. All **six** kinds the route has always accepted are offered; the grid had four and quietly dropped `line` and `freehand`.
+
+**Markup was missing from the surface where a frame is actually judged.** The full-screen viewer had no tools at all, which is backwards: a 260px card is not where you decide a shot is wrong. Both surfaces build their controls from **one** `markupToolbar()`, because two literals is exactly how they came to disagree. The viewer letterboxes its image with `object-fit` and the grid does not, so coordinates are normalised against the **picture's** rect rather than the canvas's — normalising against the element looks perfect on the grid and puts every mark in the wrong place in the viewer, on the surface nobody tested. A press on the letterbox bars is ignored rather than clamped to the frame edge.
+
+**The camera pane looked dead because the picture was stapled to the viewport.** `previsDrawKeyframeBackdrop` painted the generated frame at a fixed rect no matter where the camera was, and the only geometry over it was a ground grid at a fifth opacity — so changing the lens or dollying in recomputed everything and showed none of it. A flat picture cannot be re-rendered from a camera it was not taken with, so it is stood in the world instead: `previsPlateQuad()` builds it as a card at the subject's **depth along the aim** (the straight-line distance puts it behind the subject the moment the camera tilts), sized to exactly fill the delivered frame from its own pose with its own lens. Zoom, dolly, pan and tilt then all come out right for the subject; parallax against the background does not, which is the stated limit of a card rather than a bug. The anchor is the **saved** blocking, never the inspector — an anchor that followed the controls would hold the picture still against every change made to them — and a shot that was never blocked, which is the common case, anchors to the inspector as it opened. The frame's own edge is drawn in amber, so a longer lens reads as a measured crop into the picture you already have.
+
+**And a card can now be read as well as written.** There was a `PUT /shots/:id` and no `GET`, so the editor could only show whatever fields the storyboard panel happened to carry, and an agent had to list a whole project to read the one row it was about to change. The description editor is a modal with a real textarea and a live character count rather than a one-line `prompt()`: a shot description is a paragraph, and you cannot revise words you cannot see.
 
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.

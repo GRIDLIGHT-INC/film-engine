@@ -152,7 +152,7 @@ test('the generated frame is painted in the delivered frame, not beside it', () 
     // pane, which you could look at and could not work against. The point of
     // having it here is that the wireframe draws ON it, so changing the lens or
     // the camera height moves your blocking against the shot you are matching.
-    assert.ok(/previsDrawKeyframeBackdrop\(ctx, view\)/.test(html),
+    assert.ok(/previsDrawKeyframeBackdrop\(ctx, view, pr, sensor\)/.test(html),
         'the keyframe is not composited into the camera view');
     assert.ok(!/previsKeyframePanel/.test(html),
         'the corner thumbnail is still there, so there are two answers to where the frame lives');
@@ -161,6 +161,36 @@ test('the generated frame is painted in the delivered frame, not beside it', () 
     assert.ok(/Math\.max\(view\.w \/ img\.width, view\.h \/ img\.height\)/.test(html),
         'the frame is stretched to the delivery aspect rather than cropped');
     assert.ok(/previsKeyframeOpacity/.test(html), 'no way to fade the reference under the geometry');
+});
+
+/**
+ * The frame has to move when the camera does.
+ *
+ * Painting it at a fixed rect made the pane look dead: change the lens, dolly
+ * in, and the dominant thing on screen — the picture — did not move, while the
+ * only geometry over it was a ground grid at a fifth opacity. Everything WAS
+ * being recomputed. None of it was visible.
+ *
+ * A flat picture cannot be re-rendered from a camera it was not taken with, so
+ * it is stood in the world as a card at the subject's distance: zoom, dolly,
+ * pan and tilt then come out right for the subject, and parallax against the
+ * background does not, which is the stated limit of a card.
+ */
+test('the generated frame is anchored in the world, not stapled to the viewport', () => {
+    assert.ok(/function previsPlateQuad\(/.test(html),
+        'the frame has no world geometry, so moving the camera cannot move it');
+    // The anchor is the SAVED pose, never the inspector — an anchor that
+    // followed the controls would hold the picture still against every change
+    // made to them, which is the bug this exists to fix.
+    assert.ok(/PREVIS\.plate = \{/.test(html), 'no pose is remembered for the frame');
+    assert.ok(/previsPlateQuad\(sensor\)/.test(html),
+        'the plate is never projected through the camera being edited');
+    // A shot that was never blocked is the common case; with no anchor at all
+    // it falls back to the flat paint and the pane looks dead again.
+    const openShot = html.slice(html.indexOf('async function previsOpenShot'));
+    const body = openShot.slice(0, openShot.indexOf('\n    }'));
+    assert.ok(/previsReadInspector\(\)/.test(body),
+        'an unblocked shot gets no plate anchor, so its frame never moves');
 });
 
 

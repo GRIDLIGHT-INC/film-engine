@@ -98,10 +98,43 @@ function updateShotCard(req, res, shotId) {
     }));
 }
 
+/**
+ * Read one shot's scene card.
+ *
+ * There was a PUT and no GET. Editing a card meant listing a whole project to
+ * find the one row you were about to write, which is a strange shape for an
+ * API and a worse one for an agent — and it meant the editor could only ever
+ * show the fields the storyboard panel happened to carry, rather than the card.
+ */
+function getShot(req, res, shotId) {
+    const shot = db.prepare(
+        `SELECT s.*, sc.scene_number, sc.location, sc.time_of_day
+           FROM film_shots s LEFT JOIN film_scenes sc ON sc.id = s.scene_id
+          WHERE s.id = ?`).get(shotId);
+    if (!shot) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Shot not found' }));
+    }
+    let card = {};
+    try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        id: shot.id, shot_code: shot.shot_code, scene_id: shot.scene_id,
+        scene_number: shot.scene_number, location: shot.location, time_of_day: shot.time_of_day,
+        status: shot.status, duration_ms: shot.duration_ms, sort_order: shot.sort_order,
+        card,
+    }));
+}
+
 function handleShots(req, res, urlParts, query) {
     // POST /film/shots — parts: ['film', 'shots']
     if (urlParts[1] === 'shots' && !urlParts[2] && req.method === 'POST') {
         return createShots(req, res);
+    }
+
+    // GET /film/shots/:id — read the card the PUT below writes.
+    if (urlParts[1] === 'shots' && urlParts[2] && !urlParts[3] && req.method === 'GET') {
+        return getShot(req, res, urlParts[2]);
     }
 
     // PUT /film/shots/:id — edit the scene card.

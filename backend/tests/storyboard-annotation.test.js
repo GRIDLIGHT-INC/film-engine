@@ -56,6 +56,25 @@ function call(method, urlPath, body) {
     });
 }
 
+/** The same shim, for any route handler. */
+function callRoute(handler, method, urlPath, body) {
+    return new Promise(resolve => {
+        const parts = urlPath.split('?')[0].split('/').filter(Boolean);
+        const chunks = [];
+        const res = new Writable({ write(c, _e, n) { chunks.push(c); n(); } });
+        res.statusCode = 200;
+        res.writeHead = function (code) { this.statusCode = code; return this; };
+        res.setHeader = function () {};
+        res.on('finish', () => {
+            let parsed = Buffer.concat(chunks).toString();
+            try { parsed = JSON.parse(parsed); } catch (_) { /* not json */ }
+            resolve({ status: res.statusCode, body: parsed });
+        });
+        Promise.resolve(handler({ method, body: body || {} }, res, parts, {}))
+            .catch(err => resolve({ status: 500, body: { error: err.message } }));
+    });
+}
+
 function makeShot() {
     const projectId = generateId(), sceneId = generateId(), shotId = generateId();
     db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Annot Test');
@@ -145,10 +164,72 @@ test('an annotation can be deleted', async () => {
 
 test('the board can draw and clear markup, in one file with no build step', () => {
     const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    for (const fn of ['storyboardAnnotate', 'storyboardDrawAnnotations']) {
+    for (const fn of ['markupArm', 'markupDraw', 'markupCommit', 'storyboardDrawAnnotations']) {
         assert.ok(new RegExp(`function\\s+${fn}\\s*\\(`).test(html), `the board has no ${fn}`);
     }
     assert.ok(/annotations/.test(html), 'the board never fetches annotations');
     const external = html.match(/<script[^>]+src=["'](?!data:)[^"']+["']/g) || [];
     assert.deepStrictEqual(external, [], `external scripts reintroduce a build step: ${external.join(', ')}`);
+});
+
+/**
+ * Both surfaces, every shape.
+ *
+ * The grid card had four of the six kinds and the full-screen viewer had none —
+ * so the surface where a frame is actually judged, at size, was the one you
+ * could not draw on. And the two toolbars were separate literals, which is how
+ * they came to disagree in the first place: markupToolbar() is now the only
+ * place a shape button is written, and this asserts both surfaces call it.
+ */
+test('every shape the route accepts has a control on both surfaces', () => {
+    const html = fs.readFileSync(INDEX_HTML, 'utf8');
+
+    const toolbar = html.match(/function markupToolbar[\s\S]*?\n    }/);
+    assert.ok(toolbar, 'there is no single markup toolbar');
+    const kinds = html.match(/const MARKUP_KINDS = \[([^\]]+)\]/);
+    assert.ok(kinds, 'the UI declares no shape list');
+    const uiKinds = kinds[1].split(',').map(k => k.trim().replace(/['"]/g, '')).filter(Boolean);
+
+    assert.deepStrictEqual(uiKinds.slice().sort(), ANNOTATION_KINDS.slice().sort(),
+        'the toolbar and the route disagree about which shapes exist');
+
+    // Both surfaces build their controls from that one function, with their own
+    // canvas and their own image — the image matters because the viewer letterboxes
+    // and the grid does not, and a mark normalised against the wrong rect lands
+    // in the wrong place on exactly one of them.
+    for (const [canvas, img] of [["'annot-' + f.shot_id", "'img-' + f.shot_id"],
+                                 ["'frameViewerAnnot'", "'frameViewerImg'"]]) {
+        const call = new RegExp(`markupToolbar\\([^)]*${canvas.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+        assert.ok(call.test(html), `no markup toolbar is built for ${canvas}`);
+        assert.ok(html.includes(img), `${img} is never referenced, so marks cannot be placed against the picture`);
+    }
+
+    // Drag, not click-twice. The old gesture gave no feedback on the first
+    // click, which is precisely why the buttons read as doing nothing.
+    for (const handler of ['onpointerdown', 'onpointermove', 'onpointerup']) {
+        assert.ok(html.includes(`canvas.${handler}`), `markup never handles ${handler}, so it cannot be dragged`);
+    }
+});
+
+/**
+ * A shot's card can be read as well as written.
+ *
+ * There was a PUT and no GET, so the editor could only ever show the fields the
+ * storyboard panel happened to carry — and an agent had to list a whole project
+ * to read the one row it was about to change.
+ */
+test('a shot card can be read back through its own route', async () => {
+    const { handleShots } = require('../routes/shots');
+    const { shotId } = makeShot();
+    const res = await callRoute(handleShots, 'GET', `/film/shots/${shotId}`);
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.strictEqual(res.body.id, shotId);
+    assert.ok(res.body.card && typeof res.body.card === 'object', 'no card came back');
+    assert.strictEqual(res.body.card.description, 'x', 'the card came back without its own words');
+});
+
+test('a missing shot is a 404, not an empty card', async () => {
+    const { handleShots } = require('../routes/shots');
+    const res = await callRoute(handleShots, 'GET', `/film/shots/${generateId()}`);
+    assert.strictEqual(res.status, 404);
 });

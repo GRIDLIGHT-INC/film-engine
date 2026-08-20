@@ -5281,8 +5281,48 @@
                     <button class="modal-close" onclick="closeModal('frameViewerModal')">&times;</button>
                 </div>
             </div>
-            <img id="frameViewerImg" style="flex:1;min-height:0;width:100%;object-fit:contain;background:#000;border-radius:4px;">
-            <div id="frameViewerCaption" class="text-sm" style="max-height:22vh;overflow:auto;"></div>
+            <div style="flex:1;min-height:0;position:relative;">
+                <img id="frameViewerImg" style="width:100%;height:100%;object-fit:contain;background:#000;border-radius:4px;display:block;"
+                     onload="markupDraw('frameViewerAnnot','frameViewerImg',frameViewerShotId())">
+                <canvas id="frameViewerAnnot" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
+            </div>
+            <div id="frameViewerTools" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;"></div>
+            <div id="frameViewerCaption" class="text-sm" style="max-height:20vh;overflow:auto;"></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="shotCardModal">
+        <div class="modal" style="max-width:820px;width:92vw;">
+            <div class="modal-header">
+                <h3 id="shotCardTitle">Edit shot</h3>
+                <button class="modal-close" onclick="closeModal('shotCardModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-sm text-muted" style="margin-bottom:10px;line-height:1.5;">
+                    This is what the frame is generated from. Describe the <strong>effect</strong> you want rather than
+                    the object &mdash; &ldquo;light drops across the house fronts as something passes overhead&rdquo;
+                    reads very differently to &ldquo;a winged shadow&rdquo;.
+                </p>
+                <div class="form-group">
+                    <label>Description <span class="text-muted text-sm" id="shotCardCount"></span></label>
+                    <textarea id="shotCardDescription" rows="12" style="width:100%;line-height:1.5;font-family:inherit;"
+                              oninput="shotCardCount()"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Action <span class="text-muted text-sm">optional &mdash; what moves in the shot</span></label>
+                    <textarea id="shotCardAction" rows="4" style="width:100%;line-height:1.5;font-family:inherit;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Notes <span class="text-muted text-sm">direction that is not part of the prompt</span></label>
+                    <textarea id="shotCardNotes" rows="3" style="width:100%;line-height:1.5;font-family:inherit;"></textarea>
+                </div>
+                <div id="shotCardWarning" class="text-sm" style="display:none;margin-bottom:10px;"></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button class="btn btn-secondary" onclick="closeModal('shotCardModal')">Cancel</button>
+                    <button class="btn btn-secondary" onclick="saveShotCard(false)">Save</button>
+                    <button class="btn btn-primary" onclick="saveShotCard(true)" title="Save and generate this frame again — costs credits">Save &amp; regenerate</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -11961,6 +12001,8 @@ THREE.GLTFLoader = GLTFLoader;
         textures: {},    // url -> HTMLImageElement, loaded once
         meshes: {},      // asset id -> parsed geometry, fetched once
         keyframeUrl: null, // this shot's generated frame, painted in-frame
+        plate: null,     // the camera pose that frame was generated from; the frame is
+                         // pinned to the world through it, so moving the camera moves it
         dragView: null,          // the projection a gesture started in, frozen for its duration
         viewCentre: null,        // set by Reframe; null means follow the subject
         yDrag: null,             // lifting an object off the floor
@@ -12343,7 +12385,7 @@ THREE.GLTFLoader = GLTFLoader;
      * against it. Cropping is the honest distortion — it is what the delivery
      * does to the frame anyway.
      */
-    function previsDrawKeyframeBackdrop(ctx, view) {
+    function previsDrawKeyframeBackdrop(ctx, view, pr, sensor) {
         if (!PREVIS.keyframeUrl) return;
         const on = document.getElementById('previsKeyframeOn');
         if (on && !on.checked) return;
@@ -12354,16 +12396,71 @@ THREE.GLTFLoader = GLTFLoader;
         const alpha = slider ? Number(slider.value) / 100 : 0.55;
         if (alpha <= 0) return;
 
-        const scale = Math.max(view.w / img.width, view.h / img.height);
-        const w = img.width * scale, h = img.height * scale;
-
         ctx.save();
         ctx.beginPath();
         ctx.rect(view.x, view.y, view.w, view.h);
         ctx.clip();
         ctx.globalAlpha = alpha;
-        ctx.drawImage(img, view.x + (view.w - w) / 2, view.y + (view.h - h) / 2, w, h);
+
+        // Pinned to the world if we know what pose it was shot from, flat if
+        // we do not. Flat is the fallback and not the normal case: a picture
+        // stapled to the viewport does not move when the camera does, so
+        // changing the lens or dollying in leaves the pane visibly identical
+        // and the whole pane reads as broken.
+        const quad = pr && sensor ? previsPlateQuad(sensor) : null;
+        const painted = quad && previsDrawTexturedQuad(ctx, img, quad.map(pr));
+        if (!painted) {
+            const scale = Math.max(view.w / img.width, view.h / img.height);
+            const w = img.width * scale, h = img.height * scale;
+            ctx.drawImage(img, view.x + (view.w - w) / 2, view.y + (view.h - h) / 2, w, h);
+        }
         ctx.restore();
+    }
+
+    /**
+     * The generated frame as a card standing in the world.
+     *
+     * A keyframe is a flat picture and there is no honest way to re-render it
+     * from a camera it was not taken with. What there IS is the 2.5D previs
+     * move every animatic uses: stand the picture at the distance of the thing
+     * it is a picture OF, perpendicular to the camera that took it, and let the
+     * projection do the rest. Zoom, dolly, pan and tilt then all come out right
+     * for the subject; parallax against the background does not, which is the
+     * known and stated limit of a card rather than a bug.
+     *
+     * Sized so it exactly fills the delivered frame seen from its own pose with
+     * its own lens — so at the anchor it is pixel-for-pixel where it used to be,
+     * and every deviation from there is a real measurement of what changed.
+     */
+    function previsPlateQuad(sensor) {
+        const a = PREVIS.plate;
+        if (!a) return null;
+        const anchorSensor = (PREVIS.taxonomy && PREVIS.taxonomy.sensors[a.sensorId]) || sensor;
+        const fov = previsDeliveredFov(a.focalMm, anchorSensor);
+        if (!Number.isFinite(fov.h) || !Number.isFinite(fov.v)) return null;
+
+        const eye = a.position;
+        const aim = pNorm(pSub(previsAim(a), eye));
+        const right = pNorm(pCross(aim, [0, 1, 0]));
+        const up = pCross(right, aim);
+
+        // Depth ALONG the aim to the subject, not the straight-line distance —
+        // a card built at the straight-line distance sits behind the subject
+        // whenever the camera is tilted, and drifts as you raise it.
+        const toSubject = pSub([a.subject[0], eye[1], a.subject[2]], eye);
+        const depth = Math.max(0.5, pDot(toSubject, aim));
+        const hw = Math.tan(fov.h * P_DEG / 2) * depth;
+        const hh = Math.tan(fov.v * P_DEG / 2) * depth;
+        const c = [eye[0] + aim[0] * depth, eye[1] + aim[1] * depth, eye[2] + aim[2] * depth];
+
+        const at = (sx, sy) => [
+            c[0] + right[0] * hw * sx + up[0] * hh * sy,
+            c[1] + right[1] * hw * sx + up[1] * hh * sy,
+            c[2] + right[2] * hw * sx + up[2] * hh * sy,
+        ];
+        // top-left, top-right, bottom-right, bottom-left — the order
+        // previsDrawTexturedQuad maps its source corners in.
+        return [at(-1, 1), at(1, 1), at(1, -1), at(-1, -1)];
     }
 
     async function previsOpenShot(shotId) {
@@ -12394,6 +12491,17 @@ THREE.GLTFLoader = GLTFLoader;
                 if (res.blocking.durationMs > 0) document.getElementById('previsDuration').value = res.blocking.durationMs / 1000;
                 PREVIS.moves = Array.isArray(res.blocking.moves) ? res.blocking.moves : [];
                 PREVIS.objects = Array.isArray(res.blocking.subjects) ? res.blocking.subjects : [];
+                // The pose the frame in the pane was generated from. Captured
+                // from the SAVED blocking rather than from the inspector,
+                // because the inspector is what you are about to change and an
+                // anchor that moved with it would hold the picture still.
+                PREVIS.plate = {
+                    position: (c.position || [0, 1.6, 3]).slice(),
+                    rotation: (c.rotation || [0, 0, 0]).slice(),
+                    focalMm: c.focalMm || 50,
+                    sensorId: c.sensorId || 'super35',
+                    subject: PREVIS.subjectPos.slice(),
+                };
                 previsRenderMoves();
                 previsRenderObjects();
                 previsStatus('Blocking loaded.');
@@ -12404,6 +12512,19 @@ THREE.GLTFLoader = GLTFLoader;
                 PREVIS.objects = [];
                 previsRenderMoves();
                 previsRenderObjects();
+                // Anchor the plate to the inspector AS IT OPENED, not to null.
+                // A shot that was never blocked is the common case, and with no
+                // anchor the frame is stapled to the viewport — so the first
+                // lens change moves nothing and the pane reads as dead, which
+                // is the exact complaint this is here to answer.
+                const seed = previsReadInspector();
+                PREVIS.plate = {
+                    position: seed.camera.position.slice(),
+                    rotation: [0, 0, 0],
+                    focalMm: seed.camera.focalMm,
+                    sensorId: seed.camera.sensorId,
+                    subject: seed.subject.position.slice(),
+                };
                 previsStatus('No blocking yet — set a lens and save.');
             }
         } catch (err) {
@@ -13569,7 +13690,7 @@ THREE.GLTFLoader = GLTFLoader;
         // decorative: the wireframe draws ON the picture, so changing the lens
         // or the camera height moves your blocking against the shot you are
         // trying to match.
-        previsDrawKeyframeBackdrop(ctx, view);
+        previsDrawKeyframeBackdrop(ctx, view, pr, sensor);
 
         // Everything outside the frame is drawn AFTER the scene, so the mask is
         // a real edge rather than a tint.
@@ -13578,20 +13699,26 @@ THREE.GLTFLoader = GLTFLoader;
         ctx.rect(view.x, view.y, view.w, view.h);
         ctx.clip();
 
+        // Brighter than the stage's grid on purpose. These lines are drawn
+        // over a photograph rather than over a near-black background, and at
+        // the stage's .22 they were invisible against it — which is what made
+        // a lens change look like it had done nothing at all.
         const half = (blocking.stage.widthM || 12) / 2;
+        const grid = PREVIS.keyframeUrl ? 'rgba(148,197,255,.5)' : 'rgba(90,100,140,.35)';
         for (let g = -half; g <= half + 1e-6; g += 1) {
-            previsLine(ctx, pr([g, 0, -half]), pr([g, 0, half]), 'rgba(90,100,140,.22)');
-            previsLine(ctx, pr([-half, 0, g]), pr([half, 0, g]), 'rgba(90,100,140,.22)');
+            previsLine(ctx, pr([g, 0, -half]), pr([g, 0, half]), grid);
+            previsLine(ctx, pr([-half, 0, g]), pr([half, 0, g]), grid);
         }
 
-        const h = blocking.subject.heightM || 1.7;
-        const w = 0.45;
-        const s = blocking.subject.position;
-        const corners = [
-            [s[0] - w, 0, s[2] - w], [s[0] + w, 0, s[2] - w], [s[0] + w, 0, s[2] + w], [s[0] - w, 0, s[2] + w],
-            [s[0] - w, h, s[2] - w], [s[0] + w, h, s[2] - w], [s[0] + w, h, s[2] + w], [s[0] - w, h, s[2] + w],
-        ].map(pr);
-        // The subject box used to be drawn here too; it is an object now.
+        // The edge of the generated frame. At the pose it was made from this
+        // sits exactly on the frame border and reads as nothing; the moment you
+        // change the lens or move, it becomes the measurement — how far the new
+        // framing crops into, or falls outside, the picture you already have.
+        const plate = previsPlateQuad(sensor);
+        if (plate) {
+            const q = plate.map(pr);
+            for (let i = 0; i < 4; i++) previsLine(ctx, q[i], q[(i + 1) % 4], 'rgba(251,191,36,.65)', 1.2);
+        }
 
         // Staged objects. Absent here until now, so anything placed on the stage
         // was invisible in the one pane that answers "is it in the shot".
@@ -23141,7 +23268,7 @@ ${fountainText.slice(0, 50000)}`;
                 grid.innerHTML = frames.map(f => `
                     <div class="card" style="padding:0;overflow:hidden;">
                         <div style="position:relative;background:var(--surface-alt,var(--gl-bg-surface));min-height:160px;">
-                            <img src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(f.shot_code)}.png"
+                            <img id="img-${f.shot_id}" src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(f.shot_code)}.png"
                                  style="width:100%;display:block;cursor:zoom-in;" title="Open full screen"
                                  onclick="openFrameViewer('${f.shot_id}')"
                                  onerror="this.style.display='none'"
@@ -23164,9 +23291,7 @@ ${fountainText.slice(0, 50000)}`;
                             ${f.description ? '<p class="text-sm" style="margin-top:6px;line-height:1.45;">' + esc(f.description) + '</p>' : ''}
                             ${storyboardDialogueHtml(f.dialogue)}
                             <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;">
-                                ${['arrow', 'rect', 'ellipse', 'text'].map(k =>
-                                    `<button class="btn btn-sm" onclick="storyboardAnnotate('${f.shot_id}','${k}')" title="draw ${k} on this frame">${k}</button>`).join('')}
-                                <button class="btn btn-sm" onclick="storyboardClearAnnotations('${f.shot_id}')" title="remove all markup from this frame">clear</button>
+                                ${markupToolbar(f.shot_id, 'annot-' + f.shot_id, 'img-' + f.shot_id)}
                             </div>
                         </div>
                     </div>`).join('');
@@ -23186,143 +23311,320 @@ ${fountainText.slice(0, 50000)}`;
     // when the frame is regenerated at another size or the board is read on a
     // phone — pixels would drift the moment either happened.
 
-    const ANNOT = { shotId: null, kind: null, points: [] };
+    const MARKUP = {
+        shotId: null, kind: null, canvasId: null, imgId: null,
+        points: [], drawing: false,
+        cache: {},        // shot id -> annotations, so a preview repaint is not a fetch
+    };
 
-    /** Arm the next click(s) on a frame to draw a shape. */
-    async function storyboardAnnotate(shotId, kind) {
-        const canvas = document.getElementById('annot-' + shotId);
+    /** The six shapes, in the order a director reaches for them. */
+    const MARKUP_KINDS = ['arrow', 'line', 'rect', 'ellipse', 'freehand', 'text'];
+
+    /** A markup toolbar, for whichever surface is showing the frame. */
+    function markupToolbar(shotId, canvasId, imgId) {
+        const btn = k => `<button class="btn btn-sm" id="mk-${canvasId}-${k}"
+            onclick="markupArm('${shotId}','${k}','${canvasId}','${imgId}')"
+            title="drag on the frame to draw ${k === 'text' ? 'a note' : 'a ' + k}">${k}</button>`;
+        return MARKUP_KINDS.map(btn).join('')
+            + `<button class="btn btn-sm" onclick="markupUndo('${shotId}')" title="remove the last mark">undo</button>`
+            + `<button class="btn btn-sm" onclick="markupClear('${shotId}')" title="remove all markup from this frame">clear</button>`;
+    }
+
+    /**
+     * Arm a shape on a particular frame.
+     *
+     * Click-twice was the old gesture and it is not the one a hand makes. You
+     * press where the arrow starts and release where it points; a shape that
+     * needs two separate clicks with nothing drawn in between gives no feedback
+     * on the first one, which is why the buttons read as broken.
+     */
+    function markupArm(shotId, kind, canvasId, imgId) {
+        const canvas = document.getElementById(canvasId);
         if (!canvas) return;
-        ANNOT.shotId = shotId; ANNOT.kind = kind; ANNOT.points = [];
-        // Only the armed frame accepts clicks, so drawing on one card cannot
-        // land markup on another.
+        // Pressing the armed tool again disarms it, so there is a way out that
+        // is not "draw something you did not want".
+        if (MARKUP.shotId === shotId && MARKUP.kind === kind && MARKUP.canvasId === canvasId) {
+            return markupDisarm();
+        }
+        markupDisarm();
+        MARKUP.shotId = shotId; MARKUP.kind = kind;
+        MARKUP.canvasId = canvasId; MARKUP.imgId = imgId;
+        MARKUP.points = []; MARKUP.drawing = false;
+
         canvas.style.pointerEvents = 'auto';
         canvas.style.cursor = 'crosshair';
-        // Visible, not just functional. Arming set pointer-events and a status
-        // line at the bottom of the screen, so pressing the button looked like
-        // nothing had happened — the frame you are about to draw on has to say
-        // so where you are looking.
+        // Visible where you are looking, not only in the status bar at the
+        // bottom of the screen.
         canvas.style.outline = '2px solid var(--gl-brand-pink, #ec4899)';
         canvas.style.outlineOffset = '-2px';
-        canvas.style.background = 'rgba(236,72,153,.08)';
-        canvas.onclick = ev => storyboardAnnotClick(ev, shotId, kind);
-        setStatus(kind === 'text'
-            ? 'Click where the note goes.'
-            : `Click twice to place the ${kind}.`);
+        const tool = document.getElementById(`mk-${canvasId}-${kind}`);
+        if (tool) tool.classList.add('btn-primary');
+
+        canvas.onpointerdown = ev => markupDown(ev);
+        canvas.onpointermove = ev => markupMove(ev);
+        canvas.onpointerup = ev => markupUp(ev);
+        canvas.onpointercancel = () => { MARKUP.drawing = false; MARKUP.points = []; markupPaint(); };
+
+        setStatus(kind === 'text' ? 'Click where the note goes.' : `Drag to draw the ${kind}.`);
     }
 
-    async function storyboardAnnotClick(ev, shotId, kind) {
-        const canvas = ev.currentTarget;
-        const r = canvas.getBoundingClientRect();
-        // Normalise here, once, at the only place that knows the frame size.
-        const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
-        const y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
-        ANNOT.points.push([x, y]);
-
-        const needed = kind === 'text' ? 1 : 2;
-        if (ANNOT.points.length < needed) return;
-
-        let text = '';
-        if (kind === 'text') {
-            text = prompt('Note for this frame:') || '';
-            if (!text.trim()) { storyboardDisarm(shotId); return; }
-        }
-
-        try {
-            await api(`/shots/${shotId}/annotations`, {
-                method: 'POST',
-                body: JSON.stringify({ kind, points: ANNOT.points, text }),
-            });
-            setStatus('Note added.');
-        } catch (err) {
-            setStatus('Could not save the note: ' + err.message);
-        }
-        storyboardDisarm(shotId);
-        storyboardDrawAnnotations(shotId);
-    }
-
-    function storyboardDisarm(shotId) {
-        const canvas = document.getElementById('annot-' + shotId);
+    function markupDisarm() {
+        const canvas = MARKUP.canvasId && document.getElementById(MARKUP.canvasId);
         if (canvas) {
             canvas.style.pointerEvents = 'none';
-            canvas.onclick = null;
             canvas.style.outline = '';
-            canvas.style.background = '';
+            canvas.style.cursor = '';
+            canvas.onpointerdown = canvas.onpointermove = canvas.onpointerup = canvas.onpointercancel = null;
         }
-        ANNOT.shotId = null; ANNOT.kind = null; ANNOT.points = [];
+        const tool = MARKUP.canvasId && MARKUP.kind
+            && document.getElementById(`mk-${MARKUP.canvasId}-${MARKUP.kind}`);
+        if (tool) tool.classList.remove('btn-primary');
+        MARKUP.shotId = null; MARKUP.kind = null; MARKUP.canvasId = null;
+        MARKUP.imgId = null; MARKUP.points = []; MARKUP.drawing = false;
     }
 
-    /** Paint a frame's markup. Called on image load and after every change. */
-    async function storyboardDrawAnnotations(shotId) {
-        const canvas = document.getElementById('annot-' + shotId);
-        if (!canvas) return;
-        let annotations = [];
+    /**
+     * Where the picture actually is inside its element.
+     *
+     * The full-screen viewer contains the frame with object-fit, so the image
+     * occupies a letterboxed sub-rect of the element it is in. Normalising
+     * against the ELEMENT would put every mark at the wrong place there while
+     * looking perfectly right on the grid, where the two coincide — the kind of
+     * error that is only ever found on the surface nobody tested.
+     */
+    function markupImageRect(img, canvas) {
+        const r = canvas.getBoundingClientRect();
+        const nw = img && img.naturalWidth, nh = img && img.naturalHeight;
+        if (!nw || !nh) return { left: 0, top: 0, width: r.width, height: r.height };
+        const scale = Math.min(r.width / nw, r.height / nh);
+        const w = nw * scale, h = nh * scale;
+        return { left: (r.width - w) / 2, top: (r.height - h) / 2, width: w, height: h };
+    }
+
+    /** True when the pointer is on the picture rather than on the letterbox. */
+    function markupOnPicture(ev) {
+        const canvas = document.getElementById(MARKUP.canvasId);
+        const img = document.getElementById(MARKUP.imgId);
+        const box = canvas.getBoundingClientRect();
+        const rect = markupImageRect(img, canvas);
+        const x = ev.clientX - box.left, y = ev.clientY - box.top;
+        return x >= rect.left && x <= rect.left + rect.width
+            && y >= rect.top && y <= rect.top + rect.height;
+    }
+
+    /** Pointer position as a fraction of the picture, clamped to it. */
+    function markupPoint(ev) {
+        const canvas = document.getElementById(MARKUP.canvasId);
+        const img = document.getElementById(MARKUP.imgId);
+        const box = canvas.getBoundingClientRect();
+        const rect = markupImageRect(img, canvas);
+        const x = (ev.clientX - box.left - rect.left) / (rect.width || 1);
+        const y = (ev.clientY - box.top - rect.top) / (rect.height || 1);
+        return [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))];
+    }
+
+    function markupDown(ev) {
+        ev.preventDefault();
+        // The canvas covers the letterbox bars as well as the picture, and a
+        // press there would clamp to the frame edge — a mark you did not place,
+        // at a position you did not choose.
+        if (!markupOnPicture(ev)) return;
+        if (MARKUP.kind === 'text') return;              // text is placed on release
+        MARKUP.drawing = true;
+        MARKUP.points = [markupPoint(ev)];
+        ev.currentTarget.setPointerCapture && ev.currentTarget.setPointerCapture(ev.pointerId);
+    }
+
+    function markupMove(ev) {
+        if (!MARKUP.drawing) return;
+        const p = markupPoint(ev);
+        if (MARKUP.kind === 'freehand') {
+            // Thinned as it is collected. A 60Hz drag across a frame is several
+            // hundred points, and storing every one makes a row that is mostly
+            // duplicates of the same millimetre.
+            const last = MARKUP.points[MARKUP.points.length - 1];
+            if (Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.004) MARKUP.points.push(p);
+        } else {
+            MARKUP.points[1] = p;
+        }
+        markupPaint();
+    }
+
+    async function markupUp(ev) {
+        const kind = MARKUP.kind, shotId = MARKUP.shotId;
+        if (!kind) return;
+
+        if (kind === 'text') {
+            if (!markupOnPicture(ev)) return;
+            const at = markupPoint(ev);
+            const text = prompt('Note for this frame:');
+            if (!text || !text.trim()) return;
+            return markupCommit(shotId, 'text', [at], text.trim());
+        }
+
+        // The release point, not the last point the mouse happened to report
+        // on its way there. They are close in a real drag and exactly equal in
+        // none, and the gap is the difference between an arrow that lands where
+        // you let go and one that lands slightly short of it.
+        if (MARKUP.drawing && MARKUP.points.length) {
+            const end = markupPoint(ev);
+            if (kind === 'freehand') MARKUP.points.push(end);
+            else MARKUP.points[1] = end;
+        }
+        MARKUP.drawing = false;
+        const pts = MARKUP.points.slice();
+        MARKUP.points = [];
+        // A tap is not a shape. Staying armed rather than saving a zero-length
+        // arrow means a missed drag costs one more try, not an undo.
+        if (pts.length < 2) { markupPaint(); return setStatus(`Drag to draw the ${kind}.`); }
+        if (kind !== 'freehand' && Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]) < 0.01) {
+            markupPaint();
+            return setStatus(`Too small — drag further to draw the ${kind}.`);
+        }
+        return markupCommit(shotId, kind, kind === 'freehand' ? pts : [pts[0], pts[1]], '');
+    }
+
+    async function markupCommit(shotId, kind, points, text) {
+        try {
+            const res = await api(`/shots/${shotId}/annotations`, {
+                method: 'POST',
+                body: JSON.stringify({ kind, points, text }),
+            });
+            (MARKUP.cache[shotId] = MARKUP.cache[shotId] || []).push(res.annotation);
+            setStatus('Mark saved to the frame.');
+        } catch (err) {
+            setStatus('Could not save the mark: ' + err.message);
+        }
+        // Both surfaces repaint, because the same shot can be on screen twice —
+        // the grid card behind the viewer that is open over it.
+        markupPaintAll(shotId);
+    }
+
+    /** Fetch a shot's markup once and remember it. */
+    async function markupLoad(shotId, force) {
+        if (!force && MARKUP.cache[shotId]) return MARKUP.cache[shotId];
         try {
             const res = await api(`/shots/${shotId}/annotations`);
-            annotations = res.annotations || [];
-        } catch (_) { return; }
+            MARKUP.cache[shotId] = res.annotations || [];
+        } catch (_) { MARKUP.cache[shotId] = []; }
+        return MARKUP.cache[shotId];
+    }
+
+    async function markupUndo(shotId) {
+        const list = await markupLoad(shotId, true);
+        const last = list[list.length - 1];
+        if (!last) return setStatus('Nothing to undo on this frame.');
+        try {
+            await api(`/annotations/${last.id}`, { method: 'DELETE' });
+            MARKUP.cache[shotId] = list.slice(0, -1);
+            setStatus('Last mark removed.');
+        } catch (err) { setStatus('Could not undo: ' + err.message); }
+        markupPaintAll(shotId);
+    }
+
+    async function markupClear(shotId) {
+        const list = await markupLoad(shotId, true);
+        if (!list.length) return setStatus('No markup on this frame.');
+        if (!confirm(`Remove all ${list.length} mark(s) from this frame?`)) return;
+        try {
+            for (const a of list) await api(`/annotations/${a.id}`, { method: 'DELETE' });
+            MARKUP.cache[shotId] = [];
+            setStatus('Markup cleared.');
+        } catch (err) { setStatus('Could not clear: ' + err.message); }
+        markupPaintAll(shotId);
+    }
+
+    /** Repaint every surface currently showing this shot. */
+    async function markupPaintAll(shotId) {
+        await markupLoad(shotId, true);
+        markupDraw('annot-' + shotId, 'img-' + shotId, shotId);
+        const f = (FRAME_VIEWER.frames || [])[FRAME_VIEWER.index];
+        if (f && f.shot_id === shotId) markupDraw('frameViewerAnnot', 'frameViewerImg', shotId);
+    }
+
+    /** Repaint the armed surface, including the shape being dragged. */
+    function markupPaint() {
+        if (MARKUP.canvasId) markupDraw(MARKUP.canvasId, MARKUP.imgId, MARKUP.shotId);
+    }
+
+    /**
+     * Paint a frame's markup — saved marks, plus the one under the cursor.
+     *
+     * The live shape is what makes this a drawing tool rather than a form: an
+     * arrow you cannot see until it is stored is an arrow you place by guessing.
+     */
+    async function markupDraw(canvasId, imgId, shotId) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !shotId) return;
+        const img = document.getElementById(imgId);
+        const saved = await markupLoad(shotId);
 
         // Match the backing store to the displayed size, or every stroke draws
         // at the wrong scale on a high-DPI screen.
-        const r = canvas.getBoundingClientRect();
-        canvas.width = Math.max(1, Math.round(r.width));
-        canvas.height = Math.max(1, Math.round(r.height));
+        const box = canvas.getBoundingClientRect();
+        canvas.width = Math.max(1, Math.round(box.width));
+        canvas.height = Math.max(1, Math.round(box.height));
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        const px = p => [p[0] * canvas.width, p[1] * canvas.height];
-        for (const a of annotations) {
-            ctx.strokeStyle = a.color || '#f59e0b';
-            ctx.fillStyle = a.color || '#f59e0b';
-            ctx.lineWidth = 2;
-            const pts = (a.points || []).map(px);
-            if (!pts.length) continue;
+        const rect = markupImageRect(img, canvas);
+        const px = p => [rect.left + p[0] * rect.width, rect.top + p[1] * rect.height];
 
-            if (a.kind === 'text') {
-                ctx.font = '600 13px system-ui, sans-serif';
-                // A dark plate behind the text, because a note that lands on a
-                // bright sky is a note nobody reads.
-                const w = ctx.measureText(a.text).width;
-                ctx.fillStyle = 'rgba(0,0,0,.6)';
-                ctx.fillRect(pts[0][0] - 4, pts[0][1] - 14, w + 8, 19);
-                ctx.fillStyle = a.color || '#f59e0b';
-                ctx.fillText(a.text, pts[0][0], pts[0][1]);
-                continue;
-            }
-            if (a.kind === 'rect') {
-                ctx.strokeRect(pts[0][0], pts[0][1], pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
-                continue;
-            }
-            if (a.kind === 'ellipse') {
-                ctx.beginPath();
-                ctx.ellipse((pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2,
-                    Math.abs(pts[1][0] - pts[0][0]) / 2, Math.abs(pts[1][1] - pts[0][1]) / 2, 0, 0, Math.PI * 2);
-                ctx.stroke();
-                continue;
-            }
+        for (const a of saved) markupShape(ctx, a.kind, (a.points || []).map(px), a.text, a.color || '#f59e0b');
+
+        const live = MARKUP.canvasId === canvasId && MARKUP.points.length >= 2 ? MARKUP.points : null;
+        if (live) markupShape(ctx, MARKUP.kind, live.map(px), '', 'rgba(236,72,153,.95)');
+    }
+
+    function markupShape(ctx, kind, pts, text, colour) {
+        if (!pts.length) return;
+        ctx.strokeStyle = colour;
+        ctx.fillStyle = colour;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+
+        if (kind === 'text') {
+            ctx.font = '600 13px system-ui, sans-serif';
+            // A dark plate behind the text, because a note that lands on a
+            // bright sky is a note nobody reads.
+            const w = ctx.measureText(text || '').width;
+            ctx.fillStyle = 'rgba(0,0,0,.6)';
+            ctx.fillRect(pts[0][0] - 4, pts[0][1] - 14, w + 8, 19);
+            ctx.fillStyle = colour;
+            ctx.fillText(text || '', pts[0][0], pts[0][1]);
+            return;
+        }
+        if (kind === 'rect') {
+            ctx.strokeRect(pts[0][0], pts[0][1], pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
+            return;
+        }
+        if (kind === 'ellipse') {
             ctx.beginPath();
-            ctx.moveTo(pts[0][0], pts[0][1]);
-            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+            ctx.ellipse((pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2,
+                Math.abs(pts[1][0] - pts[0][0]) / 2, Math.abs(pts[1][1] - pts[0][1]) / 2, 0, 0, Math.PI * 2);
             ctx.stroke();
-            if (a.kind === 'arrow' && pts.length >= 2) {
-                const [x1, y1] = pts[pts.length - 2], [x2, y2] = pts[pts.length - 1];
-                const ang = Math.atan2(y2 - y1, x2 - x1), head = 10;
-                ctx.beginPath();
-                ctx.moveTo(x2, y2);
-                ctx.lineTo(x2 - head * Math.cos(ang - Math.PI / 6), y2 - head * Math.sin(ang - Math.PI / 6));
-                ctx.moveTo(x2, y2);
-                ctx.lineTo(x2 - head * Math.cos(ang + Math.PI / 6), y2 - head * Math.sin(ang + Math.PI / 6));
-                ctx.stroke();
-            }
+            return;
+        }
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.stroke();
+        if (kind === 'arrow' && pts.length >= 2) {
+            const [x1, y1] = pts[pts.length - 2], [x2, y2] = pts[pts.length - 1];
+            const ang = Math.atan2(y2 - y1, x2 - x1), head = 12;
+            ctx.beginPath();
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - head * Math.cos(ang - Math.PI / 6), y2 - head * Math.sin(ang - Math.PI / 6));
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - head * Math.cos(ang + Math.PI / 6), y2 - head * Math.sin(ang + Math.PI / 6));
+            ctx.stroke();
         }
     }
 
-    async function storyboardClearAnnotations(shotId) {
-        try {
-            const res = await api(`/shots/${shotId}/annotations`);
-            for (const a of (res.annotations || [])) await api(`/annotations/${a.id}`, { method: 'DELETE' });
-            setStatus('Markup cleared.');
-        } catch (err) { setStatus('Could not clear: ' + err.message); }
-        storyboardDrawAnnotations(shotId);
+    /** The grid card's image calls this on load; kept as its own name. */
+    function storyboardDrawAnnotations(shotId) {
+        markupDraw('annot-' + shotId, 'img-' + shotId, shotId);
     }
 
     // ── Full-screen frame viewer ───────────────────────────────────────────
@@ -23352,16 +23654,35 @@ ${fountainText.slice(0, 50000)}`;
         frameViewerPaint();
     }
 
+    /** Which shot the viewer is showing, for the markup tools. */
+    function frameViewerShotId() {
+        const f = (FRAME_VIEWER.frames || [])[FRAME_VIEWER.index];
+        return f ? f.shot_id : null;
+    }
+
     function frameViewerPaint() {
         const f = (FRAME_VIEWER.frames || [])[FRAME_VIEWER.index];
         if (!f) return;
+        // Stepping to another shot must not leave a tool armed on the one you
+        // just left — the canvas is reused, so the next drag would land the
+        // mark on the wrong frame.
+        markupDisarm();
         document.getElementById('frameViewerTitle').textContent =
             `Sc${f.scene_number} / ${f.shot_code}  ·  ${FRAME_VIEWER.index + 1} of ${FRAME_VIEWER.frames.length}`;
         document.getElementById('frameViewerImg').src =
             `${API_BASE}/film/storyboards/${state.currentProject.id}/${encodeURIComponent(f.shot_code)}.png`;
+        // The same six shapes as the grid, because judging a frame at size is
+        // exactly when you want to draw on it — and the note belongs to the
+        // shot either way.
+        document.getElementById('frameViewerTools').innerHTML =
+            markupToolbar(f.shot_id, 'frameViewerAnnot', 'frameViewerImg')
+            + `<span style="flex:1;"></span>`
+            + `<button class="btn btn-sm btn-secondary" onclick="editShotCard('${f.shot_id}')">Edit description</button>`
+            + `<button class="btn btn-sm btn-secondary" onclick="regenerateStoryboard('${f.shot_id}')">Regen</button>`;
         document.getElementById('frameViewerCaption').innerHTML =
             `${f.description ? '<p style="line-height:1.5;">' + esc(f.description) + '</p>' : ''}
              ${storyboardDialogueHtml(f.dialogue)}`;
+        markupDraw('frameViewerAnnot', 'frameViewerImg', f.shot_id);
     }
 
     // Arrow keys, because stepping a board is what hands do while eyes compare.
@@ -23370,7 +23691,7 @@ ${fountainText.slice(0, 50000)}`;
         if (!modal || !modal.classList.contains('open')) return;
         if (ev.key === 'ArrowRight') frameViewerStep(1);
         if (ev.key === 'ArrowLeft') frameViewerStep(-1);
-        if (ev.key === 'Escape') closeModal('frameViewerModal');
+        if (ev.key === 'Escape') { markupDisarm(); closeModal('frameViewerModal'); }
     });
 
     /**
@@ -23381,23 +23702,80 @@ ${fountainText.slice(0, 50000)}`;
      * it from exactly the same words, forever. This is the loop closing — look
      * at the frame, change the description, generate again.
      */
+    let SHOT_CARD = { shotId: null, card: null };
+
+    /**
+     * Change what a frame is generated from.
+     *
+     * The card is the only thing a regeneration reads, so a frame that came
+     * back wrong could not be fixed inside the app at all. This was a one-line
+     * prompt(), which is the wrong instrument twice over: a shot description is
+     * a paragraph, and you cannot see the words you are editing in a field that
+     * shows forty characters of them.
+     */
     async function editShotCard(shotId) {
-        const f = (FRAME_VIEWER.frames || []).find(x => x.shot_id === shotId);
-        const current = f ? (f.description || '') : '';
-        const next = prompt(
-            'What happens in this shot? This is what the frame is generated from.\n\n'
-            + 'Describe the EFFECT you want, not the object: "light drops across the house fronts as '
-            + 'something passes overhead" reads differently to "a winged shadow".',
-            current);
-        if (next === null || next.trim() === current.trim()) return;
+        try {
+            const shot = await api(`/shots/${shotId}`);
+            SHOT_CARD = { shotId, card: shot.card || {} };
+            document.getElementById('shotCardTitle').textContent =
+                `Edit Sc${shot.scene_number == null ? '?' : shot.scene_number} / ${shot.shot_code || 'shot'}`;
+            document.getElementById('shotCardDescription').value = SHOT_CARD.card.description || '';
+            document.getElementById('shotCardAction').value = SHOT_CARD.card.action || '';
+            document.getElementById('shotCardNotes').value = SHOT_CARD.card.notes || '';
+            document.getElementById('shotCardWarning').style.display = 'none';
+            shotCardCount();
+            showModal('shotCardModal');
+        } catch (err) {
+            setStatus('Could not open the card: ' + err.message);
+        }
+    }
+
+    /**
+     * How much of this will survive into the prompt.
+     *
+     * The description is one ingredient among camera, lighting and style that
+     * must all fit one request, so a very long one is trimmed rather than
+     * refused — silently, at generation time. Saying so while it is being
+     * written is the difference between a deliberate choice and a surprise.
+     */
+    function shotCardCount() {
+        const n = (document.getElementById('shotCardDescription').value || '').length;
+        const el = document.getElementById('shotCardCount');
+        el.textContent = `${n} characters`;
+        el.style.color = n > 900 ? 'var(--gl-warning, #f59e0b)' : '';
+    }
+
+    async function saveShotCard(regenerate) {
+        const shotId = SHOT_CARD.shotId;
+        if (!shotId) return;
+        const warn = document.getElementById('shotCardWarning');
+        const fail = msg => {
+            warn.style.display = 'block';
+            warn.style.color = 'var(--gl-danger, #ef4444)';
+            warn.textContent = msg;
+        };
+        const body = {
+            description: document.getElementById('shotCardDescription').value.trim(),
+            action: document.getElementById('shotCardAction').value.trim(),
+            notes: document.getElementById('shotCardNotes').value.trim(),
+        };
+        if (!body.description) return fail('A shot with no description generates from nothing. Say what is in frame.');
 
         try {
-            await api(`/shots/${shotId}`, { method: 'PUT', body: JSON.stringify({ description: next.trim() }) });
-            setStatus('Card updated. The existing frame is now stale — regenerate to see the change.');
-            loadStoryboard();
+            await api(`/shots/${shotId}`, { method: 'PUT', body: JSON.stringify(body) });
         } catch (err) {
-            setStatus('Could not save the card: ' + err.message);
+            return fail('Could not save: ' + err.message);
         }
+        closeModal('shotCardModal');
+        if (regenerate) {
+            await regenerateStoryboard(shotId);
+        } else {
+            setStatus('Card saved. The existing frame is now stale — regenerate to see the change.');
+        }
+        await loadStoryboard();
+        // The viewer, if it is open over the grid, is still showing the old words.
+        const modal = document.getElementById('frameViewerModal');
+        if (modal && modal.classList.contains('open')) frameViewerPaint();
     }
 
     function storyboardDialogueHtml(lines) {
