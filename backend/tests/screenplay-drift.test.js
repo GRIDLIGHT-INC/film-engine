@@ -193,3 +193,45 @@ test('a first stamp is a baseline, not a change', () => {
     const second = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(s.sceneId);
     assert.ok(second.source_changed_at, 'a real change left no timestamp');
 });
+
+/**
+ * The Scenes page is where "complete" is most misleading.
+ *
+ * A scene's status is a workflow state a person advanced, so it does not revert
+ * when the screenplay changes — and should not, because reverting it would
+ * overwrite a decision someone made. But left on its own it reads as done over
+ * a scene whose shots are now about a different story, which is the one place
+ * the board actively misleads rather than merely staying quiet.
+ */
+test('the scenes page shows drift beside the status, not instead of it', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    assert.ok(/function sceneDriftBadge\(/.test(html), 'no per-scene mark on the scenes page');
+    assert.ok(/function sceneDriftBanner\(/.test(html), 'nothing tells the reader what to do about it');
+
+    const loader = html.slice(html.indexOf('async function loadScenes()'));
+    assert.ok(/loadScreenplayDrift\(\)/.test(loader.slice(0, 2000)),
+        'the scenes page never asks which scenes are behind');
+
+    // The status badge must survive: overwriting it would erase the fact that
+    // someone finished this scene, which is still true.
+    assert.ok(/badge \$\{s\.status\}/.test(html), 'the workflow status was replaced rather than joined');
+});
+
+test('the page says what re-running the breakdown actually does', () => {
+    // "Break it down again" sounds destructive and is not — breakdown SKIPS a
+    // scene that already has shots. The destructive step is deleting the shots
+    // first, and leaving that to be discovered is how someone loses frames they
+    // paid for.
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    const fn = html.slice(html.indexOf('function sceneDriftBanner('));
+    const body = fn.slice(0, fn.indexOf('\n    }'));
+    assert.ok(/skips any scene that already has shots/i.test(body),
+        'the page does not say that re-running the breakdown is a no-op');
+    assert.ok(/delete the\s+shots first/i.test(body.replace(/\s+/g, ' ')) || /delete the shots first/i.test(body.replace(/\s+/g, ' ')),
+        'the page does not name the step that actually loses work');
+
+    // And that claim has to be true of the code, not just of the page.
+    const breakdown = fs.readFileSync(path.join(__dirname, '..', 'routes', 'breakdown.js'), 'utf8');
+    assert.ok(/skipped: true/.test(breakdown) && /Delete them first/.test(breakdown),
+        'the breakdown no longer skips scenes with shots, so the page is now lying');
+});

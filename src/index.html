@@ -20149,12 +20149,67 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
+    /**
+     * A scene whose shots were written from an earlier draft.
+     *
+     * The status badge says `complete`, which was true when someone advanced it
+     * and is now the most misleading thing on the page: the scene is complete,
+     * its shots are about a different story. Status is a workflow state a person
+     * set, so it is not overwritten — the drift is shown BESIDE it, and the two
+     * together say the true thing, which is "you finished this, and then the
+     * script moved".
+     */
+    function sceneDriftBadge(scene) {
+        const behind = (DRIFT.scenes || []).find(d => String(d.scene_number) === String(scene.scene_number));
+        if (!behind) return '';
+        const n = behind.shots_behind.length;
+        return `<span class="badge" style="background:rgba(245,158,11,.16);color:var(--gl-warning,#f59e0b);
+                     border:1px solid var(--gl-warning,#f59e0b);"
+                title="${n} shot card(s) here were written from an earlier draft of this scene">script changed</span>`;
+    }
+
+    /**
+     * What to do about it, including the part everyone assumes wrong.
+     *
+     * "Break it down again" sounds destructive and is not: breakdown SKIPS a
+     * scene that already has shots rather than duplicating or replacing them,
+     * so re-running it on a revised scene does nothing at all. The shots have to
+     * be deleted first, and that is the destructive step — which is why it is
+     * named here rather than left to be discovered.
+     */
+    function sceneDriftBanner() {
+        const scenes = DRIFT.scenes || [];
+        if (!scenes.length) return '';
+        const shots = scenes.reduce((n, s) => n + s.shots_behind.length, 0);
+        const where = scenes.map(s => `scene ${esc(s.scene_number)}`).join(', ');
+        return `<div class="card" style="border-color:var(--gl-warning,#f59e0b);
+                     background:rgba(245,158,11,.07);padding:12px 14px;margin-bottom:12px;">
+            <strong style="color:var(--gl-warning,#f59e0b);">The screenplay changed after these shots were written</strong>
+            <p class="text-sm" style="margin:6px 0 0;line-height:1.55;">
+                ${where} &mdash; ${shots} shot card${shots === 1 ? '' : 's'} still describe the previous draft.
+                A scene's status is what someone set when they finished it; it does not revert on its own.
+            </p>
+            <p class="text-sm" style="margin:8px 0 0;line-height:1.55;">
+                <strong>Editing the cards is the safe fix</strong> &mdash; open each shot on the Storyboard and
+                change what no longer matches. Breaking the scene down again is <em>not</em> destructive and also
+                does nothing: it skips any scene that already has shots. To replace them you must delete the
+                shots first, and that is the step that loses their generated frames.
+            </p>
+        </div>`;
+    }
+
     async function loadScenes() {
         if (!state.currentProject) return;
         setStatus('Loading scenes...');
         try {
             const data = await api('/projects/' + state.currentProject.id + '/scenes');
             state.scenes = data.scenes || [];
+            // A scene's status is a workflow state a person advanced; it does
+            // not, and should not, revert itself when the screenplay changes.
+            // But left alone it reads as "done" over a scene whose shots are
+            // now about a previous draft, which is the one place the board is
+            // actively misleading rather than merely quiet.
+            await loadScreenplayDrift();
             const el = document.getElementById('scenesList');
             // The list is rebuilt below, so any previous selection is gone —
             // clear the bar rather than leave it showing a stale count.
@@ -20174,7 +20229,7 @@ ${fountainText.slice(0, 50000)}`;
             if (state.scenes.length === 0) {
                 el.innerHTML = `<div class="empty-state"><div class="icon">&#127916;</div><h3>No scenes yet</h3><p>Upload a screenplay to auto-extract scenes.</p></div>`;
             } else {
-                el.innerHTML = state.scenes.map(s => {
+                el.innerHTML = sceneDriftBanner() + state.scenes.map(s => {
                     // FILM-124: Breakdown button only for 'written' status scenes
                     const canBreakdown = s.status === 'written';
                     const breakdownBtn = canBreakdown
@@ -20193,6 +20248,7 @@ ${fountainText.slice(0, 50000)}`;
                                 <p>${esc(parseJsonArray(s.characters_present).join(', ') || 'No characters')} &middot; ${s.shot_count || 0} shot(s)</p>
                             </div>
                             ${breakdownBtn}
+                            ${sceneDriftBadge(s)}
                             <span class="badge ${s.status}">${(s.status || '').replace(/_/g, ' ')}</span>
                             <button class="btn btn-sm scene-delete-btn"
                                     onclick="event.stopPropagation(); deleteScene('${s.id}', ${s.shot_count || 0}, ${JSON.stringify(String(s.location || 'this scene'))})"
