@@ -275,3 +275,63 @@ test('a trimmed description keeps its opening, which is what the thing IS', () =
     assert.ok(out[0].startsWith('A four-door sedan'),
         'the cut landed somewhere other than the front, so the object is no longer identified');
 });
+
+/**
+ * A subject whose picture is attached needs naming, not describing.
+ *
+ * On a real establishing shot all three subjects contributing prose also had
+ * their plates attached as references — 3,445 characters spent describing
+ * pictures the model was already looking at. That is not merely wasteful: it
+ * pushed the prompt past the ceiling, buried the style preset, and gave a lawn
+ * sprinkler the same descriptive weight as the street it sits in, so it was
+ * drawn the size of the car parked beside it.
+ */
+const { identify, hasReference } = require('../lib/consistency-apply');
+
+const PLATED = {
+    prompt_addition_items: [
+        { text: 'Late-1970s North American full-size four-door sedan, long flat hood. Rust along the sills. '
+              + 'Bench seats in cracked tan vinyl.', profile_type: 'prop', subject_name: 'SEDAN' },
+    ],
+    references: [{ subject_name: 'SEDAN', profile_type: 'prop' }],
+};
+
+test('a plated subject contributes an identifier, not its whole description', () => {
+    const out = fitAdditions('', PLATED, { maxPromptChars: 4000 });
+    assert.strictEqual(out.length, 1);
+    assert.ok(out[0].length < 140, `still describing at length: ${out[0].length} chars`);
+    assert.ok(out[0].startsWith('SEDAN:'), 'the identifier does not name the subject');
+    assert.ok(/four-door sedan/.test(out[0]), 'the identifier does not say what the thing is');
+    assert.ok(!/tan vinyl/.test(out[0]), 'detail the picture already shows survived into the prompt');
+});
+
+test('shortening happens even when there is room, because it is not about room', () => {
+    // Describing a picture at length is wrong whether or not it fits.
+    const roomy = fitAdditions('', PLATED, { maxPromptChars: 100000 });
+    const none = fitAdditions('', PLATED, {});
+    assert.ok(roomy[0].length < 140, 'a huge ceiling brought the full description back');
+    assert.ok(none[0].length < 140, 'no ceiling brought the full description back');
+});
+
+test('an unplated subject keeps its full description', () => {
+    // The prose exists for exactly this: a subject with no picture, and a
+    // provider handed an untagged array with nothing to say which is which.
+    const unplated = { prompt_addition_items: PLATED.prompt_addition_items, references: [] };
+    const out = fitAdditions('', unplated, { maxPromptChars: 4000 });
+    assert.ok(/tan vinyl/.test(out[0]), 'a subject with no plate lost its description');
+});
+
+test('a reference for a different subject does not shorten this one', () => {
+    const other = {
+        prompt_addition_items: PLATED.prompt_addition_items,
+        references: [{ subject_name: 'SUBURBAN STREET', profile_type: 'location' }],
+    };
+    assert.strictEqual(hasReference(other, PLATED.prompt_addition_items[0]), false);
+    assert.ok(/tan vinyl/.test(fitAdditions('', other, { maxPromptChars: 4000 })[0]));
+});
+
+test('the identifier is not doubled when the description already opens with the name', () => {
+    const item = { text: 'MAYA, a woman in her mid-thirties. Lean and angular.',
+                   profile_type: 'character', subject_name: 'MAYA' };
+    assert.ok(!identify(item).startsWith('MAYA: MAYA'), 'the subject name was prepended twice');
+});

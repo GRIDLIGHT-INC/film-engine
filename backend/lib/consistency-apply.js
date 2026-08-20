@@ -60,6 +60,44 @@ function shouldUseLockedSeed(seed) {
  */
 const ADDITION_RANK = { character: 0, location: 1, prop: 2, style: 3, voice: 9 };
 
+/**
+ * A subject whose picture is attached needs NAMING, not describing.
+ *
+ * Every one of the three subjects contributing prose to a real establishing
+ * shot also had its plate attached as a reference image — 3,445 characters
+ * spent describing pictures the model was already looking at. That is not
+ * merely wasteful: it is what pushed the prompt past the ceiling, buried the
+ * style preset, and gave a lawn sprinkler the same descriptive weight as the
+ * street it sits in, so it was drawn the size of the car.
+ *
+ * The prose exists for the case the reference system cannot cover — a provider
+ * taking an untagged array of images with nothing to say which is which, and a
+ * subject with no plate at all. Both still get their full description. What
+ * changes is that a plated subject contributes an identifier: its name and the
+ * clause that says what it is, so the words and the picture bind to each other
+ * and the rest of the room goes to the shot.
+ */
+const IDENTIFIER_CHARS = 120;
+
+function identify(item) {
+    const text = String(item.text || '').trim();
+    const stop = text.search(/[.;]\s/);
+    let head = (stop > 0 ? text.slice(0, stop) : text).trim();
+    if (head.length > IDENTIFIER_CHARS) head = trimContract(head, IDENTIFIER_CHARS);
+    const name = String(item.subject_name || '').trim();
+    // Named, so an untagged reference array still has something to bind to.
+    return name && !head.toLowerCase().startsWith(name.toLowerCase())
+        ? `${name}: ${head}`
+        : head;
+}
+
+/** Whether this subject's own picture is travelling with the prompt. */
+function hasReference(ctx, item) {
+    return (ctx.references || []).some(r =>
+        String(r.subject_name || '').toLowerCase() === String(item.subject_name || '').toLowerCase()
+        && String(r.profile_type || '') === String(item.profile_type || ''));
+}
+
 /** Cut at a clause boundary; a description's opening is what the thing IS. */
 function trimContract(text, budget) {
     const t = String(text || '');
@@ -82,20 +120,25 @@ function fitAdditions(basePrompt, ctx, opts) {
 
     items.sort((a, b) => (ADDITION_RANK[a.profile_type] ?? 5) - (ADDITION_RANK[b.profile_type] ?? 5));
 
+    // Plated subjects shrink to an identifier BEFORE any budgeting, because
+    // this is not a space-saving measure — describing a picture at length is
+    // wrong even when there is room for it.
+    const sized = items.map(i => (hasReference(ctx, i) ? { ...i, text: identify(i) } : i));
+
     const ceiling = Number(opts && opts.maxPromptChars) > 0 ? Number(opts.maxPromptChars) : 0;
-    if (!ceiling) return items.map(i => i.text);
+    if (!ceiling) return sized.map(i => i.text);
 
     let room = ceiling - String(basePrompt || '').length - 2;
     if (room <= 0) return [];
 
     const out = [];
-    for (let i = 0; i < items.length; i++) {
+    for (let i = 0; i < sized.length; i++) {
         // An even split of what is LEFT, so the last subject is not the one
         // that vanishes, and anything a subject does not use is inherited by
         // the ones after it rather than wasted.
-        const share = Math.floor(room / (items.length - i)) - 2;
+        const share = Math.floor(room / (sized.length - i)) - 2;
         if (share <= 40) break;              // too little room to say anything true
-        const text = trimContract(items[i].text, share);
+        const text = trimContract(sized[i].text, share);
         if (!text) continue;
         out.push(text);
         room -= text.length + 2;
@@ -164,6 +207,8 @@ function applyConsistencyToVoicePayload(payload, context, characterName) {
 module.exports = {
     fitAdditions,
     ADDITION_RANK,
+    identify,
+    hasReference,
     fitAdditions,
     ADDITION_RANK,
     normalizeName,

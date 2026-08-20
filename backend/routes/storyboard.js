@@ -776,7 +776,7 @@ async function generateStoryboard(req, res, projectId, query) {
                 aspect_ratio: project.aspect_ratio,
                 // Paired with the @tags buildStoryboardPrompt just emitted.
                 reference_images: shotRefs,
-            }, consistencyContext);
+            }, consistencyContext, { maxPromptChars: imagePromptLimitFor(project) });
             const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
                 await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
 
@@ -1004,7 +1004,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
                 aspect_ratio: project.aspect_ratio,
                 // Paired with the @tags buildStoryboardPrompt just emitted.
                 reference_images: shotRefs,
-            }, consistencyContext);
+            }, consistencyContext, { maxPromptChars: imagePromptLimitFor(project) });
             const { buffer: imageBuffer, metadata } = await callImageGenStream(
                 imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
                 imagePayload,
@@ -1269,7 +1269,7 @@ async function regenerateShot(req, res, shotId) {
             ip_adapter_image: primaryRef && (primaryRef.file_path || primaryRef.file_name),
             ip_adapter_weight: primaryRef && primaryRef.weight,
             aspect_ratio: project.aspect_ratio,
-        }, consistencyContext);
+        }, consistencyContext, { maxPromptChars: imagePromptLimitFor(project) });
         const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
             await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
 

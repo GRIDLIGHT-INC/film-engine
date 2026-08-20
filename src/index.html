@@ -3767,6 +3767,174 @@
         .flow-inspector label { display: block; font-size: 11px; opacity: .7; margin: 8px 0 3px; }
         .flow-inspector input, .flow-inspector select, .flow-inspector textarea { width: 100%; box-sizing: border-box; font-size: 12px; }
     </style>
+
+<!-- ══════════════════════════════════════════════════════════════
+     REDESIGN — appended so it overrides without touching the rules
+     above. Nothing is deleted: tokens are redefined, the chrome is
+     restyled, and every page/id/handler stays exactly as it was.
+     ══════════════════════════════════════════════════════════════ -->
+<style id="fe-redesign">
+:root {
+  --gl-bg-darkest:#08080a; --gl-bg-primary:#0b0b0c; --gl-bg-code:#131315;
+  --gl-bg-header:#151517; --gl-bg-surface:#151517; --gl-bg-elevated:#1d1d20;
+  --gl-glass-bg:rgba(21,21,23,.92); --gl-glass-bg-light:rgba(29,29,32,.7);
+  --gl-glass-border:rgba(255,255,255,.08);
+  --gl-brand-pink:#6690ff; --gl-brand-purple:#6690ff; --gl-brand-blue:#6690ff;
+  --gl-brand-gradient:#3559cc; --gl-brand-gradient-desktop:#3559cc;
+  --gl-brand-gradient-destructive:#8a3b3b;
+  --gl-text-primary:#f4f4f5; --gl-text-secondary:#b7b7be;
+  --gl-text-muted:#8e8e97; --gl-text-disabled:#6f6f77;
+  --gl-success:#4fd39c; --gl-success-neon:#4fd39c; --gl-error:#f08a8a;
+  --gl-error-neon:#f08a8a; --gl-warning:#e0a33e; --gl-info:#6690ff;
+  --gl-accent-purple:#6690ff; --gl-accent-pink:#6690ff;
+  --gl-border-subtle:rgba(255,255,255,.08);
+  --fe-rail:64px; --fe-panel:232px; --fe-top:62px; --fe-gap:10px;
+}
+/* the CRT scanlines and cyan grid competed with the picture */
+body::before, body::after { display:none !important; content:none !important; }
+body { background:#0b0b0c; }
+
+/* ── shell: floating rounded panels ── */
+body.fe { display:block; overflow:hidden; }
+.fe-top {
+  position:fixed; top:var(--fe-gap); left:var(--fe-gap); right:var(--fe-gap);
+  height:var(--fe-top); z-index:300; display:flex; align-items:center; gap:18px;
+  padding:0 16px; background:#151517; border:1px solid rgba(255,255,255,.07);
+  border-radius:18px;
+}
+.fe-rail {
+  position:fixed; top:calc(var(--fe-top) + var(--fe-gap)*2); left:var(--fe-gap);
+  bottom:var(--fe-gap); width:var(--fe-rail); z-index:300;
+  display:flex; flex-direction:column; align-items:center; gap:4px; padding:12px 0;
+  background:#151517; border:1px solid rgba(255,255,255,.07); border-radius:18px;
+}
+.fe-panel {
+  position:fixed; top:calc(var(--fe-top) + var(--fe-gap)*2);
+  left:calc(var(--fe-rail) + var(--fe-gap)*2); bottom:var(--fe-gap);
+  width:var(--fe-panel); z-index:300; display:flex; flex-direction:column;
+  background:#151517; border:1px solid rgba(255,255,255,.07); border-radius:18px;
+  overflow:hidden;
+}
+.sidebar { display:none !important; }
+.main {
+  position:fixed; margin:0;
+  top:calc(var(--fe-top) + var(--fe-gap)*2);
+  left:calc(var(--fe-rail) + var(--fe-panel) + var(--fe-gap)*3);
+  right:var(--fe-gap); bottom:var(--fe-gap); height:auto;
+  background:#151517; border:1px solid rgba(255,255,255,.07);
+  border-radius:18px; padding:22px 24px 40px; overflow-y:auto; overflow-x:hidden;
+}
+body.fe-status .main { bottom:calc(var(--fe-gap) + 26px); }
+.status-bar {
+  left:calc(var(--fe-rail) + var(--fe-panel) + var(--fe-gap)*3) !important;
+  right:var(--fe-gap) !important; bottom:var(--fe-gap) !important;
+  background:#151517; border:1px solid rgba(255,255,255,.07);
+  border-radius:12px; padding:5px 14px;
+}
+
+/* ── top bar ── */
+.fe-brand { display:flex; align-items:center; gap:9px; padding-right:16px;
+  border-right:1px solid rgba(255,255,255,.08); cursor:pointer; }
+.fe-mark { width:26px; height:26px; border-radius:7px; background:#3559cc; color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; }
+.fe-proj { font-size:13px; font-weight:600; line-height:1.15; }
+.fe-projsub { font-size:10px; color:#8e8e97; font-family:'SF Mono',Consolas,monospace; }
+.fe-track { display:flex; gap:2px; flex:1; min-width:0; }
+.fe-ph { flex:1; min-width:0; padding:7px 10px 6px; border-radius:9px; cursor:pointer;
+  background:transparent; border:none; text-align:left; font-family:inherit;
+  transition:background .14s ease; }
+.fe-ph:hover { background:#1d1d20; }
+.fe-ph.on { background:rgba(102,144,255,.14); }
+.fe-ph-row { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+.fe-ph-name { font-size:12.5px; font-weight:500; color:#8e8e97; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; }
+.fe-ph.on .fe-ph-name { color:#f4f4f5; font-weight:600; }
+.fe-ph-frac { margin-left:auto; font-size:9.5px; color:#8e8e97;
+  font-family:'SF Mono',Consolas,monospace; }
+.fe-ph-bar { height:3px; border-radius:3px; background:#2c2c31; overflow:hidden; }
+.fe-ph-fill { height:3px; border-radius:3px; background:#5f5f67; width:0; }
+.fe-ph.on .fe-ph-fill { background:#6690ff; }
+.fe-search { display:flex; align-items:center; gap:8px; height:34px; padding:0 11px;
+  border-radius:9px; background:#131315; border:1px solid rgba(255,255,255,.10);
+  cursor:pointer; min-width:190px; font-size:12px; color:#8e8e97; }
+.fe-search:hover { border-color:rgba(102,144,255,.55); }
+
+/* ── rail ── */
+.fe-rail-btn { width:46px; padding:7px 0 5px; border-radius:10px; border:none;
+  background:transparent; cursor:pointer; display:flex; flex-direction:column;
+  align-items:center; gap:4px; color:#9b9ba3; font-family:inherit; position:relative; }
+.fe-rail-btn:hover { background:#1d1d20; }
+.fe-rail-btn.on { background:rgba(102,144,255,.16); color:#6690ff; }
+.fe-rail-btn span.l { font-size:8.5px; font-weight:500; letter-spacing:.03em;
+  text-transform:uppercase; }
+.fe-rail-btn .b { position:absolute; top:2px; right:6px; min-width:14px; height:14px;
+  padding:0 3px; border-radius:7px; background:#3559cc; color:#fff; font-size:9px;
+  font-weight:600; display:flex; align-items:center; justify-content:center; }
+
+/* ── context panel ── */
+.fe-panel-head { padding:15px 15px 12px; border-bottom:1px solid rgba(255,255,255,.07); }
+.fe-panel-kicker { font-family:'SF Mono',Consolas,monospace; font-size:9.5px;
+  letter-spacing:.12em; text-transform:uppercase; color:#8e8e97; margin-bottom:5px; }
+.fe-panel-title { font-size:17px; font-weight:600; letter-spacing:-.015em; }
+.fe-panel-blurb { font-size:11.5px; color:#8e8e97; line-height:1.45; margin-top:4px; }
+.fe-panel-list { flex:1; overflow-y:auto; overflow-x:hidden; padding:8px; }
+.fe-panel-list .nav-item { box-sizing:border-box; }
+/* the app's own nav buttons, relocated — handlers untouched */
+.fe-panel-list .nav-item { padding:6px 9px; border-radius:9px; margin-bottom:1px;
+  font-size:12.5px; color:#a3a3ab; border:1px solid transparent; width:100%; }
+.fe-panel-list .nav-item:hover { background:#1d1d20; color:#f4f4f5; }
+.fe-panel-list .nav-item.active { background:#141d3f; border-color:rgba(102,144,255,.55);
+  color:#fff; font-weight:600; }
+.fe-panel-list .nav-item.active::before,
+.fe-panel-list .nav-item::before { display:none !important; }
+.fe-panel-list .nav-icon { width:16px; text-align:center; font-size:12px; filter:grayscale(1); opacity:.7; }
+.fe-panel-list .nav-item.active .nav-icon { filter:none; opacity:1; }
+.fe-panel-list .nav-section, .fe-panel-list .sidebar-divider { display:none; }
+/* tooltips are for a 260px sidebar; in the panel they force a 504px scroll width */
+.fe-panel-list .nav-item::after, .fe-panel-list .nav-item::before { display:none !important; content:none !important; }
+.fe-panel-list { overflow-x:hidden !important; }
+.fe-panel-list .nav-item { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* ── surfaces inside pages ── */
+.card, .glass-card { background:#1d1d20; border:1px solid rgba(255,255,255,.08);
+  border-radius:14px; }
+.card:hover { border-color:rgba(255,255,255,.14); }
+.stat-card, .entity-card, .cue-card, .kanban-column, .milestone-node {
+  background:#1d1d20 !important; border:1px solid rgba(255,255,255,.08) !important;
+  border-radius:12px !important; }
+.entity-card:hover { border-color:rgba(102,144,255,.55) !important; }
+.page-header h2, .flex-between h2 { font-size:20px; letter-spacing:-.02em; }
+
+/* buttons */
+.btn { border-radius:8px; font-weight:500; }
+.btn-primary { background:#3559cc !important; color:#fff !important; border:none !important; }
+.btn-primary:hover { background:#4468e0 !important; }
+.btn-secondary { background:#232327 !important; color:#c9c9d0 !important;
+  border:1px solid rgba(255,255,255,.08) !important; }
+.btn-secondary:hover { background:#2b2b30 !important; }
+.btn-danger { background:rgba(240,110,110,.12) !important; color:#f08a8a !important;
+  border:1px solid rgba(240,110,110,.34) !important; }
+.btn-success { background:rgba(58,190,128,.15) !important; color:#4fd39c !important;
+  border:1px solid rgba(58,190,128,.32) !important; }
+
+/* inputs */
+input, select, textarea { background:#131315 !important;
+  border:1px solid rgba(255,255,255,.10) !important; border-radius:7px !important;
+  color:#e7e7ea !important; }
+input:focus, select:focus, textarea:focus { border-color:rgba(102,144,255,.55) !important;
+  outline:none !important; }
+
+/* tables + tags */
+table, .render-table { border-radius:12px; overflow:hidden; }
+.render-table th { background:#232327; color:#8e8e97; font-family:'SF Mono',Consolas,monospace;
+  font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; }
+.render-table td { border-bottom:1px solid rgba(255,255,255,.05); }
+.tag, .badge { border-radius:20px; }
+.filter-pills .pill.active, .tab-btn.active { background:#2b2b30 !important; color:#f4f4f5 !important; }
+
+/* media wells stay the darkest thing on screen */
+.entity-card img, .storyboard-img, .shot-thumb, video { border-radius:8px; background:#08080a; }
+</style>
 </head>
 <body>
     <!-- ════════════════════════════════════════════════════════════
@@ -18182,6 +18350,8 @@ THREE.GLTFLoader = GLTFLoader;
 </head>
 <body>
     ${editorContent}
+
+
 </body>
 </html>`;
     }
@@ -26202,5 +26372,197 @@ ${fountainText.slice(0, 50000)}`;
     loadProjects();
     liveConnect();
     </script>
+<!-- ══════════════════════════════════════════════════════════════
+     REDESIGN CHROME. Builds the top phase track, the rail and the
+     context panel, then MOVES the app's existing .nav-item buttons
+     into the panel. They keep their data-page, onclick, tooltip and
+     active class, so navigateTo() and every page behave as before.
+     ══════════════════════════════════════════════════════════════ -->
+<script id="fe-redesign-js">
+(function () {
+  var PHASES = [
+    { id:'write',   label:'Write',   blurb:'The script, and everything read out of it.',
+      pages:['screenplay','scenes','notes'] },
+    { id:'plan',    label:'Plan',    blurb:'Shots, people, places, schedule and money.',
+      pages:['shotboard','production','characters','locations','props','milestones','budget'] },
+    { id:'look',    label:'Look',    blurb:'Decide the look before anything is generated.',
+      pages:['moodboard','storyboard','previs','continuity','consistency','colorgrading'] },
+    { id:'make',    label:'Make',    blurb:'Run the pipeline: picture, voice, score, post.',
+      pages:['pipeline','videoshots','music','threed','flows','jobsqueue','renderhistory'] },
+    { id:'edit',    label:'Edit',    blurb:'Watch it, circle the takes, keep the files straight.',
+      pages:['playback','selects','assets','musiccues'] },
+    { id:'deliver', label:'Deliver', blurb:'Exports, rights, QC — the paperwork of finishing.',
+      pages:['exportpage','colorpipeline','dubbing','broadcastqc','provenance','rights'] }
+  ];
+  var RAIL = [
+    { id:'dashboard', label:'Home',  icon:'M3 7.5L9 3l6 4.5V15H3V7.5Z' },
+    { id:'jobsqueue', label:'Jobs',  icon:'M9 3.2a5.8 5.8 0 100 11.6A5.8 5.8 0 009 3.2Zm0 2.4V9l2.2 1.4' },
+    { id:'notes',     label:'Notes', icon:'M3.2 3h11.6v12H3.2V3Zm2.8 4h6M6 10h4' },
+    { id:'guide',     label:'Guide', icon:'M9 2.6A6.4 6.4 0 109 15.4 6.4 6.4 0 009 2.6Zm-1.8 4.4a1.9 1.9 0 013.6.8c0 1.3-1.8 1.6-1.8 2.7m0 2.5v.01' },
+    { id:'settings',  label:'Setup', icon:'M9 6.6A2.4 2.4 0 109 11.4 2.4 2.4 0 009 6.6ZM9 1.8v2M9 14.2v2M1.8 9h2M14.2 9h2M4 4l1.4 1.4M12.6 12.6L14 14M14 4l-1.4 1.4M5.4 12.6L4 14' }
+  ];
+
+  var phaseOf = {};
+  PHASES.forEach(function (p) { p.pages.forEach(function (pg) { phaseOf[pg] = p.id; }); });
+
+  var current = 'plan', els = {};
+
+  function svg(d) {
+    return '<svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="' + d + '"></path></svg>';
+  }
+  function navBtn(page) {
+    return document.querySelector('#sidebarProjectNav .nav-item[data-page="' + page + '"]') ||
+           document.querySelector('.nav-item[data-page="' + page + '"]');
+  }
+
+  // Progress is READ from the app's own state — never invented. A phase with
+  // nothing to count shows no fraction rather than a fake one.
+  function progress(id) {
+    var st = window.state || {};
+    var shots = (st.shots || []).length, scenes = (st.scenes || []).length;
+    function f(done, total) {
+      return total ? { frac: done + '/' + total, pct: Math.round(done / total * 100) } : null;
+    }
+    if (id === 'write')
+      return f((st.scenes || []).filter(function (x) { return x.breakdown_done || (x.shot_count | 0) > 0; }).length, scenes);
+    if (id === 'plan')
+      return f((st.shots || []).filter(function (x) { return x.duration_s || x.duration; }).length, shots);
+    if (id === 'look')
+      return f((st.shots || []).filter(function (x) { return x.keyframe_path || x.keyframe_url; }).length, shots);
+    if (id === 'make')
+      return f((st.shots || []).filter(function (x) { return x.video_path || x.video_url; }).length, shots);
+    if (id === 'edit')
+      return f((st.shots || []).filter(function (x) { return x.selected_render_id || x.status === 'approved'; }).length, shots);
+    if (id === 'deliver')
+      return f((st.shots || []).filter(function (x) { return x.status === 'approved'; }).length, shots);
+    return null;
+  }
+
+  function build() {
+    var nav = document.querySelector('#sidebarProjectNav') || document.querySelector('.sidebar');
+    if (!nav) return;
+    document.body.classList.add('fe');
+
+    var top = document.createElement('div');
+    top.className = 'fe-top';
+    top.innerHTML =
+      '<div class="fe-brand" id="feBrand"><div class="fe-mark">FE</div>' +
+      '<div><div class="fe-proj" id="feProjName">Film Engine</div>' +
+      '<div class="fe-projsub">AI production pipeline</div></div></div>' +
+      '<div class="fe-track" id="feTrack"></div>' +
+      '<div class="fe-search" id="feSearch">Search anything</div>';
+    document.body.appendChild(top);
+
+    var rail = document.createElement('div');
+    rail.className = 'fe-rail';
+    RAIL.forEach(function (r) {
+      var b = document.createElement('button');
+      b.className = 'fe-rail-btn';
+      b.dataset.rail = r.id;
+      b.innerHTML = svg(r.icon) + '<span class="l">' + r.label + '</span>';
+      b.onclick = function () {
+        if (r.id === 'guide') { if (window.openProductionGuide) window.openProductionGuide(); return; }
+        var t = navBtn(r.id);
+        if (t) t.click(); else if (window.navigateTo) window.navigateTo(r.id);
+      };
+      rail.appendChild(b);
+    });
+    document.body.appendChild(rail);
+
+    var panel = document.createElement('div');
+    panel.className = 'fe-panel';
+    panel.innerHTML =
+      '<div class="fe-panel-head"><div class="fe-panel-kicker" id="fePhaseKicker"></div>' +
+      '<div class="fe-panel-title" id="fePhaseTitle"></div>' +
+      '<div class="fe-panel-blurb" id="fePhaseBlurb"></div></div>' +
+      '<div class="fe-panel-list" id="fePhaseList"></div>';
+    document.body.appendChild(panel);
+
+    els.track = top.querySelector('#feTrack');
+    els.list = panel.querySelector('#fePhaseList');
+    els.kicker = panel.querySelector('#fePhaseKicker');
+    els.title = panel.querySelector('#fePhaseTitle');
+    els.blurb = panel.querySelector('#fePhaseBlurb');
+    els.rail = rail;
+
+    PHASES.forEach(function (p, i) {
+      var b = document.createElement('button');
+      b.className = 'fe-ph';
+      b.dataset.phase = p.id;
+      b.innerHTML = '<div class="fe-ph-row"><span class="fe-ph-name">' + p.label +
+        '</span><span class="fe-ph-frac"></span></div>' +
+        '<div class="fe-ph-bar"><div class="fe-ph-fill"></div></div>';
+      b.onclick = function () { showPhase(p.id, true); };
+      els.track.appendChild(b);
+    });
+
+    var search = top.querySelector('#feSearch');
+    search.onclick = function () { if (window.showModal) window.showModal('glossaryModal'); };
+    var brand = top.querySelector('#feBrand');
+    brand.onclick = function () { var t = navBtn('dashboard'); if (t) t.click(); };
+
+    PHASES.forEach(function (p) {
+      p.pages.forEach(function (pg) {
+        var b = navBtn(pg);
+        if (b) { b.dataset.fePhase = p.id; els.list.appendChild(b); }
+      });
+    });
+    showPhase(phaseOf[currentPage()] || 'plan', false);
+    refresh();
+    document.addEventListener('click', function () { setTimeout(refresh, 60); }, true);
+    setInterval(refresh, 2500);
+  }
+
+  function currentPage() {
+    var a = document.querySelector('.page.active');
+    return a ? a.id.replace(/^page-/, '') : (window.state && window.state.currentPage) || 'dashboard';
+  }
+
+  function showPhase(id, navigate) {
+    var p = PHASES.filter(function (x) { return x.id === id; })[0];
+    if (!p) return;
+    current = id;
+    els.kicker.textContent = 'Phase ' + (PHASES.indexOf(p) + 1) + ' of ' + PHASES.length;
+    els.title.textContent = p.label;
+    els.blurb.textContent = p.blurb;
+    Array.prototype.forEach.call(els.list.children, function (b) {
+      b.style.display = b.dataset.fePhase === id ? '' : 'none';
+    });
+    if (navigate && phaseOf[currentPage()] !== id) {
+      var first = els.list.querySelector('.nav-item[data-fe-phase="' + id + '"]');
+      if (first) first.click();
+    }
+    refresh();
+  }
+
+  function refresh() {
+    var page = currentPage(), ph = phaseOf[page];
+    if (ph && ph !== current) showPhase(ph, false);
+    Array.prototype.forEach.call(els.track.children, function (b) {
+      b.classList.toggle('on', b.dataset.phase === current);
+      var pr = progress(b.dataset.phase);
+      b.querySelector('.fe-ph-frac').textContent = pr ? pr.frac : '';
+      b.querySelector('.fe-ph-fill').style.width = pr ? pr.pct + '%' : '0';
+    });
+    Array.prototype.forEach.call(els.rail.children, function (b) {
+      b.classList.toggle('on', b.dataset.rail === page);
+    });
+    var jobs = document.querySelectorAll('#jobsQueueList .job-row, #jobsQueueList .card').length;
+    var jb = els.rail.querySelector('[data-rail="jobsqueue"]');
+    if (jb) {
+      var old = jb.querySelector('.b');
+      if (old) old.remove();
+      if (jobs) { var s2 = document.createElement('span'); s2.className = 'b'; s2.textContent = jobs; jb.appendChild(s2); }
+    }
+    var nm = document.querySelector('#feProjName');
+    if (nm && window.state && window.state.currentProject) nm.textContent = window.state.currentProject.title || 'Film Engine';
+    document.body.classList.toggle('fe-status', !!document.querySelector('.status-bar'));
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build);
+  else build();
+})();
+</script>
 </body>
 </html>
