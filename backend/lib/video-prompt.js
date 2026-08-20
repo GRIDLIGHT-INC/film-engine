@@ -99,17 +99,31 @@ function buildVideoPrompt(sceneCard, characters, location, stylePreset, options)
  * @param {object} sceneCard - Parsed scene_card_yaml
  * @returns {{ num_frames: number, fps: number, duration_s: number, width: number, height: number }}
  */
-function calculateVideoParams(sceneCard) {
+function calculateVideoParams(sceneCard, project) {
     const durationMs = sceneCard.duration_ms || 4000;
     const durationS = durationMs / 1000;
+    const proj = project || {};
+
+    // The DELIVERY frame rate and size come from the project, not from
+    // constants. They were hardcoded at 24fps and 1024x576, so a production set
+    // to 25fps generated clips targeting 24 and was only relabelled at NLE
+    // export — a mismatch that shows up as drift in a cut, long after the
+    // frames were paid for. `fps` stays the generator's native rate, which is a
+    // fact about the model rather than a choice about the film.
+    const targetFps = Number(proj.target_fps) > 0 ? Number(proj.target_fps) : DEFAULT_FPS;
+
+    let width = DEFAULT_WIDTH, height = DEFAULT_HEIGHT;
+    const res = String(proj.target_resolution || '');
+    const m = res.match(/^(\d+)\s*x\s*(\d+)$/i);
+    if (m) { width = Number(m[1]); height = Number(m[2]); }
 
     return {
         num_frames: DEFAULT_NUM_FRAMES,
         fps: DEFAULT_GEN_FPS,
-        target_fps: DEFAULT_FPS,
+        target_fps: targetFps,
         duration_s: durationS,
-        width: DEFAULT_WIDTH,
-        height: DEFAULT_HEIGHT,
+        width,
+        height,
         steps: DEFAULT_STEPS,
         guidance_scale: DEFAULT_GUIDANCE,
     };
@@ -130,7 +144,7 @@ function buildVideoPayload(sceneCard, characters, location, stylePreset, options
     const { prompt, negative_prompt, camera_control } = buildVideoPrompt(
         sceneCard, characters, location, stylePreset, opts
     );
-    const params = calculateVideoParams(sceneCard);
+    const params = calculateVideoParams(sceneCard, opts.project);
 
     const payload = {
         prompt,

@@ -148,6 +148,7 @@ film-engine/
 │       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
 │       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
 │       ├── glb-parser.test.js          # A synthetic .glb parses, transforms apply, decimation bounds hold
+│       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
 │       ├── run-plan.test.js            # Strip ordering, dependency safety, cost, budget refusal
@@ -393,6 +394,26 @@ Two orders, and the trade is real rather than a preference: on 8 shots, `order=m
 **Breakdown summary, elements list and run report** complete the set. The elements list unions the locations table with what the scene headings name, because a heading whose row was never created is exactly the state a fresh screenplay upload leaves — reporting only the table would silently omit locations the film shoots in. `undescribed` is its actionable line, and `has_record` distinguishes "no row" (needs `entities_create`) from "row with no description" (needs `entities_describe`). The **run report** is the call sheet reinterpreted: there is no crew to notify and no mail dependency to add, but a director still needs to know whether the day happened, what failed and what it cost. Failed steps are **named individually** rather than counted — "3 steps failed" sends you to the database.
 
 Served at `GET /projects/:id/{staleness,sides,dood,run-plan,breakdown-summary,elements-list,run-report}` and as seven MCP tools (71 total).
+
+### Every Spec Changes Something (the board is not a form)
+A board that collects choices nobody reads is a form. `tests/spec-consumption.test.js` iterates all **8** `SPEC_KINDS` and, for each, changes the value and asserts that a real payload — what a provider or an editor receives — comes out different. It does not check that a spec is *stored*; storage was never the problem.
+
+Where each one lands:
+
+| Spec | Reaches | When |
+|---|---|---|
+| `lens` | the image prompt | on any shot whose card names no lens — including shots nobody has blocked |
+| `sensor` | previs | seeds a stage's sensor, and the delivered-frame crop that follows from it |
+| `aperture` | previs | seeds the stop, which sets depth of field |
+| `aspect_ratio` | the image payload | sizes the frame that is generated, and the NLE export |
+| `resolution` | `target_resolution` | the video payload's width/height, the conform, the NLE export |
+| `frame_rate` | `target_fps` | the video payload's target rate, the NLE timebase, the stitcher |
+| `color_space` | `color_space` | the NLE export and the QA rubric |
+| `style_preset` | the image prompt | the look every frame is generated in |
+
+Writing that test found the eighth broken. `calculateVideoParams` hardcoded `target_fps: 24` and `1024x576` and never read the project, so a production set to 25fps generated clips targeting 24 and was only *relabelled* at NLE export — a mismatch that surfaces as drift in a cut, long after the frames were paid for. The generator's own `fps` stays a constant, because that is a fact about the model rather than a choice about the film.
+
+The precedence rule is also pinned: a spec never outranks the scene card. The board says what the production shoots on; the card says what *this* shot does, and a default that beats an explicit choice is worse than no default.
 
 ### The Film's Optics Reach Every Shot
 `lens 40 / super35 / T2.8` sat on the board, validated, and reached nothing. They were only consulted by `previs/from-card`, so they applied to whichever shots someone had opened the 3D stage for — one of eight in practice — and the other seven generated on a generic 50mm super35 default belonging to no production. A spec a director deliberately chose was decoration.
@@ -818,6 +839,7 @@ node --test backend/tests/screenplay-to-entities.test.js
 node --test backend/tests/storyboard-prerequisites.test.js
 node --test backend/tests/previs-explore-ui.test.js
 node --test backend/tests/glb-parser.test.js
+node --test backend/tests/spec-consumption.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js
 node --test backend/tests/run-plan.test.js

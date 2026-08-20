@@ -229,7 +229,10 @@ const CAPABILITY_BUILDERS = {
             // differently. Undefined when unblocked, which is what keeps the
             // payload byte-identical for every shot nobody has blocked.
             previs: ctx.previs || undefined,
-        });
+                    // The delivery frame rate and size, so generation targets what
+            // the film is actually delivered at rather than a constant.
+            project: ctx.project,
+});
     },
 
     /** One payload per dialogue line. An empty dialogue array yields none. */
