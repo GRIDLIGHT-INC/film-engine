@@ -179,3 +179,39 @@ test('all three description fields are read, because subjects use different ones
     assert.strictEqual(statedSizes({ appearance_prompt: 'Roughly twenty metres nose to tail.' }).length, 1);
     assert.strictEqual(statedSizes({ description: 'About 0.7m across.' }).length, 1);
 });
+
+/**
+ * Whatever leads a prompt is what the image is OF.
+ *
+ * The scale notes were emitted before the action, on the reasoning that "who is
+ * here and how big they are" reads as one statement. It does not. An
+ * establishing wide down a cul-de-sac opened with "Sprinkler is roughly 1.4
+ * times smaller than a car tyre… SEDAN is roughly 1.2 times the size of a
+ * parked car", and the shot itself did not begin until character 178 — so the
+ * model made the two measured objects the subject and put both dead centre: a
+ * car parked in the middle of the road, a sprinkler on the pavement.
+ *
+ * A measurement is a qualifier on something already in the scene. It belongs
+ * after the scene, and this asserts the order rather than the presence, because
+ * the sentences were present the whole time and in the wrong place.
+ */
+test('the shot leads the prompt, and the measurements follow it', () => {
+    const { buildStoryboardPrompt } = require('../lib/storyboard-prompt');
+    const card = {
+        shot_code: '1A',
+        description: 'Extreme wide down the length of the cul-de-sac.',
+        camera: { shot_type: 'establishing', lens: '40mm' },
+        characters: [], props: ['Sprinkler'],
+    };
+    const props = [{ name: 'Sprinkler', height_m: 0.3, width_m: 0.3 }];
+    const { prompt } = buildStoryboardPrompt(card, [], null, 'teal grade', { props });
+
+    const shotAt = prompt.indexOf('Extreme wide');
+    const scaleAt = prompt.indexOf('Sprinkler is');
+    assert.ok(shotAt >= 0, 'the shot description is missing entirely');
+    assert.ok(scaleAt >= 0, 'the scale note is missing entirely');
+    assert.ok(shotAt < scaleAt,
+        `a measurement leads the prompt (shot at ${shotAt}, scale at ${scaleAt}) — `
+        + 'whatever leads is what the image is of');
+    assert.ok(shotAt < 40, `the shot does not start until character ${shotAt}`);
+});

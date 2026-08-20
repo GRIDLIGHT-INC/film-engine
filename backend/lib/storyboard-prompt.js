@@ -368,25 +368,27 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         }
     }
 
-    // 1b. How big everything is, relative to the frame and to each other.
-    //
-    // A diffusion model has no metric understanding, and a reference plate makes
-    // it worse: a plate is a close-up filling its own frame, so conditioning on
-    // one without a declared size reproduces what it was shown. That is how a
-    // thirty-centimetre lawn sprinkler came out the size of the car beside it.
-    //
-    // Emitted right after the subjects and before the action, so the model reads
-    // "who is here and how big they are" as one statement. Nothing is emitted
-    // for a subject with no declared size — a guessed default is
-    // indistinguishable from a deliberate one and would be wrong silently.
-    const scaleParts = scaleNotesFor(sceneCard, characters, opts);
-    if (scaleParts.length) parts.push(scaleParts.join('; '));
-
     // 2. Subject / action description
     const subject = sceneCard.action || sceneCard.description || '';
     if (subject) {
         parts.push(trimToAllowance(subject, opts.actionAllowance || allow.action));
     }
+
+    // 2b. How big everything is — AFTER the shot, never before it.
+    //
+    // These first led the prompt, on the reasoning that "who is here and how big
+    // they are" reads as one statement. That was wrong, and expensively so: an
+    // establishing wide down a cul-de-sac opened with "Sprinkler is roughly 1.4
+    // times smaller than a car tyre… SEDAN is roughly 1.2 times the size of a
+    // parked car", and the shot itself did not begin until character 178. The
+    // model did exactly what it was told — it made the two measured objects the
+    // subject and put both dead centre of the frame, a car parked in the middle
+    // of the road and a sprinkler on the pavement.
+    //
+    // Whatever leads a prompt is what the image is OF. A measurement is a
+    // qualifier on something already in the scene, so it goes after the scene.
+    const scaleParts = scaleNotesFor(sceneCard, characters, opts);
+    if (scaleParts.length) parts.push(`Scale: ${scaleParts.join('; ')}`);
 
     // 3-5. Camera: the blocking when the shot has been staged, otherwise the
     // scene card. Blocking WINS — the card is what was written, the blocking is
