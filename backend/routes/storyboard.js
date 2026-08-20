@@ -485,6 +485,13 @@ function handleStoryboard(req, res, urlParts, query) {
         return json(res, 404, { error: 'Not found' });
     }
 
+    // GET /film/shots/:id/prompt — what would be sent, and the room left.
+    if (urlParts[1] === 'shots' && urlParts[2] && urlParts[3] === 'prompt') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid shot ID' });
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        return shotPromptPreview(req, res, urlParts[2]);
+    }
+
     // /film/shots/:id/storyboard/regenerate
     if (urlParts[1] === 'shots' && urlParts[2] && urlParts[3] === 'storyboard') {
         const shotId = urlParts[2];
@@ -1109,6 +1116,97 @@ async function generateStoryboardStream(req, res, projectId, query) {
 }
 
 // ── FILM-020: Regenerate Single Shot ───────────────────────────────
+
+/**
+ * What this shot would send, and how much room is left — without spending.
+ *
+ * GET /film/shots/:id/prompt
+ *
+ * The engine can hold a ceiling; it cannot decide what matters. Cutting a
+ * subject's description at a clause boundary has no way of knowing that "one
+ * wheel trim missing" is worth keeping and "bench seats in cracked tan vinyl"
+ * is not — whoever is composing does. So this hands over the whole picture:
+ * every contributor with its full length and how much of it survives, the
+ * ceiling, the headroom, and which plates would attach. Compose a better prompt
+ * from it and send it back through `prompt_override`.
+ *
+ * Spends nothing, which is what makes it usable. Finding out by generating is
+ * how trying three phrasings becomes a budget decision.
+ */
+function shotPromptPreview(req, res, shotId) {
+    const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
+
+    let ctx;
+    try { ctx = loadShotContext(shotId); } catch (err) {
+        return json(res, err.code === 'PRECONDITION' ? 409 : 404, { error: err.message });
+    }
+    if (!ctx || !ctx.shot) return json(res, 404, { error: 'Shot not found' });
+
+    let built;
+    try { built = buildCapabilityPayload('image', ctx); } catch (err) {
+        return json(res, 409, { error: err.message, code: err.code });
+    }
+    const payload = Array.isArray(built.payload) ? built.payload[0] : built.payload;
+    const ceiling = imagePromptLimitFor(ctx.project);
+    const prompt = String(payload.prompt || '');
+
+    // Every locked subject that contributes prose, with what it wanted and what
+    // it got. "Over by 946" is actionable; "the prompt was truncated" is not.
+    const cc = ctx.consistency || {};
+    const contributors = (cc.prompt_addition_items || []).map(item => {
+        const kept = prompt.includes(item.text)
+            ? item.text.length
+            : longestPrefixIn(prompt, item.text);
+        return {
+            subject: item.subject_name,
+            kind: item.profile_type,
+            wrote: item.text.length,
+            survived: kept,
+            trimmed: item.text.length - kept,
+        };
+    });
+
+    return json(res, 200, {
+        shot_id: shotId,
+        shot_code: ctx.shot.shot_code,
+        prompt,
+        negative_prompt: payload.negative_prompt || '',
+        prompt_chars: prompt.length,
+        ceiling,
+        headroom: ceiling ? ceiling - prompt.length : null,
+        // The plates that travel WITH the prompt. A subject whose picture is
+        // attached needs identifying, not describing at length — which is where
+        // most of the room goes.
+        references: (payload.reference_images || []).map(r => ({
+            subject: r.subject_name, kind: r.profile_type, role: r.role,
+        })),
+        contributors,
+        card: ctx.sceneCard,
+        note: 'Compose a better prompt from this and send it back to '
+            + 'POST /shots/:id/storyboard/regenerate as prompt_override. Everything listed under '
+            + 'references is attached as an image, so it needs naming rather than describing at length.',
+    });
+}
+
+/** How much of `text` made it into `prompt`, when it was trimmed. */
+function longestPrefixIn(prompt, text) {
+    let lo = 0, hi = text.length;
+    while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (prompt.includes(text.slice(0, mid))) lo = mid; else hi = mid - 1;
+    }
+    return lo;
+}
+
+function imagePromptLimitFor(project) {
+    try {
+        const { resolveGenerator } = require('../lib/providers');
+        let config = {};
+        try { config = JSON.parse((project && project.provider_config) || '{}'); } catch (_) { config = {}; }
+        const adapter = resolveGenerator('image', config);
+        return (adapter && Number(adapter.promptLimit) > 0) ? Number(adapter.promptLimit) : null;
+    } catch (_) { return null; }
+}
 
 async function regenerateShot(req, res, shotId) {
     const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);

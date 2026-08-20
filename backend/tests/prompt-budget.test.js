@@ -210,3 +210,68 @@ test('the list reads plates from where the builder writes them', () => {
             `${kind} plates are no longer written as reference_image`);
     }
 });
+
+/**
+ * The trimmer has to see the whole prompt, including the part it did not build.
+ *
+ * Locked consistency profiles append their prompt_contract AFTER
+ * buildStoryboardPrompt has assembled against the provider ceiling — so the
+ * ceiling was enforced on a string that then grew by thousands of characters.
+ * On a real establishing shot: a ~1,500-character base plus three locked
+ * profiles adding 3,445, for 4,946 against a 4,000 ceiling.
+ *
+ * Three symptoms, one cause, and all three looked like the model misbehaving.
+ * The provider truncates the TAIL, and the tail was the location, so the street
+ * stopped looking like the street. A 653-character description of a lawn
+ * sprinkler sat FIRST, so it was drawn the size of the car beside it. And the
+ * style preset was outweighed three to one by object prose, so the look went.
+ */
+const { fitAdditions, ADDITION_RANK } = require('../lib/consistency-apply');
+
+const CONTRACTS = [
+    { text: 'S'.repeat(653), profile_type: 'prop', subject_name: 'Sprinkler' },
+    { text: 'C'.repeat(1936), profile_type: 'prop', subject_name: 'SEDAN' },
+    { text: 'L'.repeat(856), profile_type: 'location', subject_name: 'STREET' },
+    { text: 'M'.repeat(800), profile_type: 'character', subject_name: 'MAYA' },
+];
+
+test('additions never push the prompt past the provider ceiling', () => {
+    const base = 'B'.repeat(1500);
+    const out = fitAdditions(base, { prompt_addition_items: CONTRACTS }, { maxPromptChars: 4000 });
+    const total = base.length + out.join(', ').length + 2;
+    assert.ok(total <= 4000, `assembled prompt is ${total} against a ceiling of 4000`);
+});
+
+test('a place and its people outrank the objects in it', () => {
+    // With limited room, a viewer notices a different street long before a
+    // different sprinkler. Same reasoning as the reference selector's KIND_RANK.
+    assert.ok(ADDITION_RANK.character < ADDITION_RANK.prop);
+    assert.ok(ADDITION_RANK.location < ADDITION_RANK.prop);
+
+    const out = fitAdditions('B'.repeat(3400), { prompt_addition_items: CONTRACTS }, { maxPromptChars: 4000 });
+    const kinds = out.map(t => t[0]);      // M = character, L = location, S/C = props
+    assert.strictEqual(kinds[0], 'M', 'a prop was described before the character in the shot');
+    assert.strictEqual(kinds[1], 'L', 'a prop was described before the place the shot is in');
+});
+
+test('the shot itself is never cut to make room for a prop', () => {
+    // The base prompt is the action, the camera and the look. An object in the
+    // frame does not get to displace the frame.
+    const base = 'B'.repeat(3980);
+    const out = fitAdditions(base, { prompt_addition_items: CONTRACTS }, { maxPromptChars: 4000 });
+    assert.deepStrictEqual(out, [], 'additions were emitted with no room left for them');
+});
+
+test('with no ceiling nothing is trimmed, so a permissive provider loses nothing', () => {
+    const out = fitAdditions('B'.repeat(100), { prompt_addition_items: CONTRACTS }, {});
+    assert.strictEqual(out.length, CONTRACTS.length);
+    assert.strictEqual(out.join('').length, CONTRACTS.reduce((n, c) => n + c.text.length, 0));
+});
+
+test('a trimmed description keeps its opening, which is what the thing IS', () => {
+    const items = [{ text: 'A four-door sedan, forest green. Rust along the sills. Bench seats in tan vinyl.',
+                     profile_type: 'prop', subject_name: 'SEDAN' }];
+    const out = fitAdditions('', { prompt_addition_items: items }, { maxPromptChars: 60 });
+    assert.ok(out[0].startsWith('A four-door sedan'),
+        'the cut landed somewhere other than the front, so the object is no longer identified');
+});

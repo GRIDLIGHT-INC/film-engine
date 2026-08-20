@@ -901,6 +901,9 @@ const server = http.createServer(async (req, res) => {
             if (sub === 'render' || sub === 'renders' || sub === 'versions' || sub === 're-render') {
                 return handleRenderLedger(req, res, parts, query);
             }
+            if (sub === 'prompt') {
+                return await handleStoryboard(req, res, parts, query);
+            }
             if (sub === 'order' || sub === 'transition') {
                 return await handleShots(req, res, parts, query);
             }

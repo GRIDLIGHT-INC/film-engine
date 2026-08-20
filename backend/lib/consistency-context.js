@@ -318,10 +318,23 @@ function normalizeSeed(seed) {
 
 function buildPromptContract(profiles) {
     const promptParts = [];
+    // The same text, with what it is ABOUT. A flat array of strings cannot be
+    // ordered or budgeted: a sprinkler's description and a location's are
+    // indistinguishable once they are two entries in a list, so the sprinkler
+    // led the prompt on a wide establishing shot and the location fell off the
+    // end of the provider's ceiling.
+    const promptItems = [];
     const negativeParts = [];
     const seeds = [];
     for (const profile of profiles) {
-        if (profile.prompt_contract) promptParts.push(profile.prompt_contract);
+        if (profile.prompt_contract) {
+            promptParts.push(profile.prompt_contract);
+            promptItems.push({
+                text: profile.prompt_contract,
+                profile_type: profile.profile_type,
+                subject_name: profile.subject_name || '',
+            });
+        }
         if (profile.negative_contract) negativeParts.push(profile.negative_contract);
         const seed = normalizeSeed(profile.locked_seed);
         if (seed !== null) seeds.push({ profile, seed });
@@ -332,6 +345,7 @@ function buildPromptContract(profiles) {
     ] : [];
     return {
         prompt_additions: Array.from(new Set(promptParts.filter(Boolean))),
+        prompt_addition_items: promptItems,
         negative_additions: Array.from(new Set(negativeParts.filter(Boolean))),
         locked_seed: uniqueSeeds.length === 1 ? uniqueSeeds[0] : null,
         seed_warnings: seedWarnings,
@@ -347,7 +361,7 @@ function buildShotReferencePayload(shotInput, sceneInput, projectInput) {
     const scene = getScene(sceneInput || (shot && shot.scene_id));
     const project = getProject(projectInput || (scene && scene.project_id));
     if (!shot || !scene || !project) {
-        return { profiles: [], references: [], input_refs: [], prompt_additions: [], negative_additions: [], locked_seed: null, voice: {} };
+        return { profiles: [], references: [], input_refs: [], prompt_additions: [], prompt_addition_items: [], negative_additions: [], locked_seed: null, voice: {} };
     }
 
     const sceneCard = parseSceneCard(shot);
@@ -412,6 +426,7 @@ function buildShotReferencePayload(shotInput, sceneInput, projectInput) {
         reference_groups: referenceGroups,
         input_refs: inputRefs,
         prompt_additions: promptContract.prompt_additions,
+        prompt_addition_items: promptContract.prompt_addition_items,
         negative_additions: promptContract.negative_additions,
         locked_seed: promptContract.locked_seed,
         seed_conflict: promptContract.seed_conflict,

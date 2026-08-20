@@ -208,7 +208,12 @@ const CAPABILITY_BUILDERS = {
             aspect_ratio: ctx.project.aspect_ratio,
         });
 
-        return cc ? applyConsistencyToImagePayload(payload, cc) : payload;
+        // The ceiling goes WITH the additions, because they are part of the
+        // prompt the provider receives — enforcing it before they are appended
+        // measures the wrong string.
+        return cc
+            ? applyConsistencyToImagePayload(payload, cc, { maxPromptChars: imagePromptLimit(ctx.project) })
+            : payload;
     },
 
     video(ctx) {

@@ -28,15 +28,91 @@ function shouldUseLockedSeed(seed) {
 }
 
 /**
+ * What a locked subject contributes to a prompt, in what order, within budget.
+ *
+ * This is a SAFETY NET, not the plan. Whoever composes a prompt — an agent with
+ * the shot in front of it — should decide what matters about a subject in this
+ * frame, because a machine cutting a description at a comma cannot know that
+ * "one wheel trim missing" is worth more than "bench seats in cracked tan
+ * vinyl". But something has to hold the ceiling when nobody is composing: the
+ * app's own Regen button, a batch run, the orchestrator.
+ *
+ * These used to be appended verbatim AFTER buildStoryboardPrompt had assembled
+ * the prompt against the provider's ceiling, so the trimmer never saw the
+ * largest contributor to its own output. On a real establishing shot the base
+ * came to ~1,500 characters and three locked profiles added 3,445 more, for
+ * 4,946 against a 4,000 ceiling. Three things went wrong at once and every one
+ * of them looked like the model misbehaving:
+ *
+ *  - the ceiling was exceeded, so the provider truncated the TAIL, and the tail
+ *    was the location — which is why the street stopped looking like the street;
+ *  - a 653-character description of a lawn sprinkler sat FIRST, right after the
+ *    quality tags, so the model read it as a primary subject and drew it the
+ *    size of the car parked beside it;
+ *  - the style preset, ahead of all of it, was outweighed three to one by object
+ *    prose, and the look went with it.
+ *
+ * Ordering is the cheap half of the fix and costs nothing. A frame is OF a place
+ * and its people; props are things in it. ADDITION_RANK mirrors the reference
+ * selector's KIND_RANK for the same reason it exists there: with limited room,
+ * identity and place outrank objects, because a viewer notices a different
+ * street long before a different sprinkler.
+ */
+const ADDITION_RANK = { character: 0, location: 1, prop: 2, style: 3, voice: 9 };
+
+/** Cut at a clause boundary; a description's opening is what the thing IS. */
+function trimContract(text, budget) {
+    const t = String(text || '');
+    if (t.length <= budget) return t;
+    const cut = t.slice(0, budget);
+    const stop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('; '), cut.lastIndexOf(', '));
+    return (stop > budget * 0.4 ? cut.slice(0, stop) : cut).trim();
+}
+
+/**
+ * Fit the additions into what is left of the ceiling.
+ *
+ * The base prompt is the shot itself — action, camera, look — and is never cut
+ * to make room for a description of an object in it.
+ */
+function fitAdditions(basePrompt, ctx, opts) {
+    const items = Array.isArray(ctx.prompt_addition_items) && ctx.prompt_addition_items.length
+        ? ctx.prompt_addition_items.slice()
+        : (ctx.prompt_additions || []).map(text => ({ text, profile_type: 'prop', subject_name: '' }));
+
+    items.sort((a, b) => (ADDITION_RANK[a.profile_type] ?? 5) - (ADDITION_RANK[b.profile_type] ?? 5));
+
+    const ceiling = Number(opts && opts.maxPromptChars) > 0 ? Number(opts.maxPromptChars) : 0;
+    if (!ceiling) return items.map(i => i.text);
+
+    let room = ceiling - String(basePrompt || '').length - 2;
+    if (room <= 0) return [];
+
+    const out = [];
+    for (let i = 0; i < items.length; i++) {
+        // An even split of what is LEFT, so the last subject is not the one
+        // that vanishes, and anything a subject does not use is inherited by
+        // the ones after it rather than wasted.
+        const share = Math.floor(room / (items.length - i)) - 2;
+        if (share <= 40) break;              // too little room to say anything true
+        const text = trimContract(items[i].text, share);
+        if (!text) continue;
+        out.push(text);
+        room -= text.length + 2;
+    }
+    return out;
+}
+
+/**
  * Merge a shot's consistency context into an image payload: prompt/negative
  * additions, the locked seed, and reference images (promoting the first to the
  * IP-Adapter slot when nothing else claimed it).
  */
-function applyConsistencyToImagePayload(payload, context) {
+function applyConsistencyToImagePayload(payload, context, opts) {
     const p = { ...(payload || {}) };
     const ctx = context || {};
     if (ctx.prompt_additions && ctx.prompt_additions.length) {
-        p.prompt = [p.prompt, ...ctx.prompt_additions].filter(Boolean).join(', ');
+        p.prompt = [p.prompt, ...fitAdditions(p.prompt, ctx, opts)].filter(Boolean).join(', ');
     }
     if (ctx.negative_additions && ctx.negative_additions.length) {
         p.negative_prompt = [p.negative_prompt, ...ctx.negative_additions].filter(Boolean).join(', ');
@@ -86,6 +162,10 @@ function applyConsistencyToVoicePayload(payload, context, characterName) {
 }
 
 module.exports = {
+    fitAdditions,
+    ADDITION_RANK,
+    fitAdditions,
+    ADDITION_RANK,
     normalizeName,
     shouldUseLockedSeed,
     applyConsistencyToImagePayload,

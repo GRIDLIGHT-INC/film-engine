@@ -931,12 +931,32 @@ const PRODUCTION_TOOLS = [
         schema: {}, required: [],
     },
     {
+        name: 'shot_prompt',
+        handler: handleStoryboard, method: 'GET',
+        description: 'What this shot WOULD send to the image model, and how much room is left. Returns the assembled prompt, the provider ceiling, the headroom, which plates are attached as images, and every locked subject with how many characters it wrote and how many survived. SPENDS NOTHING. Read it before regenerating anything: the engine can hold a ceiling but cannot decide what matters, and a description cut at a clause boundary does not know that "one wheel trim missing" is worth more than "cracked tan vinyl".',
+        path: a => `/film/shots/${a.shot_id}/prompt`,
+        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+    },
+    {
         name: 'storyboard_regenerate',
         handler: handleStoryboard, method: 'POST',
-        description: 'Generate ONE shot\u2019s keyframe again from its current card. Costs credits. Use this after shot_update rather than regenerating the whole board.',
+        description: 'Generate ONE shot\u2019s keyframe again. Costs credits. Without prompt_override it assembles the prompt itself and trims to fit, which is a safety net rather than a plan. Prefer composing: read shot_prompt, write a prompt that fits the ceiling and says what matters about THIS frame, and send it as prompt_override. Everything listed under references travels as an image, so name those subjects rather than describing them at length — that is where the room goes.',
         path: a => `/film/shots/${a.shot_id}/storyboard/regenerate`,
-        body: () => ({}),
-        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+        body: a => {
+            const b = {};
+            if (a.prompt_override) b.prompt_override = a.prompt_override;
+            if (a.negative_prompt) b.negative_prompt = a.negative_prompt;
+            return b;
+        },
+        schema: {
+            shot_id: { type: 'string' },
+            prompt_override: {
+                type: 'string',
+                description: 'The complete prompt to send, composed by you. Must fit the ceiling from shot_prompt — nothing trims it for you, and a provider truncates the TAIL, which is where the location usually sits.',
+            },
+            negative_prompt: { type: 'string' },
+        },
+        required: ['shot_id'],
     },
     {
         name: 'consistency_list',

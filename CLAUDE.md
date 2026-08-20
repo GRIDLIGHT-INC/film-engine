@@ -574,6 +574,15 @@ Regenerating a frame overwrites the file at the same name, so the URL never chan
 
 The button gave no feedback either. `Regenerating...` went to the status bar at the bottom of the screen while the card you clicked looked exactly as it had a moment before — for up to a minute, since the image call may walk past a provider that declines before one accepts. The frame being generated now says so **on the frame**, with an elapsed count, and the card's own buttons are disabled while it runs, because the one thing a slow generation invites is a second click on a paid action. Same reasoning as arming a markup shape: feedback belongs on the thing you touched.
 
+### The Trimmer Has to See the Whole Prompt
+Locked consistency profiles append their `prompt_contract` **after** `buildStoryboardPrompt` has assembled against the provider ceiling — so the ceiling was enforced on a string that then grew by thousands of characters. On a real establishing shot: a ~1,500-character base plus three locked profiles adding **3,445**, for **4,946** against a 4,000 ceiling.
+
+Three symptoms, one cause, and every one of them looked like the model misbehaving. The provider truncates the **tail**, and the tail was the location — so the street stopped looking like the street. A 653-character description of a lawn sprinkler sat **first**, right after the quality tags, so it was drawn the size of the car beside it. And the style preset was outweighed three to one by object prose, so the look went with it.
+
+`fitAdditions` holds the ceiling and orders by `ADDITION_RANK`, which mirrors the reference selector's `KIND_RANK` for the same reason it exists there: with limited room, identity and place outrank objects. The base prompt — the action, the camera, the look — is **never** cut to make room for a description of an object in the frame, and a trimmed description keeps its opening, which is what the thing *is*.
+
+**But this is a safety net, not the plan.** The engine can hold a ceiling; it cannot decide what matters. Cutting at a clause boundary has no way of knowing that *"one wheel trim missing"* is worth keeping and *"bench seats in cracked tan vinyl"* is not — whoever is composing does. `GET /shots/:id/prompt` (`shot_prompt`) hands over the whole picture and **spends nothing**: the assembled prompt, the ceiling, the headroom, which plates travel as images, and every contributor with how much it wrote and how much survived. `storyboard_regenerate` takes that composition back as `prompt_override`. A subject whose picture is attached needs **naming, not describing at length** — which is where most of the room was going.
+
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
 
