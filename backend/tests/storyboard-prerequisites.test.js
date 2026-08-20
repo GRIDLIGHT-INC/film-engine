@@ -76,7 +76,9 @@ const PANEL_FIELDS = [
     { id: 'shot_code', probe: /f\.shot_code/ },
     { id: 'description', probe: /f\.description/ },
     { id: 'dialogue', probe: /f\.dialogue/ },
-    { id: 'camera', probe: /f\.camera/ },
+    // The effective camera, which on a blocked shot is not the card's — the
+    // board used to show the one set of values generation was going to ignore.
+    { id: 'camera', probe: /f\.camera|f\.effective/ },
     { id: 'duration', probe: /f\.duration_ms/ },
 ];
 
@@ -126,12 +128,25 @@ test('a plate with no style still names its medium, so it cannot default to clip
         `these ask for an image without ever saying what kind: ${vague.join(', ')}`);
 });
 
-test('the storyboard panel shows what a storyboard panel is for', () => {
-    const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    // The frame card, not the whole SPA: other pages also mention these names.
+/**
+ * The frame card, plus the helper it delegates its facets to.
+ *
+ * A fixed window over the renderer stopped working the moment the tags moved
+ * into a function of their own — which is the right move (the board now shows
+ * the EFFECTIVE camera, not the card's, and that needs more than a ternary) and
+ * would have read here as the panel having lost its camera entirely.
+ */
+function panelSource(html) {
     const start = html.indexOf("const grid = document.getElementById('storyboardGrid')");
     assert.ok(start > 0, 'storyboard grid renderer not found');
-    const card = html.slice(start, start + 4000);
+    const tags = html.indexOf('function storyboardFacetTags(');
+    assert.ok(tags > 0, 'the frame card renders no facets at all');
+    return html.slice(start, start + 4000) + html.slice(tags, tags + 3000);
+}
+
+test('the storyboard panel shows what a storyboard panel is for', () => {
+    const html = fs.readFileSync(INDEX_HTML, 'utf8');
+    const card = panelSource(html);
 
     const missing = PANEL_FIELDS.filter(f => !f.probe.test(card)).map(f => f.id);
     assert.deepStrictEqual(missing, [],

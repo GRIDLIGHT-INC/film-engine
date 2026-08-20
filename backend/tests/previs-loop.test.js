@@ -251,3 +251,95 @@ test('an unapproved shot is never gated, so nothing that worked stops working', 
     assert.ok(r.status < 400,
         `a shot that was never approved must generate exactly as before, got ${r.status}`);
 });
+
+/**
+ * The loop has to be visible on the board, or it is not a loop.
+ *
+ * You experiment in previs, lock a move, and then look at the storyboard —
+ * which showed the CARD's framing, lens and movement. On a blocked shot those
+ * are precisely the values generation is going to ignore, so the board was
+ * confidently displaying the wrong camera and the whole experiment left no
+ * evidence anywhere except the stage you walked away from.
+ *
+ * Set-based over the three facets blocking can override, because the merge is
+ * per-facet: a shot staged but not yet solved has a movement and no framing,
+ * and an all-or-nothing swap on it drops the card's lens as well.
+ */
+const { effectiveCamera } = require('../lib/previs-blocking');
+const { buildStoryboardPrompt, SHOT_TYPE_MAP, MOVEMENT_MAP } = require('../lib/storyboard-prompt');
+
+const CARD_CAMERA = { shot_type: 'establishing', lens: '40mm anamorphic', movement: 'push-in' };
+
+/** A blocking that solves to a close-up on an 85, moving. */
+const STAGED = {
+    camera: { position: [0, 1.6, 2.7], rotation: [0, 0, 0], focalMm: 85, sensorId: 'super35' },
+    subject: { position: [0, 0, 0], heightM: 1.7 },
+    subjects: [{ kind: 'human', position: [0, 0, 0], sizeM: [0.5, 1.7, 0.3], isTarget: true }],
+    movement: 'dolly-in',
+    rig: 'dolly',
+};
+
+test('every facet blocking has an opinion on beats the card, and only those', () => {
+    const staged = effectiveCamera(CARD_CAMERA, STAGED, {});
+    const bare = effectiveCamera(CARD_CAMERA, null, {});
+
+    assert.strictEqual(bare.blocked, false, 'an unblocked shot must read as unblocked');
+    for (const facet of ['shot_type', 'lens', 'movement']) {
+        assert.strictEqual(bare[facet].source, 'card',
+            `${facet} claims a source other than the card on a shot nobody staged`);
+        assert.strictEqual(staged[facet].source, 'blocking',
+            `${facet} still comes from the card after the shot was staged`);
+    }
+    assert.strictEqual(staged.lens.value, '85mm');
+    assert.strictEqual(staged.movement.value, 'dolly-in');
+    assert.ok(staged.distance_m > 0, 'a staged shot has a measured distance; a written one never does');
+});
+
+test('a partly staged shot keeps the card facets the stage cannot supply', () => {
+    // Movement is known the moment something is staged; framing needs a solve.
+    // The bug this guards is the all-or-nothing swap: it looked equivalent and
+    // dropped the card's framing AND lens on a shot that had only a movement.
+    const partial = { movement: 'orbit', camera: {}, subject: {}, subjects: [] };
+    const e = effectiveCamera(CARD_CAMERA, partial, {});
+    assert.strictEqual(e.movement.source, 'blocking');
+    assert.strictEqual(e.shot_type.value, 'establishing', 'the card lost its framing to a shot with no camera');
+    assert.strictEqual(e.lens.value, '40mm anamorphic', 'the card lost its lens to a shot with no camera');
+});
+
+test('the board and the prompt cannot disagree about which camera is used', () => {
+    // One rule, consulted twice. When these were two implementations the board
+    // showed one lens and the generator used another, with nothing to catch it.
+    for (const previs of [null, STAGED, { movement: 'orbit', camera: {}, subject: {}, subjects: [] }]) {
+        const e = effectiveCamera(CARD_CAMERA, previs, {}, { framingIsUsable: f => !!SHOT_TYPE_MAP[f] });
+        const prompt = buildStoryboardPrompt(
+            { shot_code: '1A', description: 'a street', camera: CARD_CAMERA }, [], null, '', { previs });
+
+        if (e.shot_type.value) {
+            assert.ok(prompt.prompt.includes(SHOT_TYPE_MAP[e.shot_type.value]),
+                `the board says framing ${e.shot_type.value} and the prompt does not use it`);
+        }
+        if (e.lens.value) {
+            assert.ok(prompt.prompt.includes(`${e.lens.value} lens`),
+                `the board says lens ${e.lens.value} and the prompt does not use it`);
+        }
+        if (e.movement.value) {
+            assert.ok(prompt.prompt.includes(MOVEMENT_MAP[e.movement.value]),
+                `the board says movement ${e.movement.value} and the prompt does not use it`);
+        }
+    }
+});
+
+test('the board can tell staged from approved from restaged', () => {
+    // Three states, not two. Folding "approved" and "approved, then restaged"
+    // together is how a director meets a 409 at generation time for a shot the
+    // board told them was signed off.
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    const fn = html.slice(html.indexOf('function storyboardPrevisTag('));
+    const body = fn.slice(0, fn.indexOf('\n    }'));
+    for (const state of ['blocked', 'approved', 'stale']) {
+        assert.ok(new RegExp(`\\b${state}\\b`).test(body),
+            `the board cannot show "${state}", so that state is invisible until generation refuses`);
+    }
+    assert.ok(/previsOpenFromBoard/.test(html),
+        'no way from a frame to the stage that produced it');
+});

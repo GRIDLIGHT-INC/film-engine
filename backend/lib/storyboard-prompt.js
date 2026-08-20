@@ -199,7 +199,7 @@ function allowancesFor(ceiling) {
     return out;
 }
 
-const { previsFacets } = require('./previs-blocking');
+const { previsFacets, effectiveCamera } = require('./previs-blocking');
 
 /**
  * Blocking, expressed in the prompt's own vocabulary.
@@ -347,10 +347,14 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     const facets = previsFacets(opts.previs) || {};
     const cardCamera = sceneCard.camera || {};
 
+    // One precedence rule, shared with the board. It used to live here alone,
+    // and the board displayed the card's facets — so a blocked shot showed a
+    // lens and a framing that generation was not going to use.
+    const effective = effectiveCamera(cardCamera, opts.previs, opts.filmOptics,
+        { framingIsUsable: f => !!SHOT_TYPE_MAP[f] });
+
     // 3. Camera shot type
-    const blockedFraming = facets.shot_type || facets.framing;
-    const shotType = (blockedFraming && SHOT_TYPE_MAP[blockedFraming])
-        ? blockedFraming : cardCamera.shot_type;
+    const shotType = effective.shot_type.value;
     if (shotType && SHOT_TYPE_MAP[shotType]) {
         parts.push(SHOT_TYPE_MAP[shotType]);
     }
@@ -359,15 +363,7 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // shoots on. That last fallback is the whole point of choosing a lens on
     // the board: without it the choice only reached shots someone had opened
     // the 3D stage for.
-    const film = opts.filmOptics || {};
-    const blockedFocal = Number(facets.focal_mm);
-    if (Number.isFinite(blockedFocal) && blockedFocal > 0) {
-        parts.push(`${Math.round(blockedFocal)}mm lens`);
-    } else if (cardCamera.lens) {
-        parts.push(`${cardCamera.lens} lens`);
-    } else if (Number(film.focalMm) > 0) {
-        parts.push(`${Math.round(Number(film.focalMm))}mm lens`);
-    }
+    if (effective.lens.value) parts.push(`${effective.lens.value} lens`);
 
     // 4b. Camera height against a standing eyeline IS the angle. Derived rather
     // than stored, because the stage already knows where the camera is and a
@@ -379,7 +375,7 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     }
 
     // 5. Camera movement
-    const movement = facets.movement || cardCamera.movement;
+    const movement = effective.movement.value;
     if (movement && MOVEMENT_MAP[movement]) {
         parts.push(MOVEMENT_MAP[movement]);
     }

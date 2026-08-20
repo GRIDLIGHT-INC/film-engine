@@ -898,6 +898,11 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
+        // Route: /film/card-vocabulary — the lists a scene card may draw on.
+        if (parts[1] === 'card-vocabulary') {
+            return await handleShots(req, res, parts, query);
+        }
+
         // Route: /film/shots (create shots from scene cards)
         if (parts[1] === 'shots') {
             return await handleShots(req, res, parts, query);

@@ -23,6 +23,9 @@ const { generateImageWithFallback, imageProviderChain } = require('../lib/image-
 const { endpointFor: gridlightEndpointFor } = require('../lib/providers/gridlight-adapter');
 const { extractMediaUrl, resolveMediaUrl, isGatewayUrl } = require('../lib/provider-media');
 const { imageRequestPayload, providerConfigOf } = require('../lib/capability-payloads');
+const { loadBlocking, approvalState } = require('./previs');
+const { effectiveCamera } = require('../lib/previs-blocking');
+const { filmOptics } = require('../lib/look-development');
 
 const os = require('os');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -538,6 +541,38 @@ function serveStoryboardImage(res, projectId, filename) {
 
 // ── FILM-019: Get Storyboard ───────────────────────────────────────
 
+/**
+ * Whether a shot has been staged, and whether the sign-off still describes it.
+ *
+ * Three states, not two. "Approved" and "approved, then restaged" are the
+ * distinction the whole iterate-until-happy loop turns on, and folding them
+ * together is how a director ends up meeting a 409 at generation time for a
+ * shot the board told them was signed off.
+ */
+function previsStateFor(shotId) {
+    let blocking = null;
+    try { blocking = loadBlocking(shotId); } catch (_) { blocking = null; }
+    if (!blocking) return { blocked: false, approved: false, stale: false };
+    let approval = { approved: false, stale: false, approved_at: null };
+    try { approval = approvalState(shotId); } catch (_) { /* keep the default */ }
+    return {
+        blocked: true,
+        approved: approval.approved,
+        stale: approval.stale,
+        approved_at: approval.approved_at,
+        rig: blocking.rig,
+        moves: Array.isArray(blocking.moves) ? blocking.moves.length : 0,
+        duration_ms: blocking.durationMs || 0,
+    };
+}
+
+/** The camera generation will use, through the one precedence rule. */
+function cameraFor(shotId, sceneCard, optics) {
+    let blocking = null;
+    try { blocking = loadBlocking(shotId); } catch (_) { blocking = null; }
+    return effectiveCamera(sceneCard.camera || {}, blocking, optics);
+}
+
 function getStoryboard(req, res, projectId, query) {
     const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
@@ -545,6 +580,7 @@ function getStoryboard(req, res, projectId, query) {
     }
 
     const shots = loadProjectShots(projectId);
+    const optics = filmOptics(db, projectId);
     let totalDurationMs = 0;
 
     const frames = shots.map(shot => {
@@ -578,6 +614,13 @@ function getStoryboard(req, res, projectId, query) {
             lighting: sceneCard.lighting || {},
             status: shot.status,
             asset_version: asset ? asset.version : null,
+            // What this frame will actually be generated with, and where each
+            // facet came from. The board used to show the CARD's camera, which
+            // on a blocked shot is precisely the set of values generation is
+            // going to ignore — so a director who staged an angle, applied it
+            // and looked at the board saw no evidence any of it had happened.
+            effective: cameraFor(shot.shot_id, sceneCard, optics),
+            previs: previsStateFor(shot.shot_id),
         };
     });
 

@@ -5316,6 +5316,20 @@
                     <label>Notes <span class="text-muted text-sm">direction that is not part of the prompt</span></label>
                     <textarea id="shotCardNotes" rows="3" style="width:100%;line-height:1.5;font-family:inherit;"></textarea>
                 </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+                    <div class="form-group"><label>Framing</label><select id="shotCardShotType"></select></div>
+                    <div class="form-group">
+                        <label>Lens <span class="text-muted text-sm">free text</span></label>
+                        <input type="text" id="shotCardLens" placeholder="40mm anamorphic">
+                    </div>
+                    <div class="form-group"><label>Movement</label><select id="shotCardMovement"></select></div>
+                    <div class="form-group"><label>Lighting</label><select id="shotCardLighting"></select></div>
+                </div>
+                <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
+                    These four reach the prompt directly, and movement also becomes the clip's
+                    <code>camera_control</code>. Blocking a shot in Previs overrides framing, lens and
+                    movement &mdash; what was staged beats what was written.
+                </p>
                 <div id="shotCardWarning" class="text-sm" style="display:none;margin-bottom:10px;"></div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;">
                     <button class="btn btn-secondary" onclick="closeModal('shotCardModal')">Cancel</button>
@@ -23283,11 +23297,7 @@ ${fountainText.slice(0, 50000)}`;
                                     <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again — costs credits">Regen</button>
                                 </div>
                             </div>
-                            ${f.camera && f.camera.shot_type ? '<span class="tag">' + esc(f.camera.shot_type) + '</span>' : (typeof f.camera === 'string' && f.camera ? '<span class="tag">' + esc(f.camera) + '</span>' : '')}
-                            ${f.camera && f.camera.lens ? '<span class="tag">' + esc(f.camera.lens) + '</span>' : ''}
-                            ${f.camera && f.camera.movement ? '<span class="tag">' + esc(f.camera.movement) + '</span>' : ''}
-                            ${f.lighting && f.lighting.type ? '<span class="tag">' + esc(f.lighting.type) + '</span>' : (typeof f.lighting === 'string' && f.lighting ? '<span class="tag">' + esc(f.lighting) + '</span>' : '')}
-                            ${f.duration_ms ? '<span class="tag">' + (f.duration_ms / 1000).toFixed(1) + 's</span>' : ''}
+                            ${storyboardFacetTags(f)}
                             ${f.description ? '<p class="text-sm" style="margin-top:6px;line-height:1.45;">' + esc(f.description) + '</p>' : ''}
                             ${storyboardDialogueHtml(f.dialogue)}
                             <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;">
@@ -23702,7 +23712,127 @@ ${fountainText.slice(0, 50000)}`;
      * it from exactly the same words, forever. This is the loop closing — look
      * at the frame, change the description, generate again.
      */
-    let SHOT_CARD = { shotId: null, card: null };
+    /**
+     * The facets under a frame, as the way in to changing them.
+     *
+     * They read as labels and were labels: the board said "establishing ·
+     * 40mm anamorphic · push-in · blue-hour" and there was nowhere to edit any
+     * of it. Each is the thing it describes, so clicking it opens the card at
+     * the field it came from — the answer to "where do I change this" should be
+     * the thing itself, not a menu somewhere else.
+     */
+    function storyboardFacetTags(f) {
+        const light = (f.lighting && typeof f.lighting === 'object') ? f.lighting : {};
+        // The EFFECTIVE camera, not the card's. On a blocked shot they are
+        // different, and the card's is exactly the set of values generation is
+        // going to ignore — so the board was showing the wrong lens with total
+        // confidence.
+        const e = f.effective || {};
+        const facet = k => (e[k] && e[k].value) || '';
+        const from = k => (e[k] && e[k].source) || 'card';
+        const facets = [
+            ['shotCardShotType', facet('shot_type'), from('shot_type')],
+            ['shotCardLens', facet('lens'), from('lens')],
+            ['shotCardMovement', facet('movement'), from('movement')],
+            ['shotCardLighting', light.type || (typeof f.lighting === 'string' ? f.lighting : ''), 'card'],
+        ];
+        const WHERE = {
+            blocking: ['staged in previs — this beats the card', 'var(--gl-brand-cyan, #38bdf8)'],
+            film: ['the production default — no shot chose this', 'var(--gl-text-muted, #94a3b8)'],
+            card: ['written on the scene card', ''],
+        };
+        const tags = facets.filter(([, v]) => v).map(([field, v, src]) => {
+            const [why, colour] = WHERE[src] || WHERE.card;
+            // A staged facet opens previs, a written one opens the card. The
+            // way in should be the place the value actually comes from.
+            const go = src === 'blocking'
+                ? `previsOpenFromBoard('${f.shot_id}')`
+                : `editShotCard('${f.shot_id}','${field}')`;
+            return `<span class="tag" style="cursor:pointer;${colour ? 'border-color:' + colour + ';color:' + colour + ';' : ''}"
+                   title="${esc(why)} — click to change"
+                   onclick="${go}">${esc(v)}</span>`;
+        }).join('');
+        // An unset facet is worth showing as unset: a frame with no lighting
+        // named is generating without one, which reads as a choice only if you
+        // can see it was never made.
+        const missing = facets.filter(([, v]) => !v).length;
+        const add = missing
+            ? `<span class="tag" style="cursor:pointer;opacity:.6;"
+                     title="${missing} of framing, lens, movement and lighting are not set"
+                     onclick="editShotCard('${f.shot_id}')">+ ${missing} unset</span>`
+            : '';
+        const dur = f.duration_ms ? `<span class="tag">${(f.duration_ms / 1000).toFixed(1)}s</span>` : '';
+        return tags + add + dur + storyboardPrevisTag(f);
+    }
+
+    /**
+     * Whether this shot was staged, and whether the sign-off still stands.
+     *
+     * Locking a move in previs changed nothing visible on the board, so the
+     * whole experiment-then-commit loop had no evidence anywhere except the
+     * stage you left. Three states, because "approved" and "approved, then
+     * restaged" are what the loop turns on — and the second one is a 409 at
+     * generation time that the director had no way to see coming.
+     */
+    function storyboardPrevisTag(f) {
+        const p = f.previs || {};
+        if (!p.blocked) {
+            return `<span class="tag" style="cursor:pointer;opacity:.55;"
+                title="not staged — the frame comes from the written card"
+                onclick="previsOpenFromBoard('${f.shot_id}')">block in previs</span>`;
+        }
+        const [label, colour, why] = p.approved && p.stale
+            ? ['staged · changed since approval', 'var(--gl-warning, #f59e0b)',
+               'approved, then restaged — generation refuses until you re-approve']
+            : p.approved
+                ? ['approved', 'var(--gl-success, #22c55e)', 'signed off as it stands']
+                : ['staged', 'var(--gl-brand-cyan, #38bdf8)', 'blocked but not approved'];
+        return `<span class="tag" style="cursor:pointer;border-color:${colour};color:${colour};"
+            title="${esc(why)}" onclick="previsOpenFromBoard('${f.shot_id}')">${label}</span>`;
+    }
+
+    /** Open the 3D stage on this shot, from the frame you were looking at. */
+    async function previsOpenFromBoard(shotId) {
+        closeModal('frameViewerModal');
+        markupDisarm();
+        navigateTo('previs');
+        // The page loads its own shot list; wait for it before selecting, or
+        // the select has no option to take.
+        for (let i = 0; i < 40 && !(PREVIS.shots || []).length; i++) await new Promise(r => setTimeout(r, 50));
+        const sel = document.getElementById('previsShotSelect');
+        if (sel) sel.value = shotId;
+        await previsOpenShot(shotId);
+    }
+
+    let SHOT_CARD = { shotId: null, card: null, vocab: null };
+
+    /**
+     * The lists a card may draw on, fetched once from the validator's own copy.
+     *
+     * Typing them into the page would work exactly once: a shot type added to
+     * the schema would become an option the board offers and the validator
+     * refuses. Same call the flows canvas made when it served its palette from
+     * the node registry instead of a literal.
+     */
+    async function shotCardVocab() {
+        if (SHOT_CARD.vocab) return SHOT_CARD.vocab;
+        SHOT_CARD.vocab = await api('/card-vocabulary');
+        return SHOT_CARD.vocab;
+    }
+
+    /** Fill a select from a list, with an explicit "not set" that means it. */
+    function shotCardFill(id, values, current, blankLabel) {
+        const el = document.getElementById(id);
+        el.innerHTML = `<option value="">${blankLabel}</option>`
+            + values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+        // A value the card carries but the list does not is kept rather than
+        // silently reset — an old card must not lose a facet just by being
+        // opened in the editor.
+        if (current && !values.includes(current)) {
+            el.innerHTML += `<option value="${esc(current)}">${esc(current)} (not in the current list)</option>`;
+        }
+        el.value = current || '';
+    }
 
     /**
      * Change what a frame is generated from.
@@ -23713,7 +23843,7 @@ ${fountainText.slice(0, 50000)}`;
      * a paragraph, and you cannot see the words you are editing in a field that
      * shows forty characters of them.
      */
-    async function editShotCard(shotId) {
+    async function editShotCard(shotId, focusField) {
         try {
             const shot = await api(`/shots/${shotId}`);
             SHOT_CARD = { shotId, card: shot.card || {} };
@@ -23722,9 +23852,23 @@ ${fountainText.slice(0, 50000)}`;
             document.getElementById('shotCardDescription').value = SHOT_CARD.card.description || '';
             document.getElementById('shotCardAction').value = SHOT_CARD.card.action || '';
             document.getElementById('shotCardNotes').value = SHOT_CARD.card.notes || '';
+
+            const vocab = await shotCardVocab();
+            const cam = SHOT_CARD.card.camera || {};
+            const light = SHOT_CARD.card.lighting || {};
+            shotCardFill('shotCardShotType', vocab.shot_types, cam.shot_type, '— no framing —');
+            shotCardFill('shotCardMovement', vocab.camera_moves, cam.movement, '— no movement —');
+            shotCardFill('shotCardLighting', vocab.lighting,
+                typeof light === 'string' ? light : light.type, '— no lighting —');
+            document.getElementById('shotCardLens').value = cam.lens || '';
+
             document.getElementById('shotCardWarning').style.display = 'none';
             shotCardCount();
             showModal('shotCardModal');
+            if (focusField) {
+                const el = document.getElementById(focusField);
+                if (el) setTimeout(() => { el.focus(); el.scrollIntoView({ block: 'center' }); }, 60);
+            }
         } catch (err) {
             setStatus('Could not open the card: ' + err.message);
         }
@@ -23754,10 +23898,26 @@ ${fountainText.slice(0, 50000)}`;
             warn.style.color = 'var(--gl-danger, #ef4444)';
             warn.textContent = msg;
         };
+        const val = id => document.getElementById(id).value.trim();
+        // Camera and lighting are MERGED into what the card already holds, not
+        // rebuilt from these four fields — a card carries sensor, aperture and
+        // height the editor does not show, and rebuilding would drop whatever
+        // previs wrote the last time a shot was blocked.
+        const camera = { ...(SHOT_CARD.card.camera || {}) };
+        const lighting = typeof SHOT_CARD.card.lighting === 'string'
+            ? { type: SHOT_CARD.card.lighting } : { ...(SHOT_CARD.card.lighting || {}) };
+        const set = (obj, key, value) => { if (value) obj[key] = value; else delete obj[key]; };
+        set(camera, 'shot_type', val('shotCardShotType'));
+        set(camera, 'movement', val('shotCardMovement'));
+        set(camera, 'lens', val('shotCardLens'));
+        set(lighting, 'type', val('shotCardLighting'));
+
         const body = {
-            description: document.getElementById('shotCardDescription').value.trim(),
-            action: document.getElementById('shotCardAction').value.trim(),
-            notes: document.getElementById('shotCardNotes').value.trim(),
+            description: val('shotCardDescription'),
+            action: val('shotCardAction'),
+            notes: val('shotCardNotes'),
+            camera,
+            lighting,
         };
         if (!body.description) return fail('A shot with no description generates from nothing. Say what is in frame.');
 

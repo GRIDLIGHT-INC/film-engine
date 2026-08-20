@@ -10,7 +10,8 @@
  * PUT  /film/shots/:id/transition — set transition metadata
  */
 const { db, generateId } = require('../db/database');
-const { validateSceneCards } = require('../lib/scene-card-schema');
+const { validateSceneCards, VALID_SHOT_TYPES, VALID_CAMERA_MOVES, VALID_LIGHTING,
+    VALID_GEN_MODES, VALID_SENSORS } = require('../lib/scene-card-schema');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -99,6 +100,31 @@ function updateShotCard(req, res, shotId) {
 }
 
 /**
+ * The vocabulary a scene card is allowed to use.
+ *
+ * The board showed "establishing · 40mm anamorphic · push-in · blue-hour" and
+ * offered no way to change any of it, because the lists live in the validator
+ * and the UI had no way to read them. Hardcoding them in the page would have
+ * worked exactly once: a shot type added here would become an option the board
+ * offers and the validator refuses, which is the failure the flows canvas
+ * already learned to avoid by serving its palette from the registry.
+ *
+ * `lens` is deliberately absent. It is a free string on purpose — "40mm
+ * anamorphic" and "50mm" and "24-70 at 35" are all things a director writes,
+ * and a select would refuse two of the three.
+ */
+function cardVocabulary(req, res) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        shot_types: VALID_SHOT_TYPES,
+        camera_moves: VALID_CAMERA_MOVES,
+        lighting: VALID_LIGHTING,
+        gen_modes: VALID_GEN_MODES,
+        sensors: VALID_SENSORS,
+    }));
+}
+
+/**
  * Read one shot's scene card.
  *
  * There was a PUT and no GET. Editing a card meant listing a whole project to
@@ -130,6 +156,12 @@ function handleShots(req, res, urlParts, query) {
     // POST /film/shots — parts: ['film', 'shots']
     if (urlParts[1] === 'shots' && !urlParts[2] && req.method === 'POST') {
         return createShots(req, res);
+    }
+
+    // GET /film/card-vocabulary — what a card is allowed to say, from the
+    // validator's own lists rather than a copy of them in the page.
+    if (urlParts[1] === 'card-vocabulary' && req.method === 'GET') {
+        return cardVocabulary(req, res);
     }
 
     // GET /film/shots/:id — read the card the PUT below writes.

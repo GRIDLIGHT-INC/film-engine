@@ -758,6 +758,65 @@ function previsFacets(blocking) {
     return Object.keys(facets).length ? facets : null;
 }
 
+
+/**
+ * What a shot's camera actually IS, once the stage has had its say.
+ *
+ * Precedence is staged → written → what the production shoots on, merged PER
+ * FACET: blocking wins wherever it has an opinion and the card fills the rest.
+ * Swapping the whole group looks equivalent and is not — stored blocking knows
+ * its movement long before it can derive a framing, so an all-or-nothing swap
+ * on a merely-staged shot dropped the card's framing AND lens and described the
+ * shot by its movement alone.
+ *
+ * It exists as a function because there were about to be two of them: the
+ * prompt builder had the rule inline, and the board needed to SHOW the same
+ * answer. Two copies of a precedence rule is how a board comes to display the
+ * facets that generation is not going to use.
+ *
+ * `source` is returned alongside every value because that is the thing a
+ * director cannot otherwise see: a lens reading 50mm means something different
+ * when it came from the stage than when it is the film's default.
+ */
+function effectiveCamera(cardCamera, previs, filmOptics, opts) {
+    const card = cardCamera || {};
+    const film = filmOptics || {};
+    const usable = (opts && opts.framingIsUsable) || (() => true);
+    const facets = previsFacets(previs) || {};
+
+    const blockedFraming = facets.shot_type || facets.framing;
+    const shotType = (blockedFraming && usable(blockedFraming))
+        ? { value: blockedFraming, source: 'blocking' }
+        : (card.shot_type ? { value: card.shot_type, source: 'card' } : { value: null, source: null });
+
+    const blockedFocal = Number(facets.focal_mm);
+    let lens;
+    if (Number.isFinite(blockedFocal) && blockedFocal > 0) {
+        lens = { value: `${Math.round(blockedFocal)}mm`, source: 'blocking' };
+    } else if (card.lens) {
+        lens = { value: card.lens, source: 'card' };
+    } else if (Number(film.focalMm) > 0) {
+        lens = { value: `${Math.round(Number(film.focalMm))}mm`, source: 'film' };
+    } else {
+        lens = { value: null, source: null };
+    }
+
+    const movement = facets.movement
+        ? { value: facets.movement, source: 'blocking' }
+        : (card.movement ? { value: card.movement, source: 'card' } : { value: null, source: null });
+
+    return {
+        shot_type: shotType,
+        lens,
+        movement,
+        // Blocking-only measurements. A card has never held either, so there is
+        // nothing to merge them against.
+        distance_m: Number.isFinite(Number(facets.distance_m)) ? Number(facets.distance_m) : null,
+        camera_height_m: Number.isFinite(Number(facets.camera_height_m)) ? Number(facets.camera_height_m) : null,
+        blocked: Object.keys(facets).length > 0,
+    };
+}
+
 module.exports = {
     RIGS, MOVEMENTS, SHOT_TYPES, SENSORS,
     DEFAULT_EYE_HEIGHT_M, DEFAULT_SUBJECT_HEIGHT_M,
@@ -765,4 +824,5 @@ module.exports = {
     rigCanPerform, toCameraControl, legTimings, movePace, groupLegs, DEFAULT_MOVE_MS,
     poseAt, EASINGS, easeT,
     previsFacets,
+    effectiveCamera,
 };

@@ -840,4 +840,4 @@ function handlePrevis(req, res, urlParts) {
     return json(res, 404, { error: 'Not found' });
 }
 
-module.exports = { handlePrevis, loadBlocking, validateBlocking };
+module.exports = { handlePrevis, loadBlocking, validateBlocking, approvalState };
