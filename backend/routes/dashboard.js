@@ -29,6 +29,18 @@ function handleDashboard(req, res, urlParts, query) {
 
     const sub = urlParts[3];
 
+    // GET /film/projects/:id/home — the six blocks the home page renders.
+    if (sub === 'home' && req.method === 'GET') {
+        const { buildHome } = require('../lib/home');
+        const home = buildHome(db, projectId);
+        if (!home) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Project not found' }));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(home));
+    }
+
     if (sub === 'dashboard' && req.method === 'GET') return getDashboard(req, res, projectId);
     if (sub === 'status-board' && req.method === 'GET') return getStatusBoard(req, res, projectId);
     if (sub === 'milestones') {

@@ -526,6 +526,10 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/projects/:id/dashboard
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'home') {
+            return handleDashboard(req, res, parts, query);
+        }
+
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'dashboard') {
             return handleDashboard(req, res, parts, query);
         }

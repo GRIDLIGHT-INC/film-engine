@@ -1405,6 +1405,48 @@
          * moment a title page is for. The toolbar's "Title Page" button is how
          * it is edited, and always was.
          */
+
+        /* ── Home ─────────────────────────────────────────────────── */
+        .home-greeting h1 { font-size:30px; font-weight:600; margin:0 0 4px; letter-spacing:-.01em; }
+        .home-greeting p { margin:0 0 22px; color:var(--gl-text-muted,#8e8e97); font-size:13.5px; }
+        .home-kicker { font-size:10.5px; letter-spacing:.13em; text-transform:uppercase;
+            color:var(--gl-text-muted,#8e8e97); margin:26px 0 10px; }
+        .home-row-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+        @media (max-width:1000px) { .home-row-2 { grid-template-columns:1fr; } }
+        .home-card { background:#151517; border:1px solid rgba(255,255,255,.07);
+            border-radius:14px; padding:16px 18px; min-height:112px; }
+        .home-card .k { font-size:10.5px; letter-spacing:.13em; text-transform:uppercase;
+            color:var(--gl-text-muted,#8e8e97); margin-bottom:12px; }
+        .home-resume-body { display:flex; gap:16px; align-items:flex-start; }
+        .home-thumb { width:150px; height:96px; flex:0 0 auto; border-radius:8px; object-fit:cover;
+            background:repeating-linear-gradient(135deg,#1b1b1e,#1b1b1e 6px,#151517 6px,#151517 12px); }
+        .home-resume h3 { margin:0 0 6px; font-size:17px; font-weight:600; }
+        .home-need { display:flex; align-items:center; gap:10px; padding:9px 0;
+            border-bottom:1px solid rgba(255,255,255,.05); font-size:13.5px; }
+        .home-need:last-child { border-bottom:none; }
+        .home-need .dot { width:6px; height:6px; border-radius:50%; background:#6690ff; flex:0 0 auto; }
+        .home-need a { margin-left:auto; color:#6690ff; text-decoration:none; font-size:12.5px; }
+        .home-need a:hover { text-decoration:underline; }
+        .home-phases { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
+        @media (max-width:1200px) { .home-phases { grid-template-columns:repeat(3,1fr); } }
+        @media (max-width:700px) { .home-phases { grid-template-columns:repeat(2,1fr); } }
+        .home-phase { background:#151517; border:1px solid rgba(255,255,255,.07); border-radius:12px;
+            padding:14px 15px; cursor:pointer; text-align:left; color:inherit; font:inherit; }
+        .home-phase:hover { border-color:rgba(102,144,255,.5); }
+        .home-phase .row { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:9px; }
+        .home-phase .name { font-size:15px; font-weight:600; }
+        .home-phase .frac { font-size:12px; color:var(--gl-text-muted,#8e8e97); }
+        .home-phase .bar { height:3px; border-radius:2px; background:rgba(255,255,255,.09); overflow:hidden; }
+        .home-phase .fill { height:100%; background:#6690ff; border-radius:2px; }
+        .home-phase .note { margin-top:9px; font-size:12px; color:var(--gl-text-muted,#8e8e97); }
+        .home-line { display:flex; gap:14px; padding:7px 0; font-size:13px; }
+        .home-line .t { color:var(--gl-text-muted,#8e8e97); font-variant-numeric:tabular-nums; min-width:52px; }
+        .home-run { margin-bottom:12px; }
+        .home-run .row { display:flex; justify-content:space-between; font-size:13.5px; margin-bottom:5px; }
+        .home-run .bar { height:3px; border-radius:2px; background:rgba(255,255,255,.09); overflow:hidden; }
+        .home-run .fill { height:100%; background:#6690ff; }
+        .home-empty { color:var(--gl-text-muted,#8e8e97); font-size:13px; }
+
         .frame-busy {
             position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
             background: rgba(8, 10, 16, .72); backdrop-filter: blur(1px); z-index: 5;
@@ -4117,37 +4159,27 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
 
         <!-- ── 2. DASHBOARD ─────────────────────────────────────── -->
+        <!--
+             The home page: what was I doing, what needs me, where is the film,
+             what is running. The dashboard it replaces reported counts and a
+             milestone list — a summary, which leaves the reader to work out the
+             next action and then find the page it lives on.
+        -->
         <div class="page" id="page-dashboard">
-            <div class="page-header"><h2>Dashboard</h2></div>
-            <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
-                <button class="btn btn-secondary btn-sm" onclick="navigateTo('scenes')" data-tooltip="View extracted scenes from your screenplay" data-tooltip-pos="bottom">Scenes</button>
-                <button class="btn btn-secondary btn-sm" onclick="navigateTo('shotboard')" data-tooltip="Kanban board for managing individual shots" data-tooltip-pos="bottom">Shot Board</button>
-                <button class="btn btn-secondary btn-sm" onclick="navigateTo('storyboard')" data-tooltip="View and generate AI storyboard keyframes" data-tooltip-pos="bottom">Storyboard</button>
-                <button class="btn btn-secondary btn-sm" onclick="navigateTo('pipeline')" data-tooltip="Run automated production pipeline on shots" data-tooltip-pos="bottom">Pipeline</button>
-                <button class="btn btn-secondary btn-sm" onclick="navigateTo('exportpage')" data-tooltip="Export project to NLE timeline formats" data-tooltip-pos="bottom">Export</button>
+            <div id="homeGreeting" class="home-greeting"></div>
+
+            <div class="home-row-2">
+                <div class="home-card" id="homeResume"></div>
+                <div class="home-card" id="homeNeeds"></div>
             </div>
-            <!-- Where the project actually is, phase by phase, with a way
-                 into each. The dashboard previously reported counts and left
-                 the reader to work out what to do next and where it lived. -->
-            <div class="card mb-16">
-                <div class="flex-between mb-8"><strong>Production progress</strong>
-                    <span class="text-sm text-muted" id="dashPhaseHint"></span></div>
-                <div id="dashProgress" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+
+            <div class="home-kicker">The whole film, phase by phase</div>
+            <div id="homePhases" class="home-phases"></div>
+
+            <div class="home-row-2">
+                <div class="home-card" id="homeActivity"></div>
+                <div class="home-card" id="homeRunning"></div>
             </div>
-            <div class="dashboard-grid" id="dashStats"></div>
-            <div class="flex-between mb-8">
-                <span class="section-label">Shot Status</span>
-            </div>
-            <div class="status-bar-chart" id="dashShotBar"></div>
-            <div id="dashShotLegend" style="display:flex;gap:16px;margin-bottom:24px;font-size:10px;color:var(--gl-text-muted);"></div>
-            <div class="flex-between mb-8">
-                <span class="section-label">Upcoming Milestones</span>
-            </div>
-            <div id="dashMilestones"></div>
-            <div class="flex-between mb-8" style="margin-top:24px;">
-                <span class="section-label">Recent Activity</span>
-            </div>
-            <div id="dashRecentActivity"></div>
         </div>
 
         <!-- ── 3. SCREENPLAY ────────────────────────────────────── -->
@@ -14953,112 +14985,110 @@ THREE.GLTFLoader = GLTFLoader;
     // ══════════════════════════════════════════════════════════════
     // DASHBOARD
     // ══════════════════════════════════════════════════════════════
+
     /**
-     * The production, phase by phase: what is done, and a way in.
+     * The home page: what was I doing, what needs me, where is the film, what is
+     * running.
      *
-     * The dashboard reported counts and left the reader to work out both what
-     * to do next and which of thirty-odd pages it lived on. Each step here
-     * answers "is this done" from real data and navigates straight to the page
-     * that does it.
+     * Every block reads `home.<field>` from one payload. The dashboard this
+     * replaces fetched four endpoints and rendered counts — a summary, which
+     * leaves the reader to work out the next action and then find the page it
+     * lives on. Each block here carries its own way in.
      */
-    const DASH_STEPS = [
-        { label: 'Mood board', page: 'moodboard',  done: d => (d.stats.assets.total || 0) > 0 || !!d.project.style_preset },
-        { label: 'Script',     page: 'screenplay', done: d => (d.stats.scenes.total || 0) > 0 },
-        { label: 'Breakdown',  page: 'characters', done: d => (d.stats.characters || 0) > 0 && (d.stats.locations || 0) > 0 },
-        { label: 'Shots',      page: 'shotboard',  done: d => (d.stats.shots.total || 0) > 0 },
-        { label: 'Board',      page: 'storyboard', done: d => byType(d, 'storyboard') > 0 || byType(d, 'keyframe') > 0 },
-        { label: 'Block',      page: 'previs',     done: d => (d.stats.previs_blocked || 0) > 0 },
-        { label: 'Plan',       page: 'production', done: d => true },
-        { label: 'Shoot',      page: 'videoshots', done: d => byType(d, 'video_raw') > 0 },
-        { label: 'Post',       page: 'colorgrading', done: d => byType(d, 'video_final') > 0 },
-        { label: 'Deliver',    page: 'exportpage', done: d => byType(d, 'fcpxml') > 0 || byType(d, 'premiere_xml') > 0 },
-    ];
-
-    function byType(d, type) {
-        const rows = (d.stats.assets && d.stats.assets.by_type) || [];
-        const hit = rows.find(r => r.asset_type === type);
-        return hit ? hit.count : 0;
-    }
-
-    function renderDashProgress(data) {
-        const el = document.getElementById('dashProgress');
-        if (!el) return;
-        let firstUndone = null;
-        el.innerHTML = DASH_STEPS.map(step => {
-            let done = false;
-            try { done = !!step.done(data); } catch (_) { done = false; }
-            if (!done && !firstUndone) firstUndone = step;
-            // Done is stated, not implied by colour alone — a colour-only
-            // signal is unreadable to a third of people looking at it.
-            return `<button class="btn btn-sm" onclick="navigateTo('${step.page}')"
-                        style="border-color:${done ? 'var(--gl-success,#22c55e)' : 'var(--gl-border,rgba(255,255,255,.2))'};"
-                        title="${done ? 'done' : 'not started'} — open ${esc(step.label)}">
-                        ${done ? '&#10003;' : '&#9675;'} ${esc(step.label)}</button>`;
-        }).join('');
-        const hint = document.getElementById('dashPhaseHint');
-        if (hint) hint.textContent = firstUndone ? `Next: ${firstUndone.label}` : 'Every stage has output';
-    }
-
     async function loadDashboard() {
         if (!state.currentProject) return;
+        let home;
         try {
-            const data = await api('/projects/' + state.currentProject.id + '/dashboard');
-            state.dashboard = data;
-            renderDashProgress(data);
-            const s = data.stats;
+            home = await api('/projects/' + state.currentProject.id + '/home');
+        } catch (err) {
+            setStatus('Could not load home: ' + err.message);
+            return;
+        }
 
-            document.getElementById('dashStats').innerHTML = [
-                { v: s.scenes.total, l: 'Scenes' },
-                { v: s.shots.total, l: 'Shots' },
-                { v: s.characters, l: 'Characters' },
-                { v: s.locations, l: 'Locations' },
-                { v: s.assets.total, l: 'Assets' },
-                { v: s.estimated_duration_formatted || '0:00', l: 'Duration' },
-            ].map(x => `<div class="stat-card"><div class="value">${x.v}</div><div class="label">${x.l}</div></div>`).join('');
+        document.getElementById('homeGreeting').innerHTML = homeGreetingHtml(home.greeting);
+        document.getElementById('homeResume').innerHTML = homeResumeHtml(home.resume);
+        document.getElementById('homeNeeds').innerHTML = homeNeedsHtml(home.needs);
+        document.getElementById('homePhases').innerHTML = homePhasesHtml(home.phases);
+        document.getElementById('homeActivity').innerHTML = homeActivityHtml(home.activity);
+        document.getElementById('homeRunning').innerHTML = homeRunningHtml(home.running);
+        setStatus(`${home.greeting.project_title} \u00b7 ${home.greeting.shot_count} shots`);
+    }
 
-            // Shot status bar
-            const total = s.shots.total || 1;
-            const statusColors = { pending: '#555', generating: '#60a5fa', complete: '#4ade80', approved: '#22c55e', failed: '#f87171' };
-            const bar = document.getElementById('dashShotBar');
-            const legend = document.getElementById('dashShotLegend');
-            const byStatus = {};
-            (s.shots.by_status || []).forEach(x => byStatus[x.status] = x.count);
+    function homeGreetingHtml(g) {
+        if (!g) return '';
+        // The name is the app author, the one place a name is recorded. Without
+        // one the greeting still works — it just does not pretend to know you.
+        const who = g.name ? `${esc(g.salutation)}, ${esc(g.name)}` : esc(g.salutation);
+        const bits = [esc(g.project_title),
+            `${g.shot_count} shot${g.shot_count === 1 ? '' : 's'} across ${g.scene_count} scene${g.scene_count === 1 ? '' : 's'}`];
+        if (g.last_opened) bits.push(`last opened ${esc(g.last_opened)}`);
+        return `<h1>${who}</h1><p>${bits.join(' &middot; ')}</p>`;
+    }
 
-            bar.innerHTML = Object.entries(statusColors).map(([st, col]) => {
-                const cnt = byStatus[st] || 0;
-                return cnt ? `<div class="segment" style="width:${(cnt/total*100)}%;background:${col};"></div>` : '';
-            }).join('');
-            legend.innerHTML = Object.entries(statusColors).map(([st, col]) => {
-                const cnt = byStatus[st] || 0;
-                return `<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${col};margin-right:4px;"></span>${st} (${cnt})</span>`;
-            }).join('');
+    function homeResumeHtml(r) {
+        if (!r) return '<div class="k">Pick up where you left off</div><div class="home-empty">Nothing worked on yet.</div>';
+        const src = r.has_keyframe && state.currentProject
+            ? `${API_BASE}/film/storyboards/${state.currentProject.id}/${encodeURIComponent(r.shot_code)}.png`
+            : '';
+        return `<div class="k">Pick up where you left off</div>
+            <div class="home-resume-body home-resume">
+                ${src ? `<img class="home-thumb" src="${src}" onerror="this.style.visibility='hidden'">`
+                      : '<div class="home-thumb"></div>'}
+                <div style="flex:1;min-width:0;">
+                    <h3>${esc(r.headline)}</h3>
+                    <p class="text-sm text-muted" style="margin:0 0 12px;line-height:1.5;">${esc(r.summary)}</p>
+                    <p class="text-sm text-muted" style="margin:0 0 12px;">${esc(r.state)}${r.when ? ' &middot; ' + esc(r.when) : ''}</p>
+                    <button class="btn btn-primary btn-sm" onclick="openFrameViewer('${r.shot_id}')">Resume</button>
+                    <button class="btn btn-secondary btn-sm" onclick="navigateTo('storyboard')">Open shot</button>
+                </div>
+            </div>`;
+    }
 
-            // Milestones preview
-            const upcoming = (data.milestones || []).filter(m => m.status !== 'completed').slice(0, 3);
-            document.getElementById('dashMilestones').innerHTML = upcoming.length === 0 ? '<p class="text-sm text-muted">No upcoming milestones.</p>' :
-                upcoming.map(m => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-                    <span class="badge ${m.status}">${m.status}</span>
-                    <span style="font-size:12px;">${esc(m.title)}</span>
-                    <span style="font-size:10px;color:var(--gl-text-muted);margin-left:auto;">${m.completion_pct || 0}%</span>
-                </div>`).join('');
+    function homeNeedsHtml(items) {
+        if (!items || !items.length) {
+            return '<div class="k">Needs you</div><div class="home-empty">Nothing is blocking the film.</div>';
+        }
+        // Every line carries the page that fixes it. An item that names a
+        // problem and not its destination is a to-do list that makes you go and
+        // find the page yourself.
+        return '<div class="k">Needs you</div>' + items.map(n =>
+            `<div class="home-need"><span class="dot"></span><span>${esc(n.label)}</span>
+             <a href="#" onclick="event.preventDefault();navigateTo('${n.page}')">${esc(capitalise(n.phase || 'Open'))}</a></div>`).join('');
+    }
 
-            // Recent activity from render ledger
-            try {
-                const sbData = await api('/projects/' + state.currentProject.id + '/status-board');
-                const allShots = [];
-                (sbData.scenes || []).forEach(sc => (sc.shots || []).forEach(sh => allShots.push({ ...sh, scene_number: sc.scene_number })));
-                const recent = allShots.slice(0, 10);
-                document.getElementById('dashRecentActivity').innerHTML = recent.length === 0 ?
-                    '<p class="text-sm text-muted">No shot activity yet.</p>' :
-                    recent.map(s => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:12px;">
-                        <span class="badge ${s.status === 'approved' ? 'approved' : ''}">${esc(s.status)}</span>
-                        <span>Sc${s.scene_number} / ${esc(s.shot_code)}</span>
-                        ${s.duration_ms ? '<span class="text-muted">' + (s.duration_ms/1000).toFixed(1) + 's</span>' : ''}
-                    </div>`).join('');
-            } catch (e) { /* ignore */ }
+    function capitalise(s) { return String(s || '').charAt(0).toUpperCase() + String(s || '').slice(1); }
 
-            setStatus('Dashboard loaded');
-        } catch (err) { setStatus('Error: ' + err.message); }
+    function homePhasesHtml(phases) {
+        return (phases || []).map(p => {
+            const pct = p.of > 0 ? Math.round((p.done / p.of) * 100) : 0;
+            return `<button class="home-phase" onclick="navigateTo('${p.page}')">
+                <div class="row"><span class="name">${esc(p.label)}</span>
+                    <span class="frac">${p.done}/${p.of}</span></div>
+                <div class="bar"><div class="fill" style="width:${pct}%;"></div></div>
+                <div class="note">${esc(p.note)}</div>
+            </button>`;
+        }).join('');
+    }
+
+    function homeActivityHtml(items) {
+        if (!items || !items.length) {
+            return '<div class="k">Recent activity</div><div class="home-empty">Nothing generated yet.</div>';
+        }
+        return '<div class="k">Recent activity</div>' + items.map(a =>
+            `<div class="home-line"><span class="t">${esc(String(a.when || ''))}</span><span>${esc(a.what)}</span></div>`).join('');
+    }
+
+    function homeRunningHtml(jobs) {
+        if (!jobs || !jobs.length) {
+            // Empty is a real answer here, not a missing one.
+            return '<div class="k">Running now</div><div class="home-empty">Nothing is generating.</div>'
+                + '<a href="#" style="color:#6690ff;font-size:12.5px;" onclick="event.preventDefault();navigateTo(\'jobsqueue\')">Open job queue &rarr;</a>';
+        }
+        return '<div class="k">Running now</div>' + jobs.map(j =>
+            `<div class="home-run"><div class="row"><span>${esc(j.kind)}${j.shot_code ? ' &mdash; ' + esc(j.shot_code) : ''}</span>
+             <span class="text-muted text-sm">${esc(j.status)}</span></div>
+             <div class="bar"><div class="fill" style="width:${j.status === 'running' ? 60 : 15}%;"></div></div></div>`).join('')
+            + '<a href="#" style="color:#6690ff;font-size:12.5px;" onclick="event.preventDefault();navigateTo(\'jobsqueue\')">Open job queue &rarr;</a>';
     }
 
     // ══════════════════════════════════════════════════════════════

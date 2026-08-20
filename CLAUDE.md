@@ -125,6 +125,7 @@ film-engine/
 │   │   ├── scene-splice.js        # Replace one scene in a screenplay, byte-identical elsewhere
 │   │   ├── story-bible.js         # Bible sections, and the link back from what was written from them
 │   │   ├── subject-scale.js       # How big a thing is, said so an image model can act on it
+│   │   ├── home.js                # The six blocks the home page renders, all derived
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
@@ -167,6 +168,7 @@ film-engine/
 │       ├── story-bible.test.js         # A section revised flags only what was written from it
 │       ├── subject-scale.test.js       # Nothing is invented; every surface can set a size
 │       ├── nav-chrome.test.js          # Global actions in the top bar; nothing orphaned by moving them
+│       ├── home-page.test.js           # Six design blocks: each renders, is fed, and is served
 │       ├── app-settings.test.js        # Author is set once; the title page is printed, not edited inline
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
@@ -275,7 +277,7 @@ All routes prefixed with `/film`:
 | Props | `GET/POST /projects/:id/props`, `GET/PUT/DELETE /props/:id` |
 | Notes | `GET/POST /shots/:id/notes`, `PUT/DELETE /notes/:id`, `POST /shots/:id/review` |
 | Assets | `GET/POST /projects/:id/assets`, `GET/DELETE /assets/:id` |
-| Dashboard | `GET /projects/:id/dashboard`, `GET /projects/:id/status-board` |
+| Dashboard | `GET /projects/:id/home`, `GET /projects/:id/dashboard`, `GET /projects/:id/status-board` |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
 | A/B Compare | `GET /shots/:id/versions/compare?a=X&b=Y` |
@@ -605,6 +607,13 @@ Migration 071 adds `height_m` to characters and `height_m`/`width_m`/`length_m` 
 Five buttons — Home, Jobs, Notes, Guide, Setup — held a 64px column down the full height of the screen, on every page, permanently. They are global actions, and a global action belongs beside the other global furniture rather than in a column of its own; they now sit at the right of the top bar. The rail width survives as a variable set to **zero** rather than being deleted, because the panel, the main pane and the status bar all offset by it — one arithmetic expression beats five hand-edited numbers that can disagree.
 
 The **"Search anything"** pill went with it, because it never searched anything: its only behaviour was opening the glossary. Which is exactly the trap in removing it — the glossary's other link lives in the old sidebar, which is `display:none` in this layout, so deleting the pill left a modal in the build with no way to reach it. A removal is finished when everything that was reachable still is, so the glossary became the sixth rail button. `tests/nav-chrome.test.js` checks every rail button resolves to a page or an explicit handler, since a button wired to nothing looks identical to a working one until it is clicked.
+
+### The Home Page Answers Four Questions
+The dashboard reported on the project — a quick-nav button row, a stat grid, a shot-status bar, a milestone list. That is a summary, and a summary leaves the reader to work out the next action and then go and find the page it lives on. The submitted design is six blocks that each answer something and carry the way in: **greeting** (who is here, which film, how big), **resume** (what you were doing), **needs you** (what is blocking it, each linked), **phases** (the whole film, six real fractions), **activity**, **running now**.
+
+Everything is **derived**, never stored: the phase fractions count real shots and assets, *needs you* is assembled from reports that already exist — keyframes missing, unresolved notes, scenes never broken down, subjects without a size, cards behind the screenplay — so an item can never disagree with the page it links to. The greeting's name is the app-settings author, the one place a name is recorded.
+
+`tests/home-page.test.js` is set-based over the six blocks and checks each **three** ways: it renders into a container, it reads `home.<field>` from the payload, and the API serves that field. A block hardcoded with the design's own sample text passes any check that only looks for markup — which is exactly how a home page gets half-built and read as finished.
 
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
@@ -1047,6 +1056,7 @@ node --test backend/tests/live-events.test.js
 node --test backend/tests/story-bible.test.js
 node --test backend/tests/subject-scale.test.js
 node --test backend/tests/nav-chrome.test.js
+node --test backend/tests/home-page.test.js
 node --test backend/tests/app-settings.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js
