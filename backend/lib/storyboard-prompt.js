@@ -239,13 +239,49 @@ function previsPromptParts(rawPrevis) {
     return parts.length ? parts : null;
 }
 
+/**
+ * Build the prompt, trimming only if it will not otherwise fit.
+ *
+ * The per-field allowances used to apply unconditionally, so a 570-character
+ * style was cut to 560 inside a prompt totalling 2,085 against a ceiling of
+ * 4,000 — throwing away the tail of a director's look with 1,900 characters of
+ * headroom going unused. The clause that vanished was "wet reflective ground
+ * with specular sheen", which is exactly what someone puts on a board
+ * deliberately.
+ *
+ * An allowance is a rule for deciding WHAT TO CUT when something must be cut.
+ * It was being read as a target to shrink every field to. So: assemble whole,
+ * and only carve up if the result overruns.
+ */
 function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, options) {
+    const opts = options || {};
+    const ceiling = opts.maxPromptChars || MAX_PROMPT_CHARS;
+
+    // The first pass must not trim AT ALL — neither per field nor at the
+    // ceiling. Leaving the ceiling trim in place made it cut the untrimmed
+    // assembly back at a clause boundary, which came in under budget and meant
+    // the second pass never ran: the prompt ended up as one enormous field and
+    // nothing else.
+    const whole = assemblePrompt(sceneCard, characters, location, stylePreset, {
+        ...opts,
+        maxPromptChars: Infinity,
+        allow: { action: Infinity, appearance: Infinity, location: Infinity, style: Infinity },
+    });
+    if (whole.prompt.length <= ceiling) return whole;
+
+    return assemblePrompt(sceneCard, characters, location, stylePreset,
+        { ...opts, allow: allowancesFor(ceiling) });
+}
+
+function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     const opts = options || {};
     // Everything downstream measures against the ceiling actually in play, so a
     // roomier provider receives more of what was written rather than the same
     // truncation with headroom to spare.
     const ceiling = opts.maxPromptChars || MAX_PROMPT_CHARS;
-    const allow = allowancesFor(ceiling);
+    // Supplied by the two-pass wrapper: unlimited on the first pass, the real
+    // carve-up on the second.
+    const allow = opts.allow || allowancesFor(ceiling);
     // Subjects the caller has attached a reference image for. Empty map when
     // there are none, so the prose path below is unchanged for every project
     // that has not generated plates yet.

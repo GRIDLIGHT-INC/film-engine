@@ -88,10 +88,11 @@ test('a roomier provider actually receives more of what was written', () => {
     assert.ok(atMeshy.length <= 4000, `overran the roomier cap too, at ${atMeshy.length}`);
 
     // Specifically: more of the APPEARANCE survives, which is the field the
-    // whole complaint was about.
-    const appearanceAt = s => (s.match(/A+/g) || [''])[0].length;
+    // whole complaint was about. Measured as the longest run of the filler, so
+    // an incidental letter elsewhere in the prompt cannot be mistaken for it.
+    const appearanceAt = s => Math.max(0, ...(s.match(/A+/g) || ['']).map(x => x.length));
     assert.ok(appearanceAt(atMeshy) > appearanceAt(atRunway),
-        `appearance survived ${appearanceAt(atRunway)} chars at both ceilings`);
+        `appearance survived ${appearanceAt(atRunway)} chars at 1000 and ${appearanceAt(atMeshy)} at 4000`);
 });
 
 test('an unknown provider falls back to the strictest, never to unlimited', () => {
@@ -102,4 +103,72 @@ test('an unknown provider falls back to the strictest, never to unlimited', () =
         { shot_code: '1A', camera: {}, lighting: {}, description: 'D'.repeat(3000) }, [], null, null, {}).prompt;
     assert.ok(fallback.length <= sp.MAX_PROMPT_CHARS,
         `no ceiling given and the prompt ran to ${fallback.length}`);
+});
+
+/**
+ * Nothing is trimmed while the prompt still fits.
+ *
+ * The per-field allowances were applied unconditionally, so a 570-character
+ * style was cut to 560 in a prompt totalling 2,085 against a ceiling of 4,000 —
+ * throwing away the tail of a director's look with 1,900 characters of headroom
+ * going unused. The clause that vanished was "wet reflective ground with
+ * specular sheen", which is exactly the sort of thing someone put on the board
+ * deliberately.
+ *
+ * An allowance is a way of deciding WHAT TO CUT when something must be cut. It
+ * is not a target to shrink every field to. So the prompt is assembled whole
+ * first, and the allowances only come into play if the result overruns.
+ *
+ * Set-based over the allowance-bearing fields, because trimming one of them
+ * needlessly is as wrong as trimming all four and much harder to notice.
+ */
+const ALLOWANCE_FIELDS = [
+    { id: 'action', filler: 'D', put: (card) => { card.description = 'D'.repeat(400); } },
+    { id: 'appearance', filler: 'A', put: (_c, chars) => { chars[0].appearance_prompt = 'A'.repeat(400); } },
+    { id: 'location', filler: 'L', put: (_c, _ch, loc) => { loc.description = 'L'.repeat(400); } },
+];
+
+test('a field is not trimmed when the whole prompt fits', () => {
+    const broken = [];
+    for (const field of ALLOWANCE_FIELDS) {
+        const card = { shot_code: '1A', description: 'x', camera: { shot_type: 'medium' }, lighting: { type: 'natural' }, characters: ['MAYA'] };
+        const chars = [{ name: 'MAYA', appearance_prompt: 'x' }];
+        const loc = { name: 'STREET', description: 'x' };
+        field.put(card, chars, loc);
+
+        // Roomy ceiling: everything together is far short of it.
+        const { prompt } = sp.buildStoryboardPrompt(card, chars, loc, 'teal and amber', { maxPromptChars: 4000 });
+        const longest = Math.max(0, ...(prompt.match(new RegExp(field.filler + '+', 'g')) || ['']).map(x => x.length));
+        if (prompt.length > 4000) { broken.push(`${field.id}: prompt overran the ceiling`); continue; }
+        if (longest < 400) {
+            broken.push(`${field.id}: cut to ${longest} of 400 in a ${prompt.length}-char prompt `
+                + `with ${4000 - prompt.length} characters of headroom unused`);
+        }
+    }
+    assert.deepStrictEqual(broken, [], `\n  ${broken.join('\n  ')}`);
+});
+
+test('the style survives whole when there is room for it', () => {
+    // The exact case reported: 570 characters of composed look, cut to 560, in
+    // a prompt less than half the ceiling.
+    const style = 'S'.repeat(570);
+    const { prompt } = sp.buildStoryboardPrompt(
+        { shot_code: '1A', description: 'She stops.', camera: {}, lighting: { type: 'natural' } },
+        [], null, style, { maxPromptChars: 4000 });
+    // Containment, not a regex: a filler letter collides with ordinary words
+    // in the prompt ("She stops." begins with an S), and the first match is not
+    // the one under test.
+    assert.ok(prompt.includes(style),
+        `the look did not survive whole with room to spare (prompt ${prompt.length}/4000)`);
+});
+
+test('but a prompt that would overrun is still cut to fit', () => {
+    // The allowances still do their job when they have to. Losing the guarantee
+    // in the other direction would send a prompt a provider rejects.
+    const { prompt } = sp.buildStoryboardPrompt(
+        { shot_code: '1A', description: 'D'.repeat(3000), camera: {}, lighting: { type: 'natural' }, characters: ['MAYA'] },
+        [{ name: 'MAYA', appearance_prompt: 'A'.repeat(3000) }],
+        { name: 'STREET', description: 'L'.repeat(3000) },
+        'S'.repeat(1000), { maxPromptChars: 1000 });
+    assert.ok(prompt.length <= 1000, `overran its ceiling at ${prompt.length}`);
 });

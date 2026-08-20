@@ -479,6 +479,13 @@ All three builders now ask for the photograph (`Full-body studio photograph`, `P
 
 **And a correction, caught by a test rather than by reasoning.** The obvious next move — "a picture is attached, so drop the paragraph describing it" — is right for a provider that reads `@tags` and **wrong** for one that takes an untagged array. With two references and no names, nothing tells the model which picture is the woman and which is the street, so the prose is the only thing carrying identity; dropping it trades a redundancy for a wrong subject. That distinction was already correct in the code and this nearly broke it. `tests/reference-capability.test.js` is what stopped it.
 
+### Nothing Is Trimmed While It Still Fits
+The per-field allowances applied unconditionally, so a 570-character style was cut to 560 inside a prompt totalling 2,085 against a ceiling of 4,000 — throwing away the tail of a director's look with 1,900 characters of headroom going unused. The clause that vanished was *"wet reflective ground with specular sheen"*, which is exactly the sort of thing someone puts on a board deliberately.
+
+An allowance is a rule for deciding **what to cut when something must be cut**. It was being read as a target to shrink every field to. So the prompt is now assembled **whole** first, and the carve-up only happens if the result overruns the provider's ceiling.
+
+The first pass has to be *genuinely* untrimmed — neither per field nor at the ceiling. Leaving the ceiling trim in place made it cut the untrimmed assembly back at a clause boundary, which came in under budget, so the second pass never ran and the prompt ended up as one enormous field and nothing else. At 1000 the fields carve up as before (appearance 240, everything present); at 4000 they all survive whole.
+
 ### The Prompt Ceiling Belongs to the Provider
 `MAX_PROMPT_CHARS` was a single constant — 1000, chosen as "the strictest of the providers wired here", which is **Runway's** `text_to_image` cap. Every prompt in the product was cut to it regardless of who was generating. A production running on **Meshy** — whose text-to-image documents no prompt limit at all, and which routes to `nano-banana` and `gpt-image-2` underneath — had its character descriptions trimmed to fit a ceiling belonging to a provider it never called.
 
