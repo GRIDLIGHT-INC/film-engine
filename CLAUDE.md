@@ -569,6 +569,11 @@ Sectioned rather than one document, and that is the whole reason it is usable: a
 
 `bible_get`, `bible_write`, `bible_delete`, `bible_drift`, plus `bible_section` on the three entity update tools.
 
+### A Regenerated Frame Has to Look Regenerated
+Regenerating a frame overwrites the file at the same name, so the URL never changes and the browser served the cached image. A successful, paid-for regeneration left the board byte-identical — the screen literally showed *nothing happened*, and the honest response to that is to press the button again and pay twice. `frameSrc()` keys the URL to `asset_version`, which increments per generation, rather than to a timestamp: busting on every render would re-download every unchanged frame on the board on each refresh, which on a feature-length board is a lot of bytes spent hiding one bug. Both surfaces use it, or the viewer shows a stale frame over a fresh grid and it looks like the regeneration half worked.
+
+The button gave no feedback either. `Regenerating...` went to the status bar at the bottom of the screen while the card you clicked looked exactly as it had a moment before — for up to a minute, since the image call may walk past a provider that declines before one accepts. The frame being generated now says so **on the frame**, with an elapsed count, and the card's own buttons are disabled while it runs, because the one thing a slow generation invites is a second click on a paid action. Same reasoning as arming a markup shape: feedback belongs on the thing you touched.
+
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
 

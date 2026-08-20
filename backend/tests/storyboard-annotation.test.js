@@ -233,3 +233,47 @@ test('a missing shot is a 404, not an empty card', async () => {
     const res = await callRoute(handleShots, 'GET', `/film/shots/${generateId()}`);
     assert.strictEqual(res.status, 404);
 });
+
+/**
+ * A regenerated frame has to be visibly regenerated.
+ *
+ * The image path never changes when a frame is regenerated — the file is
+ * overwritten at the same name — so the browser served the cached image and the
+ * board looked byte-identical after a successful, paid-for regeneration. The
+ * screen literally showed "nothing happened", and the honest response to that
+ * is to press regenerate again and pay a second time.
+ *
+ * Keyed on asset_version, not on a timestamp: busting on every render would
+ * re-download every image on the board each time the page refreshed, which on a
+ * feature-length board is a lot of bytes spent hiding one bug.
+ */
+test('a frame URL is keyed to the version of the frame', () => {
+    const html = fs.readFileSync(INDEX_HTML, 'utf8');
+    assert.ok(/function frameSrc\(/.test(html), 'frames are still requested at a fixed path');
+    const fn = html.slice(html.indexOf('function frameSrc('));
+    const body = fn.slice(0, fn.indexOf('\n    }'));
+    assert.ok(/asset_version/.test(body), 'the URL carries no version, so a regenerated frame stays cached');
+    assert.ok(!/Date\.now\(\)/.test(body),
+        'the URL busts on every render, re-downloading every unchanged frame on the board');
+
+    // Both surfaces must use it, or the viewer shows a stale frame over a
+    // fresh grid — which is worse than both being stale, because it looks
+    // like the regeneration only half worked.
+    for (const surface of ['img id="img-${f.shot_id}" src="${frameSrc(f)}"', "frameViewerImg').src = frameSrc(f)"]) {
+        assert.ok(html.includes(surface), `a surface still builds its own frame URL: ${surface}`);
+    }
+});
+
+test('a generating frame says so on the frame', () => {
+    // "Regenerating..." went to the status bar at the bottom of the screen while
+    // the card you clicked looked exactly as it had a moment before — for up to
+    // a minute, since the provider chain may walk past a decline before one
+    // accepts. A button that appears to do nothing gets pressed again.
+    const html = fs.readFileSync(INDEX_HTML, 'utf8');
+    assert.ok(/function frameBusy\(/.test(html), 'nothing marks the frame being generated');
+    assert.ok(/frameBusy\(shotId/.test(html), 'the regenerate path never marks its frame');
+    assert.ok(/\.frame-busy \{/.test(html), 'the busy overlay has no styling, so it renders as nothing');
+    // The card's buttons are disabled while it works, because the one thing a
+    // slow generation invites is a second click on a paid action.
+    assert.ok(/b\.disabled = true/.test(html), 'the regenerate button stays clickable while it runs');
+});

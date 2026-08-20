@@ -1405,6 +1405,21 @@
          * moment a title page is for. The toolbar's "Title Page" button is how
          * it is edited, and always was.
          */
+        .frame-busy {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            background: rgba(8, 10, 16, .72); backdrop-filter: blur(1px); z-index: 5;
+        }
+        .frame-busy-inner { text-align: center; color: var(--gl-text-primary, #e2e8f0); }
+        .frame-busy-spinner {
+            width: 28px; height: 28px; margin: 0 auto 8px;
+            border: 3px solid rgba(148, 163, 184, .3);
+            border-top-color: var(--gl-brand-pink, #ec4899);
+            border-radius: 50%;
+            animation: frame-busy-spin .8s linear infinite;
+        }
+        @keyframes frame-busy-spin { to { transform: rotate(360deg); } }
+        .frame-busy-label { font-size: 12px; letter-spacing: .02em; }
+
         .title-page-block { display: none !important; }
 
         .title-page-block {
@@ -23477,7 +23492,7 @@ ${fountainText.slice(0, 50000)}`;
                 grid.innerHTML = screenplayDriftBanner() + impactBanner() + frames.map(f => `
                     <div class="card" style="padding:0;overflow:hidden;">
                         <div style="position:relative;background:var(--surface-alt,var(--gl-bg-surface));min-height:160px;">
-                            <img id="img-${f.shot_id}" src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(f.shot_code)}.png"
+                            <img id="img-${f.shot_id}" src="${frameSrc(f)}"
                                  style="width:100%;display:block;cursor:zoom-in;" title="Open full screen"
                                  onclick="openFrameViewer('${f.shot_id}')"
                                  onerror="this.style.display='none'"
@@ -23874,8 +23889,7 @@ ${fountainText.slice(0, 50000)}`;
         markupDisarm();
         document.getElementById('frameViewerTitle').textContent =
             `Sc${f.scene_number} / ${f.shot_code}  ·  ${FRAME_VIEWER.index + 1} of ${FRAME_VIEWER.frames.length}`;
-        document.getElementById('frameViewerImg').src =
-            `${API_BASE}/film/storyboards/${state.currentProject.id}/${encodeURIComponent(f.shot_code)}.png`;
+        document.getElementById('frameViewerImg').src = frameSrc(f);
         // The same six shapes as the grid, because judging a frame at size is
         // exactly when you want to draw on it — and the note belongs to the
         // shot either way.
@@ -24112,6 +24126,25 @@ ${fountainText.slice(0, 50000)}`;
                 old inputs and cost money to produce something that is still wrong.
             </p>
         </div>`;
+    }
+
+    /**
+     * A frame's URL, keyed to the version it is.
+     *
+     * The path never changes when a frame is regenerated — the file is
+     * overwritten at the same name — so the browser served the cached image and
+     * the board looked identical after a successful, paid-for regeneration.
+     * "Nothing happened" was literally what the screen showed, and the honest
+     * response to that is to click regenerate again.
+     *
+     * Keyed on asset_version rather than Date.now(), so an unchanged frame
+     * still comes from cache. Busting on every render would re-download every
+     * image on the board each time the page refreshed, which on a feature-length
+     * board is a lot of bytes to spend hiding one bug.
+     */
+    function frameSrc(f) {
+        const base = `${API_BASE}/film/storyboards/${state.currentProject.id}/${encodeURIComponent(f.shot_code)}.png`;
+        return f.asset_version ? `${base}?v=${f.asset_version}` : base;
     }
 
     let SHOT_CARD = { shotId: null, card: null, vocab: null };
@@ -24358,14 +24391,76 @@ ${fountainText.slice(0, 50000)}`;
         );
     }
 
+    /**
+     * Regenerate one frame, visibly.
+     *
+     * This wrote "Regenerating..." to the status bar at the bottom of the
+     * screen and then sat silent for up to a minute — an image call, plus a
+     * provider chain that may walk past a declined provider before one accepts.
+     * The card you clicked looked exactly as it had a moment earlier, so the
+     * button read as broken and the honest response was to click it again,
+     * which is how you pay twice.
+     *
+     * The frame being generated now says so, where you are looking, with the
+     * elapsed count. Same reasoning as arming a markup shape: feedback belongs
+     * on the thing you touched.
+     */
     async function regenerateStoryboard(shotId) {
-        if (!confirm('Regenerate this storyboard frame?')) return;
-        setStatus('Regenerating...');
+        if (!confirm('Regenerate this storyboard frame?\n\nThis replaces the current image and costs credits.')) return;
+        const done = frameBusy(shotId, 'Generating');
+        setStatus('Regenerating frame...', true);
         try {
-            await api('/shots/' + shotId + '/storyboard/regenerate', { method: 'POST' });
-            setStatus('Storyboard frame regenerated');
-            loadStoryboard();
-        } catch (err) { setStatus('Error: ' + err.message); }
+            const res = await api('/shots/' + shotId + '/storyboard/regenerate', { method: 'POST' });
+            done();
+            // Which provider actually served it. The chain walks past a
+            // provider that declines, so "it worked" and "it worked on the one
+            // you configured" are different facts.
+            const via = res && (res.provider || (res.attempts && res.attempts.length > 1
+                ? res.attempts[res.attempts.length - 1].provider : null));
+            setStatus(via ? `Frame regenerated via ${via}.` : 'Frame regenerated.');
+            await loadStoryboard();
+        } catch (err) {
+            done();
+            setStatus('Could not regenerate: ' + err.message);
+        }
+    }
+
+    /**
+     * Mark one frame as working, and return the function that clears it.
+     *
+     * Returned rather than cleared by id, so a caller cannot forget which frame
+     * it started and leave a card spinning forever over a request that failed.
+     */
+    function frameBusy(shotId, label) {
+        const img = document.getElementById('img-' + shotId);
+        const host = img && img.parentElement;
+        if (!host) return () => {};
+
+        const started = Date.now();
+        const veil = document.createElement('div');
+        veil.className = 'frame-busy';
+        veil.innerHTML = `<div class="frame-busy-inner">
+            <div class="frame-busy-spinner"></div>
+            <div class="frame-busy-label">${esc(label || 'Working')} <span data-elapsed>0s</span></div>
+        </div>`;
+        host.appendChild(veil);
+
+        const tick = setInterval(() => {
+            const s = Math.round((Date.now() - started) / 1000);
+            const el = veil.querySelector('[data-elapsed]');
+            if (el) el.textContent = s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+        }, 1000);
+
+        // The card's own buttons are disabled while it works, because the one
+        // thing a slow generation invites is a second click.
+        const buttons = [...(host.closest('.card') || host).querySelectorAll('button')];
+        buttons.forEach(b => { b.disabled = true; b.style.opacity = '.5'; });
+
+        return () => {
+            clearInterval(tick);
+            veil.remove();
+            buttons.forEach(b => { b.disabled = false; b.style.opacity = ''; });
+        };
     }
 
     // ══════════════════════════════════════════════════════════════
