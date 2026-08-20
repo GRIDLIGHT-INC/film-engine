@@ -156,6 +156,7 @@ film-engine/
 │       ├── script-revision.test.js     # Revising a story does not cascade the production away
 │       ├── screenplay-drift.test.js    # A rewrite flags the shots written from the old draft
 │       ├── impact.test.js              # A changed frame warns that the footage built on it is behind
+│       ├── mcp-no-server-llm.test.js   # No MCP tool hands the reasoning back to a server-side LLM
 │       ├── app-settings.test.js        # Author is set once; the title page is printed, not edited inline
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
@@ -517,7 +518,7 @@ Without that split, one rewritten scene reports forty red items and reads as "st
 
 The chain is derived from `PIPELINE_STEPS.depends`, with `scene_card` prepended as the root — nothing generates a card, a person writes it, so it is not in the orchestrator's graph, but it is what every generated stage ultimately reads. Steps with no pipeline dependency are wired to the card rather than left rootless, which is what makes a screenplay revision reach the whole shot.
 
-Served at `GET /projects/:id/impact` and as `impact_report` (**101 tools**). The board shows both reports in one banner and marks each affected frame, because a director does not care which subsystem noticed.
+Served at `GET /projects/:id/impact` and as `impact_report` (**99 tools**). The board shows both reports in one banner and marks each affected frame, because a director does not care which subsystem noticed.
 
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
@@ -697,6 +698,8 @@ The tool list is **generated, never enumerated** (`lib/mcp-tools.js`), in three 
 - **One tool per pre-production route** — `script_get`, `scene_list`, `shot_create`, `character_update`, `location_update`, `project_update`, `storyboard_generate` and the rest (`PRODUCTION_TOOLS`, 12). These exist because a flows-only surface let an agent **run** generation while being unable to give it anything to be consistent about: a parsed screenplay leaves `appearance_prompt` as an empty string and a location's description as `"EXT location (3 mentions)"`, so `buildStoryboardPrompt` looks both up, finds nothing to inject, and every keyframe invents its own character on its own street. The fix is filling those records before generating — agent work the flows tools could not reach. Dispatch is the same in-process shim, generalised to take the route handler, so validation, scene-card checking and asset registration behave exactly as they do over HTTP.
 
 This is also how the LLM reaches the pipeline **without an API key**: an agent host (Claude Desktop, claude.ai, ChatGPT) connects to this server, and the model's own subscription does the reasoning while Film Engine keeps ownership of the data and the media. There is no Claude or ChatGPT MCP server exposing *inference* — those are MCP clients — so the connection only works in this direction, which is also the one that keeps assets in `film_assets` rather than in a chat.
+
+**No MCP tool may call a server-side LLM.** The agent host *is* the model — that is what lets the pipeline reach an LLM with no API key of its own. A tool that hands the reasoning back breaks it twice: it asks the user to hold a second key for a question the connected model has already read, and when that key has no credit it fails with a billing error the model cannot act on and will simply retry. It is an easy mistake, because the route exists, works over HTTP, and wrapping it looks like closing a gap — `breakdown_run` was added for exactly that reason and came straight back out, taking the pre-existing `entities_describe` with it. The replacements are the plain data tools, and they are strictly better: a model composing a card or a description has the whole revision in context rather than one scene of it (`script_get` + `shot_create` + `card_vocabulary`; `character_update` / `location_update` / `prop_update`). `tests/mcp-no-server-llm.test.js` derives the forbidden set from the **source** — any route module that requires the LLM client — so a tool added later against one of them fails there rather than in front of a director halfway through a revision.
 
 `tests/mcp-tools.test.js` iterates both registries in both directions — a node type without a tool, a tool without a registry entry, a router handler without a tool, or a tool whose route does not actually dispatch all fail. Route results are unwrapped before reaching the model (`presentResult`), keeping the HTTP status only when it explains a refusal, since a 402 budget rejection a model reads as "failed" is a call it will retry unchanged.
 
@@ -948,6 +951,7 @@ node --test backend/tests/shot-card-edit.test.js
 node --test backend/tests/script-revision.test.js
 node --test backend/tests/screenplay-drift.test.js
 node --test backend/tests/impact.test.js
+node --test backend/tests/mcp-no-server-llm.test.js
 node --test backend/tests/app-settings.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js

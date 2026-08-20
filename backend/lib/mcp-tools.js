@@ -237,6 +237,31 @@ async function callNodeTool(nodeTypeId, args) {
  * Same dispatch as ROUTE_TOOLS -- through the real handler, so validation,
  * scene-card checking and asset registration behave identically to HTTP.
  */
+/**
+ * Deliberately NOT here: breakdown_run and entities_describe.
+ *
+ * Both routes exist and both work — over HTTP, where the server resolves an LLM
+ * provider and pays for the call. Over MCP they are a category error. The whole
+ * point of this surface is that the AGENT HOST is the model: Claude connects,
+ * Claude reasons, and Film Engine keeps the data and the media. A tool that
+ * hands the reasoning back to a server-side LLM asks the user to hold a second
+ * API key for a question the model on the other end of the socket has already
+ * read, and it fails with a billing error the model cannot act on.
+ *
+ * The replacements are the plain data tools, and they are strictly better,
+ * because the model composing a card or a description has the whole revision in
+ * context rather than one scene of it:
+ *
+ *   breakdown_run      -> read the scene with script_get, write the cards,
+ *                         create them with shot_create.
+ *   entities_describe  -> read the screenplay, write the descriptions, save
+ *                         them with character_update / location_update /
+ *                         prop_update.
+ *
+ * tests/mcp-no-server-llm.test.js enforces this by deriving the LLM-calling
+ * route modules from the source rather than from a list, so a tool added later
+ * against one of them fails immediately.
+ */
 const PRODUCTION_TOOLS = [
     {
         name: 'project_list',
@@ -567,18 +592,6 @@ const PRODUCTION_TOOLS = [
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
-        name: 'entities_describe',
-        handler: handleBreakdown, method: 'POST',
-        description: 'Write a visual description for every entity that has none, from the screenplay, using the LLM. Run this after entities_create and BEFORE generating anything: an entity with no description reaches the image prompt as a bare name and every frame then invents its own version of it. Only fills blanks unless force is set. Reports still_blank for anything it could not describe.',
-        path: a => `/film/projects/${a.project_id}/entities/describe`,
-        body: a => { const { project_id, ...rest } = a || {}; return rest; },
-        schema: {
-            project_id: { type: 'string' },
-            force: { type: 'boolean', description: 'Also rewrite descriptions that already exist. Off by default: a hand-written description is a decision.' },
-        },
-        required: ['project_id'],
-    },
-    {
         name: 'character_create',
         handler: handleCharacters, method: 'POST',
         description: 'Create one character. Fill appearance_prompt at the same time: a character row with an empty appearance_prompt reaches the image prompt as a bare name, and every frame then invents its own person.',
@@ -779,20 +792,6 @@ const PRODUCTION_TOOLS = [
             },
         },
         required: ['project_id', 'fountain_content'],
-    },
-    {
-        name: 'breakdown_run',
-        handler: handleBreakdown, method: 'POST',
-        description: 'Break a screenplay down into shots with scene cards. Pass scene_id to do ONE scene — that is the surgical path, and the usual one after revising a single scene. Without auto_save it returns the cards for review and writes nothing. With auto_save it SKIPS any scene that already has shots rather than duplicating them, so delete the old shots first with shot_delete if you mean to replace them. Slow: one LLM call per scene.',
-        path: a => `/film/projects/${a.project_id}/breakdown`,
-        body: a => ({ scene_id: a.scene_id, scene_ids: a.scene_ids, auto_save: a.auto_save === true, multi_scene: Array.isArray(a.scene_ids) && a.scene_ids.length > 1 }),
-        schema: {
-            project_id: { type: 'string' },
-            scene_id: { type: 'string', description: 'One scene, from scene_list. Leave both scene fields out to break down the whole screenplay.' },
-            scene_ids: { type: 'array', items: { type: 'string' }, description: 'Several scenes at once.' },
-            auto_save: { type: 'boolean', description: 'Write the cards as shots. Without it this is a preview and nothing is stored.' },
-        },
-        required: ['project_id'],
     },
     {
         name: 'shot_get',
