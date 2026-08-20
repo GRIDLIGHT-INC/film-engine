@@ -29,7 +29,7 @@ const { NODE_TYPES } = require('../lib/flow-node-types');
 const { list: listHandlers } = require('../lib/node-handlers');
 const {
     listTools, hasTool, callTool, toolNameForNodeType, NODE_TOOL_PREFIX, ROUTE_TOOLS, SSE_EXCEPTION,
-    PRODUCTION_TOOLS, presentResult, isFailure, ALL_ROUTE_TOOLS,
+    PRODUCTION_TOOLS, presentResult, isFailure, ALL_ROUTE_TOOLS, BATCH_TOOLS,
 } = require('../lib/mcp-tools');
 
 const TOOLS = listTools();
@@ -441,4 +441,57 @@ test('every delete tool has a way to discover what to delete', () => {
     }
     assert.deepStrictEqual(blind, [],
         `these can delete by id and cannot find one: ${blind.join(', ')}`);
+});
+
+/**
+ * A tool in the wrong list is a tool that has never worked.
+ *
+ * `plate_generate` sat in BATCH_TOOLS carrying `handler`, `path` and
+ * `handlerFor` — the shape of a ROUTE tool — and no `run()`. The batch branch
+ * of callTool calls `.run(a)` unconditionally, so every invocation died on
+ * "run is not a function" before it reached a route. It failed identically for
+ * every subject and every kind, which reads like a data problem and is not: the
+ * tool had never been callable once.
+ *
+ * Nothing else in the suite catches this, because every other check asks
+ * whether a tool is LISTED. It was listed, described, schema'd and advertised.
+ */
+test('every batch tool can actually be run', () => {
+    const broken = BATCH_TOOLS
+        .filter(t => typeof t.run !== 'function')
+        .map(t => t.name);
+    assert.deepStrictEqual(broken, [],
+        `these are advertised and cannot be called: ${broken.join(', ')}`);
+});
+
+test('a batch tool is not secretly a route tool', () => {
+    // The fields are the tell. Carrying them means someone wrote a route tool
+    // and filed it in the batch list, and the two dispatch differently.
+    const ROUTE_ONLY = ['handler', 'path', 'method', 'handlerFor', 'bodyKeys'];
+    const confused = BATCH_TOOLS
+        .map(t => ({ name: t.name, fields: ROUTE_ONLY.filter(f => f in t) }))
+        .filter(x => x.fields.length)
+        .map(x => `${x.name} carries ${x.fields.join(', ')}`);
+    assert.deepStrictEqual(confused, [], confused.join('; '));
+});
+
+test('every listed tool dispatches to something that exists', () => {
+    // The general form of the same bug: listed is not callable.
+    const uncallable = [];
+    for (const name of listTools().map(t => t.name)) {
+        const batch = BATCH_TOOLS.find(t => t.name === name);
+        if (batch) { if (typeof batch.run !== 'function') uncallable.push(`${name} (batch, no run)`); continue; }
+        const route = [...PRODUCTION_TOOLS, ...ROUTE_TOOLS].find(t => t.name === name);
+        if (route) {
+            // `path` is what every route tool dispatches on. `handler` is
+            // deliberately null for the flow tools, which go through
+            // handleFlows by path — asserting on handler instead reported two
+            // working tools as broken, which is how a guard gets relaxed until
+            // it protects nothing.
+            if (typeof route.path !== 'function') uncallable.push(`${name} (route, no path)`);
+            continue;
+        }
+        if (!name.startsWith('node_')) uncallable.push(`${name} (in no registry)`);
+    }
+    assert.deepStrictEqual(uncallable, [], `\n  ${uncallable.join('\n  ')}`);
 });

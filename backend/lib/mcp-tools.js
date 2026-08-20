@@ -1286,24 +1286,37 @@ const BATCH_TOOLS = [
     },
     {
         name: 'plate_generate',
-        handler: handleCharacters, method: 'POST',
         description: 'Generate the reference plate for ONE subject. SPENDS CREDITS. Use this rather than plate_generate_all when some subjects already have a plate worth keeping \u2014 generating a plate DELETES the existing one for that subject, so a batch run replaces work you may want to keep. kind is character, location or prop.',
-        path: a => {
-            const kind = String(a.kind || 'character');
-            if (kind === 'location') return `/film/locations/${a.subject_id}/plate/generate`;
-            if (kind === 'prop') return `/film/props/${a.subject_id}/plate/generate`;
-            return `/film/characters/${a.subject_id}/refsheet/generate`;
-        },
-        // Routed per kind, because characters live in one handler and
-        // locations and props in another.
-        handlerFor: a => (String(a.kind || 'character') === 'character' ? handleCharacters : handleLocations),
-        body: a => (a.views ? { views: a.views } : {}),
         schema: {
             subject_id: { type: 'string' },
             kind: { type: 'string', description: 'character | location | prop' },
             views: { type: 'array', description: 'Characters only: which of front, side, back. Defaults to all three.' },
         },
         required: ['subject_id', 'kind'],
+        /**
+         * Routed per kind, because characters live in one handler and locations
+         * and props in another.
+         *
+         * This sat in BATCH_TOOLS carrying `handler`, `path` and `handlerFor` —
+         * the shape of a ROUTE tool — and no `run()`. The batch branch of
+         * callTool calls `.run(a)` unconditionally, so every invocation died on
+         * "run is not a function" before it reached a route. It failed the same
+         * way for every subject and every kind, which reads like a data problem
+         * and is not: the tool had never been callable at all.
+         */
+        async run(a) {
+            const kind = String(a.kind || 'character');
+            const KINDS = {
+                character: { handler: handleCharacters, path: id => `/film/characters/${id}/refsheet/generate` },
+                location: { handler: handleLocations, path: id => `/film/locations/${id}/plate/generate` },
+                prop: { handler: handleLocations, path: id => `/film/props/${id}/plate/generate` },
+            };
+            const spec = KINDS[kind];
+            if (!spec) {
+                return { error: `kind must be one of: ${Object.keys(KINDS).join(', ')} (got '${kind}')` };
+            }
+            return callRoute('POST', spec.path(a.subject_id), a.views ? { views: a.views } : {}, spec.handler);
+        },
     },
     {
         name: 'plate_generate_all',
