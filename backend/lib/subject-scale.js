@@ -201,6 +201,18 @@ function missingSizes(db, projectId) {
             } catch (_) { plated = false; }
             rows.push({
                 kind, id: r.id, name: r.name,
+                // The sentences in this subject's own description that mention a
+                // measurement. Every prop on the first production that needed
+                // this already stated its size in words — "about forty
+                // centimetres tall", "roughly seventy centimetres across" — and
+                // nothing was reading them.
+                //
+                // Surfaced rather than parsed. Word-numbers, ranges and mixed
+                // units make a parser that is right most of the time, and a size
+                // that is silently wrong is worse than one that is absent: it
+                // reaches every frame the subject appears in, looking deliberate.
+                // Whoever reads this can convert it in one step.
+                stated_size: statedSizes(r),
                 shots: shotsByName[String(r.name || '').toLowerCase()] || 0,
                 plated,
                 field: kind === 'character' ? 'height_m' : 'height_m, width_m or length_m',
@@ -216,6 +228,20 @@ function missingSizes(db, projectId) {
     add('prop', 'film_props', 'prop_id');
     rows.sort((a, b) => b.shots - a.shots || String(a.name).localeCompare(String(b.name)));
     return rows;
+}
+
+/** Sentences in a subject's own text that mention a measurement. */
+const UNIT_RE = /(metre|meter|centimetre|centimeter|millimetre|\bcm\b|\bmm\b|\bm\b|inch|inches|foot|feet)/i;
+
+function statedSizes(row) {
+    const text = [row && row.visual_prompt, row && row.appearance_prompt, row && row.description]
+        .filter(Boolean).join(' ');
+    if (!text) return [];
+    return String(text)
+        .split(/(?<=[.;])\s+/)
+        .filter(sentence => UNIT_RE.test(sentence))
+        .map(sentence => sentence.trim().slice(0, 200))
+        .slice(0, 3);
 }
 
 /** How many shot cards name each subject, by lowercased name. */
@@ -241,5 +267,5 @@ function countShotAppearances(db, projectId) {
 
 module.exports = {
     ANCHORS, sizeOf, dimensionsOf, fractionPhrase, anchorPhrase,
-    measurePhrase, scalePhrase, scaleNegative, missingSizes,
+    measurePhrase, scalePhrase, scaleNegative, missingSizes, statedSizes,
 };

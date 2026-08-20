@@ -141,3 +141,41 @@ test('the gap is reported as work, not as a status', () => {
     assert.ok(/shots:/.test(src), 'the report does not say how many shots a gap affects');
     assert.ok(/plated/.test(src), 'the report does not flag the plate-without-size combination');
 });
+
+/**
+ * The size is usually already written down. Surface it, don't parse it.
+ *
+ * Every prop on the first production that needed this already stated its size
+ * in its own description — "about forty centimetres tall", "roughly seventy
+ * centimetres across", "about five and a half metres nose to tail" — and
+ * nothing was reading them. The person filling the field was being asked to
+ * invent a number that was two lines above.
+ *
+ * Surfaced rather than parsed. Word-numbers, ranges and mixed units make a
+ * parser that is right most of the time, and a size that is silently wrong is
+ * worse than one that is absent: it reaches every frame the subject appears in,
+ * looking deliberate.
+ */
+test('a subject that states its size in words has that sentence surfaced', () => {
+    const { statedSizes } = require('../lib/subject-scale');
+    const found = statedSizes({
+        visual_prompt: 'Brown kraft paper grocery sack, flat-bottomed, about forty centimetres tall '
+            + 'and twenty-five across. Top edge rolled over twice.',
+    });
+    assert.strictEqual(found.length, 1, 'the sentence with the measurement was not found');
+    assert.match(found[0], /forty centimetres/);
+});
+
+test('a subject with no measurement anywhere surfaces nothing, not a guess', () => {
+    const { statedSizes } = require('../lib/subject-scale');
+    assert.deepStrictEqual(statedSizes({ visual_prompt: 'A battered tin kettle, dented on one side.' }), []);
+    assert.deepStrictEqual(statedSizes({}), []);
+});
+
+test('all three description fields are read, because subjects use different ones', () => {
+    // A character writes into appearance_prompt, a prop into visual_prompt, and
+    // either may put it in description. Reading one field finds a subset.
+    const { statedSizes } = require('../lib/subject-scale');
+    assert.strictEqual(statedSizes({ appearance_prompt: 'Roughly twenty metres nose to tail.' }).length, 1);
+    assert.strictEqual(statedSizes({ description: 'About 0.7m across.' }).length, 1);
+});
