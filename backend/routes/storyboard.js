@@ -627,6 +627,10 @@ async function generateStoryboard(req, res, projectId, query) {
     // Load characters and locations for prompt building
     const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(projectId);
     const locations = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(projectId);
+    // Loaded alongside the others so a prop named in a description can be
+    // matched to its plate. Without this the plates existed and attached to
+    // nothing, because every card's props array was empty.
+    const props = db.prepare('SELECT * FROM film_props WHERE project_id = ?').all(projectId);
 
     ensureStoryboardDir(projectId);
 
@@ -695,7 +699,7 @@ async function generateStoryboard(req, res, projectId, query) {
         const canAttach = !!(leadProvider && leadProvider.supportsReferenceImages);
         const canTag = !!(leadProvider && leadProvider.supportsReferenceTags);
         const shotRefs = canAttach
-            ? gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCard.props)
+            ? gatherShotReferences(projectId, matchedChars, matchedLocation, matchProps(sceneCard, props))
             : [];
         const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
             // The ceiling of the provider that will actually run, not a
@@ -820,6 +824,10 @@ async function generateStoryboardStream(req, res, projectId, query) {
 
     const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(projectId);
     const locations = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(projectId);
+    // Loaded alongside the others so a prop named in a description can be
+    // matched to its plate. Without this the plates existed and attached to
+    // nothing, because every card's props array was empty.
+    const props = db.prepare('SELECT * FROM film_props WHERE project_id = ?').all(projectId);
 
     ensureStoryboardDir(projectId);
 
@@ -909,7 +917,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
         const canAttach = !!(leadProvider && leadProvider.supportsReferenceImages);
         const canTag = !!(leadProvider && leadProvider.supportsReferenceTags);
         const shotRefs = canAttach
-            ? gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCard.props)
+            ? gatherShotReferences(projectId, matchedChars, matchedLocation, matchProps(sceneCard, props))
             : [];
         const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
             // The ceiling of the provider that will actually run, not a
@@ -1168,6 +1176,48 @@ async function regenerateShot(req, res, shotId) {
 
 // ── Character / Location Matching ──────────────────────────────────
 
+/**
+ * The props actually in a shot.
+ *
+ * The card's `props` array is a hint, not the truth. On a real production every
+ * card came back with `props: []` while the descriptions plainly named a
+ * sprinkler and a grocery bag — so the prop plates a director had generated,
+ * accepted and locked attached to nothing, and both objects were invented
+ * per-frame instead.
+ *
+ * A prop the description names IS in the shot, whoever wrote the card. Same
+ * reasoning that made scene presence read action lines rather than only
+ * dialogue cues: the text is the evidence, the list is somebody's memory of it.
+ *
+ * Whole-word matching only — "bag" inside "baggage" is not the grocery bag, and
+ * a plate attached on a coincidence puts the wrong object in frame.
+ */
+function matchProps(sceneCard, dbProps) {
+    const card = sceneCard || {};
+    const all = dbProps || [];
+    const chosen = new Map();
+
+    const take = (name) => {
+        if (!name) return;
+        const hit = all.find(p => p.name && p.name.toUpperCase() === String(name).toUpperCase());
+        if (hit) chosen.set(hit.id || hit.name, hit);
+    };
+
+    for (const entry of (Array.isArray(card.props) ? card.props : [])) {
+        take(typeof entry === 'string' ? entry : (entry && entry.name));
+    }
+
+    const text = String(card.description || card.action || '');
+    if (text) {
+        for (const prop of all) {
+            if (!prop.name) continue;
+            const escaped = String(prop.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            if (new RegExp(`\\b${escaped}\\b`, 'i').test(text)) chosen.set(prop.id || prop.name, prop);
+        }
+    }
+    return [...chosen.values()];
+}
+
 function matchCharacters(cardCharacters, dbCharacters) {
     if (!cardCharacters || !Array.isArray(cardCharacters)) return [];
     return cardCharacters
@@ -1256,4 +1306,4 @@ function selectReferenceImage(sceneCard, matchedChars, matchedLocation, projectI
     return { ip_adapter_image: null, ip_adapter_weight: null, source: null };
 }
 
-module.exports = { handleStoryboard };
+module.exports = { handleStoryboard, matchProps };

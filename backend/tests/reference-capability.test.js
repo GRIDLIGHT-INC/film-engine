@@ -132,3 +132,58 @@ test('a provider that takes pictures but cannot name them keeps the prose', () =
     assert.ok(prompt.includes('rust-orange cardigan'),
         'the description was dropped for a provider that cannot read tags');
 });
+
+/**
+ * A prop that is in the shot gets its plate attached.
+ *
+ * Characters are matched from sceneCard.characters and props from
+ * sceneCard.props, and on a real production every card came back with
+ * `props: []` — so the prop plates a director had generated, accepted and
+ * locked attached to nothing. The grocery bag is central to 1C and the
+ * sprinkler opens 1B; both were described in the prompt text and invented
+ * per-frame anyway.
+ *
+ * The card's array is a hint, not the truth. A prop the description names IS in
+ * the shot, whoever wrote the card — the same reasoning that made scene
+ * presence read action lines rather than only dialogue cues. Matching on the
+ * description means a plate attaches because the object is there, not because
+ * somebody remembered to list it.
+ *
+ * Set-based over the ways a prop can be named, because the failure was total:
+ * one path was implemented and the other was assumed to be filled in.
+ */
+const { matchProps } = require('../routes/storyboard');
+
+const PROJECT_PROPS = [
+    { id: 'p1', name: 'Grocery bag' },
+    { id: 'p2', name: 'Sprinkler' },
+    { id: 'p3', name: 'Storm drain' },
+];
+
+const PROP_MENTIONS = [
+    { id: 'explicit list', card: { props: ['Sprinkler'], description: 'Nothing here.' }, expect: ['Sprinkler'] },
+    { id: 'named in the description', card: { props: [], description: 'The sprinkler stops mid-arc.' }, expect: ['Sprinkler'] },
+    { id: 'different case', card: { props: [], description: 'A GROCERY BAG on her hip.' }, expect: ['Grocery bag'] },
+    { id: 'two words', card: { props: [], description: 'She reaches a storm drain.' }, expect: ['Storm drain'] },
+    { id: 'both sources, no duplicate', card: { props: ['Sprinkler'], description: 'The sprinkler ticks.' }, expect: ['Sprinkler'] },
+    { id: 'not mentioned at all', card: { props: [], description: 'Empty, ordinary, still.' }, expect: [] },
+];
+
+test('a prop is matched however the card names it', () => {
+    const broken = [];
+    for (const c of PROP_MENTIONS) {
+        const got = matchProps(c.card, PROJECT_PROPS).map(p => p.name).sort();
+        if (JSON.stringify(got) !== JSON.stringify(c.expect.slice().sort())) {
+            broken.push(`${c.id}: expected ${JSON.stringify(c.expect)}, got ${JSON.stringify(got)}`);
+        }
+    }
+    assert.deepStrictEqual(broken, [], `\n  ${broken.join('\n  ')}`);
+});
+
+test('a substring is not a mention', () => {
+    // "bag" inside "baggage" is not the grocery bag, and a plate attached on a
+    // coincidence is a wrong subject in the frame.
+    const got = matchProps({ props: [], description: 'She checks the baggage claim.' },
+        [{ id: 'p1', name: 'Bag' }]).map(p => p.name);
+    assert.deepStrictEqual(got, [], `matched a substring: ${JSON.stringify(got)}`);
+});

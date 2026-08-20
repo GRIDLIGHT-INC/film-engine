@@ -427,6 +427,11 @@ A style preset is appended to **every** image prompt in a production, is a free-
 
 Tested against a corpus rather than examples: 8 real styles that must all pass (noir, Portra, cyberpunk, documentary, golden hour…) and 5 subject-carrying ones that must all fail — including the exact string that shipped the defect.
 
+### A Prop In The Shot Gets Its Plate
+Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
+
+The card's array is a hint, not the truth. `matchProps()` unions it with any project prop the description names, so a plate attaches because the object is in the shot rather than because somebody remembered to list it — the same reasoning that made scene presence read action lines rather than only dialogue cues. Whole-word matching only: "bag" inside "baggage" is not the grocery bag, and a plate attached on a coincidence puts the wrong object in frame.
+
 ### Shot Tagger and the Mood Board (Phase 3)
 **`POST /scripts/:id/tag`** turns selected screenplay lines into shots — the fastest path from a script to a shot list, and the one that was missing: shots were created by hand, or by an agent composing a scene card from scratch. Selecting the line is quicker *and* more faithful, since the line **is** the description and nothing is paraphrased on the way. It also captures presence at the only moment anyone is actually looking at the line; deriving "who is in this shot" later from the scene as a whole is what produced a DRAGON that appeared in no scene. Only `action` and `dialogue` become shots — refusing sluglines and transitions is the feature, because a tagger that accepts everything produces a list a director has to clean up, which is worse than typing it. Idempotent per element (the card records `source_element_id`), so clicking a line twice means "did that work", not "make another".
 
