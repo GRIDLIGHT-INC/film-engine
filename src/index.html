@@ -3788,7 +3788,13 @@
   --gl-error-neon:#f08a8a; --gl-warning:#e0a33e; --gl-info:#6690ff;
   --gl-accent-purple:#6690ff; --gl-accent-pink:#6690ff;
   --gl-border-subtle:rgba(255,255,255,.08);
-  --fe-rail:64px; --fe-panel:232px; --fe-top:62px; --fe-gap:10px;
+  /* The rail is gone: five buttons that each open a page now sit in the top
+     bar beside the phase track, where a global action belongs. Holding a
+     64px column down the full height of the screen for them cost more real
+     estate than they were worth, on every page, permanently. Kept as a
+     variable at zero so the panel, main and status-bar offsets that read it
+     stay one arithmetic expression rather than five edited by hand. */
+  --fe-rail:0px; --fe-panel:232px; --fe-top:62px; --fe-gap:10px;
 }
 /* the CRT scanlines and cyan grid competed with the picture */
 body::before, body::after { display:none !important; content:none !important; }
@@ -3803,10 +3809,7 @@ body.fe { display:block; overflow:hidden; }
   border-radius:18px;
 }
 .fe-rail {
-  position:fixed; top:calc(var(--fe-top) + var(--fe-gap)*2); left:var(--fe-gap);
-  bottom:var(--fe-gap); width:var(--fe-rail); z-index:300;
-  display:flex; flex-direction:column; align-items:center; gap:4px; padding:12px 0;
-  background:#151517; border:1px solid rgba(255,255,255,.07); border-radius:18px;
+  display:flex; align-items:center; gap:4px; margin-left:auto;
 }
 .fe-panel {
   position:fixed; top:calc(var(--fe-top) + var(--fe-gap)*2);
@@ -3854,13 +3857,9 @@ body.fe-status .main { bottom:calc(var(--fe-gap) + 26px); }
 .fe-ph-bar { height:3px; border-radius:3px; background:#2c2c31; overflow:hidden; }
 .fe-ph-fill { height:3px; border-radius:3px; background:#5f5f67; width:0; }
 .fe-ph.on .fe-ph-fill { background:#6690ff; }
-.fe-search { display:flex; align-items:center; gap:8px; height:34px; padding:0 11px;
-  border-radius:9px; background:#131315; border:1px solid rgba(255,255,255,.10);
-  cursor:pointer; min-width:190px; font-size:12px; color:#8e8e97; }
-.fe-search:hover { border-color:rgba(102,144,255,.55); }
 
 /* ── rail ── */
-.fe-rail-btn { width:46px; padding:7px 0 5px; border-radius:10px; border:none;
+.fe-rail-btn { width:52px; padding:5px 0 4px; border-radius:9px; border:none;
   background:transparent; cursor:pointer; display:flex; flex-direction:column;
   align-items:center; gap:4px; color:#9b9ba3; font-family:inherit; position:relative; }
 .fe-rail-btn:hover { background:#1d1d20; }
@@ -26421,7 +26420,12 @@ ${fountainText.slice(0, 50000)}`;
     { id:'jobsqueue', label:'Jobs',  icon:'M9 3.2a5.8 5.8 0 100 11.6A5.8 5.8 0 009 3.2Zm0 2.4V9l2.2 1.4' },
     { id:'notes',     label:'Notes', icon:'M3.2 3h11.6v12H3.2V3Zm2.8 4h6M6 10h4' },
     { id:'guide',     label:'Guide', icon:'M9 2.6A6.4 6.4 0 109 15.4 6.4 6.4 0 009 2.6Zm-1.8 4.4a1.9 1.9 0 013.6.8c0 1.3-1.8 1.6-1.8 2.7m0 2.5v.01' },
-    { id:'settings',  label:'Setup', icon:'M9 6.6A2.4 2.4 0 109 11.4 2.4 2.4 0 009 6.6ZM9 1.8v2M9 14.2v2M1.8 9h2M14.2 9h2M4 4l1.4 1.4M12.6 12.6L14 14M14 4l-1.4 1.4M5.4 12.6L4 14' }
+    { id:'settings',  label:'Setup', icon:'M9 6.6A2.4 2.4 0 109 11.4 2.4 2.4 0 009 6.6ZM9 1.8v2M9 14.2v2M1.8 9h2M14.2 9h2M4 4l1.4 1.4M12.6 12.6L14 14M14 4l-1.4 1.4M5.4 12.6L4 14' },
+    // The glossary had exactly one way in: the "Search anything" pill, which
+    // was not a search — it opened this. Removing the pill without replacing
+    // the entrance would have left the glossary in the build and unreachable,
+    // since the old sidebar that also links it is display:none in this layout.
+    { id:'glossary',  label:'Terms', icon:'M4 3h8a1 1 0 011 1v10a1 1 0 01-1 1H4V3Zm2.4 3.4h4.2M6.4 9h3' }
   ];
 
   var phaseOf = {};
@@ -26472,10 +26476,12 @@ ${fountainText.slice(0, 50000)}`;
       '<div class="fe-brand" id="feBrand"><div class="fe-mark">FE</div>' +
       '<div><div class="fe-proj" id="feProjName">Film Engine</div>' +
       '<div class="fe-projsub">AI production pipeline</div></div></div>' +
-      '<div class="fe-track" id="feTrack"></div>' +
-      '<div class="fe-search" id="feSearch">Search anything</div>';
+      '<div class="fe-track" id="feTrack"></div>';
     document.body.appendChild(top);
 
+    // Into the top bar, not the body: these are global actions, and a global
+    // action belongs beside the other global furniture rather than in a column
+    // of its own.
     var rail = document.createElement('div');
     rail.className = 'fe-rail';
     RAIL.forEach(function (r) {
@@ -26485,12 +26491,13 @@ ${fountainText.slice(0, 50000)}`;
       b.innerHTML = svg(r.icon) + '<span class="l">' + r.label + '</span>';
       b.onclick = function () {
         if (r.id === 'guide') { if (window.openProductionGuide) window.openProductionGuide(); return; }
+        if (r.id === 'glossary') { if (window.showModal) window.showModal('glossaryModal'); return; }
         var t = navBtn(r.id);
         if (t) t.click(); else if (window.navigateTo) window.navigateTo(r.id);
       };
       rail.appendChild(b);
     });
-    document.body.appendChild(rail);
+    top.appendChild(rail);
 
     var panel = document.createElement('div');
     panel.className = 'fe-panel';
@@ -26519,8 +26526,6 @@ ${fountainText.slice(0, 50000)}`;
       els.track.appendChild(b);
     });
 
-    var search = top.querySelector('#feSearch');
-    search.onclick = function () { if (window.showModal) window.showModal('glossaryModal'); };
     var brand = top.querySelector('#feBrand');
     brand.onclick = function () { var t = navBtn('dashboard'); if (t) t.click(); };
 

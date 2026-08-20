@@ -166,6 +166,7 @@ film-engine/
 │       ├── live-events.test.js         # Another process's write reaches the page; our own does not
 │       ├── story-bible.test.js         # A section revised flags only what was written from it
 │       ├── subject-scale.test.js       # Nothing is invented; every surface can set a size
+│       ├── nav-chrome.test.js          # Global actions in the top bar; nothing orphaned by moving them
 │       ├── app-settings.test.js        # Author is set once; the title page is printed, not edited inline
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
@@ -599,6 +600,11 @@ Migration 071 adds `height_m` to characters and `height_m`/`width_m`/`length_m` 
 **The size is usually already written down.** Every prop on the first production that needed this stated its own size in its description — *"about forty centimetres tall"*, *"roughly seventy centimetres across"*, *"about five and a half metres nose to tail"* — and nothing was reading them, so the person filling the field was being asked to invent a number that sat two lines above. `scale_check` surfaces those sentences per subject, in words or in figures. **Surfaced, not parsed**: word-numbers, ranges and mixed units make a parser that is right most of the time, and a size that is silently wrong is worse than one that is absent, because it reaches every frame the subject appears in looking deliberate. Whoever reads the report converts it in one step.
 
 `GET /projects/:id/scale-check` (`scale_check`) reports the gap as work rather than as a status — each subject with the number of shots it appears in, ordered by that count, and flagged harder when it has a plate, since plate-without-size is the exact combination that fails. On Wingfall it opened at **6 subjects, 28 shot appearances at risk**, every one of them plated.
+
+### Chrome Should Not Charge Rent
+Five buttons — Home, Jobs, Notes, Guide, Setup — held a 64px column down the full height of the screen, on every page, permanently. They are global actions, and a global action belongs beside the other global furniture rather than in a column of its own; they now sit at the right of the top bar. The rail width survives as a variable set to **zero** rather than being deleted, because the panel, the main pane and the status bar all offset by it — one arithmetic expression beats five hand-edited numbers that can disagree.
+
+The **"Search anything"** pill went with it, because it never searched anything: its only behaviour was opening the glossary. Which is exactly the trap in removing it — the glossary's other link lives in the old sidebar, which is `display:none` in this layout, so deleting the pill left a modal in the build with no way to reach it. A removal is finished when everything that was reachable still is, so the glossary became the sixth rail button. `tests/nav-chrome.test.js` checks every rail button resolves to a page or an explicit handler, since a button wired to nothing looks identical to a working one until it is clicked.
 
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
@@ -1040,6 +1046,7 @@ node --test backend/tests/scene-edit.test.js
 node --test backend/tests/live-events.test.js
 node --test backend/tests/story-bible.test.js
 node --test backend/tests/subject-scale.test.js
+node --test backend/tests/nav-chrome.test.js
 node --test backend/tests/app-settings.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js
