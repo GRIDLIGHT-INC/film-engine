@@ -71,6 +71,7 @@ const { handleProjects, handleProjectSettingsPreset } = require('./routes/projec
 const { handleScripts, handleComments } = require('./routes/scripts');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
+const { handleAppSettings } = require('./routes/app-settings');
 const { handleBreakdown } = require('./routes/breakdown');
 const { handleProductionReports } = require('./routes/production-reports');
 const { handleMoodBoard } = require('./routes/mood-board');
@@ -896,6 +897,11 @@ const server = http.createServer(async (req, res) => {
             if (sub === 'order' || sub === 'transition') {
                 return await handleShots(req, res, parts, query);
             }
+        }
+
+        // Route: /film/settings — who is using the app, not what they are making.
+        if (parts[1] === 'settings' && !parts[2]) {
+            return handleAppSettings(req, res);
         }
 
         // Route: /film/card-vocabulary — the lists a scene card may draw on.

@@ -524,8 +524,26 @@ function uploadScript(req, res, projectId) {
         parsedScenes = parseScreenplay(content);
     }
 
-    // If this is version 1 or explicit replace, clear old scenes for this project
-    if (body.replace_scenes !== false) {
+    /**
+     * Revising a story must not destroy the production built on it.
+     *
+     * `film_shots.scene_id` is ON DELETE CASCADE, so clearing the scenes takes
+     * every shot with it — every scene card, every blocking, every annotation
+     * and every asset row. On a first upload that is correct and harmless.
+     * On the second one it is the whole film, and the only signal is a shot
+     * list that has silently become empty.
+     *
+     * `sync_scenes` reconciles instead: match by number, then by location and
+     * time, update what moved, add what is new and mark what is gone as
+     * `removed`. Scene ids survive, so the shots hanging off them survive too.
+     * It is opt-in rather than the default because changing the default would
+     * change what an existing first upload does, and a first upload has no
+     * shots to protect.
+     */
+    let syncReport = null;
+    if (body.sync_scenes && parsedFountain) {
+        syncReport = syncScenesWithScreenplay(projectId, parsedFountain);
+    } else if (body.replace_scenes !== false) {
         db.prepare('DELETE FROM film_scenes WHERE project_id = ?').run(projectId);
     }
 
@@ -536,7 +554,7 @@ function uploadScript(req, res, projectId) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    for (const scene of parsedScenes) {
+    for (const scene of (syncReport ? [] : parsedScenes)) {
         const sceneId = generateId();
         const sceneNow = new Date().toISOString();
         insertScene.run(
@@ -564,7 +582,11 @@ function uploadScript(req, res, projectId) {
     res.end(JSON.stringify({
         script: scriptRow,
         scenes_extracted: insertedScenes.length,
-        scenes: insertedScenes
+        scenes: insertedScenes,
+        // What the reconciler did, when it ran. Reported rather than silent:
+        // "3 updated, 1 added, 1 removed" is the difference between a revision
+        // someone can check and one they have to take on trust.
+        sync: syncReport
     }));
 }
 

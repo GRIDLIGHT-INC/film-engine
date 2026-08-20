@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (65 migrations)
+│   │   └── migrations/     # SQL migration files (66 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -69,6 +69,7 @@ film-engine/
 │   │   ├── timeline.js         # Timeline assembly + reordering
 │   │   ├── jobs.js             # Unified job queue view across pipelines
 │   │   ├── budget-estimate.js  # Pre-flight cost estimation
+│   │   ├── app-settings.js     # Settings that belong to the person, not the project
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
@@ -150,6 +151,8 @@ film-engine/
 │       ├── glb-parser.test.js          # A synthetic .glb parses, transforms apply, decimation bounds hold
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale
+│       ├── script-revision.test.js     # Revising a story does not cascade the production away
+│       ├── app-settings.test.js        # Author is set once; the title page is printed, not edited inline
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
 │       ├── run-plan.test.js            # Strip ordering, dependency safety, cost, budget refusal
@@ -296,7 +299,7 @@ All routes prefixed with `/film`:
 | QA | `POST /projects/:id/qa/run`, `GET /projects/:id/qa`, `GET /projects/:id/qa/latest` |
 | QA | `GET /projects/:id/qa/continuity`, `GET /projects/:id/qa/rubric` |
 | QA | `POST /scenes/:id/qa/run`, `POST /shots/:id/qa/run` |
-| Settings | `POST /projects/:id/settings/preset` |
+| Settings | `POST /projects/:id/settings/preset`, `GET/PUT /settings` |
 | Shots | `PUT /shots/:id/order`, `PUT /shots/:id/transition`, `POST /projects/:id/shots/reorder` |
 | Acts | `GET/POST /projects/:id/acts`, `GET/PUT/DELETE /acts/:id`, `POST /acts/:id/assign` |
 | Subtitles | `GET/POST /projects/:id/subtitles`, `PUT/DELETE /subtitles/:id` |
@@ -470,6 +473,20 @@ Nine tools close it, all dispatching through the existing routes rather than rei
 Two descriptions carry warnings the tool cannot enforce, because both failures are silent. `script_write` says plainly that editing the screenplay does **not** update the scenes, shots or frames derived from it — an agent that rewrites a draft and stops has left a shot list describing the previous story. And `consistency_list` says a **locked** profile is what generation conditions on while a draft one reaches nothing, since "I created a profile" and "the subject is now consistent" look identical from the outside.
 
 `storyboard_regenerate` is per-shot on purpose. The only regeneration tool was project-wide, so changing one line of one card meant paying to regenerate every frame in the film.
+
+### A Revision Must Not Cascade the Film Away
+`film_shots.scene_id` is declared `ON DELETE CASCADE`, and `uploadScript` cleared **every scene in the project** by default. On a first upload that is correct and costs nothing — there is nothing hanging off the scenes yet. On the second it takes the whole production: every shot, scene card, previs blocking, annotation and asset row. Nothing errors; the only signal is a shot list that has quietly become empty, found by whoever next opens the board.
+
+It was reachable from the UI, and once `script_write` shipped it was reachable from an agent — the worse of the two, because *"rewrite scene 3"* is a sentence a director says casually. `sync_scenes` reconciles instead, through the FILM-120 reconciler that already existed and was only wired to `PUT /script/:version`: match by number, then by location and time, update what moved, add what is new, mark what is gone as `removed`. **Scene ids survive, so the shots hanging off them survive too.** It is opt-in rather than the new default because changing the default would change what a first upload does, and a first upload has no shots to protect — the *tool* defaults to it, since that is where the casual sentence arrives. The destructive path stays, renamed to `replace_everything` and described as what it destroys.
+
+`breakdown_run` takes `scene_id`, which is the surgical path and was there all along — the tool sent an empty body and did the whole screenplay. Without `auto_save` it is a preview that writes nothing, and with it, it **skips** any scene that already has shots rather than duplicating them.
+
+`tests/script-revision.test.js` is set-based over the child tables a revision must not orphan, because a cascade is only safe if *every* child survives: a test that checks shots alone passes while previs blocking is swept away with them.
+
+### The Title Page Is for Printing
+It sat at the top of the editor as a non-editable slab you scrolled past on every open and clicked by accident when you meant to put the cursor on FADE IN. It is now `display: none` on screen and `display: block` in `@media print`, which is the one moment a title page is read. Hidden rather than removed — the block carries the data the Fountain serialiser writes back, so deleting it would lose the title page itself — and the toolbar's **Title Page** button was always the real way to edit it.
+
+The **author** moved with it. It was free text on every title page, retyped per project and per draft and blank whenever anyone forgot, which on a title page is the field a reader looks at first. It is not a fact about a screenplay; it is a fact about whoever is writing them here, and it is the same answer every time. `film_app_settings` (migration 068) is a key/value table with an allow-list — an open store returns 200 for a misspelled key and nothing ever reads the row again — served at `GET/PUT /film/settings`. It fills a **blank** author and never overwrites one: a screenplay can have been written by someone else, and a setting that quietly reassigns authorship is worse than one that does nothing.
 
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
@@ -775,7 +792,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (65 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (66 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -897,6 +914,8 @@ node --test backend/tests/previs-explore-ui.test.js
 node --test backend/tests/glb-parser.test.js
 node --test backend/tests/spec-consumption.test.js
 node --test backend/tests/shot-card-edit.test.js
+node --test backend/tests/script-revision.test.js
+node --test backend/tests/app-settings.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js
 node --test backend/tests/run-plan.test.js

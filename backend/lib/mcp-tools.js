@@ -736,23 +736,41 @@ const PRODUCTION_TOOLS = [
     {
         name: 'script_write',
         handler: handleScripts, method: 'POST',
-        description: 'Save a NEW version of the screenplay from Fountain source. This is how a story is revised: read it with script_get, rewrite it whole, save it back. Versioned, so the previous draft is never lost. Editing the screenplay does NOT update the scenes, shots or frames that were derived from it — run breakdown_run afterwards.',
+        description: 'Save a NEW version of the screenplay from Fountain source. This is how a story is revised: read it with script_get, rewrite it whole, save it back. Versioned, so the previous draft is kept. By default it RECONCILES scenes — matching by number then location, updating what changed, adding what is new — so existing shots and their generated frames survive. Shots are NOT re-derived: a scene whose story changed still holds the old shot cards, so fix them with shot_update, or delete them with shot_delete and re-derive that one scene with breakdown_run.',
         path: a => `/film/projects/${a.project_id}/script`,
-        body: a => ({ fountain_content: a.fountain_content, title: a.title }),
+        body: a => ({
+            fountain_content: a.fountain_content,
+            title: a.title,
+            // Reconcile unless the caller explicitly asks to start over. The
+            // destructive path cascades through film_shots and takes the whole
+            // production with it, which is never what a revision means.
+            sync_scenes: a.replace_everything !== true,
+            replace_scenes: a.replace_everything === true,
+        }),
         schema: {
             project_id: { type: 'string' },
             fountain_content: { type: 'string', description: 'The COMPLETE screenplay in Fountain markup, not a patch. Scene headings as INT./EXT. LOCATION - TIME.' },
             title: { type: 'string' },
+            replace_everything: {
+                type: 'boolean',
+                description: 'DESTRUCTIVE. Deletes every scene and, by cascade, every shot, scene card, blocking and annotation in the project, then rebuilds scenes from this draft. Only for starting a project over. Never use this to revise a story.',
+            },
         },
         required: ['project_id', 'fountain_content'],
     },
     {
         name: 'breakdown_run',
         handler: handleBreakdown, method: 'POST',
-        description: 'Break the current screenplay down into scenes and shots with scene cards. Run this after script_write, or the shot list still describes the previous draft. Slow — it calls the LLM once per scene.',
+        description: 'Break a screenplay down into shots with scene cards. Pass scene_id to do ONE scene — that is the surgical path, and the usual one after revising a single scene. Without auto_save it returns the cards for review and writes nothing. With auto_save it SKIPS any scene that already has shots rather than duplicating them, so delete the old shots first with shot_delete if you mean to replace them. Slow: one LLM call per scene.',
         path: a => `/film/projects/${a.project_id}/breakdown`,
-        body: () => ({}),
-        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+        body: a => ({ scene_id: a.scene_id, scene_ids: a.scene_ids, auto_save: a.auto_save === true, multi_scene: Array.isArray(a.scene_ids) && a.scene_ids.length > 1 }),
+        schema: {
+            project_id: { type: 'string' },
+            scene_id: { type: 'string', description: 'One scene, from scene_list. Leave both scene fields out to break down the whole screenplay.' },
+            scene_ids: { type: 'array', items: { type: 'string' }, description: 'Several scenes at once.' },
+            auto_save: { type: 'boolean', description: 'Write the cards as shots. Without it this is a preview and nothing is stored.' },
+        },
+        required: ['project_id'],
     },
     {
         name: 'shot_get',

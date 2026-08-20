@@ -1394,6 +1394,19 @@
         }
 
         /* FILM-128: Title Page Styles */
+        /*
+         * The title page is a printing concern, not an editing one.
+         *
+         * It sat at the top of the editor as a non-editable slab you scrolled
+         * past every time you opened the screenplay, and clicked by accident
+         * when you meant to put the cursor on FADE IN. It is still in the DOM
+         * because it carries the data the Fountain serialiser writes back — it
+         * is simply not shown until the page is printed, which is the one
+         * moment a title page is for. The toolbar's "Title Page" button is how
+         * it is edited, and always was.
+         */
+        .title-page-block { display: none !important; }
+
         .title-page-block {
             text-align: center;
             padding: 60px 20px;
@@ -1685,8 +1698,10 @@
                 text-align: center;
             }
 
-            /* Title page */
+            /* Title page — hidden on screen, printed here, which is the only
+               place it has ever been read. */
             .title-page-block {
+                display: block !important;
                 page-break-after: always;
                 text-align: center;
                 padding-top: 3in;
@@ -5006,6 +5021,21 @@
                 <div class="btn-row">
                     <button class="btn btn-primary" onclick="saveSettings()">Save</button>
                     <button class="btn btn-secondary" onclick="resetSettings()">Reset to Default</button>
+                </div>
+            </div>
+            <div class="card mt-16" style="max-width:500px;">
+                <h3 class="mb-8">You</h3>
+                <div class="form-group">
+                    <label>Author</label>
+                    <input type="text" id="settingsAuthor" placeholder="Your name">
+                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                        The written-by credit on every screenplay title page and every Final Draft export.
+                        Set once here rather than retyped per project &mdash; it fills a blank author and never
+                        overwrites one, so a screenplay written by someone else keeps their name.
+                    </p>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveAppSettings()">Save</button>
                 </div>
             </div>
             <div class="card mt-16" style="max-width:500px;" id="settingsProjectCard">
@@ -17478,7 +17508,26 @@ THREE.GLTFLoader = GLTFLoader;
     // FILM-128: Title Page Editor
     let currentTitlePage = null;
 
-    function openTitlePageModal() {
+    /**
+     * Who is writing here.
+     *
+     * The author was a free-text field on every title page, retyped per project
+     * and per draft, and blank whenever anyone forgot — which on a title page is
+     * the field a reader looks at first. It is not a fact about a screenplay; it
+     * is a fact about the person using the app, and it is the same answer every
+     * time. Read once and cached, because it changes about as often as a name.
+     */
+    let APP_AUTHOR = null;
+    async function appAuthor() {
+        if (APP_AUTHOR !== null) return APP_AUTHOR;
+        try {
+            const res = await api('/settings');
+            APP_AUTHOR = (res.settings && res.settings.author) || '';
+        } catch (_) { APP_AUTHOR = ''; }
+        return APP_AUTHOR;
+    }
+
+    async function openTitlePageModal() {
         const modal = document.getElementById('titlePageModal');
         if (!modal) return;
 
@@ -17512,7 +17561,10 @@ THREE.GLTFLoader = GLTFLoader;
         // Populate form fields
         document.getElementById('titlePageTitle').value = currentTitlePage.title || '';
         document.getElementById('titlePageCredit').value = currentTitlePage.credit || 'Written by';
-        document.getElementById('titlePageAuthor').value = currentTitlePage.author || '';
+        // Fills a BLANK author, never overwrites one. A screenplay can have been
+        // written by someone else, and a setting that quietly reassigns
+        // authorship is worse than one that does nothing.
+        document.getElementById('titlePageAuthor').value = currentTitlePage.author || await appAuthor();
         document.getElementById('titlePageSource').value = currentTitlePage.source || '';
         document.getElementById('titlePageDraftDate').value = currentTitlePage.draft_date || '';
         document.getElementById('titlePageContact').value = currentTitlePage.contact || '';
@@ -21056,6 +21108,27 @@ ${fountainText.slice(0, 50000)}`;
         }
         loadTechnicalSettings();
         loadProviders();
+        loadAppSettings();
+    }
+
+    async function loadAppSettings() {
+        const el = document.getElementById('settingsAuthor');
+        if (!el) return;
+        try {
+            const res = await api('/settings');
+            el.value = (res.settings && res.settings.author) || '';
+        } catch (_) { /* leave it blank; the field says what it is for */ }
+    }
+
+    async function saveAppSettings() {
+        const author = document.getElementById('settingsAuthor').value.trim();
+        try {
+            await api('/settings', { method: 'PUT', body: JSON.stringify({ author }) });
+            APP_AUTHOR = author;      // the cached copy, or the next title page uses the old name
+            setStatus('Author saved.');
+        } catch (err) {
+            setStatus('Could not save: ' + err.message);
+        }
     }
 
     // ── AI Providers (multi-provider layer) ─────────────────────────
