@@ -140,3 +140,63 @@ test('a tool that promises content points at a route that returns it', () => {
     assert.ok(/script_versions/.test(src),
         'the version list has no tool, so confirming a rewrite was saved is impossible');
 });
+
+/**
+ * A route that ships without a tool is a thing the app can do and an agent cannot.
+ *
+ * `POST /film/projects` worked from the first week and had no `project_create`
+ * for months, so an agent connected to this server could write a screenplay
+ * into a project and could not bring one into existence. Nothing failed; the
+ * capability was simply absent, which is the hardest kind of gap to notice
+ * because there is no error to read.
+ *
+ * The tool list is hand-written, so a test over the tool list can only confirm
+ * what someone remembered. This derives the expectation from the ROUTES: for
+ * each entity, read which HTTP methods its module actually dispatches, and
+ * require a tool for each. The registry below names entities and files — a much
+ * smaller and more stable thing than the tool list — and every deliberate
+ * omission has to be written down with its reason.
+ */
+const ENTITY_ROUTES = [
+    { kind: 'project', file: 'projects.js', verbs: { POST: 'project_create', PUT: 'project_update', DELETE: 'project_delete' } },
+    { kind: 'scene', file: 'scenes.js', verbs: { PUT: 'scene_update', DELETE: 'scene_delete' } },
+    { kind: 'shot', file: 'shots.js', verbs: { POST: 'shot_create', PUT: 'shot_update', DELETE: 'shot_delete' } },
+    { kind: 'character', file: 'characters.js', verbs: { POST: 'character_create', PUT: 'character_update', DELETE: 'character_delete' } },
+    { kind: 'location', file: 'locations.js', verbs: { POST: 'location_create', PUT: 'location_update', DELETE: 'location_delete' } },
+    { kind: 'annotation', file: 'annotations.js', verbs: { POST: 'shot_annotate', DELETE: 'annotation_delete' } },
+    { kind: 'mood board', file: 'mood-board.js', verbs: { POST: 'mood_board_add', DELETE: 'mood_board_remove' } },
+    { kind: 'consistency', file: 'consistency.js', verbs: { POST: 'consistency_create', DELETE: 'consistency_delete' } },
+];
+
+test('every entity route an agent should reach has a tool', () => {
+    const names = new Set([...PRODUCTION_TOOLS, ...ROUTE_TOOLS].map(t => t.name));
+    const gaps = [];
+
+    for (const entity of ENTITY_ROUTES) {
+        const src = fs.readFileSync(path.join(ROUTES_DIR, entity.file), 'utf8');
+        for (const [method, tool] of Object.entries(entity.verbs)) {
+            // Both forms count. annotations.js guards its delete with
+            // `req.method !== 'DELETE'` and a detector that only looked for
+            // `===` reported a gap where there was none — a derived test that
+            // is wrong about the code is worse than a hand-written one, because
+            // it is believed.
+            const dispatches = new RegExp(`req\\.method (===|!==) '${method}'`).test(src);
+            if (!dispatches) {
+                gaps.push(`${entity.kind}: ${tool} is expected but ${entity.file} handles no ${method}`);
+                continue;
+            }
+            if (!names.has(tool)) {
+                gaps.push(`${entity.kind}: ${entity.file} handles ${method} and there is no ${tool}`);
+            }
+        }
+    }
+    assert.deepStrictEqual(gaps, [], `\n  ${gaps.join('\n  ')}`);
+});
+
+test('the entity registry names files that exist', () => {
+    // A registry pointing at a renamed file silently checks nothing.
+    const missing = ENTITY_ROUTES
+        .filter(e => !fs.existsSync(path.join(ROUTES_DIR, e.file)))
+        .map(e => e.file);
+    assert.deepStrictEqual(missing, [], `these route files are gone: ${missing.join(', ')}`);
+});

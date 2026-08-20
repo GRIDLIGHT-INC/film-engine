@@ -319,6 +319,7 @@ test('a missing required argument fails the tool instead of half-running it', as
  * they cannot remove.
  */
 const CREATE_DELETE_PAIRS = [
+    { create: 'project_create', remove: 'project_delete' },
     // A profile is a commitment, and one an agent can make it must be able to
     // withdraw — otherwise a wrong subject is locked in with no way back out.
     { create: 'consistency_create', remove: 'consistency_delete' },
