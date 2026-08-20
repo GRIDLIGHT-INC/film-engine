@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (66 migrations)
+│   │   └── migrations/     # SQL migration files (67 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -118,6 +118,7 @@ film-engine/
 │   │   ├── e2e-preflight.js      # Screenplay→final-shot readiness, derived from PIPELINE_STEPS
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
+│   │   ├── screenplay-drift.js    # Which shots a rewrite left behind, and what was built on them
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
@@ -152,6 +153,7 @@ film-engine/
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale
 │       ├── script-revision.test.js     # Revising a story does not cascade the production away
+│       ├── screenplay-drift.test.js    # A rewrite flags the shots written from the old draft
 │       ├── app-settings.test.js        # Author is set once; the title page is printed, not edited inline
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
 │       ├── production-reports.test.js  # Sides + DOOD, and neither omits a non-speaking character
@@ -488,6 +490,17 @@ It sat at the top of the editor as a non-editable slab you scrolled past on ever
 
 The **author** moved with it. It was free text on every title page, retyped per project and per draft and blank whenever anyone forgot, which on a title page is the field a reader looks at first. It is not a fact about a screenplay; it is a fact about whoever is writing them here, and it is the same answer every time. `film_app_settings` (migration 068) is a key/value table with an allow-list — an open store returns 200 for a misspelled key and nothing ever reads the row again — served at `GET/PUT /film/settings`. It fills a **blank** author and never overwrites one: a screenplay can have been written by someone else, and a setting that quietly reassigns authorship is worse than one that does nothing.
 
+### A Rewrite Has to Say What It Broke
+Artefact staleness answers *does this frame still match its scene card*. It is structurally blind to a rewrite, because rewriting the screenplay **does not touch the card** — which is the whole problem. Revise scene 3 and its shot cards stay valid, correctly fingerprinted, and quietly about a different film. On eight shots a director notices; on a feature nobody does, and the first sign is a cut that makes no sense.
+
+`lib/screenplay-drift.js` is the missing edge, screenplay → card. Migration 069 gives a scene a `source_fingerprint` of the text a card is built from, and a shot the fingerprint it **was** built from; they differ exactly when the screenplay moved on without the shot. It is a **separate signal** rather than folded into the artefact fingerprint, because "the frame no longer matches its card" and "the card no longer matches the script" need different work — telling a director to regenerate a frame whose card is wrong buys them a better picture of the wrong shot.
+
+Four decisions carry it. The fingerprint covers only `int_ext`/`location`/`time_of_day`/`description`, so reordering scenes or advancing a status does not fire — **a warning that goes off on work nobody needs to redo is one people learn to dismiss**. `shot_update` re-stamps, so fixing the card *clears* the warning: one that cannot be cleared by doing the work it asks for is noise within a day. NULL means "outside this workflow", never stale, so the feature's debut is not a wall of false alarms — and `POST /projects/:id/screenplay-drift/baseline` lets a director adopt existing work as current, which is a claim only they can make and so is an explicit action, and which deliberately **never silences a shot already known to be behind**. And it **warns, never blocks**, on the precedent previs set: a card that diverged may be a deliberate choice.
+
+The report is per scene, because the work is per scene — you re-read the new text once and then fix every shot in it — and each shot names **what was generated from it**, since "this card is out of date" and "and a frame and a blocking were built on it" are different sizes of problem. The board carries it where the frames are: a banner naming the scenes, and a `script changed` tag on each affected frame that opens its card.
+
+`tests/screenplay-drift.test.js` is set-based over the ways a shot can be created, and asserts no `INSERT INTO film_shots` exists outside that list — one unstamped path is a class of shots that can never be flagged, and the gap shows up as the report cheerfully saying nothing is wrong.
+
 ### A Prop In The Shot Gets Its Plate
 Characters were matched from `sceneCard.characters` and props from `sceneCard.props`. On a real production every card came back with `props: []` while the descriptions plainly named a sprinkler and a grocery bag — so the prop plates a director had generated, accepted and locked **attached to nothing**, and both objects were invented per-frame instead. The plate system worked; nothing was feeding it.
 
@@ -792,7 +805,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (66 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (67 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -915,6 +928,7 @@ node --test backend/tests/glb-parser.test.js
 node --test backend/tests/spec-consumption.test.js
 node --test backend/tests/shot-card-edit.test.js
 node --test backend/tests/script-revision.test.js
+node --test backend/tests/screenplay-drift.test.js
 node --test backend/tests/app-settings.test.js
 node --test backend/tests/artefact-staleness.test.js
 node --test backend/tests/production-reports.test.js

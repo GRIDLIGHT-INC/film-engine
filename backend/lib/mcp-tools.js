@@ -411,6 +411,21 @@ const PRODUCTION_TOOLS = [
         required: ['asset_id'],
     },
     {
+        name: 'screenplay_drift',
+        handler: handleProductionReports, method: 'GET',
+        description: 'Which shots were written from an EARLIER draft of their scene, and what has been generated from them. Run this after any screenplay change: revising a scene does not update the shot cards derived from it, so those cards keep describing the previous story with nothing to show for it. Reports per scene with the next action for each. Warns only — nothing is blocked.',
+        path: a => `/film/projects/${a.project_id}/screenplay-drift`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'screenplay_baseline',
+        handler: handleProductionReports, method: 'POST',
+        description: 'Record every shot that has no draft recorded as matching the screenplay AS IT STANDS NOW. Run this once on a project that predates drift tracking, and only when you believe the current cards do describe the current script — it is a claim about the work, not a cleanup. Shots already known to be behind are left alone.',
+        path: a => `/film/projects/${a.project_id}/screenplay-drift/baseline`,
+        body: () => ({}),
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
         name: 'staleness_report',
         handler: handleProductionReports, method: 'GET',
         description: 'Which generated artefacts no longer match the inputs they were made from. Run this BEFORE generating: a frame built from an old character description or an old plate looks valid forever and nothing else will tell you. Reports stale (inputs changed), fresh (verified current) and unknown (generated before fingerprinting existed \u2014 not a claim either way).',

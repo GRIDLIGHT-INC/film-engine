@@ -8,6 +8,7 @@
  * and dialogue suggestions. Optionally auto-saves shots to DB.
  */
 const { db, generateId } = require('../db/database');
+const { stampShot } = require('../lib/screenplay-drift');
 const { validateSceneCards } = require('../lib/scene-card-schema');
 const { parseFountain, ELEMENT_TYPES } = require('../lib/fountain-parser');
 const { callProjectLLM, streamProjectLLM } = require('../lib/llm-client');
@@ -806,6 +807,10 @@ function autoSaveShots(sceneGroups) {
             const shotId = generateId();
             const cardYaml = JSON.stringify(card, null, 2);
             insertStmt.run(shotId, group.scene_id, card.shot_code, cardYaml, card.duration_ms || 4000, now);
+            // Which draft of the scene this card was written from. Without it a
+            // later rewrite has nothing to compare against and the shot looks
+            // current forever.
+            stampShot(shotId, group.scene_id);
             saved.push(selectStmt.get(shotId));
         }
 

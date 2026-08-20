@@ -10,6 +10,7 @@
  * PUT  /film/shots/:id/transition — set transition metadata
  */
 const { db, generateId } = require('../db/database');
+const { stampShot } = require('../lib/screenplay-drift');
 const { validateSceneCards, VALID_SHOT_TYPES, VALID_CAMERA_MOVES, VALID_LIGHTING,
     VALID_GEN_MODES, VALID_SENSORS } = require('../lib/scene-card-schema');
 
@@ -91,9 +92,19 @@ function updateShotCard(req, res, shotId) {
 
     db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?').run(JSON.stringify(card), shotId);
 
+    // Editing a card by hand is how a director answers a screenplay revision,
+    // so this is where the drift warning clears. A warning that cannot be
+    // cleared by doing the work it asks for is noise within a day.
+    let rewrittenAgainst = null;
+    try {
+        const row = db.prepare('SELECT scene_id FROM film_shots WHERE id = ?').get(shotId);
+        if (row && row.scene_id) rewrittenAgainst = stampShot(shotId, row.scene_id);
+    } catch (_) { /* never fail an edit that already succeeded */ }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
         shot_id: shotId, changed, card,
+        scene_fingerprint: rewrittenAgainst,
         // Said plainly: anything generated from the old words no longer matches.
         note: 'Anything generated from this card is now stale. Check staleness before generating.',
     }));
@@ -262,6 +273,7 @@ function createShots(req, res) {
         const now = new Date().toISOString();
 
         insertStmt.run(shotId, body.scene_id, card.shot_code, cardYaml, card.duration_ms || 0, now);
+        stampShot(shotId, body.scene_id);
         inserted.push(selectStmt.get(shotId));
     }
 

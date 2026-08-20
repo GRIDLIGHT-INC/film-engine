@@ -8,6 +8,7 @@
  * GET  /film/projects/:id/script/latest/fountain — get raw Fountain of latest version
  */
 const { db, generateId } = require('../db/database');
+const { stampScene, stampShot } = require('../lib/screenplay-drift');
 const { parseScreenplay } = require('../lib/screenplay-parser');
 const { parseFountain, analyzeScreenplay } = require('../lib/fountain-parser');
 const { parseFDX } = require('../lib/fdx-parser');
@@ -340,6 +341,9 @@ function syncScenesWithScreenplay(projectId, parsedFountain) {
                 JSON.stringify(newScene.characters_present || []),
                 match.id
             );
+            // The scene's text is what a card is built from, so this is the
+            // moment every shot in it may have fallen behind.
+            stampScene(match.id);
             report.scenes_updated++;
         }
     }
@@ -384,6 +388,7 @@ function syncScenesWithScreenplay(projectId, parsedFountain) {
                 JSON.stringify(newScene.characters_present || []),
                 match.id
             );
+            stampScene(match.id);
             report.scenes_updated++;
         }
     }
@@ -399,8 +404,9 @@ function syncScenesWithScreenplay(projectId, parsedFountain) {
         if (matchedNewIndices.has(i)) continue;
         const newScene = newScenes[i];
 
+        const newId = generateId();
         insertScene.run(
-            generateId(),
+            newId,
             projectId,
             newScene.scene_number,
             newScene.int_ext,
@@ -409,6 +415,7 @@ function syncScenesWithScreenplay(projectId, parsedFountain) {
             (newScene.description || '').slice(0, 10000),
             JSON.stringify(newScene.characters_present || [])
         );
+        stampScene(newId);
         report.scenes_added++;
     }
 
@@ -549,6 +556,7 @@ function uploadScript(req, res, projectId) {
 
     // Insert extracted scenes
     const insertedScenes = [];
+    const stampAfter = [];
     const insertScene = db.prepare(`
         INSERT INTO film_scenes (id, project_id, scene_number, int_ext, location, time_of_day, description, characters_present, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -557,6 +565,7 @@ function uploadScript(req, res, projectId) {
     for (const scene of (syncReport ? [] : parsedScenes)) {
         const sceneId = generateId();
         const sceneNow = new Date().toISOString();
+        stampAfter.push(sceneId);
         insertScene.run(
             sceneId,
             projectId,
@@ -577,6 +586,12 @@ function uploadScript(req, res, projectId) {
         UPDATE film_projects SET status = 'script', updated_at = datetime('now')
         WHERE id = ? AND status = 'concept'
     `).run(projectId);
+
+    // A baseline for every scene this upload wrote. Without it a first upload
+    // leaves the scenes unstamped, and the first revision has nothing to
+    // compare against — so the warning that matters most, on the very first
+    // rewrite, is the one that never fires.
+    for (const id of stampAfter) stampScene(id);
 
     res.writeHead(201, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -1150,6 +1165,7 @@ function tagShots(req, res, scriptId) {
                 `INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml, sort_order)
                  VALUES (?, ?, ?, ?, ?)`)
                 .run(shotId, scene.id, shotCode, JSON.stringify(card), el.element_index);
+            stampShot(shotId, scene.id);
 
             created.push({ shot_id: shotId, shot_code: shotCode, element_id: el.id, scene_id: scene.id });
         }

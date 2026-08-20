@@ -185,6 +185,34 @@ function handleProductionReports(req, res, urlParts, query) {
         return json(res, plan.refused ? 402 : 200, plan);
     }
 
+    // GET /film/projects/:id/screenplay-drift — the work a rewrite left behind.
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'screenplay-drift') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (urlParts[4] === 'baseline' && req.method === 'POST') {
+            const { adoptBaseline } = require('../lib/screenplay-drift');
+            const result = adoptBaseline(urlParts[2]);
+            return json(res, 200, {
+                project_id: urlParts[2], ...result,
+                note: 'These shots are now recorded as matching the screenplay as it stands. A later revision will flag them.',
+            });
+        }
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        const { drift } = require('../lib/screenplay-drift');
+        const scenes = drift(urlParts[2]);
+        return json(res, 200, {
+            project_id: urlParts[2],
+            scenes_behind: scenes.length,
+            shots_behind: scenes.reduce((n, s) => n + s.shots_behind.length, 0),
+            scenes,
+            // Stated rather than implied. This warns; it never refuses, because
+            // a card that diverged from the screenplay may be a deliberate
+            // choice and blocking would overrule the director.
+            note: scenes.length
+                ? 'These shots were written from an earlier draft of their scene. Nothing is blocked — fix the cards, then regenerate what was built on them.'
+                : 'Every shot was written from the current draft of its scene.',
+        });
+    }
+
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'staleness') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });

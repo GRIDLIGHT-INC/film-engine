@@ -23342,6 +23342,10 @@ ${fountainText.slice(0, 50000)}`;
         try {
             const data = await api('/projects/' + state.currentProject.id + '/storyboard');
             const frames = data.frames || [];
+            // Which shots the screenplay has moved on from. Fetched alongside
+            // the board rather than on a page of its own, because the moment a
+            // director needs to know is while they are looking at the frames.
+            await loadScreenplayDrift();
             const grid = document.getElementById('storyboardGrid');
             if (frames.length === 0) {
                 grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
@@ -23352,7 +23356,7 @@ ${fountainText.slice(0, 50000)}`;
             } else {
                 // Kept so the viewer can step between shots without the grid.
                 FRAME_VIEWER.frames = frames;
-                grid.innerHTML = frames.map(f => `
+                grid.innerHTML = screenplayDriftBanner() + frames.map(f => `
                     <div class="card" style="padding:0;overflow:hidden;">
                         <div style="position:relative;background:var(--surface-alt,var(--gl-bg-surface));min-height:160px;">
                             <img id="img-${f.shot_id}" src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(f.shot_code)}.png"
@@ -23835,7 +23839,7 @@ ${fountainText.slice(0, 50000)}`;
                      onclick="editShotCard('${f.shot_id}')">+ ${missing} unset</span>`
             : '';
         const dur = f.duration_ms ? `<span class="tag">${(f.duration_ms / 1000).toFixed(1)}s</span>` : '';
-        return tags + add + dur + storyboardPrevisTag(f);
+        return screenplayDriftTag(f) + tags + add + dur + storyboardPrevisTag(f);
     }
 
     /**
@@ -23875,6 +23879,59 @@ ${fountainText.slice(0, 50000)}`;
         const sel = document.getElementById('previsShotSelect');
         if (sel) sel.value = shotId;
         await previsOpenShot(shotId);
+    }
+
+    /**
+     * Shots the screenplay has left behind.
+     *
+     * Revising a scene does not update the cards derived from it, so those
+     * cards go on describing the previous story — valid, correctly fingerprinted
+     * and about a different film. On eight shots a director notices. On a
+     * feature nobody does, and the first sign is a cut that makes no sense.
+     */
+    let DRIFT = { shots: {}, scenes: [] };
+
+    async function loadScreenplayDrift() {
+        DRIFT = { shots: {}, scenes: [] };
+        if (!state.currentProject) return;
+        try {
+            const res = await api(`/projects/${state.currentProject.id}/screenplay-drift`);
+            DRIFT.scenes = res.scenes || [];
+            for (const sc of DRIFT.scenes) {
+                for (const sh of sc.shots_behind) {
+                    DRIFT.shots[sh.shot_id] = { scene: sc.scene_number, generated: sh.generated };
+                }
+            }
+        } catch (_) { /* the board still renders; the warning is additive */ }
+    }
+
+    /** The banner above the board. Says the work, not the status. */
+    function screenplayDriftBanner() {
+        if (!DRIFT.scenes.length) return '';
+        const shots = DRIFT.scenes.reduce((n, s) => n + s.shots_behind.length, 0);
+        const where = DRIFT.scenes.map(s => `scene ${esc(s.scene_number)}`).join(', ');
+        return `<div class="card" style="grid-column:1/-1;border-color:var(--gl-warning,#f59e0b);
+                     background:rgba(245,158,11,.07);padding:12px 14px;">
+            <strong style="color:var(--gl-warning,#f59e0b);">The screenplay moved on without ${shots} shot${shots === 1 ? '' : 's'}</strong>
+            <p class="text-sm" style="margin:6px 0 0;line-height:1.55;">
+                ${where} changed after ${shots === 1 ? 'this card was' : 'these cards were'} written, so
+                ${shots === 1 ? 'it still describes' : 'they still describe'} the previous version of the story.
+                Nothing is blocked &mdash; edit the card to match the new scene, or delete the shots and break
+                that scene down again. The affected frames are marked below.
+            </p>
+        </div>`;
+    }
+
+    /** The per-frame mark, so the banner has somewhere to point. */
+    function screenplayDriftTag(f) {
+        const d = DRIFT.shots[f.shot_id];
+        if (!d) return '';
+        const made = d.generated.length
+            ? `${d.generated.length} generated artefact(s) were built on the old words`
+            : 'nothing has been generated from it yet';
+        return `<span class="tag" style="cursor:pointer;border-color:var(--gl-warning,#f59e0b);color:var(--gl-warning,#f59e0b);"
+            title="scene ${esc(d.scene)} was rewritten after this card — ${esc(made)}"
+            onclick="editShotCard('${f.shot_id}')">script changed</span>`;
     }
 
     let SHOT_CARD = { shotId: null, card: null, vocab: null };
