@@ -154,12 +154,33 @@ function fitAdditions(basePrompt, ctx, opts) {
 function applyConsistencyToImagePayload(payload, context, opts) {
     const p = { ...(payload || {}) };
     const ctx = context || {};
+
+    /*
+     * Which pictures are ACTUALLY going, decided before the prompt is written.
+     *
+     * A provider takes three references; a shot can want five. On the film's
+     * two biggest frames the card names MAYA, the DRAGON, the sedan and the
+     * sewer plate, plus the street — so two of those five subjects travel as
+     * words alone, and WHICH two is decided by the selector, not by the card.
+     *
+     * Shortening a subject to an identifier is only right when its picture is
+     * in the payload. Deciding that against the profiles available rather than
+     * the references attached would drop the sedan's description on a frame
+     * whose sedan reference had just been cut for room — which is exactly the
+     * failure that turned an establishing shot into a product shot, repeated on
+     * the shots that can least afford it.
+     */
+    const attached = (Array.isArray(p.reference_images) && p.reference_images.length)
+        ? p.reference_images
+        : (ctx.references || []);
+
     // A composed prompt is the whole prompt. Appending subject contracts to it
     // turned a deliberate 1,573-character composition into 5,024 characters
     // against a 4,000 ceiling — and since a provider truncates the tail, what
     // survived was precisely the material the composer had chosen to leave out.
     if (!(opts && opts.promptIsFinal) && ctx.prompt_additions && ctx.prompt_additions.length) {
-        p.prompt = [p.prompt, ...fitAdditions(p.prompt, ctx, opts)].filter(Boolean).join(', ');
+        const forPrompt = { ...ctx, references: attached };
+        p.prompt = [p.prompt, ...fitAdditions(p.prompt, forPrompt, opts)].filter(Boolean).join(', ');
     }
     if (ctx.negative_additions && ctx.negative_additions.length) {
         p.negative_prompt = [p.negative_prompt, ...ctx.negative_additions].filter(Boolean).join(', ');
