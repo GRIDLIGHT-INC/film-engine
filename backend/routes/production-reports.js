@@ -50,10 +50,35 @@ function projectStaleness(req, res, projectId) {
                 shot_id, character_id, location_id, prop_id, fingerprinted_at
            FROM film_assets WHERE project_id = ?`).all(projectId);
 
-    const stale = [], fresh = [], unknown = [];
+    const stale = [], fresh = [], unknown = [], detached = [];
+
+    /**
+     * Which artefact kinds are about a shot, derived rather than listed.
+     *
+     * A shot-scoped asset whose shot has been deleted is not stale. Its inputs
+     * cannot be read because there is nothing left to read, and there is no
+     * action available either — you cannot regenerate a shot that does not
+     * exist. Reporting it as stale inflates the count with work nobody can do
+     * and, worse, makes this report disagree with the impact report, which
+     * walks shots and correctly sees six where this saw eight. Two answers to
+     * one question is the thing to avoid.
+     */
+    const SHOT_SCOPED = new Set(
+        Object.entries(ARTEFACT_KINDS).filter(([, spec]) => spec.scope === 'shot').map(([kind]) => kind));
+
     for (const row of rows) {
         if (!row.artefact_kind || !row.input_fingerprint) {
             unknown.push({ asset_id: row.id, asset_type: row.asset_type, file_name: row.file_name });
+            continue;
+        }
+        // film_assets.shot_id is ON DELETE SET NULL on purpose, so deleting a
+        // shot leaves the file registered rather than silently unregistering
+        // something that exists on disk and cost money.
+        if (SHOT_SCOPED.has(row.artefact_kind) && !row.shot_id) {
+            detached.push({
+                asset_id: row.id, kind: row.artefact_kind, file_name: row.file_name,
+                reason: 'the shot it was generated for has been deleted',
+            });
             continue;
         }
         let current = null;
@@ -76,9 +101,16 @@ function projectStaleness(req, res, projectId) {
     return json(res, 200, {
         project_id: projectId,
         project_title: project.title,
-        summary: { stale: stale.length, fresh: fresh.length, unknown: unknown.length, total: rows.length },
+        summary: {
+            stale: stale.length, fresh: fresh.length, unknown: unknown.length,
+            detached: detached.length, total: rows.length,
+        },
         stale,
         fresh,
+        // Files for work that no longer exists. Neither stale nor fresh: the
+        // only actions are to delete them or leave them, and "regenerate" —
+        // which is what stale means everywhere else here — is not available.
+        detached,
         // Named, not hidden: an unstamped asset is a gap in coverage, and
         // rolling it into "fresh" would make the report look better than it is.
         unknown,

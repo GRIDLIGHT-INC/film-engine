@@ -369,3 +369,51 @@ test('accepting an artefact that was never stamped does nothing', () => {
     fp.acceptAsCurrent(assetId, 'keyframe', ids);
     assert.ok(row().input_fingerprint, 'accepting an unstamped asset should stamp it, or say why not');
 });
+
+/**
+ * A file for a shot that no longer exists is neither stale nor fresh.
+ *
+ * `film_assets.shot_id` is ON DELETE SET NULL on purpose: deleting a shot must
+ * not silently unregister a file that exists on disk and cost money to make.
+ * But the staleness report then read those rows as stale with "inputs could not
+ * be read", which is true and useless — you cannot regenerate a shot that does
+ * not exist, so the count included work nobody could do.
+ *
+ * Worse, it made two reports disagree about one question. After deleting two
+ * shots, staleness said eight keyframes were behind and the impact report,
+ * which walks shots, said six. Both were describing the same project.
+ */
+test('an asset whose shot was deleted is reported as detached, not stale', async () => {
+    const { db, generateId } = require('../db/database');
+    const { handleProductionReports } = require('../routes/production-reports');
+    const { Writable } = require('stream');
+
+    const projectId = generateId(), sceneId = generateId(), shotId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Detached Test');
+    db.prepare(`INSERT INTO film_scenes (id, project_id, scene_number, location)
+                VALUES (?, ?, '1', 'STREET')`).run(sceneId, projectId);
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+        .run(shotId, sceneId, '1A', JSON.stringify({ shot_code: '1A', description: 'x', camera: {} }));
+    db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name,
+                    artefact_kind, input_fingerprint, fingerprinted_at)
+                VALUES (?, ?, ?, 'other', '1A.png', 'keyframe', 'whatever', datetime('now'))`)
+        .run(generateId(), projectId, shotId);
+
+    db.prepare('DELETE FROM film_shots WHERE id = ?').run(shotId);
+    // SET NULL, not cascade: the file is still on disk and still registered.
+    const left = db.prepare('SELECT shot_id FROM film_assets WHERE project_id = ?').get(projectId);
+    assert.strictEqual(left.shot_id, null, 'the asset row went with the shot, losing a paid-for file');
+
+    const chunks = [];
+    const res = new Writable({ write(c, _e, n) { chunks.push(c); n(); } });
+    res.writeHead = function () { return this; };
+    res.setHeader = function () {};
+    const body = await new Promise(resolve => {
+        res.on('finish', () => resolve(JSON.parse(Buffer.concat(chunks).toString())));
+        handleProductionReports({ method: 'GET' }, res, ['film', 'projects', projectId, 'staleness'], {});
+    });
+
+    assert.strictEqual(body.summary.stale, 0, 'a shot-less file was counted as work to redo');
+    assert.strictEqual(body.summary.detached, 1, 'the file was not reported at all');
+    assert.match(body.detached[0].reason, /deleted/);
+});
