@@ -230,3 +230,22 @@ test('a non-speaking character is present in the scene it appears in', async () 
     assert.ok(everyone.has('DRAGON'),
         `the non-speaking character is present in no scene; found: ${[...everyone].join(', ') || '(none)'}`);
 });
+
+test('a possessive is the same subject, not a new one', () => {
+    // The apostrophe lives inside the caps class so O'BRIEN survives as one
+    // name — which also meant "the SEDAN's roof" captured SEDAN', a phantom one
+    // keystroke from the real thing. The two then diverge: two rows, two
+    // plates, two descriptions, and a report listing the car twice while each
+    // half looks perfectly correct.
+    const { actionCapsInLine } = require('../routes/scripts');
+    const names = line => Object.keys(actionCapsInLine(line));
+
+    for (const line of ["The SEDAN's roof is dulled to chalk.", "The SEDAN\u2019s roof is dulled to chalk."]) {
+        assert.deepStrictEqual(names(line), ['SEDAN'], `possessive leaked into the name: ${line}`);
+    }
+    // Straight and curly, because a screenplay written in a word processor has
+    // the curly one and a screenplay written in an editor has the other.
+    assert.deepStrictEqual(names("O'BRIEN steps off the porch."), ["O'BRIEN"],
+        'an internal apostrophe was stripped, splitting one name into a shorter wrong one');
+    assert.deepStrictEqual(names('MAYA runs flat-out down the street.'), ['MAYA']);
+});

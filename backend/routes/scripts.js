@@ -955,7 +955,14 @@ function actionIntroducedCharacters(parsed, knownLocations) {
         let m;
         ACTION_CAPS_RE.lastIndex = 0;
         while ((m = ACTION_CAPS_RE.exec(text)) !== null) {
-            const name = m[1].trim();
+            // A possessive is not a different subject. The apostrophe is inside
+            // the character class so O'BRIEN survives, which also means "the
+            // SEDAN's roof" captures SEDAN' — a phantom entity one keystroke
+            // from the real one. The two then diverge: separate rows, separate
+            // plates, separate descriptions, and a report that lists the car
+            // twice while each half looks correct.
+            const name = m[1].trim().replace(/['\u2018\u2019]+$/, '').trim();
+            if (name.length < 3) continue;
             if (ACTION_CAPS_STOPWORDS.has(name)) continue;
             // A location already named by a slugline is a place, not a person.
             if (knownLocations.has(name.toUpperCase())) continue;
@@ -1478,4 +1485,9 @@ function handleComments(req, res, urlParts, query) {
     res.end(JSON.stringify({ error: 'Not found' }));
 }
 
-module.exports = { handleScripts, handleComments };
+// actionCapsInLine is exported for the suite rather than for callers: it is
+// the one piece of entity detection whose failures are silent — a name captured
+// with a trailing apostrophe becomes a second subject that looks correct in
+// every report it appears in — and a test that greps the source for a regex
+// proves nothing about what the regex does.
+module.exports = { handleScripts, handleComments, actionCapsInLine };
