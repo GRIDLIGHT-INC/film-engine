@@ -12202,7 +12202,12 @@ THREE.GLTFLoader = GLTFLoader;
         const modal = document.getElementById(modalId);
         modal.querySelectorAll('[data-field]').forEach(el => {
             const v = data[el.dataset.field];
-            el.value = v != null ? v : (el.type === 'range' || el.type === 'number' ? 0 : '');
+            // A number field with no value shows EMPTY, not 0. A size of zero is
+            // not a thing, and showing one reads as a declared measurement —
+            // which is exactly the confusion an undeclared size is meant to
+            // avoid. Sliders keep their 0, since a range has no empty state.
+            if (el.type === 'number') el.value = (v === null || v === undefined || v === '') ? '' : v;
+            else el.value = v != null ? v : (el.type === 'range' ? 0 : '');
         });
     }
 
