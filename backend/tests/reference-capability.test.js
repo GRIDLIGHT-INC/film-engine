@@ -187,3 +187,64 @@ test('a substring is not a mention', () => {
         [{ id: 'p1', name: 'Bag' }]).map(p => p.name);
     assert.deepStrictEqual(got, [], `matched a substring: ${JSON.stringify(got)}`);
 });
+
+/**
+ * Regenerating one shot must attach the same plates as regenerating the board.
+ *
+ * regenerateShot never called gatherShotReferences. It relied on the
+ * consistency context's references, which carry a `file_path` — a path on OUR
+ * disk — while every image adapter reads `uri`/`url`. So the single-shot path
+ * ran text-to-image with no plate conditioning at all, and the whole-board path
+ * conditioned correctly. Nothing failed and nothing was logged.
+ *
+ * It stayed hidden because the full prose contracts were carrying the subjects:
+ * 1,936 characters describing the car produced a good car without ever looking
+ * at its plate. The moment those contracts were shortened — on the correct
+ * assumption that a picture was attached — the subject had neither the picture
+ * nor the words, and the frame collapsed.
+ */
+test('the single-shot path attaches plates, not disk paths', () => {
+    const src = require('fs').readFileSync(path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
+    const body = src.slice(src.indexOf('async function regenerateShot('), src.indexOf('async function regenerateShot(') + 12000);
+
+    assert.ok(/gatherShotReferences\(/.test(body),
+        'regenerating one shot does not gather its plates, so it generates unconditioned');
+    assert.ok(/reference_images: shotRefs/.test(body),
+        'the gathered plates are never put on the payload');
+});
+
+test('every path that generates a keyframe gathers references the same way', () => {
+    // Set-based over the generation entry points, because the divergence was
+    // invisible: one path conditioned, one did not, and both reported success.
+    const src = require('fs').readFileSync(path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
+    const ENTRY_POINTS = ['generateStoryboard(', 'generateStoryboardStream(', 'regenerateShot('];
+    const missing = ENTRY_POINTS.filter(entry => {
+        const i = src.indexOf('function ' + entry);
+        if (i < 0) return true;
+        return !/gatherShotReferences\(/.test(src.slice(i, i + 12000));
+    });
+    assert.deepStrictEqual(missing, [],
+        `these generate keyframes without gathering plates: ${missing.join(', ')}`);
+});
+
+test('a composed prompt is the whole prompt, not a prefix', () => {
+    // prompt_override was appended to rather than replaced, so a deliberate
+    // 1,573-character composition became 5,024 against a 4,000 ceiling — and a
+    // provider truncates the tail, so what survived was exactly the material
+    // the composer had chosen to leave out.
+    const { applyConsistencyToImagePayload } = require('../lib/consistency-apply');
+    const ctx = {
+        prompt_additions: ['X'.repeat(1900)],
+        prompt_addition_items: [{ text: 'X'.repeat(1900), profile_type: 'prop', subject_name: 'SEDAN' }],
+        references: [],
+    };
+    const composed = 'The whole shot, composed deliberately.';
+
+    const final = applyConsistencyToImagePayload({ prompt: composed }, ctx,
+        { maxPromptChars: 4000, promptIsFinal: true });
+    assert.strictEqual(final.prompt, composed, 'an override was still appended to');
+
+    // Without the flag the additions still apply, which is the default path.
+    const assembled = applyConsistencyToImagePayload({ prompt: composed }, ctx, { maxPromptChars: 4000 });
+    assert.ok(assembled.prompt.length > composed.length, 'the default path stopped adding subjects');
+});

@@ -154,7 +154,11 @@ function fitAdditions(basePrompt, ctx, opts) {
 function applyConsistencyToImagePayload(payload, context, opts) {
     const p = { ...(payload || {}) };
     const ctx = context || {};
-    if (ctx.prompt_additions && ctx.prompt_additions.length) {
+    // A composed prompt is the whole prompt. Appending subject contracts to it
+    // turned a deliberate 1,573-character composition into 5,024 characters
+    // against a 4,000 ceiling — and since a provider truncates the tail, what
+    // survived was precisely the material the composer had chosen to leave out.
+    if (!(opts && opts.promptIsFinal) && ctx.prompt_additions && ctx.prompt_additions.length) {
         p.prompt = [p.prompt, ...fitAdditions(p.prompt, ctx, opts)].filter(Boolean).join(', ');
     }
     if (ctx.negative_additions && ctx.negative_additions.length) {

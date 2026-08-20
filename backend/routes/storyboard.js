@@ -1261,15 +1261,50 @@ async function regenerateShot(req, res, shotId) {
     try {
         ensureStoryboardDir(project.id);
 
+        /**
+         * The same tagged, inlined plates the batch paths attach.
+         *
+         * This path never called gatherShotReferences. It relied on the
+         * consistency context's references, which carry a `file_path` — a path
+         * on OUR disk — and every image adapter reads `uri`/`url`, so they were
+         * dropped on the floor. Regenerating one shot therefore ran
+         * text-to-image with no plate conditioning at all, while regenerating
+         * the whole board conditioned correctly. The frames still looked right
+         * because the full prose contracts were carrying the subjects; the
+         * moment those were shortened on the correct assumption that a picture
+         * was attached, the subject had neither.
+         */
+        let shotRefs = [];
+        try {
+            const allProps = db.prepare('SELECT * FROM film_props WHERE project_id = ?').all(project.id);
+            const chars = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(project.id);
+            const locs = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(project.id);
+            let card = {};
+            try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
+            shotRefs = gatherShotReferences(
+                project.id,
+                matchCharacters(card.characters, chars),
+                matchLocation(scene.location, locs),
+                matchProps(card, allProps));
+        } catch (_) { shotRefs = []; }
+
         const primaryRef = consistencyContext.references && consistencyContext.references[0];
         const imagePayload = applyConsistencyToImagePayload({
             prompt,
             negative_prompt,
             seed,
+            reference_images: shotRefs,
             ip_adapter_image: primaryRef && (primaryRef.file_path || primaryRef.file_name),
             ip_adapter_weight: primaryRef && primaryRef.weight,
             aspect_ratio: project.aspect_ratio,
-        }, consistencyContext, { maxPromptChars: imagePromptLimitFor(project) });
+        }, consistencyContext, {
+            maxPromptChars: imagePromptLimitFor(project),
+            // An override is the WHOLE prompt, not a prefix. Appending contracts
+            // to it silently made a 1,573-character composition into a
+            // 5,024-character one, and a provider truncates the tail — so what
+            // survived was the part the composer had deliberately cut.
+            promptIsFinal: !!body.prompt_override,
+        });
         const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
             await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
 
