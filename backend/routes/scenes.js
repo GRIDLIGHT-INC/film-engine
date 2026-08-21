@@ -33,6 +33,19 @@ function handleScenes(req, res, urlParts, query) {
             res.end(JSON.stringify({ error: 'Invalid scene ID' }));
             return;
         }
+        // /film/scenes/:id/card — what the scene is ABOUT, beside what it says
+        if (urlParts[3] === 'card') {
+            if (req.method === 'PUT') return writeSceneCard(req, res, sceneId);
+            if (req.method === 'GET') return readSceneCard(req, res, sceneId);
+        }
+        // /film/scenes/:id/history[/:version/restore] — derived from the script
+        // versions we already keep. No table.
+        if (urlParts[3] === 'history') {
+            if (urlParts[4] && urlParts[5] === 'restore' && req.method === 'POST') {
+                return restoreSceneVersion(req, res, sceneId, urlParts[4]);
+            }
+            if (req.method === 'GET') return sceneHistory(req, res, sceneId);
+        }
         if (req.method === 'GET') return getScene(req, res, sceneId);
         if (req.method === 'PUT') return updateScene(req, res, sceneId);
         if (req.method === 'DELETE') return deleteScene(req, res, sceneId);
@@ -183,6 +196,163 @@ function deleteScenes(req, res, projectId) {
  *
  * PUT /film/scenes/:id  { fountain: "EXT. STREET - DUSK\n\n..." }
  */
+// ── Scene cards ─────────────────────────────────────────────────────────
+//
+// What a scene is ABOUT, beside what it says. Conflict and outcome cannot live
+// in the Fountain — a synopsis line is prose you cannot sort on — so they are
+// columns on film_scenes, which is safe only because reconciliation rewrites
+// exactly int_ext/location/time_of_day/description/characters_present and
+// because scene ids now survive a revision.
+
+const CARD_FIELDS = ['pov_character', 'conflict', 'outcome'];
+
+function readSceneCard(req, res, sceneId) {
+    const row = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!row) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Scene not found' }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        scene_id: sceneId,
+        heading: `${row.int_ext || ''} ${row.location || ''}`.trim(),
+        card: Object.fromEntries(CARD_FIELDS.map(f => [f, row[f] || ''])),
+        note: 'Authored metadata, not screenplay text. Writing it does NOT mark the scene as changed, '
+            + 'so nothing generated from it is reported as behind.',
+    }));
+}
+
+function writeSceneCard(req, res, sceneId) {
+    const row = db.prepare('SELECT id FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!row) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Scene not found' }));
+    }
+    const body = req.body || {};
+    const sets = [];
+    const vals = [];
+    for (const f of CARD_FIELDS) {
+        if (body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(String(body[f]).slice(0, 2000)); }
+    }
+    if (!sets.length) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: `Nothing to write. Fields: ${CARD_FIELDS.join(', ')}` }));
+    }
+    vals.push(sceneId);
+    db.prepare(`UPDATE film_scenes SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+
+    // stampScene is NOT called. A card is authored metadata rather than
+    // screenplay text, and restamping would report every shot in the scene as
+    // behind because someone wrote down what the scene is about.
+    return readSceneCard(req, res, sceneId);
+}
+
+// ── Per-scene history, derived ──────────────────────────────────────────
+//
+// No table. Every version of every scene is already in film_scripts — one full
+// Fountain per version — so history is a view over documents we keep anyway, and
+// a table would store what we can compute and then have to be kept in step with
+// the documents it duplicates.
+//
+// A scene is traced through the versions by HEADING rather than by position,
+// because position is exactly what a revision changes. Two scenes sharing a
+// heading collapse into one history, which is a real limit and is reported
+// rather than hidden.
+
+function sceneTextIn(fountain, heading) {
+    const { sceneSpans } = require('../lib/scene-splice');
+    const lines = String(fountain || '').split('\n');
+    const span = sceneSpans(fountain).find(sp => sp.heading.toUpperCase() === String(heading).toUpperCase());
+    if (!span) return null;
+    return lines.slice(span.start, span.end + 1).join('\n').replace(/\n+$/, '');
+}
+
+function sceneHistory(req, res, sceneId) {
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!scene) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Scene not found' }));
+    }
+    const heading = `${scene.int_ext || ''}. ${scene.location || ''}${scene.time_of_day ? ' - ' + scene.time_of_day : ''}`.trim();
+
+    const versions = db.prepare(
+        `SELECT version, fountain_content, created_at FROM film_scripts
+          WHERE project_id = ? AND fountain_content IS NOT NULL ORDER BY version DESC`).all(scene.project_id);
+
+    const history = [];
+    let previous = null;
+    for (const v of versions) {
+        let text = sceneTextIn(v.fountain_content, heading);
+        if (text === null) {
+            // Try the heading as the parser would have written it at the time —
+            // a scene renamed mid-draft has two headings and belongs to both.
+            const alt = `${scene.int_ext || ''}. ${scene.location || ''}`.trim();
+            text = sceneTextIn(v.fountain_content, alt);
+        }
+        if (text === null) continue;
+        // Only versions where the text actually differs. A screenplay saved
+        // fifty times has fifty versions and perhaps four in which this scene
+        // moved, and listing the other forty-six is noise.
+        if (text === previous) continue;
+        history.push({ version: v.version, created_at: v.created_at, text, chars: text.length });
+        previous = text;
+    }
+
+    const sameHeading = db.prepare(
+        `SELECT COUNT(*) n FROM film_scenes WHERE project_id = ? AND location = ? AND status != 'removed'`)
+        .get(scene.project_id, scene.location).n;
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        scene_id: sceneId,
+        heading,
+        history,
+        note: 'Derived from the saved script versions — nothing is stored per scene, so this cannot fall '
+            + 'out of step with the screenplay. Only versions where this scene\u2019s text CHANGED are listed.',
+        ...(sameHeading > 1 ? {
+            warning: `${sameHeading} scenes in this project share the heading "${scene.location}". `
+                + 'Their histories cannot be told apart and are merged here.',
+        } : {}),
+    }));
+}
+
+/**
+ * Put an earlier version of one scene back.
+ *
+ * Forward, never backward: the old text is spliced in as a NEW script version,
+ * exactly as restoring a storyboard frame writes a new frame version. Rewinding
+ * would discard every change made since, to the whole screenplay, to undo one
+ * scene.
+ */
+function restoreSceneVersion(req, res, sceneId, version) {
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!scene) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Scene not found' }));
+    }
+    const row = db.prepare(
+        'SELECT fountain_content FROM film_scripts WHERE project_id = ? AND version = ?')
+        .get(scene.project_id, Number(version));
+    if (!row || !row.fountain_content) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: `No version ${version} for this project.` }));
+    }
+
+    const heading = `${scene.int_ext || ''}. ${scene.location || ''}${scene.time_of_day ? ' - ' + scene.time_of_day : ''}`.trim();
+    let text = sceneTextIn(row.fountain_content, heading);
+    if (text === null) text = sceneTextIn(row.fountain_content, `${scene.int_ext || ''}. ${scene.location || ''}`.trim());
+    if (text === null) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: `Version ${version} does not contain a scene with heading "${heading}".`,
+        }));
+    }
+
+    // Straight through the splice a normal scene edit uses, so there is one
+    // reconciler and one versioning rule.
+    return updateScene({ ...req, body: { fountain: text } }, res, sceneId);
+}
+
 function updateScene(req, res, sceneId) {
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
     if (!scene) {

@@ -69,6 +69,7 @@ const http = require('http');
 const { ensureSchema } = require('./db/schema');
 const { handleProjects, handleProjectSettingsPreset } = require('./routes/projects');
 const { handleScripts, handleComments } = require('./routes/scripts');
+const { handleStoryStructure } = require('./routes/story-structure');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
 const { handleAppSettings } = require('./routes/app-settings');
@@ -385,6 +386,18 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/projects/:id/scenes
+        // Route: /film/projects/:id/beats and /film/projects/:id/directives.
+        // Above the generic project routes, or they swallow it — the trap that
+        // has now bitten four times in this codebase.
+        if (parts[1] === 'projects' && parts[2] && (parts[3] === 'beats' || parts[3] === 'directives')) {
+            return handleStoryStructure(req, res, parts, query);
+        }
+
+        // Route: /film/beats/:id
+        if (parts[1] === 'beats' && parts[2]) {
+            return handleStoryStructure(req, res, parts, query);
+        }
+
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'scenes') {
             return await handleScenes(req, res, parts, query);
         }

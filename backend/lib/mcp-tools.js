@@ -31,6 +31,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 // flows engine alone left an agent able to run generation and unable to give it
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
+const { handleStoryStructure } = require('../routes/story-structure');
 const { handleScripts } = require('../routes/scripts');
 const { handleScenes } = require('../routes/scenes');
 const { handleShots } = require('../routes/shots');
@@ -438,6 +439,92 @@ const PRODUCTION_TOOLS = [
         description: 'Put the anchor down. Shots go back to generating from their own card and their subject plates.',
         path: a => `/film/projects/${a.project_id}/anchor`,
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'beats_get',
+        handler: handleStoryStructure, method: 'GET',
+        description: 'The story structure laid over this screenplay, and \u2014 the point of it \u2014 the HOLES: beats with no scene against them. Adapting a novel, that is the question worth asking: which beats have nothing yet. Each hole carries its guidance, so "you have no Midpoint" comes with what a midpoint is for. Also returns suggestions matching unlinked beats to scenes by pacing alone; they are a guess, never an assignment. SPENDS NOTHING.',
+        path: a => `/film/projects/${a.project_id}/beats`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'beats_apply',
+        handler: handleStoryStructure, method: 'POST',
+        description: 'Lay a story framework over this screenplay: three-act, save-the-cat, heros-journey or story-circle. Creates every beat UNLINKED \u2014 linking scenes to beats is the work, and what stays unlinked is where the structure has a hole. Refuses if a beat sheet already exists unless replace is true, because two frameworks over one script is two opinions rather than a structure.',
+        path: a => `/film/projects/${a.project_id}/beats`,
+        body: a => ({ framework: a.framework, replace: a.replace }),
+        schema: {
+            project_id: { type: 'string' },
+            framework: { type: 'string', description: 'three-act | save-the-cat | heros-journey | story-circle' },
+            replace: { type: 'boolean', description: 'Discard an existing beat sheet and its scene links.' },
+        },
+        required: ['project_id', 'framework'],
+    },
+    {
+        name: 'beat_link',
+        handler: handleStoryStructure, method: 'PUT',
+        description: 'Point a beat at the scene that delivers it, closing a hole \u2014 or pass scene_id null to unlink. Can also rename a beat, rewrite its guidance, move its position, or add notes: a framework is a starting shape, and a film is allowed to disagree with it.',
+        path: a => `/film/beats/${a.beat_id}`,
+        body: a => { const { beat_id, ...rest } = a || {}; return rest; },
+        schema: {
+            beat_id: { type: 'string' },
+            scene_id: { type: 'string', description: 'The scene that delivers this beat. Null unlinks it.' },
+            name: { type: 'string' }, guidance: { type: 'string' }, notes: { type: 'string' },
+            at: { type: 'number', description: 'Where in the story it falls, 0..100.' },
+        },
+        required: ['beat_id'],
+    },
+    {
+        name: 'directives_get',
+        handler: handleStoryStructure, method: 'GET',
+        description: 'The house rules for how THIS film is written \u2014 tense, dialogue length, whether camera directions belong in action. Read them before drafting or revising a scene. Deliberately not style_preset: that governs how frames are generated and is appended to every image prompt, so screenwriting instructions must never go there.',
+        path: a => `/film/projects/${a.project_id}/directives`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'directives_write',
+        handler: handleStoryStructure, method: 'PUT',
+        description: 'Set the house rules for how this film is written. Governs prose, never images.',
+        path: a => `/film/projects/${a.project_id}/directives`,
+        body: a => ({ directives: a.directives }),
+        schema: {
+            project_id: { type: 'string' },
+            directives: { type: 'string', description: 'e.g. "Present tense. No camera directions in action. Dialogue under three lines."' },
+        },
+        required: ['project_id', 'directives'],
+    },
+    {
+        name: 'scene_card_write',
+        handler: handleScenes, method: 'PUT',
+        description: 'What a scene is ABOUT, beside what it says: whose point of view, what the conflict is, how it comes out. Authored metadata rather than screenplay text \u2014 writing it does NOT mark the scene as changed, so nothing generated from it is reported as behind.',
+        path: a => `/film/scenes/${a.scene_id}/card`,
+        body: a => { const { scene_id, ...rest } = a || {}; return rest; },
+        schema: {
+            scene_id: { type: 'string' },
+            pov_character: { type: 'string' },
+            conflict: { type: 'string', description: 'What is being fought over in this scene.' },
+            outcome: { type: 'string', description: 'How it comes out, and what changes because of it.' },
+        },
+        required: ['scene_id'],
+    },
+    {
+        name: 'scene_history',
+        handler: handleScenes, method: 'GET',
+        description: 'Every version this ONE scene has had, newest first, derived from the saved script versions \u2014 nothing is stored per scene, so it cannot fall out of step with the screenplay. Only versions where this scene\u2019s text actually changed are listed. SPENDS NOTHING. Use it before rewriting a scene, so a good earlier draft is recoverable rather than remembered.',
+        path: a => `/film/scenes/${a.scene_id}/history`,
+        schema: { scene_id: { type: 'string' } }, required: ['scene_id'],
+    },
+    {
+        name: 'scene_restore',
+        handler: handleScenes, method: 'POST',
+        description: 'Put an earlier version of ONE scene back. Splices that text in as a NEW script version \u2014 forward, never backward \u2014 so every other scene and every later change survives. Read scene_history first for the version numbers.',
+        path: a => `/film/scenes/${a.scene_id}/history/${a.version}/restore`,
+        body: () => ({}),
+        schema: {
+            scene_id: { type: 'string' },
+            version: { type: 'number', description: 'The script version to take this scene\u2019s text from.' },
+        },
+        required: ['scene_id', 'version'],
     },
     {
         name: 'outline_get',

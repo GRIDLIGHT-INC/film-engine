@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (72 migrations)
+│   │   └── migrations/     # SQL migration files (73 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -71,6 +71,7 @@ film-engine/
 │   │   ├── budget-estimate.js  # Pre-flight cost estimation
 │   │   ├── app-settings.js     # Settings that belong to the person, not the project
 │   │   ├── events.js           # SSE: tell the page when another process wrote to the database
+│   │   ├── story-structure.js  # Beat sheets, holes, and house rules on the writing
 │   │   ├── story-bible.js      # What things ARE, and which entity was written from which section
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
@@ -122,6 +123,7 @@ film-engine/
 │   │   ├── annotation-prompt.js   # Markup a director drew, said in words a model can act on
 │   │   ├── shot-anchor.js        # The frame you are currently shooting from
 │   │   ├── shot-references.js    # The plates a shot generates with, gathered once for every path
+│   │   ├── beat-sheets.js        # Four story frameworks, and the holes in a structure
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
 │   │   ├── screenplay-drift.js    # Which shots a rewrite left behind, and what was built on them
 │   │   ├── impact.js              # One change, all the way down: redo now vs waiting on something above
@@ -234,6 +236,7 @@ film-engine/
 │       ├── scene-append.test.js       # A chapter is added without disturbing a byte above it
 │       ├── scene-insert.test.js       # A scene goes in the middle without rewriting the tail
 │       ├── screenplay-structure.test.js # Every element is reachable, and an outline survives export
+│       ├── story-structure.test.js  # Beats find their holes; a scene's history is derived, not stored
 │       ├── providers.test.js             # Provider registry + resolution
 │       ├── providers-api.test.js         # Provider settings/credentials API
 │       ├── providers-runway.test.js      # Runway adapter (mock server)
@@ -277,7 +280,8 @@ All routes prefixed with `/film`:
 |----------|-----------|
 | Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id`, `GET/PUT/DELETE /projects/:id/anchor` |
 | Scripts | `POST /projects/:id/script[/append\|/insert]`, `GET/POST /projects/:id/outline`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
-| Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id` |
+| Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id`, `GET/PUT /scenes/:id/card`, `GET /scenes/:id/history` |
+| Story | `GET/POST /projects/:id/beats`, `PUT/DELETE /beats/:id`, `GET/PUT /projects/:id/directives` |
 | Bible | `GET/PUT /projects/:id/bible`, `DELETE /projects/:id/bible/:section`, `GET /projects/:id/bible-drift` |
 | Shots | `POST /shots`, `GET /projects/:id/shotlist`, `GET/PUT/DELETE /shots/:id`, `GET /card-vocabulary` |
 | Characters | `GET/POST /projects/:id/characters`, `GET/PUT/DELETE /characters/:id` |
@@ -1036,7 +1040,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (72 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (73 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -1182,6 +1186,7 @@ node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js
 node --test backend/tests/screenplay-structure.test.js
+node --test backend/tests/story-structure.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js

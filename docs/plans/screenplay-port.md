@@ -197,6 +197,10 @@ What an agent can do to a screenplay today (7 tools, verified from `lib/mcp-tool
 | 3 | `outline_get` — sections + synopses in document order | **BUILT** | — | **2 ✓** |
 | 4 | `outline_write` — author sections/synopses | **BUILT** | — | **2 ✓** |
 | 5 | `script_stats` — words, pages, scene count, dialogue % | HTTP only | `surface-MCP` | 3 |
+| 6 | `scene_card_write` — POV, conflict, outcome | **BUILT** | — | **2b ✓** |
+| 7 | `scene_history` / `scene_restore` — per-scene, derived from script versions | **BUILT** | — | **2b ✓** |
+| 8 | `beats_get` / `beats_apply` / `beat_link` — structure, and its holes | **BUILT** | — | **2b ✓** |
+| 9 | `directives_get` / `directives_write` — house rules on the writing | **BUILT** | — | **2b ✓** |
 
 
 ### `scene_insert_after` corrupted the tail. Fixed at the reconciler — **SHIPPED**
@@ -501,9 +505,55 @@ editor knows is unreachable.* Both hold.
 - **The rabbit hole (a/b/c)** — explicitly needs Manny. Recorded, recommended,
   not decided.
 - **Set 3 rows #9 scene cards, #13 beat sheets, #21 format directives, #22
-  per-scene history** — each a substantial feature, none of them in this phase's
-  stated *done when*. They are the best of the writers-tool inventory and belong
-  to a phase 2b that is scoped on its own rather than smuggled in here.
+  per-scene history** — moved to phase 2b and **shipped**, below.
+
+### Phase 2b — the four from writers-tool worth having — **SHIPPED**
+
+`lib/beat-sheets.js` · `routes/story-structure.js` · migration 075 ·
+`tests/story-structure.test.js` (11 invariants).
+
+Each was tested against commitment 1 — *any row proposing a new table must argue
+why the format cannot hold it* — and **they did not all answer the same way**,
+which is the useful part:
+
+| feature | storage | why |
+|---|---|---|
+| **Beat sheets** (#13) | a table | Fountain cannot say "this scene is the Midpoint" in any form you can query, and the query IS the feature |
+| **Scene cards** (#9) | 3 columns on `film_scenes` | conflict and outcome are *about* a scene rather than in it; a synopsis line is prose you cannot sort on |
+| **Format directives** (#21) | 1 column on `film_projects` | how a film should be WRITTEN is not part of what is written |
+| **Per-scene history** (#22) | **nothing** | every version of every scene is already in `film_scripts`, one full Fountain per version — a table would store what we can derive and then have to be kept in step with the documents it duplicates |
+
+**The holes are the output.** A list of beats you have covered answers the easy
+half; the useful half is the beat with nothing against it. Each hole carries its
+guidance, so *"you have no Midpoint"* arrives with *"the midpoint is where what
+they believed turns out to be wrong"* — a diagnosis and something to act on.
+Suggestions match unlinked beats to scenes by pacing alone and are forward-only,
+so a late beat cannot claim an early scene; they are a guess and say so.
+
+Three decisions worth keeping:
+
+- **`film_beats.scene_id` is `ON DELETE SET NULL`, not CASCADE.** Deleting a
+  scene must not delete the beat: the beat is the requirement and the scene was
+  one attempt at it, so losing the scene should **reopen the hole** rather than
+  pretend the structure never wanted that beat.
+- **A scene card does not restamp the scene.** Authored metadata is not
+  screenplay text, and restamping would report every shot in the scene as behind
+  because somebody wrote down what the scene is about.
+- **Directives are not `style_preset`.** That field is appended to every image
+  prompt; putting *"present tense, no camera directions in action"* there would
+  send screenwriting instructions to an image model on every frame. Two
+  audiences, two fields, and the response says so.
+
+Scene cards surviving a revision is the risk that had to be tested rather than
+assumed: `film_scenes` is a **projection**, and reconciliation rewrites the
+fields it owns on every save. It is safe only because those fields are exactly
+int_ext/location/time_of_day/description/characters_present, and because scene
+ids now survive a revision by content matching. Without the second, every
+rewrite would have orphaned them.
+
+Not ported from the writers-tool five: **surgical `edit_document`** — named
+phrases changed in place, all-or-nothing per batch. A different shape of change
+from anything here, and phase 3.
 
 ### Phase 3 — parity polish
 - FDX `centered` / `lyrics` / `page_break` fidelity
