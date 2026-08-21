@@ -23725,7 +23725,8 @@ ${fountainText.slice(0, 50000)}`;
                                 <strong>Sc${f.scene_number} / ${esc(f.shot_code)}</strong>
                                 <div style="display:flex;gap:4px;">
                                     <button class="btn btn-secondary btn-sm" onclick="editShotCard('${f.shot_id}')" title="Change what this frame is generated from">Edit</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again — costs credits">Regen</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again from the card — costs credits">Regen</button>
                                 </div>
                             </div>
                             ${storyboardFacetTags(f)}
@@ -24118,6 +24119,7 @@ ${fountainText.slice(0, 50000)}`;
             markupToolbar(f.shot_id, 'frameViewerAnnot', 'frameViewerImg')
             + `<span style="flex:1;"></span>`
             + `<button class="btn btn-sm btn-secondary" onclick="editShotCard('${f.shot_id}')">Edit description</button>`
+            + `<button class="btn btn-sm btn-secondary" onclick="refineFrame('${f.shot_id}')">Refine</button>`
             + `<button class="btn btn-sm btn-secondary" onclick="regenerateStoryboard('${f.shot_id}')">Regen</button>`;
         document.getElementById('frameViewerCaption').innerHTML =
             `${f.description ? '<p style="line-height:1.5;">' + esc(f.description) + '</p>' : ''}
@@ -24626,6 +24628,47 @@ ${fountainText.slice(0, 50000)}`;
      * elapsed count. Same reasoning as arming a markup shape: feedback belongs
      * on the thing you touched.
      */
+    /**
+     * Keep this picture and change one thing about it.
+     *
+     * Regen rebuilds the whole prompt from the card, so every subject reasserts
+     * itself and the result is a new picture that happens to be of the same
+     * shot — the wrong tool for "this one, but without the sprinkler", where
+     * you spend a generation and lose the composition you liked in order to
+     * change one object in it.
+     *
+     * This sends the frame itself and one sentence. None of the usual payload
+     * goes with it: no scene card, no subject contracts, no style preset. The
+     * picture already carries all of that, and repeating it in words pulls the
+     * result back toward a fresh generation, which is the thing being avoided.
+     */
+    async function refineFrame(shotId) {
+        const instruction = prompt(
+            'What should change about this frame?\n\n'
+            + 'Everything else is kept — composition, camera, lighting, grade. '
+            + 'One change, said plainly:\n\n'
+            + '  remove the sprinkler\n'
+            + '  move the car to the kerb on the right\n'
+            + '  make the light warmer on the house fronts');
+        if (!instruction || !instruction.trim()) return;
+
+        const done = frameBusy(shotId, 'Refining');
+        setStatus('Refining frame...', true);
+        try {
+            const res = await api(`/shots/${shotId}/storyboard/refine`, {
+                method: 'POST', body: JSON.stringify({ instruction: instruction.trim() }),
+            });
+            done();
+            setStatus(`Refined from ${res.refined_from} \u2192 v${res.version}${res.provider ? ' via ' + res.provider : ''}.`);
+            await loadStoryboard();
+            const modal = document.getElementById('frameViewerModal');
+            if (modal && modal.classList.contains('open')) frameViewerPaint();
+        } catch (err) {
+            done();
+            setStatus('Could not refine: ' + err.message);
+        }
+    }
+
     async function regenerateStoryboard(shotId) {
         if (!confirm('Regenerate this storyboard frame?\n\nThis replaces the current image and costs credits.')) return;
         const done = frameBusy(shotId, 'Generating');

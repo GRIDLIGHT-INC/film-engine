@@ -956,6 +956,19 @@ const PRODUCTION_TOOLS = [
         schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
     },
     {
+        name: 'storyboard_refine',
+        handler: handleStoryboard, method: 'POST',
+        description: 'Keep an existing frame and change ONE thing about it. Sends the picture itself plus a single instruction — no scene card, no subject descriptions, no style preset, because the picture already carries all of that and repeating it in words pulls the result back toward a fresh generation. Use this instead of storyboard_regenerate whenever the composition is right and one element is wrong: "remove the sprinkler", "move the car to the kerb". Pass version to refine an earlier attempt rather than the current frame. Costs credits.',
+        path: a => `/film/shots/${a.shot_id}/storyboard/refine`,
+        body: a => ({ instruction: a.instruction, version: a.version }),
+        schema: {
+            shot_id: { type: 'string' },
+            instruction: { type: 'string', description: 'The one change, in a sentence. Everything else is kept.' },
+            version: { type: 'number', description: 'Refine this stored version instead of the current frame.' },
+        },
+        required: ['shot_id', 'instruction'],
+    },
+    {
         name: 'storyboard_regenerate',
         handler: handleStoryboard, method: 'POST',
         description: 'Generate ONE shot\u2019s keyframe again. Costs credits. Without prompt_override it assembles the prompt itself and trims to fit, which is a safety net rather than a plan. Prefer composing: read shot_prompt, write a prompt that fits the ceiling and says what matters about THIS frame, and send it as prompt_override. Everything listed under references travels as an image, so name those subjects rather than describing them at length — that is where the room goes.',

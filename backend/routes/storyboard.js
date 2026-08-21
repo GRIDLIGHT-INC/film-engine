@@ -545,6 +545,11 @@ function handleStoryboard(req, res, urlParts, query) {
             return regenerateShot(req, res, shotId);
         }
 
+        // POST /film/shots/:id/storyboard/refine — change one thing, keep the rest.
+        if (urlParts[4] === 'refine' && req.method === 'POST') {
+            return refineShot(req, res, shotId);
+        }
+
         return json(res, 404, { error: 'Not found' });
     }
 
@@ -1266,6 +1271,110 @@ function imagePromptLimitFor(project) {
         const adapter = resolveGenerator('image', config);
         return (adapter && Number(adapter.promptLimit) > 0) ? Number(adapter.promptLimit) : null;
     } catch (_) { return null; }
+}
+
+/**
+ * Change one thing about a frame you already have.
+ *
+ * POST /film/shots/:id/storyboard/refine  { instruction, version? }
+ *
+ * Everything else here regenerates from the card: the whole prompt is rebuilt,
+ * every subject reasserts itself, and the result is a NEW picture that happens
+ * to be of the same shot. That is the wrong tool for "this one, but without the
+ * sprinkler" — you spend a generation and lose the composition you liked in
+ * order to change one object in it.
+ *
+ * So this sends the frame itself as the reference and says only what to change.
+ * The prompt is deliberately SHORT: the picture carries the scene, the grade and
+ * the placement, and a long prompt beside it re-describes everything and pulls
+ * the result back toward a fresh generation — which is the failure this exists
+ * to avoid.
+ *
+ * A past version can be refined too, so a composition three attempts ago is
+ * still reachable rather than being something you have to regenerate your way
+ * back to.
+ */
+async function refineShot(req, res, shotId) {
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    const project = scene && db.prepare(
+        'SELECT id, title, style_preset, provider_config, aspect_ratio FROM film_projects WHERE id = ?')
+        .get(scene.project_id);
+    if (!project) return json(res, 404, { error: 'Project not found' });
+
+    const body = req.body || {};
+    const instruction = String(body.instruction || '').trim();
+    if (!instruction) {
+        return json(res, 400, {
+            error: 'instruction is required: what to change about this frame, in a sentence',
+            hint: 'e.g. "remove the sprinkler" or "move the car to the kerb on the right"',
+        });
+    }
+
+    // Which picture to work from. Default is what is on screen now.
+    let source = storyboardImagePath(project.id, shot.shot_code);
+    let fromVersion = null;
+    if (body.version) {
+        const row = db.prepare(
+            `SELECT version, file_path FROM film_assets
+              WHERE shot_id = ? AND asset_type = 'storyboard' AND version = ?`).get(shotId, Number(body.version));
+        if (!row || !fs.existsSync(row.file_path)) {
+            return json(res, 404, { error: `No stored image for version ${body.version}` });
+        }
+        source = row.file_path;
+        fromVersion = row.version;
+    }
+    if (!fs.existsSync(source)) {
+        return json(res, 409, { error: 'This shot has no frame yet. Generate one before refining it.' });
+    }
+
+    // The frame as a data URI, which is how every adapter reads a local image —
+    // no provider can read our disk.
+    const { toDataUri } = require('../lib/reference-images');
+    let uri;
+    try {
+        uri = toDataUri(source);
+    } catch (err) {
+        return json(res, 500, { error: `Could not read the frame: ${err.message}` });
+    }
+    if (!uri) return json(res, 409, { error: 'That frame could not be inlined as a reference.' });
+    const reference = { name: shot.shot_code, kind: 'style', tag: 'frame', uri, file_path: source, weight: 0.9 };
+
+    // Short on purpose. The picture is the description.
+    const prompt = `${instruction}. Keep everything else in the reference image exactly as it is: `
+        + 'the same composition, framing, camera position, lighting and colour grade.';
+
+    db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shotId);
+    try {
+        ensureStoryboardDir(project.id);
+        const payload = {
+            prompt,
+            negative_prompt: 'different composition, different camera angle, different framing, '
+                + 'recropped, restyled, different time of day',
+            reference_images: [reference],
+            aspect_ratio: project.aspect_ratio,
+        };
+        const { buffer, provider, model } = await callImageGen(
+            payload.prompt, payload.negative_prompt, undefined, payload, providerConfigOf(project));
+
+        const imgPath = storyboardImagePath(project.id, shot.shot_code);
+        archiveExistingFrame(project.id, shotId, shot.shot_code);
+        fs.writeFileSync(imgPath, buffer);
+        const asset = registerStoryboardAsset(project.id, shotId, imgPath, `${shot.shot_code}.png`,
+            { provider, provider_model: model });
+        db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('complete', shotId);
+
+        return json(res, 200, {
+            shot_id: shotId, shot_code: shot.shot_code,
+            refined_from: fromVersion === null ? 'current' : `v${fromVersion}`,
+            instruction, version: asset.version, provider,
+            image_url: storyboardImageUrl(project.id, shot.shot_code),
+        });
+    } catch (err) {
+        db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('failed', shotId);
+        return json(res, 502, { error: `Refine failed: ${err.message}` });
+    }
 }
 
 async function regenerateShot(req, res, shotId) {
