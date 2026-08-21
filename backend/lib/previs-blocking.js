@@ -725,6 +725,12 @@ function previsFacets(blocking) {
 
     const facets = {};
     if (blocking.movement) facets.movement = blocking.movement;
+    // A sequence, when one was blocked. Kept as the leg list rather than
+    // flattened here, so the prompt can say "closer, then panning right" and
+    // the video payload can still send the sampled path.
+    if (Array.isArray(blocking.moves) && blocking.moves.length > 1) {
+        facets.moves = blocking.moves.map(m => m && m.movement).filter(Boolean);
+    }
     if (Number.isFinite(focalMm) && focalMm > 0) facets.focal_mm = focalMm;
     if (position && Number.isFinite(Number(position[1]))) facets.camera_height_m = Number(position[1]);
 

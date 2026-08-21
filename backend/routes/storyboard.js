@@ -478,6 +478,17 @@ function handleStoryboard(req, res, urlParts, query) {
     }
 
     // GET /film/shots/:id/prompt — what would be sent, and the room left.
+    // GET  /film/shots/:id/frames
+    // POST /film/shots/:id/frames/:version/restore
+    if (urlParts[1] === 'shots' && urlParts[2] && urlParts[3] === 'frames') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid shot ID' });
+        if (urlParts[4] && urlParts[5] === 'restore' && req.method === 'POST') {
+            return restoreShotFrame(req, res, urlParts[2], urlParts[4]);
+        }
+        if (req.method === 'GET') return listShotFrames(req, res, urlParts[2]);
+        return json(res, 405, { error: 'Method not allowed' });
+    }
+
     if (urlParts[1] === 'shots' && urlParts[2] && urlParts[3] === 'prompt') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid shot ID' });
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
@@ -1180,6 +1191,118 @@ async function generateStoryboardStream(req, res, projectId, query) {
 }
 
 // ── FILM-020: Regenerate Single Shot ───────────────────────────────
+
+/**
+ * Every attempt at this shot, and the way back to one.
+ *
+ * Regeneration overwrites the frame at a fixed name, and `archiveExistingFrame`
+ * has been copying the outgoing picture to `{code}_v{n}.png` and repointing its
+ * asset row for a while — so the attempts were all on disk and in the ledger,
+ * and there was no way to look at them or go back to one. Kept and unreachable
+ * is barely better than not kept: the reason you keep them is that generation
+ * is a coin flip you already paid for, and v2 is often the one you wanted.
+ *
+ * GET /film/shots/:id/frames
+ */
+function listShotFrames(req, res, shotId) {
+    const shot = db.prepare('SELECT id, shot_code, scene_id FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+    const scene = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    if (!scene) return json(res, 404, { error: 'Scene not found' });
+
+    const rows = db.prepare(
+        `SELECT id, version, file_name, file_path, created_at, metadata FROM film_assets
+          WHERE shot_id = ? AND asset_type = 'storyboard' ORDER BY version DESC`).all(shotId);
+
+    const current = storyboardImagePath(scene.project_id, shot.shot_code);
+    const versions = rows.map(r => {
+        let meta = {};
+        try { meta = JSON.parse(r.metadata || '{}'); } catch (_) { meta = {}; }
+        return {
+            version: r.version,
+            // Only the version that still occupies the live filename is the one
+            // on the board. Said explicitly rather than inferred from "highest",
+            // because restoring writes a NEW highest version whose picture is an
+            // older one — and "which of these am I looking at" is the question
+            // this list exists to answer.
+            is_current: r.file_path === current,
+            url: `/film/storyboards/${scene.project_id}/${encodeURIComponent(r.file_name)}`,
+            exists: safeExists(r.file_path),
+            created_at: r.created_at,
+            provider: meta.provider || null,
+            restored_from: meta.restored_from || null,
+        };
+    });
+
+    return json(res, 200, {
+        shot_id: shotId, shot_code: shot.shot_code, versions,
+        note: 'Every attempt is kept. Restoring one copies it back to the live frame as a NEW '
+            + 'version — nothing is deleted and nothing is rewound, so the attempt you are '
+            + 'leaving is still here if you change your mind again.',
+    });
+}
+
+function safeExists(p) {
+    try { return !!p && fs.existsSync(p); } catch (_) { return false; }
+}
+
+/**
+ * Put an earlier attempt back on the board.
+ *
+ * POST /film/shots/:id/frames/:version/restore
+ *
+ * Forward, never backward. The restored picture becomes a new highest version
+ * rather than truncating the history to the one being restored: rewinding would
+ * destroy the attempts made after it, which is the same mistake as deleting a
+ * frame to regenerate it, and it would make "restore" a destructive verb on a
+ * list whose whole purpose is that nothing is lost.
+ *
+ * Costs nothing — it is a file copy, not a generation.
+ */
+function restoreShotFrame(req, res, shotId, version) {
+    const shot = db.prepare('SELECT id, shot_code, scene_id FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+    const scene = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    if (!scene) return json(res, 404, { error: 'Scene not found' });
+
+    const row = db.prepare(
+        `SELECT id, version, file_path FROM film_assets
+          WHERE shot_id = ? AND asset_type = 'storyboard' AND version = ?`).get(shotId, Number(version));
+    if (!row) return json(res, 404, { error: `This shot has no version ${version}` });
+    if (!safeExists(row.file_path)) {
+        return json(res, 409, { error: `The file for version ${version} is no longer on disk.` });
+    }
+
+    const current = storyboardImagePath(scene.project_id, shot.shot_code);
+    if (row.file_path === current) {
+        return json(res, 200, {
+            shot_id: shotId, version: row.version, changed: false,
+            note: 'That version is already the frame on the board.',
+        });
+    }
+
+    try {
+        ensureStoryboardDir(scene.project_id);
+        // Archive what is being replaced FIRST, or the current picture is
+        // overwritten by the restore and the attempt you were on is the one
+        // thing the history loses.
+        archiveExistingFrame(scene.project_id, shotId, shot.shot_code);
+        fs.copyFileSync(row.file_path, current);
+    } catch (err) {
+        return json(res, 500, { error: `Could not restore that frame: ${err.message}` });
+    }
+
+    const asset = registerStoryboardAsset(scene.project_id, shotId, current, `${shot.shot_code}.png`,
+        { restored_from: row.version });
+    db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('complete', shotId);
+
+    return json(res, 200, {
+        shot_id: shotId, shot_code: shot.shot_code, changed: true,
+        restored_from: row.version, version: asset.version,
+        image_url: storyboardImageUrl(scene.project_id, shot.shot_code),
+        note: `v${row.version} is back on the board as v${asset.version}. Nothing was deleted.`,
+    });
+}
 
 /**
  * What this shot would send, and how much room is left — without spending.

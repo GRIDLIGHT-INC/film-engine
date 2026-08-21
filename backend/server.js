@@ -911,6 +911,10 @@ const server = http.createServer(async (req, res) => {
             if (sub === 'prompt') {
                 return await handleStoryboard(req, res, parts, query);
             }
+            // Every attempt at this shot's keyframe, and putting one back.
+            if (sub === 'frames') {
+                return await handleStoryboard(req, res, parts, query);
+            }
             if (sub === 'order' || sub === 'transition') {
                 return await handleShots(req, res, parts, query);
             }

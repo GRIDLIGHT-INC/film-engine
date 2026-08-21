@@ -104,9 +104,16 @@ function makeScene(shotCodes, framed, opts) {
             .run(id, sceneId, code, JSON.stringify({ shot_code: code, action: 'A street.', camera: {} }));
         shots[code] = id;
         if ((framed || []).includes(code)) {
+            // Written where the app really keeps a live frame, so `is_current`
+            // — which compares the asset's path to the live one — means the
+            // same thing here as it does in the product.
+            const dir = path.join(process.env.FILM_DATA_DIR, 'storyboards', projectId);
+            fs.mkdirSync(dir, { recursive: true });
+            const live = path.join(dir, code + '.png');
+            fs.writeFileSync(live, PNG);
             db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, file_path, version)
                         VALUES (?, ?, ?, 'storyboard', ?, ?, 1)`)
-                .run(generateId(), projectId, id, code + '.png', framePath(projectId + '-' + code));
+                .run(generateId(), projectId, id, code + '.png', live);
         }
     }
     return { projectId, sceneId, shots };
@@ -644,4 +651,109 @@ test('the board can pick the anchor up, show it, and put it down', () => {
         missing.push('the retired per-scene switch is still on the page');
     }
     assert.deepStrictEqual(missing, [], `\n  ${missing.join('\n  ')}`);
+});
+
+
+// ── Every attempt, and the way back to one ──────────────────────────────
+
+test('a restore is a new version, never a rewind', async () => {
+    // Restoring must not truncate history to the version being restored: that
+    // would destroy the attempts made after it, and make "restore" destructive
+    // on the one list whose whole purpose is that nothing is lost.
+    const { handleStoryboard } = require('../routes/storyboard');
+    const os_ = require('os');
+    const { projectId, shots } = makeScene(['1A'], ['1A']);
+    const shotId = shots['1A'];
+
+    // Three attempts, the way regeneration leaves them.
+    const dir = fs.mkdtempSync(path.join(os_.tmpdir(), 'restore-'));
+    for (const v of [2, 3]) {
+        const f = path.join(dir, `1A_v${v}.png`);
+        fs.writeFileSync(f, PNG);
+        db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, file_path, version)
+                    VALUES (?, ?, ?, 'storyboard', ?, ?, ?)`)
+            .run(generateId(), projectId, shotId, `1A_v${v}.png`, f, v);
+    }
+
+    const before = await callRoute(handleStoryboard, 'GET', `/film/shots/${shotId}/frames`);
+    assert.strictEqual(before.status, 200);
+    assert.strictEqual(before.body.versions.length, 3, 'not every attempt was listed');
+    assert.ok(before.body.note, 'the list does not say what restoring does');
+
+    const r = await callRoute(handleStoryboard, 'POST', `/film/shots/${shotId}/frames/2/restore`);
+    assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+    assert.strictEqual(r.body.restored_from, 2);
+    assert.ok(r.body.version > 3, `restore rewound to v${r.body.version} instead of moving forward`);
+
+    const after = await callRoute(handleStoryboard, 'GET', `/film/shots/${shotId}/frames`);
+    assert.ok(after.body.versions.length > before.body.versions.length,
+        'restoring removed an attempt instead of adding one');
+    const versions = after.body.versions.map(v => v.version);
+    assert.ok(versions.includes(3), 'the attempt that was on the board when you restored is gone');
+});
+
+test('exactly one listed version is the frame on the board', () => {
+    // "Which of these am I looking at" is the question the list exists to
+    // answer, and after a restore the highest version is NOT the newest
+    // picture — so it cannot be inferred from the number.
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { shots } = makeScene(['1A'], ['1A']);
+    return callRoute(handleStoryboard, 'GET', `/film/shots/${shots['1A']}/frames`).then(r => {
+        const current = r.body.versions.filter(v => v.is_current);
+        assert.strictEqual(current.length, 1,
+            `${current.length} versions claim to be the one on the board`);
+    });
+});
+
+test('restoring a version whose file is gone is refused, not half-done', async () => {
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { projectId, shots } = makeScene(['1A'], ['1A']);
+    db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, file_path, version)
+                VALUES (?, ?, ?, 'storyboard', '1A_v9.png', '/nowhere/1A_v9.png', 9)`)
+        .run(generateId(), projectId, shots['1A']);
+    const r = await callRoute(handleStoryboard, 'POST', `/film/shots/${shots['1A']}/frames/9/restore`);
+    assert.strictEqual(r.status, 409);
+    assert.match(r.body.error, /no longer on disk/);
+});
+
+test('the board offers a way into the attempts, and a way back', () => {
+    const html = fs.readFileSync(INDEX_HTML, 'utf8');
+    const missing = [];
+    if (!/onclick="openFrameVersions\(/.test(html)) missing.push('no control opens the attempts');
+    for (const fn of ['openFrameVersions', 'restoreFrameVersion', 'closeFrameVersions']) {
+        if (!new RegExp('function ' + fn).test(html)) missing.push(fn + ' is not defined');
+    }
+    if (!html.includes('id="frameVersionsModal"')) missing.push('the attempts modal is not in the page');
+    if (!/onclick="restoreFrameVersion\(/.test(html)) missing.push('nothing restores a version');
+    // A modal-overlay is shown by `.open`; `.active` shows a page, so the wrong
+    // class here builds a modal that is present and invisible.
+    if (!/frameVersionsModal'\)\.classList\.add\('open'\)/.test(html)) {
+        missing.push('the attempts modal is never actually shown');
+    }
+    assert.deepStrictEqual(missing, [], `\n  ${missing.join('\n  ')}`);
+});
+
+test('every shot subroute the storyboard module handles is dispatched by the server', () => {
+    // The frames route existed, loaded, and returned 405 in the browser: the
+    // module handled `urlParts[3] === "frames"` and server.js never sent it
+    // there. A route nothing dispatches to is indistinguishable from a route
+    // that was never written, and no unit test sees it because the module is
+    // called directly.
+    //
+    // Derived from the module's own routing rather than listed, so the next
+    // subroute is checked without anyone remembering to.
+    const routeSrc = fs.readFileSync(path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
+    const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+
+    const subs = new Set();
+    for (const m of routeSrc.matchAll(/urlParts\[1\] === 'shots'[\s\S]{0,160}?urlParts\[3\] === '(\w+)'/g)) {
+        subs.add(m[1]);
+    }
+    assert.ok(subs.size >= 2, `found only ${subs.size} shot subroutes — the scan is broken`);
+
+    const undispatched = [...subs].filter(sub =>
+        !new RegExp(`sub === '${sub}'`).test(serverSrc)
+        && !new RegExp(`parts\\[3\\] === '${sub}'`).test(serverSrc));
+    assert.deepStrictEqual(undispatched, [],
+        `routes/storyboard.js handles these and server.js never routes to them: ${undispatched.join(', ')}`);
 });

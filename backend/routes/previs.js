@@ -61,6 +61,25 @@ function loadBlocking(shotId) {
 }
 
 /**
+ * The single movement that best names a sequence: the leg that runs longest.
+ *
+ * `movement` is one column and a sequence is many legs, so something has to be
+ * chosen. Weight is proportional to time, so the heaviest leg is what the shot
+ * mostly does — and a viewer describing the move in one word would say the same
+ * thing. Ties go to the first, which is the order they were authored in.
+ */
+function dominantMovement(moves) {
+    if (!Array.isArray(moves) || !moves.length) return null;
+    let best = null;
+    for (const leg of moves) {
+        if (!leg || !leg.movement) continue;
+        const weight = Number(leg.weight) > 0 ? Number(leg.weight) : 1;
+        if (!best || weight > best.weight) best = { movement: leg.movement, weight };
+    }
+    return best ? best.movement : null;
+}
+
+/**
  * Validate a blocking payload.
  *
  * The split that matters: ERRORS are things the maths cannot proceed from — an
@@ -190,7 +209,21 @@ function putBlocking(req, res, shotId) {
         camera: { ...base.camera, ...(body.camera || {}) },
         stage: { ...base.stage, ...(body.stage || {}) },
         rig: body.rig || base.rig,
-        movement: body.movement || 'static',
+        // Derived from the legs when a sequence was saved without naming one.
+        //
+        // The column and moves[] were written independently, so blocking a
+        // two-leg "dolly in, then pan right" and not also setting `movement`
+        // stored `static` — and that column is what BOTH downstream consumers
+        // read. The video payload went out as camera_control.type "static"
+        // beside a path that plainly moves, and the keyframe prompt asked
+        // MOVEMENT_MAP['static'], which is the empty string, so the sequence
+        // was invisible to the still entirely.
+        //
+        // The HEAVIEST leg, not the first: weight is how long a leg runs, so
+        // the dominant motion is the honest single-word answer for a field that
+        // can only hold one. An explicit movement still wins — somebody naming
+        // it means it.
+        movement: body.movement || dominantMovement(body.moves) || 'static',
         moves: Array.isArray(body.moves) ? body.moves : [],
         subjects: Array.isArray(body.subjects) ? body.subjects : [],
     };

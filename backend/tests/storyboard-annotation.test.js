@@ -296,10 +296,19 @@ test('a superseded frame is archived before it is overwritten', () => {
 
     // Every write of a frame archives first. One path that does not is a shot
     // whose history silently stops.
-    // Any write of a frame, whatever the buffer variable is called. Matching one
-    // variable name meant a fourth write path — refine, which calls its buffer
-    // `buffer` — was invisible to this check the moment it was added.
-    const writes = (src.match(/fs\.writeFileSync\(imgPath, \w+\)/g) || []).length;
+    //
+    // Counted by DESTINATION, not by call name or buffer name. Matching
+    // `writeFileSync(imgPath, buffer)` missed refine when it arrived — hence
+    // the earlier widening — and then missed restore, which puts an older
+    // attempt back with copyFileSync and has a destination variable of its own.
+    // A path that replaces the live frame is a path that must archive first,
+    // however it does the writing.
+    // Destination only: writeFileSync takes it first, copyFileSync second. The
+    // archive's own `copyFileSync(current, dest)` reads FROM the live frame and
+    // must not be counted as a write of it, or the archive would be required to
+    // archive itself.
+    const LIVE_FRAME = /fs\.writeFileSync\(\s*(?:imgPath|current)\b|fs\.copyFileSync\([^,)]+,\s*(?:imgPath|current)\b/g;
+    const writes = (src.match(LIVE_FRAME) || []).length;
     const archives = (src.match(/archiveExistingFrame\(/g) || []).length - 1;   // minus the definition
     assert.ok(writes > 0, 'no frame is written anywhere');
     assert.strictEqual(archives, writes,

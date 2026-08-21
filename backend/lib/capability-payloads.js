@@ -498,6 +498,10 @@ function loadShotContext(shotId) {
                 stage: JSON.parse(row.stage_json || '{}'),
                 rig: row.rig,
                 movement: row.movement,
+                // The legs, not just the single movement column. A compound
+                // move is what was blocked; collapsing it to one word before it
+                // reaches a prompt loses the half a director spent time on.
+                moves: JSON.parse(row.moves_json || '[]'),
                 path: JSON.parse(row.path_json || '[]'),
             };
         }

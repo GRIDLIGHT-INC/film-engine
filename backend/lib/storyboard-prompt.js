@@ -495,9 +495,20 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         else if (h >= 2.2) parts.push('high angle, camera looking down');
     }
 
-    // 5. Camera movement
+    // 5. Camera movement — the whole move when a sequence was blocked.
+    //
+    // A still can only ever show the START of a move, so this is a phrase
+    // naming what the camera does rather than an attempt to depict motion. But
+    // naming only the first leg, or only the dominant one, describes a
+    // different shot from the one that was staged: "moving closer" and "moving
+    // closer, then panning right" end in different places.
+    const legs = Array.isArray(facets.moves) ? facets.moves : null;
     const movement = effective.movement.value;
-    if (movement && MOVEMENT_MAP[movement]) {
+    if (legs && legs.length > 1) {
+        const phrases = legs.map(m => MOVEMENT_MAP[m]).filter(Boolean);
+        if (phrases.length > 1) parts.push(phrases.join(', then '));
+        else if (phrases.length === 1) parts.push(phrases[0]);
+    } else if (movement && MOVEMENT_MAP[movement]) {
         parts.push(MOVEMENT_MAP[movement]);
     }
 

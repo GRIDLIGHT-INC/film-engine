@@ -5557,6 +5557,21 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
     </div>
 
+    <!-- Every attempt at one shot. They have always been kept on disk; this is
+         the way back to one. -->
+    <div class="modal-overlay" id="frameVersionsModal" onclick="closeFrameVersions()">
+        <div class="modal-content" style="max-width:900px;" onclick="event.stopPropagation()">
+            <div class="flex-between mb-16">
+                <h2 id="frameVersionsTitle">Attempts</h2>
+                <button class="modal-close" onclick="closeFrameVersions()">&times;</button>
+            </div>
+            <p class="text-sm text-muted" id="frameVersionsNote" style="margin:0 0 12px;line-height:1.5;"></p>
+            <div id="frameVersionsBody"
+                 style="display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+                        max-height:66vh;overflow:auto;"></div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="shotCardModal">
         <div class="modal" style="max-width:820px;width:92vw;">
             <div class="modal-header">
@@ -14707,8 +14722,24 @@ THREE.GLTFLoader = GLTFLoader;
     let LAST_RELOAD = 0;
     const RELOAD_THROTTLE_MS = 3000;
 
+    /**
+     * How many frames are mid-generation.
+     *
+     * A background refresh rewrites grid.innerHTML, which destroys the busy
+     * veil painted on the card you are watching — so alt-tabbing during a
+     * one-minute refine made the spinner vanish while the generation carried
+     * on. The image still arrived; the page just stopped saying so, which reads
+     * as the spinner being broken.
+     *
+     * Deferred, not dropped, on the precedent the live-events refresh already
+     * set: dropping it leaves the board stale for as long as the work runs, and
+     * the user closes it expecting to see what just happened.
+     */
+    const BUSY = { count: 0, pending: false };
+
     function refreshCurrentPage(reason) {
         if (!PAGE_RELOAD || !state.currentProject) return;
+        if (BUSY.count > 0) { BUSY.pending = true; return; }
         const now = Date.now();
         if (now - LAST_RELOAD < RELOAD_THROTTLE_MS) return;
         LAST_RELOAD = now;
@@ -23758,6 +23789,7 @@ ${fountainText.slice(0, 50000)}`;
                                     ${anchorButton(f)}
                                     <button class="btn btn-secondary btn-sm" onclick="editShotCard('${f.shot_id}')" title="Change what this frame is generated from">Edit</button>
                                     <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="Every attempt at this shot — go back to one">v${f.asset_version || 1}</button>
                                     <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again from the card — costs credits">Regen</button>
                                 </div>
                             </div>
@@ -23803,6 +23835,64 @@ ${fountainText.slice(0, 50000)}`;
             + `<button class="btn btn-sm" onclick="markupUndo('${shotId}')" title="remove the last mark">undo</button>`
             + `<button class="btn btn-sm" onclick="markupClear('${shotId}')" title="remove all markup from this frame">clear</button>`
             + `<span id="mkfeed-${canvasId}" class="text-sm" style="opacity:.75;align-self:center;"></span>`;
+    }
+
+
+    // ── Every attempt at a shot, and the way back to one ───────────────────
+    //
+    // Regeneration overwrites the frame at a fixed name, and the outgoing
+    // picture has been archived to {code}_v{n}.png for a while — so the
+    // attempts were all on disk and there was no way to look at them. Kept and
+    // unreachable is barely better than not kept: the reason to keep them is
+    // that generation is a coin flip you already paid for, and v2 is often the
+    // one you wanted.
+
+    async function openFrameVersions(shotId) {
+        let data;
+        try {
+            data = await api(`/shots/${shotId}/frames`);
+        } catch (err) { return setStatus('Could not read the versions: ' + err.message); }
+
+        const versions = (data.versions || []).filter(v => v.exists);
+        if (!versions.length) return setStatus('This shot has no generated frames yet.');
+
+        document.getElementById('frameVersionsTitle').textContent =
+            `${data.shot_code} \u2014 ${versions.length} attempt(s)`;
+        document.getElementById('frameVersionsBody').innerHTML = versions.map(v => `
+            <div style="border:1px solid ${v.is_current ? 'var(--gl-brand-pink,#ec4899)' : 'var(--gl-border-subtle)'};
+                        border-radius:6px;overflow:hidden;">
+                <img src="${API_BASE}${v.url}" style="width:100%;display:block;background:#000;"
+                     onerror="this.style.display='none'">
+                <div style="padding:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                    <div class="text-sm">
+                        <strong>v${v.version}</strong>${v.is_current ? ' &middot; on the board' : ''}
+                        ${v.restored_from ? '<br><span class="text-muted">restored from v' + v.restored_from + '</span>' : ''}
+                        <br><span class="text-muted">${esc(v.created_at || '')}</span>
+                    </div>
+                    ${v.is_current ? ''
+                        : `<button class="btn btn-primary btn-sm"
+                             onclick="restoreFrameVersion('${shotId}', ${v.version})">Restore</button>`}
+                </div>
+            </div>`).join('');
+        // Said where the decision is made, because "restore" sounds destructive
+        // and this one is not.
+        document.getElementById('frameVersionsNote').textContent = data.note || '';
+        document.getElementById('frameVersionsModal').classList.add('open');
+    }
+
+    function closeFrameVersions() {
+        document.getElementById('frameVersionsModal').classList.remove('open');
+    }
+
+    async function restoreFrameVersion(shotId, version) {
+        try {
+            const r = await api(`/shots/${shotId}/frames/${version}/restore`, { method: 'POST' });
+            setStatus(r.note || `v${version} restored.`);
+            closeFrameVersions();
+            await loadStoryboard();
+            const modal = document.getElementById('frameViewerModal');
+            if (modal && modal.classList.contains('open')) frameViewerPaint();
+        } catch (err) { setStatus('Could not restore that version: ' + err.message); }
     }
 
     // ── The frame you are currently shooting from ──────────────────────────
@@ -24948,6 +25038,7 @@ ${fountainText.slice(0, 50000)}`;
         const started = Date.now();
         const veils = [];
         const buttons = [];
+        BUSY.count++;
 
         for (const find of SURFACES) {
             let img = null;
@@ -24983,10 +25074,21 @@ ${fountainText.slice(0, 50000)}`;
             });
         }, 1000);
 
+        let cleared = false;
         return () => {
+            // Guarded: a caller that clears twice would drive the counter
+            // negative and suppress every background refresh for the session.
+            if (cleared) return;
+            cleared = true;
             clearInterval(tick);
             veils.forEach(v => v.remove());
             buttons.forEach(b => { b.disabled = false; b.style.opacity = ''; });
+            BUSY.count = Math.max(0, BUSY.count - 1);
+            if (BUSY.count === 0 && BUSY.pending) {
+                BUSY.pending = false;
+                LAST_RELOAD = 0;          // the throttle must not swallow the deferred one
+                refreshCurrentPage('deferred');
+            }
         };
     }
 

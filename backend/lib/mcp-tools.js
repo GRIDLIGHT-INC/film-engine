@@ -989,6 +989,25 @@ const PRODUCTION_TOOLS = [
         schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
     },
     {
+        name: 'shot_frames',
+        handler: handleStoryboard, method: 'GET',
+        description: 'Every attempt at this shot\u2019s keyframe, newest first, with which one is currently on the board. Regeneration overwrites the live frame but the outgoing picture is archived, so nothing generated is ever lost \u2014 and generation is a coin flip you already paid for, so an earlier attempt is often the one you wanted. SPENDS NOTHING.',
+        path: a => `/film/shots/${a.shot_id}/frames`,
+        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+    },
+    {
+        name: 'shot_frame_restore',
+        handler: handleStoryboard, method: 'POST',
+        description: 'Put an earlier attempt back on the board. Copies that version to the live frame as a NEW version \u2014 nothing is deleted and nothing is rewound, so the attempt you are leaving is still there if you change your mind again. Costs nothing: it is a file copy, not a generation. Read shot_frames first for the version numbers.',
+        path: a => `/film/shots/${a.shot_id}/frames/${a.version}/restore`,
+        body: () => ({}),
+        schema: {
+            shot_id: { type: 'string' },
+            version: { type: 'number', description: 'The version to put back, from shot_frames.' },
+        },
+        required: ['shot_id', 'version'],
+    },
+    {
         name: 'storyboard_refine',
         handler: handleStoryboard, method: 'POST',
         description: 'Keep an existing frame and change ONE thing about it. Sends the picture itself plus a single instruction — no scene card, no subject descriptions, no style preset, because the picture already carries all of that and repeating it in words pulls the result back toward a fresh generation. Use this instead of storyboard_regenerate whenever the composition is right and one element is wrong: "remove the sprinkler", "move the car to the kerb". Pass version to refine an earlier attempt rather than the current frame. Costs credits.',
