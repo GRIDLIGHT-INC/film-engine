@@ -1,3 +1,24 @@
+### The FDX defects were three different bugs — **TWO FIXED, ONE KNOWN**
+
+Fixing them as one — *"send the rest as Action"* — is what produced the worst of
+them in the first place.
+
+- **Dropped → fixed.** `section` and `synopsis` now map to Final Draft's own
+  `Section Heading` and `Summary`. An outline written here survives the trip.
+- **Wrongly promoted → fixed.** `note` mapped to `Action`, putting a private
+  production note into the **screenplay body** — the only one of the three that
+  changed what the script *says*, and worse than dropping it. Notes now travel as
+  a `ScriptNote`, kept in a separate `FDX_NOTE_TYPES` set so that adding an entry
+  to the type map can never silently turn a note back into dialogue.
+- **Lossy → known, not fixed.** `centered` and `lyrics` still map to `Action`.
+  FDX has no lyric type and centring is a paragraph *alignment* rather than a
+  type, so the words survive and the form does not. Recorded rather than
+  invented, because a mapping Final Draft will not read back is worse than a
+  documented loss. Phase 3.
+
+`boneyard` stays absent deliberately: it is text that was cut, and exporting it
+would resurrect the cuts.
+
 # Screenplay: making Film Engine the only tool you need to write in
 
 **Status:** draft 2 · confer 766495b7 · driver = film-engine agent · writers-tool cells owned by the writers-tool agent
@@ -40,6 +61,7 @@ So this is **not a port**. It is a two-way gap closure whose goal is: *write a s
 | `film-engine-ahead` | Film Engine already does this, better | none — recorded so nobody re-implements it |
 | `surface-UI` | capability exists in the engine; the editor cannot reach it | editor only |
 | `surface-MCP` | capability exists; no tool exposes it | tool only |
+| **stranded** | the editor knows the type, renders it, and offers no way in | editor only |
 | `missing-primitive` | genuinely absent; nothing in the format or schema solves it | build |
 | `bug` | present and wrong | fix |
 
@@ -85,11 +107,11 @@ Authorable = the union. Everything else is a gap with a *name*.
 | 4 | `dialogue` | ✓ | ✓ | typed, cycled | ✓ Dialogue | `none` | — |
 | 5 | `parenthetical` | ✓ | ✓ | typed, cycled | ✓ Parenthetical | `none` | — |
 | 6 | `transition` | ✓ | ✓ | typed | ✓ Transition | `none` | — |
-| 7 | `centered` | ✓ | ✓ | ✗ **stranded** | ⚠ as `Action` | `stranded` + `bug` | 2 |
-| 8 | `lyrics` | ✓ | ✓ | ✗ **stranded** | ⚠ as `Action` | `stranded` + `bug` | 2 |
-| 9 | `note` | ✓ | ✓ | ✗ **stranded** | ✗ **as `Action`** | `stranded` + `bug` (**wrong**) | 2 |
-| 10 | `section` | ✓ depth | ✓ | ✗ unknown | ✗ dropped | `surface-UI` + `bug` | 2 |
-| 11 | `synopsis` | ✓ | ✓ | ✗ unknown | ✗ dropped | `surface-UI` + `bug` | 2 |
+| 7 | `centered` | ✓ | ✓ | typed (`> x <`) | ⚠ as `Action` | `bug` (lossy, known) | 3 |
+| 8 | `lyrics` | ✓ | ✓ | typed (`~`) | ⚠ as `Action` | `bug` (lossy, known) | 3 |
+| 9 | `note` | ✓ | ✓ | typed (`[[x]]`) | ✓ ScriptNote | `none` ✓ | — |
+| 10 | `section` | ✓ depth | ✓ | typed (`#`) | ✓ Section Heading | `none` ✓ | — |
+| 11 | `synopsis` | ✓ | ✓ | typed (`=`) | ✓ Summary | `none` ✓ | — |
 | 12 | `boneyard` | ✓ | ✓ | ✗ unknown | ✗ dropped | `surface-UI` | 3 |
 | 13 | `page_break` | ✓ | ✓ | ✗ unknown | ✗ dropped | `bug` | 3 |
 
@@ -100,23 +122,38 @@ that makes `scene_insert_after` safe. Verdict today: `none` — parsed and store
 Recorded because the next reader will ask, and because phase 1's blocker turns on
 them. *(writers-tool agent.)*
 
-**Coverage: parser 13/13 · renderer 13/13 · authorable 6/13 · FDX 9/13 (3 of those 9 lossy or wrong).**
+**Coverage: parser 13/13 · renderer 13/13 · authorable 11/13 · FDX 10/13.**
+
+*Phase 2 moved authorable 6→11 and FDX 9→10. The two that remain unauthorable
+are `page_break` and `boneyard`; the three not exported are `page_break`,
+`boneyard` (deliberately — it is cut text) and `note` (which now travels as a
+Final Draft ScriptNote rather than as script text, so it is absent from the type
+map by design).*
 
 Dual dialogue is deliberately **not a row**: it is a modifier on an element, not
 an element type, and it is not in `ELEMENT_TYPES`. It is authorable by command.
 Three statements about dual dialogue were made during this confer and no two
 agreed — which is the argument for defining the vocabulary before counting.
 
-### `stranded` is a distinct bug class, and it was invisible in draft 1
+### `stranded` was a distinct bug class — **CLEARED**
 
-`centered`, `lyrics` and `note` are types the editor **knows**: the format rules
-name them, `nextType` says what follows them, the stylesheet renders them. There
-is simply no way to enter one. The editor can *leave* these types and cannot
-*reach* them — they appear only in Fountain that arrived from an import or over
-MCP.
+`centered`, `lyrics` and `note` were types the editor **knew**: the format rules
+named them, `nextType` said what followed them, the stylesheet rendered them, and
+there was no way to enter one. They appeared only in Fountain that arrived from
+an import or over MCP.
 
-That is a different fix from `section`/`synopsis`, which the editor does not know
-at all. Draft 1's single "editor" column made both look like the same work.
+Every one has a **forced marker in Fountain already** — `> x <`, `~`, `[[x]]` —
+so the way in was the syntax the format defines rather than a toolbar, exactly as
+`.` already forces a scene heading. A second convention would have been a second
+thing to learn for a format that has one. `section` (`#`) and `synopsis` (`=`)
+were added the same way, which is why two different classes of gap closed with
+one change.
+
+One ordering detail is load-bearing: **`centered` must be tested before
+`forcedTransition`.** Both open with `>` and only the closing `<` separates them,
+so testing the transition first swallows every centered line. Both classifiers
+carry the same order, because two classifiers that disagree about what a line is
+are worse than one that is wrong.
 
 ### The FDX defects are three different bugs
 
@@ -157,8 +194,8 @@ What an agent can do to a screenplay today (7 tools, verified from `lib/mcp-tool
 | 0 | `script_write` — save a whole new version | present | rewrites everything; the quadratic path | — |
 | 1 | `scene_append` — append a Fountain **fragment** (may hold several headings), one transaction, reconciled once | **BUILT** | — | **1 ✓** |
 | 2 | `scene_insert_after` — add after scene N | **BUILT** | — | **1 ✓** (was blocked; unblocked at the reconciler) |
-| 3 | `outline_get` — sections + synopses as a tree | absent | `surface-MCP` | 2 |
-| 4 | `outline_write` — author sections/synopses | absent | `surface-MCP` | 2 |
+| 3 | `outline_get` — sections + synopses in document order | **BUILT** | — | **2 ✓** |
+| 4 | `outline_write` — author sections/synopses | **BUILT** | — | **2 ✓** |
 | 5 | `script_stats` — words, pages, scene count, dialogue % | HTTP only | `surface-MCP` | 3 |
 
 
@@ -438,20 +475,35 @@ cannot be imported at all today, which is the thing actually blocking. Agreed.
 The goal's acceptance criterion is real, so the handoff is **phase 2**, ahead of
 the FDX work — not folded into phase 1 and not dropped.)*
 
-### Phase 2 — the screenplay reaches the pipeline, and structure survives
-- **The shots handoff, proven**: an appended chapter reaching shots over MCP via
-  `shot_tag` / `shot_create`. First, because the goal's acceptance criterion is a
-  finished film and everything below is polish by comparison.
-- Editor: author `section` and `synopsis` (currently *unknown* to the editor)
-- Editor: a way IN to `centered`, `lyrics`, `note` (currently *stranded*)
-- FDX: stop dropping `section`/`synopsis`; stop exporting `note` as script text
-- MCP: `outline_get` / `outline_write`
-- `film_acts` reduced to the fields Fountain cannot express, keyed off the section
-- Decide the rabbit hole (a/b/c above) — **needs Manny**
-- From Set 3: scene cards (#9), beat sheets (#13), format directives (#21), per-scene history (#22)
+### Phase 2 — the screenplay reaches the pipeline, and structure survives — **SHIPPED**
 
-**Done when:** an outline written in Film Engine survives a round trip to Final
-Draft, and no element the editor knows is unreachable.
+`tests/screenplay-structure.test.js` (10 invariants). Done when: *an outline
+written in Film Engine survives a round trip to Final Draft, and no element the
+editor knows is unreachable.* Both hold.
+
+- **Shots handoff, proven.** An appended chapter reaches shots over MCP via
+  `shot_tag` / `shot_create`, asserted end to end — including that
+  `breakdown_run` is still absent, so a future edit cannot quietly reintroduce a
+  server-side LLM on this path.
+- **Five elements made authorable** — `section` (`#`), `synopsis` (`=`),
+  `centered` (`> x <`), `lyrics` (`~`), `note` (`[[x]]`). Authorable 6/13 → 11/13.
+- **FDX round trip.** `section` → Section Heading, `synopsis` → Summary, `note` →
+  ScriptNote. Two of three defects fixed, the lossy one recorded for phase 3.
+- **`outline_get` / `outline_write`** on MCP, plus `GET|POST /projects/:id/outline`.
+- **Editor styling** for sections and synopses, so structure reads as scaffolding
+  rather than as script.
+
+**Deferred out of phase 2, with reasons:**
+
+- **`film_acts` reduction** — depends on open question 2 (does `includeInCompile`
+  have a Film Engine meaning?), which needs Manny. Doing it on a guess would
+  bake the wrong answer into a schema.
+- **The rabbit hole (a/b/c)** — explicitly needs Manny. Recorded, recommended,
+  not decided.
+- **Set 3 rows #9 scene cards, #13 beat sheets, #21 format directives, #22
+  per-scene history** — each a substantial feature, none of them in this phase's
+  stated *done when*. They are the best of the writers-tool inventory and belong
+  to a phase 2b that is scoped on its own rather than smuggled in here.
 
 ### Phase 3 — parity polish
 - FDX `centered` / `lyrics` / `page_break` fidelity

@@ -9,6 +9,27 @@
  */
 
 // Map Fountain element types to FDX paragraph types
+/**
+ * Three defects lived in this table, and they were three different bugs wearing
+ * one map. Fixing them as one — "send the rest as Action" — is what produced the
+ * worst of them.
+ *
+ * DROPPED: `section` and `synopsis` had no entry, so an outline written in Film
+ * Engine vanished on the way to Final Draft, silently. Final Draft has both.
+ *
+ * WRONGLY PROMOTED: `note` mapped to `Action`, putting a private production note
+ * into the SCREENPLAY BODY. The only one of the three that changes what the
+ * script says, and worse than dropping it. Notes travel as ScriptNote now, via
+ * FDX_NOTE_TYPES below.
+ *
+ * LOSSY, and knowingly: `centered` and `lyrics` still map to Action. FDX has no
+ * lyric type and centring is a paragraph ALIGNMENT rather than a type, so the
+ * words survive and the form does not. Recorded rather than fixed, because the
+ * alternative is inventing a mapping Final Draft will not read back.
+ *
+ * `boneyard` stays absent deliberately: it is text that was cut, and exporting
+ * it would resurrect the cuts.
+ */
 const FDX_TYPE_MAP = {
     scene_heading: 'Scene Heading',
     action: 'Action',
@@ -16,10 +37,19 @@ const FDX_TYPE_MAP = {
     dialogue: 'Dialogue',
     parenthetical: 'Parenthetical',
     transition: 'Transition',
+    section: 'Section Heading',
+    synopsis: 'Summary',
     centered: 'Action',
     lyrics: 'Action',
-    note: 'Action',
 };
+
+/**
+ * Types that travel as a ScriptNote rather than as script text.
+ *
+ * A separate list so that adding an entry to FDX_TYPE_MAP can never silently
+ * turn a note back into dialogue.
+ */
+const FDX_NOTE_TYPES = new Set(['note']);
 
 /**
  * Escape XML special characters.
@@ -125,9 +155,21 @@ function generateFDX(fountainAST, titlePageOverride) {
 
     for (const el of elements) {
         const fdxType = FDX_TYPE_MAP[el.type];
-        if (!fdxType) continue; // skip page breaks, sections, synopses, boneyard
-
         const text = el.text || el.content || '';
+
+        // A note is ABOUT the screenplay, not part of it. Written as a Final
+        // Draft ScriptNote so it survives the trip without appearing in the
+        // script body — which is what mapping it to Action did.
+        if (FDX_NOTE_TYPES.has(el.type)) {
+            if (text) {
+                lines.push(`    <Paragraph Type="Action">`);
+                lines.push(`      <ScriptNote><Text>${escXML(text)}</Text></ScriptNote>`);
+                lines.push('    </Paragraph>');
+            }
+            continue;
+        }
+
+        if (!fdxType) continue; // page breaks and boneyard: deliberately not exported
 
         if (el.type === 'scene_heading') {
             // Scene headings may have scene numbers

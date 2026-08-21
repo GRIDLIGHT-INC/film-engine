@@ -440,6 +440,28 @@ const PRODUCTION_TOOLS = [
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
+        name: 'outline_get',
+        handler: handleScripts, method: 'GET',
+        description: 'The screenplay\u2019s structure: acts and sequences (Fountain `#` sections, with depth), scene synopses (`=` lines) and the scenes, in document order. SPENDS NOTHING. Read this to see the shape of a script without pulling the whole document. Structure lives IN the Fountain, so it exports to Final Draft and travels with any copy \u2014 there is no separate outline store to fall out of step.',
+        path: a => `/film/projects/${a.project_id}/outline`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'outline_write',
+        handler: handleScripts, method: 'POST',
+        description: 'Add a section (act/sequence heading) and/or a scene synopsis to the screenplay, above a given scene. `depth` 1..6 sets the level, so depth 1 is an act and depth 2 a sequence beneath it. These are Fountain elements written into the document, not metadata \u2014 which is why they survive export. Omit before_scene to put them at the end.',
+        path: a => `/film/projects/${a.project_id}/outline`,
+        body: a => ({ before_scene: a.before_scene, section: a.section, depth: a.depth, synopsis: a.synopsis }),
+        schema: {
+            project_id: { type: 'string' },
+            section: { type: 'string', description: 'An act or sequence heading, e.g. "ACT ONE". Omit to write only a synopsis.' },
+            depth: { type: 'number', description: '1..6. 1 is an act, 2 a sequence beneath it. Default 1.' },
+            synopsis: { type: 'string', description: 'One line describing what follows. Omit to write only a section.' },
+            before_scene: { type: 'number', description: '0-based scene position to write above. Omit for the end of the script.' },
+        },
+        required: ['project_id'],
+    },
+    {
         name: 'scene_insert_after',
         handler: handleScripts, method: 'POST',
         description: 'Insert scenes INTO the middle of the screenplay, after a given scene. `after_scene` is the scene to insert AFTER, counted the way scene_list reports them (1 is the first scene); 0 puts them before scene 1, and the scene count appends. Takes a Fountain FRAGMENT which may contain several headings. Scenes below the insertion point are renumbered in the document but each keeps its id and its text, so nothing is marked as changed and no shot is reported behind. Use this when a chapter belongs somewhere other than the end; use scene_append for the normal front-to-back import, which is cheaper.',

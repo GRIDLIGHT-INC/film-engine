@@ -2187,6 +2187,26 @@
             text-align: center;
             margin: 1em 0;
         }
+        /* Structure. Deliberately not screenplay-formatted: a section and a
+           synopsis are the writer's scaffolding, not pages the reader gets, so
+           they should look like scaffolding on the page and be unmistakable
+           from the script around them. */
+        .screenplay-page .sp-section {
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--gl-brand-pink, #ec4899);
+            border-bottom: 1px solid rgba(236, 72, 153, 0.35);
+            margin: 1.6em 0 0.6em;
+            padding-bottom: 2px;
+        }
+        .screenplay-page .sp-synopsis {
+            font-style: italic;
+            color: #6b7280;
+            border-left: 3px solid rgba(107, 114, 128, 0.4);
+            padding-left: 8px;
+            margin: 0.4em 0 0.8em;
+        }
         .screenplay-page .sp-lyrics {
             font-style: italic;
             margin-left: 1in;
@@ -15232,7 +15252,11 @@ THREE.GLTFLoader = GLTFLoader;
             'centered': 'action',
             'dual-dialogue': 'dialogue',
             'lyrics': 'lyrics',
-            'note': 'action'
+            'note': 'action',
+            // A section heads what follows; a synopsis describes it. Both give
+            // way to action, which is what actually comes next on the page.
+            'section': 'action',
+            'synopsis': 'action'
         },
         // What type to switch to on empty line Enter
         emptyLineType: {
@@ -15245,7 +15269,9 @@ THREE.GLTFLoader = GLTFLoader;
             'centered': 'action',
             'dual-dialogue': 'action',
             'lyrics': 'action',
-            'note': 'action'
+            'note': 'action',
+            'section': 'action',
+            'synopsis': 'action'
         },
         // Context-aware Tab cycles
         tabCycles: {
@@ -15262,7 +15288,26 @@ THREE.GLTFLoader = GLTFLoader;
             forcedCharacter: /^@/,
             forcedTransition: /^>/,
             forcedAction: /^!/,
-            parenthetical: /^\s*\([^)]+\)\s*$/
+            parenthetical: /^\s*\([^)]+\)\s*$/,
+
+            // The five that were unreachable. Every one has a forced marker in
+            // Fountain already, so the way in is the syntax the format defines
+            // rather than a toolbar — the same mechanism `.` uses to force a
+            // scene heading. A second convention would be a second thing to
+            // learn for a format that already has one.
+            //
+            // ORDER MATTERS for `centered`: it opens with `>` exactly as a
+            // forced transition does, and is distinguished only by the closing
+            // `<`. It must be tested first or every centered line becomes a
+            // transition.
+            centered: /^>.*<\s*$/,
+            section: /^#{1,6}\s*\S/,
+            // `=` is a synopsis; `===` is a page break. The lookahead keeps the
+            // two apart rather than letting a page break become a one-character
+            // synopsis.
+            synopsis: /^=(?!=)\s*\S/,
+            lyrics: /^~/,
+            note: /^\[\[.*\]\]\s*$/
         }
     };
 
@@ -16186,7 +16231,21 @@ THREE.GLTFLoader = GLTFLoader;
         let detectedType = null;
 
         // Check for forced element markers first
-        if (AUTO_FORMAT_RULES.patterns.forcedSceneHeading.test(text)) {
+        //
+        // STRUCTURE FIRST, and `centered` before `forcedTransition`: both open
+        // with `>` and only the closing `<` tells them apart, so testing the
+        // transition first would swallow every centered line.
+        if (AUTO_FORMAT_RULES.patterns.centered.test(text)) {
+            detectedType = 'centered';
+        } else if (AUTO_FORMAT_RULES.patterns.section.test(text)) {
+            detectedType = 'section';
+        } else if (AUTO_FORMAT_RULES.patterns.synopsis.test(text)) {
+            detectedType = 'synopsis';
+        } else if (AUTO_FORMAT_RULES.patterns.lyrics.test(text)) {
+            detectedType = 'lyrics';
+        } else if (AUTO_FORMAT_RULES.patterns.note.test(text)) {
+            detectedType = 'note';
+        } else if (AUTO_FORMAT_RULES.patterns.forcedSceneHeading.test(text)) {
             detectedType = 'scene-heading';
         } else if (AUTO_FORMAT_RULES.patterns.forcedCharacter.test(text)) {
             detectedType = 'character';
@@ -17097,6 +17156,16 @@ THREE.GLTFLoader = GLTFLoader;
     // Immediate element type detection (called on Enter, no debounce)
     function detectElementTypeImmediate(text, currentType) {
         if (!text) return null;
+
+        // Structure first, and `centered` before `forcedTransition`: both open
+        // with `>` and only the closing `<` separates them. Kept in the same
+        // order as autoDetectElementType, because two classifiers that disagree
+        // about what a line is are worse than one that is wrong.
+        if (AUTO_FORMAT_RULES.patterns.centered.test(text)) return 'centered';
+        if (AUTO_FORMAT_RULES.patterns.section.test(text)) return 'section';
+        if (AUTO_FORMAT_RULES.patterns.synopsis.test(text)) return 'synopsis';
+        if (AUTO_FORMAT_RULES.patterns.lyrics.test(text)) return 'lyrics';
+        if (AUTO_FORMAT_RULES.patterns.note.test(text)) return 'note';
 
         // Check for forced element markers
         if (AUTO_FORMAT_RULES.patterns.forcedSceneHeading.test(text)) {

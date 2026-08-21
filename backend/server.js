@@ -371,8 +371,16 @@ const server = http.createServer(async (req, res) => {
             return await handleScripts(req, res, parts, query);
         }
 
-        // Route: /film/projects/:id/script or /film/projects/:id/scripts[/:version]
-        if (parts[1] === 'projects' && parts[2] && (parts[3] === 'script' || parts[3] === 'scripts')) {
+        // Route: /film/projects/:id/script[s] and /film/projects/:id/outline
+        //
+        // `outline` is here rather than beside the project routes because it IS
+        // the screenplay — sections and synopses are Fountain elements, not
+        // project metadata. Without this line the generic /projects/:id route
+        // below swallows it: GET returned the project and POST returned
+        // "Method not allowed", which is the fourth time in this codebase a
+        // handler has existed with nothing routed to it.
+        if (parts[1] === 'projects' && parts[2]
+            && (parts[3] === 'script' || parts[3] === 'scripts' || parts[3] === 'outline')) {
             return await handleScripts(req, res, parts, query);
         }
 

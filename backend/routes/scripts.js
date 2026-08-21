@@ -77,6 +77,13 @@ function handleScripts(req, res, urlParts, query) {
         return appendToScript(req, res, projectId);
     }
 
+    // GET  /film/projects/:id/outline — sections + synopses as a tree
+    // POST /film/projects/:id/outline — author them
+    if (sub === 'outline') {
+        if (req.method === 'GET') return getOutline(req, res, projectId);
+        if (req.method === 'POST') return writeOutline(req, res, projectId);
+    }
+
     // POST /film/projects/:id/script/insert — add scenes in the middle
     if (req.method === 'POST' && sub === 'script' && versionOrKeyword === 'insert') {
         return insertIntoScript(req, res, projectId);
@@ -690,6 +697,150 @@ function insertIntoScript(req, res, projectId) {
     return uploadScript(
         { ...req, body: { fountain_content: out.fountain, sync_scenes: true } },
         wrapped, projectId);
+}
+
+/**
+ * The screenplay's structure: sections, synopses and the scenes under them.
+ *
+ * GET /film/projects/:id/outline
+ *
+ * Film Engine has parsed `#` sections (with depth) and `=` synopses since the
+ * Fountain parser was written, stored them per element, and styled them for
+ * print — and nothing has ever exposed them, so not one was ever written. This
+ * is the read side of closing that: an agent can see the shape of the script
+ * without pulling the whole document and re-parsing it.
+ *
+ * Returned FLAT with a depth on each node rather than as a nested tree. A tree
+ * forces a caller to walk it to find anything, and the one question an outline
+ * is asked — "what is the shape, and where does this scene sit" — is answered
+ * more directly by an ordered list that says how deep each entry is. It is also
+ * what the document itself is.
+ */
+function getOutline(req, res, projectId) {
+    const { parseFountain } = require('../lib/fountain-parser');
+
+    const script = db.prepare(
+        'SELECT * FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1').get(projectId);
+    if (!script || !script.fountain_content) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'This project has no Fountain screenplay yet.' }));
+    }
+
+    const ast = parseFountain(script.fountain_content);
+    const elements = ast.elements || ast.tokens || [];
+
+    const outline = [];
+    let sceneIndex = 0;
+    for (const el of elements) {
+        if (el.type === 'section') {
+            outline.push({ type: 'section', depth: el.depth || 1, text: el.text || '' });
+        } else if (el.type === 'synopsis') {
+            outline.push({ type: 'synopsis', text: el.text || '' });
+        } else if (el.type === 'scene_heading') {
+            outline.push({
+                type: 'scene', scene_index: sceneIndex++,
+                heading: el.text || '', scene_number: el.scene_number || null,
+            });
+        }
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        project_id: projectId,
+        version: script.version,
+        outline,
+        counts: {
+            sections: outline.filter(n => n.type === 'section').length,
+            synopses: outline.filter(n => n.type === 'synopsis').length,
+            scenes: outline.filter(n => n.type === 'scene').length,
+        },
+        note: 'Sections (#) and synopses (=) are part of the Fountain document, not a separate store. '
+            + 'Write them with outline_write, or by including them in any scene_append/scene_update fragment.',
+    }));
+}
+
+/**
+ * Put a section or a synopsis into the document.
+ *
+ * POST /film/projects/:id/outline  { before_scene, section?, depth?, synopsis? }
+ *
+ * Deliberately narrow. Structure lives IN the Fountain — there is no outline
+ * table to keep in step, which is the whole reason this is cheap — so writing
+ * an outline is writing lines into the screenplay above a scene. Anything more
+ * ambitious (reordering acts, moving scenes between them) is a document edit and
+ * belongs to `scene_insert_after` and friends, not to a second mechanism that
+ * would have to agree with them.
+ */
+function writeOutline(req, res, projectId) {
+    const { insertScenesAfter, sceneSpans } = require('../lib/scene-splice');
+    const body = req.body || {};
+
+    const section = String(body.section || '').trim();
+    const synopsis = String(body.synopsis || '').trim();
+    if (!section && !synopsis) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: 'Give a section, a synopsis, or both.',
+            hint: 'section: "ACT ONE" with depth 1..6; synopsis: one line describing what follows.',
+        }));
+    }
+
+    const script = db.prepare(
+        'SELECT * FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1').get(projectId);
+    if (!script || !script.fountain_content) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'This project has no Fountain screenplay yet.' }));
+    }
+
+    const base = script.fountain_content;
+    const spans = sceneSpans(base);
+    const beforeScene = body.before_scene === undefined ? spans.length : Number(body.before_scene);
+    if (!Number.isInteger(beforeScene) || beforeScene < 0 || beforeScene > spans.length) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: `before_scene must be 0..${spans.length}; this screenplay has ${spans.length} scene(s).`,
+        }));
+    }
+
+    const depth = Math.min(6, Math.max(1, Number(body.depth) || 1));
+    const lines = [];
+    if (section) lines.push('#'.repeat(depth) + ' ' + section);
+    if (synopsis) lines.push('= ' + synopsis);
+
+    // Written as lines above a scene, through the same splice the rest of the
+    // document edits use. `insertScenesAfter` refuses a fragment with no scene
+    // heading — correctly, for scenes — so the join is done here rather than
+    // relaxing that rule and losing the protection it gives.
+    const all = base.split('\n');
+    const cut = beforeScene < spans.length ? spans[beforeScene].start : all.length;
+    const before = all.slice(0, cut);
+    const after = all.slice(cut);
+    const lead = before.length && before[before.length - 1].trim() !== '' ? [''] : [];
+    const next = base.split('\n').slice(cut).join('\n');
+    void insertScenesAfter; void next;
+
+    const fountain = [...before, ...lead, ...lines, '', ...after].join('\n');
+
+    const wrapped = new Proxy(res, {
+        get(target, prop) {
+            if (prop !== 'end') return typeof target[prop] === 'function'
+                ? target[prop].bind(target) : target[prop];
+            return function (chunk) {
+                let payload = {};
+                try { payload = JSON.parse(String(chunk || '{}')); } catch (_) { payload = {}; }
+                return target.end(JSON.stringify({
+                    ...payload, changed: true,
+                    wrote: { section: section || null, depth: section ? depth : null, synopsis: synopsis || null },
+                    before_scene: beforeScene,
+                    note: 'Structure is part of the screenplay, not a side table — it exports to Final Draft '
+                        + 'and travels with any copy of the document.',
+                }));
+            };
+        },
+    });
+
+    return uploadScript(
+        { ...req, body: { fountain_content: fountain, sync_scenes: true } }, wrapped, projectId);
 }
 
 function uploadScript(req, res, projectId) {

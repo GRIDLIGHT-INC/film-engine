@@ -257,7 +257,10 @@ test('every element the plan calls stranded really is known-but-unreachable', ()
         .map(l => (l.match(/`([a-z_]+)`/) || [])[1])
         .filter(Boolean);
 
-    assert.ok(claimed.length > 0, 'the editor strands elements and the plan names none');
+    // NOT "some exist". Phase 2 cleared them all, and an assertion that the
+    // list is non-empty goes red exactly when the work is finished — which is
+    // the failure mode my peer named: a test that punishes finishing will be
+    // deleted, not fixed. What must hold is AGREEMENT in both directions.
     const wrong = claimed.filter(t => !known.includes(asEditor(t)) || reachable.has(asEditor(t)));
     assert.deepStrictEqual(wrong, [],
         `the plan calls these stranded, but they are reachable or unknown to the editor: ${wrong.join(', ')}`);
@@ -268,19 +271,33 @@ test('every element the plan calls stranded really is known-but-unreachable', ()
 });
 
 
-test('the FDX defects the plan names are real', () => {
+test('the plan and the FDX map agree about what is exported', () => {
+    // Written as AGREEMENT rather than as "these defects exist". The first
+    // version asserted `note: 'Action'` was still present, so fixing the bug
+    // turned the suite red and the cheapest way back to green was to un-fix it.
     const map = src('lib/fdx-generator.js').match(/FDX_TYPE_MAP\s*=\s*\{([\s\S]*?)\}/)[1];
+    const doc = plan();
 
-    // A note is a production note, not script text. Exporting it as Action puts
-    // it in the screenplay body — worse than dropping it, and the only one of
-    // the three defects that changes what the script SAYS.
-    assert.match(map, /note:\s*'Action'/,
-        'the plan claims notes export as Action; they no longer do — update the plan');
+    const exported = t => new RegExp(`\\b${t}\\s*:`).test(map);
+    const disagreements = [];
 
-    for (const dropped of ['section', 'synopsis', 'page_break']) {
-        assert.ok(!new RegExp(`\\b${dropped}\\s*:`).test(map),
-            `the plan claims ${dropped} is dropped on FDX export; it is now mapped — update the plan`);
+    for (const t of ['section', 'synopsis']) {
+        const rowSaysDropped = doc.split('\n')
+            .some(l => l.startsWith('|') && l.includes('`' + t + '`') && /dropped/.test(l));
+        if (exported(t) && rowSaysDropped) disagreements.push(`${t}: exported, plan says dropped`);
+        if (!exported(t) && !rowSaysDropped) disagreements.push(`${t}: dropped, plan does not say so`);
     }
+
+    // A note must never be script text again. Asserted as a permanent rule
+    // rather than as a description of the current map, because this is the one
+    // defect that changed what the script SAYS.
+    assert.ok(!/note:\s*'Action'/.test(map),
+        'a Fountain note is exported as Action again — it lands in the screenplay body');
+
+    // Boneyard must stay out: it is text that was cut.
+    assert.ok(!exported('boneyard'), 'boneyard is exported — that resurrects deleted scenes');
+
+    assert.deepStrictEqual(disagreements, [], `\n  ${disagreements.join('\n  ')}`);
 });
 
 test('the MCP screenplay surface is what the plan says it is', () => {
