@@ -33,6 +33,15 @@ function handleScenes(req, res, urlParts, query) {
             res.end(JSON.stringify({ error: 'Invalid scene ID' }));
             return;
         }
+        // /film/scenes/:id/anchor — which frame establishes this scene.
+        // Its own path rather than a field on PUT /scenes/:id, because that
+        // route is the Fountain splice and requires the replacement scene text;
+        // pinning an anchor is not an edit to the screenplay.
+        if (urlParts[3] === 'anchor') {
+            if (req.method === 'PUT') return setSceneAnchor(req, res, sceneId);
+            if (req.method === 'DELETE') return clearSceneAnchor(req, res, sceneId);
+            if (req.method === 'GET') return getSceneAnchor(req, res, sceneId);
+        }
         if (req.method === 'GET') return getScene(req, res, sceneId);
         if (req.method === 'PUT') return updateScene(req, res, sceneId);
         if (req.method === 'DELETE') return deleteScene(req, res, sceneId);
@@ -242,6 +251,95 @@ function updateScene(req, res, sceneId) {
     return handleScripts(
         { method: 'POST', body: { fountain_content: next, sync_scenes: true } },
         res, ['film', 'projects', scene.project_id, 'script'], {});
+}
+
+// ── The frame a scene is measured against ───────────────────────────────
+//
+// The anchor is DERIVED by default — the first shot in the scene that has a
+// frame — and this pins it instead. The pin exists because the first shot of a
+// scene is frequently an insert or a detail, and conditioning eight frames on a
+// close-up of a doorknob is exactly the wrong picture. Only a director can say
+// which frame establishes a scene.
+
+/** The scene's anchor, asked without a vantage shot. */
+function sceneAnchorAt(sceneId, pinnedShotId) {
+    const { pickAnchor } = require('../lib/scene-anchor');
+    const shots = db.prepare(
+        `SELECT s.id, s.shot_code,
+                (SELECT COUNT(*) FROM film_assets a
+                  WHERE a.shot_id = s.id AND a.asset_type IN ('storyboard', 'keyframe')) AS frames
+           FROM film_shots s WHERE s.scene_id = ? ORDER BY s.shot_code`).all(sceneId)
+        .map(r => ({ id: r.id, shot_code: r.shot_code, has_frame: r.frames > 0 }));
+    return pickAnchor(shots, null, pinnedShotId);
+}
+
+function sceneAnchorPayload(sceneId) {
+    const scene = db.prepare('SELECT id, anchor_shot_id FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!scene) return null;
+    // Resolved from NO vantage shot: the question here is which frame the scene
+    // is measured against, not whether some particular shot may use it. Asking
+    // on behalf of a shot that turns out to BE the anchor answers "you are
+    // standing on it", which reads as the scene having none.
+    const resolved = sceneAnchorAt(sceneId, scene.anchor_shot_id);
+    return {
+        scene_id: sceneId,
+        pinned_shot_id: scene.anchor_shot_id || null,
+        anchor_shot_code: resolved && resolved.shot ? resolved.shot.shot_code : null,
+        pinned: !!(resolved && resolved.pinned),
+        reason: resolved ? resolved.reason : null,
+        note: 'Every shot in this scene is conditioned on this one frame for its light, palette '
+            + 'and grade — never its composition. Fixed rather than chained to the previous shot, '
+            + 'so drift cannot accumulate down the scene.',
+    };
+}
+
+function getSceneAnchor(req, res, sceneId) {
+    const payload = sceneAnchorPayload(sceneId);
+    if (!payload) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Scene not found' }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(payload));
+}
+
+function setSceneAnchor(req, res, sceneId) {
+    const scene = db.prepare('SELECT id FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!scene) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Scene not found' }));
+    }
+    const shotId = String((req.body && req.body.shot_id) || '').trim();
+    if (!shotId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'shot_id is required: which frame establishes this scene' }));
+    }
+    // A shot from another scene would be accepted by the foreign key and then
+    // silently ignored by the resolver, which is the worst of both.
+    const shot = db.prepare('SELECT id, shot_code, scene_id FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot || shot.scene_id !== sceneId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: 'That shot is not in this scene. An anchor is what THIS scene looks like.',
+        }));
+    }
+    db.prepare('UPDATE film_scenes SET anchor_shot_id = ? WHERE id = ?').run(shotId, sceneId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ...sceneAnchorPayload(sceneId), pinned_shot_code: shot.shot_code }));
+}
+
+function clearSceneAnchor(req, res, sceneId) {
+    const scene = db.prepare('SELECT id FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!scene) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Scene not found' }));
+    }
+    db.prepare('UPDATE film_scenes SET anchor_shot_id = NULL WHERE id = ?').run(sceneId);
+    // Unpinning falls back to the derived anchor rather than to nothing: the
+    // scene still has a first framed shot, and reporting "no anchor" here would
+    // read as the feature having been turned off.
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ...sceneAnchorPayload(sceneId), unpinned: true }));
 }
 
 module.exports = { handleScenes };

@@ -27,16 +27,20 @@ process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
 const { ensureSchema } = require('../db/schema');
 ensureSchema();
 const { db } = require('../db/database');
-const { KIND_RANK } = require('../lib/reference-images');
+const { KIND_RANK, KIND_SOURCE } = require('../lib/reference-images');
 
 const ROUTES = path.join(__dirname, '..', 'routes');
 
 /**
- * The entity-backed kinds, derived from KIND_RANK rather than listed.
+ * The entity-backed kinds, derived from the registry rather than listed.
  *
- * `style` is deliberately excluded: it lives as free text on
- * film_projects.style_preset and has no table, so demanding a generator for it
- * would be asserting a design nobody chose. Everything else names a table.
+ * Which kinds those are is declared at the source as KIND_SOURCE, not guessed
+ * here by excluding the ones we happen to know about. `style` lives as free
+ * text on film_projects and as board images; `anchor` is a keyframe already
+ * generated for another shot — it IS a plate's output rather than a subject
+ * that has one. Demanding a table or a generator for either would assert a
+ * design nobody chose, and excluding them by name is how a fifth kind gets
+ * silently skipped.
  */
 const TABLE_FOR = {
     character: { table: 'film_characters', route: 'characters.js', fk: 'character_id' },
@@ -46,13 +50,17 @@ const TABLE_FOR = {
     prop: { table: 'film_props', route: 'locations.js', fk: 'prop_id' },
 };
 
-const ENTITY_KINDS = Object.keys(KIND_RANK).filter(k => k !== 'style');
+const ENTITY_KINDS = Object.keys(KIND_RANK).filter(k => KIND_SOURCE[k] === 'entity');
 
-test('every non-style kind is entity-backed and mapped', () => {
-    // Guards the derivation itself: a fifth kind added to KIND_RANK without a
-    // table here would otherwise be skipped by every test below.
+test('every reference kind declares where it comes from, and entity kinds are mapped', () => {
+    // Guards the derivation itself, in both directions: a kind added to
+    // KIND_RANK with no declared source would be silently skipped by every test
+    // below, and an entity kind with no table mapping would be skipped too.
+    const undeclared = Object.keys(KIND_RANK).filter(k => !KIND_SOURCE[k]);
+    assert.deepStrictEqual(undeclared, [],
+        `KIND_RANK kinds with no declared source: ${undeclared.join(', ')}`);
     const unmapped = ENTITY_KINDS.filter(k => !TABLE_FOR[k]);
-    assert.deepStrictEqual(unmapped, [], `KIND_RANK kinds with no table mapping: ${unmapped.join(', ')}`);
+    assert.deepStrictEqual(unmapped, [], `entity kinds with no table mapping: ${unmapped.join(', ')}`);
     assert.strictEqual(ENTITY_KINDS.length, 3, `expected 3 entity kinds, found ${ENTITY_KINDS.length}`);
 });
 

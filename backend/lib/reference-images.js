@@ -117,7 +117,42 @@ function resolveUri(ref) {
  * `{ name, kind, file_path|uri, priority? }` where kind is
  * 'character' | 'location' | 'prop' | 'style'.
  */
-const KIND_RANK = { character: 0, location: 1, prop: 2, style: 3 };
+/**
+ * With three slots, what gets in.
+ *
+ * A viewer notices a different face long before a different porch, so identity
+ * leads and always has. The scene anchor sits between identity and place
+ * because it is a photograph of THIS scene as generated — same hour, same
+ * weather, same grade — where the location plate is a photograph of the place
+ * in the abstract. When both want the last slot the specific one wins, and the
+ * anchor already contains the location, rendered.
+ *
+ * Everything below the anchor moved down one. The RELATIVE order is untouched,
+ * so a project with no anchor selects exactly the references it selected
+ * before — which is what makes this safe to add to a shipped board.
+ */
+const KIND_RANK = { character: 0, anchor: 1, location: 2, prop: 3, style: 4 };
+
+/**
+ * Where each kind of reference comes from.
+ *
+ * `entity` kinds are subjects with a table, a plate generator and a
+ * film_assets column linking the plate to the row. The other two are not, and
+ * saying so here is what stops a test deriving "every subject kind" from
+ * KIND_RANK and then demanding a props table for the scene anchor:
+ *
+ *  - `frame`   — a keyframe already generated for a shot in this scene. It has
+ *                no subject and no plate; it IS the output of one.
+ *  - `project` — the look, which lives as free text on film_projects and as
+ *                mood-board images. No table of its own by design.
+ */
+const KIND_SOURCE = {
+    character: 'entity',
+    anchor: 'frame',
+    location: 'entity',
+    prop: 'entity',
+    style: 'project',
+};
 
 function selectReferences(candidates, options) {
     const opts = options || {};
@@ -166,4 +201,5 @@ module.exports = {
     selectReferences,
     taggedNames,
     KIND_RANK,
+    KIND_SOURCE,
 };

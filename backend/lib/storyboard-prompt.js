@@ -517,6 +517,24 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         parts.push(trimToAllowance(stylePreset, opts.styleAllowance || allow.style));
     }
 
+    // 8b. The frame this scene is measured against.
+    //
+    // Placed with the look because that is what it carries: light, palette and
+    // grade. It says so explicitly rather than "matching the reference", which
+    // a model reads as matching its COMPOSITION — and a scene of eight frames
+    // that all copy the establishing shot's staging is a worse failure than the
+    // drift this exists to fix. The negative names that failure directly.
+    //
+    // Tag-only. A provider that cannot address references from the prompt gets
+    // an unexplained extra picture competing with the plates, with nothing to
+    // say it is there for the light; the caller declines to attach it at all in
+    // that case, and this stays silent to match.
+    if (opts.anchorTag) {
+        const { anchorPhrase } = require('./scene-anchor');
+        const phrase = anchorPhrase(opts.anchorTag);
+        if (phrase) parts.push(phrase);
+    }
+
     // 9. Scene card style overrides
     if (sceneCard.style) {
         if (sceneCard.style.mood) parts.push(`${sceneCard.style.mood} mood`);
@@ -543,6 +561,7 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
 
     // Build negative prompt
     const negParts = [DEFAULT_NEGATIVE_PROMPT];
+    if (opts.anchorTag) negParts.push(require('./scene-anchor').ANCHOR_NEGATIVE);
     if (preset && preset.negative) {
         negParts.push(preset.negative);
     }

@@ -231,6 +231,13 @@ function updateProject(req, res, id) {
         fields.push('annotation_feedback = ?');
         values.push(body.annotation_feedback ? 1 : 0);
     }
+    // Whether every frame in a scene is conditioned on the frame that
+    // established it. Off by default — turning it on changes what every
+    // subsequent generation in the production is built from.
+    if (body.scene_anchor_refs !== undefined) {
+        fields.push('scene_anchor_refs = ?');
+        values.push(body.scene_anchor_refs ? 1 : 0);
+    }
     if (body.status !== undefined && VALID_STATUSES.includes(body.status)) {
         fields.push('status = ?');
         values.push(body.status);

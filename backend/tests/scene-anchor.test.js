@@ -1,0 +1,370 @@
+/**
+ * Continuity within a scene: one frame every other frame is measured against.
+ *
+ * Board generation never looked at another frame. A keyframe was conditioned on
+ * character plates, a location plate and a mood-board image — all pictures of
+ * things in the abstract — so two shots of the same street at the same hour
+ * could come back with different light and a different grade, and the remedy
+ * was to regenerate until they happened to agree.
+ *
+ * The obvious fix is to chain each shot to the one before it, and it is wrong
+ * in two ways this file pins down. It COMPOUNDS: 1A→1B→1C means the eighth shot
+ * is a copy of a copy, drift per step too small to see and drift across the
+ * scene obvious. And it makes a frame's inputs depend on the order somebody
+ * pressed the buttons in — regenerate 1C alone and it chains to whatever 1B is
+ * at that moment. An anchor is fixed, so neither happens.
+ *
+ * The properties tested here are the ones that fail silently:
+ *
+ *   - off means the same references a board selected yesterday, exactly;
+ *   - the anchor never moves as the board fills in, and never crosses a scene;
+ *   - the anchor shot does not reference itself, which would be a loop that
+ *     locks a frame against ever being revised;
+ *   - it is attached for LIGHT and refuses composition, in the prompt and in
+ *     the negative, because "every shot copies the establishing shot" is a
+ *     worse failure than the drift it fixes.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const { Writable } = require('stream');
+
+process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
+    || path.join(os.tmpdir(), 'film-engine-anchor-' + crypto.randomUUID().slice(0, 8));
+
+const { db, generateId } = require('../db/database');
+const { ensureSchema } = require('../db/schema');
+ensureSchema();
+
+const {
+    pickAnchor, anchorPhrase, ANCHOR_NEGATIVE, sceneAnchorFor, anchorCandidate,
+} = require('../lib/scene-anchor');
+const { buildStoryboardPrompt } = require('../lib/storyboard-prompt');
+const { selectReferences, KIND_RANK, MAX_REFERENCES } = require('../lib/reference-images');
+const INDEX_HTML = path.join(__dirname, '..', '..', 'src', 'index.html');
+
+function callRoute(handler, method, urlPath, body) {
+    return new Promise(resolve => {
+        const parts = urlPath.split('?')[0].split('/').filter(Boolean);
+        const chunks = [];
+        const res = new Writable({ write(c, _e, n) { chunks.push(c); n(); } });
+        res.statusCode = 200;
+        res.writeHead = function (code) { this.statusCode = code; return this; };
+        res.setHeader = function () {};
+        res.on('finish', () => {
+            let parsed = Buffer.concat(chunks).toString();
+            try { parsed = JSON.parse(parsed); } catch (_) { /* not json */ }
+            resolve({ status: res.statusCode, body: parsed });
+        });
+        Promise.resolve(handler({ method, body: body || {} }, res, parts, {}))
+            .catch(err => resolve({ status: 500, body: { error: err.message } }));
+    });
+}
+
+/** A 1x1 PNG, so a plate resolves to a real data URI rather than being skipped. */
+const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64');
+
+let tmpDir;
+function framePath(name) {
+    if (!tmpDir) {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anchor-frames-'));
+    }
+    const p = path.join(tmpDir, name + '.png');
+    fs.writeFileSync(p, PNG);
+    return p;
+}
+
+/** A scene with N shots; `framed` lists which shot codes have a generated frame. */
+function makeScene(shotCodes, framed, opts) {
+    const o = opts || {};
+    const projectId = generateId(), sceneId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title, scene_anchor_refs) VALUES (?, ?, ?)')
+        .run(projectId, 'Anchor Test', o.enabled ? 1 : 0);
+    db.prepare("INSERT INTO film_scenes (id, project_id, scene_number, location) VALUES (?, ?, '1', 'STREET')")
+        .run(sceneId, projectId);
+    const shots = {};
+    for (const code of shotCodes) {
+        const id = generateId();
+        db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+            .run(id, sceneId, code, JSON.stringify({ shot_code: code, action: 'A street.', camera: {} }));
+        shots[code] = id;
+        if ((framed || []).includes(code)) {
+            db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, file_path, version)
+                        VALUES (?, ?, ?, 'storyboard', ?, ?, 1)`)
+                .run(generateId(), projectId, id, code + '.png', framePath(projectId + '-' + code));
+        }
+    }
+    return { projectId, sceneId, shots };
+}
+
+// ── The rule, without a database ────────────────────────────────────────
+
+test('the anchor is the first framed shot in the scene, not the most recent', () => {
+    // "Most recent" would move as the board fills in, which makes a shot's
+    // inputs depend on when it was generated — the same defect as chaining.
+    const shots = [
+        { id: 'a', shot_code: '1A', has_frame: true },
+        { id: 'b', shot_code: '1B', has_frame: true },
+        { id: 'c', shot_code: '1C', has_frame: false },
+    ];
+    assert.strictEqual(pickAnchor(shots, 'c', null).shot.shot_code, '1A');
+    assert.strictEqual(pickAnchor(shots, 'b', null).shot.shot_code, '1A');
+});
+
+test('the anchor does not move as the rest of the scene is generated', () => {
+    // The whole reason for an anchor over a chain. Generating 1B and 1C must
+    // not change what 1D is conditioned on.
+    const early = [{ id: 'a', shot_code: '1A', has_frame: true }, { id: 'd', shot_code: '1D', has_frame: false }];
+    const later = [
+        { id: 'a', shot_code: '1A', has_frame: true },
+        { id: 'b', shot_code: '1B', has_frame: true },
+        { id: 'c', shot_code: '1C', has_frame: true },
+        { id: 'd', shot_code: '1D', has_frame: false },
+    ];
+    assert.strictEqual(pickAnchor(early, 'd', null).shot.id, pickAnchor(later, 'd', null).shot.id);
+});
+
+test('the anchor shot does not reference itself', () => {
+    // A frame conditioned on itself is a loop: regenerating it can only
+    // reproduce it, so the one frame a director most wants to revise is the one
+    // they cannot.
+    const shots = [{ id: 'a', shot_code: '1A', has_frame: true }];
+    const r = pickAnchor(shots, 'a', null);
+    assert.strictEqual(r.shot, null);
+    assert.match(r.reason, /IS the scene anchor/);
+});
+
+test('every refusal carries a reason a director can act on', () => {
+    // "No anchor" and "no anchor because you are standing on it" and "your pin
+    // has no frame yet" need three different actions, and a bare null makes
+    // them look identical.
+    const cases = [
+        // Nothing in the scene is generated yet.
+        pickAnchor([{ id: 'a', shot_code: '1A', has_frame: false }], 'a', null),
+        // This shot is itself the anchor.
+        pickAnchor([{ id: 'a', shot_code: '1A', has_frame: true }], 'a', null),
+        // The pinned shot has no frame to be an anchor with.
+        pickAnchor([{ id: 'a', shot_code: '1A', has_frame: false }, { id: 'b', shot_code: '1B', has_frame: true }], 'b', 'a'),
+        // The pin points at a shot that is not in this scene.
+        pickAnchor([{ id: 'a', shot_code: '1A', has_frame: true }], 'a', 'gone'),
+    ];
+    const bad = cases.filter(c => c.shot === null && !c.reason);
+    assert.strictEqual(bad.length, 0, 'a refusal gave no reason');
+    // And they are not all the same sentence.
+    assert.strictEqual(new Set(cases.map(c => c.reason)).size, cases.length,
+        'two different refusals produced the same message');
+});
+
+test('a pin overrides the derived choice', () => {
+    const shots = [
+        { id: 'a', shot_code: '1A', has_frame: true },
+        { id: 'b', shot_code: '1B', has_frame: true },
+    ];
+    assert.strictEqual(pickAnchor(shots, 'b', null).shot.shot_code, '1A');
+    const pinned = pickAnchor(shots, 'a', 'b');
+    assert.strictEqual(pinned.shot.shot_code, '1B');
+    assert.strictEqual(pinned.pinned, true);
+});
+
+// ── What it says, and what it refuses to say ────────────────────────────
+
+test('the anchor is named for light, never for composition', () => {
+    // The specific way this feature fails: an attached frame of the same place
+    // pulls generation toward reproducing it, and a scene of eight identical
+    // setups reads as a broken board rather than a choice.
+    const phrase = anchorPhrase('1a');
+    assert.match(phrase, /light/);
+    assert.match(phrase, /grade/);
+    assert.ok(!/composition|framing|staging/i.test(phrase),
+        `the anchor phrase invites a copied composition: "${phrase}"`);
+    assert.match(ANCHOR_NEGATIVE, /composition/,
+        'nothing in the negative refuses a copied composition');
+});
+
+test('the phrase and the negative reach the prompt together, or neither does', () => {
+    const card = { action: 'A street.', camera: { shot_type: 'wide' }, characters: [] };
+    const without = buildStoryboardPrompt(card, [], null, 'noir', {});
+    assert.ok(!without.prompt.includes('matching the light'));
+    assert.ok(!without.negative_prompt.includes('copying the reference composition'),
+        'the anchor negative was applied to a shot with no anchor');
+
+    const withAnchor = buildStoryboardPrompt(card, [], null, 'noir', { anchorTag: '1a' });
+    assert.ok(withAnchor.prompt.includes('@1a'), 'the anchor is attached but never named');
+    assert.ok(withAnchor.negative_prompt.includes('copying the reference composition'),
+        'the anchor was named without refusing its composition');
+});
+
+// ── Three slots ─────────────────────────────────────────────────────────
+
+test('the anchor outranks the location and never the character', () => {
+    // A viewer notices a different face long before a different porch, so
+    // identity leads. The anchor beats the location plate because it is a
+    // photograph of THIS scene — same hour, same weather — and already contains
+    // the location, rendered.
+    assert.ok(KIND_RANK.character < KIND_RANK.anchor, 'the anchor displaced the actor');
+    assert.ok(KIND_RANK.anchor < KIND_RANK.location, 'the location plate outranks the scene anchor');
+    assert.ok(KIND_RANK.location < KIND_RANK.prop);
+    assert.ok(KIND_RANK.prop < KIND_RANK.style);
+});
+
+test('a board with no anchor selects exactly the references it selected before', () => {
+    // Adding a rank in the middle moves every rank below it. The RELATIVE order
+    // is what selection depends on, so this must be a no-op for every project
+    // that never turns the feature on.
+    const candidates = [
+        { name: 'STREET', kind: 'location', file_path: framePath('rank-loc') },
+        { name: 'SPRINKLER', kind: 'prop', file_path: framePath('rank-prop') },
+        { name: 'MAYA', kind: 'character', file_path: framePath('rank-char') },
+        { name: 'BOARD', kind: 'style', file_path: framePath('rank-style') },
+    ];
+    const picked = selectReferences(candidates).map(r => r.kind);
+    assert.deepStrictEqual(picked, ['character', 'location', 'prop']);
+});
+
+test('with three slots taken, the anchor beats the location', () => {
+    const picked = selectReferences([
+        { name: 'STREET', kind: 'location', file_path: framePath('slot-loc') },
+        { name: '1A', kind: 'anchor', file_path: framePath('slot-anchor') },
+        { name: 'MAYA', kind: 'character', file_path: framePath('slot-char') },
+        { name: 'SPRINKLER', kind: 'prop', file_path: framePath('slot-prop') },
+    ]).map(r => r.kind);
+    assert.strictEqual(picked.length, MAX_REFERENCES);
+    assert.deepStrictEqual(picked, ['character', 'anchor', 'location']);
+});
+
+test('the anchor is tagged by the shot it is, so two scenes cannot collide', () => {
+    const refs = selectReferences([
+        { name: '1A', kind: 'anchor', file_path: framePath('tag-1a') },
+        { name: '2A', kind: 'anchor', file_path: framePath('tag-2a') },
+    ]);
+    assert.strictEqual(refs[0].tag, '1a');
+    assert.notStrictEqual(refs[0].tag, refs[1].tag);
+});
+
+// ── Against a real database ─────────────────────────────────────────────
+
+test('the anchor resolves to a readable frame in the same scene', () => {
+    const { shots } = makeScene(['1A', '1B', '1C'], ['1A', '1B'], { enabled: true });
+    const r = sceneAnchorFor(db, shots['1C']);
+    assert.strictEqual(r.shot.shot_code, '1A');
+    assert.ok(r.asset && r.asset.file_path, 'no file was resolved for the anchor');
+    assert.ok(anchorCandidate(r), 'the anchor did not become a reference candidate');
+});
+
+test('an anchor never crosses a scene', () => {
+    const a = makeScene(['1A', '1B'], ['1A'], { enabled: true });
+    const b = makeScene(['2A', '2B'], ['2A'], { enabled: true });
+    assert.strictEqual(sceneAnchorFor(db, a.shots['1B']).shot.shot_code, '1A');
+    assert.strictEqual(sceneAnchorFor(db, b.shots['2B']).shot.shot_code, '2A');
+});
+
+test('a scene with no generated frame has no anchor, and says why', () => {
+    const { shots } = makeScene(['1A', '1B'], [], { enabled: true });
+    const r = sceneAnchorFor(db, shots['1B']);
+    assert.strictEqual(r.shot, null);
+    assert.match(r.reason, /no frame/);
+});
+
+test('pinning is refused for a shot in another scene', async () => {
+    const { handleScenes } = require('../routes/scenes');
+    const a = makeScene(['1A', '1B'], ['1A'], { enabled: true });
+    const b = makeScene(['2A'], ['2A'], { enabled: true });
+    const r = await callRoute(handleScenes, 'PUT', `/film/scenes/${a.sceneId}/anchor`,
+        { shot_id: b.shots['2A'] });
+    assert.strictEqual(r.status, 400);
+    assert.match(r.body.error, /not in this scene/);
+});
+
+test('pinning changes which frame a scene is measured against, and unpinning restores the derived one', async () => {
+    const { handleScenes } = require('../routes/scenes');
+    const { sceneId, shots } = makeScene(['1A', '1B', '1C'], ['1A', '1B'], { enabled: true });
+    assert.strictEqual(sceneAnchorFor(db, shots['1C']).shot.shot_code, '1A');
+
+    const set = await callRoute(handleScenes, 'PUT', `/film/scenes/${sceneId}/anchor`, { shot_id: shots['1B'] });
+    assert.strictEqual(set.status, 200);
+    const pinned = sceneAnchorFor(db, shots['1C']);
+    assert.strictEqual(pinned.shot.shot_code, '1B');
+    assert.strictEqual(pinned.pinned, true);
+
+    const cleared = await callRoute(handleScenes, 'DELETE', `/film/scenes/${sceneId}/anchor`);
+    assert.strictEqual(cleared.status, 200);
+    assert.strictEqual(sceneAnchorFor(db, shots['1C']).shot.shot_code, '1A');
+});
+
+test('deleting the pinned shot falls back rather than refusing the delete', () => {
+    // ON DELETE SET NULL. A pin that blocked a delete, or that survived as a
+    // pointer to a shot that is gone, would both be worse than falling back.
+    const { sceneId, shots } = makeScene(['1A', '1B', '1C'], ['1A', '1B'], { enabled: true });
+    db.prepare('UPDATE film_scenes SET anchor_shot_id = ? WHERE id = ?').run(shots['1B'], sceneId);
+    db.prepare('DELETE FROM film_shots WHERE id = ?').run(shots['1B']);
+    const row = db.prepare('SELECT anchor_shot_id FROM film_scenes WHERE id = ?').get(sceneId);
+    assert.strictEqual(row.anchor_shot_id, null, 'the pin outlived the shot it pointed at');
+    assert.strictEqual(sceneAnchorFor(db, shots['1C']).shot.shot_code, '1A');
+});
+
+// ── Default off, and reported ───────────────────────────────────────────
+
+test('a new project has no scene anchor', () => {
+    const { handleProjects } = require('../routes/projects');
+    return callRoute(handleProjects, 'POST', '/film/projects', { title: 'Fresh' }).then(r => {
+        assert.strictEqual(r.status, 201, JSON.stringify(r.body));
+        const row = db.prepare('SELECT scene_anchor_refs FROM film_projects WHERE id = ?').get(r.body.id);
+        assert.ok(!row.scene_anchor_refs, 'a new project shipped conditioning frames on other frames');
+    });
+});
+
+test('the project route can turn it on and off', async () => {
+    const { handleProjects } = require('../routes/projects');
+    const { projectId } = makeScene(['1A'], ['1A'], { enabled: false });
+    await callRoute(handleProjects, 'PUT', `/film/projects/${projectId}`, { scene_anchor_refs: 1 });
+    assert.strictEqual(db.prepare('SELECT scene_anchor_refs FROM film_projects WHERE id = ?').get(projectId).scene_anchor_refs, 1);
+    await callRoute(handleProjects, 'PUT', `/film/projects/${projectId}`, { scene_anchor_refs: 0 });
+    assert.strictEqual(db.prepare('SELECT scene_anchor_refs FROM film_projects WHERE id = ?').get(projectId).scene_anchor_refs, 0);
+});
+
+test('the board says which frame each scene is measured against', async () => {
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { projectId, shots } = makeScene(['1A', '1B'], ['1A', '1B'], { enabled: true });
+    const r = await callRoute(handleStoryboard, 'GET', `/film/projects/${projectId}/storyboard`);
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.body.scene_anchor_refs, true);
+    const byCode = Object.fromEntries(r.body.frames.map(f => [f.shot_code, f]));
+    assert.strictEqual(byCode['1A'].anchor.is_anchor, true, '1A is the first framed shot and is not marked as the anchor');
+    assert.strictEqual(byCode['1B'].anchor.is_anchor, false);
+    assert.strictEqual(byCode['1B'].anchor.shot_code, '1A', 'a non-anchor frame does not say which frame is');
+    assert.ok(shots['1A']);
+});
+
+test('the free preview reports the anchor and does not pretend to apply it', async () => {
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { shots } = makeScene(['1A', '1B'], ['1A'], { enabled: true });
+    const r = await callRoute(handleStoryboard, 'GET', `/film/shots/${shots['1B']}/prompt`);
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.body.scene_anchor.shot_code, '1A');
+    assert.ok(r.body.scene_anchor.adds.includes('light'),
+        'the preview does not show the phrase the anchor would add');
+    assert.ok(r.body.scene_anchor.note, 'the preview does not say how its prompt relates to generation');
+});
+
+// ── The page ────────────────────────────────────────────────────────────
+
+test('the board carries the switch and a per-frame anchor control', () => {
+    const html = fs.readFileSync(INDEX_HTML, 'utf8');
+    const missing = [];
+    if (!html.includes('id="sceneAnchorToggle"')) missing.push('the toggle itself');
+    if (!/onchange="setSceneAnchorRefs/.test(html)) missing.push('the toggle is wired to nothing');
+    if (!/function setSceneAnchorRefs/.test(html)) missing.push('setSceneAnchorRefs is not defined');
+    if (!/scene_anchor_refs/.test(html)) missing.push('nothing writes the project field');
+    if (!/function anchorButton/.test(html)) missing.push('the per-frame control is not built');
+    if (!/\$\{anchorButton\(f\)\}/.test(html)) missing.push('the per-frame control is never rendered');
+    for (const fn of ['pinSceneAnchor', 'clearSceneAnchor']) {
+        if (!new RegExp('function ' + fn).test(html)) missing.push(fn + ' is not defined');
+    }
+    assert.deepStrictEqual(missing, [], `\n  ${missing.join('\n  ')}`);
+});

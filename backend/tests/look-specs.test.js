@@ -147,7 +147,14 @@ test('a board image becomes a style reference on generation', () => {
     // lib/reference-images has had a `style` rank since it was written and
     // nothing has ever put anything in it. A picture that changes no output is
     // not a reference, it is decoration.
-    assert.strictEqual(KIND_RANK.style, 3, 'the style slot is gone from the ranking');
+    // Relative, not a fixed number: the point is that the slot still exists and
+    // still sits below every subject, which is what stops a look plate
+    // displacing an actor. Pinning it to 3 made adding a kind above it look
+    // like the style slot had been deleted.
+    assert.ok(Number.isFinite(KIND_RANK.style), 'the style slot is gone from the ranking');
+    const subjects = ['character', 'location', 'prop'].map(k => KIND_RANK[k]);
+    assert.ok(subjects.every(r => r < KIND_RANK.style),
+        'a style reference now outranks a subject and can displace a face');
 
     const projectId = makeProject();
     const assetId = generateId();

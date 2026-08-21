@@ -430,8 +430,15 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
  * with no plate simply falls back to its prose description — so a project that
  * has never generated a reference sheet behaves exactly as before.
  */
-function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCardProps) {
+function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCardProps, anchor) {
     const candidates = [];
+
+    // The frame this scene is measured against, when the caller resolved one.
+    // Ranked between identity and place by lib/reference-images: it is a
+    // photograph of THIS scene as generated rather than of the place in the
+    // abstract, and it already contains the location, rendered.
+    const anchorRef = require('../lib/scene-anchor').anchorCandidate(anchor);
+    if (anchorRef) candidates.push(anchorRef);
 
     for (const ch of matchedChars || []) {
         if (!ch || !ch.id) continue;
@@ -628,13 +635,20 @@ function cameraFor(shotId, sceneCard, optics) {
 }
 
 function getStoryboard(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, scene_anchor_refs FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
 
     const shots = loadProjectShots(projectId);
     const optics = filmOptics(db, projectId);
+    // Read once for the whole board. Resolving per frame would run the scene's
+    // shot query for every shot in it, which on a feature is the difference
+    // between opening the board and waiting for it.
+    const anchorPins = new Map(
+        db.prepare('SELECT id, anchor_shot_id FROM film_scenes WHERE project_id = ?').all(projectId)
+            .map(r => [r.id, r.anchor_shot_id]));
+    const anchorShots = new Map();
     let totalDurationMs = 0;
 
     const frames = shots.map(shot => {
@@ -675,6 +689,11 @@ function getStoryboard(req, res, projectId, query) {
             // and looked at the board saw no evidence any of it had happened.
             effective: cameraFor(shot.shot_id, sceneCard, optics),
             previs: previsStateFor(shot.shot_id),
+            // Which frame this shot's scene is measured against, and whether
+            // THIS is it. Per frame rather than per scene, because the board is
+            // read as frames and a director marking one as the establishing
+            // shot is looking at that picture when they decide.
+            anchor: anchorStateFor(shot.shot_id, anchorPins, anchorShots),
         };
     });
 
@@ -683,6 +702,10 @@ function getStoryboard(req, res, projectId, query) {
         project_title: project.title,
         frame_count: frames.length,
         total_duration_ms: totalDurationMs,
+        // The project's two standing choices about how a frame is conditioned,
+        // so the page can say which of them is on without a second request.
+        scene_anchor_refs: !!project.scene_anchor_refs,
+        annotation_feedback: !!project.annotation_feedback,
         frames,
     });
 }
@@ -690,7 +713,7 @@ function getStoryboard(req, res, projectId, query) {
 // ── FILM-017: Generate Storyboard (Sync) ───────────────────────────
 
 async function generateStoryboard(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, scene_anchor_refs FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -795,9 +818,12 @@ async function generateStoryboard(req, res, projectId, query) {
         const leadProvider = imageProviderChain(providerConfigOf(project))[0];
         const canAttach = !!(leadProvider && leadProvider.supportsReferenceImages);
         const canTag = !!(leadProvider && leadProvider.supportsReferenceTags);
+        const anchorState = sceneAnchorFor_(shot.shot_id, project, body, canTag);
         const shotRefs = canAttach
-            ? gatherShotReferences(projectId, matchedChars, matchedLocation, matchProps(sceneCard, props))
+            ? gatherShotReferences(projectId, matchedChars, matchedLocation,
+                matchProps(sceneCard, props), anchorState.anchor)
             : [];
+        const anchorTag = anchorTagIn(shotRefs);
         const shotMarks = annotationsFor(shot.shot_id, project, body);
         const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
             // The ceiling of the provider that will actually run, not a
@@ -817,6 +843,11 @@ async function generateStoryboard(req, res, projectId, query) {
                 // disagree with itself, and the plate bug that cost a day was
                 // exactly that shape.
                 annotations: shotMarks.enabled ? shotMarks.marks : undefined,
+                // Only when the anchor actually claimed one of the three slots.
+                // Naming a tag the payload does not carry is strictly worse than
+                // saying nothing — the same defect as a prompt carrying @maya
+                // with no matching image.
+                anchorTag,
             });
 
         // Update shot status
@@ -925,7 +956,7 @@ async function generateStoryboard(req, res, projectId, query) {
 // ── FILM-017: Generate Storyboard (SSE Stream) ─────────────────────
 
 async function generateStoryboardStream(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, scene_anchor_refs FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -1029,9 +1060,12 @@ async function generateStoryboardStream(req, res, projectId, query) {
         const leadProvider = imageProviderChain(providerConfigOf(project))[0];
         const canAttach = !!(leadProvider && leadProvider.supportsReferenceImages);
         const canTag = !!(leadProvider && leadProvider.supportsReferenceTags);
+        const anchorState = sceneAnchorFor_(shot.shot_id, project, body, canTag);
         const shotRefs = canAttach
-            ? gatherShotReferences(projectId, matchedChars, matchedLocation, matchProps(sceneCard, props))
+            ? gatherShotReferences(projectId, matchedChars, matchedLocation,
+                matchProps(sceneCard, props), anchorState.anchor)
             : [];
+        const anchorTag = anchorTagIn(shotRefs);
         const shotMarks = annotationsFor(shot.shot_id, project, body);
         const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
             // The ceiling of the provider that will actually run, not a
@@ -1051,6 +1085,11 @@ async function generateStoryboardStream(req, res, projectId, query) {
                 // disagree with itself, and the plate bug that cost a day was
                 // exactly that shape.
                 annotations: shotMarks.enabled ? shotMarks.marks : undefined,
+                // Only when the anchor actually claimed one of the three slots.
+                // Naming a tag the payload does not carry is strictly worse than
+                // saying nothing — the same defect as a prompt carrying @maya
+                // with no matching image.
+                anchorTag,
             });
 
         sendEvent({
@@ -1288,6 +1327,30 @@ function shotPromptPreview(req, res, shotId, query) {
                         + 'Costs nothing.',
             };
         })(),
+        // Which frame this scene is measured against.
+        //
+        // Reported rather than folded into `prompt` above, and the difference is
+        // stated: the board paths attach the anchor and name it, and this
+        // preview is built through the shared capability payload, which does not
+        // gather reference plates at all. Showing the phrase that would be added
+        // is honest; silently adding it here would make the preview claim an
+        // attachment this path cannot make.
+        scene_anchor: (() => {
+            const { sceneAnchorFor, anchorPhrase } = require('../lib/scene-anchor');
+            const enabled = !!(ctx.project && ctx.project.scene_anchor_refs);
+            const resolved = sceneAnchorFor(db, shotId);
+            const code = resolved.shot ? resolved.shot.shot_code : null;
+            return {
+                feedback_enabled: enabled,
+                shot_code: code,
+                pinned: !!resolved.pinned,
+                reason: code ? null : resolved.reason,
+                adds: enabled && code ? anchorPhrase(String(code).toLowerCase().replace(/[^a-z0-9]/g, '')) : '',
+                note: 'Generating this shot from the board attaches that frame as a reference and '
+                    + 'names it for its LIGHT, palette and grade — never its composition. This '
+                    + 'preview reports it; the prompt string above does not include it.',
+            };
+        })(),
         card: ctx.sceneCard,
         note: 'Compose a better prompt from this and send it back to '
             + 'POST /shots/:id/storyboard/regenerate as prompt_override. Everything listed under '
@@ -1313,6 +1376,87 @@ function imagePromptLimitFor(project) {
         const adapter = resolveGenerator('image', config);
         return (adapter && Number(adapter.promptLimit) > 0) ? Number(adapter.promptLimit) : null;
     } catch (_) { return null; }
+}
+
+/**
+ * Is this frame the one its scene is measured against, and if not, which is?
+ *
+ * Answered from the board's own rows rather than by re-resolving per shot: the
+ * pin, plus the first framed shot in the scene, is the whole rule.
+ */
+function anchorStateFor(shotId, pins, cache) {
+    const shot = db.prepare('SELECT id, scene_id FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return { is_anchor: false, shot_code: null, pinned: false };
+
+    // Request-scoped, passed in. A module-level cache would answer the next
+    // request from the state of the last one, so the frame a director just
+    // generated would not be eligible as an anchor until the process restarted.
+    const sceneCache = cache || new Map();
+    if (!sceneCache.has(shot.scene_id)) {
+        sceneCache.set(shot.scene_id, db.prepare(
+            `SELECT s.id, s.shot_code,
+                    (SELECT COUNT(*) FROM film_assets a
+                      WHERE a.shot_id = s.id AND a.asset_type IN ('storyboard', 'keyframe')) AS frames
+               FROM film_shots s WHERE s.scene_id = ? ORDER BY s.shot_code`).all(shot.scene_id)
+            .map(r => ({ id: r.id, shot_code: r.shot_code, has_frame: r.frames > 0 })));
+    }
+    const sceneShots = sceneCache.get(shot.scene_id);
+    const pinned = pins ? pins.get(shot.scene_id) : null;
+
+    const { pickAnchor } = require('../lib/scene-anchor');
+    // Resolved from NO vantage shot, which is the only way to ask "which frame
+    // is the anchor" rather than "may this shot use it". Asking on behalf of
+    // some other shot in the scene looks equivalent and is not: pick that other
+    // shot and it happens to be the anchor, and the answer comes back as "you
+    // are standing on it" — so every frame that is not the anchor reported that
+    // its scene had none.
+    const resolved = pickAnchor(sceneShots, null, pinned);
+    const anchorId = resolved.shot ? resolved.shot.id : null;
+    return {
+        is_anchor: !!anchorId && anchorId === shotId,
+        shot_code: resolved.shot ? resolved.shot.shot_code : null,
+        pinned: !!resolved.pinned,
+        reason: resolved.shot ? null : resolved.reason,
+    };
+}
+
+/**
+ * The scene anchor for this shot, and whether this call should attach it.
+ *
+ * Same three-way precedence as markup: an explicit `use_scene_anchor` wins,
+ * then the project's standing choice, then off.
+ *
+ * The provider gate is not a detail. An anchor is attached for its LIGHT, and
+ * the only way to say so is to name it in the prompt — so a provider that
+ * cannot address references by tag would receive an unexplained extra picture
+ * of the same street sitting beside the plates, with nothing to stop the model
+ * reproducing its composition. Declined, and the reason is reported, rather
+ * than attached and hoped for. Same call the prose-vs-@tag decision already
+ * made for Meshy.
+ */
+function sceneAnchorFor_(shotId, project, body, canTag) {
+    const requested = body && body.use_scene_anchor;
+    const enabled = requested === undefined || requested === null
+        ? !!(project && project.scene_anchor_refs)
+        : !!requested;
+    if (!enabled) {
+        return { enabled: false, anchor: null, tag: null,
+            reason: 'scene_anchor_refs is off for this project' };
+    }
+    if (!canTag) {
+        return { enabled: true, anchor: null, tag: null,
+            reason: 'the image provider cannot name references in the prompt, so an anchor '
+                + 'could only be an unlabelled picture — not attached' };
+    }
+    const { sceneAnchorFor } = require('../lib/scene-anchor');
+    const resolved = sceneAnchorFor(db, shotId);
+    return { enabled: true, anchor: resolved.shot ? resolved : null, tag: null, reason: resolved.reason };
+}
+
+/** The tag the gatherer assigned to the anchor, if it got a slot. */
+function anchorTagIn(refs) {
+    const ref = (refs || []).find(r => r && r.kind === 'anchor');
+    return ref ? ref.tag : null;
 }
 
 /**
@@ -1391,7 +1535,7 @@ async function refineShot(req, res, shotId) {
     if (!shot) return json(res, 404, { error: 'Shot not found' });
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     const project = scene && db.prepare(
-        'SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback FROM film_projects WHERE id = ?')
+        'SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, scene_anchor_refs FROM film_projects WHERE id = ?')
         .get(scene.project_id);
     if (!project) return json(res, 404, { error: 'Project not found' });
 
@@ -1509,7 +1653,7 @@ async function regenerateShot(req, res, shotId) {
         return json(res, 404, { error: 'Scene not found' });
     }
 
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback FROM film_projects WHERE id = ?').get(scene.project_id);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, scene_anchor_refs FROM film_projects WHERE id = ?').get(scene.project_id);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -1519,6 +1663,42 @@ async function regenerateShot(req, res, shotId) {
 
     // PAR-026: what the director drew, if this project or this call says so.
     const annots = annotationsFor(shotId, project, body);
+
+    /**
+     * The plates, resolved BEFORE the prompt rather than after it.
+     *
+     * The order matters now: the scene anchor is attached for its light and the
+     * prompt has to name it by the tag the gatherer assigned, so a prompt built
+     * first could only name a tag it had not yet seen. Everything else about
+     * this gather is unchanged.
+     *
+     * Note what is deliberately NOT passed to the builder: the full reference
+     * set. Handing it `references` would switch every character from prose to
+     * `@maya`, which was tried, shipped and reverted — the picture does not
+     * always arrive, and a subject that travels with neither words nor image
+     * comes back as something else entirely. Only the anchor tag goes, because
+     * an anchor has no prose form to fall back on.
+     */
+    const canTag = (() => {
+        const lead = imageProviderChain(providerConfigOf(project))[0];
+        return !!(lead && lead.supportsReferenceTags);
+    })();
+    const anchorState = sceneAnchorFor_(shotId, project, body, canTag);
+    let shotRefs = [];
+    try {
+        const allProps = db.prepare('SELECT * FROM film_props WHERE project_id = ?').all(project.id);
+        const chars = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(project.id);
+        const locs = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(project.id);
+        let card = {};
+        try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
+        shotRefs = gatherShotReferences(
+            project.id,
+            matchCharacters(card.characters, chars),
+            matchLocation(scene.location, locs),
+            matchProps(card, allProps),
+            anchorState.anchor);
+    } catch (_) { shotRefs = []; }
+    const anchorTag = anchorTagIn(shotRefs);
 
     // Build or use override prompt
     let prompt, negative_prompt;
@@ -1549,7 +1729,7 @@ async function regenerateShot(req, res, shotId) {
         const result = buildStoryboardPrompt(
             sceneCard, matchedChars, matchedLocation,
             body.style_override || project.style_preset,
-            { props, annotations: annots.enabled ? annots.marks : undefined }
+            { props, annotations: annots.enabled ? annots.marks : undefined, anchorTag }
         );
         prompt = result.prompt;
         negative_prompt = result.negative_prompt;
@@ -1563,32 +1743,11 @@ async function regenerateShot(req, res, shotId) {
     try {
         ensureStoryboardDir(project.id);
 
-        /**
-         * The same tagged, inlined plates the batch paths attach.
-         *
-         * This path never called gatherShotReferences. It relied on the
-         * consistency context's references, which carry a `file_path` — a path
-         * on OUR disk — and every image adapter reads `uri`/`url`, so they were
-         * dropped on the floor. Regenerating one shot therefore ran
-         * text-to-image with no plate conditioning at all, while regenerating
-         * the whole board conditioned correctly. The frames still looked right
-         * because the full prose contracts were carrying the subjects; the
-         * moment those were shortened on the correct assumption that a picture
-         * was attached, the subject had neither.
-         */
-        let shotRefs = [];
-        try {
-            const allProps = db.prepare('SELECT * FROM film_props WHERE project_id = ?').all(project.id);
-            const chars = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(project.id);
-            const locs = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(project.id);
-            let card = {};
-            try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
-            shotRefs = gatherShotReferences(
-                project.id,
-                matchCharacters(card.characters, chars),
-                matchLocation(scene.location, locs),
-                matchProps(card, allProps));
-        } catch (_) { shotRefs = []; }
+        // The tagged, inlined plates gathered above. This path used to rely on
+        // the consistency context's references, which carry a `file_path` — a
+        // path on OUR disk — while every image adapter reads `uri`/`url`, so
+        // they were dropped on the floor and regenerating one shot ran
+        // text-to-image with no plate conditioning at all.
 
         const primaryRef = consistencyContext.references && consistencyContext.references[0];
         const imagePayload = applyConsistencyToImagePayload({
@@ -1641,6 +1800,13 @@ async function regenerateShot(req, res, shotId) {
             image_url: storyboardImageUrl(project.id, shot.shot_code),
             seed: imagePayload.seed,
             prompt: imagePayload.prompt,
+            scene_anchor: {
+                enabled: anchorState.enabled,
+                shot_code: anchorState.anchor && anchorState.anchor.shot ? anchorState.anchor.shot.shot_code : null,
+                pinned: !!(anchorState.anchor && anchorState.anchor.pinned),
+                attached: !!anchorTag,
+                reason: anchorTag ? null : anchorState.reason,
+            },
             annotations: {
                 ...annotationReport(annots),
                 ...(annots.overridden

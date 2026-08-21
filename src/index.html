@@ -4562,6 +4562,17 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                                onchange="setAnnotationFeedback(this.checked)">
                         <span id="annotFeedbackText">Marks are notes only</span>
                     </label>
+                    <!-- Continuity within a scene: one frame every other frame in it is
+                         measured against, for light and grade rather than staging. Off by
+                         default, because turning it on changes what every subsequent
+                         generation in the production is conditioned on. -->
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"
+                           id="sceneAnchorLabel"
+                           title="Condition every frame in a scene on the frame that established it — its light, palette and grade, never its composition. Fixed per scene, so drift cannot accumulate down the board.">
+                        <input type="checkbox" id="sceneAnchorToggle" style="cursor:pointer;"
+                               onchange="setSceneAnchorRefs(this.checked)">
+                        <span id="sceneAnchorText">No scene anchor</span>
+                    </label>
                     <button class="btn btn-primary" onclick="generateAllStoryboards()">Generate All</button>
                 </div>
             </div>
@@ -23711,7 +23722,15 @@ ${fountainText.slice(0, 50000)}`;
             // director needs to know is while they are looking at the frames.
             await loadScreenplayDrift();
             await loadImpact();
+            // The board reports both standing choices, so the two toggles come
+            // from the payload that drew the frames rather than from a second
+            // request that could answer differently.
+            if (state.currentProject) {
+                state.currentProject.annotation_feedback = data.annotation_feedback ? 1 : 0;
+                state.currentProject.scene_anchor_refs = data.scene_anchor_refs ? 1 : 0;
+            }
             renderAnnotationFeedbackToggle();
+            renderSceneAnchorToggle();
             const grid = document.getElementById('storyboardGrid');
             if (frames.length === 0) {
                 grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
@@ -23736,6 +23755,7 @@ ${fountainText.slice(0, 50000)}`;
                             <div class="flex-between">
                                 <strong>Sc${f.scene_number} / ${esc(f.shot_code)}</strong>
                                 <div style="display:flex;gap:4px;">
+                                    ${anchorButton(f)}
                                     <button class="btn btn-secondary btn-sm" onclick="editShotCard('${f.shot_id}')" title="Change what this frame is generated from">Edit</button>
                                     <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
                                     <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again from the card — costs credits">Regen</button>
@@ -23783,6 +23803,91 @@ ${fountainText.slice(0, 50000)}`;
             + `<button class="btn btn-sm" onclick="markupUndo('${shotId}')" title="remove the last mark">undo</button>`
             + `<button class="btn btn-sm" onclick="markupClear('${shotId}')" title="remove all markup from this frame">clear</button>`
             + `<span id="mkfeed-${canvasId}" class="text-sm" style="opacity:.75;align-self:center;"></span>`;
+    }
+
+    // ── The frame a scene is measured against ──────────────────────────────
+    //
+    // Every shot in a scene is conditioned on ONE frame for its light, palette
+    // and grade. Fixed rather than chained to the previous shot: chaining
+    // compounds, so by the eighth shot the board is a copy of a copy, and it
+    // makes a frame's inputs depend on the order somebody pressed the buttons
+    // in. The pin exists because the first shot of a scene is often an insert,
+    // and conditioning eight frames on a close-up of a doorknob is exactly the
+    // wrong picture.
+
+    function sceneAnchorOn() {
+        return !!(state.currentProject && state.currentProject.scene_anchor_refs);
+    }
+
+    function renderSceneAnchorToggle() {
+        const box = document.getElementById('sceneAnchorToggle');
+        const text = document.getElementById('sceneAnchorText');
+        if (!box || !text) return;
+        const on = sceneAnchorOn();
+        box.checked = on;
+        text.textContent = on ? 'Scene anchor on' : 'No scene anchor';
+    }
+
+    async function setSceneAnchorRefs(on) {
+        if (!state.currentProject) return;
+        try {
+            const p = await api('/projects/' + state.currentProject.id, {
+                method: 'PUT',
+                body: JSON.stringify({ scene_anchor_refs: on ? 1 : 0 }),
+            });
+            state.currentProject = { ...state.currentProject, ...p };
+            renderSceneAnchorToggle();
+            setStatus(on
+                ? 'Each scene\u2019s frames now match the light and grade of the frame that established it.'
+                : 'Frames are conditioned on plates only again. No frame references another frame.');
+            loadStoryboard();
+        } catch (err) {
+            setStatus('Could not change that: ' + err.message);
+            renderSceneAnchorToggle();
+        }
+    }
+
+    /**
+     * The anchor control on a frame.
+     *
+     * Three states, because they need three different actions: this frame IS
+     * the anchor (unpin it), another frame is (pin this one instead), or the
+     * scene has no anchor yet (nothing to say — generate a frame first). A
+     * single "anchor" button would make the first two indistinguishable.
+     */
+    function anchorButton(f) {
+        const a = f.anchor || {};
+        if (a.is_anchor) {
+            return `<button class="btn btn-sm" style="border-color:var(--gl-brand-pink,#ec4899);"
+                onclick="clearSceneAnchor('${f.scene_id}')"
+                title="This frame establishes scene ${esc(String(f.scene_number))} \u2014 every other frame in it matches its light and grade. Click to unpin.">&#9875; anchor</button>`;
+        }
+        if (!f.image_url) return '';
+        const to = a.shot_code ? ` (now ${esc(a.shot_code)})` : '';
+        return `<button class="btn btn-secondary btn-sm"
+            onclick="pinSceneAnchor('${f.scene_id}','${f.shot_id}')"
+            title="Make this the frame scene ${esc(String(f.scene_number))} is measured against${to}">&#9875;</button>`;
+    }
+
+    async function pinSceneAnchor(sceneId, shotId) {
+        try {
+            const r = await api(`/scenes/${sceneId}/anchor`, {
+                method: 'PUT', body: JSON.stringify({ shot_id: shotId }),
+            });
+            setStatus(`Scene anchored to ${r.pinned_shot_code || 'that frame'}.`
+                + (sceneAnchorOn() ? '' : ' Turn on "Scene anchor" for it to reach generation.'));
+            loadStoryboard();
+        } catch (err) { setStatus('Could not anchor that: ' + err.message); }
+    }
+
+    async function clearSceneAnchor(sceneId) {
+        try {
+            const r = await api(`/scenes/${sceneId}/anchor`, { method: 'DELETE' });
+            setStatus(r.anchor_shot_code
+                ? `Unpinned. This scene now falls back to ${r.anchor_shot_code}.`
+                : 'Unpinned.');
+            loadStoryboard();
+        } catch (err) { setStatus('Could not unpin that: ' + err.message); }
     }
 
     // ── PAR-026: do these marks reach the next prompt? ─────────────────────

@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (70 migrations)
+│   │   └── migrations/     # SQL migration files (71 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -120,6 +120,7 @@ film-engine/
 │   │   ├── e2e-preflight.js      # Screenplay→final-shot readiness, derived from PIPELINE_STEPS
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
 │   │   ├── annotation-prompt.js   # Markup a director drew, said in words a model can act on
+│   │   ├── scene-anchor.js       # The one frame a scene is measured against (light, not staging)
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
 │   │   ├── screenplay-drift.js    # Which shots a rewrite left behind, and what was built on them
 │   │   ├── impact.js              # One change, all the way down: redo now vs waiting on something above
@@ -179,6 +180,7 @@ film-engine/
 │       ├── mood-board.test.js          # The board composes a style preset, and warns about subjects
 │       ├── storyboard-annotation.test.js # Every shape round-trips; markup survives regeneration
 │       ├── annotation-feedback.test.js # Marks steer a prompt only when asked, and say when they cannot
+│       ├── scene-anchor.test.js  # One fixed frame per scene; it never moves, loops or crosses a scene
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -270,7 +272,7 @@ All routes prefixed with `/film`:
 |----------|-----------|
 | Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id` |
 | Scripts | `POST /projects/:id/script`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
-| Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id` |
+| Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id`, `GET/PUT/DELETE /scenes/:id/anchor` |
 | Bible | `GET/PUT /projects/:id/bible`, `DELETE /projects/:id/bible/:section`, `GET /projects/:id/bible-drift` |
 | Shots | `POST /shots`, `GET /projects/:id/shotlist`, `GET/PUT/DELETE /shots/:id`, `GET /card-vocabulary` |
 | Characters | `GET/POST /projects/:id/characters`, `GET/PUT/DELETE /characters/:id` |
@@ -481,6 +483,21 @@ Worse, the tags it showed were the **card's** camera. On a blocked shot those ar
 `GET /projects/:id/storyboard` gains `effective` and `previs` per frame, and the frame carries a badge with **three** states — `block in previs`, `staged`, `approved`, and `staged · changed since approval`. Three rather than two, because "approved" and "approved, then restaged" is the distinction the iterate-until-happy loop turns on, and folding them together is how a director meets a 409 at generation time for a shot the board told them was signed off.
 
 **What markup does *not* do by default.** Arrows, rectangles and notes are **notation** unless a project says otherwise — stored, drawn, kept with the shot, and read by nothing in generation. An arrow drawn to mean "dolly in" changes no prompt and no payload; the movement that does is `camera_control`, set on the card or staged in previs. Turning on `annotation_feedback` makes *noted* marks reach the prompt — see **Markup That Steers a Frame** below — and leaves an unnoted arrow exactly as decorative as it was.
+
+### The Frame a Scene Is Measured Against (also off)
+Nothing in board generation ever looked at another frame. A keyframe was conditioned on character plates, a location plate and a mood-board image — every one of them a picture of something *in the abstract* — so two shots of the same street at the same hour came back with different light, a different grade and a different time of day, and the only remedy was to regenerate until they happened to agree. The one place shot-to-shot chaining existed was `POST /shots/:id/post/color-match`, which matches a finished **clip's** grade to the previous shot long after the frames were paid for.
+
+**Chaining each shot to the one before it is the obvious fix and it is wrong twice.** It *compounds*: 1A→1B→1C means the eighth shot is conditioned on a copy of a copy, with drift per step too small to notice and drift across the scene obvious — the worst possible ratio. And it makes a frame's inputs depend on **the order somebody pressed the buttons in**: regenerate 1C on its own and it chains to whatever 1B happens to be at that moment.
+
+An **anchor** is fixed. `lib/scene-anchor.js` picks one frame per scene — by default the *first* shot in the scene that has a frame, never the most recent, because an anchor that moves as the board fills in is not an anchor — and every other shot in that scene references it. Error cannot accumulate, and regenerating one shot changes no other shot's inputs. `film_scenes.anchor_shot_id` (migration 073) **pins** it, because the first shot of a scene is frequently an insert or a detail and conditioning eight frames on a close-up of a doorknob is exactly the wrong picture; `ON DELETE SET NULL`, so deleting the pinned shot falls back rather than refusing the delete. `film_projects.scene_anchor_refs` defaults to `0` for the same reason `annotation_feedback` does.
+
+**It is attached for light, and refuses composition.** The prompt says *"matching the light, palette and colour grade of @1a"* and the negative says *"copying the reference composition, identical framing"* — because a scene where every frame copies the establishing shot's staging is a worse failure than the drift being fixed, and it is exactly what an unlabelled reference image invites. That is also why the anchor is attached **only to a provider that can name references from the prompt**: without a tag it is an unexplained extra picture of the same street sitting beside the plates, with nothing saying it is there for the light. Declined with a reason, the same call the prose-vs-`@tag` decision already made for Meshy.
+
+In `KIND_RANK` the anchor sits at **1**, between identity and place: a viewer notices a different face long before a different porch, so character still leads, but the anchor beats the location plate because it is a photograph of *this* scene as generated — same hour, same weather, same grade — and already contains the location, rendered. Everything below moved down one, so **relative** order is untouched and a project that never turns this on selects exactly the references it selected before. `KIND_SOURCE` now declares where each kind comes from (`entity` / `frame` / `project`), because `tests/reference-plates.test.js` derived "every subject kind" from `KIND_RANK` by excluding `style` by name — and the moment a fifth kind arrived it demanded a table and a plate generator for a *generated frame*. Deriving from a declared source is what a name-exclusion was pretending to be.
+
+The anchor shot **never references itself**: a frame conditioned on itself is a loop, and the one frame a director most wants to revise would be the one they cannot. And every refusal carries its own reason — *no frame generated yet*, *you are standing on it*, *your pin has no frame*, *your pin is not in this scene* — because those need four different actions and a bare null makes them identical.
+
+Served on the board (`anchor` per frame, `scene_anchor_refs` per project), at `GET|PUT|DELETE /film/scenes/:id/anchor`, reported by `GET /shots/:id/prompt`, and as `scene_anchor_get` / `scene_anchor_set` / `scene_anchor_clear` (**117 tools**). **Known limit:** the anchor is attached by the three board paths — generate, generate/stream, regenerate. The orchestrated `image` capability payload does not gather reference plates at all (a pre-existing gap), so it does not attach one either; `shot_prompt` reports the anchor and the phrase it would add rather than folding it into a prompt string that path could not honour.
 
 ### Markup That Steers a Frame (PAR-026, and it is off)
 Markup shipped as **notation**: arrows and notes stored against the shot, drawn on the frame, read by nothing in generation. Whether it should drive the next prompt was the epic's Open Question 3, left open because the answer is not obviously yes — a stale arrow from three revisions ago becomes a standing instruction on every frame generated afterwards, and nothing on the page said so.
@@ -944,7 +961,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (70 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (71 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -1085,6 +1102,7 @@ node --test backend/tests/shot-tagger.test.js
 node --test backend/tests/mood-board.test.js
 node --test backend/tests/storyboard-annotation.test.js
 node --test backend/tests/annotation-feedback.test.js
+node --test backend/tests/scene-anchor.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js

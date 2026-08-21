@@ -1,0 +1,37 @@
+-- Continuity within a scene: one frame every other frame is measured against.
+--
+-- Nothing in board generation ever looked at another frame. A keyframe was
+-- conditioned on character plates, a location plate and a mood-board image —
+-- all of them pictures of things in the abstract — so two shots of the same
+-- street at the same hour could come back with different light, a different
+-- grade and a different time of day, and the only fix was to regenerate until
+-- they happened to agree.
+--
+-- The obvious version is to chain each shot to the one before it. That is
+-- wrong, and quietly: 1A→1B→1C compounds, so by the eighth shot the board is
+-- conditioned on a copy of a copy and the drift per step is too small to see
+-- while the drift across the scene is obvious. It also requires shots to be
+-- generated strictly in order — regenerate 1C on its own and it chains to
+-- whatever 1B happens to be right now, which makes a frame's inputs depend on
+-- the order somebody pressed the buttons in.
+--
+-- An ANCHOR is fixed. Every shot in the scene references the same frame, so
+-- error cannot accumulate and regenerating one shot changes no other shot's
+-- inputs.
+--
+-- anchor_shot_id is the PIN, and it is nullable because the default is derived
+-- (the first shot in the scene that has a frame). The pin exists because the
+-- first shot of a scene is often an insert or a detail, and conditioning a
+-- whole scene on a close-up of a doorknob is exactly the wrong picture. Only a
+-- director can say which frame establishes the scene.
+--
+-- ON DELETE SET NULL: deleting the pinned shot must fall back to the derived
+-- anchor rather than refusing the delete or leaving a pin at a shot that no
+-- longer exists.
+ALTER TABLE film_scenes ADD COLUMN anchor_shot_id TEXT REFERENCES film_shots(id) ON DELETE SET NULL;
+
+-- Opt-in, and off, for the same reason annotation_feedback is: turning it on
+-- changes what every subsequent frame in an existing production is conditioned
+-- on, and that has to be a decision somebody made rather than something that
+-- happened to their board overnight.
+ALTER TABLE film_projects ADD COLUMN scene_anchor_refs INTEGER DEFAULT 0;

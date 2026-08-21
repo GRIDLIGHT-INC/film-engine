@@ -322,6 +322,13 @@ const PRODUCTION_TOOLS = [
             aspect_ratio: { type: 'string', description: 'Delivery frame, e.g. "2.39:1", "16:9".' },
             logline: { type: 'string' },
             genre: { type: 'string' },
+            scene_anchor_refs: {
+                type: 'boolean',
+                description: 'Whether every frame in a scene is conditioned on the frame that established it '
+                    + '\u2014 the scene anchor \u2014 for its light, palette and grade. Default false. '
+                    + 'Fixed rather than chained to the previous shot, so drift cannot accumulate down a '
+                    + 'scene and regenerating one shot changes no other shot\u2019s inputs.',
+            },
             annotation_feedback: {
                 type: 'boolean',
                 description: 'Whether markup drawn on a frame reaches the next prompt for that shot. '
@@ -412,6 +419,32 @@ const PRODUCTION_TOOLS = [
             fountain: { type: 'string', description: 'The complete scene in Fountain, heading first, action and dialogue beneath.' },
         },
         required: ['scene_id', 'fountain'],
+    },
+    {
+        name: 'scene_anchor_get',
+        handler: handleScenes, method: 'GET',
+        description: 'Which frame a scene is measured against. Every shot in the scene is conditioned on this one frame for its LIGHT, palette and grade \u2014 never its composition. Derived by default (the first shot in the scene that has a frame) and pinnable with scene_anchor_set. Fixed rather than chained to the previous shot: chaining compounds, so by the eighth shot a board is a copy of a copy, and it makes a frame\u2019s inputs depend on the order somebody generated in.',
+        path: a => `/film/scenes/${a.scene_id}/anchor`,
+        schema: { scene_id: { type: 'string' } }, required: ['scene_id'],
+    },
+    {
+        name: 'scene_anchor_set',
+        handler: handleScenes, method: 'PUT',
+        description: 'Pin which frame establishes a scene, overriding the derived choice. Worth doing whenever the first shot of a scene is an insert or a detail \u2014 conditioning eight frames on a close-up of a doorknob is exactly the wrong picture, and only a person can say which frame is the establishing one. The shot must be in this scene.',
+        path: a => `/film/scenes/${a.scene_id}/anchor`,
+        body: a => ({ shot_id: a.shot_id }),
+        schema: {
+            scene_id: { type: 'string' },
+            shot_id: { type: 'string', description: 'A shot in this scene, whose generated frame establishes it.' },
+        },
+        required: ['scene_id', 'shot_id'],
+    },
+    {
+        name: 'scene_anchor_clear',
+        handler: handleScenes, method: 'DELETE',
+        description: 'Unpin a scene\u2019s anchor and fall back to the derived one (the first shot in the scene with a frame). Does not turn the feature off \u2014 that is scene_anchor_refs on the project.',
+        path: a => `/film/scenes/${a.scene_id}/anchor`,
+        schema: { scene_id: { type: 'string' } }, required: ['scene_id'],
     },
     {
         name: 'shot_list',
@@ -992,6 +1025,7 @@ const PRODUCTION_TOOLS = [
             if (a.prompt_override) b.prompt_override = a.prompt_override;
             if (a.negative_prompt) b.negative_prompt = a.negative_prompt;
             if (a.use_annotations !== undefined) b.use_annotations = a.use_annotations;
+            if (a.use_scene_anchor !== undefined) b.use_scene_anchor = a.use_scene_anchor;
             return b;
         },
         schema: {
@@ -1001,6 +1035,13 @@ const PRODUCTION_TOOLS = [
                 description: 'The complete prompt to send, composed by you. Must fit the ceiling from shot_prompt — nothing trims it for you, and a provider truncates the TAIL, which is where the location usually sits.',
             },
             negative_prompt: { type: 'string' },
+            use_scene_anchor: {
+                type: 'boolean',
+                description: 'Attach the scene anchor \u2014 the frame that established this scene \u2014 as a '
+                    + 'reference and name it for its light, palette and grade, whatever the project setting. '
+                    + 'Requires a provider that can name references in the prompt; read shot_prompt to see '
+                    + 'which frame would be used and why it might not attach.',
+            },
             use_annotations: {
                 type: 'boolean',
                 description: 'Fold the shot\u2019s noted markup into the assembled prompt as a Direction clause, '
