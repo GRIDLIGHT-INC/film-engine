@@ -231,6 +231,7 @@ film-engine/
 │       ├── test-isolation.test.js        # No test may open the real database
 │       ├── docs-drift.test.js            # CLAUDE.md matches the tree on disk
 │       ├── screenplay-port.test.js     # The screenplay port plan, held to the code it describes
+│       ├── scene-append.test.js       # A chapter is added without disturbing a byte above it
 │       ├── providers.test.js             # Provider registry + resolution
 │       ├── providers-api.test.js         # Provider settings/credentials API
 │       ├── providers-runway.test.js      # Runway adapter (mock server)
@@ -273,7 +274,7 @@ All routes prefixed with `/film`:
 | Category | Endpoints |
 |----------|-----------|
 | Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id`, `GET/PUT/DELETE /projects/:id/anchor` |
-| Scripts | `POST /projects/:id/script`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
+| Scripts | `POST /projects/:id/script[/append]`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
 | Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id` |
 | Bible | `GET/PUT /projects/:id/bible`, `DELETE /projects/:id/bible/:section`, `GET /projects/:id/bible-drift` |
 | Shots | `POST /shots`, `GET /projects/:id/shotlist`, `GET/PUT/DELETE /shots/:id`, `GET /card-vocabulary` |
@@ -1176,6 +1177,7 @@ node --test backend/tests/storyboard-annotation.test.js
 node --test backend/tests/annotation-feedback.test.js
 node --test backend/tests/shot-anchor.test.js
 node --test backend/tests/screenplay-port.test.js
+node --test backend/tests/scene-append.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js

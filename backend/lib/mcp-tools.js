@@ -440,6 +440,21 @@ const PRODUCTION_TOOLS = [
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
+        name: 'scene_append',
+        handler: handleScripts, method: 'POST',
+        description: 'Add scenes to the END of the screenplay without re-sending it. Takes a Fountain FRAGMENT which may contain SEVERAL scene headings \u2014 send a whole chapter in one call, not one call per scene, because each call re-parses and re-reconciles the entire screenplay. This is how a novel is imported chapter by chapter: script_write would make you repost every previous chapter, which grows quadratically and risks reflowing scenes nobody edited. Everything above the appended scenes stays byte-identical, so no existing scene is marked as changed and no shot is reported behind. Refuses a fragment with no scene heading rather than burying prose inside the previous scene. Scenes are NOT broken down into shots by this \u2014 use shot_tag or shot_create for that.',
+        path: a => `/film/projects/${a.project_id}/script/append`,
+        body: a => ({ fountain: a.fountain }),
+        schema: {
+            project_id: { type: 'string' },
+            fountain: {
+                type: 'string',
+                description: 'A Fountain fragment starting with a scene heading (INT./EXT., or a line beginning with a full stop). May contain several scenes \u2014 one chapter per call.',
+            },
+        },
+        required: ['project_id', 'fountain'],
+    },
+    {
         name: 'shot_list',
         handler: handleShots, method: 'GET',
         description: 'The full shot list with each shot\u2019s scene card.',

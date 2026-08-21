@@ -72,6 +72,11 @@ function handleScripts(req, res, urlParts, query) {
     }
 
     // POST /film/projects/:id/script — upload new version
+    // POST /film/projects/:id/script/append — add scenes without re-sending
+    if (req.method === 'POST' && sub === 'script' && versionOrKeyword === 'append') {
+        return appendToScript(req, res, projectId);
+    }
+
     if (req.method === 'POST' && sub === 'script') {
         return uploadScript(req, res, projectId);
     }
@@ -447,6 +452,89 @@ function syncScenesWithScreenplay(projectId, parsedFountain) {
 
     report.characters_found = [...report.characters_found];
     return report;
+}
+
+/**
+ * Add scenes to the end of the screenplay without re-sending it.
+ *
+ * POST /film/projects/:id/script/append  { fountain }
+ *
+ * The primitive the chapter-by-chapter novel import needs. Without it,
+ * importing chapter N means posting chapters 1..N as one document — quadratic
+ * in tokens, and every resend risks reflowing scenes nobody edited, which marks
+ * their shots stale.
+ *
+ * Straight through the SAME save a full rewrite takes, so there is one
+ * reconciler, one versioning rule and one set of bugs. The append itself is
+ * pure (`appendScenes`); everything below is reading, checking and delegating.
+ *
+ * **Why append is safe when insert is not.** `syncScenesWithScreenplay` matches
+ * by `scene_number` and UPDATEs whatever it matches — so a primitive that
+ * shifts numbering rewrites the tail with its own predecessors' text. Append
+ * shifts nothing: scenes 1..N-1 keep their numbers AND their text, `moved()` is
+ * false, and `stampScene` short-circuits on the unchanged fingerprint. That is
+ * the whole reason `scene_insert_after` is deferred and this is not.
+ */
+function appendToScript(req, res, projectId) {
+    const { appendScenes } = require('../lib/scene-splice');
+
+    const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Project not found' }));
+    }
+
+    const fragment = String((req.body && (req.body.fountain || req.body.fountain_content)) || '');
+
+    const script = db.prepare(
+        'SELECT * FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1').get(projectId);
+    const base = (script && script.fountain_content) || '';
+
+    let out;
+    try {
+        out = appendScenes(base, fragment);
+    } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: err.message, code: err.code }));
+    }
+
+    if (!out.added) {
+        // Nothing to add is not a failure, and it must not cost a version — the
+        // same rule PUT /scenes/:id follows for a save that changes nothing.
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            project_id: projectId, changed: false, scenes_added: 0,
+            note: 'The fragment was empty. Nothing was appended and no version was saved.',
+        }));
+    }
+
+    // Reported before delegating, because the save writes the response.
+    const added = out.added;
+    const headings = out.headings;
+    const wrapped = new Proxy(res, {
+        get(target, prop) {
+            if (prop !== 'end') return typeof target[prop] === 'function'
+                ? target[prop].bind(target) : target[prop];
+            return function (chunk) {
+                let payload = {};
+                try { payload = JSON.parse(String(chunk || '{}')); } catch (_) { payload = {}; }
+                return target.end(JSON.stringify({
+                    ...payload,
+                    changed: true,
+                    scenes_added: added,
+                    headings,
+                    // Said plainly, because it is the property the caller is
+                    // relying on and cannot see.
+                    note: `Appended ${added} scene(s). Everything above them is byte-identical, `
+                        + 'so no existing scene was marked as changed.',
+                }));
+            };
+        },
+    });
+
+    return uploadScript(
+        { ...req, body: { fountain_content: out.fountain, sync_scenes: true } },
+        wrapped, projectId);
 }
 
 function uploadScript(req, res, projectId) {

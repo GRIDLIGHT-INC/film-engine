@@ -155,7 +155,7 @@ What an agent can do to a screenplay today (7 tools, verified from `lib/mcp-tool
 | # | operation | status | gap | phase |
 |---|---|---|---|---|
 | 0 | `script_write` — save a whole new version | present | rewrites everything; the quadratic path | — |
-| 1 | `scene_append` — append a Fountain **fragment** (may hold several headings), one transaction, reconciled once | absent | `missing-primitive` | **1** |
+| 1 | `scene_append` — append a Fountain **fragment** (may hold several headings), one transaction, reconciled once | **BUILT** | — | **1 ✓** |
 | 2 | `scene_insert_after` — add after scene N | absent | `missing-primitive` | **blocked** — see below |
 | 3 | `outline_get` — sections + synopses as a tree | absent | `surface-MCP` | 2 |
 | 4 | `outline_write` — author sections/synopses | absent | `surface-MCP` | 2 |
@@ -400,7 +400,25 @@ AssertionError: the editor strands these and the plan does not say so: centered
 
 Cut by **dependency**, not by feature count.
 
-### Phase 1 — a chapter can be imported at all
+### Phase 1 — a chapter can be imported at all — **SHIPPED**
+
+`lib/scene-splice.js:appendScenes` · `POST /film/projects/:id/script/append` ·
+MCP `scene_append` · `backend/tests/scene-append.test.js` (11 invariants).
+
+Verified live, three chapters arriving one at a time:
+
+```
+ch1  seeded          scenes=1  chars=128
+ch2  sent  144 chars  +2 scenes  updated=0  unchanged=1  prefix-intact=true
+ch3  sent  136 chars  +2 scenes  updated=0  unchanged=3  prefix-intact=true
+final: 5 scenes, 410 chars · shot on scene 1 survived · scenes drifted: 0
+sent by appending 408 chars, vs 808 by re-sending — and that gap is quadratic
+```
+
+`updated=0` is the whole result: the reconciler touched no existing scene, so
+nothing was restamped and nothing reports as behind.
+
+
 - `scene_append` — route + MCP tool, taking a Fountain **fragment**
 - The chapter-by-chapter loop working end to end from Claude Desktop
 - **Not** `scene_insert_after` — blocked on scene identity, see above

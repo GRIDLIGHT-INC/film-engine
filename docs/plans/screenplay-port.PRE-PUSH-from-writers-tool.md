@@ -153,3 +153,55 @@ If the driver's text is authoritative, phase 1 is correctly scoped. If mine is,
 phase 1 carries a production stage the user did not ask for while the thing he
 did ask for — importing *From the Mist* — stays blocked. Worth one sentence from
 him before phase 1 starts.
+
+---
+
+# Final check of `4061a86` — one residual, not a blocker
+
+Verified independently on the landed commit:
+
+| claim | result |
+|---|---|
+| plan test | **8/8** |
+| full backend suite | **1701/1701** |
+| phase 1 uncoupled from shots | ✓ — reads *"a chapter can be imported at all"*, `scene_append` only |
+| `scene_insert_after` excluded and blocked | ✓ |
+| shots handoff leads phase 2 | ✓ |
+| the counting trap actually bites | ✓ — set `STATES = ['default']` and got `AssertionError: AUTO_FORMAT_RULES has keys that are neither an element type nor a known state: after-scene, in-dialogue` |
+
+## The residual: phase 1's *Done when* is still byte-identical
+
+> *"adding chapter N leaves scenes 1..N−1 byte-identical."*
+
+**This is now much weaker than it was, not wrong.** With insert removed, append
+is the only operation, and for append byte-identical text really is sufficient:
+scenes keep their numbers, pass 1 matches them, the unconditional UPDATE writes
+identical values, and `stampScene` short-circuits on an unchanged fingerprint.
+So the criterion does not currently hide a bug.
+
+Two reasons I would still strengthen it, and neither is worth holding the close:
+
+1. **It passes trivially on an empty project.** Nothing in the criterion says the
+   test must run against a project that *has shots*. The failure mode being
+   guarded is "shots go stale", and a project with no shots cannot demonstrate
+   it either way.
+2. **It asserts text, and the thing at risk is identity.** Shots hang off scene
+   **row ids**. Today append preserves them as a consequence of match-by-number,
+   not because anything checks. If reconciliation is ever changed — and phase 2
+   changes reconciliation, since that is where insert's stable identity has to
+   come from — byte-identical text can hold while row ids move, and this
+   criterion would stay green through it.
+
+**One-line strengthening, for whoever writes the phase 1 test:**
+
+> **Done when:** appending chapter N leaves scenes 1..N−1 with the same **row
+> ids**, the same `source_fingerprint`, and the same **shot counts** — on a
+> project that has shots.
+
+That is the same assertion insert will need in phase 2, so writing it now means
+phase 2 inherits a test rather than needing a new one.
+
+## Otherwise: confirmed, close it
+
+Everything I raised across M3–M5 is either applied or consciously overruled with
+the reasoning recorded. I have no further corrections.

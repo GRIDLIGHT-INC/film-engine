@@ -103,4 +103,76 @@ function spliceScene(fountain, sceneIndex, replacement) {
     return [...before, ...body.split('\n'), ...gap, ...after].join('\n');
 }
 
-module.exports = { isSceneHeading, sceneSpans, spliceScene };
+/**
+ * Add scenes to the end, leaving every existing byte where it was.
+ *
+ * The primitive the chapter-by-chapter import needs. `script_write` rewrites the
+ * whole document and `spliceScene` replaces one scene by index; neither can add
+ * without re-sending everything, which is quadratic in tokens and — worse —
+ * risks reflowing scenes nobody edited.
+ *
+ * **The result is guaranteed to START WITH the original, byte for byte.** That
+ * is not a nicety: `syncScenesWithScreenplay` matches scenes by number and
+ * restamps whatever it matches, so a prefix that shifts by one character marks
+ * every shot below it as behind. Everything here exists to keep that promise.
+ *
+ * A FRAGMENT, not a scene. A novel chapter is rarely one scene — it may be an
+ * arrival, a conversation and a departure — and a one-scene-per-call signature
+ * would make the model call this three times per chapter, each call re-parsing
+ * and re-reconciling the entire screenplay. That is the quadratic problem again
+ * in miniature.
+ *
+ * Refuses a fragment with no scene heading rather than appending it. Bare prose
+ * would land inside the previous scene, silently, and the first sign would be a
+ * scene that had grown a paragraph nobody wrote there.
+ *
+ * @returns {{ fountain: string, added: number, headings: string[] }}
+ */
+function appendScenes(fountain, fragment) {
+    const base = String(fountain || '');
+    const frag = String(fragment || '');
+
+    // "Did that apply?" has to be a free question. An empty append changes
+    // nothing and must not produce a version — the rule spliceScene already
+    // follows for a save that says what the scene already said.
+    if (!frag.trim()) return { fountain: base, added: 0, headings: [] };
+
+    const spans = sceneSpans(frag);
+    if (!spans.length) {
+        const err = new Error(
+            'A fragment must contain at least one scene heading (INT./EXT., or a line starting with a full stop). '
+            + 'Bare prose would be appended inside the previous scene.');
+        err.code = 'NO_SCENE_HEADING';
+        throw err;
+    }
+
+    // Anything above the fragment's first heading is dropped rather than
+    // carried: it would silently extend the LAST existing scene, which is the
+    // failure this function refuses bare prose to avoid. Dropping it visibly is
+    // wrong too, so it is refused instead.
+    if (spans[0].start > 0 && frag.split('\n').slice(0, spans[0].start).some(l => l.trim())) {
+        const err = new Error(
+            'The fragment has text above its first scene heading. That text would extend the previous '
+            + 'scene rather than start a new one — move it under a heading, or into the scene it belongs to.');
+        err.code = 'TEXT_BEFORE_HEADING';
+        throw err;
+    }
+
+    // Exactly enough separation for Fountain, and not one byte more. Computed
+    // from what the base already ends with, so appending to a document that
+    // ends in a newline does not introduce a second one and appending twice is
+    // stable.
+    const body = frag.replace(/^\n+/, '');
+    let sep = '\n\n';
+    if (base === '') sep = '';
+    else if (base.endsWith('\n\n')) sep = '';
+    else if (base.endsWith('\n')) sep = '\n';
+
+    return {
+        fountain: base + sep + body,
+        added: spans.length,
+        headings: spans.map(s => s.heading),
+    };
+}
+
+module.exports = { isSceneHeading, sceneSpans, spliceScene, appendScenes };
