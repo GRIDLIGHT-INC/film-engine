@@ -322,15 +322,6 @@ const PRODUCTION_TOOLS = [
             aspect_ratio: { type: 'string', description: 'Delivery frame, e.g. "2.39:1", "16:9".' },
             logline: { type: 'string' },
             genre: { type: 'string' },
-            scene_anchor_refs: {
-                type: 'boolean',
-                description: 'Whether every other shot in a scene is generated FROM its anchor frame: '
-                    + 'the same location, set dressing and subject placement, re-shot on whatever lens '
-                    + 'and angle that shot\u2019s own card asks for. Default false. Plates for subjects '
-                    + 'already standing in the anchor are not sent, since the frame has established '
-                    + 'them in situ. Fixed rather than chained to the previous shot, so drift cannot '
-                    + 'accumulate down a scene and regenerating one shot changes no other shot\u2019s inputs.',
-            },
             annotation_feedback: {
                 type: 'boolean',
                 description: 'Whether markup drawn on a frame reaches the next prompt for that shot. '
@@ -423,30 +414,30 @@ const PRODUCTION_TOOLS = [
         required: ['scene_id', 'fountain'],
     },
     {
-        name: 'scene_anchor_get',
-        handler: handleScenes, method: 'GET',
-        description: 'Which frame the rest of a scene is shot from. Every other shot in the scene is generated FROM this frame \u2014 the same location, the same set dressing, the same subjects where they stand in it \u2014 re-shot on whatever lens and angle that shot\u2019s own card asks for. Derived by default (the first shot in the scene that has a frame) and pinnable with scene_anchor_set. Fixed rather than chained to the previous shot: chaining compounds, so by the eighth shot a board is a copy of a copy, and it makes a frame\u2019s inputs depend on the order somebody generated in.',
-        path: a => `/film/scenes/${a.scene_id}/anchor`,
-        schema: { scene_id: { type: 'string' } }, required: ['scene_id'],
+        name: 'anchor_get',
+        handler: handleProjects, method: 'GET',
+        description: 'Which frame this project is currently shooting from, if any. While an anchor is set, every OTHER shot you generate is built FROM that frame \u2014 the same location, the same set dressing, the same subjects where they stand in it \u2014 re-shot on whatever lens and angle that shot\u2019s own card asks for. Plates for subjects already standing in it are not sent, since the frame has established them in situ. Exactly one anchor at a time, and none unless somebody set one.',
+        path: a => `/film/projects/${a.project_id}/anchor`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
-        name: 'scene_anchor_set',
-        handler: handleScenes, method: 'PUT',
-        description: 'Pin which frame the rest of a scene is shot from, overriding the derived choice. Worth doing whenever the first shot of a scene is an insert or a detail \u2014 shooting eight frames out of a close-up of a doorknob is exactly the wrong starting point, and only a person can say which frame has the scene right. The shot must be in this scene.',
-        path: a => `/film/scenes/${a.scene_id}/anchor`,
+        name: 'anchor_set',
+        handler: handleProjects, method: 'PUT',
+        description: 'Shoot from this frame. Point at the shot whose frame has the scene right \u2014 the street, the dressing, the light \u2014 and the next shots you generate keep all of it and change only the camera. Setting one REPLACES the last; the anchored shot itself still generates from its own card, since a frame built from itself could only reproduce itself. Refused if that shot has no generated frame yet. Clear it with anchor_clear when you are done working this way.',
+        path: a => `/film/projects/${a.project_id}/anchor`,
         body: a => ({ shot_id: a.shot_id }),
         schema: {
-            scene_id: { type: 'string' },
-            shot_id: { type: 'string', description: 'A shot in this scene, whose generated frame establishes it.' },
+            project_id: { type: 'string' },
+            shot_id: { type: 'string', description: 'The shot whose generated frame to shoot from.' },
         },
-        required: ['scene_id', 'shot_id'],
+        required: ['project_id', 'shot_id'],
     },
     {
-        name: 'scene_anchor_clear',
-        handler: handleScenes, method: 'DELETE',
-        description: 'Unpin a scene\u2019s anchor and fall back to the derived one (the first shot in the scene with a frame). Does not turn the feature off \u2014 that is scene_anchor_refs on the project.',
-        path: a => `/film/scenes/${a.scene_id}/anchor`,
-        schema: { scene_id: { type: 'string' } }, required: ['scene_id'],
+        name: 'anchor_clear',
+        handler: handleProjects, method: 'DELETE',
+        description: 'Put the anchor down. Shots go back to generating from their own card and their subject plates.',
+        path: a => `/film/projects/${a.project_id}/anchor`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
         name: 'shot_list',
@@ -1027,7 +1018,7 @@ const PRODUCTION_TOOLS = [
             if (a.prompt_override) b.prompt_override = a.prompt_override;
             if (a.negative_prompt) b.negative_prompt = a.negative_prompt;
             if (a.use_annotations !== undefined) b.use_annotations = a.use_annotations;
-            if (a.use_scene_anchor !== undefined) b.use_scene_anchor = a.use_scene_anchor;
+            if (a.use_anchor !== undefined) b.use_anchor = a.use_anchor;
             return b;
         },
         schema: {
@@ -1039,10 +1030,9 @@ const PRODUCTION_TOOLS = [
             negative_prompt: { type: 'string' },
             use_scene_anchor: {
                 type: 'boolean',
-                description: 'Build this shot FROM its scene\u2019s anchor frame \u2014 same location, same '
-                    + 'dressing, same subjects where they stand \u2014 re-shot on this card\u2019s own lens and '
-                    + 'angle, whatever the project setting. Requires a provider that takes reference '
-                    + 'images; read shot_prompt to see which frame would be used and why it might not attach.',
+                description: 'Set false to generate this one shot from its plates without putting the '
+                    + 'project\u2019s anchor down. Defaults to using the anchor when one is set. Read '
+                    + 'shot_prompt to see which frame would be used and why it might not attach.',
             },
             use_annotations: {
                 type: 'boolean',

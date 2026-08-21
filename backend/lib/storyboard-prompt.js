@@ -362,7 +362,7 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // Present only when the caller attached the frame AND can address it, so a
     // project with no anchor builds byte-identically.
     if (opts.anchorAttached) {
-        parts.push(require('./scene-anchor').anchorLeadPhrase(opts.anchorTag));
+        parts.push(require('./shot-anchor').anchorLeadPhrase(opts.anchorTag));
     }
 
     // 1. Character LoRA/TI tokens and appearance
@@ -537,7 +537,7 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // overwrite — a look appended after the scene has been described will
     // happily regrade it.
     if (opts.anchorAttached) {
-        const phrase = require('./scene-anchor').anchorPhrase(opts.anchorTag);
+        const phrase = require('./shot-anchor').anchorPhrase(opts.anchorTag);
         if (phrase) parts.push(phrase);
     }
 
@@ -567,7 +567,7 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
 
     // Build negative prompt
     const negParts = [DEFAULT_NEGATIVE_PROMPT];
-    if (opts.anchorAttached) negParts.push(require('./scene-anchor').ANCHOR_NEGATIVE);
+    if (opts.anchorAttached) negParts.push(require('./shot-anchor').ANCHOR_NEGATIVE);
     if (preset && preset.negative) {
         negParts.push(preset.negative);
     }

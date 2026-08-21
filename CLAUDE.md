@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (71 migrations)
+│   │   └── migrations/     # SQL migration files (72 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -120,7 +120,7 @@ film-engine/
 │   │   ├── e2e-preflight.js      # Screenplay→final-shot readiness, derived from PIPELINE_STEPS
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
 │   │   ├── annotation-prompt.js   # Markup a director drew, said in words a model can act on
-│   │   ├── scene-anchor.js       # The one frame a scene is measured against (light, not staging)
+│   │   ├── shot-anchor.js        # The frame you are currently shooting from
 │   │   ├── shot-references.js    # The plates a shot generates with, gathered once for every path
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
 │   │   ├── screenplay-drift.js    # Which shots a rewrite left behind, and what was built on them
@@ -181,7 +181,7 @@ film-engine/
 │       ├── mood-board.test.js          # The board composes a style preset, and warns about subjects
 │       ├── storyboard-annotation.test.js # Every shape round-trips; markup survives regeneration
 │       ├── annotation-feedback.test.js # Marks steer a prompt only when asked, and say when they cannot
-│       ├── scene-anchor.test.js  # One fixed frame per scene; it never moves, loops or crosses a scene
+│       ├── shot-anchor.test.js   # One anchor, held deliberately; it carries the set and replaces the plates
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -271,9 +271,9 @@ All routes prefixed with `/film`:
 
 | Category | Endpoints |
 |----------|-----------|
-| Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id` |
+| Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id`, `GET/PUT/DELETE /projects/:id/anchor` |
 | Scripts | `POST /projects/:id/script`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
-| Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id`, `GET/PUT/DELETE /scenes/:id/anchor` |
+| Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id` |
 | Bible | `GET/PUT /projects/:id/bible`, `DELETE /projects/:id/bible/:section`, `GET /projects/:id/bible-drift` |
 | Shots | `POST /shots`, `GET /projects/:id/shotlist`, `GET/PUT/DELETE /shots/:id`, `GET /card-vocabulary` |
 | Characters | `GET/POST /projects/:id/characters`, `GET/PUT/DELETE /characters/:id` |
@@ -485,26 +485,28 @@ Worse, the tags it showed were the **card's** camera. On a blocked shot those ar
 
 **What markup does *not* do by default.** Arrows, rectangles and notes are **notation** unless a project says otherwise — stored, drawn, kept with the shot, and read by nothing in generation. An arrow drawn to mean "dolly in" changes no prompt and no payload; the movement that does is `camera_control`, set on the card or staged in previs. Turning on `annotation_feedback` makes *noted* marks reach the prompt — see **Markup That Steers a Frame** below — and leaves an unnoted arrow exactly as decorative as it was.
 
-### Shooting a Scene From One Frame (off by default)
-Nothing in board generation ever looked at another frame. A keyframe was conditioned on character plates, a location plate and a mood-board image — every one a picture of something *in the abstract* — so 1B rebuilt the street from scratch and put the well, the cart and the light somewhere else than 1A had. The only shot-to-shot chaining that existed was `POST /shots/:id/post/color-match`, which matches a finished **clip's** grade long after the frames were paid for.
+### The Frame You Are Shooting From
+Board generation never looked at another frame. A keyframe was conditioned on character plates, a location plate and a mood-board image — every one a picture of something *in the abstract* — so 1B rebuilt the street from scratch and put the well, the cart and the light somewhere else than 1A had. The only shot-to-shot chaining that existed was `POST /shots/:id/post/color-match`, on the finished **clip**, long after the frames were paid for.
 
-**The anchor is the starting point, not a swatch.** Pick the frame that has the scene right and every other shot in that scene is generated **from** it: same location, same set dressing, same subjects standing where they stand in it, re-shot on whatever lens and angle that shot's own card asks for. 1A establishes the square; 1B is the same square from a 24mm at a low angle with the dragon's shadow across it.
+**Point at the frame that has the scene right, and the next shot is generated FROM it**: the same location, the same set dressing, the same subjects standing where they stand in it, re-shot on whatever lens and angle that shot's own card asks for. 1A establishes the square; 1B is that square from a 24mm at a low angle with the dragon's shadow across it. `anchor_set` / ⚓ picks it up, `anchor_clear` puts it down.
 
-This was first built the other way round — attached for grade only, with a negative refusing to reuse its composition, on the reasoning that a scene of eight copies of the establishing shot is worse than the drift. That failure is real and it is not the one worth designing against: a director who wants 1B to keep 1A's street with the cart exactly where it was cannot get there from a colour swatch, and telling the model to ignore the placement throws away the only thing the frame was attached for. **The camera change is what stops it being a duplicate**, and the camera change is stated in the prompt from the shot's own card. If two shots genuinely name the same framing, two similar frames is the correct output. The negative now refuses **discontinuity** — `different location, rebuilt set, rearranged props, different time of day` — which is what a model does when it treats a reference as inspiration rather than as the set.
+Two versions of this were wrong before it was right, and both mistakes are pinned as tests:
+
+**It was attached for GRADE**, with a negative refusing to reuse its composition, on the reasoning that a scene of eight copies of the establishing shot is worse than the drift. That failure is real and it is not the one worth designing against: a director who wants 1B to keep 1A's street with the cart exactly where it was cannot get there from a colour swatch, and telling the model to ignore the placement throws away the only thing the frame was attached for. **The camera change is what stops it being a duplicate**, stated in the prompt from the shot's own card — if two shots genuinely name the same framing, two similar frames is the correct output. The negative refuses **discontinuity** instead: `different location, rebuilt set, rearranged props, different time of day`.
+
+**It was a standing property of every SCENE**, derived automatically from the first shot in it with a frame — so anchoring 1A lit up an anchor badge on 2A as well, because scene 2 had quietly appointed its own. Nothing was wrong on screen; the model was. Anchoring is not a property a scene has, it is something a director picks up while working on 1B and 1C and puts down afterwards to go back to plates. Migration 074 makes it **exactly one active anchor per project** (`film_projects.anchor_shot_id`), set explicitly, replaced by setting another, cleared in a click — and retires the separate on/off switch, because **setting one IS turning it on** and a pinned frame that reached nothing while a checkbox elsewhere sat clear is the state nobody can hold in their head. `use_anchor: false` skips it for one generation without putting it down, which is a different action from stopping.
 
 **It leads the prompt, and that placement is the decision.** *"Whatever leads a prompt is what the image is of"* is the rule this codebase learned expensively, and here the leading statement is true: the image **is** of that location with those things in those places. What follows is the new camera on it. The lead phrase names re-shooting explicitly, because without it *"same scene as this picture"* reads as *"reproduce this picture"* and the camera facets arrive as decoration on a copy.
 
-**It replaces the plates it makes redundant.** Three reference slots is the whole budget, and a plate of a character standing in the attached frame is a slot taken from a subject who is *not* in it — which is the subject that still needs establishing. `subjectsCoveredBy` reads the anchor shot's own card, so a subject the anchor names loses its plate and the location plate stands down entirely (the anchor **is** the location, rendered). Two things keep that honest: it is read from a card rather than from the picture, which deliberately under-claims — a subject the card omits keeps its plate even if it happens to be visible — and only the **plate** is dropped, never the description. A redundant description costs room; a missing one costs the shot. On a real 1A→1B: three plates became one plate plus the frame.
+**It replaces the plates it makes redundant.** Three reference slots is the whole budget, and a plate of a character standing in the attached frame is a slot taken from a subject who is *not* in it — the subject that still needs establishing. `subjectsCoveredBy` reads the anchor shot's own card, so a subject the anchor names loses its plate and the location plate stands down entirely (the anchor **is** the location, rendered). Two things keep it honest: it is read from a card rather than from the picture, which deliberately under-claims, and only the **plate** is dropped, never the description — a redundant description costs room, a missing one costs the shot. On a real 1A→1B: three plates became one plate plus the frame.
 
-The anchor ranks **0**, ahead of every plate, because it is not one. A plate says what a subject looks like in the abstract; the anchor has already answered that for every subject in it, in situ and lit the way the scene is lit. Ranking it behind the plates would spend the slots re-establishing what the first reference fixed. Since it ranks first, an untaggable provider can use it too — the prompt says *"the first reference image"* where a tag is unavailable, which is unambiguous precisely because of the rank. The gate is whether the picture can be **sent**, not whether it can be named.
+The anchor ranks **0**, ahead of every plate, because it is not one. Since it ranks first, an untaggable provider can use it too — the prompt says *"the first reference image"*, unambiguous precisely because of the rank. The gate is whether the picture can be **sent**, not whether it can be named.
 
-**Fixed, never chained.** 1A→1B→1C compounds: the eighth shot is a copy of a copy, drift per step too small to notice and drift across the scene obvious. Chaining also makes a frame's inputs depend on the order somebody pressed the buttons in — regenerate 1C alone and it chains to whatever 1B is at that moment. The anchor is the *first* shot in the scene that has a frame, never the most recent, because an anchor that moves as the board fills in is not an anchor. `film_scenes.anchor_shot_id` (migration 073) **pins** it, since the first shot of a scene is frequently an insert and shooting eight frames out of a close-up of a doorknob is the wrong starting point; `ON DELETE SET NULL`, so deleting the pinned shot falls back rather than refusing the delete. `film_projects.scene_anchor_refs` defaults to `0`.
-
-The anchor shot **never references itself** — a frame conditioned on itself is a loop, and the one frame a director most wants to revise would be the one they cannot. Every refusal carries its own reason (*no frame generated yet*, *you are standing on it*, *your pin has no frame*, *your pin is not in this scene*), because those need four different actions.
+The anchored shot **generates from its own card**: a frame conditioned on itself could only reproduce itself, so the one frame a director most wants to revise would be the one they cannot. Anchoring a shot with no generated frame is **refused** rather than accepted and ignored, since accepted-and-ignored looks exactly like the feature not working. A cross-scene anchor is **allowed and reported** — two scenes in one location is a real reason to do it, two scenes in different locations is how you get the wrong street back and cannot see why, and only a director knows which. `ON DELETE SET NULL`, so deleting the anchored shot puts the anchor down rather than refusing the delete.
 
 `KIND_SOURCE` declares where each reference kind comes from (`entity` / `frame` / `project`), because `tests/reference-plates.test.js` derived "every subject kind" from `KIND_RANK` by excluding `style` by name — and the moment a fifth kind arrived it demanded a table and a plate generator for a *generated frame*.
 
-Served on the board (`anchor` per frame, `scene_anchor_refs` per project), at `GET|PUT|DELETE /film/scenes/:id/anchor`, reported by `GET /shots/:id/prompt`, and as `scene_anchor_get` / `scene_anchor_set` / `scene_anchor_clear` (**117 tools**). All four generation paths attach it — see below.
+Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project), at `GET|PUT|DELETE /film/projects/:id/anchor`, reported by `GET /shots/:id/prompt`, and as `anchor_get` / `anchor_set` / `anchor_clear` (**117 tools**). All four generation paths attach it — see below.
 
 ### One Gatherer, Four Paths
 `lib/capability-payloads.js` exists so that "the per-domain routes, the pipeline orchestrator and the flow canvas cannot describe the same generation differently", and it could not honour that: the gatherer that decides which plates a shot generates with lived in `routes/storyboard.js`, so only the three board paths could reach it. **The orchestrated `image` payload gathered no references at all.** A pipeline run generated keyframes with no plate conditioning while the board conditioned correctly — the same shape of divergence `regenerateShot` had already shipped once — and every reference feature added since (prop plates, mood-board style images, the scene anchor) reached three paths out of four. Nothing failed and nothing was logged; the prose contracts carried the subjects until the day they were shortened on the correct assumption that a picture was attached.
@@ -977,7 +979,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (71 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (72 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -1118,7 +1120,7 @@ node --test backend/tests/shot-tagger.test.js
 node --test backend/tests/mood-board.test.js
 node --test backend/tests/storyboard-annotation.test.js
 node --test backend/tests/annotation-feedback.test.js
-node --test backend/tests/scene-anchor.test.js
+node --test backend/tests/shot-anchor.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js

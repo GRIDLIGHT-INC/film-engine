@@ -23,6 +23,16 @@ function handleProjects(req, res, urlParts, query) {
     // /film/projects/:id  — parts: ['film', 'projects', id?]
     const id = urlParts[2] || null;
 
+    // /film/projects/:id/anchor — the one frame this project is currently
+    // shooting from. Its own path rather than a field on PUT /projects/:id,
+    // because it is an action a director takes and puts down, not a setting
+    // that describes the film.
+    if (id && urlParts[3] === 'anchor') {
+        if (req.method === 'GET') return getAnchor(req, res, id);
+        if (req.method === 'PUT') return setAnchor(req, res, id);
+        if (req.method === 'DELETE') return clearAnchor(req, res, id);
+    }
+
     if (req.method === 'GET' && !id) return listProjects(req, res, query);
     if (req.method === 'GET' && id) return getProject(req, res, id);
     if (req.method === 'POST' && !id) return createProject(req, res);
@@ -231,13 +241,6 @@ function updateProject(req, res, id) {
         fields.push('annotation_feedback = ?');
         values.push(body.annotation_feedback ? 1 : 0);
     }
-    // Whether every frame in a scene is conditioned on the frame that
-    // established it. Off by default — turning it on changes what every
-    // subsequent generation in the production is built from.
-    if (body.scene_anchor_refs !== undefined) {
-        fields.push('scene_anchor_refs = ?');
-        values.push(body.scene_anchor_refs ? 1 : 0);
-    }
     if (body.status !== undefined && VALID_STATUSES.includes(body.status)) {
         fields.push('status = ?');
         values.push(body.status);
@@ -372,6 +375,100 @@ function handleProjectSettingsPreset(req, res, parts) {
     const row = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(id);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ project: row, applied_preset: preset }));
+}
+
+// ── The frame this project is currently shooting from ───────────────────
+//
+// Exactly one, set explicitly, replaced by setting another, cleared in a
+// click. There is no derived anchor and no separate on/off switch: setting one
+// IS turning it on, and a pinned frame that reached nothing while a checkbox
+// elsewhere sat clear is the state nobody can hold in their head.
+
+function anchorPayload(projectId) {
+    const row = db.prepare('SELECT anchor_shot_id FROM film_projects WHERE id = ?').get(projectId);
+    if (!row) return null;
+    if (!row.anchor_shot_id) {
+        return {
+            project_id: projectId, anchor_shot_id: null, shot_code: null, scene_number: null,
+            note: 'No anchor. Every shot generates from its own card and its plates.',
+        };
+    }
+    const shot = db.prepare(
+        `SELECT s.id, s.shot_code, sc.scene_number,
+                (SELECT COUNT(*) FROM film_assets a
+                  WHERE a.shot_id = s.id AND a.asset_type IN ('storyboard', 'keyframe')) AS frames
+           FROM film_shots s JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?`)
+        .get(row.anchor_shot_id);
+    return {
+        project_id: projectId,
+        anchor_shot_id: row.anchor_shot_id,
+        shot_code: shot ? shot.shot_code : null,
+        scene_number: shot ? shot.scene_number : null,
+        // Named, because an anchor whose frame has been deleted looks identical
+        // to a working one until a generation quietly falls back to plates.
+        has_frame: !!(shot && shot.frames > 0),
+        note: 'Every OTHER shot you generate is built from this frame: the same location, '
+            + 'the same set dressing and the same subjects where they stand in it, re-shot on '
+            + 'whatever lens and angle that shot\u2019s own card asks for. Plates for subjects '
+            + 'already standing in it are not sent. Clear it to go back to plates.',
+    };
+}
+
+function getAnchor(req, res, projectId) {
+    const payload = anchorPayload(projectId);
+    if (!payload) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Project not found' }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(payload));
+}
+
+function setAnchor(req, res, projectId) {
+    const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Project not found' }));
+    }
+    const shotId = String((req.body && req.body.shot_id) || '').trim();
+    if (!shotId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'shot_id is required: the frame to shoot from' }));
+    }
+    const shot = db.prepare(
+        `SELECT s.id, s.shot_code, sc.project_id,
+                (SELECT COUNT(*) FROM film_assets a
+                  WHERE a.shot_id = s.id AND a.asset_type IN ('storyboard', 'keyframe')) AS frames
+           FROM film_shots s JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?`).get(shotId);
+    if (!shot || shot.project_id !== projectId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'That shot is not in this project' }));
+    }
+    // Refused rather than accepted-and-ignored. An anchor with no picture can
+    // only fall back to plates at generation time, which looks exactly like the
+    // feature not working.
+    if (!shot.frames) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: `${shot.shot_code} has no generated frame yet, so there is nothing to shoot from.`,
+            hint: 'Generate that frame first, then anchor on it.',
+        }));
+    }
+    // Setting one replaces the last. One at a time is the whole model.
+    db.prepare('UPDATE film_projects SET anchor_shot_id = ? WHERE id = ?').run(shotId, projectId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(anchorPayload(projectId)));
+}
+
+function clearAnchor(req, res, projectId) {
+    const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Project not found' }));
+    }
+    db.prepare('UPDATE film_projects SET anchor_shot_id = NULL WHERE id = ?').run(projectId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ...anchorPayload(projectId), cleared: true }));
 }
 
 module.exports = { handleProjects, handleProjectSettingsPreset };

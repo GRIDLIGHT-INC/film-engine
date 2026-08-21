@@ -47,7 +47,7 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
     // in the positions they ended up in. Ranked FIRST by lib/reference-images,
     // because the new shot is a different camera pointed at that world rather
     // than a fresh assembly of the same ingredients.
-    const sceneAnchor = require('./scene-anchor');
+    const sceneAnchor = require('./shot-anchor');
     const anchorRef = sceneAnchor.anchorCandidate(anchor);
     if (anchorRef) candidates.push(anchorRef);
 

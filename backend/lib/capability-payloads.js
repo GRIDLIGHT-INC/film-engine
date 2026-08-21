@@ -519,16 +519,14 @@ function loadShotContext(shotId) {
         const { shotReferencesFor, matchCharacters, matchLocation, matchProps } =
             require('./shot-references');
         const locations = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(scene.project_id);
-        const anchor = project && project.scene_anchor_refs
-            ? require('./scene-anchor').sceneAnchorFor(db, shotId)
-            : null;
+        const anchor = require('./shot-anchor').activeAnchorFor(db, shotId);
         const gathered = shotReferencesFor(db, {
             projectId: scene.project_id,
             providerConfig: providerConfigOf(project),
             characters: matchCharacters(sceneCard.characters, characters),
             location: matchLocation(scene.location, locations),
             props: matchProps(sceneCard, props),
-            anchor: anchor && anchor.shot ? anchor : null,
+            anchor: anchor.shot ? anchor : null,
         });
         references = gathered.references;
         tagged = gathered.tagged;
