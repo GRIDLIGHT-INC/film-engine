@@ -77,6 +77,11 @@ function handleScripts(req, res, urlParts, query) {
         return appendToScript(req, res, projectId);
     }
 
+    // POST /film/projects/:id/script/insert — add scenes in the middle
+    if (req.method === 'POST' && sub === 'script' && versionOrKeyword === 'insert') {
+        return insertIntoScript(req, res, projectId);
+    }
+
     if (req.method === 'POST' && sub === 'script') {
         return uploadScript(req, res, projectId);
     }
@@ -326,8 +331,85 @@ function syncScenesWithScreenplay(projectId, parsedFountain) {
     const matchedExistingIds = new Set();
     const matchedNewIndices = new Set();
 
+    /*
+     * Pass 0: match by CONTENT, before anything looks at position.
+     *
+     * This is what makes inserting a scene safe, and its absence is what made
+     * it corrupting. Matching by `scene_number` first is positional, and an
+     * insert changes position by definition — so new #3 matched old #3 and was
+     * overwritten with the NEW text, new #4 matched old #4 and took old-3's
+     * text, and so on to the end of the screenplay. Every scene below the
+     * insertion point ended up holding its predecessor's words with a moved
+     * fingerprint, silently, on every call.
+     *
+     * A scene's identity is its content, not where it sits. `sceneFingerprint`
+     * is DELIBERATELY the same function that answers "has this scene changed" —
+     * the two are one question asked from opposite directions, and sharing the
+     * function is what stops the answers disagreeing. A scene whose text is
+     * byte-identical IS that scene, whatever number it now carries.
+     *
+     * An EDITED scene has no content match and falls through to the number pass
+     * below, where it is updated and restamped exactly as before. That is the
+     * property that keeps drift detection alive: matching by content must not
+     * make a rewrite invisible.
+     *
+     * Two genuinely identical scenes match arbitrarily, which is correct — if
+     * their int/ext, location, time and description are the same, nothing
+     * downstream can tell them apart either.
+     */
+    const { sceneFingerprint } = require('../lib/screenplay-drift');
+    const fpOf = sc => sceneFingerprint({
+        int_ext: sc.int_ext, location: sc.location,
+        time_of_day: sc.time_of_day, description: (sc.description || '').slice(0, 10000),
+    });
+    const byFingerprint = new Map();
+    for (const es of existingScenes) {
+        const fp = fpOf(es);
+        if (!byFingerprint.has(fp)) byFingerprint.set(fp, []);
+        byFingerprint.get(fp).push(es);
+    }
+    for (let i = 0; i < newScenes.length; i++) {
+        const bucket = byFingerprint.get(fpOf(newScenes[i]));
+        if (!bucket) continue;
+        let match = null;
+        while (bucket.length && !match) {
+            const candidate = bucket.shift();
+            if (!matchedExistingIds.has(candidate.id)) match = candidate;
+        }
+        if (!match) continue;
+        matchedExistingIds.add(match.id);
+        matchedNewIndices.add(i);
+        (newScenes[i].characters_present || []).forEach(c => report.characters_found.add(c));
+
+        // POSITION is written; CONTENT is not.
+        //
+        // The distinction is the whole point. A scene's content is its identity
+        // and has not changed, so nothing is restamped and no shot is reported
+        // behind. Its position HAS changed — everything below an insert shifts
+        // — and `film_scenes` is a projection of the document, so the projection
+        // must follow it or the board reads in an order the screenplay does not
+        // have. That is not hypothetical: writing nothing at all here left the
+        // inserted scene and the scene it displaced both claiming the same
+        // number, and the scene list came back in an arbitrary order.
+        //
+        // Safe because `sceneFingerprint` covers int_ext, location, time_of_day
+        // and description — never the number. Reordering was deliberately
+        // excluded from drift when it was written: a warning that fires on work
+        // nobody needs to redo is one people learn to dismiss.
+        if (String(match.scene_number) !== String(newScenes[i].scene_number)) {
+            db.prepare('UPDATE film_scenes SET scene_number = ? WHERE id = ?')
+                .run(newScenes[i].scene_number, match.id);
+        }
+        report.scenes_unchanged++;
+    }
+
     // First pass: match by scene number
     for (let i = 0; i < newScenes.length; i++) {
+        // Skip anything pass 0 already claimed by content. Without this a
+        // content-matched scene would ALSO match some other row by number and
+        // overwrite it — turning the fix into a second, subtler version of the
+        // bug it replaces.
+        if (matchedNewIndices.has(i)) continue;
         const newScene = newScenes[i];
 
         // Collect characters
@@ -527,6 +609,79 @@ function appendToScript(req, res, projectId) {
                     // relying on and cannot see.
                     note: `Appended ${added} scene(s). Everything above them is byte-identical, `
                         + 'so no existing scene was marked as changed.',
+                }));
+            };
+        },
+    });
+
+    return uploadScript(
+        { ...req, body: { fountain_content: out.fountain, sync_scenes: true } },
+        wrapped, projectId);
+}
+
+/**
+ * Insert scenes in the middle of the screenplay.
+ *
+ * POST /film/projects/:id/script/insert  { after_scene_index, fountain }
+ *
+ * Was blocked, and the block was at the RECONCILER rather than here: matching
+ * scenes by number meant an insert rewrote the whole tail with its own
+ * predecessors' text. `syncScenesWithScreenplay` now matches by content first,
+ * so a scene that merely moved is recognised as itself and left alone.
+ *
+ * `after_scene` is the scene to insert after, counted from 1 the way `scene_list`
+ * reports them; 0 inserts before scene 1, and the scene count appends.
+ */
+function insertIntoScript(req, res, projectId) {
+    const { insertScenesAfter } = require('../lib/scene-splice');
+
+    const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Project not found' }));
+    }
+
+    const body = req.body || {};
+    const fragment = String(body.fountain || body.fountain_content || '');
+    const afterScene = body.after_scene !== undefined ? body.after_scene : body.after_scene_index;
+
+    const script = db.prepare(
+        'SELECT * FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1').get(projectId);
+    const base = (script && script.fountain_content) || '';
+
+    let out;
+    try {
+        out = insertScenesAfter(base, afterScene, fragment);
+    } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: err.message, code: err.code }));
+    }
+
+    if (!out.added) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            project_id: projectId, changed: false, scenes_added: 0,
+            note: 'The fragment was empty. Nothing was inserted and no version was saved.',
+        }));
+    }
+
+    const { added, headings, at } = out;
+    const wrapped = new Proxy(res, {
+        get(target, prop) {
+            if (prop !== 'end') return typeof target[prop] === 'function'
+                ? target[prop].bind(target) : target[prop];
+            return function (chunk) {
+                let payload = {};
+                try { payload = JSON.parse(String(chunk || '{}')); } catch (_) { payload = {}; }
+                return target.end(JSON.stringify({
+                    ...payload,
+                    changed: true,
+                    scenes_added: added,
+                    inserted_after_scene: at,
+                    headings,
+                    note: `Inserted ${added} scene(s) after scene ${at}. Scenes below have been `
+                        + 'renumbered in the document, but each kept its id and its text, so nothing '
+                        + 'is marked as changed and no shot is reported behind.',
                 }));
             };
         },

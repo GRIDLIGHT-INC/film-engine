@@ -175,4 +175,87 @@ function appendScenes(fountain, fragment) {
     };
 }
 
-module.exports = { isSceneHeading, sceneSpans, spliceScene, appendScenes };
+/**
+ * Put scenes in the middle, leaving every existing byte where it was.
+ *
+ * Deferred as a blocker until reconciliation learned identity. The primitive
+ * itself was never the problem — splicing text into a document is easy — it was
+ * that `syncScenesWithScreenplay` matched scenes by NUMBER, so shifting the
+ * numbering rewrote the whole tail with its own predecessors' text. That is
+ * fixed at the reconciler (content is matched before position), which is where
+ * it belonged: no amount of care here could have made a positional matcher safe.
+ *
+ * `afterScene` is the scene to insert AFTER, counted the way a reader counts:
+ * 1 is the first scene, and 0 means "before scene 1". It is deliberately not a
+ * 0-based index — `scene_list` reports 1-based `scene_number`s, and a model that
+ * has just read that list should be able to use the number it saw. Naming it
+ * `after_scene_index` was enough to make the author of this function get it
+ * wrong in his own test, which is the argument for the rename.
+ *
+ * The front case is why the title page has to be handled explicitly:
+ * `sceneSpans` deliberately skips it, so inserting at the front means inserting
+ * at the first heading's line, not at line 0 — and the difference is the whole
+ * title page.
+ *
+ * Out of range is refused rather than clamped. Silently appending when someone
+ * asked to insert at 99 is the kind of help that is discovered three chapters
+ * later.
+ *
+ * @returns {{ fountain: string, added: number, headings: string[], at: number }}
+ */
+function insertScenesAfter(fountain, afterScene, fragment) {
+    const base = String(fountain || '');
+    const frag = String(fragment || '');
+    const n = Number(afterScene);
+
+    if (!Number.isInteger(n) || n < 0) {
+        const err = new Error('after_scene must be a whole number: the scene to insert after, or 0 to insert before scene 1.');
+        err.code = 'BAD_INDEX';
+        throw err;
+    }
+    if (!frag.trim()) return { fountain: base, added: 0, headings: [], at: n };
+
+    const spans = sceneSpans(base);
+    if (n > spans.length) {
+        const err = new Error(
+            `This screenplay has ${spans.length} scene(s); cannot insert after scene ${n}.`);
+        err.code = 'INDEX_OUT_OF_RANGE';
+        throw err;
+    }
+
+    // Past the last scene is an append, and says so rather than being a second
+    // implementation of it.
+    if (n === spans.length) return { ...appendScenes(base, frag), at: n };
+
+    const check = sceneSpans(frag);
+    if (!check.length) {
+        const err = new Error(
+            'A fragment must contain at least one scene heading. Bare prose would be inserted '
+            + 'into the middle of the previous scene.');
+        err.code = 'NO_SCENE_HEADING';
+        throw err;
+    }
+
+    // The line the NEXT scene starts on: everything from here down shifts.
+    const cut = spans[n].start;
+    const lines = base.split('\n');
+    const before = lines.slice(0, cut);
+    const after = lines.slice(cut);
+
+    // A blank line each side, and only where one is not already there. The
+    // separator is computed rather than assumed for the same reason spliceScene
+    // puts the old trailing blanks back: a fixed separator quietly rewrites the
+    // document around the edit, and the diff then blames the wrong scene.
+    const body = frag.replace(/^\n+/, '').replace(/\n+$/, '');
+    const lead = before.length && before[before.length - 1].trim() !== '' ? [''] : [];
+    const tail = [''];
+
+    return {
+        fountain: [...before, ...lead, ...body.split('\n'), ...tail, ...after].join('\n'),
+        added: check.length,
+        headings: check.map(x => x.heading),
+        at: n,
+    };
+}
+
+module.exports = { isSceneHeading, sceneSpans, spliceScene, appendScenes, insertScenesAfter };

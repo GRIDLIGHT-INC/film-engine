@@ -156,52 +156,51 @@ What an agent can do to a screenplay today (7 tools, verified from `lib/mcp-tool
 |---|---|---|---|---|
 | 0 | `script_write` — save a whole new version | present | rewrites everything; the quadratic path | — |
 | 1 | `scene_append` — append a Fountain **fragment** (may hold several headings), one transaction, reconciled once | **BUILT** | — | **1 ✓** |
-| 2 | `scene_insert_after` — add after scene N | absent | `missing-primitive` | **blocked** — see below |
+| 2 | `scene_insert_after` — add after scene N | **BUILT** | — | **1 ✓** (was blocked; unblocked at the reconciler) |
 | 3 | `outline_get` — sections + synopses as a tree | absent | `surface-MCP` | 2 |
 | 4 | `outline_write` — author sections/synopses | absent | `surface-MCP` | 2 |
 | 5 | `script_stats` — words, pages, scene count, dialogue % | HTTP only | `surface-MCP` | 3 |
 
 
-### `scene_insert_after` corrupts the tail. It cannot ship in phase 1
+### `scene_insert_after` corrupted the tail. Fixed at the reconciler — **SHIPPED**
 
-*Found by the writers-tool agent; verified independently by the driver.*
+*Found by the writers-tool agent; verified, then unblocked.*
 
-`syncScenesWithScreenplay` (`backend/routes/scripts.js:322-363`, pass 1) matches
-**by `scene_number`, greedily**, and then **UPDATEs the row unconditionally**.
-`moved()` only feeds the report counters — it does not gate the write, and
-`stampScene(:359)` restamps the fingerprint either way.
+`syncScenesWithScreenplay` matched **by `scene_number`, greedily**, and UPDATEd
+the row it matched unconditionally — `moved()` only fed the report counters.
+Insert a scene after scene 2 of a ten-scene script and the new Fountain numbers
+1, 2, **NEW=3**, old-3→4, old-4→5 … so new #3 matched old #3 and took the NEW
+text, new #4 matched old #4 and took old-3's text, and so on to the end. Pass 2
+could rescue none of it; pass 1 had already consumed those rows by number.
 
-Insert a scene after scene 2 of a 10-scene script. The new Fountain numbers
-1, 2, **NEW=3**, old-3→4, old-4→5 … Pass 1 then matches:
+**The fix is identity, not ordering.** A scene's identity is its CONTENT, not its
+position, so reconciliation now matches on `sceneFingerprint` **before** it
+matches on number. That is deliberately the same function that answers *"has this
+scene changed"* — the two are one question asked from opposite directions, and
+sharing the function is what stops the answers disagreeing. A scene whose text is
+byte-identical **is** that scene, whatever number it now carries.
 
-```
-new #3 ↔ old #3    NEW text vs old-3's text     → row overwritten
-new #4 ↔ old #4    old-3's text vs old-4's      → row overwritten
-…every scene to the end
-```
+Three properties make it safe rather than merely different:
 
-Pass 2 cannot rescue any of it — pass 1 already consumed those rows by number.
-**Every scene from the insertion point on gets its predecessor's text and a
-moved fingerprint**, which is precisely the harm this plan exists to prevent,
-performed deterministically on every call.
+- **An edited scene still drifts.** It has no content match, falls through to the
+  number pass, and is updated and restamped exactly as before. Matching by
+  content must not make a rewrite invisible, and there is a test that fails if it
+  does.
+- **Position is written; content is not.** `film_scenes` is a projection, so the
+  order must follow the document — but `sceneFingerprint` covers int_ext,
+  location, time_of_day and description and *never* the number, so renumbering
+  restamps nothing. Writing nothing at all here was the author's first attempt
+  and it left the inserted scene and the scene it displaced both claiming the
+  same number.
+- **Pass 1 skips what pass 0 claimed.** Without that a content-matched scene
+  would also match some other row by number and overwrite it — the same bug in a
+  subtler costume.
 
-**`scene_append` is safe, and for a reason worth recording** so nobody
-re-derives it: appended scenes take fresh numbers, scenes 1..N−1 match by number
-with identical text, and `stampScene` short-circuits on an unchanged fingerprint
-(`lib/screenplay-drift.js`). The two primitives have completely different risk
-profiles and draft 1 treated them as one line.
-
-**Resolution.** `scene_insert_after` ships only once reconciliation learns a
-**stable identity that survives renumbering** — a Fountain scene number (`#3#`,
-which the parser already reads) or a `meta` id on the element. Until then it is
-deferred and *From the Mist* is imported **strictly in order**, which is
-acceptable for a first pass and is stated here rather than discovered.
-
-**Granularity matters too.** A novel chapter is rarely one scene. If
-`scene_append` took exactly one, Claude would call it three times per chapter and
-each call would re-parse and re-reconcile the whole screenplay — a smaller copy
-of the quadratic problem phase 1 exists to solve. It takes a **fragment**: one
-call per chapter, not one per scene.
+**Naming.** The parameter was `after_scene_index`, which implies 0-based, and
+that was enough to make the author write his own test off by one. It is
+`after_scene`, counted the way `scene_list` reports scenes: 1 is the first,
+0 inserts before it, and the scene count appends (and delegates to `appendScenes`
+rather than reimplementing it).
 
 ### Chapter 1 already works. It is chapters 2..n that are quadratic
 
@@ -400,10 +399,12 @@ AssertionError: the editor strands these and the plan does not say so: centered
 
 Cut by **dependency**, not by feature count.
 
-### Phase 1 — a chapter can be imported at all — **SHIPPED**
+### Phase 1 — a chapter can be imported at all — **SHIPPED, including insert**
 
-`lib/scene-splice.js:appendScenes` · `POST /film/projects/:id/script/append` ·
-MCP `scene_append` · `backend/tests/scene-append.test.js` (11 invariants).
+`lib/scene-splice.js:appendScenes` + `insertScenesAfter` ·
+`POST /film/projects/:id/script/{append,insert}` · MCP `scene_append` +
+`scene_insert_after` · `tests/scene-append.test.js` (11 invariants) +
+`tests/scene-insert.test.js` (11 invariants).
 
 Verified live, three chapters arriving one at a time:
 
@@ -421,7 +422,7 @@ nothing was restamped and nothing reports as behind.
 
 - `scene_append` — route + MCP tool, taking a Fountain **fragment**
 - The chapter-by-chapter loop working end to end from Claude Desktop
-- **Not** `scene_insert_after` — blocked on scene identity, see above
+- `scene_insert_after` — **unblocked**: reconciliation now matches content before position
 
 **Done when:** a chapter can be added without re-sending the screenplay, and
 adding chapter N leaves scenes 1..N−1 byte-identical. The second clause matters

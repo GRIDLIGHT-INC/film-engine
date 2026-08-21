@@ -440,6 +440,25 @@ const PRODUCTION_TOOLS = [
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
+        name: 'scene_insert_after',
+        handler: handleScripts, method: 'POST',
+        description: 'Insert scenes INTO the middle of the screenplay, after a given scene. `after_scene` is the scene to insert AFTER, counted the way scene_list reports them (1 is the first scene); 0 puts them before scene 1, and the scene count appends. Takes a Fountain FRAGMENT which may contain several headings. Scenes below the insertion point are renumbered in the document but each keeps its id and its text, so nothing is marked as changed and no shot is reported behind. Use this when a chapter belongs somewhere other than the end; use scene_append for the normal front-to-back import, which is cheaper.',
+        path: a => `/film/projects/${a.project_id}/script/insert`,
+        body: a => ({ after_scene: a.after_scene, fountain: a.fountain }),
+        schema: {
+            project_id: { type: 'string' },
+            after_scene: {
+                type: 'number',
+                description: 'The scene to insert AFTER, counted the way scene_list reports them: 1 is the first scene. 0 inserts before scene 1. Read scene_list first.',
+            },
+            fountain: {
+                type: 'string',
+                description: 'A Fountain fragment starting with a scene heading. May contain several scenes.',
+            },
+        },
+        required: ['project_id', 'after_scene', 'fountain'],
+    },
+    {
         name: 'scene_append',
         handler: handleScripts, method: 'POST',
         description: 'Add scenes to the END of the screenplay without re-sending it. Takes a Fountain FRAGMENT which may contain SEVERAL scene headings \u2014 send a whole chapter in one call, not one call per scene, because each call re-parses and re-reconciles the entire screenplay. This is how a novel is imported chapter by chapter: script_write would make you repost every previous chapter, which grows quadratically and risks reflowing scenes nobody edited. Everything above the appended scenes stays byte-identical, so no existing scene is marked as changed and no shot is reported behind. Refuses a fragment with no scene heading rather than burying prose inside the previous scene. Scenes are NOT broken down into shots by this \u2014 use shot_tag or shot_create for that.',
