@@ -295,7 +295,10 @@ test('a superseded frame is archived before it is overwritten', () => {
 
     // Every write of a frame archives first. One path that does not is a shot
     // whose history silently stops.
-    const writes = (src.match(/fs\.writeFileSync\(imgPath, imageBuffer\)/g) || []).length;
+    // Any write of a frame, whatever the buffer variable is called. Matching one
+    // variable name meant a fourth write path — refine, which calls its buffer
+    // `buffer` — was invisible to this check the moment it was added.
+    const writes = (src.match(/fs\.writeFileSync\(imgPath, \w+\)/g) || []).length;
     const archives = (src.match(/archiveExistingFrame\(/g) || []).length - 1;   // minus the definition
     assert.ok(writes > 0, 'no frame is written anywhere');
     assert.strictEqual(archives, writes,
