@@ -206,6 +206,35 @@ test('the plan states the coverage counts, and they are true', () => {
         `the plan claims a different FDX coverage than the ${exported.length}/${types.length} the map shows: ${line}`);
 });
 
+test('the editor state machine is partitioned into types and states', () => {
+    // Requirement from the writers-tool agent, and it is this morning's error in
+    // a third costume: counting the CONTAINER instead of the thing.
+    //
+    // AUTO_FORMAT_RULES holds element types AND state names (`default`,
+    // `after-scene`, `in-dialogue`). A test that iterates it naively counts 13,
+    // disagrees with the plan's 10, and the obvious "fix" is to change the plan
+    // to 13 — inflating the type count with things that are not types.
+    //
+    // So every key is classified explicitly and an unknown one FAILS. Adding a
+    // fourth state breaks this loudly rather than silently inflating a figure.
+    const html = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+    const STATES = ['default', 'after-scene', 'in-dialogue'];
+
+    const all = new Set();
+    for (const block of ['nextType', 'emptyLineType', 'tabCycles']) {
+        const m = html.match(new RegExp(block + ':\\s*\\{([\\s\\S]*?)\\n\\s{8}\\}'));
+        if (!m) continue;
+        for (const k of m[1].matchAll(/'([a-z-]+)'\s*:/g)) all.add(k[1]);
+    }
+    assert.ok(all.size >= 10, `only ${all.size} state-machine keys found — the extraction broke`);
+
+    const { known } = authorability();
+    const unclassified = [...all].filter(k => !known.includes(k) && !STATES.includes(k));
+    assert.deepStrictEqual(unclassified, [],
+        `AUTO_FORMAT_RULES has keys that are neither an element type nor a known state: ${unclassified.join(', ')}. `
+        + 'Classify it before any count that iterates this object can be trusted.');
+});
+
 test('the plan defines authorability rather than just counting it', () => {
     // The regression this replaces: a single "editor N/13" number that conflated
     // reachable-by-typing with merely-rendered. The three routes a writer has

@@ -90,8 +90,15 @@ Authorable = the union. Everything else is a gap with a *name*.
 | 9 | `note` | ✓ | ✓ | ✗ **stranded** | ✗ **as `Action`** | `stranded` + `bug` (**wrong**) | 2 |
 | 10 | `section` | ✓ depth | ✓ | ✗ unknown | ✗ dropped | `surface-UI` + `bug` | 2 |
 | 11 | `synopsis` | ✓ | ✓ | ✗ unknown | ✗ dropped | `surface-UI` + `bug` | 2 |
-| 12 | `boneyard` | ✓ | ✓ | ✗ unknown | ✗ dropped | `none` — correct | — |
+| 12 | `boneyard` | ✓ | ✓ | ✗ unknown | ✗ dropped | `surface-UI` | 3 |
 | 13 | `page_break` | ✓ | ✓ | ✗ unknown | ✗ dropped | `bug` | 3 |
+
+**Scene numbers (`#3#`) are not an element type and need a row anyway.** The
+parser already reads them (8 references in `lib/fountain-parser.js`), production
+locks pages by them, and per the blocker above they may be the stable identity
+that makes `scene_insert_after` safe. Verdict today: `none` — parsed and stored.
+Recorded because the next reader will ask, and because phase 1's blocker turns on
+them. *(writers-tool agent.)*
 
 **Coverage: parser 13/13 · renderer 13/13 · authorable 6/13 · FDX 9/13 (3 of those 9 lossy or wrong).**
 
@@ -122,8 +129,12 @@ at all. Draft 1's single "editor" column made both look like the same work.
   at all, so this is not a shared bug and fixing it cannot break parity.
 - **Lossy** (`centered`, `lyrics`): flattened to Action. Words survive, form does not.
 
-`boneyard` is correctly dropped — it is deleted text, and exporting it would
-resurrect cuts.
+`boneyard`'s FDX drop is correct, but draft 1's verdict of `none` was not.
+Boneyard (`/* … */`) is not deleted text — it is text **kept in the document and
+omitted from output**, the standard way to cut a scene without losing it. Being
+unable to author one means **there is no way to cut a scene and keep it**, which
+is an inconsistent verdict in a plan that elsewhere treats losing writing as data
+loss. *(writers-tool agent.)*
 
 ## Set 2 — the MCP screenplay surface
 
@@ -143,11 +154,54 @@ What an agent can do to a screenplay today (7 tools, verified from `lib/mcp-tool
 
 | # | operation | status | gap | phase |
 |---|---|---|---|---|
-| 1 | `scene_append` — add a scene at the end | absent | `missing-primitive` | **1** |
-| 2 | `scene_insert_after` — add after scene N | absent | `missing-primitive` | **1** |
+| 0 | `script_write` — save a whole new version | present | rewrites everything; the quadratic path | — |
+| 1 | `scene_append` — append a Fountain **fragment** (may hold several headings), one transaction, reconciled once | absent | `missing-primitive` | **1** |
+| 2 | `scene_insert_after` — add after scene N | absent | `missing-primitive` | **blocked** — see below |
 | 3 | `outline_get` — sections + synopses as a tree | absent | `surface-MCP` | 2 |
 | 4 | `outline_write` — author sections/synopses | absent | `surface-MCP` | 2 |
 | 5 | `script_stats` — words, pages, scene count, dialogue % | HTTP only | `surface-MCP` | 3 |
+
+
+### `scene_insert_after` corrupts the tail. It cannot ship in phase 1
+
+*Found by the writers-tool agent; verified independently by the driver.*
+
+`syncScenesWithScreenplay` (`backend/routes/scripts.js:322-363`, pass 1) matches
+**by `scene_number`, greedily**, and then **UPDATEs the row unconditionally**.
+`moved()` only feeds the report counters — it does not gate the write, and
+`stampScene(:359)` restamps the fingerprint either way.
+
+Insert a scene after scene 2 of a 10-scene script. The new Fountain numbers
+1, 2, **NEW=3**, old-3→4, old-4→5 … Pass 1 then matches:
+
+```
+new #3 ↔ old #3    NEW text vs old-3's text     → row overwritten
+new #4 ↔ old #4    old-3's text vs old-4's      → row overwritten
+…every scene to the end
+```
+
+Pass 2 cannot rescue any of it — pass 1 already consumed those rows by number.
+**Every scene from the insertion point on gets its predecessor's text and a
+moved fingerprint**, which is precisely the harm this plan exists to prevent,
+performed deterministically on every call.
+
+**`scene_append` is safe, and for a reason worth recording** so nobody
+re-derives it: appended scenes take fresh numbers, scenes 1..N−1 match by number
+with identical text, and `stampScene` short-circuits on an unchanged fingerprint
+(`lib/screenplay-drift.js`). The two primitives have completely different risk
+profiles and draft 1 treated them as one line.
+
+**Resolution.** `scene_insert_after` ships only once reconciliation learns a
+**stable identity that survives renumbering** — a Fountain scene number (`#3#`,
+which the parser already reads) or a `meta` id on the element. Until then it is
+deferred and *From the Mist* is imported **strictly in order**, which is
+acceptable for a first pass and is stated here rather than discovered.
+
+**Granularity matters too.** A novel chapter is rarely one scene. If
+`scene_append` took exactly one, Claude would call it three times per chapter and
+each call would re-parse and re-reconcile the whole screenplay — a smaller copy
+of the quadratic problem phase 1 exists to solve. It takes a **fragment**: one
+call per chapter, not one per scene.
 
 ### Chapter 1 already works. It is chapters 2..n that are quadratic
 
@@ -346,18 +400,29 @@ AssertionError: the editor strands these and the plan does not say so: centered
 
 Cut by **dependency**, not by feature count.
 
-### Phase 1 — a chapter reaches a shot (the acceptance criterion)
-- `scene_append`, `scene_insert_after` — route + MCP tool
+### Phase 1 — a chapter can be imported at all
+- `scene_append` — route + MCP tool, taking a Fountain **fragment**
 - The chapter-by-chapter loop working end to end from Claude Desktop
-- The handoff **past writing**: an appended chapter reaching `shot_tag` / `shot_create`
+- **Not** `scene_insert_after` — blocked on scene identity, see above
 
-**Done when:** a chapter can be added without re-sending the screenplay; adding
-chapter N leaves scenes 1..N−1 byte-identical; and the scenes it added can become
-shots over MCP without `breakdown_run`. The middle clause matters as much as the
-first — a resend that reflows untouched scenes marks their shots stale and makes
-a director redo work nobody asked for.
+**Done when:** a chapter can be added without re-sending the screenplay, and
+adding chapter N leaves scenes 1..N−1 byte-identical. The second clause matters
+as much as the first — a resend that reflows untouched scenes marks their shots
+stale and makes a director redo work nobody asked for.
 
-### Phase 2 — structure you can author, keep, and export
+**Not phase 1's to prove:** the path from an appended scene to a shot is
+`shot_tag` / `shot_create`. It exists today. *(The driver initially folded the
+shots handoff into phase 1; the writers-tool agent argued that coupling an
+**import primitive** to a **production stage** makes phase 1 unshippable behind
+failure modes that have nothing to do with `scene_append` — and From the Mist
+cannot be imported at all today, which is the thing actually blocking. Agreed.
+The goal's acceptance criterion is real, so the handoff is **phase 2**, ahead of
+the FDX work — not folded into phase 1 and not dropped.)*
+
+### Phase 2 — the screenplay reaches the pipeline, and structure survives
+- **The shots handoff, proven**: an appended chapter reaching shots over MCP via
+  `shot_tag` / `shot_create`. First, because the goal's acceptance criterion is a
+  finished film and everything below is polish by comparison.
 - Editor: author `section` and `synopsis` (currently *unknown* to the editor)
 - Editor: a way IN to `centered`, `lyrics`, `note` (currently *stranded*)
 - FDX: stop dropping `section`/`synopsis`; stop exporting `note` as script text
