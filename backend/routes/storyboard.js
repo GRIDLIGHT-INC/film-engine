@@ -55,6 +55,48 @@ function storyboardImagePath(projectId, shotCode) {
 }
 
 /**
+ * Where a superseded attempt is kept.
+ *
+ * Every regeneration wrote to the same filename, so the asset ledger recorded
+ * six versions of a frame and the disk held one. Five images that cost money
+ * were gone, and the row that claimed each of them pointed at whichever picture
+ * happened to be there last — which is worse than not recording them, because
+ * A/B compare and the version list both read those rows and would show the
+ * newest frame six times over.
+ *
+ * The current frame keeps the plain name, so nothing that links to
+ * `{shot}.png` has to change; the version being replaced is copied aside first.
+ */
+function storyboardVersionPath(projectId, shotCode, version) {
+    return path.join(DATA_DIR, 'storyboards', projectId, 'versions', `${shotCode}_v${version}.png`);
+}
+
+/**
+ * Copy the frame that is about to be overwritten into the version store.
+ *
+ * Never throws: failing to archive an old attempt must not fail a generation
+ * that has already succeeded and been paid for.
+ */
+function archiveExistingFrame(projectId, shotId, shotCode) {
+    try {
+        const current = storyboardImagePath(projectId, shotCode);
+        if (!fs.existsSync(current)) return null;
+        const row = db.prepare(
+            `SELECT id, version FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard'
+              ORDER BY version DESC LIMIT 1`).get(shotId);
+        if (!row) return null;
+        const dest = storyboardVersionPath(projectId, shotCode, row.version);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(current, dest);
+        // The row now points at the copy, so the ledger and the disk agree
+        // about which picture that version WAS.
+        db.prepare('UPDATE film_assets SET file_path = ?, file_name = ? WHERE id = ?')
+            .run(dest, path.basename(dest), row.id);
+        return dest;
+    } catch (_) { return null; }
+}
+
+/**
  * Resolve an image URL from Gridlight response.
  * Handles full URLs, absolute paths, and bare filenames.
  */
@@ -789,6 +831,8 @@ async function generateStoryboard(req, res, projectId, query) {
 
             // Save image to disk
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
+            // Keep what is about to be replaced. Every attempt cost money.
+            archiveExistingFrame(projectId, shot.shot_id, shot.shot_code);
             fs.writeFileSync(imgPath, imageBuffer);
 
             // Register asset
@@ -1037,6 +1081,8 @@ async function generateStoryboardStream(req, res, projectId, query) {
             );
 
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
+            // Keep what is about to be replaced. Every attempt cost money.
+            archiveExistingFrame(projectId, shot.shot_id, shot.shot_code);
             fs.writeFileSync(imgPath, imageBuffer);
 
             const asset = registerStoryboardAsset(projectId, shot.shot_id, imgPath, `${shot.shot_code}.png`, {
@@ -1325,6 +1371,8 @@ async function regenerateShot(req, res, shotId) {
             await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
+        // Keep what is about to be replaced. Every attempt cost money.
+        archiveExistingFrame(project.id, shotId, shot.shot_code);
         fs.writeFileSync(imgPath, imageBuffer);
 
         const asset = registerStoryboardAsset(project.id, shotId, imgPath, `${shot.shot_code}.png`, {

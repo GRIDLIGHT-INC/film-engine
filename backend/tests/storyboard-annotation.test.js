@@ -277,3 +277,53 @@ test('a generating frame says so on the frame', () => {
     // slow generation invites is a second click on a paid action.
     assert.ok(/b\.disabled = true/.test(html), 'the regenerate button stays clickable while it runs');
 });
+
+/**
+ * Every attempt is kept, because every attempt cost money.
+ *
+ * Regeneration wrote to the same filename, so the asset ledger recorded six
+ * versions of one frame and the disk held one picture. Five images that were
+ * paid for were gone, and each row claiming them pointed at whichever file
+ * happened to be there last — which is worse than not recording them at all,
+ * since A/B compare and the version list both read those rows and would show
+ * the newest frame six times over while calling it history.
+ */
+test('a superseded frame is archived before it is overwritten', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
+    assert.ok(/function archiveExistingFrame\(/.test(src), 'nothing archives a replaced frame');
+    assert.ok(/storyboardVersionPath\(/.test(src), 'there is no per-version path');
+
+    // Every write of a frame archives first. One path that does not is a shot
+    // whose history silently stops.
+    const writes = (src.match(/fs\.writeFileSync\(imgPath, imageBuffer\)/g) || []).length;
+    const archives = (src.match(/archiveExistingFrame\(/g) || []).length - 1;   // minus the definition
+    assert.ok(writes > 0, 'no frame is written anywhere');
+    assert.strictEqual(archives, writes,
+        `${writes} paths write a frame and ${archives} archive first`);
+});
+
+test('the archived row points at the archived file', () => {
+    // Otherwise the ledger still claims a version whose pixels were replaced,
+    // which is the bug with an extra step.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
+    const fn = src.slice(src.indexOf('function archiveExistingFrame('));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    assert.ok(/UPDATE film_assets SET file_path = \?/.test(body),
+        'the old row is left pointing at the current frame');
+    assert.ok(/catch \(_\) \{ return null; \}/.test(body),
+        'a failed archive can fail a generation that already succeeded');
+});
+
+test('regen is visible from every place it can be pressed', () => {
+    // It marked only the board card. Pressed from the viewer the overlay went
+    // behind the modal; pressed from the detail panel it marked nothing at all.
+    // Both look exactly like a button that does nothing.
+    const html = fs.readFileSync(INDEX_HTML, 'utf8');
+    const fn = html.slice(html.indexOf('function frameBusy(shotId, label)'));
+    const body = fn.slice(0, fn.indexOf('\n    }'));
+    for (const surface of ['img-', 'frameViewerImg', 'shotDetailPanel']) {
+        assert.ok(body.includes(surface), `frameBusy does not mark ${surface}`);
+    }
+    assert.ok(/offsetParent/.test(body),
+        'a surface that is not on screen is still marked, so the overlay lands where nobody can see it');
+});

@@ -24652,34 +24652,76 @@ ${fountainText.slice(0, 50000)}`;
      * Returned rather than cleared by id, so a caller cannot forget which frame
      * it started and leave a card spinning forever over a request that failed.
      */
+    /**
+     * Mark EVERY surface showing this shot as working, and return the undo.
+     *
+     * Regen can be pressed from three places — the board card, the full-screen
+     * viewer's toolbar, and the shot detail panel — and this marked only the
+     * board card. Press it from the viewer and the overlay was appended to a
+     * card sitting behind the modal, so it did exist and could not be seen;
+     * press it from the detail panel and the card is not on screen at all, so
+     * the function returned a no-op and marked nothing. Both look identical to
+     * a button that does nothing, which is what got reported twice.
+     *
+     * Set-based over the surfaces rather than a lookup of one, because a
+     * fourth place to press Regen will be added and this has already been wrong
+     * about which one is on screen.
+     */
     function frameBusy(shotId, label) {
-        const img = document.getElementById('img-' + shotId);
-        const host = img && img.parentElement;
-        if (!host) return () => {};
+        const SURFACES = [
+            // The board card.
+            () => document.getElementById('img-' + shotId),
+            // The full-screen viewer, but only when it is showing THIS shot —
+            // veiling someone else's frame is worse than veiling nothing.
+            () => (frameViewerShotId() === shotId ? document.getElementById('frameViewerImg') : null),
+            // The shot detail panel.
+            () => {
+                const panel = document.getElementById('shotDetailPanel');
+                return panel ? panel.querySelector('img') : null;
+            },
+        ];
 
         const started = Date.now();
-        const veil = document.createElement('div');
-        veil.className = 'frame-busy';
-        veil.innerHTML = `<div class="frame-busy-inner">
-            <div class="frame-busy-spinner"></div>
-            <div class="frame-busy-label">${esc(label || 'Working')} <span data-elapsed>0s</span></div>
-        </div>`;
-        host.appendChild(veil);
+        const veils = [];
+        const buttons = [];
+
+        for (const find of SURFACES) {
+            let img = null;
+            try { img = find(); } catch (_) { img = null; }
+            const host = img && img.parentElement;
+            if (!host || !host.offsetParent) continue;      // not on screen: nothing to mark
+            if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+
+            const veil = document.createElement('div');
+            veil.className = 'frame-busy';
+            veil.innerHTML = `<div class="frame-busy-inner">
+                <div class="frame-busy-spinner"></div>
+                <div class="frame-busy-label">${esc(label || 'Working')} <span data-elapsed>0s</span></div>
+            </div>`;
+            host.appendChild(veil);
+            veils.push(veil);
+
+            const card = host.closest('.card') || host.closest('#shotDetailPanel') || host;
+            card.querySelectorAll('button').forEach(b => {
+                if (b.disabled) return;
+                b.disabled = true; b.style.opacity = '.5';
+                buttons.push(b);
+            });
+        }
 
         const tick = setInterval(() => {
-            const s = Math.round((Date.now() - started) / 1000);
-            const el = veil.querySelector('[data-elapsed]');
-            if (el) el.textContent = s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+            const secs = Math.round((Date.now() - started) / 1000);
+            const text = secs >= 60
+                ? `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s` : `${secs}s`;
+            veils.forEach(v => {
+                const el = v.querySelector('[data-elapsed]');
+                if (el) el.textContent = text;
+            });
         }, 1000);
-
-        // The card's own buttons are disabled while it works, because the one
-        // thing a slow generation invites is a second click.
-        const buttons = [...(host.closest('.card') || host).querySelectorAll('button')];
-        buttons.forEach(b => { b.disabled = true; b.style.opacity = '.5'; });
 
         return () => {
             clearInterval(tick);
-            veil.remove();
+            veils.forEach(v => v.remove());
             buttons.forEach(b => { b.disabled = false; b.style.opacity = ''; });
         };
     }
