@@ -1,0 +1,215 @@
+/**
+ * The plates a shot is generated with, gathered once for every path.
+ *
+ * This lived in routes/storyboard.js, which meant only the board paths could
+ * use it — and the divergence that produced was exactly the bug it had already
+ * been through once. `regenerateShot` did not call it, so regenerating ONE shot
+ * ran text-to-image with no plate conditioning while regenerating the whole
+ * board conditioned correctly; nothing failed and nothing was logged, because
+ * the full prose contracts were carrying the subjects until the day they were
+ * shortened on the correct assumption that a picture was attached.
+ *
+ * The orchestrated path had the same shape of gap and never closed it: the
+ * shared capability payload gathered no references at all, so a pipeline run
+ * generated keyframes unconditioned, and every reference feature added since —
+ * plates, mood-board style images, the scene anchor — reached three paths out
+ * of four. `lib/capability-payloads.js` exists precisely so "the per-domain
+ * routes, the pipeline orchestrator and the flow canvas cannot describe the
+ * same generation differently", and it could not honour that while the gatherer
+ * lived behind an HTTP route.
+ *
+ * Pure of the payload builder, deliberately. `loadShotContext` does the reading
+ * and hands the result over as `ctx.references`, so building a payload from an
+ * already-loaded context still needs no database — the property that makes the
+ * whole parity suite testable without I/O.
+ */
+
+const { selectReferences } = require('./reference-images');
+
+/**
+ * The database, required on first use rather than at module load.
+ *
+ * lib/capability-payloads.js requires this file and is deliberately free of a
+ * module-scope database so that building a payload from an already-loaded
+ * context needs no I/O at all. A top-level `require('../db/database')` here
+ * would open the database the moment that file was imported and undo it.
+ */
+let _db = null;
+function database() {
+    if (!_db) _db = require('../db/database').db;
+    return _db;
+}
+
+function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCardProps, anchor) {
+    const candidates = [];
+
+    // The frame this scene is measured against, when the caller resolved one.
+    // Ranked between identity and place by lib/reference-images: it is a
+    // photograph of THIS scene as generated rather than of the place in the
+    // abstract, and it already contains the location, rendered.
+    const anchorRef = require('./scene-anchor').anchorCandidate(anchor);
+    if (anchorRef) candidates.push(anchorRef);
+
+    for (const ch of matchedChars || []) {
+        if (!ch || !ch.id) continue;
+        const plate = database().prepare(
+            `SELECT file_path, file_name FROM film_assets
+             WHERE project_id = ? AND character_id = ?
+               AND asset_type IN ('character_sheet', 'reference_image')
+             ORDER BY version DESC, created_at DESC LIMIT 1`
+        ).get(projectId, ch.id);
+        if (plate) candidates.push({ name: ch.name, kind: 'character', file_path: plate.file_path });
+    }
+
+    if (matchedLocation && matchedLocation.id) {
+        const plate = database().prepare(
+            `SELECT file_path, file_name FROM film_assets
+             WHERE project_id = ? AND location_id = ?
+               AND asset_type IN ('reference_image', 'character_sheet')
+             ORDER BY version DESC, created_at DESC LIMIT 1`
+        ).get(projectId, matchedLocation.id);
+        if (plate) candidates.push({ name: matchedLocation.name, kind: 'location', file_path: plate.file_path });
+    }
+
+    // The film's look, as a picture. lib/reference-images has had a `style`
+    // rank since it was written and nothing ever filled it, so a frame pinned
+    // to the mood board changed no output anywhere. Ranked below character and
+    // location, so with three slots a look plate never displaces the actor — a
+    // viewer notices a different face long before a different grade.
+    try {
+        for (const ref of require('./look-development').styleReferences(db, projectId, 1)) {
+            candidates.push(ref);
+        }
+    } catch (_) { /* a project with no board generates exactly as before */ }
+
+    // Props named on the scene card. Ranked below character and location by
+    // lib/reference-images, so with the 3-reference cap they only claim a slot
+    // when there is one free — a prop displacing the actor would be the wrong
+    // trade every time.
+    const propNames = Array.isArray(sceneCardProps) ? sceneCardProps : [];
+    for (const raw of propNames) {
+        const name = typeof raw === 'string' ? raw : (raw && raw.name);
+        if (!name) continue;
+        const prop = database().prepare(
+            'SELECT id, name FROM film_props WHERE project_id = ? AND UPPER(name) = UPPER(?) LIMIT 1'
+        ).get(projectId, name);
+        if (!prop) continue;
+        const plate = database().prepare(
+            `SELECT file_path FROM film_assets
+             WHERE project_id = ? AND prop_id = ? AND asset_type IN ('reference_image', 'character_sheet')
+             ORDER BY version DESC, created_at DESC LIMIT 1`
+        ).get(projectId, prop.id);
+        if (plate) candidates.push({ name: prop.name, kind: 'prop', file_path: plate.file_path });
+    }
+
+    return selectReferences(candidates);
+}
+
+function matchProps(sceneCard, dbProps) {
+    const card = sceneCard || {};
+    const all = dbProps || [];
+    const chosen = new Map();
+
+    const take = (name) => {
+        if (!name) return;
+        const hit = all.find(p => p.name && p.name.toUpperCase() === String(name).toUpperCase());
+        if (hit) chosen.set(hit.id || hit.name, hit);
+    };
+
+    for (const entry of (Array.isArray(card.props) ? card.props : [])) {
+        take(typeof entry === 'string' ? entry : (entry && entry.name));
+    }
+
+    const text = String(card.description || card.action || '');
+    if (text) {
+        for (const prop of all) {
+            if (!prop.name) continue;
+            const escaped = String(prop.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            if (new RegExp(`\\b${escaped}\\b`, 'i').test(text)) chosen.set(prop.id || prop.name, prop);
+        }
+    }
+    return [...chosen.values()];
+}
+
+function matchCharacters(cardCharacters, dbCharacters) {
+    if (!cardCharacters || !Array.isArray(cardCharacters)) return [];
+    return cardCharacters
+        .map(ch => {
+            const name = typeof ch === 'string' ? ch : ch.name;
+            if (!name) return null;
+            return (dbCharacters || []).find(
+                c => c.name && c.name.toUpperCase() === name.toUpperCase()
+            );
+        })
+        .filter(Boolean);
+}
+
+function matchLocation(locationName, dbLocations) {
+    if (!locationName) return null;
+    return (dbLocations || []).find(
+        l => l.name && l.name.toUpperCase() === locationName.toUpperCase()
+    ) || null;
+}
+
+
+/**
+ * What the provider that will actually run can do with a picture.
+ *
+ * Two different questions, and conflating them cost a real frame. `canAttach`
+ * is whether it takes reference images at all; `canTag` is whether the PROMPT
+ * can address them as @maya. Meshy conditions on a plain untagged array, so
+ * emitting "@maya" there replaced 240 characters of appearance with a token
+ * meaning nothing to the model.
+ */
+function providerReferenceSupport(providerConfig) {
+    try {
+        const { imageProviderChain } = require('./image-fallback');
+        const lead = imageProviderChain(providerConfig || {})[0];
+        return {
+            canAttach: !!(lead && lead.supportsReferenceImages),
+            canTag: !!(lead && lead.supportsReferenceTags),
+            promptLimit: lead && Number(lead.promptLimit) > 0 ? Number(lead.promptLimit) : undefined,
+        };
+    } catch (_) {
+        return { canAttach: false, canTag: false, promptLimit: undefined };
+    }
+}
+
+/**
+ * Everything a shot's prompt and payload need to know about pictures.
+ *
+ * One call, so a path cannot gather the plates and forget the anchor, or attach
+ * references and fail to say whether the prompt may name them.
+ */
+function shotReferencesFor(db, opts) {
+    const o = opts || {};
+    const support = providerReferenceSupport(o.providerConfig);
+    if (!support.canAttach) {
+        return { references: [], tagged: false, anchorTag: null, support };
+    }
+    const references = gatherShotReferences(
+        o.projectId, o.characters || [], o.location || null, o.props || [], o.anchor || null);
+    const anchorRef = references.find(r => r && r.kind === 'anchor');
+    return {
+        references,
+        tagged: support.canTag,
+        // Named only when it claimed one of the three slots AND this provider
+        // can read a tag from the prompt. Two gates, because they fail
+        // differently: without a slot the tag points at nothing, and without
+        // tag support the model reads "@1a" as literal text — which is how an
+        // untaggable provider ends up with an unexplained extra picture and a
+        // stray token. The route paths gate before resolving; this is the same
+        // rule for the callers that do not.
+        anchorTag: (support.canTag && anchorRef) ? anchorRef.tag : null,
+        support,
+    };
+}
+
+module.exports = {
+    gatherShotReferences,
+    matchProps,
+    matchCharacters,
+    matchLocation,
+    providerReferenceSupport,
+    shotReferencesFor,
+};

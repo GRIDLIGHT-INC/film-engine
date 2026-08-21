@@ -184,7 +184,11 @@ test('the three outputs are wired to the three destinations, not just computed',
     const fs = require('fs');
     const at = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 
-    assert.ok(/styleReferences\(/.test(at('routes/storyboard.js')),
+    // The gatherer moved to lib/shot-references.js so the orchestrated payload
+    // path could use it too. Checking the lib rather than the route is
+    // strictly stronger: it is now the single place all four generation paths
+    // gather from, where the route was only three of them.
+    assert.ok(/styleReferences\(/.test(at('lib/shot-references.js')),
         'board images never reach generation, so a pinned frame changes nothing');
     assert.ok(/previsDefaults\(/.test(at('routes/previs.js')),
         'the film\'s lens never reaches previs, so a stage opens on a generic default');

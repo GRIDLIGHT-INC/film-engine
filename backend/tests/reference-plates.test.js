@@ -99,10 +99,13 @@ test('every subject kind has a film_assets column to link its plate to', () => {
         `film_assets cannot link a plate for: ${missing.map(k => TABLE_FOR[k].fk).join(', ')}`);
 });
 
-test('the storyboard route gathers a plate for every subject kind', () => {
+test('the gatherer looks up a plate for every subject kind', () => {
     // A generator plus a column is still useless if nothing looks the plate up
-    // when building a shot.
-    const src = fs.readFileSync(path.join(ROUTES, 'storyboard.js'), 'utf8');
+    // when building a shot. Read from the lib rather than the route: the
+    // gatherer moved there so the orchestrated payload path could use it too,
+    // and a test pinned to the route file would have gone quiet at exactly the
+    // moment a fourth caller appeared.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'shot-references.js'), 'utf8');
     const gather = src.slice(src.indexOf('function gatherShotReferences'));
     assert.ok(gather.length > 100, 'gatherShotReferences is missing');
 

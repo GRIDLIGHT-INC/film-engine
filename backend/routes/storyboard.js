@@ -20,6 +20,13 @@ const { buildShotReferencePayload, applyConsistencyToImagePayload, recordConsist
 const { resolveGenerator } = require('../lib/providers');
 const { selectReferences } = require('../lib/reference-images');
 const { generateImageWithFallback, imageProviderChain } = require('../lib/image-fallback');
+// Moved to a lib so the orchestrated payload path can gather the same plates.
+// While it lived here, only the three board paths could reach it, and every
+// reference feature added since — plates, board style images, the scene anchor
+// — reached three paths out of four.
+const {
+    gatherShotReferences, matchProps, matchCharacters, matchLocation,
+} = require('../lib/shot-references');
 const { endpointFor: gridlightEndpointFor } = require('../lib/providers/gridlight-adapter');
 const { extractMediaUrl, resolveMediaUrl, isGatewayUrl } = require('../lib/provider-media');
 const { imageRequestPayload, providerConfigOf } = require('../lib/capability-payloads');
@@ -430,70 +437,6 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
  * with no plate simply falls back to its prose description — so a project that
  * has never generated a reference sheet behaves exactly as before.
  */
-function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCardProps, anchor) {
-    const candidates = [];
-
-    // The frame this scene is measured against, when the caller resolved one.
-    // Ranked between identity and place by lib/reference-images: it is a
-    // photograph of THIS scene as generated rather than of the place in the
-    // abstract, and it already contains the location, rendered.
-    const anchorRef = require('../lib/scene-anchor').anchorCandidate(anchor);
-    if (anchorRef) candidates.push(anchorRef);
-
-    for (const ch of matchedChars || []) {
-        if (!ch || !ch.id) continue;
-        const plate = db.prepare(
-            `SELECT file_path, file_name FROM film_assets
-             WHERE project_id = ? AND character_id = ?
-               AND asset_type IN ('character_sheet', 'reference_image')
-             ORDER BY version DESC, created_at DESC LIMIT 1`
-        ).get(projectId, ch.id);
-        if (plate) candidates.push({ name: ch.name, kind: 'character', file_path: plate.file_path });
-    }
-
-    if (matchedLocation && matchedLocation.id) {
-        const plate = db.prepare(
-            `SELECT file_path, file_name FROM film_assets
-             WHERE project_id = ? AND location_id = ?
-               AND asset_type IN ('reference_image', 'character_sheet')
-             ORDER BY version DESC, created_at DESC LIMIT 1`
-        ).get(projectId, matchedLocation.id);
-        if (plate) candidates.push({ name: matchedLocation.name, kind: 'location', file_path: plate.file_path });
-    }
-
-    // The film's look, as a picture. lib/reference-images has had a `style`
-    // rank since it was written and nothing ever filled it, so a frame pinned
-    // to the mood board changed no output anywhere. Ranked below character and
-    // location, so with three slots a look plate never displaces the actor — a
-    // viewer notices a different face long before a different grade.
-    try {
-        for (const ref of require('../lib/look-development').styleReferences(db, projectId, 1)) {
-            candidates.push(ref);
-        }
-    } catch (_) { /* a project with no board generates exactly as before */ }
-
-    // Props named on the scene card. Ranked below character and location by
-    // lib/reference-images, so with the 3-reference cap they only claim a slot
-    // when there is one free — a prop displacing the actor would be the wrong
-    // trade every time.
-    const propNames = Array.isArray(sceneCardProps) ? sceneCardProps : [];
-    for (const raw of propNames) {
-        const name = typeof raw === 'string' ? raw : (raw && raw.name);
-        if (!name) continue;
-        const prop = db.prepare(
-            'SELECT id, name FROM film_props WHERE project_id = ? AND UPPER(name) = UPPER(?) LIMIT 1'
-        ).get(projectId, name);
-        if (!prop) continue;
-        const plate = db.prepare(
-            `SELECT file_path FROM film_assets
-             WHERE project_id = ? AND prop_id = ? AND asset_type IN ('reference_image', 'character_sheet')
-             ORDER BY version DESC, created_at DESC LIMIT 1`
-        ).get(projectId, prop.id);
-        if (plate) candidates.push({ name: prop.name, kind: 'prop', file_path: plate.file_path });
-    }
-
-    return selectReferences(candidates);
-}
 
 // ── Route Handler ───────────────────────────────────────────────────
 
@@ -1303,8 +1246,16 @@ function shotPromptPreview(req, res, shotId, query) {
         // The plates that travel WITH the prompt. A subject whose picture is
         // attached needs identifying, not describing at length — which is where
         // most of the room goes.
+        // Two shapes reach this list and only one was being read. A gathered
+        // plate is { name, kind, tag, uri }; a consistency reference is
+        // { subject_name, profile_type, role }. Reporting only the second
+        // rendered every gathered plate as `{}` — a report that says a
+        // subject's picture is attached, and cannot say which subject.
         references: (payload.reference_images || []).map(r => ({
-            subject: r.subject_name, kind: r.profile_type, role: r.role,
+            subject: r.name || r.subject_name || null,
+            kind: r.kind || r.profile_type || null,
+            tag: r.tag || null,
+            role: r.role || null,
         })),
         contributors,
         // What the director drew, and what it is doing. Three separate facts —
@@ -1329,12 +1280,9 @@ function shotPromptPreview(req, res, shotId, query) {
         })(),
         // Which frame this scene is measured against.
         //
-        // Reported rather than folded into `prompt` above, and the difference is
-        // stated: the board paths attach the anchor and name it, and this
-        // preview is built through the shared capability payload, which does not
-        // gather reference plates at all. Showing the phrase that would be added
-        // is honest; silently adding it here would make the preview claim an
-        // attachment this path cannot make.
+        // The anchor as this shot will actually generate with it. The shared
+        // payload gathers plates now, so the prompt above is the prompt — this
+        // block explains it rather than standing in for it.
         scene_anchor: (() => {
             const { sceneAnchorFor, anchorPhrase } = require('../lib/scene-anchor');
             const enabled = !!(ctx.project && ctx.project.scene_anchor_refs);
@@ -1344,11 +1292,14 @@ function shotPromptPreview(req, res, shotId, query) {
                 feedback_enabled: enabled,
                 shot_code: code,
                 pinned: !!resolved.pinned,
+                // Whether it actually claimed one of the three slots, which is a
+                // different question from whether the scene has an anchor: two
+                // characters and a location fill the payload first.
+                attached: !!ctx.anchorTag,
                 reason: code ? null : resolved.reason,
-                adds: enabled && code ? anchorPhrase(String(code).toLowerCase().replace(/[^a-z0-9]/g, '')) : '',
-                note: 'Generating this shot from the board attaches that frame as a reference and '
-                    + 'names it for its LIGHT, palette and grade — never its composition. This '
-                    + 'preview reports it; the prompt string above does not include it.',
+                adds: ctx.anchorTag ? anchorPhrase(ctx.anchorTag) : '',
+                note: 'The frame is attached as a reference and named for its LIGHT, palette and '
+                    + 'grade — never its composition. The prompt above is what generation sends.',
             };
         })(),
         card: ctx.sceneCard,
@@ -1729,7 +1680,23 @@ async function regenerateShot(req, res, shotId) {
         const result = buildStoryboardPrompt(
             sceneCard, matchedChars, matchedLocation,
             body.style_override || project.style_preset,
-            { props, annotations: annots.enabled ? annots.marks : undefined, anchorTag }
+            {
+                props,
+                annotations: annots.enabled ? annots.marks : undefined,
+                anchorTag,
+                // The same plates the board path names. This path used to build
+                // its prompt in prose while attaching the pictures anyway, so
+                // two shots on one board generated two ways described their
+                // subjects differently — the divergence this work exists to
+                // remove, surviving inside the one route that does both.
+                //
+                // Safe only because the plates are gathered ABOVE and go on the
+                // payload below: a subject shortened to @maya with no picture
+                // attached travels with neither words nor image, which is the
+                // failure the contract-shortening revert was about.
+                references: shotRefs, tagged: canTag,
+                maxPromptChars: imagePromptLimitFor(project),
+            }
         );
         prompt = result.prompt;
         negative_prompt = result.negative_prompt;
@@ -1844,51 +1811,8 @@ async function regenerateShot(req, res, shotId) {
  * Whole-word matching only — "bag" inside "baggage" is not the grocery bag, and
  * a plate attached on a coincidence puts the wrong object in frame.
  */
-function matchProps(sceneCard, dbProps) {
-    const card = sceneCard || {};
-    const all = dbProps || [];
-    const chosen = new Map();
 
-    const take = (name) => {
-        if (!name) return;
-        const hit = all.find(p => p.name && p.name.toUpperCase() === String(name).toUpperCase());
-        if (hit) chosen.set(hit.id || hit.name, hit);
-    };
 
-    for (const entry of (Array.isArray(card.props) ? card.props : [])) {
-        take(typeof entry === 'string' ? entry : (entry && entry.name));
-    }
-
-    const text = String(card.description || card.action || '');
-    if (text) {
-        for (const prop of all) {
-            if (!prop.name) continue;
-            const escaped = String(prop.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            if (new RegExp(`\\b${escaped}\\b`, 'i').test(text)) chosen.set(prop.id || prop.name, prop);
-        }
-    }
-    return [...chosen.values()];
-}
-
-function matchCharacters(cardCharacters, dbCharacters) {
-    if (!cardCharacters || !Array.isArray(cardCharacters)) return [];
-    return cardCharacters
-        .map(ch => {
-            const name = typeof ch === 'string' ? ch : ch.name;
-            if (!name) return null;
-            return (dbCharacters || []).find(
-                c => c.name && c.name.toUpperCase() === name.toUpperCase()
-            );
-        })
-        .filter(Boolean);
-}
-
-function matchLocation(locationName, dbLocations) {
-    if (!locationName) return null;
-    return (dbLocations || []).find(
-        l => l.name && l.name.toUpperCase() === locationName.toUpperCase()
-    ) || null;
-}
 
 // ── Reference Image Selection for IP-Adapter ─────────────────────
 

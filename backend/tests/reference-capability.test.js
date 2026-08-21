@@ -216,15 +216,91 @@ test('the single-shot path attaches plates, not disk paths', () => {
 test('every path that generates a keyframe gathers references the same way', () => {
     // Set-based over the generation entry points, because the divergence was
     // invisible: one path conditioned, one did not, and both reported success.
-    const src = require('fs').readFileSync(path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
-    const ENTRY_POINTS = ['generateStoryboard(', 'generateStoryboardStream(', 'regenerateShot('];
-    const missing = ENTRY_POINTS.filter(entry => {
-        const i = src.indexOf('function ' + entry);
+    //
+    // The FOURTH entry is the one that stayed open longest. The shared
+    // capability payload gathered no references at all, so an orchestrated
+    // pipeline run generated keyframes unconditioned while the board
+    // conditioned correctly — and every reference feature added since (prop
+    // plates, mood-board style images, the scene anchor) reached three paths
+    // out of four. It is listed here rather than in a test of its own, because
+    // a gap that lives in a different file is exactly the one a per-file test
+    // cannot see.
+    const read = f => require('fs').readFileSync(path.join(__dirname, '..', ...f.split('/')), 'utf8');
+    const ENTRY_POINTS = [
+        { file: 'routes/storyboard.js', fn: 'generateStoryboard(' },
+        { file: 'routes/storyboard.js', fn: 'generateStoryboardStream(' },
+        { file: 'routes/storyboard.js', fn: 'regenerateShot(' },
+        { file: 'lib/capability-payloads.js', fn: 'loadShotContext(' },
+    ];
+    const missing = ENTRY_POINTS.filter(({ file, fn }) => {
+        const src = read(file);
+        const i = src.indexOf('function ' + fn);
         if (i < 0) return true;
-        return !/gatherShotReferences\(/.test(src.slice(i, i + 12000));
-    });
+        const body = src.slice(i, i + 12000);
+        return !/gatherShotReferences\(|shotReferencesFor\(/.test(body);
+    }).map(e => `${e.file}:${e.fn}`);
     assert.deepStrictEqual(missing, [],
         `these generate keyframes without gathering plates: ${missing.join(', ')}`);
+});
+
+test('the orchestrated payload actually carries the plates, not just a call to gather them', () => {
+    // The source check above proves the call exists. This proves the pictures
+    // arrive: a prompt that names @maya with no matching image is strictly
+    // worse than one that used prose, and that is precisely what a gather whose
+    // result never reaches the payload produces.
+    const fs = require('fs');
+    const os = require('os');
+    const crypto = require('crypto');
+    process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
+        || path.join(os.tmpdir(), 'film-engine-refcap-' + crypto.randomUUID().slice(0, 8));
+    const { db, generateId } = require('../db/database');
+    require('../db/schema').ensureSchema();
+    const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
+
+    const png = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'base64');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'refcap-plate-'));
+    const plate = path.join(dir, 'maya.png');
+    fs.writeFileSync(plate, png);
+
+    const projectId = generateId(), sceneId = generateId(), shotId = generateId(), charId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Orchestrated');
+    db.prepare('INSERT INTO film_characters (id, project_id, name, appearance_prompt) VALUES (?, ?, ?, ?)')
+        .run(charId, projectId, 'MAYA', 'rust-orange cardigan, dark bob');
+    db.prepare("INSERT INTO film_scenes (id, project_id, scene_number, location) VALUES (?, ?, '1', 'STREET')")
+        .run(sceneId, projectId);
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+        .run(shotId, sceneId, '1A', JSON.stringify({
+            shot_code: '1A', action: 'MAYA crosses the street.', characters: ['MAYA'], camera: {},
+        }));
+    db.prepare(`INSERT INTO film_assets (id, project_id, character_id, asset_type, file_name, file_path, version)
+                VALUES (?, ?, ?, 'character_sheet', 'maya.png', ?, 1)`)
+        .run(generateId(), projectId, charId, plate);
+
+    const { payload } = buildCapabilityPayload('image', loadShotContext(shotId));
+    assert.ok(Array.isArray(payload.reference_images) && payload.reference_images.length,
+        'the orchestrated payload gathered plates and then dropped them on the floor');
+    assert.ok(payload.reference_images.some(r => /^data:/.test(r.uri || '')),
+        'a plate travelled as a disk path, which no provider can read');
+});
+
+test('a subject never loses its words unless its picture is in the same payload', () => {
+    // The invariant behind the contract-shortening revert, stated as a rule
+    // rather than as a story. `@maya` may replace an appearance only when the
+    // reference that gives it meaning is attached to the SAME request; a
+    // subject that travels with neither is how an establishing shot came back
+    // as a product photograph.
+    const withPicture = buildStoryboardPrompt(CARD, CHARS, LOC, 'noir', {
+        references: [{ name: 'MAYA', tag: 'maya', uri: 'data:image/png;base64,AAA' }],
+        tagged: true,
+    });
+    assert.ok(/@maya/.test(withPicture.prompt), 'the attached plate was never named');
+
+    const withoutPicture = buildStoryboardPrompt(CARD, CHARS, LOC, 'noir', {});
+    assert.ok(!/@maya/.test(withoutPicture.prompt), 'a tag was emitted with no picture to point at');
+    assert.ok(withoutPicture.prompt.includes('rust-orange cardigan'),
+        'no picture and no words: the subject travels as a bare name');
 });
 
 test('a composed prompt is the whole prompt, not a prefix', () => {

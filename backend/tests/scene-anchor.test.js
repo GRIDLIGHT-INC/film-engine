@@ -35,6 +35,11 @@ const { Writable } = require('stream');
 
 process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
     || path.join(os.tmpdir(), 'film-engine-anchor-' + crypto.randomUUID().slice(0, 8));
+// The provider chain only walks CREDENTIALED adapters, so with no keys in the
+// environment every project resolves to gridlight — which takes pictures and
+// cannot name them. A tag-capable provider has to be reachable for any test
+// about tagging to mean anything.
+process.env.RUNWAY_API_KEY = process.env.RUNWAY_API_KEY || 'test-key-not-used';
 
 const { db, generateId } = require('../db/database');
 const { ensureSchema } = require('../db/schema');
@@ -84,8 +89,9 @@ function framePath(name) {
 function makeScene(shotCodes, framed, opts) {
     const o = opts || {};
     const projectId = generateId(), sceneId = generateId();
-    db.prepare('INSERT INTO film_projects (id, title, scene_anchor_refs) VALUES (?, ?, ?)')
-        .run(projectId, 'Anchor Test', o.enabled ? 1 : 0);
+    db.prepare('INSERT INTO film_projects (id, title, scene_anchor_refs, provider_config) VALUES (?, ?, ?, ?)')
+        .run(projectId, 'Anchor Test', o.enabled ? 1 : 0,
+            JSON.stringify(o.provider ? { image: o.provider } : {}));
     db.prepare("INSERT INTO film_scenes (id, project_id, scene_number, location) VALUES (?, ?, '1', 'STREET')")
         .run(sceneId, projectId);
     const shots = {};
@@ -343,13 +349,42 @@ test('the board says which frame each scene is measured against', async () => {
 
 test('the free preview reports the anchor and does not pretend to apply it', async () => {
     const { handleStoryboard } = require('../routes/storyboard');
-    const { shots } = makeScene(['1A', '1B'], ['1A'], { enabled: true });
+    const { shots } = makeScene(['1A', '1B'], ['1A'], { enabled: true, provider: 'runway' });
     const r = await callRoute(handleStoryboard, 'GET', `/film/shots/${shots['1B']}/prompt`);
     assert.strictEqual(r.status, 200);
     assert.strictEqual(r.body.scene_anchor.shot_code, '1A');
+    assert.strictEqual(r.body.scene_anchor.attached, true,
+        'the anchor was resolved but never claimed a reference slot');
     assert.ok(r.body.scene_anchor.adds.includes('light'),
-        'the preview does not show the phrase the anchor would add');
+        'the preview does not show the phrase the anchor adds');
+    // The prompt IS what generation sends now that the shared payload gathers
+    // plates, so the preview must not be reporting something the prompt lacks.
+    assert.ok(r.body.prompt.includes('@' + r.body.scene_anchor.shot_code.toLowerCase()),
+        'the preview reports an anchor its own prompt does not name');
     assert.ok(r.body.scene_anchor.note, 'the preview does not say how its prompt relates to generation');
+});
+
+test('an untaggable provider gets the picture but never the tag', () => {
+    // Two gates that fail differently. Without a slot the tag points at
+    // nothing; without tag support the model reads "@1a" as literal text and
+    // the picture arrives unexplained beside the plates. The route paths gate
+    // before resolving, so this pins the rule for the shared gatherer that the
+    // orchestrated path uses — where it was missing, and a live run emitted
+    // "@1a" to a provider that cannot read one.
+    const { shotReferencesFor } = require('../lib/shot-references');
+    const { shots, projectId } = makeScene(['1A', '1B'], ['1A'], { enabled: true });
+    const anchor = sceneAnchorFor(db, shots['1B']);
+    assert.ok(anchor.shot, 'the fixture produced no anchor to test with');
+
+    // gridlight takes reference images and cannot name them; runway can.
+    const untagged = shotReferencesFor(db, { projectId, providerConfig: { image: 'gridlight' }, anchor });
+    assert.ok(untagged.references.some(r => r.kind === 'anchor'),
+        'the picture was withheld from a provider that can take pictures');
+    assert.strictEqual(untagged.anchorTag, null,
+        'a tag was emitted to a provider that reads it as literal text');
+
+    const tagged = shotReferencesFor(db, { projectId, providerConfig: { image: 'runway' }, anchor });
+    assert.strictEqual(tagged.anchorTag, '1a', 'a tag-capable provider was not given the tag');
 });
 
 // ── The page ────────────────────────────────────────────────────────────

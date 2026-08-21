@@ -201,6 +201,13 @@ const CAPABILITY_BUILDERS = {
                 // payload, and therefore the artefact fingerprint, byte-identical
                 // for every project that has not turned it on.
                 annotations: ctx.useAnnotations ? (ctx.annotations || []) : undefined,
+                // The plates loadShotContext gathered, and whether this
+                // provider lets the prompt name them. Undefined on a
+                // hand-built context, which is what keeps every payload the
+                // parity suite compares byte-identical.
+                references: (ctx.references && ctx.references.length) ? ctx.references : undefined,
+                tagged: ctx.tagged,
+                anchorTag: ctx.anchorTag || undefined,
             });
 
         const payload = imageRequestPayload({
@@ -215,6 +222,10 @@ const CAPABILITY_BUILDERS = {
             ip_adapter_image: overrides.ip_adapter_image,
             ip_adapter_weight: overrides.ip_adapter_weight,
             aspect_ratio: ctx.project.aspect_ratio,
+            // The pictures themselves. Without this the prompt above could emit
+            // @maya with nothing for it to point at, which is strictly worse
+            // than having used prose.
+            reference_images: ctx.references,
         });
 
         // The ceiling goes WITH the additions, because they are part of the
@@ -481,11 +492,56 @@ function loadShotContext(shotId) {
         }
     } catch (_) { previs = null; }
 
+    /**
+     * The plates this shot generates with — gathered HERE, where the reading
+     * happens, not in the payload builder.
+     *
+     * This is the gap that made the shared payload path a partial one. The
+     * board routes gathered tagged, inlined plates and the orchestrator
+     * gathered nothing, so a pipeline run generated keyframes with no
+     * conditioning at all while the board conditioned correctly — the same
+     * shape of divergence `regenerateShot` already shipped once. Every
+     * reference feature added since (character and location plates, prop
+     * plates, mood-board style images, the scene anchor) reached three paths
+     * out of four.
+     *
+     * `tagged` travels with them because they are two different questions: a
+     * provider may take pictures and still be unable to read `@maya` from the
+     * prompt, and emitting the tag there replaces the appearance with a token
+     * meaning nothing.
+     */
+    let references = [], tagged = false, anchorTag = null;
+    try {
+        const { shotReferencesFor, matchCharacters, matchLocation, matchProps } =
+            require('./shot-references');
+        const locations = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(scene.project_id);
+        const anchor = project && project.scene_anchor_refs
+            ? require('./scene-anchor').sceneAnchorFor(db, shotId)
+            : null;
+        const gathered = shotReferencesFor(db, {
+            projectId: scene.project_id,
+            providerConfig: providerConfigOf(project),
+            characters: matchCharacters(sceneCard.characters, characters),
+            location: matchLocation(scene.location, locations),
+            props: matchProps(sceneCard, props),
+            anchor: anchor && anchor.shot ? anchor : null,
+        });
+        references = gathered.references;
+        tagged = gathered.tagged;
+        anchorTag = gathered.anchorTag;
+    } catch (_) {
+        // A project with no plates, or a provider that cannot be resolved,
+        // generates exactly as it did before rather than failing to build a
+        // payload at all.
+        references = []; tagged = false; anchorTag = null;
+    }
+
     return {
         shot, scene, project, sceneCard, characters, location, voiceProfiles, props,
         keyframeAsset, videoAsset, audioAsset, musicCue, initImage,
         consistency: consistencyContext,
         previs,
+        references, tagged, anchorTag,
         annotations,
         // The project's standing answer to PAR-026. A route may override it per
         // request; nothing else may, because a default that turns itself on is
