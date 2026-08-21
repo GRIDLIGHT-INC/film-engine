@@ -293,3 +293,41 @@ describe('3D Integration (mock Gridlight)', () => {
         assert.equal(res.status, 404);
     });
 });
+
+
+describe('3D subject coverage', () => {
+it('every subject kind the 3D module accepts is reachable through the server', () => {
+    // A location mesh is a previs stage, and the generic /film/locations route
+    // sits in server.js ahead of any 3D dispatch — so a handler can exist and
+    // nothing ever reach it. That is the trap the frames route fell into: a
+    // route written, loaded, and unreachable is indistinguishable from one
+    // nobody wrote, and no unit test sees it because the module is called
+    // directly.
+    const fs_ = require('fs');
+    const path_ = require('path');
+    const routeSrc = fs_.readFileSync(path_.join(__dirname, '..', 'routes', 'threed.js'), 'utf8');
+    const serverSrc = fs_.readFileSync(path_.join(__dirname, '..', 'server.js'), 'utf8');
+
+    const m = routeSrc.match(/const MODEL_SUBJECTS = \{([^}]*)\}/);
+    assert.ok(m, 'the 3D module no longer declares which subjects it accepts');
+    const subjects = [...m[1].matchAll(/(\w+):/g)].map(x => x[1]);
+    assert.ok(subjects.length >= 3, `found only ${subjects.length} model subjects`);
+
+    const unreachable = subjects.filter(sub =>
+        !new RegExp(`parts\\[1\\] === '${sub}'[\\s\\S]{0,120}?parts\\[3\\] === 'model'`).test(serverSrc));
+    assert.deepStrictEqual(unreachable, [],
+        `routes/threed.js accepts these and server.js never routes them: ${unreachable.join(', ')}`);
+});
+
+it('a location becomes a stage, not a subject', () => {
+    // What previs needs from a location mesh is where the ground is, where the
+    // walls are and how far the far side is — an environment you can put a
+    // camera INSIDE. Asking for it the way a prop is asked for produces a model
+    // of a street sitting on a turntable.
+    const { normalizeSubject } = require('../lib/threed-prompt');
+    const out = normalizeSubject({ name: 'SUBURBAN STREET', description: 'a cul-de-sac ringed by houses' }, 'location');
+    assert.strictEqual(out.category, 'set', 'a location was categorised as a prop or a character');
+    assert.match(out.prompt, /cul-de-sac/, 'the location description never reached the mesh prompt');
+    assert.match(out.prompt, /environment|ground plane/, 'nothing asks for something a camera can stand in');
+});
+});

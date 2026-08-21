@@ -249,3 +249,30 @@ test('a possessive is the same subject, not a new one', () => {
         'an internal apostrophe was stripped, splitting one name into a shorter wrong one');
     assert.deepStrictEqual(names('MAYA runs flat-out down the street.'), ['MAYA']);
 });
+
+
+test('describing from the screenplay is reachable in the app', () => {
+    // The route has existed since this work shipped and was reachable only over
+    // HTTP: no button, and deliberately no MCP tool, since it hands the
+    // reasoning to a server-side LLM while the agent host IS the model. So in
+    // the app, descriptions were typed by hand — and an entity with no
+    // description generates a bare name, which is how a character becomes a
+    // different person in every frame.
+    const fs_ = require('fs');
+    const path_ = require('path');
+    const html = fs_.readFileSync(path_.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+
+    assert.ok(/function describeFromScreenplay/.test(html), 'describeFromScreenplay is not defined');
+    assert.ok(/entities\/describe/.test(html), 'nothing calls the describe route');
+
+    // On all three entity pages, because the gap is per page: a button on
+    // characters alone leaves locations and props typed by hand.
+    const calls = (html.match(/onclick="describeFromScreenplay\(/g) || []).length;
+    assert.ok(calls >= 3, `only ${calls} entity page(s) offer it`);
+
+    // And it must report what stayed blank, not just what it wrote.
+    const fn = html.slice(html.indexOf('async function describeFromScreenplay'),
+        html.indexOf('async function describeFromScreenplay') + 1600);
+    assert.ok(/still_blank/.test(fn),
+        'an entity that stayed blank is not reported, so it looks like success');
+});

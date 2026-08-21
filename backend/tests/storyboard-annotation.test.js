@@ -340,3 +340,36 @@ test('regen is visible from every place it can be pressed', () => {
     assert.ok(/offsetParent/.test(body),
         'a surface that is not on screen is still marked, so the overlay lands where nobody can see it');
 });
+
+
+test('markup is visible in the stage you restage against', () => {
+    // Markup reached the prompt and the previs payload previews; what it never
+    // did was appear in the one place you go to restage the shot. Previs stands
+    // the generated frame in the world so a new angle can be judged against it
+    // — and the arrows drawn on that frame, which are the reason you are there,
+    // were invisible.
+    const html = fs.readFileSync(INDEX_HTML, 'utf8');
+    const missing = [];
+    if (!/function previsDrawKeyframeMarkup/.test(html)) missing.push('nothing draws markup in the stage');
+    if (!/previsDrawKeyframeMarkup\(ctx,/.test(html)) missing.push('the stage never calls it');
+    if (!/markupLoad\(shotId\)\.then/.test(html)) missing.push('previs never loads the shot\u2019s markup');
+    // It must reuse the board's renderer, or the same arrow is two shapes.
+    const fn = html.slice(html.indexOf('function previsDrawKeyframeMarkup'),
+        html.indexOf('function previsDrawKeyframeMarkup') + 1600);
+    if (!/markupShape\(/.test(fn)) missing.push('the stage draws markup with its own renderer');
+    assert.deepStrictEqual(missing, [], `\n  ${missing.join('\n  ')}`);
+});
+
+test('previs reads markup and does not act on it', () => {
+    // An arrow is notation. The thing that moves a previs camera is the
+    // blocking, and two systems claiming to set the same camera is exactly how
+    // they come to disagree — the reason the storyboard and the board's facets
+    // were unified onto one precedence rule.
+    const html = fs.readFileSync(INDEX_HTML, 'utf8');
+    const fn = html.slice(html.indexOf('function previsDrawKeyframeMarkup'),
+        html.indexOf('function previsDrawKeyframeMarkup') + 1600);
+    for (const forbidden of ['PREVIS.camera =', 'previsSolve(', 'previsApply(']) {
+        assert.ok(!fn.includes(forbidden),
+            `the stage acts on markup (${forbidden}) instead of only showing it`);
+    }
+});

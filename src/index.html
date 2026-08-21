@@ -4601,7 +4601,11 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         <div class="page" id="page-characters">
             <div class="flex-between mb-16">
                 <h2>Characters</h2>
-                <button class="btn btn-primary" onclick="showModal('characterModal')">+ Character</button>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary" onclick="describeFromScreenplay('loadCharacters')"
+                            title="Write the missing descriptions from the screenplay. Only fills what is blank — a description you wrote is a decision and is never overwritten.">Describe from screenplay</button>
+                    <button class="btn btn-primary" onclick="showModal('characterModal')">+ Character</button>
+                </div>
             </div>
             <div class="entity-grid" id="characterGrid"></div>
         </div>
@@ -4610,7 +4614,11 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         <div class="page" id="page-locations">
             <div class="flex-between mb-16">
                 <h2>Locations</h2>
-                <button class="btn btn-primary" onclick="showModal('locationModal')">+ Location</button>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary" onclick="describeFromScreenplay('loadLocations')"
+                            title="Write the missing descriptions from the screenplay. Only fills what is blank — a description you wrote is a decision and is never overwritten.">Describe from screenplay</button>
+                    <button class="btn btn-primary" onclick="showModal('locationModal')">+ Location</button>
+                </div>
             </div>
             <div class="entity-grid" id="locationGrid"></div>
         </div>
@@ -4619,7 +4627,11 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         <div class="page" id="page-props">
             <div class="flex-between mb-16">
                 <h2>Props</h2>
-                <button class="btn btn-primary" onclick="showModal('propModal')">+ Prop</button>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary" onclick="describeFromScreenplay('loadProps')"
+                            title="Write the missing descriptions from the screenplay. Only fills what is blank — a description you wrote is a decision and is never overwritten.">Describe from screenplay</button>
+                    <button class="btn btn-primary" onclick="showModal('propModal')">+ Prop</button>
+                </div>
             </div>
             <div class="filter-pills" id="propFilters"></div>
             <div class="entity-grid" id="propGrid"></div>
@@ -12725,12 +12737,21 @@ THREE.GLTFLoader = GLTFLoader;
         // changing the lens or dollying in leaves the pane visibly identical
         // and the whole pane reads as broken.
         const quad = pr && sensor ? previsPlateQuad(sensor) : null;
-        const painted = quad && previsDrawTexturedQuad(ctx, img, quad.map(pr));
+        const screen = quad ? quad.map(pr) : null;
+        const painted = screen && previsDrawTexturedQuad(ctx, img, screen);
+        let flat = null;
         if (!painted) {
             const scale = Math.max(view.w / img.width, view.h / img.height);
             const w = img.width * scale, h = img.height * scale;
-            ctx.drawImage(img, view.x + (view.w - w) / 2, view.y + (view.h - h) / 2, w, h);
+            const x = view.x + (view.w - w) / 2, y = view.y + (view.h - h) / 2;
+            ctx.drawImage(img, x, y, w, h);
+            flat = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
         }
+        // The direction drawn on that frame, on the frame, at full strength.
+        // You are restaging against a picture you marked up; the arrow saying
+        // "push in past the mailbox" is the reason you came here.
+        ctx.globalAlpha = 1;
+        previsDrawKeyframeMarkup(ctx, painted ? screen : flat);
         ctx.restore();
     }
 
@@ -12780,9 +12801,51 @@ THREE.GLTFLoader = GLTFLoader;
         return [at(-1, 1), at(1, 1), at(1, -1), at(-1, -1)];
     }
 
+
+    /**
+     * The shot's markup, drawn on the keyframe standing in the stage.
+     *
+     * Markup reached the prompt and the payload previews; what it never did was
+     * appear in the one place you go to restage the shot. Previs stands the
+     * generated frame in the world so you can judge a new angle against it —
+     * and the arrows you drew on that frame, which are the reason you are
+     * restaging, were invisible.
+     *
+     * Mapped bilinearly across the quad's four projected corners. That is
+     * affine per edge rather than truly perspective-correct, the same
+     * approximation previsDrawTexturedQuad already makes when it splits the
+     * card into two triangles: exact at the corners, imperceptibly off along
+     * the diagonal, and consistent with the picture it is drawn over.
+     *
+     * Read only. An arrow here is the same notation it is on the board; previs
+     * does not interpret it as a camera move, because the thing that moves a
+     * camera is the blocking, and two systems claiming to set the same camera
+     * is how they come to disagree.
+     */
+    function previsDrawKeyframeMarkup(ctx, quad) {
+        if (!quad || quad.length !== 4 || quad.some(p => !p)) return;
+        const marks = MARKUP.cache[PREVIS.shotId] || [];
+        if (!marks.length) return;
+
+        const [tl, tr, br, bl] = quad;
+        const at = p => {
+            const u = Number(p[0]) || 0, v = Number(p[1]) || 0;
+            const topX = tl[0] + (tr[0] - tl[0]) * u, topY = tl[1] + (tr[1] - tl[1]) * u;
+            const botX = bl[0] + (br[0] - bl[0]) * u, botY = bl[1] + (br[1] - bl[1]) * u;
+            return [topX + (botX - topX) * v, topY + (botY - topY) * v];
+        };
+        for (const a of marks) {
+            markupShape(ctx, a.kind, (a.points || []).map(at), a.text, a.color || '#f59e0b');
+        }
+    }
+
     async function previsOpenShot(shotId) {
         PREVIS.shotId = shotId;
         PREVIS.playhead = null;
+        // The direction drawn on this shot's frame, so it can be seen in the
+        // stage. Fire-and-forget: a repaint follows, and a stage that waited on
+        // markup would open slower for a shot that has none.
+        markupLoad(shotId).then(() => previsRefresh()).catch(() => {});
         try {
             const res = await api(`/shots/${shotId}/previs`);
             PREVIS.approval = res.approval || null;
@@ -23893,6 +23956,41 @@ ${fountainText.slice(0, 50000)}`;
             const modal = document.getElementById('frameViewerModal');
             if (modal && modal.classList.contains('open')) frameViewerPaint();
         } catch (err) { setStatus('Could not restore that version: ' + err.message); }
+    }
+
+
+    /**
+     * Write the missing descriptions from the screenplay.
+     *
+     * The route has existed since the screenplay-to-entities work and was
+     * reachable only over HTTP: no button, and deliberately no MCP tool, since
+     * it hands the reasoning to a server-side LLM and the agent host IS the
+     * model. So in the app, descriptions were typed by hand — and an entity
+     * with no description generates a bare name, which is how a character
+     * becomes a different person in every frame.
+     *
+     * Fills only what is BLANK. A description someone wrote is a decision, and
+     * a button that quietly replaced it would be unusable twice.
+     */
+    async function describeFromScreenplay(reload) {
+        if (!state.currentProject) return;
+        setStatus('Reading the screenplay...', true);
+        try {
+            const r = await api('/projects/' + state.currentProject.id + '/entities/describe', {
+                method: 'POST', body: JSON.stringify({}),
+            });
+            const n = r.described_count || (r.described || []).length;
+            // Named, not counted. An entity that stays blank generates a bare
+            // name and must not look like success.
+            const missed = (r.still_blank || []).map(x => x.name || x).filter(Boolean);
+            setStatus(
+                (n ? `Described ${n} entit${n === 1 ? 'y' : 'ies'}` : (r.message || 'Nothing was blank'))
+                + (missed.length ? ` \u2014 still blank: ${missed.join(', ')}` : '')
+                + (r.provider ? ` (via ${r.provider})` : ''));
+            if (typeof window[reload] === 'function') await window[reload]();
+        } catch (err) {
+            setStatus('Could not describe from the screenplay: ' + err.message);
+        }
     }
 
     // ── The frame you are currently shooting from ──────────────────────────

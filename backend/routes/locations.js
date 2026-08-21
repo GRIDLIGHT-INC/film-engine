@@ -59,6 +59,9 @@ async function generateSubjectPlate(req, res, kind, subjectId) {
         stylePreset: project.style_preset,
         aspectRatio: project.aspect_ratio,
         provider,
+        // So the board's pinned look travels as a picture, not only as the
+        // words it composed into style_preset.
+        db,
     });
 
     if (!result.ok) {

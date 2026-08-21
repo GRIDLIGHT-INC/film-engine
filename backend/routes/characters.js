@@ -549,12 +549,21 @@ async function generateRefSheet(req, res, charId) {
         const project = db.prepare('SELECT style_preset FROM film_projects WHERE id = ?').get(ch.project_id);
         const projectStyle = project && project.style_preset;
         let styleApplied = !!(projectStyle && String(projectStyle).trim());
-        const prompt = buildRefSheetPrompt(ch, view, projectStyle);
+        // The board's look as a picture, not only as the words it composed into
+        // style_preset. A plate conditions every frame its subject appears in,
+        // so a sheet generated outside the film's look drags all of them with
+        // it. One reference only: a turnaround has one subject, and a second
+        // look plate starts voting on who that is.
+        const styleRefs = require('../lib/reference-plates').styleReferencesFor(db, ch.project_id);
+        const prompt = styleRefs.length && styleRefs[0].tag
+            ? `${buildRefSheetPrompt(ch, view, projectStyle)}, in the light, palette and colour grade of @${styleRefs[0].tag}`
+            : buildRefSheetPrompt(ch, view, projectStyle);
         const negativePrompt = REFSHEET_NEGATIVE;
 
         const payload = {
             prompt,
             negative_prompt: negativePrompt,
+            ...(styleRefs.length ? { reference_images: styleRefs } : {}),
             model,
             width: 1024,
             height: 1024,
@@ -575,8 +584,13 @@ async function generateRefSheet(req, res, charId) {
             // dropping the style is how a director ends up anchoring a whole
             // film to a look nobody chose.
             if (!result.ok && styleApplied && /moderation/i.test(String(result.error || ''))) {
+                // The look drops whole — its words AND its picture. Retrying
+                // with the reference still attached re-sends what may have been
+                // refused, and would report style_applied: false while the look
+                // was in fact still applied.
+                const { reference_images: _dropped, ...styleless } = payload;
                 result = await imageProvider.generate('image', {
-                    ...payload,
+                    ...styleless,
                     prompt: buildRefSheetPrompt(ch, view, null),
                 }, { timeout: 300000 });
                 if (result.ok) styleApplied = false;

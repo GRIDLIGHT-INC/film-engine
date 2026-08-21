@@ -809,6 +809,15 @@ const server = http.createServer(async (req, res) => {
             return handleBudgetEstimate(req, res, parts, query);
         }
 
+        // Route: /film/locations/:id/model[/generate|from-image[/stream]] — 3D
+        // A location mesh is a previs STAGE. Must come before the generic
+        // locations route below, which would otherwise swallow it — the same
+        // trap the frames route fell into, where a handler existed and nothing
+        // ever reached it.
+        if (parts[1] === 'locations' && parts[2] && parts[3] === 'model') {
+            return await handleThreeD(req, res, parts, query);
+        }
+
         // Route: /film/locations/:id
         if (parts[1] === 'locations') {
             return handleLocations(req, res, parts, query);

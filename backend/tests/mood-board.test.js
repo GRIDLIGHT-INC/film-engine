@@ -230,3 +230,78 @@ test('the length warning quotes the allowance THIS project actually gets', () =>
     assert.strictEqual(allowancesFor(limit).style, 560,
         'the style allowance at meshy\'s ceiling is not what the warning should quote');
 });
+
+
+// ── The board's look reaches the plates, not only the frames ────────────
+
+test('a pinned board image conditions the plates, not only the storyboard', () => {
+    // The board composed into style_preset from the day it was built and its
+    // images reached storyboard frames — never the plates. That is the wrong
+    // way round: a plate conditions every frame its subject appears in, so a
+    // plate generated outside the film's look drags all of them with it and the
+    // look has to be re-argued in every shot.
+    const { styleReferencesFor } = require('../lib/reference-plates');
+    const fs_ = require('fs');
+    const os_ = require('os');
+    const path_ = require('path');
+
+    const projectId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Look board');
+
+    const dir = fs_.mkdtempSync(path_.join(os_.tmpdir(), 'lookref-'));
+    const img = path_.join(dir, 'look.png');
+    fs_.writeFileSync(img, Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'base64'));
+
+    assert.deepStrictEqual(styleReferencesFor(db, projectId), [],
+        'a project with no board produced a reference out of nowhere');
+
+    db.prepare(`INSERT INTO film_mood_board (id, project_id, kind, note, image_path)
+                VALUES (?, ?, 'image', 'wet streets at blue hour', ?)`)
+        .run(generateId(), projectId, img);
+
+    const refs = styleReferencesFor(db, projectId);
+    assert.strictEqual(refs.length, 1, 'the board image never became a plate reference');
+    assert.strictEqual(refs[0].kind, 'style');
+    assert.ok(/^data:/.test(refs[0].uri), 'the reference travels as a disk path no provider can read');
+});
+
+test('a plate takes ONE look reference, never a committee', () => {
+    // A plate has exactly one subject and the board is there for its grade. Two
+    // or three look plates start voting on what the object IS, and the thing
+    // being established stops being the thing.
+    const { styleReferencesFor } = require('../lib/reference-plates');
+    const fs_ = require('fs');
+    const os_ = require('os');
+    const path_ = require('path');
+    const projectId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Many looks');
+    const dir = fs_.mkdtempSync(path_.join(os_.tmpdir(), 'lookrefs-'));
+    for (const n of ['a', 'b', 'c']) {
+        const f = path_.join(dir, n + '.png');
+        fs_.writeFileSync(f, Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+            'base64'));
+        db.prepare(`INSERT INTO film_mood_board (id, project_id, kind, note, image_path)
+                    VALUES (?, ?, 'image', ?, ?)`).run(generateId(), projectId, 'look ' + n, f);
+    }
+    assert.strictEqual(styleReferencesFor(db, projectId).length, 1,
+        'more than one look reference reached a plate');
+});
+
+test('the look drops whole on a moderation refusal — words and picture', () => {
+    // Retrying with the reference still attached re-sends what may have been
+    // refused, and reports style_applied: false while the look is in fact still
+    // applied. That is a worse lie than dropping it.
+    const fs_ = require('fs');
+    const path_ = require('path');
+    for (const [file, marker] of [
+        ['lib/reference-plates.js', 'delete basePayload.reference_images'],
+        ['routes/characters.js', 'reference_images: _dropped'],
+    ]) {
+        const src = fs_.readFileSync(path_.join(__dirname, '..', ...file.split('/')), 'utf8');
+        assert.ok(src.includes(marker),
+            `${file} retries a refused plate with the look reference still attached`);
+    }
+});

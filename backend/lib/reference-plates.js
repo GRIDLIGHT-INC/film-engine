@@ -114,6 +114,23 @@ const NEGATIVE = 'blurry, low quality, distorted, multiple angles, collage, '
     + 'swatch, swatches, watermark, logo, arrows, callouts, measurement marks';
 
 /**
+ * The board's look, as at most one tagged, inlined reference.
+ *
+ * `db` is passed rather than required, because this module is used from routes
+ * that already hold a connection and from tests that must not open one. No
+ * board, no database, or an unreadable image all mean the plate generates
+ * exactly as it did before.
+ */
+function styleReferencesFor(db, projectId) {
+    if (!db || !projectId) return [];
+    try {
+        const { styleReferences } = require('./look-development');
+        const { selectReferences } = require('./reference-images');
+        return selectReferences(styleReferences(db, projectId, 1), { limit: 1 });
+    } catch (_) { return []; }
+}
+
+/**
  * Generate, store and register one plate.
  *
  * Returns { ok, asset_id, file_name, image_url, style_applied, error }.
@@ -123,7 +140,7 @@ const NEGATIVE = 'blurry, low quality, distorted, multiple angles, collage, '
  * plate generated without the style is still worth having — but a director who
  * is told nothing will believe their look is anchored when it is not.
  */
-async function generatePlate({ projectId, kind, subject, stylePreset, provider, aspectRatio, timeout }) {
+async function generatePlate({ projectId, kind, subject, stylePreset, provider, aspectRatio, timeout, db }) {
     const spec = PLATE_KINDS[kind];
     if (!spec) return { ok: false, error: `unknown plate kind '${kind}'` };
     if (!subject || !subject.id) return { ok: false, error: `${kind} not found` };
@@ -132,19 +149,49 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
     }
 
     let styleApplied = !!(stylePreset && String(stylePreset).trim());
+
+    /*
+     * The look board, as a PICTURE and not only as words.
+     *
+     * The board has composed into `style_preset` since it was built, and its
+     * pinned images reached storyboard frames — but never the plates. That is
+     * the wrong way round: a plate conditions every frame its subject appears
+     * in, so a plate generated outside the film's look drags every one of those
+     * frames with it, and the look has to be re-argued in each. Fixing it here
+     * fixes it once.
+     *
+     * ONE image, not three. A plate has exactly one subject and the board is
+     * there for its grade and palette; two or three look plates start voting on
+     * what the object is, and the thing being established stops being the
+     * thing. The prompt says what it is for where the provider can hear it.
+     */
+    const styleRefs = styleReferencesFor(db, projectId);
+    const platePrompt = (style, refs) => {
+        const base = buildPlatePrompt(kind, subject, style);
+        return (refs && refs.length && refs[0].tag)
+            ? `${base}, in the light, palette and colour grade of @${refs[0].tag}`
+            : base;
+    };
+
     const basePayload = {
         negative_prompt: NEGATIVE,
         aspect_ratio: aspectRatio || undefined,
+        ...(styleRefs.length ? { reference_images: styleRefs } : {}),
     };
 
     let result = await provider.generate('image', {
         ...basePayload,
-        prompt: buildPlatePrompt(kind, subject, stylePreset),
+        prompt: platePrompt(stylePreset, styleRefs),
     }, { timeout: timeout || 300000 });
 
     // Same refusal path as character sheets: retry once without the style
     // rather than losing the plate entirely.
     if (!result.ok && styleApplied && /moderation/i.test(String(result.error || ''))) {
+        // The look goes in full: its words AND its picture. Retrying with the
+        // reference still attached would re-send the thing that may have been
+        // refused, and report `style_applied: false` while the look was in fact
+        // still applied — a worse lie than dropping it.
+        delete basePayload.reference_images;
         result = await provider.generate('image', {
             ...basePayload,
             prompt: buildPlatePrompt(kind, subject, null),
@@ -199,4 +246,4 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
     };
 }
 
-module.exports = { PLATE_KINDS, buildPlatePrompt, generatePlate, NEGATIVE };
+module.exports = { PLATE_KINDS, buildPlatePrompt, generatePlate, styleReferencesFor, NEGATIVE };

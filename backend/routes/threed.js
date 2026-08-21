@@ -7,6 +7,7 @@
  * POST /film/characters/:id/model/generate[/stream]     - text -> mesh from character
  * POST /film/characters/:id/model/from-image[/stream]   - reference image -> mesh
  * POST /film/props/:id/model/generate[/stream]          - text -> mesh from prop
+ * POST /film/locations/:id/model/generate[/stream]     - text -> mesh from location (a previs stage)
  * POST /film/props/:id/model/from-image[/stream]        - reference image -> mesh
  * POST /film/models/:assetId/rig                        - auto-rig an existing mesh
  * POST /film/models/:assetId/retexture                  - regenerate textures
@@ -112,9 +113,16 @@ function handleThreeD(req, res, urlParts, query) {
         return getModelGeometry(req, res, urlParts[2], query);
     }
 
-    // /film/characters|props/:id/model[/generate|from-image[/stream]]
-    if ((urlParts[1] === 'characters' || urlParts[1] === 'props') && urlParts[2] && urlParts[3] === 'model') {
-        const kind = urlParts[1] === 'props' ? 'prop' : 'character';
+    // /film/characters|props|locations/:id/model[/generate|from-image[/stream]]
+    //
+    // Locations are here because previs is a STAGE and a stage needs somewhere
+    // to stand. Blocking against an empty floor answers where the camera is and
+    // not what it can see past; a rough environment mesh answers both. Its
+    // fidelity is beside the point — previs strips materials to grey-box, so
+    // what matters is the ground, the walls and the far distance.
+    const MODEL_SUBJECTS = { characters: 'character', props: 'prop', locations: 'location' };
+    if (MODEL_SUBJECTS[urlParts[1]] && urlParts[2] && urlParts[3] === 'model') {
+        const kind = MODEL_SUBJECTS[urlParts[1]];
         const subjectId = urlParts[2];
         if (!UUID_RE.test(subjectId)) return json(res, 400, { error: 'Invalid subject ID' });
 
@@ -164,6 +172,11 @@ function handleThreeD(req, res, urlParts, query) {
 
 /** Load a character or prop row + its project id. */
 function loadSubject(kind, id) {
+    if (kind === 'location') {
+        const loc = db.prepare('SELECT * FROM film_locations WHERE id = ?').get(id);
+        if (!loc) return null;
+        return { row: loc, projectId: loc.project_id };
+    }
     if (kind === 'prop') {
         const prop = db.prepare('SELECT * FROM film_props WHERE id = ?').get(id);
         if (!prop) return null;

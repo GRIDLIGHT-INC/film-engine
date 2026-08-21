@@ -25,7 +25,7 @@ const NEGATIVE_PROMPT_3D =
 /**
  * Normalize a raw character/prop DB row into a subject descriptor.
  * @param {object} row - film_characters or film_props row
- * @param {'character'|'prop'|'set'|'shot'} kind
+ * @param {'character'|'prop'|'location'|'set'|'shot'} kind
  * @returns {{name:string, prompt:string, category:string}}
  */
 function normalizeSubject(row, kind) {
@@ -35,6 +35,20 @@ function normalizeSubject(row, kind) {
             name: r.name || 'prop',
             prompt: [r.visual_prompt, r.description].filter(Boolean).join(', ') || (r.name || 'prop'),
             category: r.category || 'prop',
+        };
+    }
+    if (kind === 'location') {
+        // A location mesh is a STAGE, not a subject. What previs needs from it
+        // is where the ground is, where the walls are and how far away the far
+        // side is — so the prompt asks for an environment you can put a camera
+        // inside, and the lighting defaults are dropped: baked light on a mesh
+        // fights whatever the blocking decides, and previs strips materials to
+        // grey-box anyway.
+        return {
+            name: r.name || 'location',
+            prompt: [r.description, 'environment, open interior volume, walkable ground plane']
+                .filter(Boolean).join(', '),
+            category: 'set',
         };
     }
     // character (default)
