@@ -38,10 +38,144 @@ const src = f => fs.readFileSync(path.join(__dirname, '..', ...f.split('/')), 'u
  * added to the parser must fail this file until the plan accounts for it.
  */
 function elementTypes() {
-    const m = src('lib/fountain-parser.js').match(/ELEMENT_TYPES\s*=\s*\{([\s\S]*?)\}/);
+    const m = src('lib/fountain-parser.js').match(/ELEMENT_TYPES\s*=\s*\{([\s\S]*?)\n\s*\};/);
     assert.ok(m, 'the parser no longer declares ELEMENT_TYPES');
-    return [...m[1].matchAll(/'([a-z_]+)'/g)].map(x => x[1]);
+    const types = [...m[1].matchAll(/'([a-z_]+)'/g)].map(x => x[1]);
+    // Anchored against SHRINKING. The old pattern stopped at the first `}`, so a
+    // nested object or a brace in a comment would silently return a shorter
+    // list — and a shorter list makes every assertion below EASIER to satisfy.
+    // A test whose grip loosens as the code it guards grows is worse than none,
+    // because it still reports green.
+    assert.ok(types.length >= 13,
+        `only ${types.length} element types parsed out — the extraction is broken, not the parser`);
+    return types;
 }
+
+/**
+ * How a writer can actually produce each element, from three editor registries.
+ *
+ * Draft 1 measured this by regexing element-type strings out of index.html.
+ * String presence is not authoring capability and the two differ by four
+ * elements — the "wired vs merely exists" error this file exists to prevent,
+ * committed by the file itself.
+ *
+ * `typed` is graph REACHABILITY, not set membership. `nextType` says what
+ * follows Enter, so `'lyrics': 'lyrics'` is a self-loop that keeps you in lyrics
+ * once you are there and is not a way in. Reading it as membership over-counts.
+ */
+function authorability() {
+    const html = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+
+    const nt = html.match(/nextType:\s*\{([\s\S]*?)\}/);
+    assert.ok(nt, 'AUTO_FORMAT_RULES.nextType is gone — the editor no longer declares its types');
+    const known = [...nt[1].matchAll(/'([a-z-]+)'\s*:/g)].map(m => m[1]);
+    assert.ok(known.length >= 8, `only ${known.length} editor types extracted — the extraction broke`);
+    const edges = {};
+    for (const m of nt[1].matchAll(/'([a-z-]+)'\s*:\s*'([a-z-]+)'/g)) edges[m[1]] = m[2];
+
+    const bodyOf = name => {
+        const i = html.indexOf('function ' + name + '(');
+        return i < 0 ? '' : html.slice(i, i + 3000);
+    };
+    const seeds = new Set();
+    for (const fn of ['autoDetectElementType', 'detectElementTypeImmediate']) {
+        for (const m of bodyOf(fn).matchAll(/detectedType\s*=\s*'([a-z-]+)'|return\s+'([a-z-]+)'/g)) {
+            const t = m[1] || m[2];
+            if (known.includes(t)) seeds.add(t);
+        }
+    }
+    assert.ok(seeds.size >= 3, `only ${seeds.size} classifier seeds found — the extraction broke`);
+
+    const typed = new Set(seeds);
+    for (let grew = true; grew;) {
+        grew = false;
+        for (const t of [...typed]) {
+            const n = edges[t];
+            if (n && known.includes(n) && !typed.has(n)) { typed.add(n); grew = true; }
+        }
+    }
+
+    const tc = html.match(/tabCycles:\s*\{([\s\S]*?)\n\s{8}\}/);
+    const cycled = new Set(tc
+        ? [...tc[1].matchAll(/'([a-z-]+)'/g)].map(m => m[1]).filter(t => known.includes(t))
+        : []);
+    const commanded = new Set(/function toggleDualDialogue/.test(html) ? ['dual-dialogue'] : []);
+    const reachable = new Set([...typed, ...cycled, ...commanded]);
+
+    return { known, typed, cycled, commanded, reachable,
+        stranded: known.filter(t => !reachable.has(t)) };
+}
+
+/**
+ * The plan's own claim, not any sentence containing the number.
+ *
+ * The first version asserted `doc.includes('editor 9/13')` and passed on the
+ * sentence "Draft 1 asserted editor 9/13 as a fact. It is not a fact" — the plan
+ * REPUDIATING the number satisfied a check meant to verify it claimed it. A
+ * substring match cannot tell a claim from its retraction, so the claim is
+ * anchored to the one line that makes it.
+ */
+function coverageLine() {
+    const line = plan().split('\n').find(l => l.startsWith('**Coverage:'));
+    assert.ok(line, 'the plan no longer states its coverage on a single **Coverage:** line');
+    return line;
+}
+
+/**
+ * How a writer can actually produce each element, derived from three separate
+ * registries in the editor.
+ *
+ * Draft 1 measured this by regexing element-type strings out of index.html.
+ * String presence is not authoring capability, and the difference is four
+ * elements — the exact "wired vs merely exists" error this file was written to
+ * prevent, committed by the file itself.
+ *
+ * `typed` is graph REACHABILITY, not set membership. `nextType` says what comes
+ * after Enter, so `'lyrics': 'lyrics'` is a self-loop that keeps you in lyrics
+ * once you are there and is not a way in. Reading it as membership over-counts.
+ */
+function authorability() {
+    const html = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+
+    const nt = html.match(/nextType:\s*\{([\s\S]*?)\}/);
+    assert.ok(nt, 'AUTO_FORMAT_RULES.nextType is gone — the editor no longer declares its own types');
+    const known = [...nt[1].matchAll(/'([a-z-]+)'\s*:/g)].map(m => m[1]);
+    const edges = {};
+    for (const m of nt[1].matchAll(/'([a-z-]+)'\s*:\s*'([a-z-]+)'/g)) edges[m[1]] = m[2];
+
+    const bodyOf = name => {
+        const i = html.indexOf('function ' + name + '(');
+        return i < 0 ? '' : html.slice(i, i + 3000);
+    };
+    const seeds = new Set();
+    for (const fn of ['autoDetectElementType', 'detectElementTypeImmediate']) {
+        for (const m of bodyOf(fn).matchAll(/detectedType\s*=\s*'([a-z-]+)'|return\s+'([a-z-]+)'/g)) {
+            const t = m[1] || m[2];
+            if (known.includes(t)) seeds.add(t);
+        }
+    }
+    assert.ok(seeds.size >= 3, `only ${seeds.size} classifier seeds found — the extraction is broken`);
+
+    const typed = new Set(seeds);
+    for (let grew = true; grew;) {
+        grew = false;
+        for (const t of [...typed]) {
+            const n = edges[t];
+            if (n && known.includes(n) && !typed.has(n)) { typed.add(n); grew = true; }
+        }
+    }
+
+    const tc = html.match(/tabCycles:\s*\{([\s\S]*?)\n\s{8}\}/);
+    const cycled = new Set(tc ? [...tc[1].matchAll(/'([a-z-]+)'/g)].map(m => m[1]).filter(t => known.includes(t)) : []);
+    const commanded = new Set(/function toggleDualDialogue/.test(html) ? ['dual-dialogue'] : []);
+
+    const reachable = new Set([...typed, ...cycled, ...commanded]);
+    return { known, typed, cycled, commanded, reachable,
+        stranded: known.filter(t => !reachable.has(t)) };
+}
+
+/** Editor type names are hyphenated; parser types are underscored. */
+const asEditor = t => t.replace(/_/g, '-');
 
 test('the plan accounts for every element the parser can emit', () => {
     const types = elementTypes();
@@ -53,50 +187,57 @@ test('the plan accounts for every element the parser can emit', () => {
 });
 
 test('the plan states the coverage counts, and they are true', () => {
-    // The headline numbers are the thing a reader takes away, so they are the
-    // thing most worth being wrong. Recomputed here from source.
     const types = elementTypes();
-    const editor = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+    const { reachable } = authorability();
     const fdxMap = src('lib/fdx-generator.js').match(/FDX_TYPE_MAP\s*=\s*\{([\s\S]*?)\}/);
     assert.ok(fdxMap, 'the FDX generator no longer declares FDX_TYPE_MAP');
 
-    const authored = types.filter(t => {
-        const hyph = t.replace(/_/g, '-');
-        return new RegExp(`['"\\.](${t}|${hyph})['"\\s]`).test(editor);
-    });
+    // Only PARSED types count. dual-dialogue is authorable and is not an element
+    // type, so counting it would inflate the figure.
+    const authorable = types.filter(t => reachable.has(asEditor(t)));
     const exported = types.filter(t => new RegExp(`\\b${t}\\s*:`).test(fdxMap[1]));
 
-    const doc = plan();
-    assert.ok(doc.includes(`parser ${types.length}/${types.length}`),
-        `the plan does not state parser coverage as ${types.length}/${types.length}`);
-    assert.ok(doc.includes(`editor ${authored.length}/${types.length}`),
-        `the plan claims a different editor coverage than the ${authored.length}/${types.length} the source shows`);
-    assert.ok(doc.includes(`FDX ${exported.length}/${types.length}`),
-        `the plan claims a different FDX coverage than the ${exported.length}/${types.length} the map shows`);
+    const line = coverageLine();
+    assert.ok(line.includes(`parser ${types.length}/${types.length}`),
+        `coverage line does not state parser ${types.length}/${types.length}: ${line}`);
+    assert.ok(line.includes(`authorable ${authorable.length}/${types.length}`),
+        `the plan claims a different authorable coverage than the ${authorable.length}/${types.length} the editor reaches: ${line}`);
+    assert.ok(line.includes(`FDX ${exported.length}/${types.length}`),
+        `the plan claims a different FDX coverage than the ${exported.length}/${types.length} the map shows: ${line}`);
 });
 
-test('every element the plan calls unauthored really is absent from the editor', () => {
-    // The plan's whole organising claim is "complete implementation, incomplete
-    // surface". If an element it calls missing is in fact authorable, the claim
-    // is false and the phases are aimed at the wrong work.
-    const editor = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+test('the plan defines authorability rather than just counting it', () => {
+    // The regression this replaces: a single "editor N/13" number that conflated
+    // reachable-by-typing with merely-rendered. The three routes a writer has
+    // are separate registries and the plan has to name them.
     const doc = plan();
-    const wrong = [];
-    for (const t of elementTypes()) {
-        // A row marking the editor column with ✗ for this element.
-        const row = doc.split('\n').find(l => l.includes('`' + t + '`') && l.startsWith('|'));
-        if (!row) continue;
-        const cells = row.split('|').map(c => c.trim());
-        const editorCell = cells[4];              // # | element | parser | renderer | editor | ...
-        if (editorCell !== '✗') continue;
-        const hyph = t.replace(/_/g, '-');
-        if (new RegExp(`['"\\.](${t}|${hyph})['"\\s]`).test(editor)) {
-            wrong.push(t);
-        }
-    }
-    assert.deepStrictEqual(wrong, [],
-        `the plan says the editor cannot author these, but it can: ${wrong.join(', ')}`);
+    const missing = ['typed', 'cycled', 'commanded', 'stranded']
+        .filter(term => !new RegExp('\\*\\*' + term + '\\*\\*').test(doc));
+    assert.deepStrictEqual(missing, [],
+        `the plan counts authorability without defining it — missing: ${missing.join(', ')}`);
 });
+
+test('every element the plan calls stranded really is known-but-unreachable', () => {
+    // `stranded` is its own bug class: the editor knows the type, can leave it,
+    // and offers no way in. A row marked stranded that is reachable aims phase 2
+    // at work that does not exist; one that is UNKNOWN to the editor is a larger
+    // fix wearing the same label.
+    const { known, reachable, stranded } = authorability();
+    const claimed = plan().split('\n')
+        .filter(l => l.startsWith('|') && /\*\*stranded\*\*/.test(l))
+        .map(l => (l.match(/`([a-z_]+)`/) || [])[1])
+        .filter(Boolean);
+
+    assert.ok(claimed.length > 0, 'the editor strands elements and the plan names none');
+    const wrong = claimed.filter(t => !known.includes(asEditor(t)) || reachable.has(asEditor(t)));
+    assert.deepStrictEqual(wrong, [],
+        `the plan calls these stranded, but they are reachable or unknown to the editor: ${wrong.join(', ')}`);
+
+    const unlisted = stranded.filter(e => !claimed.includes(e.replace(/-/g, '_')));
+    assert.deepStrictEqual(unlisted, [],
+        `the editor strands these and the plan does not say so: ${unlisted.join(', ')}`);
+});
+
 
 test('the FDX defects the plan names are real', () => {
     const map = src('lib/fdx-generator.js').match(/FDX_TYPE_MAP\s*=\s*\{([\s\S]*?)\}/)[1];
@@ -145,8 +286,24 @@ test('the plan names its phases, its deferrals and who owns the unverified cells
     // Anything not done is named with a reason — the standard this work runs
     // under, and a plan that omits the section cannot honour it.
     if (!/## Deferred/.test(doc)) missing.push('a Deferred section');
-    // The writers-tool column is not the driver's to invent. If it is silently
-    // filled in, that is the failure mode this marks.
-    if (!/UNVERIFIED/.test(doc)) missing.push('UNVERIFIED markers on the writers-tool cells');
+    // The writers-tool column is not the driver's to invent. The failure mode
+    // is the driver filling it in silently — NOT the cells being filled at all,
+    // which is the goal. Asserting the literal marker survives made the plan
+    // uncompletable: finish Set 3 honestly and the suite goes red, and the
+    // cheapest way back to green is to delete the content. So assert the
+    // INVARIANT instead — every Set 3 row is either still marked unverified, or
+    // carries a line naming who supplied it and what it was checked against.
+    // Read the ROWS, not the prose around them. Prose can contain the word
+    // "UNVERIFIED" while describing the convention, which is enough to satisfy
+    // a section-wide regex and let an unattributed table through — that is
+    // exactly how the first version of this check passed on a plan it should
+    // have rejected.
+    const set3 = doc.slice(doc.indexOf('## Set 3'), doc.indexOf('## Phases'));
+    const rows = set3.split('\n').filter(l => /^\| *(\d+|—) *\|/.test(l));
+    const anyUnfilled = rows.some(r => /UNVERIFIED/.test(r));
+    const supplied = /Cells supplied by the writers-tool agent/.test(set3);
+    if (rows.length && !anyUnfilled && !supplied) {
+        missing.push('Set 3 has filled rows but no line saying who supplied them');
+    }
     assert.deepStrictEqual(missing, [], `the plan is missing: ${missing.join(', ')}`);
 });
