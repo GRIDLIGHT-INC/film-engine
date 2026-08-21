@@ -4551,6 +4551,17 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         <input type="checkbox" id="useReferencesToggle" style="cursor:pointer;">
                         Use References
                     </label>
+                    <!-- PAR-026. Off by default, and the label says which of the two
+                         things markup currently is, because "notation for me" and
+                         "instructions the model follows" are different features
+                         wearing the same arrows. -->
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"
+                           id="annotFeedbackLabel"
+                           title="When on, every mark carrying a note is added to this shot's prompt each time it is generated, until you delete the mark.">
+                        <input type="checkbox" id="annotFeedbackToggle" style="cursor:pointer;"
+                               onchange="setAnnotationFeedback(this.checked)">
+                        <span id="annotFeedbackText">Marks are notes only</span>
+                    </label>
                     <button class="btn btn-primary" onclick="generateAllStoryboards()">Generate All</button>
                 </div>
             </div>
@@ -23700,6 +23711,7 @@ ${fountainText.slice(0, 50000)}`;
             // director needs to know is while they are looking at the frames.
             await loadScreenplayDrift();
             await loadImpact();
+            renderAnnotationFeedbackToggle();
             const grid = document.getElementById('storyboardGrid');
             if (frames.length === 0) {
                 grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
@@ -23769,7 +23781,69 @@ ${fountainText.slice(0, 50000)}`;
             title="drag on the frame to draw ${k === 'text' ? 'a note' : 'a ' + k}">${k}</button>`;
         return MARKUP_KINDS.map(btn).join('')
             + `<button class="btn btn-sm" onclick="markupUndo('${shotId}')" title="remove the last mark">undo</button>`
-            + `<button class="btn btn-sm" onclick="markupClear('${shotId}')" title="remove all markup from this frame">clear</button>`;
+            + `<button class="btn btn-sm" onclick="markupClear('${shotId}')" title="remove all markup from this frame">clear</button>`
+            + `<span id="mkfeed-${canvasId}" class="text-sm" style="opacity:.75;align-self:center;"></span>`;
+    }
+
+    // ── PAR-026: do these marks reach the next prompt? ─────────────────────
+    //
+    // The same arrows mean two different things depending on one project
+    // setting, and nothing on the frame said which. A director who believes
+    // their notes are steering generation when they are notation has been
+    // misled by the app, not by the model.
+
+    /** Whether this project's markup feeds generation. */
+    function annotationFeedbackOn() {
+        return !!(state.currentProject && state.currentProject.annotation_feedback);
+    }
+
+    function renderAnnotationFeedbackToggle() {
+        const box = document.getElementById('annotFeedbackToggle');
+        const text = document.getElementById('annotFeedbackText');
+        if (!box || !text) return;
+        const on = annotationFeedbackOn();
+        box.checked = on;
+        text.textContent = on ? 'Marks steer generation' : 'Marks are notes only';
+    }
+
+    async function setAnnotationFeedback(on) {
+        if (!state.currentProject) return;
+        try {
+            const p = await api('/projects/' + state.currentProject.id, {
+                method: 'PUT',
+                body: JSON.stringify({ annotation_feedback: on ? 1 : 0 }),
+            });
+            state.currentProject = { ...state.currentProject, ...p };
+            renderAnnotationFeedbackToggle();
+            setStatus(on
+                // Said plainly, because it is the part that surprises people: a
+                // mark is not consumed by the generation that acts on it.
+                ? 'Marks carrying a note now steer this shot\u2019s prompt, and keep doing so until deleted.'
+                : 'Marks are notation only again. Nothing in generation reads them.');
+            // Every frame's badge is now wrong.
+            for (const shotId of Object.keys(MARKUP.cache)) markupPaintAll(shotId);
+        } catch (err) {
+            setStatus('Could not change that: ' + err.message);
+            renderAnnotationFeedbackToggle();
+        }
+    }
+
+    /**
+     * What this frame's marks will do, on the frame.
+     *
+     * Counted rather than assumed: geometry says where and never what, so a
+     * shape with no note cannot reach a prompt however the project is set, and
+     * a badge that counted all marks would promise something it cannot deliver.
+     */
+    function markupFeedBadge(shotId) {
+        const marks = MARKUP.cache[shotId] || [];
+        const noted = marks.filter(m => String(m.text || '').trim()).length;
+        if (!marks.length) return '';
+        if (!annotationFeedbackOn()) return `${marks.length} note(s), not applied`;
+        if (!noted) return `${marks.length} mark(s) — none carry a note, so none apply`;
+        return noted === marks.length
+            ? `${noted} mark(s) steering this shot`
+            : `${noted} of ${marks.length} steering this shot`;
     }
 
     /**
@@ -23979,6 +24053,7 @@ ${fountainText.slice(0, 50000)}`;
     /** Repaint every surface currently showing this shot. */
     async function markupPaintAll(shotId) {
         await markupLoad(shotId, true);
+        markupPaintFeedBadge(shotId);
         markupDraw('annot-' + shotId, 'img-' + shotId, shotId);
         const f = (FRAME_VIEWER.frames || [])[FRAME_VIEWER.index];
         if (f && f.shot_id === shotId) markupDraw('frameViewerAnnot', 'frameViewerImg', shotId);
@@ -24067,6 +24142,25 @@ ${fountainText.slice(0, 50000)}`;
     /** The grid card's image calls this on load; kept as its own name. */
     function storyboardDrawAnnotations(shotId) {
         markupDraw('annot-' + shotId, 'img-' + shotId, shotId);
+        // The badge is state about the marks, not about the picture, but this
+        // is the one callback that fires for every card after a board reload.
+        markupLoad(shotId).then(() => markupPaintFeedBadge(shotId));
+    }
+
+    /**
+     * Write "N marks steering this shot" onto whichever surfaces show it.
+     *
+     * The viewer's badge is guarded on the viewer actually showing THIS shot —
+     * its element ids are fixed rather than per-shot, so painting it from any
+     * repaint would label the open frame with another shot's count.
+     */
+    function markupPaintFeedBadge(shotId) {
+        const badge = markupFeedBadge(shotId);
+        const card = document.getElementById('mkfeed-annot-' + shotId);
+        if (card) card.textContent = badge;
+        const f = (FRAME_VIEWER.frames || [])[FRAME_VIEWER.index];
+        const view = document.getElementById('mkfeed-frameViewerAnnot');
+        if (view && f && f.shot_id === shotId) view.textContent = badge;
     }
 
     // ── Full-screen frame viewer ───────────────────────────────────────────
@@ -24125,6 +24219,7 @@ ${fountainText.slice(0, 50000)}`;
             `${f.description ? '<p style="line-height:1.5;">' + esc(f.description) + '</p>' : ''}
              ${storyboardDialogueHtml(f.dialogue)}`;
         markupDraw('frameViewerAnnot', 'frameViewerImg', f.shot_id);
+        markupLoad(f.shot_id).then(() => markupPaintFeedBadge(f.shot_id));
     }
 
     // Arrow keys, because stepping a board is what hands do while eyes compare.

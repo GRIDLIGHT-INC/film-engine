@@ -224,6 +224,13 @@ function updateProject(req, res, id) {
         fields.push('style_preset = ?');
         values.push(String(body.style_preset).trim().slice(0, 2000));
     }
+    // PAR-026: does markup on a frame reach the next prompt, or only inform a
+    // human? Per project, and off unless someone says otherwise — see
+    // migration 072 and lib/annotation-prompt.js.
+    if (body.annotation_feedback !== undefined) {
+        fields.push('annotation_feedback = ?');
+        values.push(body.annotation_feedback ? 1 : 0);
+    }
     if (body.status !== undefined && VALID_STATUSES.includes(body.status)) {
         fields.push('status = ?');
         values.push(body.status);

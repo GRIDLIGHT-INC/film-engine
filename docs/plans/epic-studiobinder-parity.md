@@ -132,7 +132,7 @@ that close the creative loop (P3), and identity only if it is asked for (P4). It
 | PAR-023 | Storyboard annotation | Arrows, text and shapes over a generated frame. Hand-rolled canvas; no library. | L | None |
 | PAR-024 | Panel grouping | Group panels by scene, location or batch; export the board with notes. | M | PAR-023 |
 | PAR-025 | Camera/lighting setup grouping | Group shots into setups by plate/style/seed reuse — the AI reading of a camera setup. | M | PAR-011 |
-| PAR-026 | Annotation → regeneration *(conditional)* | Feed markup into the next prompt rather than only informing a human. Differentiating, and materially harder; gated on Open Question 3. | L | PAR-023 |
+| PAR-026 | Annotation → regeneration | **Built.** Noted markup reaches the next prompt; `annotation_feedback` defaults to off, so no existing board changes. Answers Open Question 3. | L | PAR-023 |
 
 ### Phase 4: Identity and Sharing *(conditional — build only if asked for)*
 
@@ -150,8 +150,12 @@ that close the creative loop (P3), and identity only if it is asked for (P4). It
    a design failure. Blocks PAR-010 and therefore all of Phase 2.
 2. **What is a "shooting day" in AI production?** A budget window, a provider session, a
    wall-clock batch, or purely a grouping device? Blocks the PAR-010 data model.
-3. **Should annotation drive re-generation or only inform it?** Feeding markup into the next
-   prompt is the differentiating version and much harder. Decides whether PAR-026 exists.
+3. **Should annotation drive re-generation or only inform it?** *Answered: both, and the
+   project chooses.* Noted markup composes into the prompt when `annotation_feedback` is on;
+   default off, so every existing board is byte-identical and adoption is a decision rather
+   than something that happened to a director overnight. Geometry alone stays notation —
+   a shape says where and never what — and the marks it cannot use are named rather than
+   dropped. PAR-026 exists and is built.
 4. **Retire or populate the dead presence tables?** `film_scene_characters` and
    `film_scene_props` have zero writers and zero rows. Blocks the second half of PAR-008.
 5. **What exactly does a fingerprint cover?** Too broad and every edit invalidates everything;

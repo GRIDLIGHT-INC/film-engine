@@ -195,6 +195,12 @@ const CAPABILITY_BUILDERS = {
                 // Declared dimensions, so the prompt can say how big things are
                 // relative to the frame and to each other.
                 props: ctx.props || [],
+                // PAR-026: markup reaches the prompt only when this shot's
+                // project has opted in, or a caller has said so for this one
+                // generation. Undefined otherwise — which is what keeps the
+                // payload, and therefore the artefact fingerprint, byte-identical
+                // for every project that has not turned it on.
+                annotations: ctx.useAnnotations ? (ctx.annotations || []) : undefined,
             });
 
         const payload = imageRequestPayload({
@@ -443,6 +449,21 @@ function loadShotContext(shotId) {
         consistencyContext = consistency().buildShotReferencePayload(shot, scene, project);
     } catch (_) { consistencyContext = null; }
 
+    // Markup on the frame. Always READ, never automatically applied: whether it
+    // reaches the prompt is `useAnnotations` below, and a caller that wants to
+    // preview the marks without generating from them needs them present either
+    // way.
+    let annotations = [];
+    try {
+        annotations = db.prepare(
+            'SELECT * FROM film_storyboard_annotations WHERE shot_id = ? ORDER BY created_at').all(shotId)
+            .map(r => {
+                let points = [];
+                try { const v = JSON.parse(r.points_json || '[]'); if (Array.isArray(v)) points = v; } catch (_) { points = []; }
+                return { id: r.id, kind: r.kind, points, text: r.text, color: r.color, created_at: r.created_at };
+            });
+    } catch (_) { annotations = []; }
+
     // 3D blocking, when the shot has any. Null rather than absent so a caller
     // can tell "not blocked" from "context built before previs existed".
     let previs = null;
@@ -465,6 +486,11 @@ function loadShotContext(shotId) {
         keyframeAsset, videoAsset, audioAsset, musicCue, initImage,
         consistency: consistencyContext,
         previs,
+        annotations,
+        // The project's standing answer to PAR-026. A route may override it per
+        // request; nothing else may, because a default that turns itself on is
+        // the failure this column exists to prevent.
+        useAnnotations: !!(project && project.annotation_feedback),
         overrides: {},
     };
 }

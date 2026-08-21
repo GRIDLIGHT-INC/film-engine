@@ -322,6 +322,13 @@ const PRODUCTION_TOOLS = [
             aspect_ratio: { type: 'string', description: 'Delivery frame, e.g. "2.39:1", "16:9".' },
             logline: { type: 'string' },
             genre: { type: 'string' },
+            annotation_feedback: {
+                type: 'boolean',
+                description: 'Whether markup drawn on a frame reaches the next prompt for that shot. '
+                    + 'Default false, in which case markup is notation for a human only. Turning it on '
+                    + 'applies every NOTED mark on a shot to every subsequent generation of it, until '
+                    + 'the mark is deleted — marks are about the shot, not about one attempt at it.',
+            },
         },
         required: ['project_id'],
     },
@@ -607,7 +614,7 @@ const PRODUCTION_TOOLS = [
     {
         name: 'shot_annotate',
         handler: handleAnnotations, method: 'POST',
-        description: 'Draw a note on a storyboard frame: arrow, line, rect, ellipse, freehand or text. Geometry is NORMALISED \u2014 points are [[x,y],...] with x and y between 0 and 1 of the frame \u2014 so markup survives the frame being regenerated at another size. Attached to the shot, not the image, so regenerating does not erase the note that asked for it.',
+        description: 'Draw a note on a storyboard frame: arrow, line, rect, ellipse, freehand or text. Geometry is NORMALISED \u2014 points are [[x,y],...] with x and y between 0 and 1 of the frame \u2014 so markup survives the frame being regenerated at another size. Attached to the shot, not the image, so regenerating does not erase the note that asked for it. ALWAYS pass `text`: geometry says where, never what, so a mark with no note can be drawn and read by a person but cannot reach a prompt. Whether noted marks reach the prompt at all is the project\u2019s annotation_feedback, off by default; storyboard_regenerate and storyboard_refine take use_annotations to apply them for one call.',
         path: a => `/film/shots/${a.shot_id}/annotations`,
         body: a => { const { shot_id, ...rest } = a || {}; return rest; },
         schema: {
@@ -777,7 +784,7 @@ const PRODUCTION_TOOLS = [
     {
         name: 'annotation_list',
         handler: handleAnnotations, method: 'GET',
-        description: 'List the markup notes on a storyboard frame with their ids. Needed before annotation_delete.',
+        description: 'List the markup notes on a storyboard frame with their ids. Needed before annotation_delete. Also reports, per mark, whether it reaches the next prompt and why not \u2014 a mark with no note says where but not what, and a project with annotation_feedback off treats all markup as notation for a human.',
         path: a => `/film/shots/${a.shot_id}/annotations`,
         schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
     },
@@ -951,7 +958,7 @@ const PRODUCTION_TOOLS = [
     {
         name: 'shot_prompt',
         handler: handleStoryboard, method: 'GET',
-        description: 'What this shot WOULD send to the image model, and how much room is left. Returns the assembled prompt, the provider ceiling, the headroom, which plates are attached as images, and every locked subject with how many characters it wrote and how many survived. SPENDS NOTHING. Read it before regenerating anything: the engine can hold a ceiling but cannot decide what matters, and a description cut at a clause boundary does not know that "one wheel trim missing" is worth more than "cracked tan vinyl".',
+        description: 'What this shot WOULD send to the image model, and how much room is left. Returns the assembled prompt, the provider ceiling, the headroom, which plates are attached as images, and every locked subject with how many characters it wrote and how many survived. SPENDS NOTHING, and reports the shot\u2019s markup under `direction` \u2014 which marks would reach the prompt, which carry no note and therefore cannot, and the exact clause they produce. Read it before regenerating anything: the engine can hold a ceiling but cannot decide what matters, and a description cut at a clause boundary does not know that "one wheel trim missing" is worth more than "cracked tan vinyl".',
         path: a => `/film/shots/${a.shot_id}/prompt`,
         schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
     },
@@ -960,13 +967,20 @@ const PRODUCTION_TOOLS = [
         handler: handleStoryboard, method: 'POST',
         description: 'Keep an existing frame and change ONE thing about it. Sends the picture itself plus a single instruction — no scene card, no subject descriptions, no style preset, because the picture already carries all of that and repeating it in words pulls the result back toward a fresh generation. Use this instead of storyboard_regenerate whenever the composition is right and one element is wrong: "remove the sprinkler", "move the car to the kerb". Pass version to refine an earlier attempt rather than the current frame. Costs credits.',
         path: a => `/film/shots/${a.shot_id}/storyboard/refine`,
-        body: a => ({ instruction: a.instruction, version: a.version }),
+        body: a => ({ instruction: a.instruction, version: a.version, use_annotations: a.use_annotations }),
         schema: {
             shot_id: { type: 'string' },
             instruction: { type: 'string', description: 'The one change, in a sentence. Everything else is kept.' },
             version: { type: 'number', description: 'Refine this stored version instead of the current frame.' },
+            use_annotations: {
+                type: 'boolean',
+                description: 'Apply the shot\u2019s markup as part of the instruction, whatever the project setting. '
+                    + 'This is where marks are strongest: the picture is attached, so "move the car to the kerb" '
+                    + 'has something to move and somewhere to move it. Only marks carrying a note apply; read '
+                    + 'annotation_list first to see which do.',
+            },
         },
-        required: ['shot_id', 'instruction'],
+        required: ['shot_id'],
     },
     {
         name: 'storyboard_regenerate',
@@ -977,6 +991,7 @@ const PRODUCTION_TOOLS = [
             const b = {};
             if (a.prompt_override) b.prompt_override = a.prompt_override;
             if (a.negative_prompt) b.negative_prompt = a.negative_prompt;
+            if (a.use_annotations !== undefined) b.use_annotations = a.use_annotations;
             return b;
         },
         schema: {
@@ -986,6 +1001,13 @@ const PRODUCTION_TOOLS = [
                 description: 'The complete prompt to send, composed by you. Must fit the ceiling from shot_prompt — nothing trims it for you, and a provider truncates the TAIL, which is where the location usually sits.',
             },
             negative_prompt: { type: 'string' },
+            use_annotations: {
+                type: 'boolean',
+                description: 'Fold the shot\u2019s noted markup into the assembled prompt as a Direction clause, '
+                    + 'whatever the project setting. Ignored alongside prompt_override, which is the whole '
+                    + 'prompt: read shot_prompt?use_annotations=true, decide what the marks mean, and compose '
+                    + 'them in yourself.',
+            },
         },
         required: ['shot_id'],
     },

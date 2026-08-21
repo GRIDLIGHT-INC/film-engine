@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (69 migrations)
+│   │   └── migrations/     # SQL migration files (70 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -119,6 +119,7 @@ film-engine/
 │   │   ├── nav-flow.js           # Sidebar order, derived from PROJECT_PHASES (Phase 6)
 │   │   ├── e2e-preflight.js      # Screenplay→final-shot readiness, derived from PIPELINE_STEPS
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
+│   │   ├── annotation-prompt.js   # Markup a director drew, said in words a model can act on
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
 │   │   ├── screenplay-drift.js    # Which shots a rewrite left behind, and what was built on them
 │   │   ├── impact.js              # One change, all the way down: redo now vs waiting on something above
@@ -177,6 +178,7 @@ film-engine/
 │       ├── shot-tagger.test.js         # A screenplay line becomes a shot, with who is in it
 │       ├── mood-board.test.js          # The board composes a style preset, and warns about subjects
 │       ├── storyboard-annotation.test.js # Every shape round-trips; markup survives regeneration
+│       ├── annotation-feedback.test.js # Marks steer a prompt only when asked, and say when they cannot
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -478,7 +480,24 @@ Worse, the tags it showed were the **card's** camera. On a blocked shot those ar
 
 `GET /projects/:id/storyboard` gains `effective` and `previs` per frame, and the frame carries a badge with **three** states — `block in previs`, `staged`, `approved`, and `staged · changed since approval`. Three rather than two, because "approved" and "approved, then restaged" is the distinction the iterate-until-happy loop turns on, and folding them together is how a director meets a 409 at generation time for a shot the board told them was signed off.
 
-**What markup does *not* do.** Arrows, rectangles and notes are **notation** — stored, drawn, kept with the shot, and read by nothing in generation. An arrow drawn to mean "dolly in" changes no prompt and no payload; the movement that does is `camera_control`, set on the card or staged in previs. Whether markup should feed the next generation is PAR-026, gated on an open question and still deliberately unanswered.
+**What markup does *not* do by default.** Arrows, rectangles and notes are **notation** unless a project says otherwise — stored, drawn, kept with the shot, and read by nothing in generation. An arrow drawn to mean "dolly in" changes no prompt and no payload; the movement that does is `camera_control`, set on the card or staged in previs. Turning on `annotation_feedback` makes *noted* marks reach the prompt — see **Markup That Steers a Frame** below — and leaves an unnoted arrow exactly as decorative as it was.
+
+### Markup That Steers a Frame (PAR-026, and it is off)
+Markup shipped as **notation**: arrows and notes stored against the shot, drawn on the frame, read by nothing in generation. Whether it should drive the next prompt was the epic's Open Question 3, left open because the answer is not obviously yes — a stale arrow from three revisions ago becomes a standing instruction on every frame generated afterwards, and nothing on the page said so.
+
+The answer is **yes, opt-in, off**. `film_projects.annotation_feedback` (migration 072) defaults to `0`, which is the whole safety argument: every project that exists today, and every project created without an opinion about this, builds byte-identical prompts with markup all over its frames. A feature that changes what an existing board produces the moment it ships is one nobody can adopt deliberately. `storyboard_regenerate` and `storyboard_refine` take `use_annotations` to apply marks for a single call, so trying it does not mean committing the production to it.
+
+**Geometry says where, never what.** An arrow at (0.2,0.3)→(0.7,0.6) is a place and a direction, and a model asked to act on it has nothing to act on — so a mark becomes a direction **only when it carries a note**. A shape with no words is still stored and still drawn; it simply reaches no prompt, and it is **reported** as reaching no prompt rather than dropped quietly. Silence is what makes a director believe their three arrows changed the frame when nothing did. `annotation_list`, the frame's own badge, and `GET /shots/:id/prompt` each name the marks they cannot use and why.
+
+Normalised coordinates turn out to be the whole reason this is sayable. `0..1` means the same thing at 1024px and at 4K, so a point converts honestly to *"the bottom right"* where a pixel could not — the payoff of a decision made in migration 065 for an entirely different reason (surviving a regeneration at another resolution).
+
+**The same marks are read two ways, because the two paths are not the same question.** `refine` attaches the picture, so *"move the car to the kerb"* has something to move and somewhere to move it; a regeneration from the card has no previous frame, so the same words are a description of a target state, folded in as a labelled `Direction:` clause. One builder each rather than one that pretends the difference away. A hand-typed instruction still **leads** on the refine path: the marks were drawn earlier, and the sentence someone just wrote is the current thought.
+
+Placement in the prompt is decided by two failures already paid for. It sits **after the action** because whatever leads a prompt is what the image is *of*, and *"remove the sprinkler"* at the head makes the sprinkler the subject of the frame it was asking to be rid of. It sits **before the camera and the look** because a provider truncates the tail, and a director's explicit instruction is the last thing that should be lost to a ceiling. It has an allowance — an unbounded field ate the budget once and amputated location and style — which binds only when the prompt overruns.
+
+`prompt_override` never receives markup: an override is the whole prompt, the composer had the marks in front of them in `shot_prompt`, and stapling them on afterwards is the bug `promptIsFinal` already exists to stop. Staleness follows for free, because the fingerprint **is** the payload: a mark that changes the prompt changes the fingerprint, and an unnoted one changes neither — otherwise every stray arrow would mark its frame stale for a change that reaches no model.
+
+`tests/annotation-feedback.test.js` is set-based over the six shape kinds, since the failure would be partial: an arrow that converts to words while a freehand silently produces an empty clause passes any test written against arrows.
 
 ### The Card's Own Vocabulary Is Editable
 The board showed `establishing · 40mm anamorphic · push-in · blue-hour` and offered no way to change any of it. `GET /film/card-vocabulary` serves the validator's own `VALID_SHOT_TYPES` / `VALID_CAMERA_MOVES` / `VALID_LIGHTING` / sensors, so the editor cannot offer a value the validator refuses — typing the lists into the page would work exactly once, until somebody added a shot type. `lens` is deliberately **not** a select: "40mm anamorphic", "50mm" and "24-70 at 35" are all things a director writes, and a dropdown refuses two of the three.
@@ -630,7 +649,7 @@ Composing **does not apply**. Previewing a look and committing to it are differe
 A separate table from `film_continuity_refs` on purpose: continuity refs answer "did this match what we already shot" — a question about the past — while a mood board answers "what should this look like", a question about work not yet done. Same shape, opposite direction, and conflating them would make both queries lie.
 
 ### Storyboard Markup and Grouping (Phase 3 close-out)
-**Markup** (`routes/annotations.js`, migration 065) puts a director's fastest notation on a frame: arrow, line, rect, ellipse, freehand, text. Two decisions carry it. Geometry is stored **normalised** — `[[x,y], …]` in 0..1 of the frame, never pixels — so a frame regenerated at another resolution, or a board read on a phone, keeps every arrow on the thing it points at; a pixel coordinate sent by mistake is **refused** rather than stored silently to draw nowhere. And markup attaches to the **shot, not the asset**: a note is about the shot and the PNG is one attempt at it, so keying it to an asset id would erase the direction at the exact moment it was acted on. Whether markup should later *feed* the next generation is PAR-026, gated on an open question and deliberately not answered here. The board draws it on a hand-rolled overlay canvas, same as previs and the flows canvas.
+**Markup** (`routes/annotations.js`, migration 065) puts a director's fastest notation on a frame: arrow, line, rect, ellipse, freehand, text. Two decisions carry it. Geometry is stored **normalised** — `[[x,y], …]` in 0..1 of the frame, never pixels — so a frame regenerated at another resolution, or a board read on a phone, keeps every arrow on the thing it points at; a pixel coordinate sent by mistake is **refused** rather than stored silently to draw nowhere. And markup attaches to the **shot, not the asset**: a note is about the shot and the PNG is one attempt at it, so keying it to an asset id would erase the direction at the exact moment it was acted on. Whether markup should later *feed* the next generation was PAR-026 and Open Question 3; it is answered below, opt-in and off by default. The board draws it on a hand-rolled overlay canvas, same as previs and the flows canvas.
 
 **Panel grouping and setups are different questions that look alike.** Grouping by scene, location or time of day is for *reading* — a flat grid of two hundred frames is a contact sheet. Every frame lands in exactly one group, and frames missing the axis value collect under an explicit `(no location)` rather than vanishing, since a frame that disappears when you change how you read the board looks like data loss.
 
@@ -925,7 +944,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (69 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (70 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -1065,6 +1084,7 @@ node --test backend/tests/look-development.test.js
 node --test backend/tests/shot-tagger.test.js
 node --test backend/tests/mood-board.test.js
 node --test backend/tests/storyboard-annotation.test.js
+node --test backend/tests/annotation-feedback.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js

@@ -6,10 +6,11 @@
  * way to put any of it on a frame: the board was pictures you could regenerate
  * and nothing you could draw on.
  *
- * StudioBinder's version instructs a human artist. Ours does not have to stop
- * there — the markup could eventually feed the next generation — but that is
- * deliberately NOT this task (PAR-026, gated on an open question). What ships
- * here is the notation itself: store it, show it, keep it with the frame.
+ * StudioBinder's version instructs a human artist. Ours does not stop there —
+ * markup can feed the next generation — but that is a separate feature, off by
+ * default, and tested separately in annotation-feedback.test.js (PAR-026). What
+ * this file covers is the notation itself: store it, show it, keep it with the
+ * frame, whether or not anything downstream reads it.
  *
  * Set-based over the shape kinds, because a markup tool that supports arrows
  * and silently drops the text label is worse than no markup tool: the director

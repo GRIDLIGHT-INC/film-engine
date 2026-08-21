@@ -531,7 +531,7 @@ function handleStoryboard(req, res, urlParts, query) {
     if (urlParts[1] === 'shots' && urlParts[2] && urlParts[3] === 'prompt') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid shot ID' });
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
-        return shotPromptPreview(req, res, urlParts[2]);
+        return shotPromptPreview(req, res, urlParts[2], query);
     }
 
     // /film/shots/:id/storyboard/regenerate
@@ -628,7 +628,7 @@ function cameraFor(shotId, sceneCard, optics) {
 }
 
 function getStoryboard(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -690,7 +690,7 @@ function getStoryboard(req, res, projectId, query) {
 // ── FILM-017: Generate Storyboard (Sync) ───────────────────────────
 
 async function generateStoryboard(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -798,6 +798,7 @@ async function generateStoryboard(req, res, projectId, query) {
         const shotRefs = canAttach
             ? gatherShotReferences(projectId, matchedChars, matchedLocation, matchProps(sceneCard, props))
             : [];
+        const shotMarks = annotationsFor(shot.shot_id, project, body);
         const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
             // The ceiling of the provider that will actually run, not a
             // constant. Meshy documents no prompt limit and routes to models
@@ -810,6 +811,12 @@ async function generateStoryboard(req, res, projectId, query) {
                 // never been handed props — they reach the prompt through the
                 // consistency contract, which carries no measurements.
                 props,
+                // PAR-026. The board path honours markup for the same reason
+                // it honours plates: a regenerate-one that conditions
+                // differently from a generate-all is how a board comes to
+                // disagree with itself, and the plate bug that cost a day was
+                // exactly that shape.
+                annotations: shotMarks.enabled ? shotMarks.marks : undefined,
             });
 
         // Update shot status
@@ -918,7 +925,7 @@ async function generateStoryboard(req, res, projectId, query) {
 // ── FILM-017: Generate Storyboard (SSE Stream) ─────────────────────
 
 async function generateStoryboardStream(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -1025,6 +1032,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
         const shotRefs = canAttach
             ? gatherShotReferences(projectId, matchedChars, matchedLocation, matchProps(sceneCard, props))
             : [];
+        const shotMarks = annotationsFor(shot.shot_id, project, body);
         const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
             // The ceiling of the provider that will actually run, not a
             // constant. Meshy documents no prompt limit and routes to models
@@ -1037,6 +1045,12 @@ async function generateStoryboardStream(req, res, projectId, query) {
                 // never been handed props — they reach the prompt through the
                 // consistency contract, which carries no measurements.
                 props,
+                // PAR-026. The board path honours markup for the same reason
+                // it honours plates: a regenerate-one that conditions
+                // differently from a generate-all is how a board comes to
+                // disagree with itself, and the plate bug that cost a day was
+                // exactly that shape.
+                annotations: shotMarks.enabled ? shotMarks.marks : undefined,
             });
 
         sendEvent({
@@ -1198,7 +1212,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
  * Spends nothing, which is what makes it usable. Finding out by generating is
  * how trying three phrasings becomes a budget decision.
  */
-function shotPromptPreview(req, res, shotId) {
+function shotPromptPreview(req, res, shotId, query) {
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
 
     let ctx;
@@ -1206,6 +1220,14 @@ function shotPromptPreview(req, res, shotId) {
         return json(res, err.code === 'PRECONDITION' ? 409 : 404, { error: err.message });
     }
     if (!ctx || !ctx.shot) return json(res, 404, { error: 'Shot not found' });
+
+    // PAR-026: preview the frame WITH the marks applied without turning the
+    // feature on and without generating. Trying it is what makes it adoptable —
+    // finding out by generating is how one experiment becomes a budget
+    // decision, which is the same argument previs made for its own preview.
+    const wants = query && (query.use_annotations === 'true' || query.use_annotations === '1');
+    if (wants) ctx.useAnnotations = true;
+    if (query && (query.use_annotations === 'false' || query.use_annotations === '0')) ctx.useAnnotations = false;
 
     let built;
     try { built = buildCapabilityPayload('image', ctx); } catch (err) {
@@ -1246,6 +1268,26 @@ function shotPromptPreview(req, res, shotId) {
             subject: r.subject_name, kind: r.profile_type, role: r.role,
         })),
         contributors,
+        // What the director drew, and what it is doing. Three separate facts —
+        // is the feature on, which marks carry a note, and what sentence they
+        // produce — because each has a different fix and folding them into one
+        // count tells a director nothing about which to do.
+        direction: (() => {
+            const { directionClause } = require('../lib/annotation-prompt');
+            const d = directionClause(ctx.annotations || []);
+            return {
+                feedback_enabled: !!ctx.useAnnotations,
+                marks: (ctx.annotations || []).length,
+                applied: ctx.useAnnotations ? d.used : 0,
+                clause: ctx.useAnnotations ? d.text : '',
+                ignored: d.directives.filter(x => !x.feeds)
+                    .map(x => ({ id: x.id, kind: x.kind, reason: x.reason })),
+                hint: ctx.useAnnotations
+                    ? undefined
+                    : 'Add ?use_annotations=true to see this prompt with the markup applied. '
+                        + 'Costs nothing.',
+            };
+        })(),
         card: ctx.sceneCard,
         note: 'Compose a better prompt from this and send it back to '
             + 'POST /shots/:id/storyboard/regenerate as prompt_override. Everything listed under '
@@ -1274,6 +1316,56 @@ function imagePromptLimitFor(project) {
 }
 
 /**
+ * The marks on a shot, and whether this call should generate from them.
+ *
+ * PAR-026. Three-way precedence and only one of the three can turn it ON by
+ * itself without somebody saying so: an explicit `use_annotations` on the
+ * request wins, otherwise the project's standing choice, otherwise off. A
+ * default that switches itself on would silently change what every existing
+ * board produces, which is the reason this is a column rather than a constant.
+ */
+function annotationsFor(shotId, project, body) {
+    const requested = body && body.use_annotations;
+    const enabled = requested === undefined || requested === null
+        ? !!(project && project.annotation_feedback)
+        : !!requested;
+
+    let marks = [];
+    try {
+        marks = db.prepare(
+            'SELECT * FROM film_storyboard_annotations WHERE shot_id = ? ORDER BY created_at').all(shotId)
+            .map(r => {
+                let points = [];
+                try { const v = JSON.parse(r.points_json || '[]'); if (Array.isArray(v)) points = v; } catch (_) { points = []; }
+                return { id: r.id, kind: r.kind, points, text: r.text, color: r.color };
+            });
+    } catch (_) { marks = []; }
+
+    const { annotationDirectives } = require('../lib/annotation-prompt');
+    const directives = annotationDirectives(marks);
+    return {
+        enabled,
+        marks,
+        directives,
+        // Marks that WOULD feed, whether or not this call is applying them.
+        noted: directives.filter(d => d.feeds).length,
+        unnoted: directives.filter(d => !d.feeds).length,
+        applied: enabled ? directives.filter(d => d.feeds).length : 0,
+    };
+}
+
+/** What a caller is told about the marks, on every path that can use them. */
+function annotationReport(a) {
+    return {
+        feedback_enabled: a.enabled,
+        applied: a.applied,
+        // Named individually. "1 mark was ignored" sends a director back to the
+        // frame to work out which one.
+        ignored: a.directives.filter(d => !d.feeds).map(d => ({ id: d.id, kind: d.kind, reason: d.reason })),
+    };
+}
+
+/**
  * Change one thing about a frame you already have.
  *
  * POST /film/shots/:id/storyboard/refine  { instruction, version? }
@@ -1299,16 +1391,44 @@ async function refineShot(req, res, shotId) {
     if (!shot) return json(res, 404, { error: 'Shot not found' });
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     const project = scene && db.prepare(
-        'SELECT id, title, style_preset, provider_config, aspect_ratio FROM film_projects WHERE id = ?')
+        'SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback FROM film_projects WHERE id = ?')
         .get(scene.project_id);
     if (!project) return json(res, 404, { error: 'Project not found' });
 
     const body = req.body || {};
-    const instruction = String(body.instruction || '').trim();
+    let instruction = String(body.instruction || '').trim();
+
+    /**
+     * Marks are at their strongest here (PAR-026).
+     *
+     * Refine attaches the picture, so "move the car to the kerb" means exactly
+     * what it says: the thing being moved is on screen and so is the place. On
+     * a regeneration from the card there is no previous frame and "move" has
+     * nothing to move from, which is why the two paths read the same marks
+     * through different builders rather than one that pretends the difference
+     * away.
+     *
+     * An instruction typed by hand still LEADS. The marks were drawn earlier;
+     * the sentence someone just wrote is the current thought, and burying it
+     * behind three older notes would invert that.
+     */
+    const annots = annotationsFor(shotId, project, body);
+    if (annots.enabled && annots.applied) {
+        const { refineInstruction } = require('../lib/annotation-prompt');
+        const fromMarks = refineInstruction(annots.marks).text;
+        instruction = instruction ? `${instruction}. ${fromMarks}` : fromMarks;
+    }
+
     if (!instruction) {
         return json(res, 400, {
             error: 'instruction is required: what to change about this frame, in a sentence',
             hint: 'e.g. "remove the sprinkler" or "move the car to the kerb on the right"',
+            marks: annots.marks.length
+                ? (annots.enabled
+                    ? 'This shot has markup, but none of it carries a note — a shape says where, not what.'
+                    : 'This shot has markup that is not being applied. Pass use_annotations: true, '
+                        + 'or turn on annotation_feedback for the project.')
+                : undefined,
         });
     }
 
@@ -1370,6 +1490,7 @@ async function refineShot(req, res, shotId) {
             refined_from: fromVersion === null ? 'current' : `v${fromVersion}`,
             instruction, version: asset.version, provider,
             image_url: storyboardImageUrl(project.id, shot.shot_code),
+            annotations: annotationReport(annots),
         });
     } catch (err) {
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('failed', shotId);
@@ -1388,7 +1509,7 @@ async function regenerateShot(req, res, shotId) {
         return json(res, 404, { error: 'Scene not found' });
     }
 
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio FROM film_projects WHERE id = ?').get(scene.project_id);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback FROM film_projects WHERE id = ?').get(scene.project_id);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -1396,12 +1517,22 @@ async function regenerateShot(req, res, shotId) {
     const body = req.body || {};
     const consistencyContext = buildShotReferencePayload(shot, scene, project);
 
+    // PAR-026: what the director drew, if this project or this call says so.
+    const annots = annotationsFor(shotId, project, body);
+
     // Build or use override prompt
     let prompt, negative_prompt;
 
     if (body.prompt_override) {
         prompt = body.prompt_override;
         negative_prompt = body.negative_prompt || 'blurry, low quality, distorted, deformed';
+        // An override is the WHOLE prompt. Appending direction to it is the same
+        // mistake `promptIsFinal` exists to stop: the composer already had the
+        // marks in front of them (shot_prompt reports them) and either used
+        // them or decided not to. Reported as not applied, never silently
+        // stapled on.
+        annots.applied = 0;
+        annots.overridden = true;
     } else {
         let sceneCard = {};
         try {
@@ -1418,7 +1549,7 @@ async function regenerateShot(req, res, shotId) {
         const result = buildStoryboardPrompt(
             sceneCard, matchedChars, matchedLocation,
             body.style_override || project.style_preset,
-            { props }
+            { props, annotations: annots.enabled ? annots.marks : undefined }
         );
         prompt = result.prompt;
         negative_prompt = result.negative_prompt;
@@ -1510,6 +1641,12 @@ async function regenerateShot(req, res, shotId) {
             image_url: storyboardImageUrl(project.id, shot.shot_code),
             seed: imagePayload.seed,
             prompt: imagePayload.prompt,
+            annotations: {
+                ...annotationReport(annots),
+                ...(annots.overridden
+                    ? { note: 'prompt_override is the whole prompt, so markup was not appended to it.' }
+                    : {}),
+            },
         });
 
     } catch (err) {

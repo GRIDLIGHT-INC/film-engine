@@ -162,6 +162,19 @@ const LOCATION_ALLOWANCE = 200;
 const STYLE_ALLOWANCE = 140;
 
 /**
+ * What a director drew on the frame, when their marks feed generation.
+ *
+ * Sized between the action and the location on purpose. Direction is the
+ * director's own words about THIS frame, so it outranks a stock description of
+ * a place; it is not the shot itself, so it must not be able to starve the
+ * action the way an unbounded field already did once.
+ *
+ * It only binds when the prompt overruns — the two-pass wrapper assembles whole
+ * first — so a board with three notes and a roomy provider loses nothing.
+ */
+const DIRECTION_ALLOWANCE = 220;
+
+/**
  * Last-resort ceiling.
  *
  * The per-field allowances handle the normal case, but a long action line can
@@ -190,6 +203,7 @@ const ALLOWANCE_SHARE = {
     appearance: APPEARANCE_ALLOWANCE / MAX_PROMPT_CHARS,
     location: LOCATION_ALLOWANCE / MAX_PROMPT_CHARS,
     style: STYLE_ALLOWANCE / MAX_PROMPT_CHARS,
+    direction: DIRECTION_ALLOWANCE / MAX_PROMPT_CHARS,
 };
 
 /**
@@ -306,7 +320,7 @@ function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, opt
     const whole = assemblePrompt(sceneCard, characters, location, stylePreset, {
         ...opts,
         maxPromptChars: Infinity,
-        allow: { action: Infinity, appearance: Infinity, location: Infinity, style: Infinity },
+        allow: { action: Infinity, appearance: Infinity, location: Infinity, style: Infinity, direction: Infinity },
     });
     if (whole.prompt.length <= ceiling) return whole;
 
@@ -389,6 +403,28 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // qualifier on something already in the scene, so it goes after the scene.
     const scaleParts = scaleNotesFor(sceneCard, characters, opts);
     if (scaleParts.length) parts.push(`Scale: ${scaleParts.join('; ')}`);
+
+    // 2c. What the director drew on the frame (PAR-026), when their marks feed
+    // generation. Off unless a caller passes annotations, so a project that has
+    // not opted in builds byte-identically to before.
+    //
+    // Placed HERE — after the shot, before the camera — for the reason the
+    // scale notes were moved: whatever leads a prompt is what the image is of,
+    // and "remove the sprinkler" at the head of a prompt makes the sprinkler the
+    // subject of the frame it was asking to be rid of. It sits before the
+    // camera rather than at the tail because a provider truncates the tail, and
+    // a director's explicit instruction is the last thing that should be lost to
+    // a ceiling.
+    //
+    // Only marks carrying a note contribute. A shape with no words says where
+    // and not what; the caller reports those rather than dropping them quietly.
+    if (Array.isArray(opts.annotations) && opts.annotations.length) {
+        const { directionClause } = require('./annotation-prompt');
+        const direction = directionClause(opts.annotations);
+        if (direction.text) {
+            parts.push(trimToAllowance(direction.text, opts.directionAllowance || allow.direction));
+        }
+    }
 
     // 3-5. Camera: the blocking when the shot has been staged, otherwise the
     // scene card. Blocking WINS — the card is what was written, the blocking is
@@ -571,6 +607,7 @@ module.exports = {
     APPEARANCE_ALLOWANCE,
     LOCATION_ALLOWANCE,
     STYLE_ALLOWANCE,
+    DIRECTION_ALLOWANCE,
     buildStoryboardPrompt,
     applyStyleLock,
     SHOT_TYPE_MAP,
