@@ -60,6 +60,12 @@ function buildVideoPrompt(sceneCard, characters, location, stylePreset, options)
         sceneCard, characters, location, stylePreset, {
             prompt_additions: opts.prompt_additions,
             negative_additions: opts.negative_additions,
+            // The markup a director drew on the board. It reaches the clip for
+            // the reason it cannot reach much of the frame: an arrow is about
+            // what happens NEXT, and a clip is the only artefact with room for
+            // that. Undefined unless the project opted in, so an unmarked shot
+            // builds byte-identically.
+            annotations: opts.annotations,
         }
     );
 

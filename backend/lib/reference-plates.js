@@ -84,6 +84,25 @@ function buildPlatePrompt(kind, subject, stylePreset) {
     }
     if (kind === 'prop' && subject.category) parts.push(subject.category);
 
+    // How big the thing is, on the plate that establishes it.
+    //
+    // This reached the KEYFRAME prompt and never the plate, which is backwards.
+    // A plate is a close-up filling its own frame, and conditioning transfers
+    // appearance rather than scale — so the model reproduces what it was shown,
+    // and a thirty-centimetre sprinkler plated at full-frame came back the size
+    // of the car beside it. Fixing it downstream means arguing with the plate
+    // in every shot the subject appears in; fixing it here fixes it once.
+    //
+    // No frame fraction: a plate has no lens, no distance and no other subject
+    // to be a fraction OF. What applies is the anchor and the plain measure,
+    // which is what scalePhrase falls back to when no coverage is passed.
+    // Undeclared dimensions say nothing at all rather than guessing.
+    try {
+        const { scalePhrase } = require('./subject-scale');
+        const note = scalePhrase(subject.name || kind, kind === 'location' ? 'prop' : kind, subject, null);
+        if (note) parts.push(note);
+    } catch (_) { /* a subject with no declared size plates exactly as before */ }
+
     return parts.filter(Boolean).join(', ');
 }
 

@@ -420,3 +420,43 @@ test('the storyboard page carries the switch and a per-frame badge', () => {
     if (!/markupPaintFeedBadge\(/.test(html)) missing.push('the per-frame badge is never painted');
     assert.deepStrictEqual(missing, [], `\n  ${missing.join('\n  ')}`);
 });
+
+
+// ── The clip is where direction has room ────────────────────────────────
+
+test('markup reaches the footage, not only the frame', () => {
+    // The board's instructions are meant to reach the footage generator. An
+    // arrow is about what happens NEXT — "then dolly past the mailbox" — which
+    // a still has no room for and a clip does.
+    const { buildVideoPrompt } = require('../lib/video-prompt');
+    const card = { action: 'A street.', camera: { shot_type: 'wide', movement: 'push-in' } };
+    const marks = [{ id: '1', kind: 'arrow', points: [[0.5, 0.5], [0.2, 0.5]], text: 'dolly past the mailbox' }];
+
+    const plain = buildVideoPrompt(card, [], null, '', {});
+    assert.ok(!/Direction:/.test(plain.prompt), 'an unmarked shot picked up a direction clause');
+
+    const marked = buildVideoPrompt(card, [], null, '', { annotations: marks });
+    assert.ok(/Direction:/.test(marked.prompt), 'the board\u2019s markup never reaches the clip');
+    assert.ok(marked.prompt.includes('dolly past the mailbox'), 'the note itself was lost');
+    // The camera move from the card still travels alongside it.
+    assert.ok(/pushing in toward subject/.test(marked.prompt),
+        'the card\u2019s movement was displaced by the markup');
+});
+
+test('the clip carries no reference plates, on purpose', () => {
+    // Image-to-video: the keyframe IS the init_image, and that frame was
+    // generated FROM the plates, so everything they contribute is baked into
+    // it. Sending them again puts a T-pose studio photograph on a seamless
+    // backdrop beside a composed street and asks the model which is the truth.
+    //
+    // They were being sent as consistency rows carrying `file_path` and no
+    // `uri`, so every adapter dropped them silently — the repair was to REMOVE
+    // them, not to make them work.
+    const src = require('fs').readFileSync(
+        require('path').join(__dirname, '..', 'lib', 'capability-payloads.js'), 'utf8');
+    const video = src.slice(src.indexOf('    video(ctx) {'), src.indexOf('    /** One payload per dialogue line'));
+    assert.ok(!/reference_images:/.test(video),
+        'the clip attaches reference plates again, which fight the init_image it is generated from');
+    assert.ok(/init_image: ctx.initImage/.test(video),
+        'the clip is not generated from the board frame at all');
+});

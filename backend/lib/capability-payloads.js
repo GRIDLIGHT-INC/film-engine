@@ -258,17 +258,36 @@ const CAPABILITY_BUILDERS = {
             model: overrides.model,
             prompt_additions: cc.prompt_additions,
             negative_additions: cc.negative_additions,
-            reference_images: cc.references,
+            // No reference plates. Deliberate, and a REMOVAL rather than a fix.
+            //
+            // These were being sent as consistency rows carrying `file_path`
+            // and no `uri`, so every adapter dropped them silently — and the
+            // repair would have been the wrong move. This is image-to-video:
+            // the keyframe is the init_image, and that frame was already
+            // generated FROM the plates, so everything they contribute is baked
+            // into it. Sending them again puts a T-pose studio photograph on a
+            // seamless backdrop beside a composed street, and asks the model
+            // which one is the truth.
+            //
+            // What the clip is conditioned on is the board and the blocking:
+            // the frame below, the camera path from previs, and the director's
+            // markup — which is the one thing the picture cannot carry, because
+            // an arrow means "then dolly past the mailbox" rather than anything
+            // visible in a still.
             input_refs: cc.input_refs,
             // Phase 3: previs travels the ONE payload path, so the orchestrator
             // and the per-domain route cannot describe the same shot
             // differently. Undefined when unblocked, which is what keeps the
             // payload byte-identical for every shot nobody has blocked.
             previs: ctx.previs || undefined,
-                    // The delivery frame rate and size, so generation targets what
-            // the film is actually delivered at rather than a constant.
+            // The direction drawn on the board. A still can only show a state;
+            // an arrow is about what happens next, which is exactly what a clip
+            // has room for and a frame does not.
+            annotations: ctx.useAnnotations ? (ctx.annotations || []) : undefined,
+            // The delivery frame rate and size, so generation targets what the
+            // film is actually delivered at rather than a constant.
             project: ctx.project,
-});
+        });
     },
 
     /** One payload per dialogue line. An empty dialogue array yields none. */

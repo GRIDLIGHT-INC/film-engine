@@ -138,7 +138,6 @@ async function generateVideo(req, res, shotId) {
         model: req.body && req.body.model ? req.body.model : undefined,
         prompt_additions: consistencyContext.prompt_additions,
         negative_additions: consistencyContext.negative_additions,
-        reference_images: consistencyContext.references,
         input_refs: consistencyContext.input_refs,
     });
 
@@ -225,7 +224,6 @@ async function generateVideoStream(req, res, shotId) {
         seed: consistencyContext.locked_seed,
         prompt_additions: consistencyContext.prompt_additions,
         negative_additions: consistencyContext.negative_additions,
-        reference_images: consistencyContext.references,
         input_refs: consistencyContext.input_refs,
     });
 
@@ -347,7 +345,6 @@ async function batchVideoStream(req, res, projectId) {
             seed: consistencyContext.locked_seed,
             prompt_additions: consistencyContext.prompt_additions,
             negative_additions: consistencyContext.negative_additions,
-            reference_images: consistencyContext.references,
             input_refs: consistencyContext.input_refs,
         });
 

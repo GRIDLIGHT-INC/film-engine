@@ -215,3 +215,51 @@ test('the shot leads the prompt, and the measurements follow it', () => {
         + 'whatever leads is what the image is of');
     assert.ok(shotAt < 40, `the shot does not start until character ${shotAt}`);
 });
+
+
+// ── The plate is where a size has to land ───────────────────────────────
+
+test('a declared size reaches the plate that establishes the subject', () => {
+    // It reached the KEYFRAME prompt and never the plate, which is backwards. A
+    // plate is a close-up filling its own frame, and conditioning transfers
+    // appearance rather than scale — so the model reproduces what it was shown,
+    // and a thirty-centimetre sprinkler plated at full frame came back the size
+    // of the car beside it. Fixing that downstream means arguing with the plate
+    // in every shot the subject appears in.
+    const { buildPlatePrompt } = require('../lib/reference-plates');
+    const { buildRefSheetPrompt } = require('../routes/characters');
+
+    const prop = buildPlatePrompt('prop',
+        { name: 'Sprinkler', visual_prompt: 'cast-metal sprinkler', height_m: 0.3, length_m: 0.45, width_m: 0.3 },
+        'noir');
+    assert.match(prop, /0\.3m tall/, 'a prop plate says nothing about how big the prop is');
+
+    const character = buildRefSheetPrompt({ name: 'MAYA', appearance_prompt: 'rust cardigan', height_m: 1.62 },
+        'front', 'noir');
+    assert.match(character, /1\.62m tall/, 'a character plate says nothing about how tall they are');
+});
+
+test('an undeclared size still says nothing, on plates too', () => {
+    // An invented default is indistinguishable from a deliberate one and would
+    // be wrong silently — the rule the size fields were built on, and it has to
+    // hold on the surface that conditions every later frame.
+    const { buildPlatePrompt } = require('../lib/reference-plates');
+    const { buildRefSheetPrompt } = require('../routes/characters');
+
+    const prop = buildPlatePrompt('prop', { name: 'Sprinkler', visual_prompt: 'cast-metal sprinkler' }, 'noir');
+    assert.ok(!/\dm (tall|long|wide)/.test(prop), `a size was invented: ${prop}`);
+    assert.ok(!/times (smaller|larger)/.test(prop), `an anchor was invented: ${prop}`);
+
+    const character = buildRefSheetPrompt({ name: 'MAYA', appearance_prompt: 'rust cardigan' }, 'front', 'noir');
+    assert.ok(!/\dm tall/.test(character), `a height was invented: ${character}`);
+});
+
+test('a plate gets no frame fraction, because it has no frame to be a fraction of', () => {
+    // "About one 25th of the frame width" is a statement about composition and
+    // needs a lens, a distance and something else in shot. A plate has none of
+    // the three; what applies is the anchor and the plain measure.
+    const { buildPlatePrompt } = require('../lib/reference-plates');
+    const prop = buildPlatePrompt('prop',
+        { name: 'Sprinkler', visual_prompt: 'x', height_m: 0.3, length_m: 0.45, width_m: 0.3 }, '');
+    assert.ok(!/of the frame/.test(prop), `a plate claimed a frame fraction: ${prop}`);
+});

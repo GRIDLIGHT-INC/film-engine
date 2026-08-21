@@ -503,6 +503,18 @@ function buildRefSheetPrompt(character, view, stylePreset) {
     if (character.distinguishing) parts.push(character.distinguishing);
     if (character.ethnicity) parts.push(character.ethnicity);
 
+    // How tall they are, on the plate that establishes them.
+    //
+    // This reached the keyframe prompt and never the plate — backwards, because
+    // a plate is a full-frame studio photograph and conditioning transfers
+    // appearance rather than scale, so every frame referencing it inherits
+    // whatever height the plate happened to imply.
+    try {
+        const { scalePhrase } = require('../lib/subject-scale');
+        const note = scalePhrase(character.name || 'the subject', 'character', character, null);
+        if (note) parts.push(note);
+    } catch (_) { /* a character with no declared height plates exactly as before */ }
+
     // Add LoRA/TI tokens if available
     if (character.lora_id) parts.push(`<lora:${character.lora_id}:0.8>`);
     if (character.ti_token) parts.push(character.ti_token);
