@@ -54,6 +54,64 @@ function sceneFingerprint(scene) {
         location: scene.location || '',
         time_of_day: scene.time_of_day || '',
         description: scene.description || '',
+        // DIALOGUE, added after a surgical-edit test surfaced that it was
+        // missing. `film_scenes.description` holds ACTION only — the parser
+        // never put dialogue in it — so rewriting a character's lines changed
+        // nothing this function could see, and every shot in the scene went on
+        // reporting as current.
+        //
+        // That is the most consequential thing it could have missed. Dialogue is
+        // what gets rewritten most, and it is the direct input to voice
+        // generation: a line changed after the voice was cut left an audio file
+        // saying something the script no longer says, with nothing to notice.
+        dialogue: JSON.stringify(scene.dialogue || dialogueOf(scene) || []),
+    });
+}
+
+/**
+ * The dialogue a scene holds, for the fingerprint.
+ *
+ * Read from the shots' scene cards rather than from `film_scenes`, because the
+ * scenes table has no dialogue column — the parser puts dialogue on the shot
+ * card, which is what generation reads. Falls back to an empty list rather than
+ * throwing: a scene with no shots yet has no dialogue to be behind on.
+ */
+function dialogueOf(scene) {
+    if (!scene || !scene.id) return [];
+    try {
+        const rows = database().prepare(
+            'SELECT scene_card_yaml FROM film_shots WHERE scene_id = ? ORDER BY shot_code').all(scene.id);
+        const out = [];
+        for (const r of rows) {
+            let card = {};
+            try { card = JSON.parse(r.scene_card_yaml || '{}'); } catch (_) { continue; }
+            for (const d of (Array.isArray(card.dialogue) ? card.dialogue : [])) {
+                out.push(`${(d && d.character) || ''}:${(d && d.line) || ''}`);
+            }
+        }
+        return out;
+    } catch (_) { return []; }
+}
+
+/**
+ * The fingerprint as it was computed before dialogue was included.
+ *
+ * Kept so that widening the formula does not report every scene in every
+ * existing project as rewritten. A stored fingerprint that matches THIS is one
+ * that was stamped under the old rule and has not actually changed — it is
+ * re-stamped silently, without moving `source_changed_at`.
+ *
+ * Without it, the first save after this change would light up every board with
+ * drift warnings for work nobody touched, and a warning that fires on work
+ * nobody needs to redo is one people learn to dismiss.
+ */
+function legacySceneFingerprint(scene) {
+    if (!scene) return null;
+    return hash({
+        int_ext: scene.int_ext || '',
+        location: scene.location || '',
+        time_of_day: scene.time_of_day || '',
+        description: scene.description || '',
     });
 }
 
@@ -71,6 +129,15 @@ function stampScene(sceneId) {
         if (!scene) return null;
         const fp = sceneFingerprint(scene);
         if (scene.source_fingerprint === fp) return fp;
+
+        // Stamped under the pre-dialogue formula and otherwise unchanged: this
+        // is a re-baseline, not a rewrite. Update the hash and leave the
+        // timestamp alone, or widening the formula would report every scene in
+        // every existing project as behind.
+        if (scene.source_fingerprint && scene.source_fingerprint === legacySceneFingerprint(scene)) {
+            db.prepare('UPDATE film_scenes SET source_fingerprint = ? WHERE id = ?').run(fp, sceneId);
+            return fp;
+        }
 
         // A FIRST stamp is a baseline, not a change. Setting the timestamp here
         // makes every scene in an existing project claim it was rewritten at the
@@ -213,4 +280,5 @@ function adoptBaseline(projectId) {
     return { shots_stamped: stamped, scenes_touched: scenes.size };
 }
 
-module.exports = { sceneFingerprint, stampScene, stampShot, drift, adoptBaseline, tracking };
+module.exports = {
+    legacySceneFingerprint, sceneFingerprint, stampScene, stampShot, drift, adoptBaseline, tracking };

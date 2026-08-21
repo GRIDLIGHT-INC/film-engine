@@ -237,6 +237,7 @@ film-engine/
 │       ├── scene-insert.test.js       # A scene goes in the middle without rewriting the tail
 │       ├── screenplay-structure.test.js # Every element is reachable, and an outline survives export
 │       ├── story-structure.test.js  # Beats find their holes; a scene's history is derived, not stored
+│       ├── screenplay-polish.test.js # Export fidelity, and an edit batch that is all-or-nothing
 │       ├── providers.test.js             # Provider registry + resolution
 │       ├── providers-api.test.js         # Provider settings/credentials API
 │       ├── providers-runway.test.js      # Runway adapter (mock server)
@@ -280,7 +281,7 @@ All routes prefixed with `/film`:
 |----------|-----------|
 | Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id`, `GET/PUT/DELETE /projects/:id/anchor` |
 | Scripts | `POST /projects/:id/script[/append\|/insert]`, `GET/POST /projects/:id/outline`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
-| Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id`, `GET/PUT /scenes/:id/card`, `GET /scenes/:id/history` |
+| Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id`, `GET/PUT /scenes/:id/card`, `GET /scenes/:id/history`, `POST /scenes/:id/edit` |
 | Story | `GET/POST /projects/:id/beats`, `PUT/DELETE /beats/:id`, `GET/PUT /projects/:id/directives` |
 | Bible | `GET/PUT /projects/:id/bible`, `DELETE /projects/:id/bible/:section`, `GET /projects/:id/bible-drift` |
 | Shots | `POST /shots`, `GET /projects/:id/shotlist`, `GET/PUT/DELETE /shots/:id`, `GET /card-vocabulary` |
@@ -1187,6 +1188,7 @@ node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js
 node --test backend/tests/screenplay-structure.test.js
 node --test backend/tests/story-structure.test.js
+node --test backend/tests/screenplay-polish.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js

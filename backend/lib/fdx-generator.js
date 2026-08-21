@@ -22,10 +22,15 @@
  * script says, and worse than dropping it. Notes travel as ScriptNote now, via
  * FDX_NOTE_TYPES below.
  *
- * LOSSY, and knowingly: `centered` and `lyrics` still map to Action. FDX has no
- * lyric type and centring is a paragraph ALIGNMENT rather than a type, so the
- * words survive and the form does not. Recorded rather than fixed, because the
- * alternative is inventing a mapping Final Draft will not read back.
+ * LOSSY, and now fixed at the paragraph rather than the type. `centered` and
+ * `lyrics` have no FDX *type* — centring is an ALIGNMENT and there is no lyric
+ * paragraph at all — which is why mapping them to a type was always going to
+ * lose something. They stay `Action` and carry the form as paragraph attributes
+ * instead: `Alignment="Center"` and italics. That is what Final Draft itself
+ * does, so it reads back.
+ *
+ * `page_break` was simply dropped, and unlike the other two it has a real FDX
+ * type. It is exported.
  *
  * `boneyard` stays absent deliberately: it is text that was cut, and exporting
  * it would resurrect the cuts.
@@ -41,6 +46,23 @@ const FDX_TYPE_MAP = {
     synopsis: 'Summary',
     centered: 'Action',
     lyrics: 'Action',
+    page_break: 'Page Break',
+};
+
+/**
+ * Form that FDX carries on the PARAGRAPH rather than in its type.
+ *
+ * Mapping `centered` to a type was always lossy because centring is not a type
+ * in Final Draft — it is an alignment on an Action paragraph, which is exactly
+ * how Final Draft writes it itself. Same for lyrics, which have no paragraph
+ * type at all and are conventionally italic.
+ *
+ * Kept as attributes rather than a second type map so that widening the type
+ * map can never silently pick these up and flatten them again.
+ */
+const FDX_PARAGRAPH_FORM = {
+    centered: { attrs: ' Alignment="Center"', italic: false },
+    lyrics: { attrs: '', italic: true },
 };
 
 /**
@@ -169,7 +191,27 @@ function generateFDX(fountainAST, titlePageOverride) {
             continue;
         }
 
-        if (!fdxType) continue; // page breaks and boneyard: deliberately not exported
+        if (!fdxType) continue; // boneyard: deliberately not exported
+
+        // A page break is a paragraph with no text. Written before the general
+        // path so an empty <Text> is not emitted for it.
+        if (el.type === 'page_break') {
+            lines.push(`    <Paragraph Type="${fdxType}"/>`);
+            continue;
+        }
+
+        // Form FDX carries on the paragraph rather than in its type: centring is
+        // an alignment, lyrics are conventionally italic. Written here so that
+        // widening FDX_TYPE_MAP later cannot silently flatten them again.
+        const form = FDX_PARAGRAPH_FORM[el.type];
+        if (form) {
+            lines.push(`    <Paragraph Type="${fdxType}"${form.attrs}>`);
+            lines.push(form.italic
+                ? `      <Text Style="Italic">${escXML(text)}</Text>`
+                : `      ${formatText(text)}`);
+            lines.push('    </Paragraph>');
+            continue;
+        }
 
         if (el.type === 'scene_heading') {
             // Scene headings may have scene numbers

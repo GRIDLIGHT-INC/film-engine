@@ -107,13 +107,13 @@ Authorable = the union. Everything else is a gap with a *name*.
 | 4 | `dialogue` | ✓ | ✓ | typed, cycled | ✓ Dialogue | `none` | — |
 | 5 | `parenthetical` | ✓ | ✓ | typed, cycled | ✓ Parenthetical | `none` | — |
 | 6 | `transition` | ✓ | ✓ | typed | ✓ Transition | `none` | — |
-| 7 | `centered` | ✓ | ✓ | typed (`> x <`) | ⚠ as `Action` | `bug` (lossy, known) | 3 |
-| 8 | `lyrics` | ✓ | ✓ | typed (`~`) | ⚠ as `Action` | `bug` (lossy, known) | 3 |
+| 7 | `centered` | ✓ | ✓ | typed (`> x <`) | ✓ `Alignment="Center"` | `none` ✓ | — |
+| 8 | `lyrics` | ✓ | ✓ | typed (`~`) | ✓ `Style="Italic"` | `none` ✓ | — |
 | 9 | `note` | ✓ | ✓ | typed (`[[x]]`) | ✓ ScriptNote | `none` ✓ | — |
 | 10 | `section` | ✓ depth | ✓ | typed (`#`) | ✓ Section Heading | `none` ✓ | — |
 | 11 | `synopsis` | ✓ | ✓ | typed (`=`) | ✓ Summary | `none` ✓ | — |
 | 12 | `boneyard` | ✓ | ✓ | ✗ unknown | ✗ dropped | `surface-UI` | 3 |
-| 13 | `page_break` | ✓ | ✓ | ✗ unknown | ✗ dropped | `bug` | 3 |
+| 13 | `page_break` | ✓ | ✓ | ✗ unknown | ✓ Page Break | `none` ✓ | — |
 
 **Scene numbers (`#3#`) are not an element type and need a row anyway.** The
 parser already reads them (8 references in `lib/fountain-parser.js`), production
@@ -122,13 +122,12 @@ that makes `scene_insert_after` safe. Verdict today: `none` — parsed and store
 Recorded because the next reader will ask, and because phase 1's blocker turns on
 them. *(writers-tool agent.)*
 
-**Coverage: parser 13/13 · renderer 13/13 · authorable 11/13 · FDX 10/13.**
+**Coverage: parser 13/13 · renderer 13/13 · authorable 11/13 · FDX 11/13.**
 
-*Phase 2 moved authorable 6→11 and FDX 9→10. The two that remain unauthorable
-are `page_break` and `boneyard`; the three not exported are `page_break`,
-`boneyard` (deliberately — it is cut text) and `note` (which now travels as a
-Final Draft ScriptNote rather than as script text, so it is absent from the type
-map by design).*
+*Phase 2 moved authorable 6→11 and FDX 9→10; phase 3 took FDX to 11/13. The two
+that remain unauthorable are `page_break` and `boneyard`. The two not in the type
+map are `boneyard` (deliberately — it is cut text) and `note`, which travels as a
+Final Draft ScriptNote rather than as script text and so is absent by design.*
 
 Dual dialogue is deliberately **not a row**: it is a modifier on an element, not
 an element type, and it is not in `ELEMENT_TYPES`. It is authorable by command.
@@ -196,7 +195,7 @@ What an agent can do to a screenplay today (7 tools, verified from `lib/mcp-tool
 | 2 | `scene_insert_after` — add after scene N | **BUILT** | — | **1 ✓** (was blocked; unblocked at the reconciler) |
 | 3 | `outline_get` — sections + synopses in document order | **BUILT** | — | **2 ✓** |
 | 4 | `outline_write` — author sections/synopses | **BUILT** | — | **2 ✓** |
-| 5 | `script_stats` — words, pages, scene count, dialogue % | HTTP only | `surface-MCP` | 3 |
+| 5 | `script_stats` — words, pages, scenes, dialogue %, cast, runtime | **BUILT** | — | **3 ✓** |
 | 6 | `scene_card_write` — POV, conflict, outcome | **BUILT** | — | **2b ✓** |
 | 7 | `scene_history` / `scene_restore` — per-scene, derived from script versions | **BUILT** | — | **2b ✓** |
 | 8 | `beats_get` / `beats_apply` / `beat_link` — structure, and its holes | **BUILT** | — | **2b ✓** |
@@ -555,12 +554,90 @@ Not ported from the writers-tool five: **surgical `edit_document`** — named
 phrases changed in place, all-or-nothing per batch. A different shape of change
 from anything here, and phase 3.
 
+### The `BELIEVED` cells, verified
+
+The writers-tool agent marked eight cells as their reading of *this* repo rather
+than knowledge of it, and flagged them for the driver. Settling them before
+scoping phase 3 was the point — **two were wrong, and phase 3 is smaller for it**:
+
+| row | believed | verified |
+|---|---|---|
+| #2 live auto-classification | "not verified" | **present** — debounced re-typing on input (`index.html:15950`) |
+| #3 Tab / Enter cycling | absent | **present** — Tab accepts a suggested type or cycles by context (`:16995`) |
+| #4 SmartType | absent | **partial** — autocomplete for characters and locations; no scene-intro, time-of-day or transition vocabulary |
+| #5 element indicator | absent | **absent**, confirmed |
+| #10 move / reorder | "scene order is Fountain order" | **present in the editor** (drag-drop rebuilds the blocks), **absent over MCP** |
+| #17 groups and collections | absent | **absent**, confirmed — the matches were board-grouping, a different feature |
+| #18 story points | absent | **absent**, confirmed |
+| #20 project vocabularies | "fixed" | **fixed**, confirmed — `card-vocabulary` serves the validator's own enums |
+| #25 targets and writing history | absent | **absent**, confirmed |
+
+Marking a cell BELIEVED rather than filling it in confidently is what made this
+cheap to settle. Two features that would have been rebuilt were already there.
+
 ### Phase 3 — parity polish
 - FDX `centered` / `lyrics` / `page_break` fidelity
 - `script_stats` over MCP
 - Set 3 rows marked phase 3: live auto-classification (#2), Tab chains (#3),
   SmartType (#4), element indicator (#5), move/reorder (#10), split/merge (#11),
   groups (#17), story points (#18), vocabularies (#20), targets (#25)
+
+### Phase 3 — **SHIPPED**, and shorter than planned
+
+`tests/screenplay-polish.test.js` (12 invariants). Scoped **after** verifying the
+`BELIEVED` cells, which is why it is short: live auto-classification and Tab
+cycling were believed absent and are present, so two features that would have
+been rebuilt were already there.
+
+**Export fidelity, closed at the paragraph rather than the type.** `centered` and
+`lyrics` were flattened to `Action` because they have no FDX *type* — centring is
+an ALIGNMENT and there is no lyric paragraph at all. Mapping them to a type was
+always going to lose something. They now carry their form as paragraph
+attributes (`Alignment="Center"`, `Style="Italic"`), which is what Final Draft
+does itself, so it reads back. `page_break` had a real type and was simply
+dropped. FDX 10/13 → 11/13.
+
+**Surgical `scene_edit`** — the fifth writers-tool feature. `scene_update`
+replaces a whole scene, so changing one line means re-sending every other line
+and trusting the model reproduced them. Three rules make it usable by an agent: a
+phrase must match **exactly once** unless `all` is set, a phrase that is not
+there is a **failure** rather than a no-op, and **if any edit in a batch fails,
+none are written** — a batch that applies two of three changes leaves a scene
+nobody wrote and nobody can reconstruct. It *does* mark the scene changed,
+because it is screenplay text.
+
+**`script_stats`** over MCP: words, pages, scenes, dialogue percentage, speaking
+parts, and runtime at a page a minute.
+
+### A real bug the phase found: dialogue was invisible to drift
+
+Writing the surgical-edit test surfaced it. `film_scenes.description` holds
+**action only** — the parser never put dialogue in it — so `sceneFingerprint`
+could not see a dialogue rewrite, and every shot in the scene went on reporting
+as current.
+
+It is the most consequential thing that function could have missed. Dialogue is
+what gets rewritten most, and it is the **direct input to voice generation**: a
+line changed after the voice was cut left an audio file saying something the
+script no longer says, with nothing anywhere to notice.
+
+Dialogue is in the fingerprint now, read from the shot cards (which is where the
+parser puts it and what generation reads). Widening a fingerprint would normally
+report every scene in every existing project as rewritten, so a scene whose
+stored hash matches the **pre-dialogue formula** and is otherwise unchanged is
+re-baselined silently — new hash, timestamp untouched. Without that, the first
+save after this change would light up every board with drift for work nobody
+touched, and a warning that fires on work nobody needs to redo is one people
+learn to dismiss.
+
+### Not ported, and why
+
+`groups and collections` (#17), `story points` (#18), `project vocabularies`
+(#20) and `targets and writing history` (#25) are writers-tool **project
+management**. They do not serve *write a screenplay and take it through the
+pipeline to a film*, and porting them would add surface nobody asked for to the
+tool that is meant to replace two tools with one. Recorded as a decision rather
+than left looking like an oversight.
 
 ## Open questions
 
@@ -593,6 +670,6 @@ sections above. What remains open needs Manny, not us:
 - **Compile (#23), corkboard/outliner (#24), DOCX/Scrivener import (#27)** —
   marked *do not port* by the writers-tool agent. Film Engine has its own output
   path, and its board is the corkboard.
-- **The three `BELIEVED` cells** in Set 3 rows 2, 3, 9, 10, 17, 18, 20, 25 —
-  the writers-tool agent's reading of this repo. Driver to verify before phase 3
-  scopes them; they change what work exists, not whether the plan is right.
+- ~~The `BELIEVED` cells in Set 3 rows 2, 3, 9, 10, 17, 18, 20, 25~~ —
+  **VERIFIED** before phase 3 was scoped. See below; two were wrong, and phase 3
+  is smaller because of it.

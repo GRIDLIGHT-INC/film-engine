@@ -33,6 +33,10 @@ function handleScenes(req, res, urlParts, query) {
             res.end(JSON.stringify({ error: 'Invalid scene ID' }));
             return;
         }
+        // /film/scenes/:id/edit — change named phrases in place
+        if (urlParts[3] === 'edit' && req.method === 'POST') {
+            return editScene(req, res, sceneId);
+        }
         // /film/scenes/:id/card — what the scene is ABOUT, beside what it says
         if (urlParts[3] === 'card') {
             if (req.method === 'PUT') return writeSceneCard(req, res, sceneId);
@@ -196,6 +200,120 @@ function deleteScenes(req, res, projectId) {
  *
  * PUT /film/scenes/:id  { fountain: "EXT. STREET - DUSK\n\n..." }
  */
+// ── Surgical edit ───────────────────────────────────────────────────────
+//
+// `updateScene` replaces a whole scene, which for a one-line change means
+// re-sending every other line and trusting the model reproduced them exactly.
+// It usually does; when it does not, the diff blames the wrong sentence and the
+// scene quietly becomes something nobody wrote.
+//
+// This changes named phrases in place. Three rules make it usable by an agent:
+// a phrase must match EXACTLY ONCE unless `all` is set, a phrase that is not
+// there is a failure rather than a no-op, and **if any edit in a batch fails,
+// none are written**. The last one is what turns "commit and hope" into "try
+// it": a batch that applies two of three changes leaves a scene that cannot be
+// reconstructed from either the before or the after.
+
+function editScene(req, res, sceneId) {
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!scene) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Scene not found' }));
+    }
+    const edits = Array.isArray(req.body && req.body.edits) ? req.body.edits : [];
+    if (!edits.length) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: 'edits is required: [{ find, replace, all? }]',
+            hint: 'Each `find` must appear exactly once in the scene unless you pass all: true.',
+        }));
+    }
+
+    const script = db.prepare(
+        'SELECT * FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1').get(scene.project_id);
+    if (!script || !script.fountain_content) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'This project has no Fountain screenplay to edit.' }));
+    }
+
+    const { sceneSpans } = require('../lib/scene-splice');
+    const ordered = db.prepare(
+        `SELECT id FROM film_scenes WHERE project_id = ? AND status != 'removed'
+          ORDER BY CAST(scene_number AS INTEGER), scene_number`).all(scene.project_id);
+    const index = ordered.findIndex(r => r.id === sceneId);
+    const spans = sceneSpans(script.fountain_content);
+    if (index < 0 || !spans[index]) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'That scene is not in the current screenplay.' }));
+    }
+
+    const lines = script.fountain_content.split('\n');
+    const span = spans[index];
+    let text = lines.slice(span.start, span.end + 1).join('\n');
+
+    // DRY RUN FIRST. Every edit is checked against the scene before any is
+    // applied, so a batch that cannot succeed writes nothing at all.
+    const problems = [];
+    let probe = text;
+    for (const [i, e] of edits.entries()) {
+        const find = String((e && e.find) || '');
+        if (!find) { problems.push(`edit ${i + 1}: no \`find\``); continue; }
+        const count = probe.split(find).length - 1;
+        if (count === 0) {
+            problems.push(`edit ${i + 1}: "${find}" does not appear in this scene`);
+        } else if (count > 1 && !(e && e.all)) {
+            problems.push(
+                `edit ${i + 1}: "${find}" appears ${count} times — pass all: true, or quote more of the line`);
+        } else {
+            probe = e && e.all
+                ? probe.split(find).join(String(e.replace || ''))
+                : probe.replace(find, String(e.replace || ''));
+        }
+    }
+    if (problems.length) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: `${problems.length} of ${edits.length} edit(s) cannot be applied, so NONE were applied.`,
+            problems,
+            note: 'The batch is all-or-nothing on purpose: applying some of it would leave a scene '
+                + 'that is neither what you had nor what you asked for.',
+        }));
+    }
+
+    let applied = 0;
+    for (const e of edits) {
+        const find = String(e.find);
+        if (e.all) {
+            applied += text.split(find).length - 1;
+            text = text.split(find).join(String(e.replace || ''));
+        } else {
+            applied += 1;
+            text = text.replace(find, String(e.replace || ''));
+        }
+    }
+
+    // Through the same splice a whole-scene rewrite takes: one reconciler, one
+    // versioning rule. And it DOES mark the scene changed — this is screenplay
+    // text, so anything generated from it is now behind, and staying quiet
+    // would be worse than the false-drift problem it superficially resembles.
+    const wrapped = new Proxy(res, {
+        get(target, prop) {
+            if (prop !== 'end') return typeof target[prop] === 'function'
+                ? target[prop].bind(target) : target[prop];
+            return function (chunk) {
+                let payload = {};
+                try { payload = JSON.parse(String(chunk || '{}')); } catch (_) { payload = {}; }
+                return target.end(JSON.stringify({
+                    ...payload, edits_applied: applied,
+                    note: `${applied} change(s) made in place. Everything else in the scene, and every `
+                        + 'other scene, is byte-identical.',
+                }));
+            };
+        },
+    });
+    return updateScene({ ...req, body: { fountain: text } }, wrapped, sceneId);
+}
+
 // ── Scene cards ─────────────────────────────────────────────────────────
 //
 // What a scene is ABOUT, beside what it says. Conflict and outcome cannot live

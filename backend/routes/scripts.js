@@ -77,6 +77,11 @@ function handleScripts(req, res, urlParts, query) {
         return appendToScript(req, res, projectId);
     }
 
+    // GET /film/projects/:id/script/stats
+    if (req.method === 'GET' && sub === 'script' && versionOrKeyword === 'stats') {
+        return getScriptStats(req, res, projectId);
+    }
+
     // GET  /film/projects/:id/outline — sections + synopses as a tree
     // POST /film/projects/:id/outline — author them
     if (sub === 'outline') {
@@ -841,6 +846,46 @@ function writeOutline(req, res, projectId) {
 
     return uploadScript(
         { ...req, body: { fountain_content: fountain, sync_scenes: true } }, wrapped, projectId);
+}
+
+/**
+ * What a writer actually asks about a draft.
+ *
+ * The numbers were computed and stored on every save since the parser was
+ * written, and nothing exposed them — the same shape as sections and synopses.
+ * Read from the stored row rather than recomputed, so what this reports is what
+ * the version says about itself.
+ *
+ * `characters` is included because "how many speaking parts" is the question
+ * that follows "how long is it", and it is the one a producer asks first.
+ */
+function getScriptStats(req, res, projectId) {
+    const row = db.prepare(
+        'SELECT * FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1').get(projectId);
+    if (!row) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'This project has no screenplay yet.' }));
+    }
+
+    const speaking = db.prepare(
+        `SELECT COUNT(DISTINCT text) n FROM film_script_elements
+          WHERE script_id = ? AND element_type = 'character'`).get(row.id).n;
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        project_id: projectId,
+        version: row.version,
+        words: row.word_count || 0,
+        pages: row.page_count || 0,
+        scenes: row.scene_count || 0,
+        dialogue_percentage: row.dialogue_percentage || 0,
+        characters: speaking,
+        // A page is a minute is the oldest rule in the business and the only one
+        // a schedule is built on, so it is stated rather than left to be
+        // multiplied.
+        estimated_runtime_minutes: row.page_count || 0,
+        note: 'One page is roughly one minute of screen time. Dialogue percentage is of total words.',
+    }));
 }
 
 function uploadScript(req, res, projectId) {

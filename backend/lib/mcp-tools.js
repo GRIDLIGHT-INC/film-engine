@@ -508,6 +508,28 @@ const PRODUCTION_TOOLS = [
         required: ['scene_id'],
     },
     {
+        name: 'scene_edit',
+        handler: handleScenes, method: 'POST',
+        description: 'Change named phrases inside ONE scene, in place. Use this instead of scene_update whenever you are altering a line rather than rewriting a scene: scene_update replaces the whole scene, so you must re-send every other line exactly and a single stray reflow marks the shots under it as behind. Each `find` must appear EXACTLY ONCE unless you pass all: true \u2014 an ambiguous match is refused rather than guessed. The batch is ALL-OR-NOTHING: if any edit cannot be applied, none are written, so a failed call leaves the scene exactly as it was. This DOES mark the scene as changed, because it is screenplay text.',
+        path: a => `/film/scenes/${a.scene_id}/edit`,
+        body: a => ({ edits: a.edits }),
+        schema: {
+            scene_id: { type: 'string' },
+            edits: {
+                type: 'array',
+                description: '[{ find, replace, all? }]. Quote enough of the line to be unambiguous.',
+            },
+        },
+        required: ['scene_id', 'edits'],
+    },
+    {
+        name: 'script_stats',
+        handler: handleScripts, method: 'GET',
+        description: 'Length and shape of the current draft: words, pages, scenes, dialogue percentage, speaking parts, and estimated runtime (one page is roughly one minute). SPENDS NOTHING. Read it to answer "how long is this" before deciding what to cut.',
+        path: a => `/film/projects/${a.project_id}/script/stats`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
         name: 'scene_history',
         handler: handleScenes, method: 'GET',
         description: 'Every version this ONE scene has had, newest first, derived from the saved script versions \u2014 nothing is stored per scene, so it cannot fall out of step with the screenplay. Only versions where this scene\u2019s text actually changed are listed. SPENDS NOTHING. Use it before rewriting a scene, so a good earlier draft is recoverable rather than remembered.',
