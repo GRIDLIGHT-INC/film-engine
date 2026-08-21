@@ -230,6 +230,7 @@ film-engine/
 │       ├── asset-path-containment.test.js # DB file_name cannot escape project dir
 │       ├── test-isolation.test.js        # No test may open the real database
 │       ├── docs-drift.test.js            # CLAUDE.md matches the tree on disk
+│       ├── screenplay-port.test.js     # The screenplay port plan, held to the code it describes
 │       ├── providers.test.js             # Provider registry + resolution
 │       ├── providers-api.test.js         # Provider settings/credentials API
 │       ├── providers-runway.test.js      # Runway adapter (mock server)
@@ -1174,6 +1175,7 @@ node --test backend/tests/mood-board.test.js
 node --test backend/tests/storyboard-annotation.test.js
 node --test backend/tests/annotation-feedback.test.js
 node --test backend/tests/shot-anchor.test.js
+node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js
