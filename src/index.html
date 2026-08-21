@@ -15060,8 +15060,8 @@ THREE.GLTFLoader = GLTFLoader;
                     <h3>${esc(r.headline)}</h3>
                     <p class="text-sm text-muted" style="margin:0 0 12px;line-height:1.5;">${esc(r.summary)}</p>
                     <p class="text-sm text-muted" style="margin:0 0 12px;">${esc(r.state)}${r.when ? ' &middot; ' + esc(r.when) : ''}</p>
-                    <button class="btn btn-primary btn-sm" onclick="openFrameViewer('${r.shot_id}')">Resume</button>
-                    <button class="btn btn-secondary btn-sm" onclick="navigateTo('storyboard')">Open shot</button>
+                    <button class="btn btn-primary btn-sm" onclick="resumeShot('${r.shot_id}')">Resume</button>
+                    <button class="btn btn-secondary btn-sm" onclick="navigateTo('storyboard')">Open board</button>
                 </div>
             </div>`;
     }
@@ -24270,13 +24270,41 @@ ${fountainText.slice(0, 50000)}`;
 
     let FRAME_VIEWER = { frames: [], index: 0 };
 
-    function openFrameViewer(shotId) {
-        const frames = FRAME_VIEWER.frames || [];
-        const i = frames.findIndex(f => f.shot_id === shotId);
-        if (i < 0) return;
+    /**
+     * Open the full-screen viewer on a shot.
+     *
+     * FRAME_VIEWER.frames is filled by loadStoryboard, so this used to be a
+     * SILENT no-op from anywhere else: `if (i < 0) return`. The home page's
+     * Resume button called it with a shot id and nothing happened at all — no
+     * error, no message, exactly the failure mode a button wired to nothing has.
+     *
+     * It loads the board when it does not have it, and says so when the shot
+     * genuinely is not there, rather than returning as though it had worked.
+     */
+    async function openFrameViewer(shotId) {
+        let frames = FRAME_VIEWER.frames || [];
+        let i = frames.findIndex(f => f.shot_id === shotId);
+        if (i < 0) {
+            await loadStoryboard();
+            frames = FRAME_VIEWER.frames || [];
+            i = frames.findIndex(f => f.shot_id === shotId);
+        }
+        if (i < 0) return setStatus('That shot is not on the board any more.');
         FRAME_VIEWER.index = i;
         document.getElementById('frameViewerModal').classList.add('open');
         frameViewerPaint();
+    }
+
+    /**
+     * Pick up where you left off: go to the board AND open the frame.
+     *
+     * Both halves matter. Opening the viewer alone leaves you back on the home
+     * page when you close it, which is not where you were working; navigating
+     * alone makes Resume identical to Open shot.
+     */
+    async function resumeShot(shotId) {
+        navigateTo('storyboard');
+        await openFrameViewer(shotId);
     }
 
     function frameViewerStep(delta) {

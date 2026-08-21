@@ -121,3 +121,65 @@ test('every needs-you item carries a way in', () => {
     const body = fn.slice(0, fn.indexOf('\n    }'));
     assert.ok(/navigateTo\(/.test(body), 'a needs item does not link anywhere');
 });
+
+
+/**
+ * Every button on the home page has to DO something.
+ *
+ * Resume did nothing at all: it called openFrameViewer, whose frame list is
+ * filled only by loadStoryboard, so from the home page the lookup always missed
+ * and the function returned silently. No error, no message — indistinguishable
+ * from a working button until you press it, which is precisely the failure the
+ * nav-chrome work went looking for and this page shipped anyway.
+ *
+ * Derived from the markup rather than listed, so a seventh button added later
+ * is checked too.
+ */
+test('every handler the home page calls is actually defined', () => {
+    const src = html();
+    // Every home render function, which is where the page's own buttons live.
+    // Bounded by the first and the last rather than by a pair in the middle, so
+    // a block added between them is inside the region rather than skipped.
+    const first = src.indexOf('function homeGreetingHtml');
+    const last = src.indexOf('function homeRunningHtml');
+    assert.ok(first > 0 && last > first, 'the home render functions moved');
+    const region = src.slice(first, src.indexOf('\n    }', last) + 6);
+    const called = new Set();
+    for (const m of region.matchAll(/onclick="(?:event\.preventDefault\(\);)?([A-Za-z_$][\w$]*)\(/g)) {
+        called.add(m[1]);
+    }
+    // Two distinct handlers across six blocks is correct — most blocks navigate
+    // — so this guards the SCAN rather than the count: if the regex stopped
+    // matching, every name would resolve vacuously.
+    const sites = [...region.matchAll(/onclick=/g)].length;
+    assert.ok(sites >= 5, `found only ${sites} onclick sites in the home blocks — the scan is broken`);
+    assert.ok(called.size >= 2, `found only ${called.size} distinct handlers`);
+
+    const missing = [...called].filter(fn =>
+        !new RegExp(`(?:async\\s+)?function\\s+${fn}\\s*\\(`).test(src));
+    assert.deepStrictEqual(missing, [],
+        `home page calls handlers that do not exist: ${missing.join(', ')}`);
+});
+
+test('resume opens the frame rather than silently doing nothing', () => {
+    const src = html();
+    assert.ok(/onclick="resumeShot\(/.test(src),
+        'Resume is not wired to a resume handler');
+    const fn = src.slice(src.indexOf('async function resumeShot'), src.indexOf('async function resumeShot') + 400);
+    assert.ok(/navigateTo\('storyboard'\)/.test(fn),
+        'Resume does not take you to the board, so closing the viewer leaves you where you were not working');
+    assert.ok(/openFrameViewer\(/.test(fn), 'Resume does not open the frame');
+});
+
+test('the frame viewer loads the board when it does not have it', () => {
+    // The root cause. FRAME_VIEWER.frames is populated by loadStoryboard, so
+    // any caller from another page found an empty list and hit `return`.
+    const src = html();
+    const start = src.indexOf('async function openFrameViewer');
+    assert.ok(start > 0, 'openFrameViewer is not async, so it cannot load the board it needs');
+    const fn = src.slice(start, start + 900);
+    assert.ok(/await loadStoryboard\(\)/.test(fn),
+        'openFrameViewer still assumes the board is already loaded');
+    assert.ok(/setStatus\(/.test(fn),
+        'a shot that genuinely cannot be found still fails silently');
+});
