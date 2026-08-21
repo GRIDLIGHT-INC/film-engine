@@ -471,10 +471,25 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // the 3D stage for.
     if (effective.lens.value) parts.push(`${effective.lens.value} lens`);
 
-    // 4b. Camera height against a standing eyeline IS the angle. Derived rather
-    // than stored, because the stage already knows where the camera is and a
-    // separate field could disagree with it.
-    const h = Number(facets.camera_height_m);
+    // 4b. Camera height against a standing eyeline IS the angle.
+    //
+    // Read from the blocking when a shot is staged, and OTHERWISE FROM THE CARD
+    // — which it was not, and the gap was invisible because `camera.height_m`
+    // is a validated field. A director could write it, the card would save, and
+    // it reached nothing unless somebody had also opened the 3D stage. That is
+    // the same defect class as the mood-board specs that validated and were
+    // consumed nowhere.
+    //
+    // It matters more than it looks, because VALID_SHOT_TYPES mixes three
+    // independent axes: framing (wide, medium, close-up), angle (low-angle,
+    // high-angle, dutch-angle) and rig (tracking, dolly, handheld). `shot_type`
+    // holds exactly one, so "a low-angle wide" is unsayable there — you pick
+    // the framing or the angle and lose the other. Height is the second axis,
+    // and reading it from the card is what makes the pair sayable without
+    // blocking the shot in 3D.
+    const h = Number.isFinite(Number(facets.camera_height_m))
+        ? Number(facets.camera_height_m)
+        : Number(cardCamera.height_m);
     if (Number.isFinite(h)) {
         if (h <= 0.9) parts.push('low angle, camera looking up');
         else if (h >= 2.2) parts.push('high angle, camera looking down');

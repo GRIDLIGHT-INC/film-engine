@@ -190,6 +190,22 @@ function subjectsCoveredBy(db, anchor) {
                 if (name) covered.add(String(name).trim().toUpperCase());
             }
         }
+
+        // The place, which the anchor covers most completely of all — it is a
+        // photograph of that location rather than a description of it. Its
+        // plate already stands down for an anchor; leaving its paragraph in was
+        // an inconsistency that cost 856 characters on a real shot.
+        //
+        // Only when the anchor is in the SAME scene. Anchoring across scenes is
+        // allowed, and there the anchor is a picture of a different place —
+        // dropping this location's description would leave the one thing the
+        // frame does not show travelling as a bare name.
+        if (!anchor.cross_scene) {
+            const loc = db.prepare(
+                'SELECT sc.location FROM film_shots s JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?')
+                .get(anchor.shot.id);
+            if (loc && loc.location) covered.add(String(loc.location).trim().toUpperCase());
+        }
     } catch (_) { /* an unreadable card covers nothing, which keeps every plate */ }
     return covered;
 }

@@ -143,3 +143,46 @@ test('every previs shot type is expressible in the prompt vocabulary', () => {
     });
     assert.deepStrictEqual(unexpressible, [], `previs shot types with no prompt form: ${unexpressible.join(', ')}`);
 });
+
+
+test('a card can say a low angle without being blocked in 3D', () => {
+    // VALID_SHOT_TYPES mixes three independent axes — framing (wide, medium,
+    // close-up), angle (low-angle, high-angle) and rig (tracking, dolly) — and
+    // `shot_type` holds exactly one. So "a low-angle wide" is unsayable there:
+    // you pick the framing or the angle and lose the other.
+    //
+    // `camera.height_m` is the second axis and the scene-card schema has always
+    // VALIDATED it, but the prompt read camera height from previs blocking
+    // ONLY. A director could write it, the card would save, and it reached
+    // nothing unless somebody had also opened the 3D stage — the same defect
+    // class as a mood-board spec that validates and is consumed nowhere.
+    const { buildStoryboardPrompt } = require('../lib/storyboard-prompt');
+    const wide = { action: 'Three house fronts.', camera: { shot_type: 'wide', lens: '32mm' } };
+
+    const flat = buildStoryboardPrompt(wide, [], null, '', {}).prompt;
+    assert.ok(!/low angle/.test(flat), 'an angle appeared on a card that names none');
+
+    const low = buildStoryboardPrompt(
+        { ...wide, camera: { ...wide.camera, height_m: 0.4 } }, [], null, '', {}).prompt;
+    assert.ok(/wide angle shot/.test(low), 'the framing was lost when the angle was added');
+    assert.ok(/low angle, camera looking up/.test(low),
+        'camera.height_m validates on the card and still reaches no prompt');
+
+    const high = buildStoryboardPrompt(
+        { ...wide, camera: { ...wide.camera, height_m: 3 } }, [], null, '', {}).prompt;
+    assert.ok(/high angle, camera looking down/.test(high));
+});
+
+test('blocking still beats the card for camera height', () => {
+    // The card is what was written; the blocking is what was staged and
+    // approved. A card height that overrode the stage would show a director the
+    // shot they had already moved past.
+    const { buildStoryboardPrompt } = require('../lib/storyboard-prompt');
+    const card = { action: 'A street.', camera: { shot_type: 'wide', height_m: 0.4 } };
+    // The flat facet shape the other tests here use, standing in for blocking.
+    const staged = buildStoryboardPrompt(card, [], null, '', {
+        previs: { shot_type: 'wide', focal_mm: 32, camera_height_m: 1.6 },
+    }).prompt;
+    assert.ok(!/low angle/.test(staged),
+        'the card height overrode the staged camera');
+});

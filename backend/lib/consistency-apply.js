@@ -120,17 +120,43 @@ function fitAdditions(basePrompt, ctx, opts) {
 
     items.sort((a, b) => (ADDITION_RANK[a.profile_type] ?? 5) - (ADDITION_RANK[b.profile_type] ?? 5));
 
-    // NOT shortened because a picture is attached.
-    //
-    // That was tried and reverted. The reasoning was sound — a plate shows what
-    // a subject looks like, so describing it again is redundant — and it was
-    // wrong in practice for one reason: the picture does not always arrive. A
-    // provider takes three references and a shot can want five; one generation
-    // path was attaching none at all. Every time the picture was missing, the
-    // shortened subject travelled with neither words nor image, and the model
-    // built whatever was still described at length. A redundant description
-    // costs room. A missing one costs the shot.
-    const sized = items;
+    /*
+     * NOT shortened because a plate is attached.
+     *
+     * That was tried and reverted. The reasoning was sound — a plate shows what
+     * a subject looks like, so describing it again is redundant — and it was
+     * wrong in practice for one reason: the picture does not always arrive. A
+     * provider takes three references and a shot can want five; one generation
+     * path was attaching none at all. Every time the picture was missing, the
+     * shortened subject travelled with neither words nor image, and the model
+     * built whatever was still described at length. A redundant description
+     * costs room. A missing one costs the shot.
+     *
+     * SHORTENED because the ANCHOR shows it, which is a different bet.
+     *
+     * A plate may or may not win one of three slots. The anchor ranks 0, so it
+     * is attached whenever there is an anchor at all — and it does not show the
+     * subject in the abstract, it shows it in this scene, in position, at the
+     * right scale, lit the way the scene is lit. Re-describing that is not
+     * redundancy against a maybe; it is redundancy against the most specific
+     * picture in the payload.
+     *
+     * It cost the whole budget once. A real 1B anchored on 1A sent 3,990
+     * characters against a 4,000 ceiling, of which 2,517 described the
+     * cul-de-sac, the sprinkler and the sedan — all three plainly visible in
+     * the attached frame — so the shot's own action line and the anamorphic
+     * look were competing for the 1,473 that were left.
+     *
+     * The subject keeps its NAME. Shortening to nothing is the failure the
+     * revert was about; shortening to "the SEDAN, as in the reference image"
+     * still tells the model which thing is meant and which picture answers it.
+     */
+    const covered = new Set(((opts && opts.anchorCovers) || []).map(n => String(n || '').toUpperCase()));
+    const sized = covered.size
+        ? items.map(i => (covered.has(String(i.subject_name || '').toUpperCase())
+            ? { ...i, text: identify(i), shortened: true }
+            : i))
+        : items;
 
     const ceiling = Number(opts && opts.maxPromptChars) > 0 ? Number(opts.maxPromptChars) : 0;
     if (!ceiling) return sized.map(i => i.text);

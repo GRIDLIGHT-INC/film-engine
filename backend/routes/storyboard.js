@@ -804,7 +804,12 @@ async function generateStoryboard(req, res, projectId, query) {
                 aspect_ratio: project.aspect_ratio,
                 // Paired with the @tags buildStoryboardPrompt just emitted.
                 reference_images: shotRefs,
-            }, consistencyContext, { maxPromptChars: imagePromptLimitFor(project) });
+            }, consistencyContext, {
+                maxPromptChars: imagePromptLimitFor(project),
+                // Subjects standing in the attached frame keep their NAME and
+                // lose their paragraph.
+                anchorCovers: anchorCoversFor(anchorState, anchorState_.anchorAttached),
+            });
             const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
                 await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
 
@@ -1056,7 +1061,12 @@ async function generateStoryboardStream(req, res, projectId, query) {
                 aspect_ratio: project.aspect_ratio,
                 // Paired with the @tags buildStoryboardPrompt just emitted.
                 reference_images: shotRefs,
-            }, consistencyContext, { maxPromptChars: imagePromptLimitFor(project) });
+            }, consistencyContext, {
+                maxPromptChars: imagePromptLimitFor(project),
+                // Subjects standing in the attached frame keep their NAME and
+                // lose their paragraph.
+                anchorCovers: anchorCoversFor(anchorState, anchorState_.anchorAttached),
+            });
             const { buffer: imageBuffer, metadata } = await callImageGenStream(
                 imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
                 imagePayload,
@@ -1362,6 +1372,18 @@ function activeAnchorFor_(shotId, project, body, canAttach) {
         reason: resolved.reason,
         cross_scene: resolved.cross_scene || null,
     };
+}
+
+/**
+ * The subjects an attached anchor already shows, for the contract trimmer.
+ *
+ * Empty unless the frame actually claimed a slot: shortening a subject's
+ * description because of a picture that is not in the payload is the exact
+ * failure the contract shortening was reverted for.
+ */
+function anchorCoversFor(anchorState, attached) {
+    if (!attached || !anchorState || !anchorState.anchor) return [];
+    return [...require('../lib/shot-anchor').subjectsCoveredBy(db, anchorState.anchor)];
 }
 
 /** Did the anchor claim a reference slot, and may the prompt name it? */
@@ -1691,6 +1713,11 @@ async function regenerateShot(req, res, shotId) {
             // 5,024-character one, and a provider truncates the tail — so what
             // survived was the part the composer had deliberately cut.
             promptIsFinal: !!body.prompt_override,
+            // Subjects standing in the attached frame keep their NAME and lose
+            // their paragraph. On a real shot that was 2,517 of 3,990
+            // characters describing a street, a sprinkler and a car all plainly
+            // visible in the picture travelling beside them.
+            anchorCovers: anchorCoversFor(anchorState, anchorAttached),
         });
         const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
             await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));

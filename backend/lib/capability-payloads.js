@@ -236,7 +236,14 @@ const CAPABILITY_BUILDERS = {
         // prompt the provider receives — enforcing it before they are appended
         // measures the wrong string.
         return cc
-            ? applyConsistencyToImagePayload(payload, cc, { maxPromptChars: imagePromptLimit(ctx.project) })
+            ? applyConsistencyToImagePayload(payload, cc, {
+                maxPromptChars: imagePromptLimit(ctx.project),
+                // Subjects standing in the attached frame keep their name and
+                // lose their paragraph — but only when the frame really is in
+                // this payload, since shortening against a picture that did not
+                // travel is the failure the contract shortening was reverted for.
+                anchorCovers: ctx.anchorAttached ? (ctx.anchorCovers || []) : [],
+            })
             : payload;
     },
 
@@ -514,7 +521,7 @@ function loadShotContext(shotId) {
      * prompt, and emitting the tag there replaces the appearance with a token
      * meaning nothing.
      */
-    let references = [], tagged = false, anchorTag = null, anchorAttached = false;
+    let references = [], tagged = false, anchorTag = null, anchorAttached = false, anchorCovers = [];
     try {
         const { shotReferencesFor, matchCharacters, matchLocation, matchProps } =
             require('./shot-references');
@@ -528,6 +535,8 @@ function loadShotContext(shotId) {
             props: matchProps(sceneCard, props),
             anchor: anchor.shot ? anchor : null,
         });
+        anchorCovers = anchor.shot
+            ? [...require('./shot-anchor').subjectsCoveredBy(db, anchor)] : [];
         references = gathered.references;
         tagged = gathered.tagged;
         anchorTag = gathered.anchorTag;
@@ -536,7 +545,7 @@ function loadShotContext(shotId) {
         // A project with no plates, or a provider that cannot be resolved,
         // generates exactly as it did before rather than failing to build a
         // payload at all.
-        references = []; tagged = false; anchorTag = null; anchorAttached = false;
+        references = []; tagged = false; anchorTag = null; anchorAttached = false; anchorCovers = [];
     }
 
     return {
@@ -544,7 +553,7 @@ function loadShotContext(shotId) {
         keyframeAsset, videoAsset, audioAsset, musicCue, initImage,
         consistency: consistencyContext,
         previs,
-        references, tagged, anchorTag, anchorAttached,
+        references, tagged, anchorTag, anchorAttached, anchorCovers,
         annotations,
         // The project's standing answer to PAR-026. A route may override it per
         // request; nothing else may, because a default that turns itself on is

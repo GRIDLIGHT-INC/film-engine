@@ -437,6 +437,80 @@ test('the location plate stands down entirely for an anchor', () => {
         'with no anchor the location plate must still go');
 });
 
+test('a subject standing in the anchor keeps its name and loses its paragraph', () => {
+    // Dropping the PLATE was only half of it. The locked contracts are appended
+    // later by applyConsistencyToImagePayload, which knew nothing about the
+    // anchor — so a real 1B sent 3,990 characters against a 4,000 ceiling, of
+    // which 2,517 described a street, a sprinkler and a car all plainly visible
+    // in the frame travelling beside them. Two pictures saved, the entire
+    // budget spent re-describing what they showed.
+    const { applyConsistencyToImagePayload } = require('../lib/consistency-apply');
+    const items = [
+        { subject_name: 'SEDAN', profile_type: 'prop',
+          text: 'Late-1970s full-size four-door sedan. Dark forest green enamel, oxidised to '
+              + 'chalky matte across the hood. Rust blistering along the lower door seams and '
+              + 'both rear wheel arches, edges lifted and flaking to orange-brown.' },
+        { subject_name: 'DRAGON', profile_type: 'character',
+          text: 'Ash-grey scales over a lean frame. Torn wing membrane, the tear old and '
+              + 'healed at the edges. Amber eye with a slit pupil.' },
+    ];
+    // The flat array is what gates the append; the items carry the per-subject
+    // detail the trimmer works from. Both travel, as the routes send them.
+    const ctx = { prompt_addition_items: items, prompt_additions: items.map(i => i.text) };
+    const base = { prompt: 'A street.', negative_prompt: '' };
+
+    const full = applyConsistencyToImagePayload(base, ctx, { maxPromptChars: 4000 });
+    const short = applyConsistencyToImagePayload(base, ctx, {
+        maxPromptChars: 4000, anchorCovers: ['SEDAN'],
+    });
+
+    assert.ok(short.prompt.length < full.prompt.length,
+        'the covered subject was not shortened at all');
+    assert.ok(short.prompt.includes('SEDAN'),
+        'the covered subject lost its NAME — it now travels as nothing, which is the '
+        + 'failure the contract shortening was reverted for');
+    assert.ok(!short.prompt.includes('Rust blistering'),
+        'the paragraph describing what the anchor already shows was still sent');
+    assert.ok(short.prompt.includes('Torn wing membrane'),
+        'a subject the anchor does NOT show lost its description too');
+});
+
+test('the place is covered too, but only when the anchor is in the same scene', () => {
+    // The anchor covers the location most completely of all — it is a
+    // photograph of it rather than a description. Its PLATE already stands down
+    // for an anchor, and leaving its paragraph in was an inconsistency that
+    // cost 856 characters on a real shot.
+    //
+    // Across scenes the anchor is a picture of a DIFFERENT place, so dropping
+    // this location's description would leave the one thing the frame does not
+    // show travelling as a bare name.
+    const { projectId, shots } = makeScene(['1A', '1B'], ['1A']);
+    anchorOn(projectId, shots['1A']);
+    const same = subjectsCoveredBy(db, activeAnchorFor(db, shots['1B']));
+    assert.ok(same.has('STREET'), 'the location was not covered by an anchor of the same scene');
+
+    const anchor = activeAnchorFor(db, shots['1B']);
+    const across = subjectsCoveredBy(db, { ...anchor, cross_scene: 'different scene' });
+    assert.ok(!across.has('STREET'),
+        'a cross-scene anchor dropped the description of a place it does not show');
+});
+
+test('nothing is shortened unless the anchor really travelled', () => {
+    // Shortening against a picture that is not in the payload leaves the
+    // subject with neither words nor image. The caller passes anchorCovers only
+    // when the frame actually claimed a slot; this pins the default.
+    const { applyConsistencyToImagePayload } = require('../lib/consistency-apply');
+    const items = [{
+        subject_name: 'SEDAN', profile_type: 'prop',
+        text: 'Late-1970s sedan. Rust blistering along the lower door seams.',
+    }];
+    const ctx = { prompt_addition_items: items, prompt_additions: items.map(i => i.text) };
+    const p = applyConsistencyToImagePayload({ prompt: 'A street.', negative_prompt: '' }, ctx,
+        { maxPromptChars: 4000 });
+    assert.ok(p.prompt.includes('Rust blistering'),
+        'a contract was shortened with no anchor in the payload');
+});
+
 // ── Setting it is turning it on ─────────────────────────────────────────
 
 test('a new project has no anchor', () => {
