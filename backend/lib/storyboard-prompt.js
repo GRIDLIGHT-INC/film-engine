@@ -352,6 +352,19 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     const parts = [];
     const loraParts = [];
 
+    // 0. The scene this shot is being taken OF, when one is attached.
+    //
+    // Leads deliberately. "Whatever leads a prompt is what the image is of" is
+    // the rule that moved the scale notes out of first position, and here the
+    // leading statement is true: the image IS of that location with those
+    // things in those places. What follows is the new camera on it.
+    //
+    // Present only when the caller attached the frame AND can address it, so a
+    // project with no anchor builds byte-identically.
+    if (opts.anchorAttached) {
+        parts.push(require('./scene-anchor').anchorLeadPhrase(opts.anchorTag));
+    }
+
     // 1. Character LoRA/TI tokens and appearance
     const cardChars = sceneCard.characters || [];
     for (const cardChar of cardChars) {
@@ -517,21 +530,14 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         parts.push(trimToAllowance(stylePreset, opts.styleAllowance || allow.style));
     }
 
-    // 8b. The frame this scene is measured against.
+    // 8b. Continuity of light, restated beside the look.
     //
-    // Placed with the look because that is what it carries: light, palette and
-    // grade. It says so explicitly rather than "matching the reference", which
-    // a model reads as matching its COMPOSITION — and a scene of eight frames
-    // that all copy the establishing shot's staging is a worse failure than the
-    // drift this exists to fix. The negative names that failure directly.
-    //
-    // Tag-only. A provider that cannot address references from the prompt gets
-    // an unexplained extra picture competing with the plates, with nothing to
-    // say it is there for the light; the caller declines to attach it at all in
-    // that case, and this stays silent to match.
-    if (opts.anchorTag) {
-        const { anchorPhrase } = require('./scene-anchor');
-        const phrase = anchorPhrase(opts.anchorTag);
+    // The lead phrase above establishes the world; this sits with the style
+    // because grade is the part of continuity the style preset can otherwise
+    // overwrite — a look appended after the scene has been described will
+    // happily regrade it.
+    if (opts.anchorAttached) {
+        const phrase = require('./scene-anchor').anchorPhrase(opts.anchorTag);
         if (phrase) parts.push(phrase);
     }
 
@@ -561,7 +567,7 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
 
     // Build negative prompt
     const negParts = [DEFAULT_NEGATIVE_PROMPT];
-    if (opts.anchorTag) negParts.push(require('./scene-anchor').ANCHOR_NEGATIVE);
+    if (opts.anchorAttached) negParts.push(require('./scene-anchor').ANCHOR_NEGATIVE);
     if (preset && preset.negative) {
         negParts.push(preset.negative);
     }

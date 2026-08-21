@@ -17,12 +17,24 @@
  * references the same frame, error cannot accumulate, and regenerating one shot
  * changes no other shot's inputs.
  *
- * **What it carries, and what it must not.** An anchor is attached for its
- * light, palette and grade. It is emphatically NOT attached for its
- * composition: a scene where every frame copies the establishing shot's
- * staging is a worse failure than the drift being fixed, and it is the failure
- * an unlabelled reference image invites. The prompt says which of the two it
- * wants and the negative says which it does not.
+ * **The anchor is the starting point, not a swatch.** It carries the WORLD:
+ * the location as it was actually rendered, the set dressing, the props and
+ * the subjects in the positions they ended up in. The new shot re-shoots that
+ * world from a different camera — a longer lens, a lower angle, the dragon's
+ * shadow now overhead — and says so. Continuity comes from the picture;
+ * everything the new shot adds or changes comes from its own card.
+ *
+ * This was first built the other way round — attached for grade only, with a
+ * negative refusing to reuse its composition — on the reasoning that a scene of
+ * eight copies of the establishing shot is a worse failure than the drift.
+ * That is a real failure and it is not the one worth designing against here: a
+ * director who wants 1B to keep 1A's street with the car exactly where it was
+ * cannot get there from a colour swatch, and telling the model to ignore the
+ * placement throws away the only thing the frame was attached for.
+ *
+ * The camera change is what stops it being a duplicate, and the camera change
+ * is stated in the prompt from the shot's own card. If two shots genuinely
+ * name the same framing, two similar frames is the correct output.
  *
  * Pure: `pickAnchor` takes rows and returns a choice with its reasoning. The
  * database read is a thin wrapper below it, so the rule that decides which
@@ -86,18 +98,46 @@ function pickAnchor(shots, targetShotId, pinnedShotId) {
  */
 function anchorPhrase(tag) {
     const t = String(tag || '').trim();
-    return t ? `matching the light, palette and colour grade of @${t}` : '';
+    return t ? `matching the light, palette and colour grade of ${ref(t)}` : '';
+}
+
+/** How to address the attached frame: by tag where the provider reads one. */
+function ref(tag) {
+    const t = String(tag || '').trim();
+    return t ? `@${t}` : 'the first reference image';
 }
 
 /**
- * And what it says it does not want.
+ * The instruction that makes the anchor a starting point.
  *
- * Stated because it is the specific way this feature fails: an attached frame
- * of the same place pulls the generation toward reproducing that frame, and a
- * scene of eight identical setups reads as a bug in the board rather than a
- * choice.
+ * Leads the prompt, and that placement is the decision. "Whatever leads a
+ * prompt is what the image is of" is the rule this codebase learned the
+ * expensive way — and here the leading statement is TRUE: the image genuinely
+ * is of that location, with those things in those places. What follows is the
+ * shot being taken of it.
+ *
+ * It names re-shooting explicitly. Without that the model reads "same scene as
+ * this picture" as "reproduce this picture", and the camera facets further down
+ * arrive as decoration on a copy.
  */
-const ANCHOR_NEGATIVE = 'copying the reference composition, identical framing to the reference, duplicate shot';
+function anchorLeadPhrase(tag) {
+    return `The same scene as ${ref(tag)}: the same location, the same set dressing `
+        + `and the same subjects standing where they stand in it. Re-shot from a new camera `
+        + `position — keep every element continuous with it and change only the framing `
+        + `and what the shot below describes`;
+}
+
+/**
+ * What breaks continuity, refused by name.
+ *
+ * The inverse of what this negative used to say. Refusing to reuse the
+ * reference's composition made the anchor a colour swatch; what actually has to
+ * be refused is the scene quietly becoming a different one — a rebuilt street,
+ * props that moved, an hour that changed — which is exactly what a model does
+ * when it treats a reference as inspiration rather than as the set.
+ */
+const ANCHOR_NEGATIVE = 'different location, rebuilt set, rearranged props, '
+    + 'inconsistent set dressing, different time of day, discontinuous lighting';
 
 /**
  * Read the scene's shots and pick the anchor. Thin on purpose.
@@ -149,4 +189,42 @@ function anchorCandidate(anchor) {
     };
 }
 
-module.exports = { pickAnchor, anchorPhrase, ANCHOR_NEGATIVE, sceneAnchorFor, anchorCandidate };
+/**
+ * The subjects the anchor frame already shows.
+ *
+ * A plate exists to tell the model what a subject looks like. When the anchor
+ * frame contains that subject, it has already been told — in situ, at the right
+ * scale, lit the way the scene is lit — so spending one of three reference
+ * slots on the plate buys nothing and costs the slot a subject that is NOT in
+ * the anchor could have used.
+ *
+ * Read from the anchor shot's own card rather than from the picture, because
+ * nothing here can look at a picture. That is a deliberate under-claim: a card
+ * lists what the shot is about, so a subject the card omits keeps its plate
+ * even if it happens to be visible. Erring the other way would drop the plate
+ * for a subject the frame does not actually show.
+ *
+ * The DESCRIPTION is never dropped, only the plate. A redundant description
+ * costs room; a missing one costs the shot, which is the lesson the contract
+ * shortening was reverted for.
+ */
+function subjectsCoveredBy(db, anchor) {
+    const covered = new Set();
+    if (!anchor || !anchor.shot || !anchor.shot.id) return covered;
+    try {
+        const row = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(anchor.shot.id);
+        const card = JSON.parse((row && row.scene_card_yaml) || '{}');
+        for (const key of ['characters', 'props']) {
+            for (const raw of (Array.isArray(card[key]) ? card[key] : [])) {
+                const name = typeof raw === 'string' ? raw : (raw && raw.name);
+                if (name) covered.add(String(name).trim().toUpperCase());
+            }
+        }
+    } catch (_) { /* an unreadable card covers nothing, which keeps every plate */ }
+    return covered;
+}
+
+module.exports = {
+    pickAnchor, anchorPhrase, anchorLeadPhrase, ref, ANCHOR_NEGATIVE,
+    sceneAnchorFor, anchorCandidate, subjectsCoveredBy,
+};

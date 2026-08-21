@@ -46,9 +46,11 @@ const { ensureSchema } = require('../db/schema');
 ensureSchema();
 
 const {
-    pickAnchor, anchorPhrase, ANCHOR_NEGATIVE, sceneAnchorFor, anchorCandidate,
+    pickAnchor, anchorPhrase, anchorLeadPhrase, ANCHOR_NEGATIVE, sceneAnchorFor,
+    anchorCandidate, subjectsCoveredBy,
 } = require('../lib/scene-anchor');
 const { buildStoryboardPrompt } = require('../lib/storyboard-prompt');
+const { shotReferencesFor } = require('../lib/shot-references');
 const { selectReferences, KIND_RANK, MAX_REFERENCES } = require('../lib/reference-images');
 const INDEX_HTML = path.join(__dirname, '..', '..', 'src', 'index.html');
 
@@ -180,41 +182,86 @@ test('a pin overrides the derived choice', () => {
 
 // ── What it says, and what it refuses to say ────────────────────────────
 
-test('the anchor is named for light, never for composition', () => {
-    // The specific way this feature fails: an attached frame of the same place
-    // pulls generation toward reproducing it, and a scene of eight identical
-    // setups reads as a broken board rather than a choice.
-    const phrase = anchorPhrase('1a');
-    assert.match(phrase, /light/);
-    assert.match(phrase, /grade/);
-    assert.ok(!/composition|framing|staging/i.test(phrase),
-        `the anchor phrase invites a copied composition: "${phrase}"`);
-    assert.match(ANCHOR_NEGATIVE, /composition/,
-        'nothing in the negative refuses a copied composition');
+test('the anchor is the scene, not a colour swatch', () => {
+    // This was first built the other way round — attached for grade only, with
+    // a negative refusing to reuse its composition. A director who wants 1B to
+    // keep 1A's street with the car exactly where it was cannot get there from
+    // a swatch, and telling the model to ignore the placement throws away the
+    // only thing the frame was attached for.
+    const lead = anchorLeadPhrase('1a');
+    assert.match(lead, /same location/i, 'the lead phrase does not carry the location');
+    assert.match(lead, /set dressing/i, 'the lead phrase does not carry the dressing');
+    assert.match(lead, /where they stand/i, 'the lead phrase does not carry subject placement');
+
+    // And it must say it is a NEW camera, or "same scene as this picture" is
+    // read as "reproduce this picture" and the camera facets arrive as
+    // decoration on a copy.
+    assert.match(lead, /re-shot|new camera/i,
+        `nothing tells the model this is a different camera: "${lead}"`);
+
+    // The negative refuses discontinuity, which is the failure mode now.
+    for (const breaker of ['different location', 'rearranged props', 'different time of day']) {
+        assert.ok(ANCHOR_NEGATIVE.includes(breaker),
+            `the negative does not refuse "${breaker}"`);
+    }
+    assert.ok(!/copying the reference composition/.test(ANCHOR_NEGATIVE),
+        'the negative still refuses the composition, which is what the anchor is FOR');
 });
 
-test('the phrase and the negative reach the prompt together, or neither does', () => {
+test('the anchor leads the prompt, and the new shot follows it', () => {
+    // The order is the instruction. Whatever leads a prompt is what the image
+    // is OF — and here that is true: the image IS that location with those
+    // things in those places. What follows is the new camera on it.
+    const card = {
+        action: "The dragon's shadow sweeps across the street below.",
+        camera: { shot_type: 'low-angle', lens: '24mm' }, characters: [],
+    };
+    const { prompt, negative_prompt } = buildStoryboardPrompt(card, [], null, 'noir',
+        { anchorAttached: true, anchorTag: '1a' });
+
+    assert.ok(prompt.indexOf('@1a') === 0 || prompt.indexOf('same scene') < 40,
+        `the anchor does not lead the prompt:\n${prompt}`);
+    assert.ok(prompt.indexOf('same location') < prompt.indexOf("dragon's shadow"),
+        'the new action was stated before the world it happens in');
+    assert.ok(prompt.indexOf("dragon's shadow") < prompt.indexOf('low angle shot'),
+        'the camera change was stated before what the shot is of');
+    assert.ok(prompt.includes('24mm lens'), 'the new lens never reached the prompt');
+    assert.ok(negative_prompt.includes('different location'),
+        'nothing refuses the scene quietly becoming a different one');
+});
+
+test('a shot with no anchor is untouched', () => {
     const card = { action: 'A street.', camera: { shot_type: 'wide' }, characters: [] };
     const without = buildStoryboardPrompt(card, [], null, 'noir', {});
-    assert.ok(!without.prompt.includes('matching the light'));
-    assert.ok(!without.negative_prompt.includes('copying the reference composition'),
+    assert.ok(!/same scene as/i.test(without.prompt));
+    assert.ok(!without.negative_prompt.includes('different location'),
         'the anchor negative was applied to a shot with no anchor');
+});
 
-    const withAnchor = buildStoryboardPrompt(card, [], null, 'noir', { anchorTag: '1a' });
-    assert.ok(withAnchor.prompt.includes('@1a'), 'the anchor is attached but never named');
-    assert.ok(withAnchor.negative_prompt.includes('copying the reference composition'),
-        'the anchor was named without refusing its composition');
+test('an attached frame is addressed by tag, or as the first reference', () => {
+    // It ranks first, so "the first reference image" is unambiguous — which is
+    // what lets an untaggable provider use the anchor at all. Emitting "@1a"
+    // there would put a literal token in the prompt beside an unexplained
+    // picture.
+    const card = { action: 'A street.', camera: {}, characters: [] };
+    const tagged = buildStoryboardPrompt(card, [], null, 'noir', { anchorAttached: true, anchorTag: '1a' });
+    assert.ok(tagged.prompt.includes('@1a'));
+
+    const untagged = buildStoryboardPrompt(card, [], null, 'noir', { anchorAttached: true, anchorTag: null });
+    assert.ok(!/@/.test(untagged.prompt), `a tag was emitted with no tag support: ${untagged.prompt}`);
+    assert.ok(untagged.prompt.includes('first reference image'),
+        'the untagged prompt never says which picture it means');
 });
 
 // ── Three slots ─────────────────────────────────────────────────────────
 
-test('the anchor outranks the location and never the character', () => {
-    // A viewer notices a different face long before a different porch, so
-    // identity leads. The anchor beats the location plate because it is a
-    // photograph of THIS scene — same hour, same weather — and already contains
-    // the location, rendered.
-    assert.ok(KIND_RANK.character < KIND_RANK.anchor, 'the anchor displaced the actor');
-    assert.ok(KIND_RANK.anchor < KIND_RANK.location, 'the location plate outranks the scene anchor');
+test('the anchor leads every plate, because it is not one', () => {
+    // A plate says what a subject looks like in the abstract. The anchor has
+    // already answered that for every subject in it — in situ, at the right
+    // scale, lit the way the scene is lit — so ranking it behind the plates
+    // would spend the slots re-establishing what the first reference fixed.
+    assert.strictEqual(KIND_RANK.anchor, 0, 'a plate outranks the scene itself');
+    assert.ok(KIND_RANK.character < KIND_RANK.location, 'a face is worth less than a porch');
     assert.ok(KIND_RANK.location < KIND_RANK.prop);
     assert.ok(KIND_RANK.prop < KIND_RANK.style);
 });
@@ -233,7 +280,7 @@ test('a board with no anchor selects exactly the references it selected before',
     assert.deepStrictEqual(picked, ['character', 'location', 'prop']);
 });
 
-test('with three slots taken, the anchor beats the location', () => {
+test('with more candidates than slots, the anchor takes the first', () => {
     const picked = selectReferences([
         { name: 'STREET', kind: 'location', file_path: framePath('slot-loc') },
         { name: '1A', kind: 'anchor', file_path: framePath('slot-anchor') },
@@ -241,7 +288,7 @@ test('with three slots taken, the anchor beats the location', () => {
         { name: 'SPRINKLER', kind: 'prop', file_path: framePath('slot-prop') },
     ]).map(r => r.kind);
     assert.strictEqual(picked.length, MAX_REFERENCES);
-    assert.deepStrictEqual(picked, ['character', 'anchor', 'location']);
+    assert.deepStrictEqual(picked, ['anchor', 'character', 'location']);
 });
 
 test('the anchor is tagged by the shot it is, so two scenes cannot collide', () => {
@@ -312,6 +359,85 @@ test('deleting the pinned shot falls back rather than refusing the delete', () =
     const row = db.prepare('SELECT anchor_shot_id FROM film_scenes WHERE id = ?').get(sceneId);
     assert.strictEqual(row.anchor_shot_id, null, 'the pin outlived the shot it pointed at');
     assert.strictEqual(sceneAnchorFor(db, shots['1C']).shot.shot_code, '1A');
+});
+
+// ── It replaces the plates it makes redundant ───────────────────────────
+
+test('a subject standing in the anchor does not also get a plate', () => {
+    // The point of anchoring 1B on 1A is that 1A already shows MAYA on that
+    // street. Sending her plate as well spends one of three slots telling the
+    // model what she looks like in the abstract — a slot a subject who is NOT
+    // in 1A could have used, and those are the ones that still need one.
+    const { shots, projectId } = makeScene(['1A', '1B'], ['1A'], { enabled: true, provider: 'runway' });
+
+    // MAYA is on 1A's card and has a plate. THE DRAGON is new in 1B.
+    const maya = generateId(), dragon = generateId();
+    for (const [id, name] of [[maya, 'MAYA'], [dragon, 'DRAGON']]) {
+        db.prepare('INSERT INTO film_characters (id, project_id, name, appearance_prompt) VALUES (?, ?, ?, ?)')
+            .run(id, projectId, name, name + ' looks a certain way');
+        db.prepare(`INSERT INTO film_assets (id, project_id, character_id, asset_type, file_name, file_path, version)
+                    VALUES (?, ?, ?, 'character_sheet', ?, ?, 1)`)
+            .run(generateId(), projectId, id, name + '.png', framePath('cover-' + name));
+    }
+    db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?')
+        .run(JSON.stringify({ shot_code: '1A', action: 'Wide.', characters: ['MAYA'] }), shots['1A']);
+
+    const anchor = sceneAnchorFor(db, shots['1B']);
+    const covered = subjectsCoveredBy(db, anchor);
+    assert.ok(covered.has('MAYA'), 'the anchor card lists MAYA and she was not counted as covered');
+    assert.ok(!covered.has('DRAGON'), 'a subject absent from the anchor was treated as covered');
+
+    const { references } = shotReferencesFor(db, {
+        projectId, providerConfig: { image: 'runway' }, anchor,
+        characters: [
+            { id: maya, name: 'MAYA' },
+            { id: dragon, name: 'DRAGON' },
+        ],
+    });
+    const kinds = references.map(r => `${r.kind}:${r.name}`);
+    assert.ok(kinds.includes('anchor:1A'), 'the anchor frame was not attached');
+    assert.ok(!kinds.includes('character:MAYA'),
+        `MAYA is in the anchor and her plate went too: ${kinds.join(', ')}`);
+    assert.ok(kinds.includes('character:DRAGON'),
+        `the subject that is NOT in the anchor lost its plate: ${kinds.join(', ')}`);
+});
+
+test('a covered subject keeps its words even though its plate went', () => {
+    // A redundant description costs room; a missing one costs the shot. Only
+    // the PLATE is dropped — the appearance still travels, because the anchor
+    // covering a subject is inferred from a card rather than seen in a picture.
+    const card = { action: 'MAYA turns.', characters: ['MAYA'], camera: {} };
+    const chars = [{ id: 'm', name: 'MAYA', appearance_prompt: 'rust-orange cardigan, dark bob' }];
+    const { prompt } = buildStoryboardPrompt(card, chars, null, 'noir',
+        { anchorAttached: true, anchorTag: '1a' });
+    assert.ok(prompt.includes('rust-orange cardigan'),
+        'a subject whose plate was dropped for the anchor lost its description too');
+});
+
+test('the location plate stands down entirely for an anchor', () => {
+    // The anchor IS the location, rendered. Its plate is the most redundant of
+    // all when a frame of the place is already attached.
+    const { shots, projectId } = makeScene(['1A', '1B'], ['1A'], { enabled: true, provider: 'runway' });
+    const locId = generateId();
+    db.prepare('INSERT INTO film_locations (id, project_id, name, description) VALUES (?, ?, ?, ?)')
+        .run(locId, projectId, 'STREET', 'a cul-de-sac');
+    db.prepare(`INSERT INTO film_assets (id, project_id, location_id, asset_type, file_name, file_path, version)
+                VALUES (?, ?, ?, 'reference_image', 'street.png', ?, 1)`)
+        .run(generateId(), projectId, locId, framePath('cover-street'));
+
+    const anchor = sceneAnchorFor(db, shots['1B']);
+    const withAnchor = shotReferencesFor(db, {
+        projectId, providerConfig: { image: 'runway' }, anchor,
+        location: { id: locId, name: 'STREET' },
+    }).references.map(r => r.kind);
+    assert.deepStrictEqual(withAnchor, ['anchor'], 'the location plate rode along beside the anchor');
+
+    const withoutAnchor = shotReferencesFor(db, {
+        projectId, providerConfig: { image: 'runway' }, anchor: null,
+        location: { id: locId, name: 'STREET' },
+    }).references.map(r => r.kind);
+    assert.deepStrictEqual(withoutAnchor, ['location'],
+        'with no anchor the location plate must still go');
 });
 
 // ── Default off, and reported ───────────────────────────────────────────

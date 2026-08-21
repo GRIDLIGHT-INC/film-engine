@@ -43,15 +43,24 @@ function database() {
 function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCardProps, anchor) {
     const candidates = [];
 
-    // The frame this scene is measured against, when the caller resolved one.
-    // Ranked between identity and place by lib/reference-images: it is a
-    // photograph of THIS scene as generated rather than of the place in the
-    // abstract, and it already contains the location, rendered.
-    const anchorRef = require('./scene-anchor').anchorCandidate(anchor);
+    // The scene as it was actually rendered — location, dressing and subjects
+    // in the positions they ended up in. Ranked FIRST by lib/reference-images,
+    // because the new shot is a different camera pointed at that world rather
+    // than a fresh assembly of the same ingredients.
+    const sceneAnchor = require('./scene-anchor');
+    const anchorRef = sceneAnchor.anchorCandidate(anchor);
     if (anchorRef) candidates.push(anchorRef);
+
+    // Whatever the anchor already shows needs no plate. Three slots is the
+    // whole budget, so a plate of a character standing in the attached frame is
+    // a slot taken from a subject that is not in it — which is exactly the
+    // subject that still needs establishing.
+    const covered = anchorRef ? sceneAnchor.subjectsCoveredBy(database(), anchor) : new Set();
+    const isCovered = name => covered.has(String(name || '').trim().toUpperCase());
 
     for (const ch of matchedChars || []) {
         if (!ch || !ch.id) continue;
+        if (isCovered(ch.name)) continue;
         const plate = database().prepare(
             `SELECT file_path, file_name FROM film_assets
              WHERE project_id = ? AND character_id = ?
@@ -61,7 +70,9 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
         if (plate) candidates.push({ name: ch.name, kind: 'character', file_path: plate.file_path });
     }
 
-    if (matchedLocation && matchedLocation.id) {
+    // The anchor IS the location, rendered, so its plate is the most redundant
+    // of all when one is attached.
+    if (matchedLocation && matchedLocation.id && !anchorRef) {
         const plate = database().prepare(
             `SELECT file_path, file_name FROM film_assets
              WHERE project_id = ? AND location_id = ?
@@ -89,7 +100,7 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
     const propNames = Array.isArray(sceneCardProps) ? sceneCardProps : [];
     for (const raw of propNames) {
         const name = typeof raw === 'string' ? raw : (raw && raw.name);
-        if (!name) continue;
+        if (!name || isCovered(name)) continue;
         const prop = database().prepare(
             'SELECT id, name FROM film_props WHERE project_id = ? AND UPPER(name) = UPPER(?) LIMIT 1'
         ).get(projectId, name);
@@ -193,13 +204,18 @@ function shotReferencesFor(db, opts) {
     return {
         references,
         tagged: support.canTag,
-        // Named only when it claimed one of the three slots AND this provider
-        // can read a tag from the prompt. Two gates, because they fail
-        // differently: without a slot the tag points at nothing, and without
-        // tag support the model reads "@1a" as literal text — which is how an
-        // untaggable provider ends up with an unexplained extra picture and a
-        // stray token. The route paths gate before resolving; this is the same
-        // rule for the callers that do not.
+        // Two separate facts, because they gate different things.
+        //
+        // `anchorAttached` is whether the frame claimed one of the three slots
+        // — it ranks first, so it does whenever the provider takes pictures at
+        // all. That is what licenses the prompt to talk about it.
+        //
+        // `anchorTag` is only set where the provider can READ a tag. Without
+        // one the prompt says "the first reference image" instead, which is
+        // unambiguous precisely because the anchor ranks first. Emitting "@1a"
+        // to a provider that cannot resolve it puts a literal token in the
+        // prompt and leaves the picture unexplained.
+        anchorAttached: !!anchorRef,
         anchorTag: (support.canTag && anchorRef) ? anchorRef.tag : null,
         support,
     };

@@ -207,6 +207,10 @@ const CAPABILITY_BUILDERS = {
                 // parity suite compares byte-identical.
                 references: (ctx.references && ctx.references.length) ? ctx.references : undefined,
                 tagged: ctx.tagged,
+                // Two facts: whether the frame is in the payload (which licenses
+                // the prompt to talk about it) and whether this provider can
+                // read a tag (which decides how it is addressed).
+                anchorAttached: ctx.anchorAttached || undefined,
                 anchorTag: ctx.anchorTag || undefined,
             });
 
@@ -510,7 +514,7 @@ function loadShotContext(shotId) {
      * prompt, and emitting the tag there replaces the appearance with a token
      * meaning nothing.
      */
-    let references = [], tagged = false, anchorTag = null;
+    let references = [], tagged = false, anchorTag = null, anchorAttached = false;
     try {
         const { shotReferencesFor, matchCharacters, matchLocation, matchProps } =
             require('./shot-references');
@@ -529,11 +533,12 @@ function loadShotContext(shotId) {
         references = gathered.references;
         tagged = gathered.tagged;
         anchorTag = gathered.anchorTag;
+        anchorAttached = gathered.anchorAttached;
     } catch (_) {
         // A project with no plates, or a provider that cannot be resolved,
         // generates exactly as it did before rather than failing to build a
         // payload at all.
-        references = []; tagged = false; anchorTag = null;
+        references = []; tagged = false; anchorTag = null; anchorAttached = false;
     }
 
     return {
@@ -541,7 +546,7 @@ function loadShotContext(shotId) {
         keyframeAsset, videoAsset, audioAsset, musicCue, initImage,
         consistency: consistencyContext,
         previs,
-        references, tagged, anchorTag,
+        references, tagged, anchorTag, anchorAttached,
         annotations,
         // The project's standing answer to PAR-026. A route may override it per
         // request; nothing else may, because a default that turns itself on is

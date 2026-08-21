@@ -761,12 +761,12 @@ async function generateStoryboard(req, res, projectId, query) {
         const leadProvider = imageProviderChain(providerConfigOf(project))[0];
         const canAttach = !!(leadProvider && leadProvider.supportsReferenceImages);
         const canTag = !!(leadProvider && leadProvider.supportsReferenceTags);
-        const anchorState = sceneAnchorFor_(shot.shot_id, project, body, canTag);
+        const anchorState = sceneAnchorFor_(shot.shot_id, project, body, canAttach);
         const shotRefs = canAttach
             ? gatherShotReferences(projectId, matchedChars, matchedLocation,
                 matchProps(sceneCard, props), anchorState.anchor)
             : [];
-        const anchorTag = anchorTagIn(shotRefs);
+        const anchorState_ = anchorIn(shotRefs, canTag);
         const shotMarks = annotationsFor(shot.shot_id, project, body);
         const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
             // The ceiling of the provider that will actually run, not a
@@ -790,7 +790,7 @@ async function generateStoryboard(req, res, projectId, query) {
                 // Naming a tag the payload does not carry is strictly worse than
                 // saying nothing — the same defect as a prompt carrying @maya
                 // with no matching image.
-                anchorTag,
+                ...anchorState_,
             });
 
         // Update shot status
@@ -1003,12 +1003,12 @@ async function generateStoryboardStream(req, res, projectId, query) {
         const leadProvider = imageProviderChain(providerConfigOf(project))[0];
         const canAttach = !!(leadProvider && leadProvider.supportsReferenceImages);
         const canTag = !!(leadProvider && leadProvider.supportsReferenceTags);
-        const anchorState = sceneAnchorFor_(shot.shot_id, project, body, canTag);
+        const anchorState = sceneAnchorFor_(shot.shot_id, project, body, canAttach);
         const shotRefs = canAttach
             ? gatherShotReferences(projectId, matchedChars, matchedLocation,
                 matchProps(sceneCard, props), anchorState.anchor)
             : [];
-        const anchorTag = anchorTagIn(shotRefs);
+        const anchorState_ = anchorIn(shotRefs, canTag);
         const shotMarks = annotationsFor(shot.shot_id, project, body);
         const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
             // The ceiling of the provider that will actually run, not a
@@ -1032,7 +1032,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
                 // Naming a tag the payload does not carry is strictly worse than
                 // saying nothing — the same defect as a prompt carrying @maya
                 // with no matching image.
-                anchorTag,
+                ...anchorState_,
             });
 
         sendEvent({
@@ -1295,9 +1295,9 @@ function shotPromptPreview(req, res, shotId, query) {
                 // Whether it actually claimed one of the three slots, which is a
                 // different question from whether the scene has an anchor: two
                 // characters and a location fill the payload first.
-                attached: !!ctx.anchorTag,
+                attached: !!ctx.anchorAttached,
                 reason: code ? null : resolved.reason,
-                adds: ctx.anchorTag ? anchorPhrase(ctx.anchorTag) : '',
+                adds: ctx.anchorAttached ? anchorPhrase(ctx.anchorTag) : '',
                 note: 'The frame is attached as a reference and named for its LIGHT, palette and '
                     + 'grade — never its composition. The prompt above is what generation sends.',
             };
@@ -1377,15 +1377,14 @@ function anchorStateFor(shotId, pins, cache) {
  * Same three-way precedence as markup: an explicit `use_scene_anchor` wins,
  * then the project's standing choice, then off.
  *
- * The provider gate is not a detail. An anchor is attached for its LIGHT, and
- * the only way to say so is to name it in the prompt — so a provider that
- * cannot address references by tag would receive an unexplained extra picture
- * of the same street sitting beside the plates, with nothing to stop the model
- * reproducing its composition. Declined, and the reason is reported, rather
- * than attached and hoped for. Same call the prose-vs-@tag decision already
- * made for Meshy.
+ * The provider gate is about whether the picture can be SENT, not whether it
+ * can be named: the anchor ranks first among references, so a provider that
+ * cannot read tags is told "the first reference image" and that is unambiguous.
+ * A provider that takes no reference images at all has no way to receive the
+ * frame, and the reason is reported rather than the anchor being silently
+ * dropped.
  */
-function sceneAnchorFor_(shotId, project, body, canTag) {
+function sceneAnchorFor_(shotId, project, body, canAttach) {
     const requested = body && body.use_scene_anchor;
     const enabled = requested === undefined || requested === null
         ? !!(project && project.scene_anchor_refs)
@@ -1394,20 +1393,20 @@ function sceneAnchorFor_(shotId, project, body, canTag) {
         return { enabled: false, anchor: null, tag: null,
             reason: 'scene_anchor_refs is off for this project' };
     }
-    if (!canTag) {
+    if (!canAttach) {
         return { enabled: true, anchor: null, tag: null,
-            reason: 'the image provider cannot name references in the prompt, so an anchor '
-                + 'could only be an unlabelled picture — not attached' };
+            reason: 'the image provider does not take reference images, so there is no way '
+                + 'to send the frame — not attached' };
     }
     const { sceneAnchorFor } = require('../lib/scene-anchor');
     const resolved = sceneAnchorFor(db, shotId);
     return { enabled: true, anchor: resolved.shot ? resolved : null, tag: null, reason: resolved.reason };
 }
 
-/** The tag the gatherer assigned to the anchor, if it got a slot. */
-function anchorTagIn(refs) {
+/** Did the anchor claim a reference slot, and may the prompt name it? */
+function anchorIn(refs, canTag) {
     const ref = (refs || []).find(r => r && r.kind === 'anchor');
-    return ref ? ref.tag : null;
+    return { anchorAttached: !!ref, anchorTag: (ref && canTag) ? ref.tag : null };
 }
 
 /**
@@ -1630,11 +1629,10 @@ async function regenerateShot(req, res, shotId) {
      * comes back as something else entirely. Only the anchor tag goes, because
      * an anchor has no prose form to fall back on.
      */
-    const canTag = (() => {
-        const lead = imageProviderChain(providerConfigOf(project))[0];
-        return !!(lead && lead.supportsReferenceTags);
-    })();
-    const anchorState = sceneAnchorFor_(shotId, project, body, canTag);
+    const lead = imageProviderChain(providerConfigOf(project))[0];
+    const canAttach = !!(lead && lead.supportsReferenceImages);
+    const canTag = !!(lead && lead.supportsReferenceTags);
+    const anchorState = sceneAnchorFor_(shotId, project, body, canAttach);
     let shotRefs = [];
     try {
         const allProps = db.prepare('SELECT * FROM film_props WHERE project_id = ?').all(project.id);
@@ -1649,7 +1647,7 @@ async function regenerateShot(req, res, shotId) {
             matchProps(card, allProps),
             anchorState.anchor);
     } catch (_) { shotRefs = []; }
-    const anchorTag = anchorTagIn(shotRefs);
+    const { anchorAttached, anchorTag } = anchorIn(shotRefs, canTag);
 
     // Build or use override prompt
     let prompt, negative_prompt;
@@ -1683,7 +1681,7 @@ async function regenerateShot(req, res, shotId) {
             {
                 props,
                 annotations: annots.enabled ? annots.marks : undefined,
-                anchorTag,
+                anchorAttached, anchorTag,
                 // The same plates the board path names. This path used to build
                 // its prompt in prose while attaching the pictures anyway, so
                 // two shots on one board generated two ways described their
@@ -1771,8 +1769,8 @@ async function regenerateShot(req, res, shotId) {
                 enabled: anchorState.enabled,
                 shot_code: anchorState.anchor && anchorState.anchor.shot ? anchorState.anchor.shot.shot_code : null,
                 pinned: !!(anchorState.anchor && anchorState.anchor.pinned),
-                attached: !!anchorTag,
-                reason: anchorTag ? null : anchorState.reason,
+                attached: !!anchorAttached,
+                reason: anchorAttached ? null : anchorState.reason,
             },
             annotations: {
                 ...annotationReport(annots),

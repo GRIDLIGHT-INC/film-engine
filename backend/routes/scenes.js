@@ -287,9 +287,11 @@ function sceneAnchorPayload(sceneId) {
         anchor_shot_code: resolved && resolved.shot ? resolved.shot.shot_code : null,
         pinned: !!(resolved && resolved.pinned),
         reason: resolved ? resolved.reason : null,
-        note: 'Every shot in this scene is conditioned on this one frame for its light, palette '
-            + 'and grade — never its composition. Fixed rather than chained to the previous shot, '
-            + 'so drift cannot accumulate down the scene.',
+        note: 'Every other shot in this scene is generated FROM this frame: the same location, '
+            + 'the same set dressing and the same subjects where they stand in it, re-shot on '
+            + 'whatever lens and angle that shot\u2019s own card asks for. Plates for subjects '
+            + 'already standing in it are not sent, since the frame has established them. Fixed '
+            + 'rather than chained to the previous shot, so drift cannot accumulate down the scene.',
     };
 }
 

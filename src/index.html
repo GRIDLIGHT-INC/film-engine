@@ -4562,16 +4562,17 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                                onchange="setAnnotationFeedback(this.checked)">
                         <span id="annotFeedbackText">Marks are notes only</span>
                     </label>
-                    <!-- Continuity within a scene: one frame every other frame in it is
-                         measured against, for light and grade rather than staging. Off by
-                         default, because turning it on changes what every subsequent
-                         generation in the production is conditioned on. -->
+                    <!-- Shoot the rest of a scene from one frame you already have:
+                         its street, its dressing, its subjects where they stand,
+                         re-shot on the new lens and angle each card asks for. Off by
+                         default, because it changes what every subsequent generation
+                         in the scene is built from. -->
                     <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"
                            id="sceneAnchorLabel"
-                           title="Condition every frame in a scene on the frame that established it — its light, palette and grade, never its composition. Fixed per scene, so drift cannot accumulate down the board.">
+                           title="Generate every other shot in a scene FROM its anchor frame — same location, same dressing, same subjects in the same places, re-shot on that shot's own lens and angle. Sends the frame instead of the plates it makes redundant.">
                         <input type="checkbox" id="sceneAnchorToggle" style="cursor:pointer;"
                                onchange="setSceneAnchorRefs(this.checked)">
-                        <span id="sceneAnchorText">No scene anchor</span>
+                        <span id="sceneAnchorText">Not shooting from an anchor</span>
                     </label>
                     <button class="btn btn-primary" onclick="generateAllStoryboards()">Generate All</button>
                 </div>
@@ -23805,15 +23806,19 @@ ${fountainText.slice(0, 50000)}`;
             + `<span id="mkfeed-${canvasId}" class="text-sm" style="opacity:.75;align-self:center;"></span>`;
     }
 
-    // ── The frame a scene is measured against ──────────────────────────────
+    // ── Shooting the rest of a scene from one frame ────────────────────────
     //
-    // Every shot in a scene is conditioned on ONE frame for its light, palette
-    // and grade. Fixed rather than chained to the previous shot: chaining
+    // Pick the frame that has the scene right — the street, the car where it
+    // ended up, the light — and every other shot in that scene is generated
+    // FROM it: same world, same placement, re-shot on whatever lens and angle
+    // its own card asks for. It also replaces the plates it makes redundant,
+    // so a subject already standing in the anchor does not spend one of three
+    // reference slots being described in the abstract.
+    //
+    // Fixed per scene rather than chained to the previous shot: chaining
     // compounds, so by the eighth shot the board is a copy of a copy, and it
     // makes a frame's inputs depend on the order somebody pressed the buttons
-    // in. The pin exists because the first shot of a scene is often an insert,
-    // and conditioning eight frames on a close-up of a doorknob is exactly the
-    // wrong picture.
+    // in.
 
     function sceneAnchorOn() {
         return !!(state.currentProject && state.currentProject.scene_anchor_refs);
@@ -23825,7 +23830,7 @@ ${fountainText.slice(0, 50000)}`;
         if (!box || !text) return;
         const on = sceneAnchorOn();
         box.checked = on;
-        text.textContent = on ? 'Scene anchor on' : 'No scene anchor';
+        text.textContent = on ? 'Shooting from the anchor' : 'Not shooting from an anchor';
     }
 
     async function setSceneAnchorRefs(on) {
@@ -23838,8 +23843,9 @@ ${fountainText.slice(0, 50000)}`;
             state.currentProject = { ...state.currentProject, ...p };
             renderSceneAnchorToggle();
             setStatus(on
-                ? 'Each scene\u2019s frames now match the light and grade of the frame that established it.'
-                : 'Frames are conditioned on plates only again. No frame references another frame.');
+                ? 'Regen now builds each shot FROM its scene\u2019s anchor frame \u2014 same set, same '
+                    + 'placement, new camera.'
+                : 'Shots are built from plates again. No frame is generated from another frame.');
             loadStoryboard();
         } catch (err) {
             setStatus('Could not change that: ' + err.message);
@@ -23860,13 +23866,13 @@ ${fountainText.slice(0, 50000)}`;
         if (a.is_anchor) {
             return `<button class="btn btn-sm" style="border-color:var(--gl-brand-pink,#ec4899);"
                 onclick="clearSceneAnchor('${f.scene_id}')"
-                title="This frame establishes scene ${esc(String(f.scene_number))} \u2014 every other frame in it matches its light and grade. Click to unpin.">&#9875; anchor</button>`;
+                title="Every other shot in scene ${esc(String(f.scene_number))} is generated FROM this frame \u2014 its location, dressing and subject placement, re-shot on each shot's own lens and angle. Click to unpin.">&#9875; shooting from this</button>`;
         }
         if (!f.image_url) return '';
-        const to = a.shot_code ? ` (now ${esc(a.shot_code)})` : '';
+        const to = a.shot_code ? ` (currently ${esc(a.shot_code)})` : '';
         return `<button class="btn btn-secondary btn-sm"
             onclick="pinSceneAnchor('${f.scene_id}','${f.shot_id}')"
-            title="Make this the frame scene ${esc(String(f.scene_number))} is measured against${to}">&#9875;</button>`;
+            title="Shoot the rest of scene ${esc(String(f.scene_number))} from this frame${to}">&#9875;</button>`;
     }
 
     async function pinSceneAnchor(sceneId, shotId) {
@@ -23874,8 +23880,9 @@ ${fountainText.slice(0, 50000)}`;
             const r = await api(`/scenes/${sceneId}/anchor`, {
                 method: 'PUT', body: JSON.stringify({ shot_id: shotId }),
             });
-            setStatus(`Scene anchored to ${r.pinned_shot_code || 'that frame'}.`
-                + (sceneAnchorOn() ? '' : ' Turn on "Scene anchor" for it to reach generation.'));
+            setStatus(`The rest of this scene will be shot from ${r.pinned_shot_code || 'that frame'}.`
+                + (sceneAnchorOn() ? ' Press Regen on a shot to rebuild it from that frame.'
+                    : ' Tick the anchor box in the header for it to reach generation.'));
             loadStoryboard();
         } catch (err) { setStatus('Could not anchor that: ' + err.message); }
     }

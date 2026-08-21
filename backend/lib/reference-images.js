@@ -120,18 +120,26 @@ function resolveUri(ref) {
 /**
  * With three slots, what gets in.
  *
- * A viewer notices a different face long before a different porch, so identity
- * leads and always has. The scene anchor sits between identity and place
- * because it is a photograph of THIS scene as generated — same hour, same
- * weather, same grade — where the location plate is a photograph of the place
- * in the abstract. When both want the last slot the specific one wins, and the
- * anchor already contains the location, rendered.
+ * A viewer notices a different face long before a different porch, so among
+ * the plates identity leads and always has.
  *
- * Everything below the anchor moved down one. The RELATIVE order is untouched,
- * so a project with no anchor selects exactly the references it selected
- * before — which is what makes this safe to add to a shipped board.
+ * The scene anchor leads all of them, because it is not a plate. It is the
+ * scene itself, already rendered — the location, the dressing and the subjects
+ * in the positions they ended up in — and the new shot is a different camera
+ * pointed at it. A plate says what a subject looks like in the abstract; the
+ * anchor has already answered that for every subject in it, in situ and lit
+ * the way the scene is lit. Ranking it behind the plates would spend the slots
+ * re-establishing what the first reference already fixed.
+ *
+ * The plates the anchor makes redundant are dropped before selection (see
+ * subjectsCoveredBy), so this does not push a subject out — it frees slots for
+ * the subjects the anchor does NOT show, which are the ones that still need
+ * one.
+ *
+ * Relative order among the plates is untouched, so a project with no anchor
+ * selects exactly the references it selected before.
  */
-const KIND_RANK = { character: 0, anchor: 1, location: 2, prop: 3, style: 4 };
+const KIND_RANK = { anchor: 0, character: 1, location: 2, prop: 3, style: 4 };
 
 /**
  * Where each kind of reference comes from.
