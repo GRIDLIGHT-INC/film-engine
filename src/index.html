@@ -5689,9 +5689,12 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     Previs overrides framing, lens and movement &mdash; what was staged beats what was
                     written &mdash; and staging subjects there says where they stand in this frame.
                 </p>
+                <div id="shotCardPreview" style="margin:10px 0;"></div>
                 <div id="shotCardWarning" class="text-sm" style="display:none;margin-bottom:10px;"></div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;">
                     <button class="btn btn-secondary" onclick="closeModal('shotCardModal')">Cancel</button>
+                    <button class="btn btn-secondary" onclick="previewShotPrompt()"
+                            title="See exactly what would be sent — the words, the plates, and whether anything was cut. Costs nothing.">Check first</button>
                     <button class="btn btn-secondary" onclick="saveShotCard(false)">Save</button>
                     <button class="btn btn-primary" onclick="saveShotCard(true)" title="Save and generate this frame again — costs credits">Save &amp; regenerate</button>
                 </div>
@@ -25685,6 +25688,73 @@ ${fountainText.slice(0, 50000)}`;
      * a paragraph, and you cannot see the words you are editing in a field that
      * shows forty characters of them.
      */
+
+    /**
+     * What this shot would send, before any money is spent.
+     *
+     * GET /shots/:id/prompt costs nothing and returns the exact assembled
+     * prompt, which plates travel with it, and how much room is left. It had no
+     * control on the page at all, so the only way to find out what a shot would
+     * send was to generate it and study the picture — which is what made
+     * getting one frame right an afternoon of purchases.
+     *
+     * Everything that went wrong on 2B was visible here first: a camera note
+     * contradicted by a staging line, a subject description overriding the
+     * anchor, plates silently dropped for want of a slot.
+     *
+     * Deliberately not the budget chart this surface carried once. What a
+     * director needs is the words going out, the pictures going with them, and
+     * whether anything was cut.
+     */
+    async function previewShotPrompt() {
+        const box = document.getElementById('shotCardPreview');
+        if (!box || !SHOT_CARD.shotId) return;
+        const picked = document.querySelector('input[name="shotCardMode"]:checked');
+        const mode = picked ? picked.value : 'action';
+        box.innerHTML = '<span class="text-muted text-sm">Reading what this would send&hellip;</span>';
+        try {
+            const d = await api(`/shots/${SHOT_CARD.shotId}/prompt?direction_mode=${encodeURIComponent(mode)}`);
+            const esc = escapeHtml;
+            const cut = (d.budget || []).filter(b => b.cut > 0);
+            const staging = (d.prompt || '').match(/Staging:[^,]*(?:, [^,]*){0,6}/);
+            const over = d.headroom !== null && d.headroom < 0;
+
+            box.innerHTML = `
+              <div class="card" style="padding:11px;">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                  <strong class="text-sm">What this would send &mdash; costs nothing</strong>
+                  <span class="text-sm ${over ? '' : 'text-muted'}"
+                        style="${over ? 'color:var(--gl-danger,#ef4444);' : ''}">
+                    ${d.prompt_chars} of ${d.ceiling}${d.headroom !== null ? ` &middot; ${d.headroom} spare` : ''}
+                  </span>
+                </div>
+                ${d.direction_mode_blocked
+                    ? `<div class="text-sm" style="color:var(--warning,#b8860b);margin-top:5px;">${esc(d.direction_mode_blocked)}</div>` : ''}
+                <div class="text-sm" style="margin-top:7px;">
+                  <strong>Travelling as pictures:</strong>
+                  ${(d.references || []).length
+                      ? (d.references || []).map(r => esc(`${r.subject || '?'} (${r.kind || '?'})`)).join(', ')
+                      : '<span class="text-muted">none &mdash; every subject is being invented from words</span>'}
+                </div>
+                ${staging ? `<div class="text-sm" style="margin-top:5px;">
+                    <strong>Staged geometry:</strong> ${esc(staging[0])}
+                    <div class="text-muted" style="line-height:1.45;">
+                        This comes from previs. If it disagrees with your camera note, the model is
+                        being told two different things.
+                    </div></div>` : ''}
+                ${cut.length ? `<div class="text-sm" style="margin-top:5px;color:var(--warning,#b8860b);">
+                    <strong>Cut to fit:</strong> ${cut.map(b => esc(`${b.contributor} (${b.cut} chars)`)).join(', ')}
+                  </div>` : ''}
+                <details style="margin-top:8px;">
+                  <summary style="cursor:pointer;font-size:12px;">Read the whole prompt</summary>
+                  <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;margin:6px 0 0;">${esc(d.prompt || '')}</pre>
+                </details>
+              </div>`;
+        } catch (err) {
+            box.innerHTML = `<span class="text-sm" style="color:var(--gl-danger,#ef4444);">Could not read it: ${escapeHtml(err.message)}</span>`;
+        }
+    }
+
     /**
      * Direct a shot: who and what is in it, then where the camera is.
      *
@@ -25771,6 +25841,7 @@ ${fountainText.slice(0, 50000)}`;
             fillDirectingPanel('shotCard', vocab, cam, SHOT_CARD.card.lighting, directingFallbacks(specs));
 
             document.getElementById('shotCardWarning').style.display = 'none';
+            document.getElementById('shotCardPreview').innerHTML = '';
             showModal('shotCardModal');
             if (focusField) {
                 const el = document.getElementById(focusField);

@@ -322,3 +322,47 @@ test('camera mode is reachable from the board, and says when it cannot run', () 
     assert.ok(/cameraRadio\.disabled/.test(html),
         'camera mode stays selectable with no anchor, so the only feedback is a refusal');
 });
+
+test('you can see what will be sent before paying for it', () => {
+    /*
+     * "We need to nail getting accurate results on this tool, as this is where
+     * all the experimentation and consistency must be nailed first."
+     *
+     * Experimentation needs a feedback loop that is not a purchase. GET
+     * /shots/:id/prompt spends NOTHING and returns the exact assembled prompt,
+     * which plates travel, and how much room is left — and it had no control on
+     * the page at all, so the only way to find out what a shot would send was
+     * to generate it and look at the picture.
+     *
+     * That is what kept 2B expensive: a camera note contradicted by a staging
+     * line, a subject description overriding the anchor, plates silently
+     * dropped — every one of them visible in the assembled prompt, and none of
+     * them visible before the money was spent.
+     *
+     * Deliberately NOT the budget chart this surface carried the first time.
+     * What a director needs is the words that are going, the pictures that are
+     * going, and whether anything got cut.
+     */
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    assert.ok(/function previewShotPrompt\(/.test(html),
+        'there is no way to see what a shot would send');
+
+    const fn = html.slice(html.indexOf('async function previewShotPrompt('),
+        html.indexOf('async function previewShotPrompt(') + 2600);
+    assert.ok(fn.length > 200, 'previewShotPrompt is not defined');
+    assert.ok(/\/prompt/.test(fn), 'the preview does not call the free prompt route');
+    assert.ok(!/regenerate/.test(fn), 'the preview spends money');
+    assert.ok(/direction_mode/.test(fn),
+        'the preview cannot show the mode being chosen, which is the one worth previewing');
+
+    // The three things that decide whether a frame comes back right.
+    for (const [needle, why] of [
+        ['references', 'which plates actually travel — a dropped plate is invented from scratch'],
+        ['Staging', 'the staged geometry, which is what contradicts a camera note'],
+        ['headroom', 'whether anything was cut to fit'],
+    ]) {
+        assert.ok(fn.includes(needle), `the preview does not show ${why}`);
+    }
+    assert.ok(/previewShotPrompt\(/.test(html.replace(fn, '')),
+        'nothing opens the preview');
+});
