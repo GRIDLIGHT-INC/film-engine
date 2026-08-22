@@ -118,13 +118,37 @@ test('pricing a metered call yields a real amount for every pair', () => {
         const usage = adapter.meter(capability, samplePayload(capability), sampleResult(capability, provider));
         const priced = pricing.priceUsage({ provider, capability, ...usage });
         assert.ok(priced.priced, `${provider}:${capability} could not be priced at all`);
-        if (priced.self_hosted) {
-            assert.strictEqual(priced.amount_usd, 0, `${provider}:${capability} is self-hosted but charged money`);
+        if (priced.self_hosted || priced.subscription) {
+            assert.strictEqual(priced.amount_usd, 0,
+                `${provider}:${capability} bills to a subscription or a local box but charged the project`);
         } else {
             assert.ok(priced.amount_usd > 0,
                 `${provider}:${capability} priced at $${priced.amount_usd} for ${usage.quantity} ${usage.unit}`);
         }
     }
+});
+
+test('a capability billed to a subscription costs the project nothing, and says why', () => {
+    // The LLM runs inside Claude Desktop over MCP — the agent host IS the
+    // model, on the user's own subscription. Charging per-token API list rates
+    // to a project would invent thousands of dollars of spend that was never
+    // billed, and it would be the largest line in the report.
+    //
+    // Tokens are still metered: "how much reasoning did this film take" is a
+    // real question. Only the DOLLARS are zero, and the zero is labelled.
+    const priced = pricing.priceUsage({
+        provider: 'anthropic', capability: 'llm', model: 'claude-opus-5',
+        unit: 'token', quantity: 200000, parts: { input: 150000, output: 50000 },
+    });
+    assert.strictEqual(priced.amount_usd, 0, 'subscription LLM use was charged to the project');
+    assert.ok(priced.subscription, 'the zero is unexplained — indistinguishable from an unpriced pair');
+    assert.ok(priced.native_quantity > 0, 'token consumption was not recorded');
+
+    // And the researched API rates survive underneath, so an install that DOES
+    // pay per token can switch it on rather than needing the numbers found again.
+    const rate = pricing.rateFor('anthropic', 'llm', 'claude-opus-5');
+    assert.ok(rate.components.input > 0 && rate.components.output > rate.components.input,
+        'the published per-token rates were deleted rather than set aside');
 });
 
 // ── 3. The meter actually writes, through the registry, for every capability ─
@@ -160,8 +184,8 @@ test('a metered generation records one usage event and one cost entry, per capab
         assert.strictEqual(after.cost - before.cost, expectedEntries,
             `${capability}: expected ${expectedEntries} cost entry, got ${after.cost - before.cost}`);
         if (expectedEntries === 0) {
-            assert.ok(priced.self_hosted,
-                `${capability} billed nothing but is not marked self-hosted — that is an unpriced pair wearing a zero`);
+            assert.ok(priced.self_hosted || priced.subscription,
+                `${capability} billed nothing and gives no reason — that is an unpriced pair wearing a zero`);
         }
     }
 
@@ -306,6 +330,70 @@ test('every shot-scoped generation route builds a spend context', () => {
         if (!/spendContext\s*\(/.test(src)) missing.push(`routes/${file}`);
     }
     assert.deepStrictEqual(missing, [], `these attribute spend to no shot: ${missing.join(', ')}`);
+});
+
+// ── 4b. The MCP host is the model, so its traffic is the LLM meter ─────────
+
+test('every MCP tool call meters the tokens it moved, in both directions', async () => {
+    // The pipeline reaches an LLM through an agent host — Claude Desktop or
+    // ChatGPT Desktop connected to mcp-server.js. Nothing is billed per call,
+    // but the traffic is real and it draws down a subscription window. The
+    // meter counts the tokens the tool payload carried, in and out, since that
+    // is the part this process can actually see.
+    const { db, generateId } = require('../db/database');
+    const { recordHostUsage, HOSTS } = require('../lib/mcp-usage');
+
+    const projectId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'MCP');
+
+    recordHostUsage({
+        host: 'claude-desktop', tool: 'shot_list', projectId,
+        inboundChars: 400, outboundChars: 8000, durationMs: 12,
+    });
+
+    const row = db.prepare('SELECT * FROM film_usage_events WHERE project_id = ?').get(projectId);
+    assert.ok(row, 'an MCP tool call recorded nothing');
+    assert.strictEqual(row.capability, 'llm');
+    assert.strictEqual(row.unit, 'token');
+    assert.strictEqual(row.amount_usd, 0, 'subscription traffic was charged to the project');
+    assert.strictEqual(row.estimated, 1, 'a token count we approximated must not claim to be measured');
+
+    const parts = JSON.parse(row.parts);
+    assert.ok(parts.input > 0 && parts.output > 0, 'inbound and outbound were not counted separately');
+    assert.ok(parts.output > parts.input, 'direction was lost — a large result read as a small one');
+
+    assert.ok(Array.isArray(HOSTS) && HOSTS.length >= 2,
+        'only one agent host is recognised; ChatGPT Desktop over MCP would be unattributed');
+});
+
+test('the subscription gauge reports real windows and never invents a ceiling', () => {
+    // Anthropic publishes plan MULTIPLIERS (Max 5x and 20x of Pro) and two
+    // windows — a rolling 5-hour session and a weekly reset. It publishes no
+    // token count for any plan. A gauge that shows "62% of your Max plan"
+    // against a number we made up is worse than no gauge, because it gets
+    // trusted. So the windows are measured and the allowance is whatever the
+    // user calibrated; unset means the gauge reports consumption and no
+    // percentage at all.
+    const { db, generateId } = require('../db/database');
+    const { subscriptionUsage } = require('../lib/mcp-usage');
+
+    const projectId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Gauge');
+    require('../lib/mcp-usage').recordHostUsage({
+        host: 'claude-desktop', tool: 'script_get', projectId,
+        inboundChars: 200, outboundChars: 40000,
+    });
+
+    const g = subscriptionUsage();
+    assert.ok(g.windows.session, 'no rolling session window');
+    assert.ok(g.windows.week, 'no weekly window');
+    assert.strictEqual(g.windows.session.hours, 5, 'session window is not the 5 hours Anthropic actually uses');
+    assert.ok(g.windows.session.tokens > 0, 'tokens moved in the last five hours were not counted');
+    assert.strictEqual(g.allowance_tokens, null, 'an allowance was invented rather than left to be calibrated');
+    assert.strictEqual(g.windows.session.pct, null, 'a percentage was shown against a ceiling nobody set');
+    assert.ok(/publishes no token/i.test(g.note || ''), 'the report does not say the ceiling is uncalibrated');
+    assert.ok(g.plan_multipliers && g.plan_multipliers.max_20x > g.plan_multipliers.max_5x,
+        'plan multipliers — the only figure Anthropic does publish — are missing');
 });
 
 // ── 5. What the user actually asked to see ─────────────────────────────────

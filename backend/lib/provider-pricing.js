@@ -56,6 +56,27 @@ const RATE_BOOK = {
     // wrong by 5x in either direction depending on the shape of the call.
     'anthropic:llm': {
         unit: 'token', native_unit: 'token', native_per_unit: 1,
+        // Billed to a Claude SUBSCRIPTION, not per call.
+        //
+        // This pipeline reaches an LLM through an agent host — Claude Desktop
+        // connected to backend/mcp-server.js — and the host IS the model. That
+        // is the whole reason `tests/mcp-no-server-llm.test.js` exists: a tool
+        // that hands reasoning back to a server-side LLM asks the user to hold
+        // a second key for a question the connected model has already read.
+        //
+        // So the project is charged nothing. Pricing a feature-length
+        // breakdown at API list rates would invent thousands of dollars that
+        // were never billed, and it would be the LARGEST line in the report —
+        // a number confidently wrong in the direction that makes AI filmmaking
+        // look unaffordable.
+        //
+        // Tokens are still metered, because "how much reasoning did this film
+        // take" is a real question and the subscription has its own limits.
+        // The published rates below are kept, not deleted, so an install that
+        // genuinely pays per token can switch this off with one rate override
+        // rather than having to find the numbers again.
+        subscription: true,
+        subscription_note: 'Runs on your Claude subscription through the MCP host, not a metered API. Tokens are counted; dollars are not charged to the project.',
         components: { input: 5.00 * M, output: 25.00 * M },
         models: {
             'claude-opus-5':    { components: { input: 5.00 * M,  output: 25.00 * M } },
@@ -69,7 +90,7 @@ const RATE_BOOK = {
         },
         source: 'https://docs.claude.com/en/docs/about-claude/pricing',
         checked: '2026-08-22',
-        note: 'Per-million-token list rates. Cache reads bill at ~0.1x and cache writes at ~1.25x; the meter records them separately when the response reports them.',
+        note: 'Not charged to the project: the LLM runs on a Claude subscription through the MCP host. The per-million-token list rates are kept for installs that pay per token — clear the subscription flag with a rate override to apply them. Cache reads bill at ~0.1x and cache writes at ~1.25x.',
     },
 
     // ── OpenAI ────────────────────────────────────────────────────────────
@@ -223,6 +244,12 @@ function rateFor(provider, capability, model, overrides) {
     const override = lookupOverride(provider, capability, model, overrides);
     const rate = { ...base, ...perModel, ...override, provider, capability, model: model || null };
 
+    // An install that stores a real rate for a subscription-billed capability
+    // is saying it pays per call after all. Honour that rather than making the
+    // flag unclearable — a waiver you cannot switch off is a bug the day
+    // someone moves to an API key.
+    if (rate.subscription && override && override.usd_per_native > 0) rate.subscription = false;
+
     // The single figure the gate and the estimator want: USD per metered unit.
     // Component-priced entries (input/output tokens) have no single rate, so
     // the higher of the two stands in — an estimate that leans expensive fails
@@ -272,6 +299,12 @@ function priceUsage({ provider, capability, model, unit, quantity, parts }, over
         amount = qty * rate.usd_per_unit;
     }
 
+    // Consumption is recorded either way; only the money is waived. A zero
+    // that carries no reason is indistinguishable from a pair nobody priced,
+    // which is the exact confusion this file exists to end — so the flag
+    // travels with the result and the report prints it.
+    if (rate.subscription || rate.self_hosted) amount = 0;
+
     return {
         amount_usd: round6(amount),
         native_unit: rate.native_unit,
@@ -280,6 +313,8 @@ function priceUsage({ provider, capability, model, unit, quantity, parts }, over
         unit,
         priced: true,
         self_hosted: !!rate.self_hosted,
+        subscription: !!rate.subscription,
+        billing_note: rate.subscription_note || null,
         inferred: !!rate.inferred,
         source: rate.source,
     };
@@ -311,6 +346,7 @@ function listRates(overrides) {
                 inferred: (base.inferred_models || []).includes(id),
             })),
             self_hosted: !!base.self_hosted,
+            subscription: !!base.subscription,
             source: base.source, checked: base.checked, note: base.note,
             overridden: !!lookupOverride(provider, capability, null, overrides).usd_per_native,
         });

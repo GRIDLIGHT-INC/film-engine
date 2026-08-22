@@ -61,6 +61,11 @@ function handleBudget(req, res, urlParts, query) {
         if (sub === 'backfill' && req.method === 'POST') return runBackfill(req, res, projectId);
     }
 
+    // /film/spend/subscription — MCP host traffic against the plan windows.
+    if (urlParts[1] === 'spend' && urlParts[2] === 'subscription' && req.method === 'GET') {
+        return subscriptionReport(req, res, query);
+    }
+
     // /film/spend/rates — the rate book, and per-install corrections to it.
     if (urlParts[1] === 'spend' && urlParts[2] === 'rates') {
         if (req.method === 'GET') return listRateBook(req, res);
@@ -367,6 +372,20 @@ function runBackfill(req, res, projectId) {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ...result, dry_run: dryRun }));
+}
+
+/**
+ * What the agent host has consumed, against the windows the plan is enforced in.
+ *
+ * Global by default: the subscription is the person's and one pool is shared
+ * across every film, so reporting it per project would let two projects each
+ * show comfortable headroom while the account is out of capacity. Pass
+ * project_id to see one film's share.
+ */
+function subscriptionReport(req, res, query) {
+    const { subscriptionUsage } = require('../lib/mcp-usage');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(subscriptionUsage(query.project_id || null)));
 }
 
 function listRateBook(req, res) {

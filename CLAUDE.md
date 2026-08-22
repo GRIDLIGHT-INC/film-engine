@@ -143,6 +143,7 @@ film-engine/
 │   │   ├── budget-estimator.js   # Pre-flight cost estimation
 │   │   ├── provider-pricing.js  # What a generation costs, in the provider's own units
 │   │   ├── usage-meter.js       # Every provider call, metered and attributed
+│   │   ├── mcp-usage.js         # The agent host is the model; its traffic is the LLM meter
 │   │   ├── spend-backfill.js    # What a project spent before anything was tracking it
 │   │   ├── provider-config.js   # One provider-config reader, carrying the project id
 │   │   ├── prompt-diff.js        # Prompt/parameter diffing for A/B compare
@@ -356,6 +357,7 @@ All routes prefixed with `/film`:
 | Budget | `PUT /projects/:id/budget/limit`, `DELETE /budget/:id` |
 | Spend | `GET /projects/:id/spend`, `GET /projects/:id/spend/usage` |
 | Spend | `POST /projects/:id/spend/backfill`, `GET/PUT/DELETE /spend/rates` |
+| Spend | `GET /spend/subscription` |
 | Music Rights | `GET /projects/:id/music-rights`, `PUT /music-cues/:id/rights` |
 | Backups | `GET/POST /projects/:id/backups`, `GET/DELETE /backups/:id` |
 | Backups | `GET /backups/:id/download`, `POST /backups/:id/restore` |
@@ -801,7 +803,13 @@ Two pre-existing breaks surfaced while wiring the page, both shipped and neither
 
 `tests/ai-spend.test.js` is set-based over the **21 (provider, capability) pairs** in `providers.list()` — never a list typed into the test, or the next adapter arrives unpriced and silently free. It checks four separate things per pair, because the failure is partial: a book covering Anthropic and Runway while leaving Meshy unpriced reports a plausible number that is wrong by exactly the images, which is the largest line on a storyboard-heavy project, and an example test passes in that state. It also derives from the **source** that no `.generate()` call site obtains its adapter outside the registry, and that `parseProjectConfig` has exactly zero remaining copies.
 
-Served at `GET /projects/:id/spend`, `GET /projects/:id/spend/usage`, `POST /projects/:id/spend/backfill` and `GET|PUT|DELETE /spend/rates`, and as `spend_report`, `spend_usage`, `spend_backfill`, `spend_rates`.
+**The LLM is not an API bill — it is a subscription window.** This pipeline reaches a model through an agent host: Claude Desktop, and soon ChatGPT Desktop, connected to `backend/mcp-server.js`. That is the whole reason `tests/mcp-no-server-llm.test.js` exists — a tool that hands reasoning back to a server-side LLM asks the user to hold a second key for a question the connected model has already read. So `anthropic:llm` is marked `subscription: true` and charges the project **nothing**. Pricing a feature-length breakdown at per-token list rates would invent thousands of dollars that were never billed, and it would be the *largest* line in the report — confidently wrong in the direction that makes AI filmmaking look unaffordable. The researched per-token rates are kept rather than deleted, so an install that genuinely pays per token switches them on with one rate override instead of having to find the numbers again.
+
+**But the traffic is real, so it is metered anyway.** A director who runs out of Claude capacity halfway through a breakdown is blocked exactly as hard as one who runs out of Meshy credits; the resource is only denominated differently. `lib/mcp-usage.js` meters at `tools/call` — one choke point, the same choice made for providers, so a tool added later is covered with nothing to remember — recording inbound and outbound tokens separately and attributing to the project the arguments name.
+
+Two honesty constraints shape that gauge, and both are enforced by test. The counts are **estimates and say so**: this process sees the JSON going out and coming back, not the host's system prompt, its history, or its tokeniser, so four characters per token is an approximation and what it counts is a **floor** on what the host actually processed. And there is **no published ceiling to gauge against** — Anthropic publishes plan *multipliers* (Pro at 5x free, Max 5x at five times Pro, Max 20x at twenty) plus a rolling five-hour session window and a weekly reset, and deliberately publishes no token count for any plan. So `allowance_tokens` starts NULL and the report shows consumption with **no percentage at all** until the user calibrates it from what they observe. A bar reading "62% of your Max plan" against a number this codebase invented would be worse than no bar, because it would be believed and planned around. Calibration is stored per person in `film_app_settings` beside `author` — one pool is shared across every film, so a per-project ceiling would let two projects each show comfortable headroom while the account is out of capacity — and a single Pro-equivalent baseline scales to every plan through those multipliers, so one measurement calibrates all of them.
+
+Served at `GET /projects/:id/spend`, `GET /projects/:id/spend/usage`, `POST /projects/:id/spend/backfill` and `GET|PUT|DELETE /spend/rates`, plus `GET /spend/subscription`, and as `spend_report`, `spend_usage`, `spend_backfill`, `spend_rates`.
 
 ### Conform: shots into a film
 `assembly` has been a no-op since it was written, returning `"use export endpoints to finalize"` — so an orchestrated run reports success and there is no movie, and the `video_master` QA check goes green on shot 1 of N.

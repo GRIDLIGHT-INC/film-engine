@@ -93,16 +93,55 @@ const METHODS = {
         const name = params && params.name;
         if (!name) throw Object.assign(new Error('tools/call requires a name'), { code: -32602 });
 
-        const result = await api().callTool(name, (params && params.arguments) || {});
+        const args = (params && params.arguments) || {};
+        const started = Date.now();
+        const result = await api().callTool(name, args);
 
         // An unadvertised name is the caller's mistake about the protocol, not
         // a tool that ran badly, so it is a JSON-RPC error.
         if (result && result.unknownTool) {
             throw Object.assign(new Error(result.error), { code: -32602 });
         }
-        return toolResult(result);
+
+        const payload = toolResult(result);
+        meterHostCall(name, args, payload, Date.now() - started);
+        return payload;
     },
 };
+
+
+/**
+ * Every tool call is subscription traffic, so every tool call is metered.
+ *
+ * This server is driven by an agent host — Claude Desktop, ChatGPT Desktop —
+ * and the host IS the model. Nothing here is billed per call, but the payloads
+ * moving through this function draw down the user's subscription window, which
+ * is the resource that actually runs out mid-breakdown. Metering at
+ * `tools/call` rather than per tool is the same choice made for providers: one
+ * choke point, so a tool added later is covered with nothing to remember.
+ *
+ * The project is taken from the arguments where a tool names one — most do —
+ * so subscription use can be attributed to a film. A tool with no project id
+ * is still recorded, unattributed, because the tokens were spent either way.
+ *
+ * Never throws. The tool has already run and the model is waiting on its
+ * result; bookkeeping does not get to turn that into an error.
+ */
+function meterHostCall(name, args, payload, durationMs) {
+    try {
+        const { recordHostUsage } = require('./lib/mcp-usage');
+        recordHostUsage({
+            host: process.env.MCP_HOST || 'claude-desktop',
+            tool: name,
+            projectId: args && (args.project_id || args.projectId) || null,
+            shotId: args && (args.shot_id || args.shotId) || null,
+            sceneId: args && (args.scene_id || args.sceneId) || null,
+            inboundChars: JSON.stringify(args || {}).length,
+            outboundChars: JSON.stringify(payload || {}).length,
+            durationMs,
+        });
+    } catch (_) { /* metering never breaks a completed call */ }
+}
 
 async function handle(message) {
     const { id, method, params } = message;

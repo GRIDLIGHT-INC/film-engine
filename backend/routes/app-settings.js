@@ -25,6 +25,22 @@ const SETTINGS = {
         description: 'Written-by credit on every screenplay title page and every FDX export.',
         default: '',
     },
+    // The subscription is the person's, not the project's — one pool shared
+    // across every film they work on. Stored here for the same reason `author`
+    // is: it is the same answer every time and belongs to whoever is sitting
+    // at the machine.
+    subscription_plan: {
+        description: 'Which Claude/ChatGPT plan drives the MCP host: free, pro, max_5x, max_20x. Used only to scale a calibrated baseline across plans — no ceiling is assumed from the name alone.',
+        default: '',
+    },
+    subscription_session_tokens: {
+        description: 'Your own measurement of how many tokens fit in one rolling 5-hour window. Anthropic publishes no such number, so the spend gauge shows no percentage until you set this. Leave blank to see raw consumption without a bar.',
+        default: '',
+    },
+    subscription_pro_baseline_tokens: {
+        description: 'A Pro-plan 5-hour baseline. Set this instead of the above and the published plan multipliers (Max 5x, Max 20x) scale it for you, so one measurement calibrates every plan.',
+        default: '',
+    },
 };
 
 function json(res, status, data) {

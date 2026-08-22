@@ -4991,6 +4991,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <div id="spendBackfillBanner" class="mb-16"></div>
                 <div id="spendHeadline" class="mb-16"></div>
                 <div id="spendUnits" class="mb-16"></div>
+                <div id="spendSubscription" class="mb-16"></div>
                 <div id="spendByCapability" class="mb-16"></div>
                 <div id="spendOverTime" class="mb-16"></div>
                 <div id="spendByModel" class="mb-16"></div>
@@ -22227,6 +22228,7 @@ ${fountainText.slice(0, 50000)}`;
             renderSpendBackfill(s);
             renderSpendHeadline(s);
             renderSpendUnits(s);
+            await renderSubscription();
             renderSpendByCapability(s);
             renderSpendOverTime(s);
             renderSpendByModel(s);
@@ -22426,6 +22428,66 @@ ${fountainText.slice(0, 50000)}`;
                     }).join('')}
                 </table>
             </div>`;
+    }
+
+
+    // The subscription is the other currency.
+    //
+    // Nothing in the MCP path is billed per call — the agent host is the model,
+    // on the user's own plan. But a director who runs out of Claude capacity
+    // halfway through a breakdown is blocked exactly as hard as one who runs
+    // out of Meshy credits; the resource is just denominated differently. So it
+    // is shown beside the dollars rather than in a different screen.
+    //
+    // No bar until it is CALIBRATED. Anthropic publishes plan multipliers and
+    // two windows, and no token count for any plan — a progress bar reading
+    // "62% of your Max plan" against a number we invented would be believed and
+    // planned around, which is worse than showing no bar at all.
+    async function renderSubscription() {
+        const el = document.getElementById('spendSubscription');
+        try {
+            const g = await api('/spend/subscription?project_id=' + state.currentProject.id);
+            const win = w => {
+                const bar = w.pct === null ? '' : `
+                    <div style="background:var(--gl-border-subtle);border-radius:4px;height:6px;overflow:hidden;margin-top:6px;">
+                        <div style="background:${w.pct > 90 ? 'var(--gl-error)' : w.pct > 70 ? 'var(--gl-warning)' : 'var(--gl-success)'};height:100%;width:${Math.min(100, w.pct)}%;border-radius:4px;"></div>
+                    </div>`;
+                return `<div>
+                    <div class="text-sm text-muted">${esc(w.label)}</div>
+                    <div style="font-size:20px;font-weight:600;">${qty(w.tokens)} tokens</div>
+                    <div class="text-sm text-muted">${w.calls} tool call(s)${w.pct !== null ? ' &middot; ' + w.pct + '% of your window' : ''}</div>
+                    ${bar}
+                </div>`;
+            };
+            el.innerHTML = `
+                <h3 class="mb-8">Subscription (MCP host)</h3>
+                <div class="card">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;">
+                        ${win(g.windows.session)}${win(g.windows.week)}
+                    </div>
+                    ${g.by_tool && g.by_tool.length ? `
+                        <details style="margin-top:12px;">
+                            <summary class="text-sm text-muted" style="cursor:pointer;">where the tokens go — top tools</summary>
+                            <table class="render-table" style="width:100%;margin-top:6px;">
+                                ${g.by_tool.slice(0, 10).map(t => `<tr>
+                                    <td class="text-sm">${esc(t.tool)}</td>
+                                    <td class="text-sm text-muted" style="text-align:right;">${t.calls}×</td>
+                                    <td class="text-sm" style="text-align:right;">${qty(t.tokens)} tokens</td>
+                                </tr>`).join('')}
+                            </table>
+                        </details>` : ''}
+                    ${g.allowance_tokens === null ? `
+                        <p class="text-sm text-muted" style="margin-top:10px;border-top:1px solid var(--gl-border-subtle);padding-top:8px;">
+                            No percentage shown because no ceiling is set. ${esc(g.note)}
+                            Set <code>subscription_plan</code> and <code>subscription_pro_baseline_tokens</code> in Settings to calibrate it —
+                            one measurement scales across plans via the published multipliers.
+                        </p>` : `
+                        <p class="text-sm text-muted" style="margin-top:10px;border-top:1px solid var(--gl-border-subtle);padding-top:8px;">
+                            Calibrated to ${qty(g.allowance_tokens)} tokens per window${g.plan ? ' on ' + esc(g.plan) : ''}.
+                            Counts are a floor — they cover the MCP payloads this server moved, not the host's own prompt and history.
+                        </p>`}
+                </div>`;
+        } catch (err) { el.innerHTML = ''; }
     }
 
     // ── Rates ─────────────────────────────────────────────────────────────
