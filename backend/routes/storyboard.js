@@ -1531,6 +1531,17 @@ function shotPromptPreview(req, res, shotId, query) {
             role: r.role || null,
         })),
         contributors,
+        /*
+         * The prompt budget, contributor by contributor: what each wanted, what
+         * it got, and whether it could have been cut. This is the answer to
+         * "it does a lot in the background" — the negotiation is visible, so a
+         * shot that came back wrong can be diagnosed rather than re-rolled.
+         */
+        budget: (built.meta && built.meta.budget) || [],
+        direction_mode: 'action',
+        direction_modes: Object.entries(require('../lib/storyboard-prompt').DIRECTION_MODES)
+            .map(([id, m]) => ({ id, label: m.label, description: m.description,
+                requires_anchor: !!m.requires_anchor })),
         // What the director drew, and what it is doing. Three separate facts —
         // is the feature on, which marks carry a note, and what sentence they
         // produce — because each has a different fix and folding them into one
@@ -1867,6 +1878,24 @@ async function regenerateShot(req, res, shotId) {
     // PAR-026: what the director drew, if this project or this call says so.
     const annots = annotationsFor(shotId, project, body);
 
+    /*
+     * What the director is doing to this shot right now.
+     *
+     * Blocking the ACTION and blocking the CAMERA are different jobs, and one
+     * prompt shape cannot serve both: "put the camera on the other side of the
+     * street" kept producing a different scene because the prompt rebuilt every
+     * subject from prose each time. Camera mode locks the scene to a frame that
+     * already exists and spends the prompt on where the camera stands.
+     */
+    const { DIRECTION_MODES } = require('../lib/storyboard-prompt');
+    const directionMode = String(body.direction_mode || 'action');
+    if (!DIRECTION_MODES[directionMode]) {
+        return json(res, 400, {
+            error: `Unknown direction_mode '${directionMode}'.`,
+            modes: Object.entries(DIRECTION_MODES).map(([id, m]) => ({ id, label: m.label, description: m.description })),
+        });
+    }
+
     /**
      * The plates, resolved BEFORE the prompt rather than after it.
      *
@@ -1901,6 +1930,19 @@ async function regenerateShot(req, res, shotId) {
             anchorState.anchor);
     } catch (_) { shotRefs = []; }
     const { anchorAttached, anchorTag } = anchorIn(shotRefs, canTag);
+
+    // Camera mode keeps a scene, so there has to BE one. Locking a scene you
+    // have not generated is not a mode, it is a mistake — and running anyway
+    // would spend money producing exactly the drift the mode exists to prevent.
+    if (DIRECTION_MODES[directionMode].requires_anchor && !anchorAttached) {
+        return json(res, 409, {
+            error: 'Camera mode keeps the scene from an existing frame, and none is attached.',
+            reason: anchorState.reason,
+            hint: 'Generate a frame you like, set it as the anchor (anchor_set), then direct the camera '
+                + 'from there. Without an anchor there is no scene to keep, so this would be an ordinary '
+                + 'regeneration with a camera instruction — which is direction_mode "action".',
+        });
+    }
 
     // Build or use override prompt
     let prompt, negative_prompt;
@@ -1947,6 +1989,11 @@ async function regenerateShot(req, res, shotId) {
                 // failure the contract-shortening revert was about.
                 references: shotRefs, tagged: canTag,
                 maxPromptChars: imagePromptLimitFor(project),
+                // Which job the director is doing, and — in camera mode — which
+                // subjects the locked frame already carries, so they travel as
+                // names rather than paragraphs.
+                directionMode,
+                anchorCovers: anchorCoversFor(anchorState, anchorAttached),
             }
         );
         prompt = result.prompt;

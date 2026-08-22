@@ -109,6 +109,95 @@ const STYLE_PRESETS = {
 
 const DEFAULT_NEGATIVE_PROMPT = 'blurry, low quality, distorted, deformed, ugly, bad anatomy, bad hands, watermark, text, logo';
 
+
+/**
+ * Who gets the prompt when there is not enough of it.
+ *
+ * Prompt assembly was an automatic negotiation between a dozen contributors
+ * with no stated order, and the outcome flipped on lengths nobody was watching.
+ * On one real shot the director's 1,253-character direction was cut to 156 while
+ * 3,217 characters of subject prose survived; on the same shot a week later the
+ * base prompt filled the ceiling and NO locked contract fitted at all. Neither
+ * result was chosen by anyone.
+ *
+ * So the contributors are ranked, and trimming walks this list backwards.
+ *
+ * The ordering principle: **the shot is what you asked for; the subjects are
+ * what happen to be in it.** A prompt that describes subjects at length and the
+ * shot briefly produces a picture of the subjects — which is exactly what
+ * happened when a request for a wide shot of a dragon's back came back as a
+ * portrait, because the prompt opened with "Woman in her mid-thirties…".
+ *
+ * `protected` means never trimmed. That is affordable only because every
+ * protected contributor is SHORT by construction — a camera note is capped by
+ * the card validator, and the camera facets are a phrase list. The direction is
+ * the one long protected field, and it is protected because it is the only text
+ * in the prompt that a person deliberately wrote about this shot.
+ */
+const PROMPT_PRIORITY = [
+    { id: 'camera_note', protected: true,
+      why: 'a short, deliberate instruction about where the camera is — the last thing that should be lost' },
+    { id: 'anchor', protected: true,
+      why: 'names the scene being re-shot; without it the attached frame is an unexplained picture' },
+    { id: 'direction', protected: true,
+      why: 'the shot itself. The only text in the prompt a person wrote about THIS frame' },
+    { id: 'camera', protected: true,
+      why: 'framing, lens, angle and movement — a phrase list, cheap to keep and the shot without it is a guess' },
+    { id: 'annotations', protected: true, cap: 0.25,
+      why: 'marks the director drew on the frame — deliberate, so never cut, but capped: forty notes '
+         + 'would otherwise eat the prompt, which is the unbounded-field failure this codebase has '
+         + 'already paid for once' },
+    { id: 'lighting', protected: false,
+      why: 'sets the hour; recoverable from the anchor or the look when it has to go' },
+    { id: 'style', protected: false,
+      why: 'the film\'s look. Cut before the shot, kept before the subjects' },
+    { id: 'scale', protected: false,
+      why: 'how big things are — matters most when a subject has no plate, which is when the prose is long anyway' },
+    { id: 'appearance', protected: false,
+      why: 'what a subject looks like. Cut before the shot: the frame can survive an approximate face, not an absent camera' },
+    { id: 'location', protected: false,
+      why: 'the place in the abstract, and the anchor or the plate says it better' },
+    { id: 'contracts', protected: false,
+      why: 'locked profile prose. Longest, most duplicated by the attached plates, cut first' },
+    { id: 'quality', protected: false,
+      why: 'fixed tags. Last in and first out, because they add nothing a model cannot infer' },
+];
+
+/*
+ * `cap` is a share of the ceiling applied BEFORE assembly, and it is what makes
+ * `protected` safe. Protection with no bound is how an unbounded field ate the
+ * budget and amputated the location and the style — so the two contributors that
+ * a person can make arbitrarily long are bounded: `camera_note` by the card
+ * validator at 400 characters, `annotations` here at a quarter of the ceiling.
+ *
+ * `direction` is deliberately uncapped. It is the shot, it is why the frame
+ * exists, and cutting it is the defect all of this was written to fix.
+ */
+
+/**
+ * What a director is doing to this shot right now.
+ *
+ * Two different jobs wearing one button. Blocking the ACTION means saying what
+ * happens; blocking the CAMERA means keeping everything and moving where you
+ * stand. Asking one prompt shape to serve both is why "put the camera on the
+ * other side" kept producing a different scene.
+ */
+const DIRECTION_MODES = {
+    action: {
+        label: 'Direct the action',
+        description: 'What happens in the shot. The scene is built from the card, and every subject '
+            + 'is described so the model can construct it.',
+    },
+    camera: {
+        label: 'Direct the camera',
+        description: 'The scene is LOCKED — same location, same people, same props, same light — and '
+            + 'only the camera changes. Requires a frame to keep: the anchor is attached and the '
+            + 'subjects in it shorten to their names, so the whole prompt is about where the camera '
+            + 'stands and what faces it.',
+        requires_anchor: true,
+    },
+};
+
 // ── Prompt Builder ──────────────────────────────────────────────────
 
 /**
@@ -349,8 +438,27 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         ? require('./reference-images').taggedNames(opts.references)
         : new Map();
 
-    const parts = [];
+    /*
+     * Collected BY CONTRIBUTOR rather than into one flat list, so that when the
+     * prompt overruns it is possible to say who gives way. A flat array can
+     * only be cut from the end, which is why the director's shot description
+     * used to be lost while a paragraph about a car's chrome survived.
+     */
+    const collected = new Map();
+    const add = (id, text) => {
+        const t = String(text || '').trim();
+        if (!t) return;
+        if (!collected.has(id)) collected.set(id, []);
+        collected.get(id).push(t);
+    };
     const loraParts = [];
+
+    // A short, deliberate instruction about where the camera is. Leads, because
+    // it is a statement about the SHOT rather than about a subject — and the
+    // rule this codebase learned expensively is that whatever leads a prompt is
+    // what the image is of. Capped by the card validator, which is what makes
+    // "never trimmed" affordable.
+    if (sceneCard.camera && sceneCard.camera.note) add('camera_note', sceneCard.camera.note);
 
     // 0. The scene this shot is being taken OF, when one is attached.
     //
@@ -362,7 +470,7 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // Present only when the caller attached the frame AND can address it, so a
     // project with no anchor builds byte-identically.
     if (opts.anchorAttached) {
-        parts.push(require('./shot-anchor').anchorLeadPhrase(opts.anchorTag));
+        add('anchor', require('./shot-anchor').anchorLeadPhrase(opts.anchorTag));
     }
 
     // 1. Character LoRA/TI tokens and appearance
@@ -388,17 +496,26 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         // and the two can disagree — at which point the model is being asked to
         // reconcile them.
         const charTag = tagFor.get(String(charName).toUpperCase());
+        // In camera mode the scene is locked and its frame is attached, so a
+        // subject in that frame needs NAMING rather than describing — the same
+        // rule the anchor already uses, and safe here for the same reason: the
+        // picture is definitely in the payload, because camera mode refuses to
+        // run without it.
+        const covered = (opts.anchorCovers || []).some(
+            n => String(n).toUpperCase() === String(charName).toUpperCase());
         if (charTag) {
-            parts.push(`@${charTag}`);
+            add('appearance', `@${charTag}`);
+        } else if (covered && opts.directionMode === 'camera') {
+            add('appearance', String(charName).toUpperCase());
         } else if (dbChar.appearance_prompt) {
-            parts.push(trimToAllowance(dbChar.appearance_prompt, opts.appearanceAllowance || allow.appearance));
+            add('appearance', dbChar.appearance_prompt);
         }
     }
 
     // 2. Subject / action description
     const subject = sceneCard.action || sceneCard.description || '';
     if (subject) {
-        parts.push(trimToAllowance(subject, opts.actionAllowance || allow.action));
+        add('direction', subject);
     }
 
     // 2b. How big everything is — AFTER the shot, never before it.
@@ -415,7 +532,7 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // Whatever leads a prompt is what the image is OF. A measurement is a
     // qualifier on something already in the scene, so it goes after the scene.
     const scaleParts = scaleNotesFor(sceneCard, characters, opts);
-    if (scaleParts.length) parts.push(`Scale: ${scaleParts.join('; ')}`);
+    if (scaleParts.length) add('scale', `Scale: ${scaleParts.join('; ')}`);
 
     // 2c. What the director drew on the frame (PAR-026), when their marks feed
     // generation. Off unless a caller passes annotations, so a project that has
@@ -435,7 +552,7 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         const { directionClause } = require('./annotation-prompt');
         const direction = directionClause(opts.annotations);
         if (direction.text) {
-            parts.push(trimToAllowance(direction.text, opts.directionAllowance || allow.direction));
+            add('annotations', direction.text);
         }
     }
 
@@ -462,14 +579,14 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // 3. Camera shot type
     const shotType = effective.shot_type.value;
     if (shotType && SHOT_TYPE_MAP[shotType]) {
-        parts.push(SHOT_TYPE_MAP[shotType]);
+        add('camera', SHOT_TYPE_MAP[shotType]);
     }
 
     // 4. Lens — staged, else what the card called it, else what the production
     // shoots on. That last fallback is the whole point of choosing a lens on
     // the board: without it the choice only reached shots someone had opened
     // the 3D stage for.
-    if (effective.lens.value) parts.push(`${effective.lens.value} lens`);
+    if (effective.lens.value) add('camera', `${effective.lens.value} lens`);
 
     // 4b. Camera height against a standing eyeline IS the angle.
     //
@@ -491,8 +608,8 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         ? Number(facets.camera_height_m)
         : Number(cardCamera.height_m);
     if (Number.isFinite(h)) {
-        if (h <= 0.9) parts.push('low angle, camera looking up');
-        else if (h >= 2.2) parts.push('high angle, camera looking down');
+        if (h <= 0.9) add('camera', 'low angle, camera looking up');
+        else if (h >= 2.2) add('camera', 'high angle, camera looking down');
     }
 
     // 5. Camera movement — the whole move when a sequence was blocked.
@@ -506,37 +623,37 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     const movement = effective.movement.value;
     if (legs && legs.length > 1) {
         const phrases = legs.map(m => MOVEMENT_MAP[m]).filter(Boolean);
-        if (phrases.length > 1) parts.push(phrases.join(', then '));
-        else if (phrases.length === 1) parts.push(phrases[0]);
+        if (phrases.length > 1) add('camera', phrases.join(', then '));
+        else if (phrases.length === 1) add('camera', phrases[0]);
     } else if (movement && MOVEMENT_MAP[movement]) {
-        parts.push(MOVEMENT_MAP[movement]);
+        add('camera', MOVEMENT_MAP[movement]);
     }
 
     // 5b. A solved distance is what makes framing a measurement rather than a
     // word. Blocking only — a card has never held one.
     const d = Number(facets.distance_m);
-    if (Number.isFinite(d) && d > 0) parts.push(`camera ${d.toFixed(1)}m from subject`);
+    if (Number.isFinite(d) && d > 0) add('camera', `camera ${d.toFixed(1)}m from subject`);
 
     // 6. Lighting
     const lightType = sceneCard.lighting && sceneCard.lighting.type;
     if (lightType && LIGHTING_MAP[lightType]) {
-        parts.push(LIGHTING_MAP[lightType]);
+        add('lighting', LIGHTING_MAP[lightType]);
     }
     const lightNotes = sceneCard.lighting && sceneCard.lighting.notes;
     if (lightNotes) {
-        parts.push(lightNotes);
+        add('lighting', lightNotes);
     }
 
     // 7. Location context
     if (location) {
         const locTag = location.name && tagFor.get(String(location.name).toUpperCase());
         if (locTag) {
-            parts.push(`@${locTag}`);
+            add('location', `@${locTag}`);
         } else if (location.description) {
-            parts.push(trimToAllowance(location.description, opts.locationAllowance || allow.location));
+            add('location', location.description);
         }
         if (location.lighting_default && !lightType) {
-            parts.push(`${location.lighting_default} lighting`);
+            add('lighting', `${location.lighting_default} lighting`);
         }
     }
 
@@ -551,9 +668,9 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // their own film is the more useful case and the column already allowed it.
     const preset = stylePreset && STYLE_PRESETS[stylePreset];
     if (preset) {
-        parts.push(preset.suffix);
+        add('style', preset.suffix);
     } else if (typeof stylePreset === 'string' && stylePreset.trim()) {
-        parts.push(trimToAllowance(stylePreset, opts.styleAllowance || allow.style));
+        add('style', stylePreset);
     }
 
     // 8b. Continuity of light, restated beside the look.
@@ -564,32 +681,109 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // happily regrade it.
     if (opts.anchorAttached) {
         const phrase = require('./shot-anchor').anchorPhrase(opts.anchorTag);
-        if (phrase) parts.push(phrase);
+        if (phrase) add('style', phrase);
     }
 
     // 9. Scene card style overrides
     if (sceneCard.style) {
-        if (sceneCard.style.mood) parts.push(`${sceneCard.style.mood} mood`);
-        if (sceneCard.style.color_palette) parts.push(`${sceneCard.style.color_palette} color palette`);
-        if (sceneCard.style.film_grain) parts.push(`${sceneCard.style.film_grain} film grain`);
+        if (sceneCard.style.mood) add('style', `${sceneCard.style.mood} mood`);
+        if (sceneCard.style.color_palette) add('style', `${sceneCard.style.color_palette} color palette`);
+        if (sceneCard.style.film_grain) add('style', `${sceneCard.style.film_grain} film grain`);
     }
 
     // 10. Locked consistency profile prompt contracts
     if (Array.isArray(opts.prompt_additions)) {
         for (const addition of opts.prompt_additions) {
-            if (addition) parts.push(addition);
+            if (addition) add('contracts', addition);
         }
     }
 
     // 11. Quality tags
-    parts.push('masterpiece, high quality');
+    add('quality', 'masterpiece, high quality');
 
     // Assemble prompt
+    /*
+     * Assemble in priority order, and trim from the BOTTOM of it.
+     *
+     * The old scheme gave every field a fixed share of the ceiling and cut each
+     * one to fit, which meant a long direction was cut even when there was room,
+     * and — worse — cut at all while lower-ranked prose survived untouched.
+     * Walking the ranking backwards means the things that give way are the ones
+     * the plates and the anchor already carry.
+     */
     const loraPrefix = loraParts.length > 0 ? loraParts.join(' ') + ', ' : '';
-    const assembled = loraPrefix + parts.filter(Boolean).join(', ');
-    const prompt = assembled.length <= ceiling
-        ? assembled
-        : trimToAllowance(assembled, ceiling);
+    const ordered = PROMPT_PRIORITY
+        .map(c => {
+            let text = (collected.get(c.id) || []).join(', ');
+            // Capped before anything else sees it, so a protected contributor
+            // cannot claim more of the ceiling than it was ever meant to have.
+            if (c.cap && text.length > ceiling * c.cap) {
+                text = trimToAllowance(text, Math.floor(ceiling * c.cap));
+            }
+            return { ...c, text };
+        })
+        .filter(c => c.text);
+
+    const join = list => loraPrefix + list.map(c => c.text).filter(Boolean).join(', ');
+
+    /*
+     * The protected set is kept whole; what is left is shared out among the
+     * rest, in rank order.
+     *
+     * An earlier version of this loop dropped whole contributors from the bottom
+     * before shortening anything above them, which starved the lowest rank: a
+     * long appearance survived at length while the location vanished entirely,
+     * so the frame knew who but not where. That is the failure the per-field
+     * allowances were originally written to prevent, and losing it while fixing
+     * a different problem would have traded one defect for another.
+     *
+     * So: an even split of what remains, in rank order, with anything a
+     * contributor does not use inherited by the ones after it — the same
+     * algorithm `fitAdditions` uses for locked contracts, for the same reason.
+     * Rank decides who is served first, not who is served alone.
+     */
+    const held = ordered.filter(c => c.protected);
+    const flexible = ordered.filter(c => !c.protected);
+    let room = ceiling - join(held).length - (flexible.length * 2);
+
+    const fitted = [];
+    for (let i = 0; i < flexible.length; i++) {
+        const share = Math.floor(room / (flexible.length - i));
+        if (share <= 40) break;              // too little to say anything true
+        const text = flexible[i].text.length <= share
+            ? flexible[i].text
+            : trimToAllowance(flexible[i].text, share);
+        if (!text) continue;
+        fitted.push({ ...flexible[i], text });
+        room -= text.length + 2;
+    }
+
+    // Back into rank order, so the prompt still reads shot-first.
+    const byId = new Map([...held, ...fitted].map(c => [c.id, c]));
+    const kept = ordered.map(c => byId.get(c.id)).filter(Boolean);
+
+    const assembled = join(kept);
+    const prompt = assembled.length <= ceiling ? assembled : trimToAllowance(assembled, ceiling);
+
+    /*
+     * Who got what, so a director can SEE the negotiation.
+     *
+     * "It does a lot without my control in the background" is the real
+     * complaint, and the answer to it is not a better default — it is being able
+     * to look. Every contributor reports what it wanted, what it got, and
+     * whether it could have been cut.
+     */
+    const budget = ordered.map(c => {
+        const survivor = kept.find(k => k.id === c.id);
+        return {
+            contributor: c.id,
+            protected: c.protected,
+            wanted: c.text.length,
+            chars: survivor ? survivor.text.length : 0,
+            cut: c.text.length - (survivor ? survivor.text.length : 0),
+            why: c.why,
+        };
+    });
 
     // Build negative prompt
     const negParts = [DEFAULT_NEGATIVE_PROMPT];
@@ -607,7 +801,7 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     }
     const negative_prompt = negParts.join(', ');
 
-    return { prompt, negative_prompt };
+    return { prompt, negative_prompt, budget, ceiling };
 }
 
 // ── Style Lock (FILM-021) ──────────────────────────────────────────
@@ -648,6 +842,8 @@ function applyStyleLock(baseSeed, shotIndex, options) {
 }
 
 module.exports = {
+    PROMPT_PRIORITY,
+    DIRECTION_MODES,
     allowancesFor,
     scaleNotesFor,
     ALLOWANCE_SHARE,

@@ -70,6 +70,26 @@ function validateSceneCard(card) {
             if (card.camera.movement && !VALID_CAMERA_MOVES.includes(card.camera.movement)) {
                 errors.push(`camera.movement must be one of: ${VALID_CAMERA_MOVES.join(', ')}`);
             }
+            /*
+             * A short, deliberate instruction about where the camera is — the
+             * one contributor that is never trimmed, which is affordable only
+             * because it is capped here. Uncapped, "never trimmed" would let a
+             * thousand-word note push every subject out of the prompt, and the
+             * protection would become the defect.
+             *
+             * 400 is two or three sentences: "Camera on the far side of the
+             * street looking back; dragon's back to camera; MAYA faces us."
+             * Anything longer is the shot description, which has its own field
+             * and is also protected.
+             */
+            if (card.camera.note !== undefined) {
+                if (typeof card.camera.note !== 'string') {
+                    errors.push('camera.note must be a string');
+                } else if (card.camera.note.length > 400) {
+                    errors.push(`camera.note must be 400 characters or fewer (got ${card.camera.note.length}) `
+                        + '— it is never trimmed, so it has to stay short. Put the rest in the description.');
+                }
+            }
             if (card.camera.lens !== undefined && typeof card.camera.lens !== 'string') {
                 errors.push('camera.lens must be a string (e.g. "35mm", "85mm")');
             }

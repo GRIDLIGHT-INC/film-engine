@@ -185,6 +185,10 @@ const CAPABILITY_BUILDERS = {
         // what makes the frame a director approves the frame they staged.
         const base = buildStoryboardPrompt(ctx.sceneCard, ctx.characters, ctx.location,
             ctx.project.style_preset, {
+                // Which job the director is doing. Defaults to `action`, so a
+                // caller that says nothing gets exactly what it got before.
+                directionMode: ctx.directionMode || 'action',
+                anchorCovers: ctx.anchorAttached ? (ctx.anchorCovers || []) : [],
                 previs: ctx.previs || undefined,
                 // Resolved here rather than passed in, so the orchestrator and
                 // the per-domain route cannot disagree about how much prompt a
@@ -235,6 +239,7 @@ const CAPABILITY_BUILDERS = {
         // The ceiling goes WITH the additions, because they are part of the
         // prompt the provider receives — enforcing it before they are appended
         // measures the wrong string.
+        ctx.__budget = base.budget || null;
         return cc
             ? applyConsistencyToImagePayload(payload, cc, {
                 maxPromptChars: imagePromptLimit(ctx.project),
@@ -426,6 +431,10 @@ function buildCapabilityPayload(capability, ctx) {
     }
 
     const context = ctx || {};
+    // The image builder reports how the prompt budget was spent; captured here
+    // so `shot_prompt` can show it without rebuilding the prompt a second time
+    // and risking a different answer.
+    context.__budget = null;
     const payload = builder(context);
 
     // Which shot this spend belongs to, carried on the payload itself.
@@ -446,6 +455,7 @@ function buildCapabilityPayload(capability, ctx) {
         payload,
         meta: {
             capability,
+            budget: context.__budget || [],
             cardinality: Array.isArray(payload) ? 'many' : 'one',
             count: Array.isArray(payload) ? payload.length : 1,
             project_id: projectIdOf(context),

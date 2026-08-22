@@ -64,16 +64,51 @@ test('the golden fixture covers every movement', () => {
 });
 
 test('an unblocked shot produces byte-identical output to before phase 3', () => {
+    // Everything except the prompt STRING, which is compared by content below.
+    //
+    // The guarantee this fixture exists for is that previs blocking does not
+    // leak into shots nobody has blocked, and camera_control is where that would
+    // show. The prompt was later deliberately reordered — the shot now leads and
+    // subject descriptions follow, because a prompt opening with a face produces
+    // a portrait — so a byte comparison of the string would fail on a change
+    // that has nothing to do with previs, and regenerating the fixture to hide
+    // that would delete the real guarantee. Split rather than regenerated.
     const drift = [];
     for (const [key, expected] of Object.entries(GOLDEN)) {
         const [movement, shotType] = key.split('|');
         const actual = buildVideoPayload(...goldenCall(movement, shotType));
-        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        const strip = o => { const { prompt, ...rest } = o; return rest; };
+        if (JSON.stringify(strip(actual)) !== JSON.stringify(strip(expected))) {
             drift.push({ key, expected: expected.camera_control, actual: actual.camera_control });
         }
     }
     assert.deepStrictEqual(drift, [],
         `phase 3 changed output for shots with no blocking:\n${JSON.stringify(drift.slice(0, 3), null, 1)}`);
+});
+
+test('the prompt still says the same things, in a deliberate order', () => {
+    // The prompt was reordered, not rewritten. Every clause the old code
+    // produced must still be present — a REORDER is a decision, a LOSS is a bug,
+    // and a byte comparison cannot tell them apart.
+    const missing = [];
+    for (const [key, expected] of Object.entries(GOLDEN)) {
+        const [movement, shotType] = key.split('|');
+        const actual = buildVideoPayload(...goldenCall(movement, shotType));
+        const clauses = expected.prompt.split(', ').map(c => c.trim()).filter(Boolean);
+        for (const c of clauses) {
+            if (!actual.prompt.includes(c)) missing.push(`${key}: lost "${c}"`);
+        }
+    }
+    assert.deepStrictEqual(missing.slice(0, 5), [],
+        `the reordering dropped clauses rather than moving them:\n  ${missing.slice(0, 5).join('\n  ')}`);
+});
+
+test('the shot leads the prompt, not the subject', () => {
+    // What the reordering was FOR, pinned here so the video path cannot drift
+    // back: a prompt that opens with "tired, 30s" is a request for a portrait.
+    const payload = buildVideoPayload(...goldenCall('static', 'wide'));
+    const head = payload.prompt.slice(0, 60);
+    assert.ok(!/^tired, 30s/.test(head), `the video prompt still opens with a subject: ${head}`);
 });
 
 test('no previs key leaks into an unblocked payload', () => {

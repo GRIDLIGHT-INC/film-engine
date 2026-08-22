@@ -250,19 +250,27 @@ test('direction never leads the prompt', () => {
         `direction led the prompt:\n${prompt}`);
 });
 
-test('direction sits ahead of the camera and the look, where a ceiling cannot cut it', () => {
-    // Providers truncate the TAIL. A director's explicit instruction is the
-    // last thing that should be lost to a ceiling, so it is not put at the end.
+test('direction cannot be trimmed away at all', () => {
+    // This used to assert POSITION — direction ahead of the camera and the look
+    // — because a provider truncates the tail and an explicit instruction is the
+    // last thing that should be lost to a ceiling. Position was a proxy for
+    // protection, and the prompt is now ranked: annotations are marked
+    // `protected` in PROMPT_PRIORITY and are never cut, whatever their place.
+    // Asserting the guarantee beats asserting the proxy for it.
+    const { PROMPT_PRIORITY } = require('../lib/storyboard-prompt');
+    const rank = PROMPT_PRIORITY.find(c => c.id === 'annotations');
+    assert.ok(rank, 'annotations are no longer a ranked contributor');
+    assert.strictEqual(rank.protected, true, 'a director\u2019s marks can be trimmed away');
+
+    // And proven under real pressure rather than taken from the registry.
     const card = { action: 'A street.', camera: { shot_type: 'wide' }, characters: [] };
     const { prompt } = buildStoryboardPrompt(card, [], null, 'noir', {
         annotations: [{ id: '1', kind: 'text', points: SAMPLES.text, text: NOTE }],
+        maxPromptChars: 260,
+        prompt_additions: ['x'.repeat(4000)],
     });
-    assert.ok(prompt.indexOf('Direction:') < prompt.indexOf('wide angle shot'),
-        `direction was placed behind the camera, where a trim reaches it first:\n${prompt}`);
-    assert.ok(prompt.indexOf('Direction:') < prompt.indexOf('film noir'),
-        `direction was placed behind the style:\n${prompt}`);
+    assert.ok(prompt.includes(NOTE), `the note was cut under pressure:\n${prompt}`);
 });
-
 test('a wall of marks is bounded rather than allowed to eat the prompt', () => {
     // An unbounded field ate the budget once already and amputated location and
     // style entirely. It only binds when the prompt overruns.

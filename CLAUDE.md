@@ -248,6 +248,7 @@ film-engine/
 │       ├── act-structure.test.js   # Acts are sections; the table and its readers are gone
 │       ├── frame-versions.test.js  # Which attempt is which, and which can be chosen
 │       ├── mcp-guide.test.js       # The Claude Desktop guide, held to the tool registry
+│       ├── prompt-control.test.js  # Who gets the prompt when there is not enough of it
 │       ├── providers.test.js             # Provider registry + resolution
 │       ├── providers-api.test.js         # Provider settings/credentials API
 │       ├── providers-runway.test.js      # Runway adapter (mock server)
@@ -1245,6 +1246,7 @@ node --test backend/tests/mcp-first-writing.test.js
 node --test backend/tests/act-structure.test.js
 node --test backend/tests/frame-versions.test.js
 node --test backend/tests/mcp-guide.test.js
+node --test backend/tests/prompt-control.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js
