@@ -25708,9 +25708,16 @@ ${fountainText.slice(0, 50000)}`;
                     api(`/projects/${pid}/locations`).catch(() => []),
                     api(`/projects/${pid}/mood-board`).catch(() => ({})),
                 ]);
-                const platedBy = rows => (Array.isArray(rows) ? rows : []).map(r => ({
-                    name: r.name, has_plate: !!(r.plate_asset_id || r.has_plate || r.refsheet_asset_id),
-                }));
+                /*
+                 * `has_plate` comes from the server, derived from the same
+                 * asset query the gatherer uses to attach a plate. This read
+                 * three invented field names and so reported "no plate" for
+                 * every subject in every project — the opposite of the truth,
+                 * and the direction that costs money: it tells a director to go
+                 * and generate plates that already exist.
+                 */
+                const platedBy = rows => (Array.isArray(rows) ? rows : [])
+                    .map(r => ({ name: r.name, has_plate: !!r.has_plate }));
                 ctx.characters = platedBy(chars.characters || chars);
                 ctx.props = platedBy(props.props || props);
                 const locRows = platedBy(locs.locations || locs);

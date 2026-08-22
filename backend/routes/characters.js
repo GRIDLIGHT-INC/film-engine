@@ -90,6 +90,24 @@ function listCharacters(req, res, projectId) {
         ch.reference_image_url = refsheet ? getFileUrl('refsheets', refsheet.project_id, refsheet.file_name) : null;
     }
 
+    /*
+     * Whether each character has a reference plate, from the SAME query the
+     * gatherer uses to attach one — the two answers have to agree.
+     *
+     * The picker that shows this used three invented field names
+     * (`plate_asset_id`, `has_plate`, `refsheet_asset_id`), none of which any
+     * route returns, so every subject in every project reported "no plate":
+     * telling a director their cast would be invented fresh in each frame when
+     * it was already plated, which is misinformation in the direction that
+     * costs money to act on.
+     */
+    try {
+        const { platedSubjects } = require('../lib/shot-references');
+        const byId = new Map(platedSubjects(db, projectId).characters.map(p => [p.id, p.has_plate]));
+        for (const ch of rows) ch.has_plate = !!byId.get(ch.id);
+    } catch (_) { /* the list is still a list without it */ }
+
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ characters: rows }));
 }

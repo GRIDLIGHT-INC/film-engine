@@ -257,3 +257,44 @@ test('directing in previs writes back into the directing elements', () => {
     assert.ok(/card\.characters|card\.props/.test(apply),
         'staging a named subject in previs never reaches the shot\'s blocking, so the two disagree');
 });
+
+test('the plate badge agrees with what actually attaches', () => {
+    /*
+     * The picker invented three field names — plate_asset_id, has_plate,
+     * refsheet_asset_id — and only the middle one exists, and only because it
+     * was added afterwards. Every subject in every project reported "no plate",
+     * which is the opposite of the truth and the direction that costs money: it
+     * tells a director to go and generate plates that already exist.
+     *
+     * Derived over the three subject kinds, and against the GATHERER's own
+     * query, because a badge that disagrees with what attaches is worse than no
+     * badge.
+     */
+    const routes = {
+        characters: fs.readFileSync(path.join(__dirname, '..', 'routes', 'characters.js'), 'utf8'),
+        props: fs.readFileSync(path.join(__dirname, '..', 'routes', 'locations.js'), 'utf8'),
+        locations: fs.readFileSync(path.join(__dirname, '..', 'routes', 'locations.js'), 'utf8'),
+    };
+    for (const [kind, src] of Object.entries(routes)) {
+        assert.ok(/platedSubjects/.test(src),
+            `the ${kind} list does not report which subjects have a plate`);
+    }
+
+    // One source of truth: the helper must run the gatherer's own asset types.
+    const refs = fs.readFileSync(path.join(__dirname, '..', 'lib', 'shot-references.js'), 'utf8');
+    assert.ok(/function platedSubjects\(/.test(refs), 'platedSubjects is not defined beside the gatherer');
+    const helper = refs.slice(refs.indexOf('const PLATE_TYPES'), refs.indexOf('function platedSubjects(') + 900);
+    for (const t of ['character_sheet', 'reference_image']) {
+        assert.ok(helper.includes(t), `platedSubjects ignores ${t}, which the gatherer attaches`);
+    }
+
+    // And the client must read the served field, not a guessed one.
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    const fn = html.slice(html.indexOf('const platedBy = rows =>'),
+        html.indexOf('const platedBy = rows =>') + 400);
+    assert.ok(/r\.has_plate/.test(fn), 'the picker does not read has_plate');
+    for (const invented of ['plate_asset_id', 'refsheet_asset_id']) {
+        assert.ok(!fn.includes(invented),
+            `the picker still reads ${invented}, which no route returns`);
+    }
+});

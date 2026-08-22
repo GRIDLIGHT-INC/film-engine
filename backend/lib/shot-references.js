@@ -221,7 +221,42 @@ function shotReferencesFor(db, opts) {
     };
 }
 
+
+/**
+ * Which subjects in a project actually have a plate.
+ *
+ * Derived from the SAME asset query the gatherer uses to attach one, because
+ * the two answers must agree: a picker that says "no plate" while the generator
+ * cheerfully attaches one is misinformation in the worst direction — it tells a
+ * director their subject will be invented fresh in every frame when it will
+ * not, and the honest response to that is to go and generate plates that
+ * already exist.
+ *
+ * This existed as three invented field names on the client (`plate_asset_id`,
+ * `has_plate`, `refsheet_asset_id`), none of which any route returns, so every
+ * subject in every project reported no plate.
+ */
+const PLATE_TYPES = "('character_sheet', 'reference_image')";
+
+function platedSubjects(db, projectId) {
+    const has = (column, table) => {
+        const rows = db.prepare(
+            `SELECT t.id, t.name,
+                    (SELECT COUNT(*) FROM film_assets a
+                      WHERE a.project_id = ? AND a.${column} = t.id
+                        AND a.asset_type IN ${PLATE_TYPES}) n
+               FROM ${table} t WHERE t.project_id = ?`).all(projectId, projectId);
+        return rows.map(r => ({ id: r.id, name: r.name, has_plate: r.n > 0 }));
+    };
+    return {
+        characters: has('character_id', 'film_characters'),
+        props: has('prop_id', 'film_props'),
+        locations: has('location_id', 'film_locations'),
+    };
+}
+
 module.exports = {
+    platedSubjects,
     gatherShotReferences,
     matchProps,
     matchCharacters,

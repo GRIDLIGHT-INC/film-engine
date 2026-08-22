@@ -166,6 +166,21 @@ function badReq(res, msg) {
 
 function listLocations(req, res, projectId) {
     const rows = db.prepare('SELECT * FROM film_locations WHERE project_id = ? ORDER BY name').all(projectId);
+    /*
+     * Whether each subject has a reference plate, from the SAME query the
+     * gatherer uses to attach one. The picker that shows this had three
+     * invented field names and reported "no plate" for every subject in every
+     * project — telling a director their cast would be invented fresh in each
+     * frame when it was already plated, which is misinformation in the
+     * direction that costs money to act on.
+     */
+    try {
+        const { platedSubjects } = require('../lib/shot-references');
+        const plated = platedSubjects(db, projectId).locations;
+        const byId = new Map(plated.map(p => [p.id, p.has_plate]));
+        for (const r of rows) r.has_plate = !!byId.get(r.id);
+    } catch (_) { /* the list is still a list without it */ }
+
 
     // Attach scene count and reference image per location
     const refImageQuery = db.prepare(
@@ -430,6 +445,21 @@ function deleteLocation(req, res, locId) {
 
 function listProps(req, res, projectId) {
     const rows = db.prepare('SELECT * FROM film_props WHERE project_id = ? ORDER BY name').all(projectId);
+    /*
+     * Whether each subject has a reference plate, from the SAME query the
+     * gatherer uses to attach one. The picker that shows this had three
+     * invented field names and reported "no plate" for every subject in every
+     * project — telling a director their cast would be invented fresh in each
+     * frame when it was already plated, which is misinformation in the
+     * direction that costs money to act on.
+     */
+    try {
+        const { platedSubjects } = require('../lib/shot-references');
+        const plated = platedSubjects(db, projectId).props;
+        const byId = new Map(plated.map(p => [p.id, p.has_plate]));
+        for (const r of rows) r.has_plate = !!byId.get(r.id);
+    } catch (_) { /* the list is still a list without it */ }
+
 
     // Attach reference image per prop
     // The prop_id COLUMN, not a LIKE against metadata. Migration 061 added the
