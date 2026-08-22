@@ -24287,6 +24287,16 @@ ${fountainText.slice(0, 50000)}`;
             if (state.currentProject) {
                 state.currentProject.annotation_feedback = data.annotation_feedback ? 1 : 0;
                 state.currentProject.anchor_shot_id = data.anchor_shot_id || null;
+                /*
+                 * The anchor, as the refine prompt needs it: a code to name and
+                 * an id to compare against, so it can offer continuity without
+                 * offering a shot the chance to match itself.
+                 */
+                BOARD_ANCHOR = null;
+                if (data.anchor_shot_id) {
+                    const a = (data.frames || []).find(f => f.shot_id === data.anchor_shot_id);
+                    if (a) BOARD_ANCHOR = { shot_id: a.shot_id, shot_code: a.shot_code };
+                }
             }
             ANCHOR.frames = data.frames || [];
             renderAnnotationFeedbackToggle();
@@ -25865,14 +25875,33 @@ ${fountainText.slice(0, 50000)}`;
             + '  make the light warmer on the house fronts');
         if (!instruction || !instruction.trim()) return;
 
+        /*
+         * Offer the anchor as a continuity reference, but only when there IS
+         * one — a prompt asking whether to match a frame that does not exist is
+         * a question with no right answer. Off unless chosen: refine means
+         * "keep this picture", and a second image arriving uninvited is what
+         * pulls a refine back toward a fresh generation.
+         */
+        let useAnchor = false;
+        if (BOARD_ANCHOR && BOARD_ANCHOR.shot_code && BOARD_ANCHOR.shot_id !== shotId) {
+            useAnchor = confirm(
+                `Match ${BOARD_ANCHOR.shot_code} for continuity?\n\n`
+                + `OK    — send ${BOARD_ANCHOR.shot_code} as a second reference, so this frame keeps its own\n`
+                + '        composition but matches that scene\'s location, dressing, time of day and grade.\n\n'
+                + 'Cancel — refine from this frame alone.');
+        }
+
         const done = frameBusy(shotId, 'Refining');
         setStatus('Refining frame...', true);
         try {
             const res = await api(`/shots/${shotId}/storyboard/refine`, {
-                method: 'POST', body: JSON.stringify({ instruction: instruction.trim() }),
+                method: 'POST',
+                body: JSON.stringify({ instruction: instruction.trim(), use_anchor: useAnchor }),
             });
             done();
-            setStatus(`Refined from ${res.refined_from} \u2192 v${res.version}${res.provider ? ' via ' + res.provider : ''}.`);
+            setStatus(`Refined from ${res.refined_from} \u2192 v${res.version}`
+                + (res.matched_against ? `, matched against ${res.matched_against}` : '')
+                + (res.provider ? ` via ${res.provider}` : '') + '.');
             await loadStoryboard();
             const modal = document.getElementById('frameViewerModal');
             if (modal && modal.classList.contains('open')) frameViewerPaint();
@@ -25895,6 +25924,8 @@ ${fountainText.slice(0, 50000)}`;
      * as the buttons being broken.
      */
     let BOARD_LOCK = { locked: false, locked_at: null };
+    /* The frame this project is currently shooting from, if any. */
+    let BOARD_ANCHOR = null;
 
     async function loadBoardLock() {
         if (!state.currentProject) return;

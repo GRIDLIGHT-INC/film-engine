@@ -430,3 +430,58 @@ test('a filename cannot escape the project directory', () => {
     }
     assert.deepStrictEqual(leaked, [], `these escaped the project directory: ${leaked.join(', ')}`);
 });
+
+// ── Refining against a scene you cannot see ─────────────────────────────
+
+/**
+ * "If I ask for a refine, can I anchor a previous scene to add a reference?"
+ *
+ * No — refine sent exactly ONE picture, the frame being changed, so "make the
+ * street match 1A" was unsayable: the only thing the model could look at was
+ * the shot being refined. The anchor existed and every other generation path
+ * used it; refine was the one that could not.
+ *
+ * It is opt-in, and that is the whole safety argument. Refine's contract is
+ * "keep this picture, change one thing", enforced by a negative that refuses a
+ * different composition — a second picture arriving uninvited is exactly what
+ * pulls a refine back toward a fresh generation.
+ */
+test('refine can attach the anchor, and names each picture by its job', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'backend', 'routes', 'storyboard.js'), 'utf8');
+    const at = src.indexOf('async function refineShot(');
+    assert.ok(at > 0, 'refineShot is gone');
+    const next = src.indexOf('\nasync function ', at + 10);
+    const body = src.slice(at, next === -1 ? src.length : next);
+
+    assert.ok(/use_anchor/.test(body), 'refine still cannot take an anchor');
+    assert.ok(/activeAnchorFor/.test(body),
+        'refine resolves the anchor its own way, so it can disagree with the board about which frame it is');
+    assert.ok(/reference_images: anchorRef \? \[reference, anchorRef\] : \[reference\]/.test(body),
+        'the anchor is resolved and never actually sent');
+
+    // Two pictures with no jobs named is worse than one: the model cannot tell
+    // which it is supposed to be reproducing.
+    assert.ok(/FIRST reference image/.test(body) && /SECOND reference image/.test(body),
+        'both pictures are attached and neither is named, so the model must guess which to keep');
+    assert.ok(/continuity only/.test(body),
+        'the anchor is not scoped to continuity, so it will pull the composition too');
+
+    // Off by default.
+    assert.ok(/body\.use_anchor === true/.test(body),
+        'the anchor attaches unless refused, which inverts the safe default');
+
+    // And refused rather than silently ignored when there is nothing to match.
+    assert.ok(/NO_ANCHOR/.test(body),
+        'asking to match an anchor that does not exist succeeds silently, which looks like it worked');
+});
+
+test('refine says what it matched against', () => {
+    // "Matched against 1A" and "matched against nothing" produce different
+    // pictures and look identical afterwards.
+    const src = fs.readFileSync(path.join(ROOT, 'backend', 'routes', 'storyboard.js'), 'utf8');
+    assert.ok(/matched_against/.test(src), 'the refine response never says whether an anchor was used');
+
+    const html = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+    assert.ok(/matched_against/.test(html), 'the page never reports what a refine was matched against');
+    assert.ok(/use_anchor: useAnchor/.test(html), 'the page cannot ask for the anchor on a refine');
+});

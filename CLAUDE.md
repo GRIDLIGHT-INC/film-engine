@@ -552,6 +552,13 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
 
+### Refining Against a Scene the Frame Cannot See
+Refine sent exactly **one** picture — the frame being changed — so *"make the street match 1A"* was unsayable: the only thing the model could look at was the shot being refined. The anchor existed and every other generation path used it; refine was the one that could not.
+
+`use_anchor` attaches it as a **second** reference, and the prompt names each picture by its **job**: the first is the frame to keep, the second is the scene to match *for continuity only* — same location, dressing, time of day and grade, explicitly **not** its composition or camera angle. Two pictures with no jobs named is worse than one, because the model cannot tell which it is supposed to be reproducing.
+
+**Off by default, and that is the whole safety argument.** Refine's contract is *keep this picture, change one thing*, enforced by a negative that refuses a different composition — a second image arriving uninvited is exactly what pulls a refine back toward a fresh generation. Asking to match an anchor that does not exist is **refused** (`NO_ANCHOR`) rather than succeeding silently, and the response names what it matched against, because *"matched against 1A"* and *"matched against nothing"* produce different pictures and look identical afterwards.
+
 ### A Version Is a Generation; Which One Shows Is a Pointer
 Selecting an earlier frame created a **new highest version** — v3 chosen became v6 — on the reasoning that history must never be destroyed. The history was safe and the **count became a lie**: five generations plus one selection read as six attempts, and *"which am I on"* stopped having an answer. `shows_version` was added to explain the confusing number, which is a label apologising for a model rather than fixing it.
 

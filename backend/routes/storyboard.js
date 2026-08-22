@@ -1968,9 +1968,59 @@ async function refineShot(req, res, shotId) {
     if (!uri) return json(res, 409, { error: 'That frame could not be inlined as a reference.' });
     const reference = { name: shot.shot_code, kind: 'style', tag: 'frame', uri, file_path: source, weight: 0.9 };
 
+    /*
+     * A second reference: the anchor, for continuity a refine cannot see.
+     *
+     * Refine sent exactly one picture — this frame — so "make the street match
+     * 1A" was unsayable: the only thing the model could look at was the shot
+     * being changed. Attaching the anchor gives it the scene to be continuous
+     * WITH.
+     *
+     * Opt-in rather than automatic, and that is the whole safety argument.
+     * Refine's contract is "keep this picture, change one thing", enforced by a
+     * negative that refuses a different composition. A second picture arriving
+     * uninvited is exactly what pulls a refine back toward a fresh generation —
+     * so it attaches only when asked, and the prompt names each image by its
+     * JOB: the first is the frame to keep, the second is the scene to match.
+     * Without that the model gets two pictures and no idea which one it is
+     * supposed to be reproducing.
+     */
+    let anchorRef = null;
+    if (body.use_anchor === true || body.use_anchor === 'true') {
+        try {
+            // The same resolver every generation path uses, so refine can never
+            // disagree with the board about which frame the anchor is.
+            const { activeAnchorFor } = require('../lib/shot-anchor');
+            const resolved = activeAnchorFor(db, shotId);
+            const src = resolved && resolved.asset && resolved.asset.file_path;
+            if (resolved && resolved.shot && src && fs.existsSync(src)) {
+                const auri = toDataUri(src);
+                if (auri) {
+                    anchorRef = {
+                        name: resolved.shot.shot_code, kind: 'anchor', tag: 'scene',
+                        uri: auri, file_path: src, weight: 0.6,
+                    };
+                }
+            }
+        } catch (_) { anchorRef = null; }
+        if (!anchorRef) {
+            return json(res, 409, {
+                error: 'No anchor frame is available to match against.',
+                code: 'NO_ANCHOR',
+                hint: 'Set an anchor on a shot that already has a generated frame (the ⚓ button), '
+                    + 'then refine again with use_anchor.',
+            });
+        }
+    }
+
     // Short on purpose. The picture is the description.
-    const prompt = `${instruction}. Keep everything else in the reference image exactly as it is: `
-        + 'the same composition, framing, camera position, lighting and colour grade.';
+    const prompt = anchorRef
+        ? `${instruction}. Keep everything else in the FIRST reference image exactly as it is: `
+          + 'the same composition, framing, camera position and lens. '
+          + 'Match the SECOND reference image for continuity only — the same location, set dressing, '
+          + 'time of day, lighting and colour grade — without copying its composition or camera angle.'
+        : `${instruction}. Keep everything else in the reference image exactly as it is: `
+          + 'the same composition, framing, camera position, lighting and colour grade.';
 
     db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shotId);
     try {
@@ -1979,7 +2029,7 @@ async function refineShot(req, res, shotId) {
             prompt,
             negative_prompt: 'different composition, different camera angle, different framing, '
                 + 'recropped, restyled, different time of day',
-            reference_images: [reference],
+            reference_images: anchorRef ? [reference, anchorRef] : [reference],
             aspect_ratio: project.aspect_ratio,
         };
         const { buffer, provider, model } = await callImageGen(
@@ -1998,6 +2048,7 @@ async function refineShot(req, res, shotId) {
                 provider, provider_model: model,
                 refined_from: fromVersion === null ? 'current' : `v${fromVersion}`,
                 instruction,
+                anchor_shot_code: anchorRef ? anchorRef.name : null,
             });
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('complete', shotId);
 
@@ -2005,6 +2056,9 @@ async function refineShot(req, res, shotId) {
             shot_id: shotId, shot_code: shot.shot_code,
             refined_from: fromVersion === null ? 'current' : `v${fromVersion}`,
             instruction, version: asset.version, provider,
+            // Named, because "matched against 1A" and "matched against nothing"
+            // produce different pictures and look identical afterwards.
+            matched_against: anchorRef ? anchorRef.name : null,
             image_url: storyboardImageUrl(project.id, shot.shot_code),
             annotations: annotationReport(annots),
         });

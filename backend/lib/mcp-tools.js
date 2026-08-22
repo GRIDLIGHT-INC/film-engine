@@ -1247,8 +1247,17 @@ const PRODUCTION_TOOLS = [
         handler: handleStoryboard, method: 'POST',
         description: 'Keep an existing frame and change ONE thing about it. Sends the picture itself plus a single instruction — no scene card, no subject descriptions, no style preset, because the picture already carries all of that and repeating it in words pulls the result back toward a fresh generation. Use this instead of storyboard_regenerate whenever the composition is right and one element is wrong: "remove the sprinkler", "move the car to the kerb". Pass version to refine an earlier attempt rather than the current frame. Costs credits.',
         path: a => `/film/shots/${a.shot_id}/storyboard/refine`,
-        body: a => ({ instruction: a.instruction, version: a.version, use_annotations: a.use_annotations }),
+        body: a => ({ instruction: a.instruction, version: a.version, use_annotations: a.use_annotations, use_anchor: a.use_anchor }),
         schema: {
+            shot_id: { type: 'string' },
+            use_anchor: {
+                type: 'boolean',
+                description: 'Attach the project\u2019s anchor frame as a SECOND reference, so this refine '
+                    + 'can be made continuous with a scene it cannot otherwise see \u2014 same location, set '
+                    + 'dressing, time of day and grade, without copying its composition. Off by default: '
+                    + 'refine means "keep this picture", and a second image arriving uninvited is what pulls '
+                    + 'a refine back toward a fresh generation. Refused if no anchor has a frame.',
+            },
             shot_id: { type: 'string' },
             instruction: { type: 'string', description: 'The one change, in a sentence. Everything else is kept.' },
             version: { type: 'number', description: 'Refine this stored version instead of the current frame.' },
