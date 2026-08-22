@@ -115,6 +115,41 @@ function legacySceneFingerprint(scene) {
     });
 }
 
+
+/**
+ * Is this stamp current for this scene?
+ *
+ * `sceneFingerprint` was widened to include dialogue, so everything stamped
+ * before that carries the pre-dialogue hash. `stampScene` already recognises
+ * that and re-baselines the SCENE silently — and the SHOTS were left holding
+ * the old value, while `drift()` compared against the new formula. Every shot
+ * in every project stamped before the widening reported as behind, permanently,
+ * and re-stamping wrote the same old value back so the warning could not be
+ * cleared by doing the work it asked for.
+ *
+ * A stamp is current if it matches the scene as it is now under EITHER formula.
+ * That is not a blanket amnesty: a scene whose action was genuinely rewritten
+ * changes both hashes, since both cover the description — so a stale stamp
+ * still matches neither.
+ *
+ * The one case it does forgive is a scene where ONLY the dialogue changed and
+ * whose shots predate the widening. Those shots were stamped by a formula that
+ * could not see dialogue, so they never had the information; reporting them is
+ * asking a director to act on a distinction the data cannot make. Once anything
+ * re-stamps them under the current formula, dialogue changes are caught
+ * normally, which is the behaviour the widening was for.
+ */
+function matchesScene(scene, stamp) {
+    if (!stamp) return false;
+    if (stamp === sceneFingerprint(scene)) return true;
+    // Only forgive the legacy hash while the SCENE itself is still on it —
+    // once a scene has been re-baselined, an old shot stamp is genuinely stale.
+    if (scene.source_fingerprint && scene.source_fingerprint === legacySceneFingerprint(scene)) {
+        return stamp === scene.source_fingerprint;
+    }
+    return false;
+}
+
 /**
  * Record what a scene's text currently is.
  *
@@ -136,6 +171,13 @@ function stampScene(sceneId) {
         // every existing project as behind.
         if (scene.source_fingerprint && scene.source_fingerprint === legacySceneFingerprint(scene)) {
             db.prepare('UPDATE film_scenes SET source_fingerprint = ? WHERE id = ?').run(fp, sceneId);
+            // Carry the SHOTS with it. Migrating the scene alone leaves every
+            // shot holding a hash nothing will ever match again, which is how
+            // this became an unclearable warning in the first place. Only shots
+            // that were current under the old formula move — a genuinely stale
+            // one stays stale.
+            db.prepare('UPDATE film_shots SET scene_fingerprint = ? WHERE scene_id = ? AND scene_fingerprint = ?')
+                .run(fp, sceneId, scene.source_fingerprint);
             return fp;
         }
 
@@ -195,7 +237,6 @@ function drift(projectId) {
 
     const out = [];
     for (const scene of scenes) {
-        const current = sceneFingerprint(scene);
         const shots = db.prepare('SELECT * FROM film_shots WHERE scene_id = ? ORDER BY sort_order, shot_code')
             .all(scene.id);
 
@@ -205,7 +246,7 @@ function drift(projectId) {
             // NULL is "written before any of this existed", which is not the
             // same as out of date and must not be reported as though it were.
             if (!shot.scene_fingerprint) { unknown++; continue; }
-            if (shot.scene_fingerprint === current) continue;
+            if (matchesScene(scene, shot.scene_fingerprint)) continue;
             behind.push({
                 shot_id: shot.id,
                 shot_code: shot.shot_code,
@@ -281,4 +322,4 @@ function adoptBaseline(projectId) {
 }
 
 module.exports = {
-    legacySceneFingerprint, sceneFingerprint, stampScene, stampShot, drift, adoptBaseline, tracking };
+    legacySceneFingerprint, sceneFingerprint, matchesScene, stampScene, stampShot, drift, adoptBaseline, tracking };

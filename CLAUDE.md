@@ -557,6 +557,17 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
 
+### A Warning You Cannot Clear Is Worse Than No Warning
+Two banners sat on a real board permanently: *"the screenplay moved on without 11 shots"* and eleven items to regenerate. Every shot carried a fingerprint that **matched** its scene's stored one, and the report said they were all behind anyway.
+
+`sceneFingerprint` was widened to include dialogue — correctly, since rewriting a character's lines used to change nothing the report could see. Everything stamped before that carries the pre-dialogue hash. `stampScene` already recognised the case and re-baselined the **scene** silently, and two things were left behind: `drift()` compared against the **new** formula while the shots still held the **old** one, and `stampShot` writes the scene's stored value — so re-stamping wrote the old hash straight back and the warning could not be cleared by doing the work it asked for.
+
+Permanently on, pointing at work that is fine. Acting on it means redoing eleven cards for nothing; learning to ignore it means ignoring the real thing when it happens.
+
+`matchesScene()` is the one rule now: a stamp is current if it matches the scene as it stands under **either** formula. That is not an amnesty — a genuinely rewritten scene changes both hashes, since both cover the description, so a stale stamp still matches neither. The single case it forgives is a scene where only the **dialogue** changed and whose shots predate the widening: those shots were stamped by a formula that could not see dialogue, so reporting them asks a director to act on a distinction the data cannot make. And `stampScene`'s re-baseline now **carries the shots with it**, so the next screenplay save cannot recreate the mismatch.
+
+On the project that reported it: 3 scenes and 11 shots behind became **0**, and the impact report went from 11 redo / 7 waiting to 6 redo / 0 waiting — six real keyframes whose cards genuinely moved.
+
 ### A Refine Previews What a REFINE Sends
 The pre-spend confirmation was added for every paid path, and for refine it showed the **wrong thing**: it called the regeneration preview, so a director about to refine saw a ~3,800-character prompt and a list of five plates that a refine does not send.
 

@@ -235,3 +235,100 @@ test('the page says what re-running the breakdown actually does', () => {
     assert.ok(/skipped: true/.test(breakdown) && /Delete them first/.test(breakdown),
         'the breakdown no longer skips scenes with shots, so the page is now lying');
 });
+
+// ── The comparator and the stamper must agree ───────────────────────────
+
+/**
+ * A shot stamped under the OLD fingerprint formula is not behind.
+ *
+ * Reported from use as two banners that could not be cleared: "the screenplay
+ * moved on without 11 shots", and eleven items to regenerate. Every shot in the
+ * project carried a fingerprint that matched its scene's STORED one, and the
+ * report said they were all behind anyway.
+ *
+ * `sceneFingerprint` was widened to include dialogue — correctly, because
+ * rewriting a character's lines used to change nothing the drift report could
+ * see. Everything stamped before that carries the pre-dialogue hash.
+ * `stampScene` already recognises that case and re-baselines the SCENE
+ * silently, and two things were left behind: `drift()` compares against the new
+ * formula while the shots still hold the old one, and `stampShot` writes the
+ * scene's stored value — so re-stamping reproduces the mismatch and the warning
+ * cannot be cleared by doing the work it asks for.
+ *
+ * That is the worst kind of warning: permanently on, pointing at work that is
+ * fine. Acting on it means redoing eleven cards for nothing; learning to ignore
+ * it means ignoring the real thing when it happens.
+ */
+test('a scene stamped under the pre-dialogue formula reports nothing behind', () => {
+    const { sceneFingerprint, legacySceneFingerprint, stampShot, drift } = require('../lib/screenplay-drift');
+    const s = seed();
+
+    // Exactly the state a real project is in: scene and shots both carrying the
+    // legacy hash, nothing actually rewritten.
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(s.sceneId);
+    const legacy = legacySceneFingerprint(scene);
+    assert.notStrictEqual(legacy, sceneFingerprint(scene),
+        'the two formulas agree on this fixture, so it cannot reproduce the bug');
+    db.prepare('UPDATE film_scenes SET source_fingerprint = ? WHERE id = ?').run(legacy, s.sceneId);
+    db.prepare('UPDATE film_shots SET scene_fingerprint = ? WHERE id = ?').run(legacy, s.shotId);
+
+    assert.deepStrictEqual(drift(s.projectId), [],
+        'a shot stamped under the old formula, on a scene nobody rewrote, is reported behind — '
+        + 'and re-stamping writes the same old value, so the warning can never be cleared');
+});
+
+test('re-stamping a shot clears it, whatever formula it was on', () => {
+    // A warning that cannot be cleared by doing the work it asks for is noise
+    // within a day.
+    const { legacySceneFingerprint, stampShot, drift } = require('../lib/screenplay-drift');
+    const s = seed();
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(s.sceneId);
+    db.prepare('UPDATE film_shots SET scene_fingerprint = ? WHERE id = ?')
+        .run(legacySceneFingerprint(scene), s.shotId);
+
+    stampShot(s.shotId, s.sceneId);
+    assert.deepStrictEqual(drift(s.projectId), [],
+        're-stamping the shot did not clear it');
+});
+
+test('a genuine rewrite is still caught after the migration', () => {
+    // The fix must not buy silence by accepting any old hash. A scene that
+    // really changed still has to fire.
+    const { legacySceneFingerprint, drift } = require('../lib/screenplay-drift');
+    const s = seed();
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(s.sceneId);
+    const legacy = legacySceneFingerprint(scene);
+    db.prepare('UPDATE film_scenes SET source_fingerprint = ? WHERE id = ?').run(legacy, s.sceneId);
+    db.prepare('UPDATE film_shots SET scene_fingerprint = ? WHERE id = ?').run(legacy, s.shotId);
+
+    rewrite(s.sceneId, 'She runs for the sewer plate as the roof comes down.');
+    const report = drift(s.projectId);
+    assert.strictEqual(report.length, 1, 'a real rewrite stopped being reported');
+    assert.deepStrictEqual(report[0].shots_behind.map(x => x.shot_code), ['3A']);
+});
+
+test('every site resolving a scene fingerprint uses the same rule', () => {
+    /*
+     * Derived from the source, because the bug was two call sites answering
+     * "what is this scene now" differently — and each looked correct alone.
+     */
+    const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'screenplay-drift.js'), 'utf8');
+    const sites = [];
+    let fn = null;
+    for (const line of src.split('\n')) {
+        const m = line.match(/^function (\w+)\(/);
+        if (m) fn = m[1];
+        // The resolvers themselves are the ones allowed to call it — the check
+        // is about CONSUMERS asking the question a second way.
+        if (!fn || ['sceneFingerprint', 'legacySceneFingerprint', 'stampScene', 'matchesScene'].includes(fn)) continue;
+        if (/sceneFingerprint\(/.test(line)) sites.push({ fn, line: line.trim() });
+    }
+    // One is the healthy state: stampShot, which already prefers the stored
+    // value. The guard is that no SECOND site answers the question its own way
+    // — which is what drift() was doing.
+    assert.ok(sites.length >= 1, `the detector found no resolution sites at all`);
+    const bare = sites.filter(s => !/source_fingerprint|legacy|matchesScene/i.test(s.line));
+    assert.deepStrictEqual([...new Set(bare.map(s => s.fn))], [],
+        'these recompute the scene fingerprint live and ignore what was actually stamped, so they '
+        + `disagree with stampShot: ${[...new Set(bare.map(s => s.fn))].join(', ')}`);
+});
