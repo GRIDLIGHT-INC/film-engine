@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (74 migrations)
+│   │   └── migrations/     # SQL migration files (75 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -50,7 +50,6 @@ film-engine/
 │   │   ├── pipeline.js         # Pipeline orchestrator (Phase 12)
 │   │   ├── qa.js               # QA checks & quality gates (Phase 13)
 │   │   ├── project-bundle.js   # Project export/import bundles
-│   │   ├── acts.js             # Act/sequence structure (Phase 16)
 │   │   ├── subtitles.js        # Subtitle CRUD + SRT/VTT export (Phase 17)
 │   │   ├── audio-deliverables.js # Audio deliverables + manifest (Phase 17)
 │   │   ├── continuity.js       # Continuity reference board (Phase 18)
@@ -72,6 +71,7 @@ film-engine/
 │   │   ├── app-settings.js     # Settings that belong to the person, not the project
 │   │   ├── events.js           # SSE: tell the page when another process wrote to the database
 │   │   ├── story-structure.js  # Beat sheets, holes, and house rules on the writing
+│   │   ├── agent-presence.js   # Which path an AI request takes, and why
 │   │   ├── story-bible.js      # What things ARE, and which entity was written from which section
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
@@ -124,6 +124,7 @@ film-engine/
 │   │   ├── shot-anchor.js        # The frame you are currently shooting from
 │   │   ├── shot-references.js    # The plates a shot generates with, gathered once for every path
 │   │   ├── beat-sheets.js        # Four story frameworks, and the holes in a structure
+│   │   ├── agent-presence.js     # Is an agent host attached, and what it would replace
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
 │   │   ├── screenplay-drift.js    # Which shots a rewrite left behind, and what was built on them
 │   │   ├── impact.js              # One change, all the way down: redo now vs waiting on something above
@@ -243,6 +244,9 @@ film-engine/
 │       ├── screenplay-structure.test.js # Every element is reachable, and an outline survives export
 │       ├── story-structure.test.js  # Beats find their holes; a scene's history is derived, not stored
 │       ├── screenplay-polish.test.js # Export fidelity, and an edit batch that is all-or-nothing
+│       ├── mcp-first-writing.test.js # MCP is the default path; HTTP says it cost you something
+│       ├── act-structure.test.js   # Acts are sections; the table and its readers are gone
+│       ├── frame-versions.test.js  # Which attempt is which, and which can be chosen
 │       ├── providers.test.js             # Provider registry + resolution
 │       ├── providers-api.test.js         # Provider settings/credentials API
 │       ├── providers-runway.test.js      # Runway adapter (mock server)
@@ -338,9 +342,8 @@ All routes prefixed with `/film`:
 | QA | `POST /projects/:id/qa/run`, `GET /projects/:id/qa`, `GET /projects/:id/qa/latest` |
 | QA | `GET /projects/:id/qa/continuity`, `GET /projects/:id/qa/rubric` |
 | QA | `POST /scenes/:id/qa/run`, `POST /shots/:id/qa/run` |
-| Settings | `POST /projects/:id/settings/preset`, `GET/PUT /settings` |
+| Settings | `POST /projects/:id/settings/preset`, `GET/PUT /settings`, `GET /agent` |
 | Shots | `PUT /shots/:id/order`, `PUT /shots/:id/transition`, `POST /projects/:id/shots/reorder` |
-| Acts | `GET/POST /projects/:id/acts`, `GET/PUT/DELETE /acts/:id`, `POST /acts/:id/assign` |
 | Subtitles | `GET/POST /projects/:id/subtitles`, `PUT/DELETE /subtitles/:id` |
 | Subtitles | `GET /projects/:id/subtitles/export/:fmt`, `GET /projects/:id/subtitles/languages` |
 | Audio Dlv | `GET/POST /projects/:id/audio-deliverables`, `GET/DELETE /audio-deliverables/:id` |
@@ -1087,7 +1090,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (74 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (75 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -1121,7 +1124,6 @@ SQLite via `better-sqlite3`. Schema auto-migrates on startup (74 migrations).
 - `film_audio_mix_jobs` — Audio mix job tracking
 - `film_schedule_runs` — Pipeline schedule optimization runs
 - `film_screenplay_comments` — Inline screenplay comments/annotations
-- `film_acts` — Act/sequence structure
 - `film_subtitles` — Subtitle cues with SRT/VTT support
 - `film_audio_deliverables` — Audio deliverable specs (stereo, 5.1, stems, M&E)
 - `film_continuity_refs` — Continuity reference board (visual, wardrobe, prop, lighting)
@@ -1237,6 +1239,9 @@ node --test backend/tests/scene-insert.test.js
 node --test backend/tests/screenplay-structure.test.js
 node --test backend/tests/story-structure.test.js
 node --test backend/tests/screenplay-polish.test.js
+node --test backend/tests/mcp-first-writing.test.js
+node --test backend/tests/act-structure.test.js
+node --test backend/tests/frame-versions.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js

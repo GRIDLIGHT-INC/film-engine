@@ -9,6 +9,31 @@
 const { db } = require('../db/database');
 const { extractDocxText } = require('../lib/docx-text');
 const { callProjectLLM } = require('../lib/llm-client');
+const { fallbackNotice } = require('../lib/agent-presence');
+
+/**
+ * What replaces this over MCP. See screenplay-ai.js for the reasoning.
+ *
+ * The novel import is exactly this case: Claude Desktop reads a chapter, writes
+ * Fountain, and calls scene_append. Routing that through a server-side LLM would
+ * ask the user for a second key so a second model could redo work the first one
+ * had already done better, having read the chapter.
+ */
+const MCP_ALTERNATIVE = [
+    {
+        route: 'POST /film/projects/:id/text-to-screenplay',
+        does: 'prose in, Fountain out, saved as a new version',
+        mcp_alternative: 'scene_append (or script_write for a whole draft)',
+        why: 'the connected model has the prose in front of it; converting is what it is for',
+    },
+    {
+        route: 'POST /film/projects/:id/text-to-screenplay/preview',
+        does: 'the same conversion, without saving',
+        mcp_alternative: 'ask the connected model to show the Fountain before you save it',
+        why: 'a preview is a conversation turn, which is the thing an agent host is',
+    },
+];
+
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_TEXT_LENGTH = 20000;
@@ -204,7 +229,8 @@ async function processTextConversion(req, res, projectId, isPreview) {
             res.end(JSON.stringify({
                 error: 'AI service error',
                 details: aiResult.error,
-                provider: aiResult.provider
+                provider: aiResult.provider,
+            ai_path: fallbackNotice(MCP_ALTERNATIVE[0].mcp_alternative)
             }));
             return;
         }
@@ -228,6 +254,7 @@ async function processTextConversion(req, res, projectId, isPreview) {
             input_length: text.length,
             output_length: fountainText.length,
             provider: aiResult.provider,
+            ai_path: fallbackNotice(MCP_ALTERNATIVE[0].mcp_alternative),
             provider_model: aiResult.provider_model || ''
         };
 
@@ -348,4 +375,4 @@ function isLikelyTransition(text) {
     return transitions.some(t => text.toUpperCase().includes(t));
 }
 
-module.exports = { handleTextConvert };
+module.exports = { MCP_ALTERNATIVE, handleTextConvert };

@@ -70,6 +70,7 @@ const { ensureSchema } = require('./db/schema');
 const { handleProjects, handleProjectSettingsPreset } = require('./routes/projects');
 const { handleScripts, handleComments } = require('./routes/scripts');
 const { handleStoryStructure } = require('./routes/story-structure');
+const { handleAgentPresence } = require('./routes/agent-presence');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
 const { handleAppSettings } = require('./routes/app-settings');
@@ -81,7 +82,6 @@ const { handleMoodBoard } = require('./routes/mood-board');
 const { handleAnnotations } = require('./routes/annotations');
 const { handleScreenplayAI } = require('./routes/screenplay-ai');
 const { handleCharacters } = require('./routes/characters');
-const { handleActs } = require('./routes/acts');
 const { handleSubtitles } = require('./routes/subtitles');
 const { handleAudioDeliverables } = require('./routes/audio-deliverables');
 const { handleLocations } = require('./routes/locations');
@@ -386,6 +386,13 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/projects/:id/scenes
+        // Route: /film/agent — is an agent host attached, and what would it
+        // replace? Above everything, because it takes no project id and would
+        // otherwise fall through to a project lookup.
+        if (parts[1] === 'agent' && !parts[2]) {
+            return handleAgentPresence(req, res, parts, query);
+        }
+
         // Route: /film/projects/:id/beats and /film/projects/:id/directives.
         // Above the generic project routes, or they swallow it — the trap that
         // has now bitten four times in this codebase.
@@ -420,11 +427,6 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/projects/:id/audio-deliverables[/manifest]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'audio-deliverables') {
             return handleAudioDeliverables(req, res, parts, query);
-        }
-
-        // Route: /film/projects/:id/acts
-        if (parts[1] === 'projects' && parts[2] && parts[3] === 'acts') {
-            return handleActs(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/characters
@@ -758,11 +760,6 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/scenes/:id
         if (parts[1] === 'scenes') {
             return await handleScenes(req, res, parts, query);
-        }
-
-        // Route: /film/acts/:id[/assign]
-        if (parts[1] === 'acts') {
-            return handleActs(req, res, parts, query);
         }
 
         // Route: /film/subtitles/:id

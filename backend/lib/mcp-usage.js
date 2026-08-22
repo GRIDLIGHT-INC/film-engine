@@ -38,6 +38,42 @@ const { recordUsage } = require('./usage-meter');
 /** Agent hosts that can drive this server over MCP. */
 const HOSTS = ['claude-desktop', 'chatgpt-desktop', 'claude-code', 'unknown-host'];
 
+/**
+ * What a client calls itself, mapped to a host we can report on.
+ *
+ * MCP clients announce a free-text name at `initialize` — "Claude Desktop",
+ * "claude-ai", "ChatGPT", "Claude Code" — and there is no registry of them.
+ * Matching HOSTS literally would send every real client to `unknown-host` and
+ * collapse the by-host breakdown into one useless row, which looks exactly
+ * like the feature working.
+ *
+ * Matched on a lowercased, punctuation-stripped form so "Claude Desktop",
+ * "claude-desktop" and "claude_desktop" are one host. Order matters: the more
+ * specific pattern must win, or "claude code" is swallowed by the "claude"
+ * rule and every Claude Code session is reported as Desktop.
+ */
+const HOST_PATTERNS = [
+    [/claudecode|claude-?code/, 'claude-code'],
+    [/chatgpt|openai/,          'chatgpt-desktop'],
+    [/claude/,                  'claude-desktop'],
+];
+
+/**
+ * Resolve a reported client name to a known host.
+ *
+ * An unrecognised client is `unknown-host` rather than dropped: the tokens
+ * were spent whoever asked for them, and a host we cannot name is still a host
+ * whose traffic belongs in the window total.
+ */
+function resolveHost(reported) {
+    const key = String(reported || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!key) return 'unknown-host';
+    for (const [pattern, host] of HOST_PATTERNS) {
+        if (pattern.test(key)) return host;
+    }
+    return 'unknown-host';
+}
+
 /** Which model family a host bills against, for the report's labelling. */
 const HOST_LABEL = {
     'claude-desktop': 'Claude Desktop (Claude subscription)',
@@ -87,10 +123,10 @@ function recordHostUsage({ host, tool, projectId, shotId, sceneId, inboundChars,
             sceneId: sceneId || null,
             provider: 'anthropic',          // priced subscription:true, so $0
             capability: 'llm',
-            model: HOSTS.includes(host) ? host : 'unknown-host',
+            model: resolveHost(host),
             unit: 'token',
             quantity: input + output,
-            parts: { input, output, tool: tool || '', host: host || 'unknown-host' },
+            parts: { input, output, tool: tool || '', host: resolveHost(host), reported_as: String(host || '') },
             estimated: true,
             estimate_basis: `MCP tool payload measured at ~${CHARS_PER_TOKEN} characters per token; excludes the host's own prompt and history, so this is a floor`,
             latencyMs: durationMs || 0,
@@ -199,6 +235,6 @@ function readAllowance() {
 }
 
 module.exports = {
-    HOSTS, HOST_LABEL, PLAN_MULTIPLIERS, WINDOWS, CHARS_PER_TOKEN,
-    recordHostUsage, subscriptionUsage, tokensFor, readAllowance,
+    HOSTS, HOST_LABEL, HOST_PATTERNS, PLAN_MULTIPLIERS, WINDOWS, CHARS_PER_TOKEN,
+    recordHostUsage, subscriptionUsage, tokensFor, readAllowance, resolveHost,
 };

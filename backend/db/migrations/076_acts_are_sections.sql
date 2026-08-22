@@ -1,0 +1,29 @@
+-- Acts live in the screenplay, not in a table beside it.
+--
+-- film_acts and film_scenes.act_id were the last two-sources-of-truth problem in
+-- the screenplay layer: two ways to say which act a scene is in, with nothing to
+-- reconcile them. The plan's first commitment is that the Fountain document is
+-- the single source of truth and anything wanting a table has to argue why the
+-- format cannot hold it — and acts could not make that argument. Fountain `#`
+-- sections say exactly this, with depth, so an act and a sequence beneath it are
+-- expressible in the thing that is already the source.
+--
+-- What made the removal safe rather than a feature deletion:
+--
+--   * BOTH WERE EMPTY. film_acts had 0 rows across every project and 0 scenes
+--     carried an act_id. 0 sections had been written either, because until the
+--     editor learned `#` no one could author one. Nothing to migrate in either
+--     direction — the choice was purely which mechanism survives.
+--   * Sections became AUTHORABLE in the editor, and they export to Final Draft
+--     as Section Headings. Structure in the document travels with the document;
+--     a table stays behind on the machine it was written on.
+--   * The one field Fountain genuinely cannot express is writers-tool's
+--     `includeInCompile` — hold this act back from the cut. The user's answer
+--     was that cutting an act means deleting or boneyarding its scenes rather
+--     than flagging them, which left the table with nothing to hold.
+--
+-- If "exclude this act from the film" ever does become a thing, it is ONE column
+-- keyed off a section heading — cheaper to add then than to keep a whole table
+-- on speculation now.
+DROP TABLE IF EXISTS film_acts;
+ALTER TABLE film_scenes DROP COLUMN act_id;

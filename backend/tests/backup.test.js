@@ -60,7 +60,14 @@ describe('BACKUP_TABLES', () => {
     });
 
     it('includes new Phase 15-18 tables', () => {
-        assert.ok(BACKUP_TABLES.includes('film_acts'));
+        // film_acts is deliberately absent: acts are Fountain `#` sections and
+        // the table was dropped in migration 076. The screenplay itself is
+        // exported (film_scripts), so act structure travels with the bundle —
+        // asserted below rather than assumed.
+        assert.ok(!BACKUP_TABLES.includes('film_acts'),
+            'the backup names a table that no longer exists — every export would throw');
+        assert.ok(BACKUP_TABLES.includes('film_scripts'),
+            'the screenplay is not exported, so act structure would not travel');
         assert.ok(BACKUP_TABLES.includes('film_subtitles'));
         assert.ok(BACKUP_TABLES.includes('film_audio_deliverables'));
         assert.ok(BACKUP_TABLES.includes('film_continuity_refs'));

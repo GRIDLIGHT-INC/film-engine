@@ -4468,6 +4468,13 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         <button class="ai-analyze-btn" onclick="runAIScriptAnalysis()" title="AI Script Analysis">Analyze</button>
                         <button class="ai-chat-close" onclick="toggleAIChat()" title="Close">×</button>
                     </div>
+                    <!-- Which path this panel's requests take. MCP is the default
+                         when a host is attached; these HTTP routes are the fallback
+                         and they spend this project's own API key. Shown rather than
+                         assumed, because a writer cannot otherwise tell that the
+                         same work is available for nothing. -->
+                    <div id="aiPathBadge" class="text-sm"
+                         style="display:none;padding:6px 10px;border-bottom:1px solid var(--gl-border-subtle);"></div>
                     <div class="ai-chat-messages" id="aiChatMessages">
                         <div class="ai-chat-message assistant">
                             Hi! I can help you brainstorm ideas, write scenes, rewrite dialogue, or convert content to screenplay format. What would you like to work on?
@@ -4917,15 +4924,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
 
         <!-- ── ACTS (FILM-146) ─────────────────────────────────── -->
-        <div class="page" id="page-acts">
-            <div class="flex-between mb-16">
-                <h2>Acts</h2>
-                <button class="btn btn-primary" onclick="showModal('actModal')">+ Act</button>
-            </div>
-            <div id="actsList"></div>
-        </div>
-
-        <!-- ── CONTINUITY BOARD (FILM-163) ────────────────────── -->
         <div class="page" id="page-continuity">
             <div class="flex-between mb-16">
                 <h2>Continuity Board</h2>
@@ -6250,24 +6248,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
     </div>
 
     <!-- Act Modal (FILM-146) -->
-    <div class="modal-overlay" id="actModal">
-        <div class="modal">
-            <div class="modal-header"><h3 id="actModalTitle">New Act</h3><button class="modal-close" onclick="closeModal('actModal')">&times;</button></div>
-            <div class="modal-body">
-                <input type="hidden" id="actEditId">
-                <div class="form-group"><label>Act Number</label><input type="number" data-field="act_number" min="1" value="1"></div>
-                <div class="form-group"><label>Name</label><input type="text" data-field="name" placeholder="Act name (e.g. Act I - Setup)"></div>
-                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="What happens in this act?"></textarea></div>
-                <div class="btn-row">
-                    <button class="btn btn-primary" onclick="saveAct()">Save</button>
-                    <button class="btn btn-secondary" onclick="closeModal('actModal')">Cancel</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Continuity Reference Modal (FILM-163) -->
-    <div class="modal-overlay" id="continuityModal">
+        <div class="modal-overlay" id="continuityModal">
         <div class="modal">
             <div class="modal-header"><h3>New Continuity Reference</h3><button class="modal-close" onclick="closeModal('continuityModal')">&times;</button></div>
             <div class="modal-body">
@@ -10881,7 +10862,7 @@ THREE.GLTFLoader = GLTFLoader;
     };
 
     const GUIDE_PAGE_ORDER = [
-        'dashboard', 'screenplay', 'scenes', 'shotboard', 'storyboard', 'acts',
+        'dashboard', 'screenplay', 'scenes', 'shotboard', 'storyboard',
         'characters', 'locations', 'props', 'assets', 'threed', 'videoshots',
         'music', 'musiccues', 'colorgrading', 'milestones', 'notes', 'renderhistory',
         'continuity', 'consistency', 'budget', 'exportpage', 'pipeline', 'settings',
@@ -10917,7 +10898,7 @@ THREE.GLTFLoader = GLTFLoader;
           'Export to Fountain, FDX, plain text, or PDF'
         ],
         needs: ['Nothing. This is the front door — start here on a new project.'],
-        next: ['scenes', 'acts'],
+        next: ['scenes'],
         pro: 'Final Draft / Celtx / WriterDuet'
       },
 
@@ -10931,7 +10912,7 @@ THREE.GLTFLoader = GLTFLoader;
           'The anchor that shots, music cues, and ambient audio attach to'
         ],
         needs: ['A screenplay with properly formatted scene headings (INT./EXT.).'],
-        next: ['shotboard', 'acts'],
+        next: ['shotboard'],
         pro: 'Script breakdown in StudioBinder / Movie Magic'
       },
 
@@ -14967,7 +14948,6 @@ THREE.GLTFLoader = GLTFLoader;
             moodboard: loadMoodBoardPage,
             previs: loadPrevisPage,
             settings: loadSettings,
-            acts: loadActs,
             continuity: loadContinuity,
             consistency: loadConsistency,
             budget: () => { loadSpend(); loadBudget(); },
@@ -19120,6 +19100,9 @@ THREE.GLTFLoader = GLTFLoader;
         const btn = document.getElementById('aiChatToggle');
         if (panel) {
             const isVisible = panel.classList.toggle('visible');
+            // The moment the panel opens is the moment the answer matters, and
+            // it is the last chance to say so before a request is sent.
+            if (isVisible) aiPathBadge();
             if (btn) {
                 btn.classList.toggle('active', isVisible);
             }
@@ -19349,6 +19332,49 @@ THREE.GLTFLoader = GLTFLoader;
 
     // ── AI Chat: streaming send ────────────────────────────────────
 
+
+    // ── Which path an AI request takes ─────────────────────────────────────
+    //
+    // The goal's stated rabbit hole: use MCP wherever we can for AI queries. The
+    // MCP surface has always been protected by a test that forbids any tool from
+    // calling a server-side LLM — but that said nothing about this panel, which
+    // is the surface actually typed into. Option (c): MCP is the default when a
+    // host is attached, these routes are the fallback, and the writer is told
+    // which is which instead of finding out on a bill.
+
+    const AI_PATH = { connected: false, checked: 0 };
+
+    async function aiPathBadge() {
+        const el = document.getElementById('aiPathBadge');
+        if (!el) return;
+        // Cheap and cached: presence changes on the scale of a session, not a
+        // keystroke, and asking on every render would spend a request per typed
+        // character to learn the same thing.
+        if (Date.now() - AI_PATH.checked > 60000) {
+            try {
+                const r = await api('/agent');
+                AI_PATH.connected = !!r.connected;
+                AI_PATH.client = r.client;
+                AI_PATH.alternatives = r.ai_endpoints || [];
+            } catch (_) { AI_PATH.connected = false; }
+            AI_PATH.checked = Date.now();
+        }
+
+        el.style.display = 'block';
+        if (AI_PATH.connected) {
+            el.style.background = 'rgba(34,197,94,0.10)';
+            el.innerHTML = `<strong>${esc(AI_PATH.client || 'An agent host')} is connected.</strong> `
+                + 'Ask it to do the writing — it already has your screenplay in context and costs nothing '
+                + 'extra. Using this panel instead sends the request to the server and spends this '
+                + 'project\u2019s API key.';
+        } else {
+            el.style.background = 'rgba(245,158,11,0.10)';
+            el.innerHTML = '<strong>No agent host connected.</strong> This panel will use the server-side '
+                + 'model and spend this project\u2019s API key. Connect Claude Desktop to the MCP server '
+                + 'and the same work is done by the model you are already talking to.';
+        }
+    }
+
     async function sendAIMessage() {
         const input = document.getElementById('aiChatInput');
         const sendBtn = document.getElementById('aiSendBtn');
@@ -19367,6 +19393,7 @@ THREE.GLTFLoader = GLTFLoader;
         sendBtn.textContent = 'Sending...';
 
         // Render user message immediately then show typing dots
+        aiPathBadge();
         renderAIChatMessages();
         showTypingIndicator();
 
@@ -21951,122 +21978,6 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // FILM-146: ACT MANAGEMENT
     // ══════════════════════════════════════════════════════════════
-    async function loadActs() {
-        if (!state.currentProject) return;
-        setStatus('Loading acts...');
-        try {
-            const data = await api('/projects/' + state.currentProject.id + '/acts');
-            const acts = data.acts || [];
-            const scenesData = await api('/projects/' + state.currentProject.id + '/scenes');
-            const allScenes = scenesData.scenes || [];
-            const el = document.getElementById('actsList');
-
-            if (acts.length === 0 && allScenes.length === 0) {
-                el.innerHTML = '<div class="empty-state"><div class="icon">&#127917;</div><h3>No acts</h3><p>Create acts to organize your scenes into a structure.</p></div>';
-                return;
-            }
-
-            const assignedSceneIds = new Set();
-            let html = '';
-
-            // Render each act with its scenes
-            acts.sort((a, b) => a.sort_order - b.sort_order);
-            for (const act of acts) {
-                const actScenes = allScenes.filter(s => s.act_id === act.id);
-                actScenes.forEach(s => assignedSceneIds.add(s.id));
-                html += `
-                    <div class="card mb-8" style="border-left:3px solid var(--gl-brand-pink);">
-                        <div class="flex-between mb-8">
-                            <div>
-                                <h3 style="font-size:14px;">Act ${act.act_number}: ${esc(act.name || 'Untitled')}</h3>
-                                <p class="text-sm text-muted">${esc(act.description || '')}</p>
-                            </div>
-                            <div>
-                                <button class="btn btn-secondary btn-sm" onclick="editAct('${act.id}')">Edit</button>
-                                <button class="btn btn-danger btn-sm" onclick="deleteAct('${act.id}')">Delete</button>
-                            </div>
-                        </div>
-                        <div class="act-scenes" id="act-scenes-${act.id}" style="min-height:30px;border:1px dashed var(--gl-border-subtle);border-radius:8px;padding:8px;"
-                             ondragover="event.preventDefault();this.style.background='rgba(233,30,99,0.08)'"
-                             ondragleave="this.style.background=''"
-                             ondrop="dropSceneOnAct(event,'${act.id}');this.style.background=''">
-                            ${actScenes.length === 0 ? '<p class="text-sm text-muted" style="text-align:center;padding:8px;">Drag scenes here</p>' :
-                            actScenes.map(s => `<div class="scene-act-item" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${s.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--gl-bg-header);border-radius:6px;margin-bottom:4px;cursor:grab;">
-                                <span style="font-weight:600;font-size:12px;color:var(--gl-brand-pink);">Sc${s.scene_number}</span>
-                                <span class="text-sm">${esc(s.int_ext || '')} ${esc(s.location || '')}</span>
-                                <span class="badge" style="margin-left:auto;font-size:10px;">${esc(s.status)}</span>
-                            </div>`).join('')}
-                        </div>
-                    </div>`;
-            }
-
-            // Unassigned scenes
-            const unassigned = allScenes.filter(s => !assignedSceneIds.has(s.id));
-            if (unassigned.length > 0) {
-                html += `
-                    <div class="card mb-8" style="border-left:3px solid var(--gl-text-muted);">
-                        <h3 style="font-size:14px;" class="mb-8">Unassigned Scenes</h3>
-                        <div style="min-height:30px;">
-                            ${unassigned.map(s => `<div class="scene-act-item" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${s.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--gl-bg-header);border-radius:6px;margin-bottom:4px;cursor:grab;">
-                                <span style="font-weight:600;font-size:12px;color:var(--gl-brand-pink);">Sc${s.scene_number}</span>
-                                <span class="text-sm">${esc(s.int_ext || '')} ${esc(s.location || '')}</span>
-                                <span class="badge" style="margin-left:auto;font-size:10px;">${esc(s.status)}</span>
-                            </div>`).join('')}
-                        </div>
-                    </div>`;
-            }
-
-            el.innerHTML = html;
-            setStatus(acts.length + ' act(s), ' + allScenes.length + ' scene(s)');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
-    async function saveAct() {
-        if (!state.currentProject) return;
-        const data = getModalData('actModal');
-        const editId = document.getElementById('actEditId').value;
-        try {
-            if (editId) {
-                await api('/acts/' + editId, { method: 'PUT', body: JSON.stringify(data) });
-            } else {
-                await api('/projects/' + state.currentProject.id + '/acts', { method: 'POST', body: JSON.stringify(data) });
-            }
-            closeModal('actModal');
-            loadActs();
-            setStatus('Act saved');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
-    async function editAct(actId) {
-        try {
-            const act = await api('/acts/' + actId);
-            document.getElementById('actEditId').value = actId;
-            document.getElementById('actModalTitle').textContent = 'Edit Act';
-            setModalData('actModal', act);
-            showModal('actModal');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
-    async function deleteAct(actId) {
-        if (!confirm('Delete this act? Scenes will become unassigned.')) return;
-        try {
-            await api('/acts/' + actId, { method: 'DELETE' });
-            loadActs();
-            setStatus('Act deleted');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
-    async function dropSceneOnAct(event, actId) {
-        event.preventDefault();
-        const sceneId = event.dataTransfer.getData('text/plain');
-        if (!sceneId) return;
-        try {
-            await api('/acts/' + actId + '/assign', { method: 'POST', body: JSON.stringify({ scene_ids: [sceneId] }) });
-            loadActs();
-            setStatus('Scene assigned to act');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
     // ══════════════════════════════════════════════════════════════
     // FILM-147: SHOT DRAG-DROP REORDER
     // ══════════════════════════════════════════════════════════════
@@ -24301,7 +24212,7 @@ ${fountainText.slice(0, 50000)}`;
                                     ${anchorButton(f)}
                                     <button class="btn btn-secondary btn-sm" onclick="editShotCard('${f.shot_id}')" title="Change what this frame is generated from">Edit</button>
                                     <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="Every attempt at this shot — go back to one">v${f.asset_version || 1}</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="${frameVersionTitle(f)}">${frameVersionLabel(f)}</button>
                                     <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again from the card — costs credits">Regen</button>
                                 </div>
                             </div>
@@ -24350,6 +24261,34 @@ ${fountainText.slice(0, 50000)}`;
     }
 
 
+
+    /**
+     * What the version button says, and what it means.
+     *
+     * Restoring moves FORWARD: pick v3 and it comes back as v6, so v4 and v5
+     * survive rather than being destroyed to undo one choice. Right, and it
+     * makes the number stop describing the picture — the card read "v6" over
+     * v3's frame with nothing to explain it, which reads as the restore having
+     * failed and picking the wrong version.
+     *
+     * So the label names both when they differ: `v6 ← v3`. When they agree,
+     * which is the normal case, it stays a plain number.
+     */
+    function frameVersionLabel(f) {
+        const v = f.asset_version || 1;
+        const shows = f.asset_shows_version;
+        return (shows && shows !== v) ? `v${v} \u2190 v${shows}` : `v${v}`;
+    }
+
+    function frameVersionTitle(f) {
+        const v = f.asset_version || 1;
+        const shows = f.asset_shows_version;
+        return (shows && shows !== v)
+            ? `Attempt ${v}, showing the picture from attempt ${shows} — restoring adds a new version `
+                + 'rather than deleting the ones after it. Click to see every attempt.'
+            : 'Every attempt at this shot \u2014 go back to one';
+    }
+
     // ── Every attempt at a shot, and the way back to one ───────────────────
     //
     // Regeneration overwrites the frame at a fixed name, and the outgoing
@@ -24365,29 +24304,51 @@ ${fountainText.slice(0, 50000)}`;
             data = await api(`/shots/${shotId}/frames`);
         } catch (err) { return setStatus('Could not read the versions: ' + err.message); }
 
-        const versions = (data.versions || []).filter(v => v.exists);
+        // Everything is listed, including attempts whose picture was never
+        // kept. They are real history — they record that a generation happened
+        // and what it cost — and hiding them would rewrite the ledger. What
+        // changes is that they cannot be chosen and say why.
+        const versions = data.versions || [];
         if (!versions.length) return setStatus('This shot has no generated frames yet.');
 
         document.getElementById('frameVersionsTitle').textContent =
-            `${data.shot_code} \u2014 ${versions.length} attempt(s)`;
-        document.getElementById('frameVersionsBody').innerHTML = versions.map(v => `
-            <div style="border:1px solid ${v.is_current ? 'var(--gl-brand-pink,#ec4899)' : 'var(--gl-border-subtle)'};
-                        border-radius:6px;overflow:hidden;">
-                <img src="${API_BASE}${v.url}" style="width:100%;display:block;background:#000;"
+            `${data.shot_code} \u2014 ${versions.length} attempt(s), ${data.restorable_count} restorable`;
+
+        document.getElementById('frameVersionsBody').innerHTML = versions.map(v => {
+            // A version you cannot choose is shown differently from one you can,
+            // or the grid reads as a chooser with dead entries in it.
+            const border = v.is_current ? 'var(--gl-brand-pink,#ec4899)'
+                : v.restorable ? 'var(--gl-border-subtle)' : 'rgba(148,163,184,.25)';
+            // Cache-busted per version. Without this the browser serves one
+            // cached image for every row that shares a filename, which is what
+            // made seven attempts look identical even after the API was fixed.
+            const src = `${API_BASE}${v.url}${v.url.includes('?') ? '&' : '?'}v=${v.version}`;
+            const made = v.created_at ? String(v.created_at).replace('T', ' ').slice(0, 16) : '';
+            const by = [v.provider, v.provider_model].filter(Boolean).join(' \u00b7 ');
+
+            return `
+            <div style="border:1px solid ${border};border-radius:6px;overflow:hidden;
+                        ${v.restorable || v.is_current ? '' : 'opacity:.55;'}">
+                <img src="${src}" style="width:100%;display:block;background:#000;"
                      onerror="this.style.display='none'">
-                <div style="padding:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                    <div class="text-sm">
-                        <strong>v${v.version}</strong>${v.is_current ? ' &middot; on the board' : ''}
-                        ${v.restored_from ? '<br><span class="text-muted">restored from v' + v.restored_from + '</span>' : ''}
-                        <br><span class="text-muted">${esc(v.created_at || '')}</span>
+                <div style="padding:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                    <div class="text-sm" style="min-width:0;">
+                        <strong>v${v.version}</strong>${v.is_current ? ' &middot; on the board' : ''}${
+                            v.shows_version && v.shows_version !== v.version
+                                ? ' <span class="text-muted">(shows v' + v.shows_version + ')</span>' : ''}
+                        <br><span class="text-muted">${esc(v.origin || '')}</span>
+                        ${by ? '<br><span class="text-muted">' + esc(by) + '</span>' : ''}
+                        ${made ? '<br><span class="text-muted">' + esc(made) + '</span>' : ''}
+                        ${v.reason ? '<br><span class="text-muted" style="font-style:italic;">'
+                            + esc(v.reason) + '</span>' : ''}
                     </div>
-                    ${v.is_current ? ''
-                        : `<button class="btn btn-primary btn-sm"
-                             onclick="restoreFrameVersion('${shotId}', ${v.version})">Restore</button>`}
+                    ${v.restorable
+                        ? `<button class="btn btn-primary btn-sm"
+                             onclick="restoreFrameVersion('${shotId}', ${v.version})">Restore</button>`
+                        : ''}
                 </div>
-            </div>`).join('');
-        // Said where the decision is made, because "restore" sounds destructive
-        // and this one is not.
+            </div>`;
+        }).join('');
         document.getElementById('frameVersionsNote').textContent = data.note || '';
         document.getElementById('frameVersionsModal').classList.add('open');
     }

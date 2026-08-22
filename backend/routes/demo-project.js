@@ -411,21 +411,17 @@ function createDemoProject() {
         }
 
         // ── Acts ─────────────────────────────────────────────────
-        const acts = {};
         const actData = [
             { number: 1, name: 'Act One — Setup', description: 'Introduction of Kai, the murders, and the Prometheus Protocol conspiracy.' },
             { number: 2, name: 'Act Two — Confrontation', description: 'Kai discovers the scope of Vex\'s operation and the underground lab.' },
             { number: 3, name: 'Act Three — Resolution', description: 'Final showdown on the bridge. Kai finds a third option to save the uploaded minds.' },
         ];
 
-        for (const a of actData) {
-            const aid = generateId();
-            acts[a.number] = aid;
-            db.prepare(`
-                INSERT INTO film_acts (id, project_id, act_number, name, description, sort_order, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).run(aid, projectId, a.number, a.name, a.description, a.number, now);
-        }
+        // Acts are Fountain `#` sections now, not rows. The demo still HAS act
+        // structure — it is written into the screenplay above the first scene of
+        // each act, which is where a reader finds it and where an export carries
+        // it. See migration 076: the table was dropped because the format says
+        // this already, with depth.
 
         // ── Scenes & Shots ───────────────────────────────────────
         const sceneData = [
@@ -540,13 +536,13 @@ function createDemoProject() {
             const sceneId = generateId();
             db.prepare(`
                 INSERT INTO film_scenes (id, project_id, scene_number, int_ext, location, time_of_day,
-                    description, characters_present, estimated_duration, status, act_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    description, characters_present, estimated_duration, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
                 sceneId, projectId, sc.number, sc.int_ext, sc.location, sc.time,
                 sc.description, JSON.stringify(sc.characters),
                 sc.shots.reduce((sum, s) => sum + s.duration, 0),
-                'written', acts[sc.act], now
+                'written', now
             );
 
             for (const shot of sc.shots) {

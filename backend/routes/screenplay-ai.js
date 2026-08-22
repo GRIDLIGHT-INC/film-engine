@@ -7,6 +7,30 @@
  */
 const { db } = require('../db/database');
 const { callProjectLLM, streamProjectLLM } = require('../lib/llm-client');
+const { fallbackNotice } = require('../lib/agent-presence');
+
+/**
+ * What replaces this over MCP.
+ *
+ * Declared here rather than in a central list so that a new AI endpoint cannot
+ * be added without answering the question — `tests/mcp-first-writing.test.js`
+ * fails if a module that imports the LLM client declares nothing.
+ *
+ * These routes are the FALLBACK under option (c): they work, they spend this
+ * project's API key, and they exist so the editor is usable with no agent host
+ * attached. When one IS attached, the same work is done by the model already in
+ * the conversation, which has the whole revision in context rather than one
+ * scene of it.
+ */
+const MCP_ALTERNATIVE = [
+    {
+        route: 'POST /film/projects/:id/screenplay-ai',
+        does: 'brainstorm, write, rewrite or convert, as a chat turn',
+        mcp_alternative: 'script_get + scene_update / scene_edit / scene_append',
+        why: 'the connected model reads the draft and writes the Fountain itself; nothing is relayed',
+    },
+];
+
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -262,7 +286,11 @@ async function processScreenplayAI(req, res, projectId) {
                 error: 'AI service error',
                 details: aiResult.error,
                 provider: aiResult.provider,
-                mode
+                mode,
+                // Said on the FAILURE path too, and especially there: a key with
+                // no credit produces an error the reader cannot act on, and the
+                // free path being already connected is the actionable part.
+                ai_path: fallbackNotice(MCP_ALTERNATIVE[0].mcp_alternative),
             }));
             return;
         }
@@ -294,7 +322,8 @@ async function processScreenplayAI(req, res, projectId) {
             is_valid_fountain: isValidFountain,
             validation: fountainValidation,
             provider: aiResult.provider,
-            provider_model: aiResult.provider_model || ''
+            provider_model: aiResult.provider_model || '',
+            ai_path: fallbackNotice(MCP_ALTERNATIVE[0].mcp_alternative),
         }));
 
     } catch (err) {
@@ -406,4 +435,4 @@ async function processScreenplayAIStream(req, res, projectId) {
     }
 }
 
-module.exports = { handleScreenplayAI };
+module.exports = { MCP_ALTERNATIVE, handleScreenplayAI };
