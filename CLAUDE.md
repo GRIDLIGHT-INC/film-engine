@@ -123,6 +123,7 @@ film-engine/
 │   │   ├── annotation-prompt.js   # Markup a director drew, said in words a model can act on
 │   │   ├── shot-anchor.js        # The frame you are currently shooting from
 │   │   ├── shot-staging.js       # Where things stand, said from the camera about to shoot them
+│   │   ├── prompt-lint.js        # Language that describes what is NOT in the frame
 │   │   ├── shot-references.js    # The plates a shot generates with, gathered once for every path
 │   │   ├── beat-sheets.js        # Four story frameworks, and the holes in a structure
 │   │   ├── agent-presence.js     # Is an agent host attached, and what it would replace
@@ -554,6 +555,19 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 **The free preview leads rather than hiding behind a toggle.** `GET /shots/:id/prompt` spends nothing and reports the assembled prompt, the ceiling, the headroom and every contributor with what it wanted and what survived — so the budget is a set of bars you read *before* paying, and the mode that costs money to try is the one you can look at first. Choosing a mode re-reads it, which is why the preview had to learn `direction_mode` in the first place. A mode that cannot run — camera mode with no anchor attached — says so **where it is chosen**, rather than as a 409 after the click.
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
+
+### Nothing Generates Before You Have Seen What Is Sent
+Wingfall 2B took an afternoon of purchases, and every cause was visible in the assembled prompt before a credit was spent: a camera note contradicted by a staging line, a subject description overriding the anchor, and plates dropped for want of a slot. `GET /shots/:id/prompt` costs nothing and shows all of it — and it had no control on the page, so the only way to learn what a shot would send was to generate it and study the picture.
+
+Every paid path now goes through **one** confirmation. Not a button you remember to press: the check that matters is the one you cannot skip by accident.
+
+**It names the pictures.** That is the half that kept being missed — a prompt reads perfectly while the plate that would have made the car a 1970s sedan was silently dropped, so the words look right and the frame comes back wrong. A shot sending **no** references says so loudly rather than showing an empty list, because that is the case most worth warning on.
+
+**And it flags language that draws what it excludes.** `lib/prompt-lint.js` catches the phrases a screenplay uses and an image model cannot honour — *off frame*, *behind camera*, *we never see*, *past camera*, plain negatives. 2B's card contained **five**: it described the struck house in detail and said it was *"just off frame"*, and every attempt drew that house in frame; it said *"We never see its face"* and an attempt drew the face. Nothing was broken — the prompt was asking for them, because a diffusion model draws what you NAME and negation is the least reliable instruction it takes.
+
+Matched as whole phrases, never single words: *past* and *never* appear in ordinary description constantly, and a check that fires on those is switched off within a day and then protects nothing — the same asymmetry the style-preset check is built around. It **warns, never blocks**, and names the offending phrase with what to write instead.
+
+A preview that cannot be read does **not** block a generation the director has already decided on; it says so and lets them choose, because failing closed on a diagnostic would make the diagnostic the problem.
 
 ### Camera Mode Belongs on the Board
 It was built, tested against the shot it was designed for, and then **removed from the page** during the simplification — leaving the single best tool for *"put the camera on the other side of the street"* reachable only from an agent host. A capability with no control is indistinguishable from one that does not exist.

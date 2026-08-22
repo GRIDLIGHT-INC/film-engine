@@ -1841,6 +1841,24 @@ function shotPromptPreview(req, res, shotId, query) {
          * shot that came back wrong can be diagnosed rather than re-rolled.
          */
         budget: (built.meta && built.meta.budget) || [],
+        /*
+         * Phrases that describe what is NOT in the frame.
+         *
+         * A scene card is written like a screenplay — off frame, behind camera,
+         * we never see — and an image model draws what you NAME. Every one of
+         * those phrases puts the thing it excludes into the picture, and
+         * negation is the least reliable instruction a diffusion model takes.
+         * Reported here because this route spends nothing: it is the one place
+         * a director can find out before paying.
+         */
+        off_frame: (() => {
+            try {
+                const { offFrameFindings } = require('../lib/prompt-lint');
+                const card = ctx.sceneCard || {};
+                return offFrameFindings([card.description, card.direction, (card.camera || {}).note]
+                    .filter(Boolean).join(' '));
+            } catch (_) { return []; }
+        })(),
         direction_mode: directionMode,
         // Named here rather than refused, because this route spends nothing:
         // the honest answer to "what would camera mode give me" on a shot with

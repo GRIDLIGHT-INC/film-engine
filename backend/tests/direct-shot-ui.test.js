@@ -366,3 +366,135 @@ test('you can see what will be sent before paying for it', () => {
     assert.ok(/previewShotPrompt\(/.test(html.replace(fn, '')),
         'nothing opens the preview');
 });
+
+test('language describing what is NOT in frame is flagged before spending', () => {
+    /*
+     * Wingfall 2B cost an afternoon to this. The card said the roofline was
+     * sheared off "the pale blue two-storey house JUST OFF FRAME" and every
+     * attempt drew that house, in frame. It said "We never see its face" and an
+     * attempt drew the face. Nothing was broken — the prompt was asking for
+     * them, because an image model draws what you NAME and negation is the
+     * least reliable instruction it takes.
+     *
+     * Set-based over the rules, because the failure is per-phrase: a check that
+     * catches "off frame" and misses "behind camera" leaves the same afternoon
+     * available.
+     */
+    const { offFrameFindings, RULES } = require('../lib/prompt-lint');
+    assert.ok(RULES.length >= 4, `expected several rules, found ${RULES.length}`);
+
+    const samples = {
+        off_frame: 'the pale blue house just off frame',
+        behind_camera: 'from the opened house behind camera',
+        never_see: 'we never see its face',
+        past_camera: 'debris travels toward camera and past it',
+        no_negative: 'there are no people on the street',
+    };
+    for (const rule of RULES) {
+        const sample = samples[rule.id];
+        assert.ok(sample, `rule ${rule.id} has no sample in this test — it is unproven`);
+        const hits = offFrameFindings(sample);
+        assert.ok(hits.some(h => h.rule === rule.id),
+            `rule ${rule.id} did not fire on "${sample}"`);
+        assert.ok(hits[0].fix, `rule ${rule.id} says what is wrong and not what to do instead`);
+    }
+
+    // Ordinary description must survive, or the warning gets switched off and
+    // then protects nothing — the asymmetry the style check is built around.
+    for (const innocent of [
+        'MAYA stands at the end of her driveway, small and still',
+        'the near wing fills the left of frame, seen from behind and slightly below',
+        'wet asphalt, streetlights, debris hanging in the air',
+        'a long hard-edged warm wedge lies across the wet road',
+    ]) {
+        assert.deepStrictEqual(offFrameFindings(innocent), [],
+            `ordinary description was flagged: "${innocent}"`);
+    }
+
+    // And it must reach the free preview, which is the only place it can be
+    // acted on before money is spent.
+    const routes = fs.readFileSync(path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
+    assert.ok(/off_frame:/.test(routes), 'the free preview does not report it');
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    assert.ok(/off_frame/.test(html), 'the page never shows it');
+});
+
+test('a shot can be added from the board', () => {
+    /*
+     * POST /shots has existed since the first week and `shot_create` reaches it
+     * over MCP; the board had no control at all. So a director who realised a
+     * scene needed a cutaway between 2A and 2B could not add one without
+     * leaving the app — a capability with no control is indistinguishable from
+     * one that does not exist.
+     */
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    assert.ok(/function insertShotAfter\(/.test(html), 'there is no way to add a shot from the board');
+    assert.ok(/insertShotAfter\('\$\{f\.shot_id\}'\)/.test(html),
+        'the control is not on a frame, so "after which shot" is unanswerable');
+
+    const fn = html.slice(html.indexOf('async function insertShotAfter('),
+        html.indexOf('async function insertShotAfter(') + 2600);
+    assert.ok(/scene_id: after\.scene_id/.test(fn),
+        'a new shot does not land in the scene of the shot it follows');
+    assert.ok(/cards: \[/.test(fn), 'it does not post a scene card, so the shot has nothing to generate from');
+
+    // The board must actually serve scene_id, or the insert posts undefined.
+    const routes = fs.readFileSync(path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
+    assert.ok(/scene_id: shot\.scene_id/.test(routes),
+        'the board does not return scene_id, so an inserted shot has no scene');
+});
+
+test('every paid action shows what will be sent, and names the pictures', () => {
+    /*
+     * "When we click save or regen, we should have a popup of what will be sent
+     * to the image generator, so I can check it before spending a credit. And
+     * it should mention which plate or images are included so we're not going
+     * blind."
+     *
+     * The free preview existed as a button you had to remember to press, which
+     * is not the same thing — the check that matters is the one you cannot skip
+     * by accident.
+     *
+     * Naming the PICTURES is the half that kept being missed. A prompt reads
+     * perfectly while the plate that would have made the car a 1970s sedan was
+     * dropped for want of a reference slot: the words look right and the frame
+     * comes back wrong, which is the most expensive kind of wrong.
+     *
+     * Set-based over the per-shot paid paths, because a gate on one of them
+     * teaches a director that generations are checked, and then the other
+     * spends silently.
+     */
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    assert.ok(/async function confirmGeneration\(/.test(html), 'there is no pre-spend confirmation');
+
+    const PAID = ['regenerateStoryboard', 'refineFrame'];
+    for (const fn of PAID) {
+        const at = html.indexOf(`async function ${fn}(`);
+        assert.ok(at > 0, `${fn} is gone`);
+        // Wide enough to reach past a long prompt() blurb: refineFrame asks for
+        // the instruction first, and the gate sits after it.
+        const body = html.slice(at, at + 2600);
+        assert.ok(/await confirmGeneration\(/.test(body),
+            `${fn} spends credits without showing what is being sent`);
+        assert.ok(/if \(!ok\) return;/.test(body),
+            `${fn} asks and then generates regardless of the answer`);
+    }
+
+    // The confirmation must name the pictures, the geometry and the risks —
+    // a prompt alone is what a director already could not diagnose from.
+    const dlg = html.slice(html.indexOf('async function confirmGeneration('),
+        html.indexOf('async function confirmGeneration(') + 5200);
+    for (const [needle, why] of [
+        ['references', 'which plates travel — a dropped plate is invented from scratch'],
+        ['Pictures travelling', 'the pictures named in plain words'],
+        ['off_frame', 'language that draws what it says is not there'],
+        ['Staged geometry', 'staging that may contradict the camera note'],
+        ['prompt_chars', 'whether it fits'],
+    ]) {
+        assert.ok(dlg.includes(needle), `the confirmation does not show ${why}`);
+    }
+
+    // No plates at all is the loudest case, not a quiet blank.
+    assert.ok(/invented from words alone/.test(dlg),
+        'a shot sending NO reference images says nothing about it, which is the case most worth warning on');
+});

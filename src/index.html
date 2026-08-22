@@ -5653,6 +5653,23 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
     </div>
 
+    <!-- What is about to be sent, before a credit is spent. -->
+    <div class="modal-overlay" id="confirmGenModal">
+        <div class="modal" style="max-width:820px;width:94vw;">
+            <div class="modal-header">
+                <h3 id="confirmGenTitle">Before we spend a credit</h3>
+                <button class="modal-close" onclick="confirmGenResolve(false)">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="confirmGenBody"></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                    <button class="btn btn-secondary" onclick="confirmGenResolve(false)">Cancel</button>
+                    <button class="btn btn-primary" id="confirmGenGo" onclick="confirmGenResolve(true)">Generate</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="shotCardModal">
         <div class="modal" style="max-width:820px;width:92vw;">
             <div class="modal-header">
@@ -24353,6 +24370,7 @@ ${fountainText.slice(0, 50000)}`;
                                     <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="${frameVersionTitle(f)}">${frameVersionLabel(f)}</button>
                                     <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again from the card — costs credits">Regen</button>
                                     <button class="btn btn-secondary btn-sm" onclick="directShot('${f.shot_id}')" title="Who and what is in this shot, and where the camera is">Direct</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="insertShotAfter('${f.shot_id}')" title="Add a new shot immediately after this one, in the same scene">+ Shot</button>
                                 </div>
                             </div>
                             ${storyboardFacetTags(f)}
@@ -25742,6 +25760,19 @@ ${fountainText.slice(0, 50000)}`;
                         This comes from previs. If it disagrees with your camera note, the model is
                         being told two different things.
                     </div></div>` : ''}
+                ${(d.off_frame || []).length ? `<div class="text-sm" style="margin-top:7px;">
+                    <strong style="color:var(--warning,#b8860b);">Describing what is not in frame
+                      (${d.off_frame.length}):</strong>
+                    <div class="text-muted" style="line-height:1.45;">
+                      An image model draws what you NAME, and negation is the least reliable
+                      instruction it takes &mdash; so each of these puts the thing it excludes
+                      into the picture.
+                    </div>
+                    <ul style="margin:4px 0 0 16px;padding:0;">
+                      ${d.off_frame.map(f => `<li style="margin-bottom:3px;">
+                          <code>${esc(f.phrase)}</code> &mdash; ${esc(f.fix)}</li>`).join('')}
+                    </ul>
+                  </div>` : ''}
                 ${cut.length ? `<div class="text-sm" style="margin-top:5px;color:var(--warning,#b8860b);">
                     <strong>Cut to fit:</strong> ${cut.map(b => esc(`${b.contributor} (${b.cut} chars)`)).join(', ')}
                   </div>` : ''}
@@ -26079,6 +26110,14 @@ ${fountainText.slice(0, 50000)}`;
                 + 'Cancel — refine from this frame alone.');
         }
 
+        const ok = await confirmGeneration(shotId, {
+            title: 'Refine this frame',
+            note: 'Refine sends the PICTURE plus your one instruction — the prompt below is what the '
+                + 'shot would send on a full regeneration, shown so you can see which plates and '
+                + 'settings are in play. Costs credits.',
+        });
+        if (!ok) return;
+
         const done = frameBusy(shotId, 'Refining');
         setStatus('Refining frame...', true);
         try {
@@ -26154,8 +26193,191 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
+
+    /**
+     * Insert a shot between two others.
+     *
+     * POST /shots has existed since the first week and `shot_create` reaches it
+     * over MCP, and the board had no control at all — so a director who
+     * realised a scene needed a cutaway between 2A and 2B could not add one
+     * without leaving the app. A capability with no control is indistinguishable
+     * from one that does not exist.
+     *
+     * It lands in the SAME SCENE as the shot it follows, because a shot belongs
+     * to a scene and asking which scene at insert time is asking a question the
+     * click already answered.
+     *
+     * The code is suggested rather than imposed: shot codes are a convention a
+     * production owns (2A, 2B, 2B-insert, 2Bx), and renumbering everything after
+     * an insertion would rewrite codes a director has already used in notes,
+     * conversation and the run plan.
+     */
+    async function insertShotAfter(afterShotId) {
+        if (!state.currentProject) return;
+        let board;
+        try {
+            board = await api(`/projects/${state.currentProject.id}/storyboard`);
+        } catch (err) { return setStatus('Could not read the board: ' + err.message); }
+
+        const frames = board.frames || [];
+        const idx = frames.findIndex(f => f.shot_id === afterShotId);
+        const after = frames[idx];
+        if (!after) return setStatus('That shot is no longer on the board.');
+
+        // Suggest the next free letter in this scene: 2B -> 2C.
+        const inScene = frames.filter(f => f.scene_number === after.scene_number);
+        const used = new Set(inScene.map(f => String(f.shot_code || '').toUpperCase()));
+        const base = String(after.shot_code || '').replace(/[A-Z]+$/i, '');
+        let suggested = '';
+        for (const L of 'BCDEFGHIJKLMNOPQRSTUVWXYZ') {
+            if (!used.has((base + L).toUpperCase())) { suggested = base + L; break; }
+        }
+
+        const code = prompt(
+            `New shot in scene ${after.scene_number}, after ${after.shot_code}.\n\n`
+            + `Shot code (already used: ${[...used].sort().join(', ')}):`,
+            suggested);
+        if (!code || !code.trim()) return;
+
+        const description = prompt(
+            'What happens in this shot?\n\n'
+            + 'Describe only what is IN the frame — an image model draws whatever you name, '
+            + 'so "off frame" and "we never see" put those things in the picture.');
+        if (!description || !description.trim()) return;
+
+        try {
+            await api('/shots', {
+                method: 'POST',
+                body: JSON.stringify({
+                    scene_id: after.scene_id,
+                    cards: [{ shot_code: code.trim(), description: description.trim() }],
+                }),
+            });
+            setStatus(`${code.trim()} added after ${after.shot_code}. Open Direct to block it and set the camera, `
+                + 'then generate when you are ready.');
+            await loadStoryboard();
+        } catch (err) {
+            setStatus('Could not add the shot: ' + err.message);
+        }
+    }
+
+
+    /*
+     * ── Nothing is generated before you have seen what is being sent ───────
+     *
+     * "When we click save or regen, we should have a popup of what will be sent
+     * to the image generator, so I can check it before spending a credit. And
+     * it should mention which plate or images are included so we're not going
+     * blind."
+     *
+     * The free preview existed as a button you had to remember to press, which
+     * is not the same thing: the check that matters is the one you cannot skip
+     * by accident. Every paid path now goes through here.
+     *
+     * Naming the PICTURES is the half that was missing. A prompt reads
+     * perfectly while the plate that would have made the car a 1970s sedan was
+     * silently dropped for want of a reference slot — the words look right and
+     * the frame comes back wrong, which is the most expensive kind of wrong.
+     */
+    let CONFIRM_GEN = null;
+
+    function confirmGenResolve(ok) {
+        closeModal('confirmGenModal');
+        const fn = CONFIRM_GEN;
+        CONFIRM_GEN = null;
+        if (fn) fn(!!ok);
+    }
+
+    async function confirmGeneration(shotId, opts) {
+        const o = opts || {};
+        const body = document.getElementById('confirmGenBody');
+        const title = document.getElementById('confirmGenTitle');
+        if (!body) return true;
+
+        title.textContent = o.title || 'Before we spend a credit';
+        body.innerHTML = '<span class="text-muted text-sm">Reading what would be sent&hellip;</span>';
+        showModal('confirmGenModal');
+
+        const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
+
+        try {
+            const q = o.mode ? `?direction_mode=${encodeURIComponent(o.mode)}` : '';
+            const d = await api(`/shots/${shotId}/prompt${q}`);
+            const esc = escapeHtml;
+            const refs = d.references || [];
+            const cut = (d.budget || []).filter(b => b.cut > 0);
+            const staging = (d.prompt || '').match(/Staging:[^,]*(?:, [^,]*){0,6}/);
+            const over = d.headroom !== null && d.headroom < 0;
+
+            body.innerHTML = `
+              ${o.note ? `<p class="text-sm text-muted" style="line-height:1.5;">${esc(o.note)}</p>` : ''}
+
+              <div class="form-group">
+                <label>Pictures travelling with this prompt (${refs.length})</label>
+                ${refs.length
+                    ? `<ul style="margin:2px 0 0 16px;padding:0;">${refs.map(r =>
+                        `<li class="text-sm">${esc(r.subject || '?')}
+                          <span class="text-muted">&mdash; ${esc(r.kind || '?')}</span></li>`).join('')}</ul>`
+                    : `<div class="text-sm" style="color:var(--warning,#b8860b);">
+                         None. Every subject will be invented from words alone &mdash; if a plate exists
+                         for one of them, it is not being sent.</div>`}
+              </div>
+
+              ${staging ? `<div class="form-group">
+                  <label>Staged geometry</label>
+                  <div class="text-sm">${esc(staging[0])}</div>
+                  <div class="text-sm text-muted" style="line-height:1.45;">
+                    From previs. If this disagrees with your camera note, the model is being told
+                    two different things.</div>
+                </div>` : ''}
+
+              ${(d.off_frame || []).length ? `<div class="form-group">
+                  <label style="color:var(--warning,#b8860b);">
+                    Describing what is not in frame (${d.off_frame.length})</label>
+                  <div class="text-sm text-muted" style="line-height:1.45;">
+                    An image model draws what you NAME, so each of these puts the thing it excludes
+                    into the picture.</div>
+                  <ul style="margin:3px 0 0 16px;padding:0;">${d.off_frame.map(f =>
+                    `<li class="text-sm"><code>${esc(f.phrase)}</code> &mdash; ${esc(f.fix)}</li>`).join('')}</ul>
+                </div>` : ''}
+
+              ${cut.length ? `<div class="text-sm" style="color:var(--warning,#b8860b);margin-bottom:8px;">
+                  <strong>Cut to fit:</strong> ${cut.map(b => esc(`${b.contributor} (${b.cut} chars)`)).join(', ')}
+                </div>` : ''}
+
+              ${d.direction_mode_blocked
+                  ? `<div class="text-sm" style="color:var(--warning,#b8860b);margin-bottom:8px;">
+                       ${esc(d.direction_mode_blocked)}</div>` : ''}
+
+              <div class="form-group">
+                <label>The prompt
+                  <span class="text-sm ${over ? '' : 'text-muted'}"
+                        style="${over ? 'color:var(--gl-danger,#ef4444);' : ''}">
+                    ${d.prompt_chars} of ${d.ceiling}${d.headroom !== null ? ` &middot; ${d.headroom} spare` : ''}
+                  </span>
+                </label>
+                <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;max-height:260px;overflow:auto;
+                            margin:0;padding:8px;border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.prompt || '')}</pre>
+              </div>`;
+        } catch (err) {
+            // A preview that cannot be read must not block a generation the
+            // director has already decided on — it says so and lets them choose.
+            body.innerHTML = `<p class="text-sm" style="color:var(--gl-danger,#ef4444);">
+                Could not read what would be sent: ${escapeHtml(err.message)}.
+                You can still generate, but you would be doing it blind.</p>`;
+        }
+
+        return decision;
+    }
+
     async function regenerateStoryboard(shotId, directionMode) {
-        if (!confirm('Regenerate this storyboard frame?\n\nThis replaces the current image and costs credits.')) return;
+        const ok = await confirmGeneration(shotId, {
+            mode: directionMode,
+            title: 'Regenerate this frame',
+            note: 'This replaces the current image and costs credits. The frame it replaces stays in '
+                + 'the version list.',
+        });
+        if (!ok) return;
         const done = frameBusy(shotId, 'Generating');
         setStatus('Regenerating frame...', true);
         try {
