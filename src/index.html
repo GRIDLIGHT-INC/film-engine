@@ -26299,6 +26299,34 @@ ${fountainText.slice(0, 50000)}`;
               ${o.note ? `<p class="text-sm text-muted" style="line-height:1.5;">${esc(o.note)}</p>` : ''}
 
               <div class="form-group">
+                <label>Continuity</label>
+                ${(() => {
+                    const anchored = refs.find(r => r.kind === 'anchor');
+                    if (anchored) {
+                        return `<div class="text-sm">Built from <strong>${esc(anchored.subject)}</strong>
+                            &mdash; its location, dressing and subject placement, re-shot on this
+                            shot's own lens and angle.</div>`;
+                    }
+                    /*
+                     * The absence of an anchor is the single biggest reason a
+                     * shot's location does not match the rest of its scene, and
+                     * it was invisible: the anchor is a toggle on a frame card,
+                     * easy to put down by accident, and nothing on the way to a
+                     * generation said it was gone. A missing plate among five is
+                     * hard to spot; a missing ANCHOR changes the whole street.
+                     */
+                    return `<div class="text-sm" style="color:var(--warning,#b8860b);">
+                        <strong>No anchor.</strong> The location will be built from words and the
+                        location plate alone, so the road, the kerb and where things stand may not
+                        match the other shots in this scene.
+                        <div class="text-muted" style="line-height:1.45;">
+                          Cancel, press &#9875; on the frame whose staging you want to keep, then
+                          generate this one again.
+                        </div></div>`;
+                })()}
+              </div>
+
+              <div class="form-group">
                 <label>Pictures travelling with this prompt (${refs.length})</label>
                 ${refs.length
                     ? `<ul style="margin:2px 0 0 16px;padding:0;">${refs.map(r =>

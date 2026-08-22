@@ -478,8 +478,15 @@ test('every paid action shows what will be sent, and names the pictures', () => 
 
     // The confirmation must name the pictures, the geometry and the risks —
     // a prompt alone is what a director already could not diagnose from.
-    const dlg = html.slice(html.indexOf('async function confirmGeneration('),
-        html.indexOf('async function confirmGeneration(') + 5200);
+    // Sized by brace balance rather than a guessed length: a fixed window
+    // silently stops checking the tail of the function every time it grows.
+    const dlgAt = html.indexOf('async function confirmGeneration(');
+    let di = html.indexOf('{', dlgAt), dd = 0, dEnd = -1;
+    for (let j = di; j < html.length; j++) {
+        if (html[j] === '{') dd++;
+        else if (html[j] === '}') { dd--; if (dd === 0) { dEnd = j + 1; break; } }
+    }
+    const dlg = html.slice(dlgAt, dEnd);
     for (const [needle, why] of [
         ['references', 'which plates travel — a dropped plate is invented from scratch'],
         ['Pictures travelling', 'the pictures named in plain words'],
@@ -493,4 +500,32 @@ test('every paid action shows what will be sent, and names the pictures', () => 
     // No plates at all is the loudest case, not a quiet blank.
     assert.ok(/invented from words alone/.test(dlg),
         'a shot sending NO reference images says nothing about it, which is the case most worth warning on');
+});
+
+test('the confirmation says whether the shot is anchored', () => {
+    /*
+     * The absence of an anchor is the single biggest reason a shot's location
+     * does not match the rest of its scene — the road, the kerb, where the car
+     * is parked — and it was invisible on the way to a generation.
+     *
+     * The anchor is a toggle on a frame card, so putting it down by accident is
+     * one click, and nothing afterwards mentions it. A missing plate among five
+     * is hard to spot; a missing anchor changes the whole street, which is
+     * exactly what happened to Wingfall 2B v19.
+     */
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    const dlgAt2 = html.indexOf('async function confirmGeneration(');
+    let d2 = html.indexOf('{', dlgAt2), dp = 0, d2End = -1;
+    for (let j = d2; j < html.length; j++) {
+        if (html[j] === '{') dp++;
+        else if (html[j] === '}') { dp--; if (dp === 0) { d2End = j + 1; break; } }
+    }
+    const dlg = html.slice(dlgAt2, d2End);
+    assert.ok(/Continuity/.test(dlg), 'the confirmation never mentions continuity');
+    assert.ok(/kind === 'anchor'/.test(dlg),
+        'it does not distinguish the anchor from an ordinary plate, so its absence reads as normal');
+    assert.ok(/No anchor/.test(dlg),
+        'a shot generating with no anchor is not warned about, which is the case that costs a whole street');
+    assert.ok(/Cancel/.test(dlg) && /⚓|&#9875;/.test(dlg),
+        'the warning does not say how to fix it, so it is an observation rather than a prompt to act');
 });

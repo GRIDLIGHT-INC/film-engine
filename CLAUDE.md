@@ -557,6 +557,13 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
 
+### A Missing Anchor Is the Loudest Thing on the Confirm
+Wingfall 2B v19 came back with the road in the wrong place and the car parked where no kerb was, and the cause was not the prompt: it generated with **no anchor at all**. The street was built from words and a location plate, neither of which says where the driveway is in *this* cul-de-sac.
+
+The anchor had been put down. The anchor button is a **toggle** — pressing it on the shot that is already the anchor clears it, which is correct behaviour and one accidental click away — and nothing between that click and a generation mentioned it. A missing plate among five is hard to spot; a missing anchor changes the whole street.
+
+So the confirmation leads with **Continuity**: either *"Built from 2A — its location, dressing and subject placement, re-shot on this shot's own lens and angle"*, or a warning that the location may not match the rest of the scene, with the fix stated (cancel, press the anchor on the frame whose staging you want, generate again). An observation a director cannot act on is not worth the line.
+
 ### Inserting a Shot: 2AA, Not a Renumber
 A director adding a reaction shot after 2A wants it to come **next**. The tidy answer is to call it 2B and shift 2B→2C, 2C→2D, and that is what a clean-slate tool would do.
 
