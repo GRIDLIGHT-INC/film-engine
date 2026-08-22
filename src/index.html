@@ -24823,6 +24823,11 @@ ${fountainText.slice(0, 50000)}`;
                         : ''}
                     ${v.exists && !v.reason
                         ? `<button class="btn btn-secondary btn-sm"
+                             title="Keep this picture and change one thing about it. The result is a new version; this one stays."
+                             onclick="closeFrameVersions(); refineFrame('${shotId}', ${v.version})">Refine</button>`
+                        : ''}
+                    ${v.exists && !v.reason
+                        ? `<button class="btn btn-secondary btn-sm"
                              title="Put this picture on a different shot. It is copied — this shot keeps it too."
                              onclick="sendFrameTo('${shotId}', ${v.version})">Send to&hellip;</button>`
                         : ''}
@@ -26088,9 +26093,20 @@ ${fountainText.slice(0, 50000)}`;
      * picture already carries all of that, and repeating it in words pulls the
      * result back toward a fresh generation, which is the thing being avoided.
      */
-    async function refineFrame(shotId) {
+    /**
+     * Keep a picture and change one thing about it.
+     *
+     * `version` is optional: without it this refines whatever the shot is
+     * currently showing, which is the common case. WITH it, an earlier attempt
+     * can be worked from directly — the route has always accepted a version and
+     * the button never sent one, so reaching v20 meant SELECTING it first,
+     * which changes what the whole board shows as a side effect of wanting to
+     * try something.
+     */
+    async function refineFrame(shotId, version) {
         const instruction = prompt(
-            'What should change about this frame?\n\n'
+            (version ? `Refining v${version}.\n\n` : '')
+            + 'What should change about this frame?\n\n'
             + 'Everything else is kept — composition, camera, lighting, grade. '
             + 'One change, said plainly:\n\n'
             + '  remove the sprinkler\n'
@@ -26127,7 +26143,11 @@ ${fountainText.slice(0, 50000)}`;
         try {
             const res = await api(`/shots/${shotId}/storyboard/refine`, {
                 method: 'POST',
-                body: JSON.stringify({ instruction: instruction.trim(), use_anchor: useAnchor }),
+                body: JSON.stringify({
+                    instruction: instruction.trim(),
+                    use_anchor: useAnchor,
+                    ...(version ? { version } : {}),
+                }),
             });
             done();
             setStatus(`Refined from ${res.refined_from} \u2192 v${res.version}`

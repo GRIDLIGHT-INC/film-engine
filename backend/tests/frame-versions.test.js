@@ -485,3 +485,38 @@ test('refine says what it matched against', () => {
     assert.ok(/matched_against/.test(html), 'the page never reports what a refine was matched against');
     assert.ok(/use_anchor: useAnchor/.test(html), 'the page cannot ask for the anchor on a refine');
 });
+
+test('any kept version can be refined from, not just the current one', () => {
+    /*
+     * "Now I can refine it from v20 with the refine button, right?"
+     *
+     * The route has always taken `version` and the button never sent it, so
+     * Refine only ever worked on whatever was current. Getting at an earlier
+     * attempt meant SELECTING it first — which works, and changes what the
+     * whole board shows as a side effect of wanting to try something.
+     *
+     * The version list is where you are already looking at v20 and deciding it
+     * is the one worth working from, so the control belongs on that row.
+     */
+    const html = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+
+    // The button must be able to carry a version at all.
+    const fn = html.slice(html.indexOf('async function refineFrame('),
+        html.indexOf('async function refineFrame(') + 2800);
+    assert.ok(/refineFrame\(shotId, version\)|refineFrame\(shotId, fromVersion\)/.test(html)
+        || /function refineFrame\(shotId, version\)/.test(html),
+        'refineFrame cannot be told which version to work from');
+    assert.ok(/version/.test(fn.slice(fn.indexOf('body: JSON.stringify'), fn.indexOf('body: JSON.stringify') + 200)),
+        'the refine request never sends a version, so it always uses the current frame');
+
+    // And it must be offered where a director is looking at that version.
+    const modal = html.slice(html.indexOf('async function openFrameVersions('),
+        html.indexOf('function closeFrameVersions'));
+    assert.ok(/refineFrame\('\$\{shotId\}', \$\{v\.version\}\)/.test(modal),
+        'the versions list offers no way to refine the version being looked at');
+
+    // Only for versions whose picture actually survives — refining a row whose
+    // frame was never kept aside has nothing to send.
+    assert.ok(/v\.restorable|v\.exists/.test(modal),
+        'Refine is offered on versions with no picture, which cannot work');
+});
