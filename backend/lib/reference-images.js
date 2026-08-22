@@ -164,7 +164,25 @@ const KIND_SOURCE = {
 
 function selectReferences(candidates, options) {
     const opts = options || {};
-    const limit = Math.min(opts.limit || MAX_REFERENCES, MAX_REFERENCES);
+    /*
+     * The provider's ceiling, not a constant.
+     *
+     * This clamped every caller back to MAX_REFERENCES, so a provider taking
+     * five got three — and MAX_REFERENCES is RUNWAY's documented limit for
+     * gen4_image, chosen as "the strictest of the providers wired here" and
+     * then applied to all of them. On a five-subject shot that silently dropped
+     * the last two plates before the request was built: the car came back a
+     * modern saloon and the bag came back generic, not because conditioning
+     * failed but because their pictures were never sent.
+     *
+     * Same defect the prompt ceiling already had, one level over. An absent
+     * limit still falls back to the strict default — never to unlimited, since
+     * over-sending produces a rejection at the provider, which is worse than
+     * trimming here where it can be reported.
+     */
+    const limit = Number.isFinite(opts.limit) && opts.limit > 0
+        ? Math.floor(opts.limit)
+        : MAX_REFERENCES;
 
     const ranked = (candidates || [])
         .filter(c => c && c.name)

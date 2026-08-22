@@ -40,7 +40,13 @@ function database() {
     return _db;
 }
 
-function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCardProps, anchor) {
+/**
+ * @param {object} [opts] - { limit } the ceiling of the provider that will
+ *   actually run. Absent falls back to the strict default, because a made-up
+ *   higher number produces a rejection at the provider, which is worse than
+ *   sending fewer plates.
+ */
+function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCardProps, anchor, opts) {
     const candidates = [];
 
     // The scene as it was actually rendered — location, dressing and subjects
@@ -113,7 +119,9 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
         if (plate) candidates.push({ name: prop.name, kind: 'prop', file_path: plate.file_path });
     }
 
-    return selectReferences(candidates);
+    // The ceiling belongs to the provider about to receive this, not to a
+    // constant chosen from the strictest one wired here.
+    return selectReferences(candidates, { limit: opts && opts.limit });
 }
 
 function matchProps(sceneCard, dbProps) {
@@ -179,10 +187,13 @@ function providerReferenceSupport(providerConfig) {
         return {
             canAttach: !!(lead && lead.supportsReferenceImages),
             canTag: !!(lead && lead.supportsReferenceTags),
+            // How many plates this provider actually takes. Undefined falls
+            // back to the strict default rather than to unlimited.
+            maxReferenceImages: lead && lead.maxReferenceImages,
             promptLimit: lead && Number(lead.promptLimit) > 0 ? Number(lead.promptLimit) : undefined,
         };
     } catch (_) {
-        return { canAttach: false, canTag: false, promptLimit: undefined };
+        return { canAttach: false, canTag: false, promptLimit: undefined, maxReferenceImages: undefined };
     }
 }
 
@@ -199,7 +210,10 @@ function shotReferencesFor(db, opts) {
         return { references: [], tagged: false, anchorTag: null, support };
     }
     const references = gatherShotReferences(
-        o.projectId, o.characters || [], o.location || null, o.props || [], o.anchor || null);
+        o.projectId, o.characters || [], o.location || null, o.props || [], o.anchor || null,
+        // The ceiling of the provider this config resolves to, so the shared
+        // path agrees with the per-route ones about how many plates fit.
+        { limit: support.maxReferenceImages });
     const anchorRef = references.find(r => r && r.kind === 'anchor');
     return {
         references,

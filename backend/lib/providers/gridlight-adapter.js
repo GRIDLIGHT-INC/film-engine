@@ -138,6 +138,12 @@ const gridlightAdapter = {
     capabilities: Object.keys(ENDPOINTS),
     // Gridlight receives the capability payload verbatim, including
     // reference_images and ip_adapter_image, so references survive the hop.
+    /*
+     * A swappable local agent: held at the strict default rather than guessed
+     * upward, the same call its promptLimit makes. Over-guessing produces a
+     * request the provider rejects, which is worse than sending fewer plates.
+     */
+    maxReferenceImages: 3,
     supportsReferenceImages: true,
     // reference_images / ip_adapter_image condition the result; no tag syntax.
     supportsReferenceTags: false,

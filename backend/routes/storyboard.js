@@ -882,7 +882,11 @@ async function generateStoryboard(req, res, projectId, query) {
         const anchorState = activeAnchorFor_(shot.shot_id, project, body, canAttach);
         const shotRefs = canAttach
             ? gatherShotReferences(projectId, matchedChars, matchedLocation,
-                matchProps(sceneCard, props), anchorState.anchor)
+                matchProps(sceneCard, props), anchorState.anchor,
+                // The ceiling of the provider that will actually run. A shot
+                // naming five subjects sent three because MAX_REFERENCES was
+                // Runway's limit applied to everyone.
+                { limit: leadProvider && leadProvider.maxReferenceImages })
             : [];
         const anchorState_ = anchorIn(shotRefs, canTag);
         const shotMarks = annotationsFor(shot.shot_id, project, body);
@@ -1135,7 +1139,11 @@ async function generateStoryboardStream(req, res, projectId, query) {
         const anchorState = activeAnchorFor_(shot.shot_id, project, body, canAttach);
         const shotRefs = canAttach
             ? gatherShotReferences(projectId, matchedChars, matchedLocation,
-                matchProps(sceneCard, props), anchorState.anchor)
+                matchProps(sceneCard, props), anchorState.anchor,
+                // The ceiling of the provider that will actually run. A shot
+                // naming five subjects sent three because MAX_REFERENCES was
+                // Runway's limit applied to everyone.
+                { limit: leadProvider && leadProvider.maxReferenceImages })
             : [];
         const anchorState_ = anchorIn(shotRefs, canTag);
         const shotMarks = annotationsFor(shot.shot_id, project, body);
@@ -2284,7 +2292,8 @@ async function regenerateShot(req, res, shotId) {
             matchCharacters(card.characters, chars),
             matchLocation(scene.location, locs),
             matchProps(card, allProps),
-            anchorState.anchor);
+            anchorState.anchor,
+            { limit: lead && lead.maxReferenceImages });
     } catch (_) { shotRefs = []; }
     const { anchorAttached, anchorTag } = anchorIn(shotRefs, canTag);
 

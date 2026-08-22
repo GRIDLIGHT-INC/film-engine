@@ -384,6 +384,14 @@ const adapter = {
     capabilities: ['llm', 'image'],
     // The image builder reads p.reference_images and forwards them as edit
     // inputs, so a tag has a picture behind it.
+    /*
+     * The images/edits endpoint takes an image[] array; gpt-image-1 documents
+     * up to 16. Held at 8 rather than the documented maximum because each
+     * reference is inlined as a multi-megabyte data URI and a request nobody
+     * needs that size is a timeout waiting to happen — raise it if a shot
+     * genuinely wants more.
+     */
+    maxReferenceImages: 8,
     supportsReferenceImages: true,
     // Forwarded as edit inputs; there is no tag syntax to address them with.
     supportsReferenceTags: false,
