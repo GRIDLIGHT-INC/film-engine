@@ -4924,15 +4924,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
 
         <!-- ── ACTS (FILM-146) ─────────────────────────────────── -->
-        <div class="page" id="page-acts">
-            <div class="flex-between mb-16">
-                <h2>Acts</h2>
-                <button class="btn btn-primary" onclick="showModal('actModal')">+ Act</button>
-            </div>
-            <div id="actsList"></div>
-        </div>
-
-        <!-- ── CONTINUITY BOARD (FILM-163) ────────────────────── -->
         <div class="page" id="page-continuity">
             <div class="flex-between mb-16">
                 <h2>Continuity Board</h2>
@@ -6230,24 +6221,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
     </div>
 
     <!-- Act Modal (FILM-146) -->
-    <div class="modal-overlay" id="actModal">
-        <div class="modal">
-            <div class="modal-header"><h3 id="actModalTitle">New Act</h3><button class="modal-close" onclick="closeModal('actModal')">&times;</button></div>
-            <div class="modal-body">
-                <input type="hidden" id="actEditId">
-                <div class="form-group"><label>Act Number</label><input type="number" data-field="act_number" min="1" value="1"></div>
-                <div class="form-group"><label>Name</label><input type="text" data-field="name" placeholder="Act name (e.g. Act I - Setup)"></div>
-                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="What happens in this act?"></textarea></div>
-                <div class="btn-row">
-                    <button class="btn btn-primary" onclick="saveAct()">Save</button>
-                    <button class="btn btn-secondary" onclick="closeModal('actModal')">Cancel</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Continuity Reference Modal (FILM-163) -->
-    <div class="modal-overlay" id="continuityModal">
+        <div class="modal-overlay" id="continuityModal">
         <div class="modal">
             <div class="modal-header"><h3>New Continuity Reference</h3><button class="modal-close" onclick="closeModal('continuityModal')">&times;</button></div>
             <div class="modal-body">
@@ -10861,7 +10835,7 @@ THREE.GLTFLoader = GLTFLoader;
     };
 
     const GUIDE_PAGE_ORDER = [
-        'dashboard', 'screenplay', 'scenes', 'shotboard', 'storyboard', 'acts',
+        'dashboard', 'screenplay', 'scenes', 'shotboard', 'storyboard',
         'characters', 'locations', 'props', 'assets', 'threed', 'videoshots',
         'music', 'musiccues', 'colorgrading', 'milestones', 'notes', 'renderhistory',
         'continuity', 'consistency', 'budget', 'exportpage', 'pipeline', 'settings',
@@ -10897,7 +10871,7 @@ THREE.GLTFLoader = GLTFLoader;
           'Export to Fountain, FDX, plain text, or PDF'
         ],
         needs: ['Nothing. This is the front door — start here on a new project.'],
-        next: ['scenes', 'acts'],
+        next: ['scenes'],
         pro: 'Final Draft / Celtx / WriterDuet'
       },
 
@@ -10911,7 +10885,7 @@ THREE.GLTFLoader = GLTFLoader;
           'The anchor that shots, music cues, and ambient audio attach to'
         ],
         needs: ['A screenplay with properly formatted scene headings (INT./EXT.).'],
-        next: ['shotboard', 'acts'],
+        next: ['shotboard'],
         pro: 'Script breakdown in StudioBinder / Movie Magic'
       },
 
@@ -14947,7 +14921,6 @@ THREE.GLTFLoader = GLTFLoader;
             moodboard: loadMoodBoardPage,
             previs: loadPrevisPage,
             settings: loadSettings,
-            acts: loadActs,
             continuity: loadContinuity,
             consistency: loadConsistency,
             budget: loadBudget,
@@ -21978,122 +21951,6 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // FILM-146: ACT MANAGEMENT
     // ══════════════════════════════════════════════════════════════
-    async function loadActs() {
-        if (!state.currentProject) return;
-        setStatus('Loading acts...');
-        try {
-            const data = await api('/projects/' + state.currentProject.id + '/acts');
-            const acts = data.acts || [];
-            const scenesData = await api('/projects/' + state.currentProject.id + '/scenes');
-            const allScenes = scenesData.scenes || [];
-            const el = document.getElementById('actsList');
-
-            if (acts.length === 0 && allScenes.length === 0) {
-                el.innerHTML = '<div class="empty-state"><div class="icon">&#127917;</div><h3>No acts</h3><p>Create acts to organize your scenes into a structure.</p></div>';
-                return;
-            }
-
-            const assignedSceneIds = new Set();
-            let html = '';
-
-            // Render each act with its scenes
-            acts.sort((a, b) => a.sort_order - b.sort_order);
-            for (const act of acts) {
-                const actScenes = allScenes.filter(s => s.act_id === act.id);
-                actScenes.forEach(s => assignedSceneIds.add(s.id));
-                html += `
-                    <div class="card mb-8" style="border-left:3px solid var(--gl-brand-pink);">
-                        <div class="flex-between mb-8">
-                            <div>
-                                <h3 style="font-size:14px;">Act ${act.act_number}: ${esc(act.name || 'Untitled')}</h3>
-                                <p class="text-sm text-muted">${esc(act.description || '')}</p>
-                            </div>
-                            <div>
-                                <button class="btn btn-secondary btn-sm" onclick="editAct('${act.id}')">Edit</button>
-                                <button class="btn btn-danger btn-sm" onclick="deleteAct('${act.id}')">Delete</button>
-                            </div>
-                        </div>
-                        <div class="act-scenes" id="act-scenes-${act.id}" style="min-height:30px;border:1px dashed var(--gl-border-subtle);border-radius:8px;padding:8px;"
-                             ondragover="event.preventDefault();this.style.background='rgba(233,30,99,0.08)'"
-                             ondragleave="this.style.background=''"
-                             ondrop="dropSceneOnAct(event,'${act.id}');this.style.background=''">
-                            ${actScenes.length === 0 ? '<p class="text-sm text-muted" style="text-align:center;padding:8px;">Drag scenes here</p>' :
-                            actScenes.map(s => `<div class="scene-act-item" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${s.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--gl-bg-header);border-radius:6px;margin-bottom:4px;cursor:grab;">
-                                <span style="font-weight:600;font-size:12px;color:var(--gl-brand-pink);">Sc${s.scene_number}</span>
-                                <span class="text-sm">${esc(s.int_ext || '')} ${esc(s.location || '')}</span>
-                                <span class="badge" style="margin-left:auto;font-size:10px;">${esc(s.status)}</span>
-                            </div>`).join('')}
-                        </div>
-                    </div>`;
-            }
-
-            // Unassigned scenes
-            const unassigned = allScenes.filter(s => !assignedSceneIds.has(s.id));
-            if (unassigned.length > 0) {
-                html += `
-                    <div class="card mb-8" style="border-left:3px solid var(--gl-text-muted);">
-                        <h3 style="font-size:14px;" class="mb-8">Unassigned Scenes</h3>
-                        <div style="min-height:30px;">
-                            ${unassigned.map(s => `<div class="scene-act-item" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${s.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--gl-bg-header);border-radius:6px;margin-bottom:4px;cursor:grab;">
-                                <span style="font-weight:600;font-size:12px;color:var(--gl-brand-pink);">Sc${s.scene_number}</span>
-                                <span class="text-sm">${esc(s.int_ext || '')} ${esc(s.location || '')}</span>
-                                <span class="badge" style="margin-left:auto;font-size:10px;">${esc(s.status)}</span>
-                            </div>`).join('')}
-                        </div>
-                    </div>`;
-            }
-
-            el.innerHTML = html;
-            setStatus(acts.length + ' act(s), ' + allScenes.length + ' scene(s)');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
-    async function saveAct() {
-        if (!state.currentProject) return;
-        const data = getModalData('actModal');
-        const editId = document.getElementById('actEditId').value;
-        try {
-            if (editId) {
-                await api('/acts/' + editId, { method: 'PUT', body: JSON.stringify(data) });
-            } else {
-                await api('/projects/' + state.currentProject.id + '/acts', { method: 'POST', body: JSON.stringify(data) });
-            }
-            closeModal('actModal');
-            loadActs();
-            setStatus('Act saved');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
-    async function editAct(actId) {
-        try {
-            const act = await api('/acts/' + actId);
-            document.getElementById('actEditId').value = actId;
-            document.getElementById('actModalTitle').textContent = 'Edit Act';
-            setModalData('actModal', act);
-            showModal('actModal');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
-    async function deleteAct(actId) {
-        if (!confirm('Delete this act? Scenes will become unassigned.')) return;
-        try {
-            await api('/acts/' + actId, { method: 'DELETE' });
-            loadActs();
-            setStatus('Act deleted');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
-    async function dropSceneOnAct(event, actId) {
-        event.preventDefault();
-        const sceneId = event.dataTransfer.getData('text/plain');
-        if (!sceneId) return;
-        try {
-            await api('/acts/' + actId + '/assign', { method: 'POST', body: JSON.stringify({ scene_ids: [sceneId] }) });
-            loadActs();
-            setStatus('Scene assigned to act');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
     // ══════════════════════════════════════════════════════════════
     // FILM-147: SHOT DRAG-DROP REORDER
     // ══════════════════════════════════════════════════════════════

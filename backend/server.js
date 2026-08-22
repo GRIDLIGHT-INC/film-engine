@@ -82,7 +82,6 @@ const { handleMoodBoard } = require('./routes/mood-board');
 const { handleAnnotations } = require('./routes/annotations');
 const { handleScreenplayAI } = require('./routes/screenplay-ai');
 const { handleCharacters } = require('./routes/characters');
-const { handleActs } = require('./routes/acts');
 const { handleSubtitles } = require('./routes/subtitles');
 const { handleAudioDeliverables } = require('./routes/audio-deliverables');
 const { handleLocations } = require('./routes/locations');
@@ -430,11 +429,6 @@ const server = http.createServer(async (req, res) => {
             return handleAudioDeliverables(req, res, parts, query);
         }
 
-        // Route: /film/projects/:id/acts
-        if (parts[1] === 'projects' && parts[2] && parts[3] === 'acts') {
-            return handleActs(req, res, parts, query);
-        }
-
         // Route: /film/projects/:id/characters
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'characters') {
             return handleCharacters(req, res, parts, query);
@@ -761,11 +755,6 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/scenes/:id
         if (parts[1] === 'scenes') {
             return await handleScenes(req, res, parts, query);
-        }
-
-        // Route: /film/acts/:id[/assign]
-        if (parts[1] === 'acts') {
-            return handleActs(req, res, parts, query);
         }
 
         // Route: /film/subtitles/:id

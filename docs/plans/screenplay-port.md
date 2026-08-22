@@ -679,20 +679,63 @@ sections above. What remains open needs Manny, not us:
 1. **The rabbit hole — (a), (b) or (c)?** Whether the UI's AI writing routes keep
    their server-side LLM. Recommendation is (c): MCP is the default path, HTTP is
    the fallback when no agent host is attached. Blocks phase 2.
-2. **Does `includeInCompile` have a Film Engine meaning?** writers-tool uses it to
-   exclude a branch from output. Film Engine's output is a *film*, and "exclude
-   this act from the movie" may or may not be a thing Manny wants. If it is not,
-   `film_acts` reduces further than the resolution above assumes.
+2. ~~Does `includeInCompile` have a Film Engine meaning?~~ **ANSWERED: no.**
+   Cutting an act means deleting or boneyarding its scenes, not flagging them —
+   which left `film_acts` with nothing Fountain could not hold. See below.
 
 ### Settled during this confer
 
-- **`film_acts` vs `#` sections** — sections authoritative for name, order and
-  nesting; `film_acts` retained only for state Fountain cannot express, keyed off
-  the section, never duplicating it.
+- **`film_acts` vs `#` sections** — **resolved further than the confer expected**:
+  the table is gone entirely. See "Acts are sections" below.
 - **Synopsis** — authored, not derived. `=` lines are its home. Word count is
   derived and needs nothing.
 - **writers-tool scene format** — Fountain over MCP, typed HTML blocks at rest.
   The adapter is load-bearing.
+
+## Acts are sections — `film_acts` dropped (migration 076)
+
+The confer's resolution was *sections authoritative for name/order/nesting;
+`film_acts` retained only for state Fountain cannot express*. Settling
+`includeInCompile` emptied that second half: cutting an act means deleting or
+boneyarding its scenes rather than flagging them, so there was nothing left for
+the table to hold.
+
+**The evidence that made it a clean removal rather than a migration.** Both
+mechanisms were empty: `film_acts` had **0 rows across every project** and **0
+scenes carried an `act_id`** — and 0 sections had ever been written either,
+because until phase 2 the editor could not author one. Nothing to move in either
+direction, so the only question was which mechanism survives.
+
+Sections win on three counts the table cannot match: they are **authorable in the
+editor** (phase 2), they **export to Final Draft** as Section Headings, and they
+**travel with any copy of the document**. A table stays on the machine it was
+written on.
+
+Removed as a set rather than a file: the table, `film_scenes.act_id`,
+`routes/acts.js`, its server dispatch, the backup manifest entry, the demo
+seeder's inserts, and the SPA's page, modal, nav entry and five functions.
+`tests/act-structure.test.js` scans `routes/`, `lib/` and `src/` for any
+surviving reference, because a removal is only finished when every reader is
+gone — a leftover import throws on a path nobody tests, and a backup manifest
+naming a dropped table makes **every export** fail, which is the thing you reach
+for when something else has already gone wrong.
+
+Two things worth recording from doing it:
+
+- **The demo already had act structure in its Fountain** — `# ACT ONE`,
+  `# ACT TWO`, `# ACT THREE` with synopses — while separately inserting the same
+  acts into the table. The two-sources-of-truth problem was sitting in the seed
+  data, unnoticed, which is the most persuasive argument the removal could have
+  had.
+- **A brace-counting walk deleted the previs page.** Removing the acts page by
+  matching `<div>`/`</div>` ran past the boundary and took 40,711 characters
+  instead of 356. Caught by checking every other page still existed, reverted,
+  and redone against the next sibling `<div class="page">`. Structural edits to
+  HTML get bounded by siblings, not by counting.
+
+If *"exclude this act from the film"* ever does become real, it is **one column
+keyed off a section heading** — cheaper to add then than to keep a table on
+speculation now.
 
 ## Deferred
 

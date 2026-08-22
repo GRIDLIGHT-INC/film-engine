@@ -21,7 +21,6 @@ const BACKUP_TABLES = [
     'film_music_cues',
     'film_color_presets',
     'render_ledger',
-    'film_acts',
     'film_subtitles',
     'film_audio_deliverables',
     'film_continuity_refs',
