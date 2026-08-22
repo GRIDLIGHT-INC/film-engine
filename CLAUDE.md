@@ -241,6 +241,7 @@ film-engine/
 │       ├── screenplay-polish.test.js # Export fidelity, and an edit batch that is all-or-nothing
 │       ├── mcp-first-writing.test.js # MCP is the default path; HTTP says it cost you something
 │       ├── act-structure.test.js   # Acts are sections; the table and its readers are gone
+│       ├── frame-versions.test.js  # Which attempt is which, and which can be chosen
 │       ├── providers.test.js             # Provider registry + resolution
 │       ├── providers-api.test.js         # Provider settings/credentials API
 │       ├── providers-runway.test.js      # Runway adapter (mock server)
@@ -1192,6 +1193,7 @@ node --test backend/tests/story-structure.test.js
 node --test backend/tests/screenplay-polish.test.js
 node --test backend/tests/mcp-first-writing.test.js
 node --test backend/tests/act-structure.test.js
+node --test backend/tests/frame-versions.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js

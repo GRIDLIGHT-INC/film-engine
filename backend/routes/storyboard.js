@@ -413,12 +413,32 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
         }
     } catch (_) { /* leave null rather than record a guess */ }
 
+    /*
+     * How this attempt came to exist, kept with it.
+     *
+     * `restored_from` and `instruction` were passed by their callers and thrown
+     * away here — the column was never written — so every restore was
+     * anonymous. That is why the version list could not tell one attempt from
+     * another: v6 carried no record that it was v3's picture, so the card said
+     * "v6" over a frame from three attempts ago with nothing to explain it.
+     *
+     * Only what the caller supplied is stored. An absent key means the caller
+     * did not know, which is different from a value of none.
+     */
+    const metadata = {};
+    if (opts.restored_from !== undefined) metadata.restored_from = opts.restored_from;
+    if (opts.refined_from !== undefined) metadata.refined_from = opts.refined_from;
+    if (opts.instruction !== undefined) metadata.instruction = opts.instruction;
+    if (opts.provider) metadata.provider = opts.provider;
+    if (opts.provider_model) metadata.provider_model = opts.provider_model;
+
     db.prepare(`
         INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name,
-            format, mime_type, width, height, version, input_refs, provider, provider_model)
-        VALUES (?, ?, ?, 'storyboard', ?, ?, 'png', 'image/png', ?, ?, ?, ?, ?, ?)
+            format, mime_type, width, height, version, input_refs, provider, provider_model, metadata)
+        VALUES (?, ?, ?, 'storyboard', ?, ?, 'png', 'image/png', ?, ?, ?, ?, ?, ?, ?)
     `).run(id, projectId, shotId, filePath, fileName, width, height, version,
-        JSON.stringify(opts.input_refs || []), opts.provider || null, opts.provider_model || null);
+        JSON.stringify(opts.input_refs || []), opts.provider || null, opts.provider_model || null,
+        JSON.stringify(metadata));
 
     // Same kind the orchestrator records for its keyframe step, so a frame is
     // stale on the same terms however it was generated.
@@ -613,7 +633,7 @@ function getStoryboard(req, res, projectId, query) {
 
         // Get latest asset info
         const asset = db.prepare(
-            'SELECT id, version, created_at FROM film_assets WHERE shot_id = ? AND asset_type = \'storyboard\' ORDER BY version DESC LIMIT 1'
+            'SELECT id, shot_id, version, created_at, metadata FROM film_assets WHERE shot_id = ? AND asset_type = \'storyboard\' ORDER BY version DESC LIMIT 1'
         ).get(shot.shot_id);
 
         return {
@@ -629,6 +649,12 @@ function getStoryboard(req, res, projectId, query) {
             lighting: sceneCard.lighting || {},
             status: shot.status,
             asset_version: asset ? asset.version : null,
+            // Restoring moves FORWARD — v3 comes back as v6, so v4 and v5 are
+            // not destroyed to undo one choice. That is right, and it makes the
+            // version number stop describing the picture: the card said "v6"
+            // while showing v3's frame, with nothing to say so. The number is
+            // the attempt; this is the picture it is of.
+            asset_shows_version: asset ? (assetShowsVersion(asset) || asset.version) : null,
             // What this frame will actually be generated with, and where each
             // facet came from. The board used to show the CARD's camera, which
             // on a blocked shot is precisely the set of values generation is
@@ -1193,6 +1219,38 @@ async function generateStoryboardStream(req, res, projectId, query) {
 // ── FILM-020: Regenerate Single Shot ───────────────────────────────
 
 /**
+ * Which attempt's PICTURE a version is showing.
+ *
+ * Usually itself. After a restore it is an older one — v3's frame arriving as
+ * v6 — because restore moves forward rather than rewinding: truncating history
+ * to undo one choice would destroy v4 and v5, which is the mistake this whole
+ * feature exists to avoid.
+ *
+ * The consequence is that a version NUMBER stops describing the picture, and
+ * the card said "v6" over v3's frame with nothing to explain it. Follows the
+ * chain, so a restore of a restore still names the attempt the picture came
+ * from rather than the last hop.
+ */
+function assetShowsVersion(asset) {
+    let meta = {};
+    try { meta = JSON.parse(asset.metadata || '{}'); } catch (_) { return null; }
+    if (!meta.restored_from) return null;
+    // Bounded: a corrupt chain must not spin.
+    let from = meta.restored_from;
+    for (let hops = 0; hops < 20; hops++) {
+        const prev = db.prepare(
+            `SELECT metadata FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard' AND version = ?`)
+            .get(asset.shot_id, from);
+        if (!prev) break;
+        let m = {};
+        try { m = JSON.parse(prev.metadata || '{}'); } catch (_) { break; }
+        if (!m.restored_from) break;
+        from = m.restored_from;
+    }
+    return from;
+}
+
+/**
  * Every attempt at this shot, and the way back to one.
  *
  * Regeneration overwrites the frame at a fixed name, and `archiveExistingFrame`
@@ -1211,34 +1269,79 @@ function listShotFrames(req, res, shotId) {
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
     const rows = db.prepare(
-        `SELECT id, version, file_name, file_path, created_at, metadata FROM film_assets
+        `SELECT id, shot_id, version, file_name, file_path, created_at, metadata FROM film_assets
           WHERE shot_id = ? AND asset_type = 'storyboard' ORDER BY version DESC`).all(shotId);
 
     const current = storyboardImagePath(scene.project_id, shot.shot_code);
+
+    /*
+     * `is_current` is the HIGHEST version, not "points at the live file".
+     *
+     * Comparing paths looked right and was wrong on every project that predates
+     * the archiver. Versions written before it existed were never copied aside,
+     * so they still name the live filename — and on a real shot that made SIX of
+     * seven versions claim to be on the board. The modal hides Restore on the
+     * current version, so six attempts could not be selected at all.
+     *
+     * Exactly one version is on the board by definition: the newest. After a
+     * restore that is a NEW version whose picture is an old one, which is why
+     * this cannot be inferred from the file either.
+     */
+    const currentVersion = rows.length ? Math.max(...rows.map(r => r.version)) : null;
+
     const versions = rows.map(r => {
         let meta = {};
         try { meta = JSON.parse(r.metadata || '{}'); } catch (_) { meta = {}; }
+
+        const isCurrent = r.version === currentVersion;
+        const onDisk = safeExists(r.file_path);
+        // A row still naming the live file is an attempt whose own picture was
+        // never kept — the live file is now some LATER attempt. Only the current
+        // version may legitimately point there.
+        const overwritten = !isCurrent && path.resolve(r.file_path || '') === path.resolve(current);
+
         return {
             version: r.version,
-            // Only the version that still occupies the live filename is the one
-            // on the board. Said explicitly rather than inferred from "highest",
-            // because restoring writes a NEW highest version whose picture is an
-            // older one — and "which of these am I looking at" is the question
-            // this list exists to answer.
-            is_current: r.file_path === current,
+            is_current: isCurrent,
+            // Restorable and existing are different questions. A file can be on
+            // disk and still not be this version's picture.
+            restorable: !isCurrent && onDisk && !overwritten,
+            exists: onDisk,
+            reason: isCurrent ? null
+                : overwritten
+                    ? 'this attempt was never archived — its picture was overwritten by a later one, '
+                        + 'so there is nothing to restore'
+                    : (!onDisk ? 'the file for this version is no longer on disk' : null),
+            // What tells one attempt from another. The number alone does not.
             url: `/film/storyboards/${scene.project_id}/${encodeURIComponent(r.file_name)}`,
-            exists: safeExists(r.file_path),
             created_at: r.created_at,
             provider: meta.provider || null,
+            provider_model: meta.provider_model || null,
+            // How it came to exist, which is often the thing you remember about
+            // an attempt when you cannot remember its number.
+            origin: meta.restored_from ? `restored from v${meta.restored_from}`
+                : meta.refined_from ? `refine (${meta.refined_from})`
+                : meta.instruction ? 'refine'
+                : 'generated',
             restored_from: meta.restored_from || null,
+            // Which attempt's picture this version is actually of. Differs from
+            // `version` only after a restore, which is exactly when a number
+            // alone misleads.
+            shows_version: meta.restored_from
+                ? (assetShowsVersion(r) || meta.restored_from) : r.version,
         };
     });
 
+    const lost = versions.filter(v => !v.restorable && !v.is_current).length;
     return json(res, 200, {
         shot_id: shotId, shot_code: shot.shot_code, versions,
+        current_version: currentVersion,
+        restorable_count: versions.filter(v => v.restorable).length,
         note: 'Every attempt is kept. Restoring one copies it back to the live frame as a NEW '
             + 'version — nothing is deleted and nothing is rewound, so the attempt you are '
-            + 'leaving is still here if you change your mind again.',
+            + 'leaving is still here if you change your mind again.'
+            + (lost ? ` ${lost} earlier attempt(s) predate per-version archiving and cannot be restored; `
+                + 'they are listed because they are real history, not because they can be chosen.' : ''),
     });
 }
 
@@ -1274,10 +1377,29 @@ function restoreShotFrame(req, res, shotId, version) {
     }
 
     const current = storyboardImagePath(scene.project_id, shot.shot_code);
-    if (row.file_path === current) {
+
+    // Same path, two different meanings, and telling them apart is the whole
+    // bug. A row naming the live file is EITHER the current version, or an
+    // older attempt that was never archived and whose picture the live file
+    // long ago replaced. Comparing paths said "already on the board" for both,
+    // so restoring an old attempt silently did nothing and reported success.
+    const highest = db.prepare(
+        `SELECT MAX(version) v FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard'`)
+        .get(shotId).v;
+    const sharesLiveFile = path.resolve(row.file_path || '') === path.resolve(current);
+
+    if (row.version === highest) {
         return json(res, 200, {
             shot_id: shotId, version: row.version, changed: false,
             note: 'That version is already the frame on the board.',
+        });
+    }
+    if (sharesLiveFile) {
+        return json(res, 409, {
+            error: `v${row.version} was never archived — its picture was overwritten by a later `
+                + 'attempt, so there is nothing to restore.',
+            hint: 'It is listed because it is real history. Attempts made from now on are archived '
+                + 'before they are replaced.',
         });
     }
 
@@ -1299,6 +1421,7 @@ function restoreShotFrame(req, res, shotId, version) {
     return json(res, 200, {
         shot_id: shotId, shot_code: shot.shot_code, changed: true,
         restored_from: row.version, version: asset.version,
+        shows_version: row.version,
         image_url: storyboardImageUrl(scene.project_id, shot.shot_code),
         note: `v${row.version} is back on the board as v${asset.version}. Nothing was deleted.`,
     });

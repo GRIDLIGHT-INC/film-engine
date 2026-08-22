@@ -1,0 +1,285 @@
+/**
+ * Telling one attempt from another.
+ *
+ * The version modal lists a shot's attempts and you cannot tell which is which,
+ * so you cannot choose one. That reads as a display bug and is not: the modal
+ * renders exactly what it is given, and what it is given is wrong in four
+ * separate ways, all visible on one real shot (1A, 7 versions):
+ *
+ *     v7  url=1A.png     current=true   provider=null
+ *     v6  url=1A_v6.png  current=false  provider=null
+ *     v5  url=1A.png     current=true   provider=null      ← v1..v5 all point at
+ *     v4  url=1A.png     current=true   provider=null        the LIVE file, so
+ *     v3  url=1A.png     current=true   provider=null        five thumbnails are
+ *     v2  url=1A.png     current=true   provider=null        the same picture
+ *     v1  url=1A.png     current=true   provider=null
+ *
+ * Across the real database: 10 of 31 version rows point at a picture another row
+ * already shows, and six versions of one shot claim to be on the board — which
+ * also means six of them hide their Restore button, so they cannot be selected
+ * even if you could tell them apart.
+ *
+ * The cause is historical, not current. `archiveExistingFrame` copies the
+ * outgoing picture aside and repoints its row, but only ever the NEWEST row —
+ * versions written before it existed were never archived and still name the live
+ * filename. The fix is therefore two things that must both hold: the API stops
+ * asserting things it cannot know, and the modal shows enough to choose by.
+ *
+ * Set-based over the four defects rather than over one shot, because a fix for
+ * any one of them leaves the modal unusable: distinguishable thumbnails with six
+ * missing Restore buttons is as useless as seven identical ones.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const { Writable } = require('stream');
+
+process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
+    || path.join(os.tmpdir(), 'film-engine-fv-' + crypto.randomUUID().slice(0, 8));
+
+const { db, generateId } = require('../db/database');
+require('../db/schema').ensureSchema();
+
+const ROOT = path.join(__dirname, '..', '..');
+const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64');
+
+function callRoute(handler, method, urlPath, body) {
+    return new Promise(resolve => {
+        const parts = urlPath.split('?')[0].split('/').filter(Boolean);
+        const chunks = [];
+        const res = new Writable({ write(c, _e, n) { chunks.push(c); n(); } });
+        res.statusCode = 200;
+        res.writeHead = function (code) { this.statusCode = code; return this; };
+        res.setHeader = function () {};
+        res.on('finish', () => {
+            let parsed = Buffer.concat(chunks).toString();
+            try { parsed = JSON.parse(parsed); } catch (_) { /* not json */ }
+            resolve({ status: res.statusCode, body: parsed });
+        });
+        Promise.resolve(handler({ method, body: body || {} }, res, parts, {}))
+            .catch(err => resolve({ status: 500, body: { error: err.message, stack: err.stack } }));
+    });
+}
+
+/**
+ * A shot with the damage a real project has: some versions properly archived,
+ * some — written before the archiver existed — still naming the live file.
+ */
+function damagedShot() {
+    const projectId = generateId(), sceneId = generateId(), shotId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Versions');
+    db.prepare("INSERT INTO film_scenes (id, project_id, scene_number, location) VALUES (?, ?, '1', 'STREET')")
+        .run(sceneId, projectId);
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+        .run(shotId, sceneId, '1A', JSON.stringify({ shot_code: '1A' }));
+
+    const dir = path.join(process.env.FILM_DATA_DIR, 'storyboards', projectId);
+    fs.mkdirSync(path.join(dir, 'versions'), { recursive: true });
+    const live = path.join(dir, '1A.png');
+    fs.writeFileSync(live, PNG);
+
+    // v1..v5: never archived, all naming the live file. This is the damage.
+    for (let v = 1; v <= 5; v++) {
+        db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, file_path, version, metadata)
+                    VALUES (?, ?, ?, 'storyboard', '1A.png', ?, ?, ?)`)
+            .run(generateId(), projectId, shotId, live, v, JSON.stringify({ provider: 'runway' }));
+    }
+    // v6: properly archived to its own file.
+    const arch = path.join(dir, 'versions', '1A_v6.png');
+    fs.writeFileSync(arch, Buffer.concat([PNG, Buffer.from('v6')]));
+    db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, file_path, version, metadata)
+                VALUES (?, ?, ?, 'storyboard', '1A_v6.png', ?, 6, ?)`)
+        .run(generateId(), projectId, shotId, arch, JSON.stringify({ provider: 'openai' }));
+    // v7: the live frame.
+    db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, file_path, version, metadata)
+                VALUES (?, ?, ?, 'storyboard', '1A.png', ?, 7, ?)`)
+        .run(generateId(), projectId, shotId, live, JSON.stringify({ provider: 'meshy' }));
+
+    return { projectId, shotId };
+}
+
+const frames = shotId => {
+    const { handleStoryboard } = require('../routes/storyboard');
+    return callRoute(handleStoryboard, 'GET', `/film/shots/${shotId}/frames`);
+};
+
+// ── The four defects ────────────────────────────────────────────────────
+
+test('exactly one version is reported as the one on the board', async () => {
+    // Six rows claiming `is_current` is not a cosmetic error: the modal hides
+    // Restore on the current version, so six attempts cannot be selected at all.
+    const { shotId } = damagedShot();
+    const r = await frames(shotId);
+    assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+    const current = r.body.versions.filter(v => v.is_current);
+    assert.strictEqual(current.length, 1,
+        `${current.length} versions claim to be on the board (v${current.map(v => v.version).join(', v')})`);
+    assert.strictEqual(current[0].version, 7, 'the newest version is not the one on the board');
+});
+
+test('every version that can be selected has a distinct picture', async () => {
+    // Seven rows, five of them the same image, is a chooser you cannot choose
+    // from. A version whose own file was never archived cannot be recovered —
+    // that has to be said rather than shown as a duplicate thumbnail.
+    const { shotId } = damagedShot();
+    const r = await frames(shotId);
+    const selectable = r.body.versions.filter(v => v.restorable);
+    const urls = selectable.map(v => v.url);
+    assert.strictEqual(new Set(urls).size, urls.length,
+        `two selectable versions show the same picture: ${urls.join(', ')}`);
+});
+
+test('a version whose picture was never kept says so, and cannot be restored', async () => {
+    // Honesty over hiding. These rows are real history — they record that an
+    // attempt happened and what it cost — and dropping them would rewrite the
+    // ledger. Marking them unrecoverable keeps the record and stops the lie.
+    const { shotId } = damagedShot();
+    const r = await frames(shotId);
+    const lost = r.body.versions.filter(v => !v.restorable && !v.is_current);
+    assert.ok(lost.length > 0, 'the fixture has unarchived versions and none were flagged');
+    for (const v of lost) {
+        assert.ok(v.reason, `v${v.version} is not restorable and gives no reason`);
+        assert.match(v.reason, /archiv|kept|overwritten|not saved/i,
+            `v${v.version}'s reason does not explain what happened: ${v.reason}`);
+    }
+});
+
+test('each version carries something to tell it apart by', async () => {
+    // The literal ask: "we don't know which is which". A version needs an
+    // identity beyond its number — when it was made, what made it, and whether
+    // it came from a regenerate, a refine or a restore.
+    const { shotId } = damagedShot();
+    const r = await frames(shotId);
+    const missing = [];
+    for (const v of r.body.versions) {
+        if (!v.created_at) missing.push(`v${v.version}: no timestamp`);
+        if (v.provider === undefined) missing.push(`v${v.version}: no provider field`);
+        if (!v.origin) missing.push(`v${v.version}: does not say how it was made`);
+    }
+    assert.deepStrictEqual(missing, [], `\n  ${missing.join('\n  ')}`);
+});
+
+test('the provider that made each attempt is reported when it is known', async () => {
+    // Two attempts from different providers is exactly the case where you want
+    // an earlier one back, and the reason "which is which" matters.
+    const { shotId } = damagedShot();
+    const r = await frames(shotId);
+    const named = r.body.versions.filter(v => v.provider);
+    assert.ok(named.length >= 3,
+        `only ${named.length} versions report a provider, though the metadata holds one`);
+});
+
+// ── Restore still behaves ───────────────────────────────────────────────
+
+test('restoring an unrecoverable version is refused, not half-done', async () => {
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { shotId } = damagedShot();
+    const r = await frames(shotId);
+    const lost = r.body.versions.find(v => !v.restorable && !v.is_current);
+    const attempt = await callRoute(handleStoryboard, 'POST',
+        `/film/shots/${shotId}/frames/${lost.version}/restore`);
+    assert.ok(attempt.status >= 400,
+        `restoring a version whose picture was never kept was accepted: ${JSON.stringify(attempt.body)}`);
+});
+
+test('restoring a real version still works and moves forward', async () => {
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { shotId } = damagedShot();
+    const before = await frames(shotId);
+    const good = before.body.versions.find(v => v.restorable && !v.is_current);
+    assert.ok(good, 'the fixture has no restorable version');
+
+    const r = await callRoute(handleStoryboard, 'POST', `/film/shots/${shotId}/frames/${good.version}/restore`);
+    assert.ok(r.status < 400, JSON.stringify(r.body));
+    assert.ok(r.body.version > 7, 'restore rewound instead of adding a new version');
+
+    const after = await frames(shotId);
+    assert.strictEqual(after.body.versions.filter(v => v.is_current).length, 1,
+        'after a restore, more than one version claims to be on the board');
+});
+
+// ── The modal shows it ──────────────────────────────────────────────────
+
+test('the modal renders what distinguishes one attempt from another', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+    const fn = html.slice(html.indexOf('async function openFrameVersions'),
+        html.indexOf('function closeFrameVersions'));
+    const missing = [];
+    for (const [field, why] of [
+        ['v.created_at', 'when it was made'],
+        ['v.provider', 'what made it'],
+        ['v.origin', 'whether it was a regenerate, a refine or a restore'],
+        ['v.reason', 'why an unrecoverable version cannot be chosen'],
+    ]) {
+        if (!fn.includes(field)) missing.push(`${field} — ${why}`);
+    }
+    assert.deepStrictEqual(missing, [], `the modal does not show:\n  ${missing.join('\n  ')}`);
+});
+
+test('an unrecoverable version offers no Restore button', () => {
+    // A button that cannot work is worse than no button: it reads as a working
+    // feature until pressed.
+    const html = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+    const fn = html.slice(html.indexOf('async function openFrameVersions'),
+        html.indexOf('function closeFrameVersions'));
+    assert.match(fn, /v\.restorable/,
+        'the modal offers Restore without checking whether the picture still exists');
+});
+
+
+// ── The label after a restore ───────────────────────────────────────────
+
+test('a restored version says which picture it is showing', async () => {
+    // Reported from use: "I was at v5, selected v3, and the card shows v6."
+    // Moving forward is deliberate — rewinding would destroy v4 and v5 to undo
+    // one choice — but the NUMBER then stops describing the picture, and a card
+    // reading v6 over v3's frame reads as the restore having picked the wrong
+    // one.
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { shotId, projectId } = damagedShot();
+    const before = await frames(shotId);
+    const good = before.body.versions.find(v => v.restorable && !v.is_current);
+
+    const r = await callRoute(handleStoryboard, 'POST', `/film/shots/${shotId}/frames/${good.version}/restore`);
+    assert.ok(r.status < 400, JSON.stringify(r.body));
+    assert.strictEqual(r.body.shows_version, good.version,
+        'the restore response does not say which picture the new version carries');
+
+    const after = await frames(shotId);
+    const now = after.body.versions.find(v => v.is_current);
+    assert.notStrictEqual(now.version, good.version, 'restore rewound rather than moving forward');
+    assert.strictEqual(now.shows_version, good.version,
+        `v${now.version} does not report that it is showing v${good.version}'s picture`);
+
+    // And the board — the surface the report came from — carries it too.
+    const board = await callRoute(handleStoryboard, 'GET', `/film/projects/${projectId}/storyboard`);
+    const frame = board.body.frames.find(f => f.shot_id === shotId);
+    assert.strictEqual(frame.asset_shows_version, good.version,
+        'the board does not say which picture the current version shows');
+});
+
+test('an ordinary generation reports no divergence', async () => {
+    // The label must stay a plain number in the normal case, or every card
+    // grows an arrow that means nothing.
+    const { shotId } = damagedShot();
+    const r = await frames(shotId);
+    for (const v of r.body.versions.filter(x => !x.restored_from)) {
+        assert.strictEqual(v.shows_version, v.version,
+            `v${v.version} claims to show v${v.shows_version} without having been restored`);
+    }
+});
+
+test('the card names both numbers only when they differ', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+    assert.match(html, /function frameVersionLabel/, 'the card has no label function');
+    const fn = html.slice(html.indexOf('function frameVersionLabel'),
+        html.indexOf('function frameVersionTitle'));
+    assert.match(fn, /asset_shows_version/, 'the label ignores which picture is shown');
+    assert.match(fn, /shows !== v/, 'the label does not compare the two, so it would always show an arrow');
+});
