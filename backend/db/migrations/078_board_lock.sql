@@ -1,0 +1,12 @@
+-- Locking a board: "I feel it's done."
+--
+-- A storyboard is finished work. Every frame on it was paid for, judged and
+-- kept, and every one sits behind a Regen button that costs money and REPLACES
+-- the picture. Nothing distinguished "this is a draft" from "this is the shot",
+-- so the only protection was remembering.
+--
+-- NULL means unlocked, which is what every existing project is: a feature that
+-- retroactively froze work nobody chose to freeze would be switched off the day
+-- it shipped. The timestamp rather than a boolean because "when did we call
+-- this done" is the useful half of the answer, and a flag cannot give it.
+ALTER TABLE film_projects ADD COLUMN board_locked_at TEXT;

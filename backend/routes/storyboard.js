@@ -386,6 +386,32 @@ function logToRenderLedger(shotId, params) {
     return { id, version };
 }
 
+
+/**
+ * A locked board refuses anything that would replace a picture on it.
+ *
+ * One helper rather than a check per route, because the failure mode is partial
+ * coverage: a lock that catches Regen and misses "Generate All" teaches a
+ * director the board is safe and then lets one button replace all of it.
+ *
+ * It guards the PICTURES only. Editing a card, previewing a prompt and reading
+ * the board stay free — otherwise "done" means "frozen", and a director stops
+ * locking anything. And it is overridable per call, because one frame on a
+ * finished board genuinely does need redoing sometimes, and a refusal you
+ * cannot get past is a reason to never lock at all.
+ */
+function boardLocked(project, body) {
+    if (!project || !project.board_locked_at) return null;
+    if (body && (body.ignore_lock === true || body.ignore_lock === 'true')) return null;
+    return {
+        error: 'This board is locked.',
+        code: 'BOARD_LOCKED',
+        locked_at: project.board_locked_at,
+        hint: 'Unlock the board to generate again (DELETE /film/projects/:id/board-lock, or the '
+            + 'lock button on the board), or pass ignore_lock to replace this one frame deliberately.',
+    };
+}
+
 /**
  * Register or update a storyboard asset in film_assets.
  */
@@ -645,7 +671,7 @@ function cameraFor(shotId, sceneCard, optics) {
 }
 
 function getStoryboard(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id, board_locked_at FROM film_projects WHERE id = ?').get(projectId);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -722,7 +748,9 @@ function getStoryboard(req, res, projectId, query) {
 // ── FILM-017: Generate Storyboard (Sync) ───────────────────────────
 
 async function generateStoryboard(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id, board_locked_at FROM film_projects WHERE id = ?').get(projectId);
+    const _lock = boardLocked(project, req.body || {});
+    if (_lock) return json(res, 423, _lock);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -974,7 +1002,9 @@ async function generateStoryboard(req, res, projectId, query) {
 // ── FILM-017: Generate Storyboard (SSE Stream) ─────────────────────
 
 async function generateStoryboardStream(req, res, projectId, query) {
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id FROM film_projects WHERE id = ?').get(projectId);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id, board_locked_at FROM film_projects WHERE id = ?').get(projectId);
+    const _lock = boardLocked(project, req.body || {});
+    if (_lock) return json(res, 423, _lock);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }
@@ -1409,6 +1439,24 @@ function restoreShotFrame(req, res, shotId, version) {
     const scene = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
+    /*
+     * Restoring is free and forward-only, and it still changes which picture the
+     * shot SHOWS — which is precisely what a lock exists to hold still. Guarded
+     * rather than exempted: a locked board that can be silently re-pointed at a
+     * different attempt is not locked.
+     */
+    {
+        // provider_config comes along not because restore resolves a provider
+        // — it does not — but because the guard that keeps every project fetch
+        // honest cannot tell the two apart, and relaxing a guard to fit new
+        // code is how it stops protecting the case it was written for.
+        const project = db.prepare(
+            'SELECT board_locked_at, provider_config FROM film_projects WHERE id = ?')
+            .get(scene.project_id);
+        const lk = boardLocked(project, req.body || {});
+        if (lk) return json(res, 423, lk);
+    }
+
     const row = db.prepare(
         `SELECT id, version, file_path FROM film_assets
           WHERE shot_id = ? AND asset_type = 'storyboard' AND version = ?`).get(shotId, Number(version));
@@ -1798,8 +1846,10 @@ async function refineShot(req, res, shotId) {
     if (!shot) return json(res, 404, { error: 'Shot not found' });
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     const project = scene && db.prepare(
-        'SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id FROM film_projects WHERE id = ?')
+        'SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id, board_locked_at FROM film_projects WHERE id = ?')
         .get(scene.project_id);
+    const _lock = boardLocked(project, req.body || {});
+    if (_lock) return json(res, 423, _lock);
     if (!project) return json(res, 404, { error: 'Project not found' });
 
     const body = req.body || {};
@@ -1925,7 +1975,9 @@ async function regenerateShot(req, res, shotId) {
         return json(res, 404, { error: 'Scene not found' });
     }
 
-    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id FROM film_projects WHERE id = ?').get(scene.project_id);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id, board_locked_at FROM film_projects WHERE id = ?').get(scene.project_id);
+    const _lock = boardLocked(project, req.body || {});
+    if (_lock) return json(res, 423, _lock);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
     }

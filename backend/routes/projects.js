@@ -33,6 +33,20 @@ function handleProjects(req, res, urlParts, query) {
         if (req.method === 'DELETE') return clearAnchor(req, res, id);
     }
 
+    /*
+     * /film/projects/:id/board-lock — "I feel it's done."
+     *
+     * Its own path for the same reason the anchor has one: it is an action a
+     * director takes and takes back, not a setting that describes the film.
+     * DELETE unlocks, because a lock with no way off is a trap rather than a
+     * decision.
+     */
+    if (id && urlParts[3] === 'board-lock') {
+        if (req.method === 'GET') return getBoardLock(req, res, id);
+        if (req.method === 'PUT' || req.method === 'POST') return setBoardLock(req, res, id);
+        if (req.method === 'DELETE') return clearBoardLock(req, res, id);
+    }
+
     if (req.method === 'GET' && !id) return listProjects(req, res, query);
     if (req.method === 'GET' && id) return getProject(req, res, id);
     if (req.method === 'POST' && !id) return createProject(req, res);
@@ -322,6 +336,66 @@ function deleteAllProjects(req, res) {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ deleted: count }));
+}
+
+
+/**
+ * This module writes its responses directly rather than through a shared
+ * helper, so one is defined here rather than importing a differently-named one
+ * — and the board-lock handlers called `json()`, which does not exist in this
+ * file. Every source-grep test passed and the route 500'd on its first real
+ * call: a test that asserts a route EXISTS cannot tell you it runs.
+ */
+function sendJson(res, status, payload) {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(payload));
+}
+
+/**
+ * Is this board locked, and what does that mean right now.
+ *
+ * Returns the frame count alongside, because "locked" is only meaningful with
+ * "…and there are 34 frames behind it" — a lock on an empty board is a
+ * statement about nothing, and a director should be able to see which they
+ * have before deciding.
+ */
+function getBoardLock(req, res, projectId) {
+    const row = db.prepare('SELECT board_locked_at FROM film_projects WHERE id = ?').get(projectId);
+    if (!row) return sendJson(res, 404, { error: 'Project not found' });
+    const frames = db.prepare(
+        `SELECT COUNT(*) n FROM film_assets WHERE project_id = ? AND asset_type = 'storyboard'`)
+        .get(projectId).n;
+    return sendJson(res, 200, {
+        project_id: projectId,
+        locked: !!row.board_locked_at,
+        locked_at: row.board_locked_at || null,
+        frames,
+        note: row.board_locked_at
+            ? 'Generating, refining and restoring frames are refused while this board is locked. '
+              + 'Editing cards, previewing prompts and reading the board are unaffected — a lock '
+              + 'protects the pictures, not the planning.'
+            : 'Lock the board when you are happy with it. Nothing that replaces a frame will run '
+              + 'until you unlock it.',
+    });
+}
+
+function setBoardLock(req, res, projectId) {
+    const row = db.prepare('SELECT board_locked_at FROM film_projects WHERE id = ?').get(projectId);
+    if (!row) return sendJson(res, 404, { error: 'Project not found' });
+    // Locking an already-locked board keeps the ORIGINAL timestamp: "when did
+    // we call this done" is the useful half of the answer, and re-stamping it
+    // on every click would quietly destroy it.
+    if (!row.board_locked_at) {
+        db.prepare('UPDATE film_projects SET board_locked_at = CURRENT_TIMESTAMP WHERE id = ?').run(projectId);
+    }
+    return getBoardLock(req, res, projectId);
+}
+
+function clearBoardLock(req, res, projectId) {
+    const row = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
+    if (!row) return sendJson(res, 404, { error: 'Project not found' });
+    db.prepare('UPDATE film_projects SET board_locked_at = NULL WHERE id = ?').run(projectId);
+    return getBoardLock(req, res, projectId);
 }
 
 /**

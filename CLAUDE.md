@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (75 migrations)
+│   │   └── migrations/     # SQL migration files (76 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -193,7 +193,8 @@ film-engine/
 │       ├── shot-anchor.test.js   # One anchor, held deliberately; it carries the set and replaces the plates
 │       ├── shot-staging.test.js  # The words agree with the render; an unnamed object stays silent
 │       ├── blocking-and-directing.test.js # Both jobs, on both surfaces, from one panel each
-│       ├── direct-shot-ui.test.js  # Every dial the regenerate route accepts has a control on the page
+│       ├── direct-shot-ui.test.js  # The director's surface: screenplay, blocking, cinematography, no machinery
+│       ├── board-lock.test.js      # A finished board refuses everything that would replace a frame
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -550,6 +551,15 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 **The free preview leads rather than hiding behind a toggle.** `GET /shots/:id/prompt` spends nothing and reports the assembled prompt, the ceiling, the headroom and every contributor with what it wanted and what survived — so the budget is a set of bars you read *before* paying, and the mode that costs money to try is the one you can look at first. Choosing a mode re-reads it, which is why the preview had to learn `direction_mode` in the first place. A mode that cannot run — camera mode with no anchor attached — says so **where it is chosen**, rather than as a 409 after the click.
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
+
+### Locking a Board
+A storyboard is finished work. Every frame on it was paid for, judged and kept — and every one sits behind a Regen button that costs money and **replaces** the picture. Nothing distinguished *"this is a draft"* from *"this is the shot"*, so the only protection was remembering.
+
+`film_projects.board_locked_at` (migration 078) is that distinction, made explicit and reversible. **NULL means unlocked**, which is what every existing project is: a feature that retroactively froze work nobody chose to freeze would be switched off the day it shipped. A timestamp rather than a boolean, because *when did we call this done* is the useful half of the answer.
+
+**One helper, five paths.** `boardLocked()` guards `generateStoryboard`, `generateStoryboardStream`, `regenerateShot`, `refineShot` **and** `restoreShotFrame` — derived from the call sites of `registerStoryboardAsset` rather than listed, because a lock that catches Regen and misses "Generate All" teaches a director the board is safe and then lets one button replace all of it. Restore is included even though it is free and forward-only: it changes which picture the shot *shows*, which is exactly what a lock exists to hold still.
+
+**It protects the pictures, not the planning.** Editing a card, previewing a prompt and reading the board stay free — otherwise "done" means "frozen" and a director stops locking anything. `getStoryboard` is deliberately unguarded, and a test asserts the free prompt preview is too. The refusal is **HTTP 423** with `BOARD_LOCKED`, names the unlock, and takes `ignore_lock` for the one frame on a finished board that genuinely needs redoing — a refusal you cannot get past is a reason never to lock at all.
 
 ### Directing a Shot Is a Creative Act, Not a Control Panel
 The first version of this surface exposed every parameter the route accepts — seed, ledger mode, negative prompt, style override, prompt override, and a character-budget chart. All of that is the **machinery**. A director looking at a frame that came back wrong does not want to tune a sampler; they want to say who is in the shot, where the camera is, and what else should be true. The complexity actively worked against the thing it was built for.
@@ -1149,7 +1159,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (75 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (76 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -1295,6 +1305,7 @@ node --test backend/tests/shot-anchor.test.js
 node --test backend/tests/shot-staging.test.js
 node --test backend/tests/blocking-and-directing.test.js
 node --test backend/tests/direct-shot-ui.test.js
+node --test backend/tests/board-lock.test.js
 node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js

@@ -4601,6 +4601,8 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                                 title="Put the anchor down — shots go back to generating from their plates">clear</button>
                     </span>
                     <button class="btn btn-primary" onclick="generateAllStoryboards()">Generate All</button>
+                    <button class="btn btn-secondary" id="boardLockBtn" onclick="toggleBoardLock()"
+                            title="Lock the board when you are happy with it — nothing that replaces a frame will run until you unlock">Lock board</button>
                 </div>
             </div>
             <div id="storyboardProgress" style="display:none;" class="card mb-16">
@@ -24269,6 +24271,7 @@ ${fountainText.slice(0, 50000)}`;
     // STORYBOARD GRID VIEWER (FILM-067)
     // ══════════════════════════════════════════════════════════════
     async function loadStoryboard() {
+        loadBoardLock();
         if (!state.currentProject) return;
         setStatus('Loading storyboard...');
         try {
@@ -25879,6 +25882,58 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
+
+
+    /*
+     * Locking the board: "I feel it's done."
+     *
+     * Every frame on a finished board was paid for, judged and kept, and every
+     * one sits behind a Regen button that costs money and REPLACES the picture.
+     * Nothing distinguished a draft from the shot, so the only protection was
+     * remembering. The state is shown on the button itself rather than in the
+     * status bar, because a locked board whose buttons still look armed reads
+     * as the buttons being broken.
+     */
+    let BOARD_LOCK = { locked: false, locked_at: null };
+
+    async function loadBoardLock() {
+        if (!state.currentProject) return;
+        try {
+            BOARD_LOCK = await api(`/projects/${state.currentProject.id}/board-lock`);
+        } catch (_) { BOARD_LOCK = { locked: false, locked_at: null }; }
+        renderBoardLock();
+    }
+
+    function renderBoardLock() {
+        const btn = document.getElementById('boardLockBtn');
+        if (!btn) return;
+        btn.textContent = BOARD_LOCK.locked ? '🔒 Locked — unlock' : 'Lock board';
+        btn.title = BOARD_LOCK.locked
+            ? `Locked ${BOARD_LOCK.locked_at || ''}. Generating, refining and restoring are refused. `
+              + 'Editing cards and previewing prompts still work.'
+            : 'Lock the board when you are happy with it — nothing that replaces a frame will run until you unlock';
+        // The buttons that spend money say so, rather than failing on click.
+        document.querySelectorAll('[onclick*="generateAllStoryboards"], [onclick*="regenerateStoryboard"], [onclick*="refineFrame"]')
+            .forEach(b => { if (b.id !== 'boardLockBtn') b.disabled = !!BOARD_LOCK.locked; });
+    }
+
+    async function toggleBoardLock() {
+        if (!state.currentProject) return;
+        const url = `/projects/${state.currentProject.id}/board-lock`;
+        try {
+            if (BOARD_LOCK.locked) {
+                BOARD_LOCK = await api(url, { method: 'DELETE' });
+                setStatus('Board unlocked. Frames can be generated again.');
+            } else {
+                BOARD_LOCK = await api(url, { method: 'PUT', body: JSON.stringify({}) });
+                setStatus(`Board locked — ${BOARD_LOCK.frames} frame${BOARD_LOCK.frames === 1 ? '' : 's'} held. `
+                    + 'Nothing that replaces a frame will run until you unlock.');
+            }
+            renderBoardLock();
+        } catch (err) {
+            setStatus('Could not change the lock: ' + err.message);
+        }
+    }
 
     async function regenerateStoryboard(shotId) {
         if (!confirm('Regenerate this storyboard frame?\n\nThis replaces the current image and costs credits.')) return;
