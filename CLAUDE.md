@@ -555,6 +555,11 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
 
+### Camera Mode Belongs on the Board
+It was built, tested against the shot it was designed for, and then **removed from the page** during the simplification — leaving the single best tool for *"put the camera on the other side of the street"* reachable only from an agent host. A capability with no control is indistinguishable from one that does not exist.
+
+It is back as a **directing choice** rather than a dial on a control panel, which is what it was the first time: *are you directing the action, or the camera?* Camera mode is disabled with an explanation when no anchor is set, said **where the choice is made** — meeting a 409 after filling in a form is worse than being told while deciding.
+
 ### Every Surface Paints the Version You Selected
 Selecting a version moves `current_frame_version` and copies that picture to the live file. Every surface that paints a frame still asked for `ORDER BY version DESC LIMIT 1` — the **highest** version — and keyed its image URL to that number. So after selecting v13 of 17 the picture on disk was v13 and the page requested `?v=17`, which the browser already had cached from when v17 *was* current: it served the frame you had just moved away from.
 

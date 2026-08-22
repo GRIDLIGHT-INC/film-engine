@@ -5660,6 +5660,26 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <button class="modal-close" onclick="closeModal('shotCardModal')">&times;</button>
             </div>
             <div class="modal-body">
+                <div class="form-group" id="shotCardModeRow">
+                    <label>When you regenerate, what are you directing?</label>
+                    <div style="display:flex;flex-direction:column;gap:6px;">
+                        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
+                            <input type="radio" name="shotCardMode" value="action" checked style="margin-top:3px;">
+                            <span class="text-sm"><strong>The action</strong>
+                                <span class="text-muted">&mdash; build the scene from this card. Every subject is
+                                described, so the whole frame is open to change.</span></span>
+                        </label>
+                        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
+                            <input type="radio" name="shotCardMode" value="camera" style="margin-top:3px;">
+                            <span class="text-sm"><strong>The camera</strong>
+                                <span class="text-muted">&mdash; keep the anchored frame's scene exactly (same street,
+                                same dressing, same light, same people) and change only where the camera is.
+                                Needs an anchor.</span></span>
+                        </label>
+                    </div>
+                    <div class="text-sm text-muted" id="shotCardModeHint" style="line-height:1.45;"></div>
+                </div>
+
                 <h4 style="margin:14px 0 8px;">Blocking <span class="text-muted text-sm" style="font-weight:normal;">&mdash; who and what is in the shot</span></h4>
                 <div id="shotCardBlockingPanel"></div>
                 <h4 style="margin:14px 0 8px;">Cinematography <span class="text-muted text-sm" style="font-weight:normal;">&mdash; where the camera is</span></h4>
@@ -25730,6 +25750,24 @@ ${fountainText.slice(0, 50000)}`;
             } catch (_) { /* the panel still opens; it just offers less */ }
 
             renderBlockingChoices('shotCard', ctx);
+
+            /*
+             * Whether camera mode can actually run, said WHERE IT IS CHOSEN.
+             * It is refused without an anchor, and meeting that as an error
+             * after filling in a form is worse than being told while deciding.
+             */
+            const modeHint = document.getElementById('shotCardModeHint');
+            const cameraRadio = document.querySelector('input[name="shotCardMode"][value="camera"]');
+            if (modeHint && cameraRadio) {
+                const a = BOARD_ANCHOR;
+                const usable = a && a.shot_code && a.shot_id !== shotId;
+                cameraRadio.disabled = !usable;
+                modeHint.textContent = usable
+                    ? `Camera mode will keep the scene from ${a.shot_code}.`
+                    : (a && a.shot_id === shotId
+                        ? 'This shot IS the anchor, so it generates from its own card.'
+                        : 'No anchor set — pick a frame you like on the board and press ⚓ to use camera mode.');
+            }
             fillDirectingPanel('shotCard', vocab, cam, SHOT_CARD.card.lighting, directingFallbacks(specs));
 
             document.getElementById('shotCardWarning').style.display = 'none';
@@ -25795,7 +25833,8 @@ ${fountainText.slice(0, 50000)}`;
         }
         closeModal('shotCardModal');
         if (regenerate) {
-            await regenerateStoryboard(shotId);
+            const picked = document.querySelector('input[name="shotCardMode"]:checked');
+            await regenerateStoryboard(shotId, picked ? picked.value : 'action');
         } else {
             setStatus('Card saved. The existing frame is now stale — regenerate to see the change.');
         }
@@ -26044,12 +26083,15 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
-    async function regenerateStoryboard(shotId) {
+    async function regenerateStoryboard(shotId, directionMode) {
         if (!confirm('Regenerate this storyboard frame?\n\nThis replaces the current image and costs credits.')) return;
         const done = frameBusy(shotId, 'Generating');
         setStatus('Regenerating frame...', true);
         try {
-            const res = await api('/shots/' + shotId + '/storyboard/regenerate', { method: 'POST' });
+            const res = await api('/shots/' + shotId + '/storyboard/regenerate', {
+                method: 'POST',
+                body: JSON.stringify(directionMode ? { direction_mode: directionMode } : {}),
+            });
             done();
             // Which provider actually served it. The chain walks past a
             // provider that declines, so "it worked" and "it worked on the one

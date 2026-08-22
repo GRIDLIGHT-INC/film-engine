@@ -298,3 +298,27 @@ test('the plate badge agrees with what actually attaches', () => {
             `the picker still reads ${invented}, which no route returns`);
     }
 });
+
+
+test('camera mode is reachable from the board, and says when it cannot run', () => {
+    /*
+     * It was built, tested, and then removed from the page during the
+     * simplification — leaving the single best tool for "put the camera on the
+     * other side of the street" reachable only from an agent host. A capability
+     * with no control is indistinguishable from one that does not exist.
+     *
+     * It belongs here as a DIRECTING choice — action or camera — not as a dial
+     * on a control panel, which is what it was the first time.
+     */
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    assert.ok(/name="shotCardMode"/.test(html), 'there is no way to choose what you are directing');
+    assert.ok(/value="camera"/.test(html) && /value="action"/.test(html),
+        'both directing modes must be offered');
+    assert.ok(/direction_mode/.test(html), 'the page never sends the chosen mode');
+
+    // Refused without an anchor, so it has to say so where it is CHOSEN rather
+    // than as a 409 after the form is filled in.
+    assert.ok(/shotCardModeHint/.test(html), 'nothing says whether camera mode can actually run');
+    assert.ok(/cameraRadio\.disabled/.test(html),
+        'camera mode stays selectable with no anchor, so the only feedback is a refusal');
+});
