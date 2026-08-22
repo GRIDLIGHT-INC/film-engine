@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**133 tools, 36 families.** Everything the app can do, you can ask for in a
+**137 tools, 37 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -190,6 +190,35 @@ These resolve a provider and bill you:
 **Free and worth reading first:** `shot_prompt` (what a frame would send),
 `flow_estimate` (projected cost), `run_plan` (cost of a whole batch),
 `beats_get`, `script_stats`, `scene_history`, `outline_get`, `shot_frames`.
+
+### What it actually cost
+
+`spend_report` · `spend_usage` · `spend_backfill` · `spend_rates`
+
+Every provider call is metered automatically — nothing to enter by hand.
+`spend_report` gives dollars *and* the provider's own units (credits at Meshy
+and Runway, characters and seconds at ElevenLabs, tokens at Anthropic), broken
+down by capability, provider, model, day and shot, with cost per minute of
+footage. `spend_usage` is the raw meter, one row per call, for when you want to
+know *why* a number is what it is.
+
+`spend_rates` shows where every price comes from, with the source URL and the
+date it was checked. Meshy publishes what an operation costs in credits and not
+what a credit costs, so its dollar figure is the Pro-plan rate — correct it for
+your plan and past events keep the rate they were priced at.
+
+`spend_backfill` reconstructs what a project spent *before* metering existed, by
+pricing the assets already on record. It is a floor: a generation that failed
+cost money and left nothing to count. Everything it writes is flagged as an
+estimate and totalled separately from measured spend.
+
+**The LLM is not in these numbers, and that is deliberate.** You are reading this
+in Claude Desktop, which means the model is *already here* — nothing calls an
+LLM API, so nothing is billed per token. Token traffic is still counted, against
+the rolling 5-hour and weekly windows your plan is enforced in. No percentage is
+shown until you calibrate it: Anthropic publishes plan multipliers and no token
+count for any plan, and a bar drawn against a made-up ceiling would get planned
+around.
 
 Ask Claude to check before generating at volume — *"estimate this before you run
 it"* works.
