@@ -1198,8 +1198,30 @@ const PRODUCTION_TOOLS = [
         name: 'shot_prompt',
         handler: handleStoryboard, method: 'GET',
         description: 'What this shot WOULD send to the image model, and how much room is left. Returns the assembled prompt, the provider ceiling, the headroom, which plates are attached as images, and every locked subject with how many characters it wrote and how many survived. SPENDS NOTHING, and reports the shot\u2019s markup under `direction` \u2014 which marks would reach the prompt, which carry no note and therefore cannot, and the exact clause they produce. Read it before regenerating anything: the engine can hold a ceiling but cannot decide what matters, and a description cut at a clause boundary does not know that "one wheel trim missing" is worth more than "cracked tan vinyl".',
-        path: a => `/film/shots/${a.shot_id}/prompt`,
-        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+        path: a => {
+            const q = [];
+            if (a.direction_mode) q.push(`direction_mode=${encodeURIComponent(a.direction_mode)}`);
+            if (a.use_annotations !== undefined) q.push(`use_annotations=${a.use_annotations ? 'true' : 'false'}`);
+            return `/film/shots/${a.shot_id}/prompt` + (q.length ? `?${q.join('&')}` : '');
+        },
+        schema: {
+            shot_id: { type: 'string' },
+            // Both of these were reachable on the route and unreachable from
+            // here, which made this tool unable to preview the two things most
+            // worth previewing \u2014 and this tool spends nothing, so a mode you
+            // cannot dry-run is one you can only try by paying for it.
+            direction_mode: {
+                type: 'string',
+                description: '"action" (default) or "camera". Preview what locking the scene to the anchor '
+                    + 'would do to the prompt before paying for it: camera mode collapses the anchored '
+                    + 'subjects to their names and spends the room on the camera instead.',
+            },
+            use_annotations: {
+                type: 'boolean',
+                description: 'Preview the prompt with the shot\u2019s noted markup folded in, whatever the '
+                    + 'project setting.',
+            },
+        }, required: ['shot_id'],
     },
     {
         name: 'shot_frames',
@@ -1250,7 +1272,14 @@ const PRODUCTION_TOOLS = [
             if (a.prompt_override) b.prompt_override = a.prompt_override;
             if (a.negative_prompt) b.negative_prompt = a.negative_prompt;
             if (a.use_annotations !== undefined) b.use_annotations = a.use_annotations;
-            if (a.use_anchor !== undefined) b.use_anchor = a.use_anchor;
+            // The schema advertises `use_scene_anchor` and this read `use_anchor`,
+            // so setting it did nothing and said nothing. Both are accepted now
+            // rather than renaming one: the other spelling is what the route
+            // takes, and a tool that silently ignores an argument it documents
+            // is worse than one that never offered it.
+            const anchorOff = a.use_scene_anchor !== undefined ? a.use_scene_anchor : a.use_anchor;
+            if (anchorOff !== undefined) b.use_anchor = anchorOff;
+            if (a.direction_mode !== undefined) b.direction_mode = a.direction_mode;
             return b;
         },
         schema: {
@@ -1260,6 +1289,17 @@ const PRODUCTION_TOOLS = [
                 description: 'The complete prompt to send, composed by you. Must fit the ceiling from shot_prompt — nothing trims it for you, and a provider truncates the TAIL, which is where the location usually sits.',
             },
             negative_prompt: { type: 'string' },
+            direction_mode: {
+                type: 'string',
+                description: '"action" (default) builds the whole scene from the card, describing every '
+                    + 'subject so the model can construct it. "camera" LOCKS the scene to the anchor frame '
+                    + '\u2014 same location, same people, same props, same light \u2014 and collapses those '
+                    + 'subjects to their names, so the whole prompt is about where the camera stands and what '
+                    + 'faces it. Use camera when the scene is right and the ANGLE is wrong; repeated action '
+                    + 'regenerations rebuild the subjects from prose each time and drift. Requires an anchor '
+                    + 'that CONTAINS what you want kept: an empty establishing wide locks the street and '
+                    + 'neither person. Refused with 409 when no anchor is attached.',
+            },
             use_scene_anchor: {
                 type: 'boolean',
                 description: 'Set false to generate this one shot from its plates without putting the '

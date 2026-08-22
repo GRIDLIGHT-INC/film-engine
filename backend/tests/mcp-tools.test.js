@@ -495,3 +495,61 @@ test('every listed tool dispatches to something that exists', () => {
     }
     assert.deepStrictEqual(uncallable, [], `\n  ${uncallable.join('\n  ')}`);
 });
+
+/**
+ * Every argument a tool advertises is actually read.
+ *
+ * `storyboard_regenerate` declared `use_scene_anchor` and its body builder read
+ * `a.use_anchor`. Setting it from an agent host did nothing and reported
+ * nothing — the call succeeded, the anchor stayed attached, and the only way to
+ * find out was to compare the generated frame against what you asked for.
+ *
+ * That is the worst shape a bug can take here: the tool list is the contract a
+ * model reads to decide what is possible, so a documented-but-ignored argument
+ * is a lie told to the thing driving the pipeline. Derived over every route
+ * tool rather than checked on the one that was wrong.
+ */
+test('no tool declares an argument its builder never reads', () => {
+    const { ALL_ROUTE_TOOLS } = require('../lib/mcp-tools');
+    const unread = [];
+
+    for (const tool of ALL_ROUTE_TOOLS) {
+        const keys = Object.keys(tool.schema || {});
+        if (!keys.length) continue;
+
+        /*
+         * Comments are stripped before matching. Function.toString() includes
+         * them, so a builder carrying a comment ABOUT an argument reads as one
+         * that uses it — and the comment explaining this very bug made the test
+         * pass while the bug was reintroduced. Substring matching cannot tell a
+         * claim from prose about the claim; this codebase has paid for that
+         * lesson twice already.
+         */
+        const strip = src => src
+            .replace(/\/\*[\s\S]*?\*\//g, ' ')
+            .replace(/\/\/[^\n]*/g, ' ');
+
+        const pathSrc = typeof tool.path === 'function' ? strip(tool.path.toString()) : '';
+
+        // Three legitimate ways a tool forwards an argument, and the test has
+        // to know all of them or it reports working tools as broken — which is
+        // how a guard gets relaxed until it protects nothing.
+        const bodySrc = typeof tool.body === 'function' ? strip(tool.body.toString()) : null;
+        const forwardsAll = bodySrc !== null
+            && (/\.\.\.\w+/.test(bodySrc)          // const { id, ...rest } = a
+                || /^\s*\w+\s*=>\s*\w+\s*\|\|/.test(bodySrc));  // a => a || {}
+        const declared = new Set(tool.bodyKeys || []);   // enumerated instead of built
+
+        for (const k of keys) {
+            if (forwardsAll) continue;
+            if (declared.has(k)) continue;
+            if (new RegExp(`\\b${k}\\b`).test(bodySrc || '')) continue;
+            if (new RegExp(`\\b${k}\\b`).test(pathSrc)) continue;
+            unread.push(`${tool.name}.${k}`);
+        }
+    }
+
+    assert.deepStrictEqual(unread, [],
+        'these tools advertise arguments that no builder reads, so setting them '
+        + `is silently ignored: ${unread.join(', ')}`);
+});
