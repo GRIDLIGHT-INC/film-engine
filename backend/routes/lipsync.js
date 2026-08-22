@@ -14,6 +14,7 @@ const { saveFile, getFileUrl, getFilePath, ensureDir } = require('../lib/file-st
 const { persistProviderMedia } = require('../lib/provider-media');
 const { buildVisemeTrack, mergeVisemesWithAudio, buildVisemePayload } = require('../lib/viseme-builder');
 const { resolve, get } = require('../lib/providers');
+const { providerConfigFor, spendContext } = require('../lib/provider-config');
 const { buildCapabilityPayload } = require('../lib/capability-payloads');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,11 +25,9 @@ function json(res, status, data) {
     res.end(JSON.stringify(data));
 }
 
-function parseProjectConfig(projectId) {
-    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
-    if (!row) return {};
-    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
-}
+// One implementation, in lib/provider-config.js — it also tags the config
+// with the project id so spend can be attributed. See that file for why.
+const parseProjectConfig = providerConfigFor;
 
 function resolveGenerator(capability, projectConfig) {
     const adapter = resolve(capability, projectConfig);
@@ -106,7 +105,7 @@ async function generateLipsync(req, res, shotId) {
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
-    const lipsyncProvider = resolveGenerator('lipsync', parseProjectConfig(scene.project_id));
+    const lipsyncProvider = resolveGenerator('lipsync', spendContext({ id: scene.project_id }, shot, scene));
 
     const { videoAsset, audioAsset } = findShotAssets(shotId);
     if (!videoAsset) return json(res, 400, { error: 'No video asset found for this shot. Generate video first.' });
@@ -358,7 +357,7 @@ async function visemeGuidedSync(req, res, shotId) {
     if (!shot) return json(res, 404, { error: 'Shot not found' });
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
-    const lipsyncProvider = resolveGenerator('lipsync', parseProjectConfig(scene.project_id));
+    const lipsyncProvider = resolveGenerator('lipsync', spendContext({ id: scene.project_id }, shot, scene));
 
     // Get viseme tracks for this shot
     const visemeTracks = db.prepare('SELECT * FROM film_viseme_tracks WHERE shot_id = ? ORDER BY created_at DESC').all(shotId);

@@ -15,16 +15,15 @@ const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const { resolve } = require('../lib/providers');
+const { providerConfigFor } = require('../lib/provider-config');
 const { generatePlate, PLATE_KINDS } = require('../lib/reference-plates');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IMAGE_ENDPOINT = '/image';
 
-function parseProjectConfig(projectId) {
-    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
-    if (!row) return {};
-    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
-}
+// One implementation, in lib/provider-config.js — it also tags the config
+// with the project id so spend can be attributed. See that file for why.
+const parseProjectConfig = providerConfigFor;
 
 /**
  * Generate the reference plate for one location or prop.

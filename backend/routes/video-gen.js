@@ -18,6 +18,7 @@ const { persistProviderMedia } = require('../lib/provider-media');
 const { buildVideoPayload } = require('../lib/video-prompt');
 const { needsStitching, planClips, buildStitchPayload, calculateTransitions } = require('../lib/video-stitcher');
 const { resolve } = require('../lib/providers');
+const { providerConfigFor, spendContext } = require('../lib/provider-config');
 const { buildShotReferencePayload, recordConsistencyCheck } = require('../lib/consistency-context');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -29,11 +30,9 @@ function json(res, status, data) {
     res.end(JSON.stringify(data));
 }
 
-function parseProjectConfig(projectId) {
-    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
-    if (!row) return {};
-    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
-}
+// One implementation, in lib/provider-config.js — it also tags the config
+// with the project id so spend can be attributed. See that file for why.
+const parseProjectConfig = providerConfigFor;
 
 function resultModel(result, payload) {
     return (result && result.provider_model) || (payload && payload.model) || '';
@@ -128,7 +127,7 @@ async function generateVideo(req, res, shotId) {
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
 
     const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
-    const videoProvider = resolve('video', parseProjectConfig(scene.project_id));
+    const videoProvider = resolve('video', spendContext({ id: scene.project_id }, shot, scene));
     const consistencyContext = buildShotReferencePayload(shot, scene, project);
 
     const stylePreset = project ? project.style_preset : null;
@@ -216,7 +215,7 @@ async function generateVideoStream(req, res, shotId) {
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
 
     const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
-    const videoProvider = resolve('video', parseProjectConfig(scene.project_id));
+    const videoProvider = resolve('video', spendContext({ id: scene.project_id }, shot, scene));
     const consistencyContext = buildShotReferencePayload(shot, scene, project);
     const stylePreset = project ? project.style_preset : null;
     const payload = buildVideoPayload(sceneCard, characters, location, stylePreset, {

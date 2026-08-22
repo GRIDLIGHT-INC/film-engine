@@ -7,9 +7,9 @@
 
 const { resolveGenerator } = require('./providers');
 
-function parseProjectConfig(project) {
-    try { return JSON.parse((project && project.provider_config) || '{}'); } catch (_) { return {}; }
-}
+// One implementation, in lib/provider-config.js — it tags the config with the
+// project id so an LLM call's token spend is attributed to the right film.
+const { providerConfigOf: parseProjectConfig } = require('./provider-config');
 
 function extractAnswer(result) {
     if (!result || !result.ok) return '';

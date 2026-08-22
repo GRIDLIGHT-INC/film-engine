@@ -336,7 +336,44 @@ async function callOpenAI(request, apiKey, opts) {
     }
 }
 
+/**
+ * OpenAI bills text per token and images per image — two different units under
+ * one adapter, which is why `meter` branches on capability rather than
+ * returning one shape. Image quality changes the price by 15x, so the quality
+ * tier is folded into the model id the rate book is looked up by.
+ */
+function meterOpenAI(capability, payload, result) {
+    const p = payload || {};
+    if (capability === 'llm') {
+        const model = (result && result.provider_model) || p.openai_model || p.model || DEFAULT_LLM_MODEL;
+        const u = (result && result.usage) || (result && result.data && result.data.usage) || {};
+        const parts = {
+            input: Number(u.prompt_tokens != null ? u.prompt_tokens : u.input_tokens) || 0,
+            output: Number(u.completion_tokens != null ? u.completion_tokens : u.output_tokens) || 0,
+        };
+        if (parts.input || parts.output) {
+            return { unit: 'token', quantity: parts.input + parts.output, model, parts };
+        }
+        const sent = String(p.question || p.prompt || '');
+        if (!sent) return null;
+        const est = { input: Math.ceil(sent.length / 4), output: 0 };
+        return { unit: 'token', quantity: est.input, model, parts: est,
+                 estimated: true, estimate_basis: 'no usage block on the response; ~4 characters per token' };
+    }
+
+    if (capability === 'image') {
+        const n = Math.max(1, Number(p.n) || 1);
+        const base = (result && result.provider_model) || p.openai_model || DEFAULT_IMAGE_MODEL;
+        const quality = String(p.quality || '').toLowerCase();
+        // Quality is a 15x price difference, so it must reach the rate book.
+        const model = (quality === 'low' || quality === 'high') ? `${base}-${quality}` : base;
+        return { unit: 'image', quantity: n, model };
+    }
+    return null;
+}
+
 const adapter = {
+    meter: meterOpenAI,
     id: 'openai',
     kind: 'generator',
     label: 'OpenAI',

@@ -4972,13 +4972,39 @@ table, .render-table { border-radius:12px; overflow:hidden; }
             <div class="flex-between mb-16">
                 <h2>Budget</h2>
                 <div class="tab-bar" id="budgetTabs">
-                    <button class="tab-btn active" data-tab="tracking" onclick="switchBudgetTab('tracking')">Cost Tracking</button>
-                    <button class="tab-btn" data-tab="estimation" onclick="switchBudgetTab('estimation')">Budget Estimation</button>
+                    <button class="tab-btn active" data-tab="spend" onclick="switchBudgetTab('spend')">AI Spend</button>
+                    <button class="tab-btn" data-tab="tracking" onclick="switchBudgetTab('tracking')">Ledger</button>
+                    <button class="tab-btn" data-tab="rates" onclick="switchBudgetTab('rates')">Rates</button>
+                    <button class="tab-btn" data-tab="estimation" onclick="switchBudgetTab('estimation')">Live-action Estimate</button>
                 </div>
             </div>
 
-            <!-- Cost Tracking Tab -->
-            <div id="budgetTabTracking" class="budget-tab-content">
+            <!-- AI Spend Tab — what the pipeline actually costs -->
+            <div id="budgetTabSpend" class="budget-tab-content">
+                <div class="flex-between mb-16">
+                    <div id="spendNote" class="text-sm text-muted"></div>
+                    <div>
+                        <button class="btn btn-secondary" onclick="showModal('budgetLimitModal')" style="margin-right:8px;">Set Limit</button>
+                        <button class="btn btn-secondary" onclick="loadSpend()">Refresh</button>
+                    </div>
+                </div>
+                <div id="spendBackfillBanner" class="mb-16"></div>
+                <div id="spendHeadline" class="mb-16"></div>
+                <div id="spendUnits" class="mb-16"></div>
+                <div id="spendByCapability" class="mb-16"></div>
+                <div id="spendOverTime" class="mb-16"></div>
+                <div id="spendByModel" class="mb-16"></div>
+                <div id="spendByShot" class="mb-16"></div>
+            </div>
+
+            <!-- Rates Tab — where every number comes from -->
+            <div id="budgetTabRates" class="budget-tab-content" style="display:none;">
+                <p class="text-sm text-muted mb-16">Published provider rates, with the source and the date each was checked. A rate you override applies to calls made from now on — past events keep the rate they were priced at, so a correction never rewrites history.</p>
+                <div id="spendRates"></div>
+            </div>
+
+            <!-- Cost Ledger Tab -->
+            <div id="budgetTabTracking" class="budget-tab-content" style="display:none;">
                 <div class="flex-between mb-16">
                     <div></div>
                     <div>
@@ -14943,7 +14969,7 @@ THREE.GLTFLoader = GLTFLoader;
             acts: loadActs,
             continuity: loadContinuity,
             consistency: loadConsistency,
-            budget: loadBudget,
+            budget: () => { loadSpend(); loadBudget(); },
             threed: loadThreeD,
             videoshots: loadVideoShots,
             music: loadMusic,
@@ -22163,6 +22189,290 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     // ══════════════════════════════════════════════════════════════
+    // AI SPEND — what this pipeline actually costs
+    //
+    // The estimation tab beside this one prices a live-action shoot: day rates,
+    // catering, grip, a 10% contingency. This film has no crew. What it spends
+    // is tokens at Anthropic, credits at Meshy and Runway, characters and
+    // seconds at ElevenLabs — measured at the moment of every provider call by
+    // lib/usage-meter.js, with nothing to enter by hand.
+    //
+    // Dollars AND native units are shown side by side throughout, because they
+    // are different questions. Dollars are what the film cost; credits are what
+    // runs out mid-render on a Tuesday.
+    // ══════════════════════════════════════════════════════════════
+
+    const CAP_COLOR = {
+        image: '#2196f3', video: '#9c27b0', voice: '#ff9800', music: '#4caf50',
+        sfx: '#00bcd4', ambient: '#009688', llm: '#e91e63', model3d: '#795548',
+        lipsync: '#3f51b5', post: '#607d8b', stock: '#9e9e9e',
+    };
+    const capColor = c => CAP_COLOR[c] || '#9e9e9e';
+    const money = n => '$' + (Number(n) || 0).toFixed(2);
+    const qty = n => {
+        const v = Number(n) || 0;
+        if (v >= 1000000) return (v / 1000000).toFixed(2) + 'M';
+        if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
+        return Number.isInteger(v) ? String(v) : v.toFixed(2);
+    };
+
+    let currentSpend = null;
+
+    async function loadSpend() {
+        if (!state.currentProject) return;
+        setStatus('Loading spend...');
+        try {
+            const s = await api('/projects/' + state.currentProject.id + '/spend');
+            currentSpend = s;
+            renderSpendBackfill(s);
+            renderSpendHeadline(s);
+            renderSpendUnits(s);
+            renderSpendByCapability(s);
+            renderSpendOverTime(s);
+            renderSpendByModel(s);
+            renderSpendByShot(s);
+            document.getElementById('spendNote').textContent = s.note || '';
+            setStatus('Spend loaded');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // A project generated before metering existed has real spend and reports
+    // zero — which looks identical to a project that generated nothing. Say so,
+    // and offer the reconstruction rather than leaving the zero to be believed.
+    function renderSpendBackfill(s) {
+        const el = document.getElementById('spendBackfillBanner');
+        if (!s.backfill_available) { el.innerHTML = ''; return; }
+        el.innerHTML = `
+            <div class="card" style="border-left:3px solid var(--gl-warning);">
+                <strong>${s.untracked_assets} asset(s) were generated before spend tracking existed.</strong>
+                <p class="text-sm text-muted" style="margin:4px 0 8px;">Their cost can be reconstructed by pricing what is on record — every keyframe, plate and clip is one generation someone paid for. It is a <em>floor</em>: generations that failed cost money and left nothing behind. Reconstructed spend is flagged as an estimate and counted separately.</p>
+                <button class="btn btn-secondary btn-sm" onclick="previewBackfill()">Preview</button>
+                <button class="btn btn-primary btn-sm" onclick="runBackfill()" style="margin-left:6px;">Reconstruct</button>
+            </div>`;
+    }
+
+    async function previewBackfill() {
+        try {
+            const r = await api('/projects/' + state.currentProject.id + '/spend/backfill',
+                { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+            alert(`${r.recorded} generation(s) would be reconstructed at ${money(r.total_usd)}.\n\n` +
+                  `${r.skipped} asset(s) skipped (not produced by a paid provider).\n\n${r.caveat}`);
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function runBackfill() {
+        try {
+            const r = await api('/projects/' + state.currentProject.id + '/spend/backfill',
+                { method: 'POST', body: JSON.stringify({}) });
+            setStatus(`Reconstructed ${r.recorded} generation(s) — ${money(r.total_usd)}`);
+            loadSpend();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function renderSpendHeadline(s) {
+        const limit = s.budget_limit || 0;
+        const pct = s.budget_used_pct;
+        const barColor = pct > 90 ? 'var(--gl-error)' : pct > 70 ? 'var(--gl-warning)' : 'var(--gl-success)';
+        const perMin = s.usd_per_minute || 0;
+
+        document.getElementById('spendHeadline').innerHTML = `
+            <div class="card">
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;">
+                    ${statTile('Total spent', money(s.total_usd), `${s.call_count} provider call(s)`)}
+                    ${statTile('Per minute of footage', perMin > 0 ? money(perMin) : '—',
+                        s.footage_seconds > 0 ? `over ${(s.footage_seconds / 60).toFixed(1)} min of shots` : 'no shot durations yet')}
+                    ${statTile('Per shot', s.shot_count > 0 ? money(s.usd_per_shot) : '—', `${s.shot_count} shot(s)`)}
+                    ${statTile('Budget', limit > 0 ? money(limit) : 'Not set',
+                        limit > 0 ? money(s.remaining) + ' remaining' : 'no ceiling — runs are never refused')}
+                </div>
+                ${limit > 0 ? `
+                    <div style="background:var(--gl-border-subtle);border-radius:4px;height:8px;overflow:hidden;margin-top:14px;">
+                        <div style="background:${barColor};height:100%;width:${Math.min(100, pct)}%;border-radius:4px;transition:width .3s;"></div>
+                    </div>
+                    <p class="text-sm text-muted" style="margin-top:4px;">${pct}% of budget used</p>` : ''}
+                ${s.estimated_usd > 0 ? `
+                    <p class="text-sm text-muted" style="margin-top:10px;border-top:1px solid var(--gl-border-subtle);padding-top:8px;">
+                        ${money(s.measured_usd)} measured from live calls &middot;
+                        ${money(s.estimated_usd)} reconstructed from ${s.estimated_calls} earlier generation(s).
+                        Reconstructed spend is a floor.
+                    </p>` : ''}
+            </div>`;
+    }
+
+    function statTile(label, value, sub) {
+        return `<div>
+            <div class="text-sm text-muted">${esc(label)}</div>
+            <div style="font-size:24px;font-weight:600;line-height:1.2;">${esc(value)}</div>
+            <div class="text-sm text-muted">${esc(sub || '')}</div>
+        </div>`;
+    }
+
+    // Credits and tokens, per provider. This is the number a prepaid balance
+    // runs out of, and a dollars-only report hides it completely.
+    function renderSpendUnits(s) {
+        const rows = s.by_provider || [];
+        const el = document.getElementById('spendUnits');
+        if (!rows.length) { el.innerHTML = ''; return; }
+        el.innerHTML = `
+            <h3 class="mb-8">Provider usage</h3>
+            <div class="card">
+                <table class="render-table" style="width:100%;">
+                    <tr><th>Provider</th><th style="text-align:right;">Consumed</th><th style="text-align:right;">Calls</th><th style="text-align:right;">Cost</th></tr>
+                    ${rows.map(r => `<tr>
+                        <td><span class="badge">${esc(r.provider)}</span></td>
+                        <td style="text-align:right;">${r.native_quantity > 0 ? qty(r.native_quantity) + ' ' + esc(r.native_unit) + (r.native_quantity === 1 ? '' : 's') : '—'}</td>
+                        <td style="text-align:right;">${r.calls}</td>
+                        <td style="text-align:right;">${r.usd > 0 ? money(r.usd) : '<span class="text-muted">self-hosted</span>'}</td>
+                    </tr>`).join('')}
+                </table>
+            </div>`;
+    }
+
+    function renderSpendByCapability(s) {
+        const entries = Object.entries(s.by_capability || {});
+        const el = document.getElementById('spendByCapability');
+        if (!entries.length) {
+            el.innerHTML = '<div class="card"><p class="text-sm text-muted">No provider calls recorded yet. Spend appears here automatically the moment anything is generated.</p></div>';
+            return;
+        }
+        const max = Math.max(...entries.map(([, v]) => v.usd), 0.0001);
+        el.innerHTML = `
+            <h3 class="mb-8">Where the money went</h3>
+            <div class="card">
+                ${entries.map(([cap, v]) => `
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                        <span class="text-sm" style="width:90px;flex-shrink:0;">${esc(cap)}</span>
+                        <div style="flex:1;background:var(--gl-border-subtle);border-radius:3px;height:16px;overflow:hidden;">
+                            <div style="background:${capColor(cap)};height:100%;width:${(v.usd / max * 100)}%;border-radius:3px;"></div>
+                        </div>
+                        <span class="text-sm" style="width:70px;text-align:right;">${money(v.usd)}</span>
+                        <span class="text-sm text-muted" style="width:110px;text-align:right;">${v.calls}× &middot; ${v.native_quantity > 0 ? qty(v.native_quantity) + ' ' + esc(v.native_unit) : '—'}</span>
+                    </div>`).join('')}
+            </div>`;
+    }
+
+    // Cumulative, not per-day. The question this answers is "how fast is this
+    // film getting expensive", and a daily bar chart with gaps hides the slope.
+    function renderSpendOverTime(s) {
+        const days = s.by_day || [];
+        const el = document.getElementById('spendOverTime');
+        if (days.length < 2) { el.innerHTML = ''; return; }
+
+        const W = 640, H = 120, PAD = 4;
+        let running = 0;
+        const points = days.map((d, i) => {
+            running += d.usd;
+            return { x: (i / (days.length - 1)) * (W - PAD * 2) + PAD, y: running, day: d.day, daily: d.usd };
+        });
+        const maxY = Math.max(...points.map(p => p.y), 0.0001);
+        const scaled = points.map(p => `${p.x.toFixed(1)},${(H - PAD - (p.y / maxY) * (H - PAD * 2)).toFixed(1)}`);
+        const area = `${PAD},${H - PAD} ${scaled.join(' ')} ${(W - PAD)},${H - PAD}`;
+
+        el.innerHTML = `
+            <h3 class="mb-8">Spend over time</h3>
+            <div class="card">
+                <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;" preserveAspectRatio="none">
+                    <polygon points="${area}" fill="var(--gl-accent, #2196f3)" opacity="0.15"></polygon>
+                    <polyline points="${scaled.join(' ')}" fill="none" stroke="var(--gl-accent, #2196f3)" stroke-width="2"></polyline>
+                </svg>
+                <div class="flex-between text-sm text-muted" style="margin-top:4px;">
+                    <span>${esc(days[0].day)}</span>
+                    <span>cumulative &middot; ${money(running)}</span>
+                    <span>${esc(days[days.length - 1].day)}</span>
+                </div>
+            </div>`;
+    }
+
+    function renderSpendByModel(s) {
+        const rows = s.by_model || [];
+        const el = document.getElementById('spendByModel');
+        if (!rows.length) { el.innerHTML = ''; return; }
+        el.innerHTML = `
+            <h3 class="mb-8">By model</h3>
+            <div class="card">
+                <table class="render-table" style="width:100%;">
+                    <tr><th>Model</th><th>Capability</th><th style="text-align:right;">Calls</th><th style="text-align:right;">Metered</th><th style="text-align:right;">Cost</th></tr>
+                    ${rows.map(r => `<tr>
+                        <td class="text-sm">${esc(r.model)}</td>
+                        <td><span class="badge" style="background:${capColor(r.capability)}22;">${esc(r.capability)}</span></td>
+                        <td style="text-align:right;">${r.calls}</td>
+                        <td style="text-align:right;" class="text-sm text-muted">${qty(r.quantity)} ${esc(r.unit)}${r.quantity === 1 ? '' : 's'}</td>
+                        <td style="text-align:right;">${money(r.usd)}</td>
+                    </tr>`).join('')}
+                </table>
+            </div>`;
+    }
+
+    // Most expensive first. An average hides the shot that was regenerated
+    // eleven times, which is the one worth knowing about.
+    function renderSpendByShot(s) {
+        const rows = (s.by_shot || []).slice(0, 25);
+        const el = document.getElementById('spendByShot');
+        if (!rows.length) { el.innerHTML = ''; return; }
+        el.innerHTML = `
+            <h3 class="mb-8">Most expensive shots</h3>
+            <div class="card">
+                <table class="render-table" style="width:100%;">
+                    <tr><th>Shot</th><th>Scene</th><th style="text-align:right;">Calls</th><th style="text-align:right;">Cost</th><th style="text-align:right;">Per second</th></tr>
+                    ${rows.map(r => {
+                        const secs = (r.duration_ms || 0) / 1000;
+                        return `<tr>
+                            <td><a href="#" onclick="navigateTo('storyboard');return false;">${esc(r.shot_code || '(deleted shot)')}</a></td>
+                            <td class="text-sm text-muted">${r.scene_number != null ? esc(String(r.scene_number)) : '—'}</td>
+                            <td style="text-align:right;">${r.calls}</td>
+                            <td style="text-align:right;">${money(r.usd)}</td>
+                            <td style="text-align:right;" class="text-sm text-muted">${secs > 0 ? money(r.usd / secs) : '—'}</td>
+                        </tr>`;
+                    }).join('')}
+                </table>
+            </div>`;
+    }
+
+    // ── Rates ─────────────────────────────────────────────────────────────
+
+    async function loadSpendRates() {
+        try {
+            const r = await api('/spend/rates');
+            const el = document.getElementById('spendRates');
+            el.innerHTML = r.rates.map(rate => `
+                <div class="card mb-8">
+                    <div class="flex-between">
+                        <div>
+                            <strong>${esc(rate.provider)}</strong>
+                            <span class="badge" style="background:${capColor(rate.capability)}22;margin-left:6px;">${esc(rate.capability)}</span>
+                            ${rate.self_hosted ? '<span class="badge" style="margin-left:6px;">self-hosted &middot; no per-call charge</span>' : ''}
+                            ${rate.overridden ? '<span class="badge" style="margin-left:6px;background:var(--gl-warning);">overridden</span>' : ''}
+                        </div>
+                        <div class="text-sm text-muted">checked ${esc(rate.checked)}</div>
+                    </div>
+                    <p class="text-sm" style="margin:6px 0;">
+                        Metered per <strong>${esc(rate.unit)}</strong>${rate.native_unit !== rate.unit
+                            ? ` &middot; billed as <strong>${qty(rate.native_per_unit)} ${esc(rate.native_unit)}(s)</strong> per ${esc(rate.unit)}` : ''}
+                        ${rate.components
+                            ? ` &middot; $${(rate.components.input * 1e6).toFixed(2)}/M in, $${(rate.components.output * 1e6).toFixed(2)}/M out`
+                            : ` &middot; ${'$' + (rate.usd_per_unit || 0).toFixed(6).replace(/0+$/, '').replace(/\.$/, '')} per ${esc(rate.unit)}`}
+                    </p>
+                    ${rate.note ? `<p class="text-sm text-muted">${esc(rate.note)}</p>` : ''}
+                    ${rate.models && rate.models.length ? `
+                        <details style="margin-top:6px;">
+                            <summary class="text-sm text-muted" style="cursor:pointer;">${rate.models.length} model rate(s)</summary>
+                            <table class="render-table" style="width:100%;margin-top:6px;">
+                                ${rate.models.map(m => `<tr>
+                                    <td class="text-sm">${esc(m.model)}${m.inferred ? ' <span class="badge">inferred</span>' : ''}</td>
+                                    <td class="text-sm text-muted" style="text-align:right;">${m.components
+                                        ? `$${(m.components.input * 1e6).toFixed(2)}/M in &middot; $${(m.components.output * 1e6).toFixed(2)}/M out`
+                                        : `${qty(m.native_per_unit)} ${esc(rate.native_unit)}(s) per ${esc(rate.unit)}`}</td>
+                                </tr>`).join('')}
+                            </table>
+                        </details>` : ''}
+                    <p class="text-sm text-muted" style="margin-top:6px;">
+                        <a href="${esc(rate.source)}" target="_blank" rel="noopener">source</a>
+                    </p>
+                </div>`).join('');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // FILM-164: BUDGET DASHBOARD
     // ══════════════════════════════════════════════════════════════
     async function loadBudget() {
@@ -22170,14 +22480,14 @@ ${fountainText.slice(0, 50000)}`;
         setStatus('Loading budget...');
         try {
             const [summary, ledger, forecast] = await Promise.all([
-                api('/projects/' + state.currentProject.id + '/budget/summary'),
+                api('/projects/' + state.currentProject.id + '/budget'),
                 api('/projects/' + state.currentProject.id + '/budget/ledger?limit=50'),
                 api('/projects/' + state.currentProject.id + '/budget/forecast'),
             ]);
 
             // Summary cards
             const total = summary.total_spent || 0;
-            const limit = summary.budget_limit || 0;
+            const limit = summary.budget_total || 0;
             const pct = limit > 0 ? Math.min(100, (total / limit * 100)).toFixed(1) : 0;
             const barColor = pct > 90 ? 'var(--gl-error)' : pct > 70 ? 'var(--gl-warning)' : 'var(--gl-success)';
 
@@ -22203,9 +22513,9 @@ ${fountainText.slice(0, 50000)}`;
                 </div>`;
 
             // Breakdown by type (inline SVG bar chart)
-            const breakdown = summary.by_type || [];
+            const breakdown = summary.breakdown || [];
             if (breakdown.length > 0) {
-                const maxAmt = Math.max(...breakdown.map(b => b.total_amount));
+                const maxAmt = Math.max(...breakdown.map(b => b.amount));
                 const typeColors = { render_gpu: '#e91e63', image_generation: '#2196f3', video_generation: '#9c27b0', voice_synthesis: '#ff9800', music_generation: '#4caf50', api_call: '#00bcd4', storage: '#607d8b', license: '#795548', other: '#9e9e9e' };
                 document.getElementById('budgetBreakdown').innerHTML = `
                     <h3 class="mb-8">Cost Breakdown</h3>
@@ -22214,10 +22524,10 @@ ${fountainText.slice(0, 50000)}`;
                             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
                                 <span class="text-sm" style="width:120px;flex-shrink:0;">${esc(b.cost_type.replace(/_/g, ' '))}</span>
                                 <div style="flex:1;background:var(--gl-border-subtle);border-radius:3px;height:16px;overflow:hidden;">
-                                    <div style="background:${typeColors[b.cost_type] || '#9e9e9e'};height:100%;width:${maxAmt > 0 ? (b.total_amount / maxAmt * 100) : 0}%;border-radius:3px;"></div>
+                                    <div style="background:${typeColors[b.cost_type] || '#9e9e9e'};height:100%;width:${maxAmt > 0 ? (b.amount / maxAmt * 100) : 0}%;border-radius:3px;"></div>
                                 </div>
-                                <span class="text-sm" style="width:80px;text-align:right;">$${b.total_amount.toFixed(2)}</span>
-                                <span class="text-sm text-muted" style="width:40px;text-align:right;">${b.entry_count}x</span>
+                                <span class="text-sm" style="width:80px;text-align:right;">$${b.amount.toFixed(2)}</span>
+                                <span class="text-sm text-muted" style="width:40px;text-align:right;">${b.count}x</span>
                             </div>
                         `).join('')}
                     </div>`;
@@ -22272,7 +22582,7 @@ ${fountainText.slice(0, 50000)}`;
         if (!state.currentProject) return;
         const data = getModalData('budgetLimitModal');
         try {
-            await api('/projects/' + state.currentProject.id + '/budget/limit', { method: 'PUT', body: JSON.stringify({ budget_limit: parseFloat(data.budget_limit) || 0 }) });
+            await api('/projects/' + state.currentProject.id + '/budget/limit', { method: 'PUT', body: JSON.stringify({ budget_total: parseFloat(data.budget_limit) || 0 }) });
             closeModal('budgetLimitModal');
             loadBudget();
             setStatus('Budget limit updated');
@@ -22284,15 +22594,23 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     let currentBudgetEstimate = null;
 
+    // Panels are derived from the tab buttons rather than listed here, so a tab
+    // added later cannot end up with nothing to show — which is exactly how the
+    // previous two-tab version would have failed the moment a third arrived.
+    const BUDGET_PANELS = { spend: 'budgetTabSpend', tracking: 'budgetTabTracking',
+                            rates: 'budgetTabRates', estimation: 'budgetTabEstimation' };
+
     function switchBudgetTab(tab) {
         document.querySelectorAll('#budgetTabs .tab-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.tab === tab);
         });
-        document.getElementById('budgetTabTracking').style.display = tab === 'tracking' ? 'block' : 'none';
-        document.getElementById('budgetTabEstimation').style.display = tab === 'estimation' ? 'block' : 'none';
-        if (tab === 'estimation' && !currentBudgetEstimate) {
-            generateBudgetEstimate();
+        for (const [name, id] of Object.entries(BUDGET_PANELS)) {
+            const el = document.getElementById(id);
+            if (el) el.style.display = name === tab ? 'block' : 'none';
         }
+        if (tab === 'spend') loadSpend();
+        if (tab === 'rates') loadSpendRates();
+        if (tab === 'estimation' && !currentBudgetEstimate) generateBudgetEstimate();
     }
 
     async function generateBudgetEstimate() {

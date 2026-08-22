@@ -243,7 +243,44 @@ async function callElevenLabs(request, apiKey, opts) {
     }
 }
 
+/**
+ * ElevenLabs bills speech per CHARACTER and generated sound per SECOND, which
+ * is why one adapter reports two different units.
+ *
+ * The seconds metered are the ones the request clamped to, not the shot length
+ * the caller had in mind. Ambient is the case that matters: a bed is capped at
+ * 30 seconds and tiled by the mixer across a shot of any length, so billing the
+ * shot's duration would over-report a two-minute scene by four times.
+ */
+function meterElevenLabs(capability, payload, result) {
+    const p = payload || {};
+    const model = (result && result.provider_model) || p.model || '';
+
+    if (capability === 'voice') {
+        const text = String(p.text || p.prompt || '');
+        if (!text) return null;
+        const ttsModel = String(model).startsWith('eleven') ? model : DEFAULT_TTS_MODEL;
+        return { unit: 'character', quantity: text.length, model: ttsModel };
+    }
+
+    if (capability === 'sfx' || capability === 'ambient') {
+        const seconds = clampSfxDuration(p, capability === 'ambient' ? SFX_MAX_SECONDS : 3);
+        if (!(seconds > 0)) return null;
+        return { unit: 'second', quantity: seconds, model: model || LOOPABLE_SFX_MODEL };
+    }
+
+    if (capability === 'music') {
+        const ms = Number(p.duration_ms) || (Number(p.duration_s || p.duration_seconds || p.duration) || 0) * 1000;
+        const seconds = ms > 0 ? ms / 1000 : 0;
+        if (!(seconds > 0)) return null;
+        return { unit: 'second', quantity: Math.round(seconds * 100) / 100,
+                 model: String(model).startsWith('music_') ? model : DEFAULT_MUSIC_MODEL };
+    }
+    return null;
+}
+
 const adapter = {
+    meter: meterElevenLabs,
     id: 'elevenlabs',
     kind: 'generator',
     label: 'ElevenLabs',

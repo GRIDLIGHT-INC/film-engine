@@ -110,7 +110,22 @@ async function streamGridlightLLM(endpoint, payload, res, callbacks) {
     }
 }
 
+/**
+ * Gridlight is the self-hosted gateway: no per-call charge, so every capability
+ * meters as one call and the rate book prices it at zero.
+ *
+ * It is metered anyway rather than skipped, because "the local gateway made 40
+ * keyframes" is a real answer and an unmetered provider cannot give it. The
+ * rate book carries the zero explicitly and says why, so a $0.00 row reads as
+ * self-hosted rather than as a capability somebody forgot to price — which is
+ * the confusion this whole subsystem was built to end.
+ */
+function meterGridlight(capability, payload, result) {
+    return { unit: 'call', quantity: 1, model: (result && result.provider_model) || (payload && payload.model) || '' };
+}
+
 const gridlightAdapter = {
+    meter: meterGridlight,
     id: 'gridlight',
     kind: 'generator',
     label: 'Gridlight',

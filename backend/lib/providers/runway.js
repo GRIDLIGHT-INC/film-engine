@@ -360,7 +360,35 @@ async function pollTask(taskId, key, deadline) {
     }
 }
 
+/**
+ * Runway bills video by the SECOND of output and images per image, both in
+ * credits at a cent each.
+ *
+ * The duration read here is the one that was actually requested — `clampDuration`
+ * has already snapped it to a value Runway accepts, and billing the unclamped
+ * number the caller asked for would report a cost for a clip nobody generated.
+ */
+function meterRunway(capability, payload, result) {
+    const p = payload || {};
+    if (capability === 'video') {
+        const model = (result && result.provider_model) || pickModel(p.model, KNOWN_VIDEO_MODELS, DEFAULT_VIDEO_MODEL);
+        const seconds = clampDuration(p.duration_s !== undefined ? p.duration_s : p.duration);
+        if (!(seconds > 0)) return null;
+        return { unit: 'second', quantity: seconds, model };
+    }
+    if (capability === 'image') {
+        const base = (result && result.provider_model) || pickModel(p.model, KNOWN_IMAGE_MODELS, DEFAULT_IMAGE_MODEL);
+        // 720p and 1080p are different prices on gen4_image; the taller side of
+        // the requested frame decides which.
+        const longest = Math.max(Number(p.width) || 0, Number(p.height) || 0);
+        const model = (base === 'gen4_image' && longest >= 1080) ? 'gen4_image_1080p' : base;
+        return { unit: 'image', quantity: 1, model };
+    }
+    return null;
+}
+
 const adapter = {
+    meter: meterRunway,
     id: 'runway',
     kind: 'generator',
     label: 'Runway',

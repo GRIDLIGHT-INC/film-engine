@@ -402,6 +402,23 @@ const CAPABILITY_BUILDERS = {
  *                         musicCue, initImage, consistency, overrides }
  * @returns {{ payload: object|object[], meta: object }}
  */
+/**
+ * Mark a payload (or every payload in a fan-out array) with what it is for, so
+ * the usage meter can attribute the call without the caller passing anything.
+ */
+function tagSpend(payload, attribution) {
+    if (!payload) return payload;
+    const list = Array.isArray(payload) ? payload : [payload];
+    for (const one of list) {
+        if (one && typeof one === 'object') {
+            Object.defineProperty(one, '__meter', {
+                value: attribution, enumerable: false, writable: true, configurable: true,
+            });
+        }
+    }
+    return payload;
+}
+
 function buildCapabilityPayload(capability, ctx) {
     const builder = CAPABILITY_BUILDERS[capability];
     if (!builder) {
@@ -410,6 +427,20 @@ function buildCapabilityPayload(capability, ctx) {
 
     const context = ctx || {};
     const payload = builder(context);
+
+    // Which shot this spend belongs to, carried on the payload itself.
+    //
+    // The meter already knows the project (it rides in on the provider config);
+    // the shot does not, and "which shot cost the most" is the question a
+    // per-shot budget is for. Attached NON-ENUMERABLY so it cannot leak into a
+    // provider request body — adapters pick fields explicitly, but a payload
+    // that grows an unexpected key is exactly how a 400 arrives from a provider
+    // for a reason nobody can see.
+    tagSpend(payload, {
+        projectId: projectIdOf(context),
+        sceneId: context.scene ? context.scene.id : null,
+        shotId: context.shot ? context.shot.id : null,
+    });
 
     return {
         payload,
@@ -586,10 +617,15 @@ function loadShotContext(shotId) {
     };
 }
 
-/** Parsed per-project provider_config, for resolve()/resolveGenerator(). */
+/**
+ * Parsed per-project provider_config, for resolve()/resolveGenerator().
+ *
+ * Delegates to lib/provider-config.js, which also tags the object with the
+ * project id — that is what lets resolve() attribute what a call spends
+ * without any of its callers changing shape.
+ */
 function providerConfigOf(project) {
-    if (!project || !project.provider_config) return {};
-    try { return JSON.parse(project.provider_config); } catch (_) { return {}; }
+    return require('./provider-config').providerConfigOf(project);
 }
 
 /**
@@ -627,6 +663,7 @@ module.exports = {
     persistCapabilityResult,
     imageRequestPayload,
     providerConfigOf,
+    tagSpend,
     IMAGE_DEFAULTS,
     dimensionsForAspect,
     DEFAULT_POST_JOB_TYPE,

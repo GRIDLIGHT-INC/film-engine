@@ -16,6 +16,7 @@ const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const { resolve, get } = require('../lib/providers');
+const { providerConfigFor, spendContext } = require('../lib/provider-config');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const POST_ENDPOINT = '/postprocess';
@@ -25,11 +26,9 @@ function json(res, status, data) {
     res.end(JSON.stringify(data));
 }
 
-function parseProjectConfig(projectId) {
-    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
-    if (!row) return {};
-    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
-}
+// One implementation, in lib/provider-config.js — it also tags the config
+// with the project id so spend can be attributed. See that file for why.
+const parseProjectConfig = providerConfigFor;
 
 function resolveGenerator(capability, projectConfig) {
     const adapter = resolve(capability, projectConfig);
@@ -243,7 +242,7 @@ async function runPostStep(req, res, shotId, jobType) {
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
-    const postProvider = resolveGenerator('post', parseProjectConfig(scene.project_id));
+    const postProvider = resolveGenerator('post', spendContext({ id: scene.project_id }, shot, scene));
 
     const videoAsset = findLatestVideo(shotId);
     if (!videoAsset) return json(res, 400, { error: 'No video asset found. Generate video first.' });
@@ -315,7 +314,7 @@ async function runComposite(req, res, shotId) {
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
-    const postProvider = resolveGenerator('post', parseProjectConfig(scene.project_id));
+    const postProvider = resolveGenerator('post', spendContext({ id: scene.project_id }, shot, scene));
 
     let videoAsset = findLatestVideo(shotId);
     if (!videoAsset) return json(res, 400, { error: 'No video asset found.' });
@@ -499,7 +498,7 @@ async function colorMatchShot(req, res, shotId) {
     if (!shot) return json(res, 404, { error: 'Shot not found' });
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
-    const postProvider = resolveGenerator('post', parseProjectConfig(scene.project_id));
+    const postProvider = resolveGenerator('post', spendContext({ id: scene.project_id }, shot, scene));
     const videoAsset = findLatestVideo(shotId);
     if (!videoAsset) return json(res, 400, { error: 'No video asset found.' });
 
@@ -629,7 +628,7 @@ async function encodeShot(req, res, shotId) {
     if (!shot) return json(res, 404, { error: 'Shot not found' });
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
-    const postProvider = resolveGenerator('post', parseProjectConfig(scene.project_id));
+    const postProvider = resolveGenerator('post', spendContext({ id: scene.project_id }, shot, scene));
     const videoAsset = findLatestVideo(shotId);
     if (!videoAsset) return json(res, 400, { error: 'No video asset found.' });
 

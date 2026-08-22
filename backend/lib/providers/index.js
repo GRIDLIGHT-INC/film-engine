@@ -181,13 +181,13 @@ function isProviderConfigured(id) {
 function resolve(capability, projectConfig) {
     if (!isCapability(capability)) {
         // Unknown capability: still hand back the default adapter; callers guard.
-        return get(DEFAULT_PROVIDER) || gridlightAdapter;
+        return metered(get(DEFAULT_PROVIDER) || gridlightAdapter, projectConfig);
     }
     const id = resolveId(capability, projectConfig);
     const adapter = get(id);
-    if (adapter && (!adapter.supports || adapter.supports(capability))) return adapter;
+    if (adapter && (!adapter.supports || adapter.supports(capability))) return metered(adapter, projectConfig);
     // Configured provider missing / unsupported → safe fallback.
-    return get(DEFAULT_PROVIDER) || gridlightAdapter;
+    return metered(get(DEFAULT_PROVIDER) || gridlightAdapter, projectConfig);
 }
 
 /**
@@ -199,11 +199,49 @@ function resolve(capability, projectConfig) {
 function resolveGenerator(capability, projectConfig) {
     const adapter = resolve(capability, projectConfig);
     if (adapter && typeof adapter.generate === 'function') return adapter;
-    return get(DEFAULT_PROVIDER) || gridlightAdapter;
+    return metered(get(DEFAULT_PROVIDER) || gridlightAdapter, projectConfig);
+}
+
+/**
+ * Wrap an adapter so the call it is about to make is recorded.
+ *
+ * This is THE choke point. Thirty-one call sites across routes/ and lib/ reach
+ * a provider, and every one of them gets its adapter from resolve() or
+ * resolveGenerator() — so metering installed here covers all of them, and a
+ * route added next month inherits it with nothing to remember. Instrumenting
+ * the call sites individually is how twenty-nine of thirty-one end up
+ * instrumented, and the gap is invisible: an untracked generation looks exactly
+ * like one that never ran.
+ *
+ * Attribution rides in on the config object. Every call site already writes
+ * `resolve('video', providerConfigFor(scene.project_id))` — the project id is
+ * right there and was being discarded one line before it was needed.
+ * lib/provider-config.js stamps it on, so the meter reads it with no call-site
+ * edit at all.
+ *
+ * Loaded lazily because lib/usage-meter.js requires the pricing book, which
+ * asserts its coverage against THIS registry at load — requiring it at the top
+ * would be a cycle that resolves to a half-built registry and passes vacuously.
+ */
+function metered(adapter, projectConfig) {
+    if (!adapter) return adapter;
+    try {
+        const { meterAdapter } = require('../usage-meter');
+        const cfg = projectConfig || {};
+        if (!cfg.__project_id) return meterAdapter(adapter, {});
+        return meterAdapter(adapter, {
+            projectId: cfg.__project_id,
+            shotId: cfg.__shot_id || null,
+            sceneId: cfg.__scene_id || null,
+        });
+    } catch (_) {
+        // Metering must never be the reason a generation cannot happen.
+        return adapter;
+    }
 }
 
 // Register the default provider, then auto-load any additional adapters.
 register(gridlightAdapter);
 _autoload();
 
-module.exports = { register, get, list, resolve, resolveId, resolveGenerator, isProviderConfigured, defaultProviderConfig, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };
+module.exports = { register, get, list, resolve, resolveId, resolveGenerator, metered, isProviderConfigured, defaultProviderConfig, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };

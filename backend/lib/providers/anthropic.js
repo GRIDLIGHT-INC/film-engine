@@ -234,7 +234,55 @@ async function streamAnthropic(body, apiKey, callbacks = {}) {
     return { ok: true, finalData: { answer: accumulated } };
 }
 
+/**
+ * What one call consumed, in Anthropic's own units.
+ *
+ * The API reports its token counts in `usage`, so this measures rather than
+ * estimates — with one exception. A stream that was consumed as text only has
+ * no usage block, and pretending a call was free because we did not read the
+ * counter is exactly the silent zero this whole subsystem exists to remove; a
+ * character/4 approximation is flagged `estimated` and reported as such.
+ *
+ * Input and output are different prices, so the split travels as `parts`. A
+ * single blended token count is wrong by up to 5x in either direction
+ * depending on the shape of the call, and a long-context summarisation and a
+ * long-generation rewrite are exactly the two shapes that differ most.
+ */
+function meterAnthropic(capability, payload, result) {
+    if (capability !== 'llm') return null;
+    const model = (result && result.provider_model) || (payload && payload.model) || MODEL();
+    const usage = (result && result.usage) || (result && result.data && result.data.usage) || null;
+
+    if (usage && (usage.input_tokens != null || usage.output_tokens != null)) {
+        const parts = {
+            input: Number(usage.input_tokens) || 0,
+            output: Number(usage.output_tokens) || 0,
+            cache_read: Number(usage.cache_read_input_tokens) || 0,
+            cache_write: Number(usage.cache_creation_input_tokens) || 0,
+        };
+        return { unit: 'token', quantity: parts.input + parts.output + parts.cache_read + parts.cache_write, model, parts };
+    }
+
+    const sent = String((payload && (payload.question || payload.prompt)) || '') + String((payload && payload.system) || '');
+    const got = meteredAnswerText(result);
+    if (!sent && !got) return null;
+    const parts = { input: Math.ceil(sent.length / 4), output: Math.ceil(got.length / 4) };
+    return {
+        unit: 'token', quantity: parts.input + parts.output, model, parts,
+        estimated: true, estimate_basis: 'no usage block on the response; ~4 characters per token',
+    };
+}
+
+function meteredAnswerText(result) {
+    const d = (result && result.data) || {};
+    if (typeof d.answer === 'string') return d.answer;
+    if (typeof d.response === 'string') return d.response;
+    if (Array.isArray(d.content)) return d.content.map(b => (b && b.text) || '').join('');
+    return '';
+}
+
 const adapter = {
+    meter: meterAnthropic,
     id: 'anthropic',
     kind: 'generator',
     label: 'Anthropic (Claude)',

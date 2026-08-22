@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (73 migrations)
+│   │   └── migrations/     # SQL migration files (74 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -141,6 +141,10 @@ film-engine/
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
 │   │   ├── llm-client.js         # Shared LLM call helper
 │   │   ├── budget-estimator.js   # Pre-flight cost estimation
+│   │   ├── provider-pricing.js  # What a generation costs, in the provider's own units
+│   │   ├── usage-meter.js       # Every provider call, metered and attributed
+│   │   ├── spend-backfill.js    # What a project spent before anything was tracking it
+│   │   ├── provider-config.js   # One provider-config reader, carrying the project id
 │   │   ├── prompt-diff.js        # Prompt/parameter diffing for A/B compare
 │   │   ├── provenance.js         # Provenance sidecar manifests
 │   │   ├── timeline.js           # Timeline assembly logic
@@ -257,6 +261,7 @@ film-engine/
 │       ├── editorial-routes.test.js      # Editorial routes
 │       ├── ops-compliance.test.js        # Ops/compliance jobs + provenance
 │       ├── budget-estimator.test.js      # Cost estimation
+│       ├── ai-spend.test.js              # Every provider call is metered, priced and attributed
 │       ├── prompt-diff.test.js           # Prompt/parameter diffing
 │       ├── fountain-parser.test.js       # Fountain parser
 │       ├── docx-text.test.js             # DOCX text extraction
@@ -349,6 +354,8 @@ All routes prefixed with `/film`:
 | Budget | `GET /projects/:id/budget`, `POST /projects/:id/budget` |
 | Budget | `GET /projects/:id/budget/ledger`, `GET /projects/:id/budget/forecast` |
 | Budget | `PUT /projects/:id/budget/limit`, `DELETE /budget/:id` |
+| Spend | `GET /projects/:id/spend`, `GET /projects/:id/spend/usage` |
+| Spend | `POST /projects/:id/spend/backfill`, `GET/PUT/DELETE /spend/rates` |
 | Music Rights | `GET /projects/:id/music-rights`, `PUT /music-cues/:id/rights` |
 | Backups | `GET/POST /projects/:id/backups`, `GET/DELETE /backups/:id` |
 | Backups | `GET /backups/:id/download`, `POST /backups/:id/restore` |
@@ -765,6 +772,37 @@ The first version was a text composer with a photo album bolted on — its own c
 
 One translation is load-bearing: `resolution` is picked as a preset **id** (`"1080p"`) and stored as **dimensions** (`"1920x1080"`), because `target_resolution` is what every exporter parses. Writing the id would pass validation and break the export.
 
+### The Budget Is Compute, Not Crew
+`lib/budget-estimator.js` prices a live-action shoot. Catering at $35 per head per day, a grip package, transportation, SAG day rates by talent tier, location permits, a 10% contingency. It is a careful and complete model of a production this pipeline does not run: there is no crew to feed, no van to hire, and no actor to pay scale. Meanwhile the thing that *does* cost money — every call to Anthropic, Meshy, ElevenLabs and Runway — was recorded **nowhere**.
+
+`film_cost_entries` existed from migration 037 and had exactly **one writer**: a manual `POST` a human had to fill in by hand. So a project could generate forty images and report a spend of **$0.00**, which is indistinguishable from a project that generated nothing. The only price list in the repo was `lib/flow-cost.js` — eleven round numbers, deliberately on the high side, which says of itself that "nothing here claims to be a price list". It exists to refuse a run before it starts, and it was never billing.
+
+**The meter is installed at one place, and that is the whole design.** Thirty-one call sites across `routes/` and `lib/` reach a provider. Instrumenting thirty-one call sites is how twenty-nine end up instrumented, and the gap is invisible — an untracked generation looks exactly like one that never ran. Every one of those sites gets its adapter from `resolve()` / `resolveGenerator()`, so `meterAdapter` wraps there and a route added next month inherits it with nothing to remember. Same reasoning as `lib/shot-references.js` gathering plates once for four paths.
+
+Attribution rode in on a decision made years earlier and never used. Every call site already writes `resolve('video', parseProjectConfig(scene.project_id))` — the project id is *right there*, and was thrown away one line before it was needed. That function existed **seven times**, byte-identical, in lipsync, video-gen, music-gen, post-production, locations, characters and voice; it is now one implementation in `lib/provider-config.js` that tags the config with the project id, **non-enumerably** so it cannot leak into the Provider Settings panel or round-trip into `provider_config` on the next save. Not one of the thirty-one call sites changed shape.
+
+**Two units per capability, and the distinction is the point.** `unit` is what the adapter can *measure* from a real request or response — tokens returned in `usage`, characters of text sent, seconds of media requested, or the call itself where a provider charges flat. `native_unit` is what the provider *bills* in, which is what the user tops up and watches drain. Runway meters in seconds and bills in credits; ElevenLabs meters in characters and bills in credits. Reporting only dollars hides the number that actually runs out mid-render. Keeping them apart means an adapter never has to know a price and the rate book never has to guess a quantity.
+
+Every rate carries its **source URL and the date it was checked**, and a test enforces both. A rate with no source cannot be re-verified when a provider changes pricing, and an un-recheckable number does not stay approximately right — it decays into a confident lie, which is worse than no tracking at all because it gets budgeted against. Where a figure is genuinely not published it is marked `inferred` rather than quietly averaged, and `film_provider_rates` overrides any entry per install — Meshy publishes what an operation costs in credits and *not* what a credit costs, so its dollar figure is the Pro-plan rate and a user on another plan corrects their own book without editing code.
+
+Three rules the tests pin, each because the opposite costs real money:
+
+**A failed generation is not billed.** A provider that refused produced nothing and charged nothing; recording it would make the image-fallback chain — which deliberately walks *past* providers that decline — look like three purchases for one image.
+
+**A throwing meter never fails a generation.** By the time metering runs the request has been made and the money is gone. Turning a paid, successful generation into an error the caller reports as a failure is the worst available trade, and it is the trap `stampAsset()` already documents for fingerprinting.
+
+**Self-hosted is priced at zero deliberately, and says so.** Gridlight bills nothing per call, and an *unpriced* pair also reports zero — the two are indistinguishable unless one of them is explicit. It still writes a usage event, so "the local gateway made 40 keyframes" stays answerable, and writes no cost entry, because a stream of $0.00 rows is noise in a ledger a person reads.
+
+**Cost per minute is measured against the shots' own durations, not against rendered clips.** A project storyboarded but not yet shot has real spend and a real intended running time, and "what will the rest of this cost" is exactly the question that figure answers. Measuring only finished video would report `Infinity` for every project before its first clip — the moment the number is most useful.
+
+**And history is reconstructable, once.** Metering starts the day it ships, and Wingfall had already generated 34 storyboard frames, 5 reference plates and 2 character sheets. A tracker that can only count forward reports $0.00 for all of it. `lib/spend-backfill.js` prices what survives — every row in `film_assets` is a file that exists because a provider was paid to make it, and the project's own `provider_config` says who. Each reconstructed event carries a `source_ref` of the asset it came from under a unique index, so pressing "reconstruct my spend" twice cannot double the history. Everything it writes is flagged `estimated`, and the report totals measured and estimated **separately**: "we measured $41" and "we think it was about $41" are different claims and only one should be defended in a meeting. It is a **floor** and says so — a generation that failed cost money and left no asset to count.
+
+Two pre-existing breaks surfaced while wiring the page, both shipped and neither ever hit, because the tab they were on had never worked: the SPA called `/budget/summary` where the route is `/budget` (a 405 on every load), and read `budget_limit` / `by_type` / `total_amount` where the route returns `budget_total` / `breakdown` / `amount`. `saveBudgetLimit` posted `budget_limit` to a route that only reads `budget_total`, so setting a budget silently did nothing.
+
+`tests/ai-spend.test.js` is set-based over the **21 (provider, capability) pairs** in `providers.list()` — never a list typed into the test, or the next adapter arrives unpriced and silently free. It checks four separate things per pair, because the failure is partial: a book covering Anthropic and Runway while leaving Meshy unpriced reports a plausible number that is wrong by exactly the images, which is the largest line on a storyboard-heavy project, and an example test passes in that state. It also derives from the **source** that no `.generate()` call site obtains its adapter outside the registry, and that `parseProjectConfig` has exactly zero remaining copies.
+
+Served at `GET /projects/:id/spend`, `GET /projects/:id/spend/usage`, `POST /projects/:id/spend/backfill` and `GET|PUT|DELETE /spend/rates`, and as `spend_report`, `spend_usage`, `spend_backfill`, `spend_rates`.
+
 ### Conform: shots into a film
 `assembly` has been a no-op since it was written, returning `"use export endpoints to finalize"` — so an orchestrated run reports success and there is no movie, and the `video_master` QA check goes green on shot 1 of N.
 
@@ -1041,7 +1079,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (73 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (74 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -1082,7 +1120,9 @@ SQLite via `better-sqlite3`. Schema auto-migrates on startup (73 migrations).
 - `film_credits` — Credit roll entries by section
 - `film_title_cards` — Title card sequences
 - `film_marketing_assets` — Poster, key art, banner, social card assets
-- `film_cost_entries` — Budget & cost tracking
+- `film_cost_entries` — Budget & cost tracking (money)
+- `film_usage_events` — What each provider call consumed, in the provider's own units
+- `film_provider_rates` — Per-install corrections to the published rate book
 - `film_backups` — Project backup metadata
 - `film_3d_jobs` — 3D asset generation jobs (text→mesh, image→mesh, rig, retexture, animate)
 

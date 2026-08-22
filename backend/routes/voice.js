@@ -17,6 +17,7 @@ const { saveFile, getFileUrl, ensureDir, serveFile } = require('../lib/file-stor
 const { persistProviderMedia } = require('../lib/provider-media');
 const { extractDialogue, buildVoicePayload, dialogueFilename } = require('../lib/dialogue-builder');
 const { resolve } = require('../lib/providers');
+const { providerConfigFor, spendContext } = require('../lib/provider-config');
 const { buildShotReferencePayload, applyConsistencyToVoicePayload, recordConsistencyCheck } = require('../lib/consistency-context');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -27,11 +28,9 @@ function json(res, status, data) {
     res.end(JSON.stringify(data));
 }
 
-function parseProjectConfig(projectId) {
-    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
-    if (!row) return {};
-    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
-}
+// One implementation, in lib/provider-config.js — it also tags the config
+// with the project id so spend can be attributed. See that file for why.
+const parseProjectConfig = providerConfigFor;
 
 function hashPrompt(text) {
     return crypto.createHash('sha256').update(String(text || '')).digest('hex');
@@ -116,7 +115,7 @@ async function generateVoice(req, res, shotId) {
     const voiceProfiles = db.prepare(
         'SELECT * FROM film_voice_profiles WHERE character_id IN (SELECT id FROM film_characters WHERE project_id = ?)'
     ).all(scene.project_id);
-    const voiceProvider = resolve('voice', parseProjectConfig(scene.project_id));
+    const voiceProvider = resolve('voice', spendContext({ id: scene.project_id }, shot, scene));
     const consistencyContext = buildShotReferencePayload(shot, scene, { id: scene.project_id });
 
     ensureDir(scene.project_id, 'audio');
@@ -235,7 +234,7 @@ async function generateVoiceStream(req, res, shotId) {
     const voiceProfiles = db.prepare(
         'SELECT * FROM film_voice_profiles WHERE character_id IN (SELECT id FROM film_characters WHERE project_id = ?)'
     ).all(scene.project_id);
-    const voiceProvider = resolve('voice', parseProjectConfig(scene.project_id));
+    const voiceProvider = resolve('voice', spendContext({ id: scene.project_id }, shot, scene));
     const consistencyContext = buildShotReferencePayload(shot, scene, { id: scene.project_id });
     ensureDir(scene.project_id, 'audio');
 

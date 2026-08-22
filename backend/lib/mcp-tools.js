@@ -44,6 +44,7 @@ const { handleAnnotations } = require('../routes/annotations');
 const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
 const { handleProductionReports } = require('../routes/production-reports');
+const { handleBudget } = require('../routes/budget');
 const { handleConsistency } = require('../routes/consistency');
 const { handleStoryBible } = require('../routes/story-bible');
 
@@ -758,6 +759,53 @@ const PRODUCTION_TOOLS = [
         path: a => `/film/projects/${a.project_id}/screenplay-drift/baseline`,
         body: () => ({}),
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'spend_report',
+        handler: handleBudget, method: 'GET',
+        description: 'What this project has actually cost in AI generation \u2014 dollars, and the provider units underneath them (tokens at Anthropic, credits at Meshy and Runway, characters and seconds at ElevenLabs). Broken down by capability, provider, model, day and shot, with cost per minute of finished footage and cost per shot. Spend is recorded automatically at the moment of every provider call; nothing needs to be entered by hand. `estimated_usd` is the part that was reconstructed from assets generated before tracking existed \u2014 a floor, since failed generations cost money and left nothing to count. This is NOT the live-action budget estimator (budget_estimate): that one prices crew, cast and shooting days, which this pipeline does not have.',
+        path: a => `/film/projects/${a.project_id}/spend`,
+        schema: { project_id: { type: 'string' } },
+        required: ['project_id'],
+    },
+    {
+        name: 'spend_usage',
+        handler: handleBudget, method: 'GET',
+        description: 'The raw meter: one row per provider call, with the units consumed, the rate applied and what it cost. Use it to answer "why is this number what it is" \u2014 spend_report aggregates, this shows the calls. Filter by capability or provider.',
+        path: a => {
+            const q = [];
+            if (a.capability) q.push(`capability=${encodeURIComponent(a.capability)}`);
+            if (a.provider) q.push(`provider=${encodeURIComponent(a.provider)}`);
+            if (a.limit) q.push(`limit=${encodeURIComponent(a.limit)}`);
+            return `/film/projects/${a.project_id}/spend/usage${q.length ? '?' + q.join('&') : ''}`;
+        },
+        schema: {
+            project_id: { type: 'string' },
+            capability: { type: 'string', description: 'image, video, voice, music, sfx, ambient, llm, model3d, lipsync, post' },
+            provider: { type: 'string', description: 'anthropic, meshy, elevenlabs, runway, openai, gridlight' },
+            limit: { type: 'number' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'spend_backfill',
+        handler: handleBudget, method: 'POST',
+        description: 'Reconstruct what a project spent BEFORE metering existed, by pricing the assets it already has. Every keyframe, plate, clip and audio file on record is one generation someone paid for, and the project provider config says who was paid. Idempotent \u2014 each asset is reconstructed once, so running it twice cannot double the history. Everything it writes is flagged as an estimate and reported separately from measured spend. Pass dry_run to see the number without writing it. It is a FLOOR: a generation that failed cost money and left no asset behind.',
+        path: a => `/film/projects/${a.project_id}/spend/backfill`,
+        body: a => ({ dry_run: !!a.dry_run }),
+        schema: {
+            project_id: { type: 'string' },
+            dry_run: { type: 'boolean', description: 'Price it without recording it.' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'spend_rates',
+        handler: handleBudget, method: 'GET',
+        description: 'The rate book every cost is priced from: per provider and capability, the billing unit, the provider-native unit (usually credits), the USD rate, the published source URL and the date it was checked. Meshy publishes credit costs but not what a credit costs, so its dollar figure is the Pro-plan rate and can be corrected per install; a rate marked inferred was not in the published table and inherits its tier.',
+        path: () => '/film/spend/rates',
+        schema: {},
+        required: [],
     },
     {
         name: 'staleness_report',

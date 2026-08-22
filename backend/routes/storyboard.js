@@ -18,6 +18,7 @@ const { buildStoryboardPrompt, applyStyleLock } = require('../lib/storyboard-pro
 const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
 const { buildShotReferencePayload, applyConsistencyToImagePayload, recordConsistencyCheck, auditProjectReadiness } = require('../lib/consistency-context');
 const { resolveGenerator } = require('../lib/providers');
+const { spendContext } = require('../lib/provider-config');
 const { selectReferences } = require('../lib/reference-images');
 const { generateImageWithFallback, imageProviderChain } = require('../lib/image-fallback');
 // Moved to a lib so the orchestrated payload path can gather the same plates.
@@ -762,7 +763,7 @@ async function generateStoryboard(req, res, projectId, query) {
         // when it can address them from the prompt. Runway takes { uri, tag }
         // and reads @tag; Meshy takes a plain array and cannot, so it needs the
         // prose kept alongside the images.
-        const leadProvider = imageProviderChain(providerConfigOf(project))[0];
+        const leadProvider = imageProviderChain(spendContext(project, shot))[0];
         const canAttach = !!(leadProvider && leadProvider.supportsReferenceImages);
         const canTag = !!(leadProvider && leadProvider.supportsReferenceTags);
         const anchorState = activeAnchorFor_(shot.shot_id, project, body, canAttach);
@@ -822,7 +823,7 @@ async function generateStoryboard(req, res, projectId, query) {
                 anchorCovers: anchorCoversFor(anchorState, anchorState_.anchorAttached),
             });
             const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
-                await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
+                await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, spendContext(project, shot));
 
             // Save image to disk
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
@@ -1009,7 +1010,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
         // when it can address them from the prompt. Runway takes { uri, tag }
         // and reads @tag; Meshy takes a plain array and cannot, so it needs the
         // prose kept alongside the images.
-        const leadProvider = imageProviderChain(providerConfigOf(project))[0];
+        const leadProvider = imageProviderChain(spendContext(project, shot))[0];
         const canAttach = !!(leadProvider && leadProvider.supportsReferenceImages);
         const canTag = !!(leadProvider && leadProvider.supportsReferenceTags);
         const anchorState = activeAnchorFor_(shot.shot_id, project, body, canAttach);
@@ -1092,7 +1093,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
                         ...progressData,
                     });
                 },
-                providerConfigOf(project)
+                spendContext(project, shot)
             );
 
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
@@ -1676,7 +1677,7 @@ async function refineShot(req, res, shotId) {
             aspect_ratio: project.aspect_ratio,
         };
         const { buffer, provider, model } = await callImageGen(
-            payload.prompt, payload.negative_prompt, undefined, payload, providerConfigOf(project));
+            payload.prompt, payload.negative_prompt, undefined, payload, spendContext(project, shot));
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         archiveExistingFrame(project.id, shotId, shot.shot_code);
@@ -1735,7 +1736,7 @@ async function regenerateShot(req, res, shotId) {
      * comes back as something else entirely. Only the anchor tag goes, because
      * an anchor has no prose form to fall back on.
      */
-    const lead = imageProviderChain(providerConfigOf(project))[0];
+    const lead = imageProviderChain(spendContext(project, shot))[0];
     const canAttach = !!(lead && lead.supportsReferenceImages);
     const canTag = !!(lead && lead.supportsReferenceTags);
     const anchorState = activeAnchorFor_(shotId, project, body, canAttach);
@@ -1843,7 +1844,7 @@ async function regenerateShot(req, res, shotId) {
             anchorCovers: anchorCoversFor(anchorState, anchorAttached),
         });
         const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
-            await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, providerConfigOf(project));
+            await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, spendContext(project, shot));
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         // Keep what is about to be replaced. Every attempt cost money.

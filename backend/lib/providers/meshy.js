@@ -466,7 +466,33 @@ async function health() {
         : { ok: false, error: res.error };
 }
 
+/**
+ * Meshy charges a flat number of credits per call, decided entirely by which
+ * model ran — nano-banana is 3, nano-banana-pro is 9, a mesh is 20. Nothing
+ * about the request changes it, so the metered unit is the call itself and the
+ * model is what the rate book prices.
+ */
+function meterMeshy(capability, payload, result) {
+    const p = payload || {};
+    if (capability === 'image') {
+        const model = (result && result.provider_model)
+            || (IMAGE_MODELS.includes(p.model) ? p.model : DEFAULT_IMAGE_MODEL);
+        return { unit: 'call', quantity: 1, model };
+    }
+    if (capability === 'model3d') {
+        const model = (result && result.provider_model) || p.model || DEFAULT_TEXT_MODEL;
+        // Remesh, rigging and animation are free; only generation is charged.
+        const op = String(p.operation || p.mode || 'generate');
+        if (op === 'rig' || op === 'animate' || op === 'remesh') {
+            return { unit: 'call', quantity: 1, model, free_operation: true };
+        }
+        return { unit: 'call', quantity: 1, model };
+    }
+    return null;
+}
+
 const adapter = {
+    meter: meterMeshy,
     id: 'meshy',
     kind: 'generator',
     label: 'Meshy (3D + image)',

@@ -541,6 +541,11 @@ const server = http.createServer(async (req, res) => {
             return handleBudget(req, res, parts, query);
         }
 
+        // Route: /film/projects/:id/spend[/usage|/backfill] — what AI actually cost
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'spend') {
+            return handleBudget(req, res, parts, query);
+        }
+
         // Route: /film/projects/:id/backups
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'backups') {
             return handleBackups(req, res, parts, query);
@@ -797,6 +802,11 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/budget/:id
         if (parts[1] === 'budget') {
+            return handleBudget(req, res, parts, query);
+        }
+
+        // Route: /film/spend/rates — the published rate book, and corrections
+        if (parts[1] === 'spend') {
             return handleBudget(req, res, parts, query);
         }
 

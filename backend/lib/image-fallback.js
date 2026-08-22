@@ -94,7 +94,11 @@ function imageProviderChain(projectConfig) {
 
     for (const adapter of providers.list()) {
         if (seen.has(adapter.id) || !usable(adapter)) continue;
-        chain.push(adapter);
+        // providers.list() hands back RAW adapters — resolveGenerator is what
+        // installs metering, and only the lead provider comes through it. Left
+        // alone, every image served AFTER a refusal would be free in the
+        // report, which is precisely the shot a director paid twice for.
+        chain.push(providers.metered(adapter, projectConfig || {}));
         seen.add(adapter.id);
     }
     return chain;

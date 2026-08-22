@@ -18,6 +18,7 @@ const { persistProviderMedia } = require('../lib/provider-media');
 const { buildMusicPrompt, buildSFXPrompts, buildAmbientPrompt } = require('../lib/music-prompt');
 const { buildMixPayload, calculateDucking, buildStemExport, generateSRT } = require('../lib/audio-mixer');
 const { resolve, get } = require('../lib/providers');
+const { providerConfigFor, spendContext } = require('../lib/provider-config');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MUSIC_ENDPOINT = '/music';
@@ -28,11 +29,9 @@ function json(res, status, data) {
     res.end(JSON.stringify(data));
 }
 
-function parseProjectConfig(projectId) {
-    const row = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
-    if (!row) return {};
-    try { return JSON.parse(row.provider_config || '{}'); } catch (_) { return {}; }
-}
+// One implementation, in lib/provider-config.js — it also tags the config
+// with the project id so spend can be attributed. See that file for why.
+const parseProjectConfig = providerConfigFor;
 
 function resultModel(result, payload) {
     return (result && result.provider_model) || (payload && payload.model) || '';
@@ -144,7 +143,7 @@ async function generateMusic(req, res, sceneId) {
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
-    const musicProvider = resolveGenerator('music', parseProjectConfig(scene.project_id));
+    const musicProvider = resolveGenerator('music', spendContext({ id: scene.project_id }, null, scene));
 
     // Find music cues for this scene, or create from request body
     let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(sceneId);
@@ -217,7 +216,7 @@ async function generateMusicStream(req, res, sceneId) {
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
-    const musicProvider = resolveGenerator('music', parseProjectConfig(scene.project_id));
+    const musicProvider = resolveGenerator('music', spendContext({ id: scene.project_id }, null, scene));
     let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(sceneId);
     const payload = buildMusicPrompt(musicCue, scene, project);
 
@@ -299,7 +298,7 @@ async function generateSFX(req, res, shotId) {
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
-    const sfxProvider = resolveGenerator('sfx', parseProjectConfig(scene.project_id));
+    const sfxProvider = resolveGenerator('sfx', spendContext({ id: scene.project_id }, shot, scene));
 
     let sceneCard = {};
     try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
@@ -371,7 +370,7 @@ async function generateAmbient(req, res, sceneId) {
     const location = scene.location_id
         ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id)
         : null;
-    const ambientProvider = resolveGenerator('ambient', parseProjectConfig(scene.project_id));
+    const ambientProvider = resolveGenerator('ambient', spendContext({ id: scene.project_id }, null, scene));
 
     const payload = buildAmbientPrompt(scene, location);
 
