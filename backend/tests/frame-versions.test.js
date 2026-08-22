@@ -221,20 +221,53 @@ test('restoring an unrecoverable version is refused, not half-done', async () =>
         `restoring a version whose picture was never kept was accepted: ${JSON.stringify(attempt.body)}`);
 });
 
-test('restoring a real version still works and moves forward', async () => {
+test('selecting a version points at it and creates nothing', async () => {
+    /*
+     * Reported from use: "when I switch versions it keeps adding new versions
+     * instead of keeping the number of versions in relation to the images
+     * generated — me selecting a previous version counts it as a new version."
+     *
+     * That was deliberate and wrong. Copying the chosen attempt to a new
+     * highest version kept history perfectly and made the COUNT a lie: five
+     * generations plus one selection read as six attempts, and "which am I on"
+     * stopped having an answer. Versions are the generations; which one is on
+     * the board is a pointer, and moving a pointer creates nothing.
+     */
     const { handleStoryboard } = require('../routes/storyboard');
     const { shotId } = damagedShot();
     const before = await frames(shotId);
+    const countBefore = before.body.versions.length;
     const good = before.body.versions.find(v => v.restorable && !v.is_current);
     assert.ok(good, 'the fixture has no restorable version');
 
     const r = await callRoute(handleStoryboard, 'POST', `/film/shots/${shotId}/frames/${good.version}/restore`);
     assert.ok(r.status < 400, JSON.stringify(r.body));
-    assert.ok(r.body.version > 7, 'restore rewound instead of adding a new version');
+    assert.strictEqual(r.body.version, good.version,
+        'selecting a version reported a different one');
 
     const after = await frames(shotId);
+    assert.strictEqual(after.body.versions.length, countBefore,
+        `selecting an attempt created a version: ${countBefore} generations became `
+        + `${after.body.versions.length}`);
     assert.strictEqual(after.body.versions.filter(v => v.is_current).length, 1,
-        'after a restore, more than one version claims to be on the board');
+        'more than one version claims to be on the board');
+    assert.strictEqual(after.body.versions.find(v => v.is_current).version, good.version,
+        'the board is not showing the version that was selected');
+});
+
+test('nothing is lost by selecting: every earlier attempt survives', async () => {
+    // The forward-only design existed to protect history. The pointer has to
+    // protect it just as well, or this trade was a downgrade.
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { shotId } = damagedShot();
+    const before = await frames(shotId);
+    const versionsBefore = before.body.versions.map(v => v.version).sort((a, b) => a - b);
+    const good = before.body.versions.find(v => v.restorable && !v.is_current);
+
+    await callRoute(handleStoryboard, 'POST', `/film/shots/${shotId}/frames/${good.version}/restore`);
+    const after = await frames(shotId);
+    assert.deepStrictEqual(after.body.versions.map(v => v.version).sort((a, b) => a - b),
+        versionsBefore, 'selecting an attempt changed which attempts exist');
 });
 
 // ── The modal shows it ──────────────────────────────────────────────────
@@ -268,12 +301,15 @@ test('an unrecoverable version offers no Restore button', () => {
 
 // ── The label after a restore ───────────────────────────────────────────
 
-test('a restored version says which picture it is showing', async () => {
-    // Reported from use: "I was at v5, selected v3, and the card shows v6."
-    // Moving forward is deliberate — rewinding would destroy v4 and v5 to undo
-    // one choice — but the NUMBER then stops describing the picture, and a card
-    // reading v6 over v3's frame reads as the restore having picked the wrong
-    // one.
+test('after selecting, the number on the card IS the picture', async () => {
+    /*
+     * "I was at v5, selected v3, and the card shows v6."
+     *
+     * The old answer was to report `shows_version` alongside, so v6 could say
+     * it carried v3's picture. That is a label explaining a confusing number.
+     * The number is not confusing any more: selecting v3 shows v3, so the card
+     * and the picture agree without anything having to explain them.
+     */
     const { handleStoryboard } = require('../routes/storyboard');
     const { shotId, projectId } = damagedShot();
     const before = await frames(shotId);
@@ -281,20 +317,15 @@ test('a restored version says which picture it is showing', async () => {
 
     const r = await callRoute(handleStoryboard, 'POST', `/film/shots/${shotId}/frames/${good.version}/restore`);
     assert.ok(r.status < 400, JSON.stringify(r.body));
-    assert.strictEqual(r.body.shows_version, good.version,
-        'the restore response does not say which picture the new version carries');
-
     const after = await frames(shotId);
     const now = after.body.versions.find(v => v.is_current);
-    assert.notStrictEqual(now.version, good.version, 'restore rewound rather than moving forward');
-    assert.strictEqual(now.shows_version, good.version,
-        `v${now.version} does not report that it is showing v${good.version}'s picture`);
+    assert.strictEqual(now.version, good.version,
+        `selected v${good.version} and the board reports v${now.version}`);
 
-    // And the board — the surface the report came from — carries it too.
+    // And the board — the surface the report came from — agrees.
     const board = await callRoute(handleStoryboard, 'GET', `/film/projects/${projectId}/storyboard`);
     const frame = board.body.frames.find(f => f.shot_id === shotId);
-    assert.strictEqual(frame.asset_shows_version, good.version,
-        'the board does not say which picture the current version shows');
+    assert.ok(frame, 'the shot vanished from the board');
 });
 
 test('an ordinary generation reports no divergence', async () => {

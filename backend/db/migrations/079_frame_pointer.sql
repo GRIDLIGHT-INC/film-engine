@@ -1,0 +1,14 @@
+-- Which attempt a shot is currently SHOWING.
+--
+-- Restoring an earlier frame created a NEW highest version — a copy of v3
+-- landing as v6 — on the reasoning that history must never be destroyed. The
+-- history was safe and the count became a lie: five generations and a selection
+-- read as six attempts, and "which version am I on" stopped having an answer.
+--
+-- Versions are the GENERATIONS, immutable and countable. Which one is on the
+-- board is a pointer, and moving a pointer creates nothing.
+--
+-- NULL means "the highest version", which is what every existing shot shows and
+-- what a freshly generated one shows — so no backfill, and nothing changes for
+-- a shot nobody has restored.
+ALTER TABLE film_shots ADD COLUMN current_frame_version INTEGER;

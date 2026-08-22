@@ -479,6 +479,16 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
         JSON.stringify(opts.input_refs || []), opts.provider || null, opts.provider_model || null,
         JSON.stringify(metadata));
 
+    /*
+     * A new generation is what the shot now shows, so any selection is spent.
+     * Cleared rather than set to the new number: NULL already means "the
+     * highest", so one rule covers both a fresh shot and a regenerated one, and
+     * there is no second place for the two to disagree.
+     */
+    try {
+        db.prepare('UPDATE film_shots SET current_frame_version = NULL WHERE id = ?').run(shotId);
+    } catch (_) { /* a pointer that cannot be cleared must not fail a paid generation */ }
+
     // Same kind the orchestrator records for its keyframe step, so a frame is
     // stale on the same terms however it was generated.
     require('../lib/artefact-fingerprint').stampAsset(id, 'keyframe', { shotId });
@@ -1346,19 +1356,21 @@ function listShotFrames(req, res, shotId) {
     const current = storyboardImagePath(scene.project_id, shot.shot_code);
 
     /*
-     * `is_current` is the HIGHEST version, not "points at the live file".
+     * `is_current` is the version the shot POINTS AT, not the highest.
      *
-     * Comparing paths looked right and was wrong on every project that predates
-     * the archiver. Versions written before it existed were never copied aside,
-     * so they still name the live filename — and on a real shot that made SIX of
-     * seven versions claim to be on the board. The modal hides Restore on the
-     * current version, so six attempts could not be selected at all.
+     * It was the highest, because selecting an earlier attempt used to create a
+     * new one — v3 chosen became v6. That kept history and made the count a
+     * lie: five generations and a selection read as six attempts. Selecting is
+     * a pointer now, so after choosing v3 the highest is still 5 and the
+     * current is 3, and those are genuinely different facts.
      *
-     * Exactly one version is on the board by definition: the newest. After a
-     * restore that is a NEW version whose picture is an old one, which is why
-     * this cannot be inferred from the file either.
+     * It cannot be inferred from the file either. Comparing paths looked right
+     * and was wrong on every project predating the archiver: versions written
+     * before it existed still name the live filename, which on a real shot made
+     * SIX of seven versions claim to be on the board — and the modal hides
+     * Restore on the current one, so six attempts became unselectable.
      */
-    const currentVersion = rows.length ? Math.max(...rows.map(r => r.version)) : null;
+    const currentVersion = currentFrameVersion(shotId);
 
     const versions = rows.map(r => {
         let meta = {};
@@ -1434,22 +1446,22 @@ function safeExists(p) {
  * Costs nothing — it is a file copy, not a generation.
  */
 function restoreShotFrame(req, res, shotId, version) {
-    const shot = db.prepare('SELECT id, shot_code, scene_id FROM film_shots WHERE id = ?').get(shotId);
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) return json(res, 404, { error: 'Shot not found' });
     const scene = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
     /*
-     * Restoring is free and forward-only, and it still changes which picture the
-     * shot SHOWS — which is precisely what a lock exists to hold still. Guarded
-     * rather than exempted: a locked board that can be silently re-pointed at a
-     * different attempt is not locked.
+     * Selecting a frame is free and forward-only, and it still changes which
+     * picture the shot SHOWS — which is exactly what a lock exists to hold
+     * still. Guarded rather than exempted: a locked board that can be silently
+     * re-pointed at a different attempt is not locked.
      */
     {
-        // provider_config comes along not because restore resolves a provider
-        // — it does not — but because the guard that keeps every project fetch
-        // honest cannot tell the two apart, and relaxing a guard to fit new
-        // code is how it stops protecting the case it was written for.
+        // provider_config comes along not because this resolves a provider — it
+        // does not — but because the guard keeping every project fetch honest
+        // cannot tell the two apart, and relaxing a guard to fit new code is
+        // how it stops protecting the case it was written for.
         const project = db.prepare(
             'SELECT board_locked_at, provider_config FROM film_projects WHERE id = ?')
             .get(scene.project_id);
@@ -1457,63 +1469,101 @@ function restoreShotFrame(req, res, shotId, version) {
         if (lk) return json(res, 423, lk);
     }
 
+    const wanted = Number(version);
     const row = db.prepare(
         `SELECT id, version, file_path FROM film_assets
-          WHERE shot_id = ? AND asset_type = 'storyboard' AND version = ?`).get(shotId, Number(version));
-    if (!row) return json(res, 404, { error: `This shot has no version ${version}` });
-    if (!safeExists(row.file_path)) {
-        return json(res, 409, { error: `The file for version ${version} is no longer on disk.` });
-    }
+          WHERE shot_id = ? AND asset_type = 'storyboard' AND version = ?`).get(shotId, wanted);
+    if (!row) return json(res, 404, { error: `This shot has no version ${wanted}` });
 
-    const current = storyboardImagePath(scene.project_id, shot.shot_code);
+    /*
+     * Moving a pointer, not making a version.
+     *
+     * This used to copy the chosen attempt to a NEW highest version — v3
+     * selected became v6 — so that nothing was ever destroyed. Nothing was, and
+     * the count became a lie: five generations and one selection read as six
+     * attempts, and "which am I on" stopped having an answer. Versions are the
+     * GENERATIONS; which one is on the board is a pointer, and moving it
+     * creates nothing.
+     *
+     * The live file is still written, because every consumer — the board, the
+     * viewer, previs, the video pass — reads {code}.png. What is NOT written is
+     * a row.
+     */
+    const live = storyboardImagePath(scene.project_id, shot.shot_code);
 
-    // Same path, two different meanings, and telling them apart is the whole
-    // bug. A row naming the live file is EITHER the current version, or an
-    // older attempt that was never archived and whose picture the live file
-    // long ago replaced. Comparing paths said "already on the board" for both,
-    // so restoring an old attempt silently did nothing and reported success.
-    const highest = db.prepare(
-        `SELECT MAX(version) v FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard'`)
-        .get(shotId).v;
-    const sharesLiveFile = path.resolve(row.file_path || '') === path.resolve(current);
-
-    if (row.version === highest) {
-        return json(res, 200, {
-            shot_id: shotId, version: row.version, changed: false,
-            note: 'That version is already the frame on the board.',
+    /*
+     * A row still naming the LIVE file is an attempt whose own picture was
+     * never kept aside — the file at that path is now some later attempt. It
+     * exists, so a bare existsSync says yes and the copy would silently write
+     * the current picture onto itself and report success. `listShotFrames`
+     * already calls these `overwritten` and refuses to offer Restore; the route
+     * has to agree, or the API accepts what the UI knows is impossible.
+     */
+    const namesLiveFile = row.file_path
+        && path.resolve(row.file_path) === path.resolve(live);
+    const src = (!namesLiveFile && row.file_path && fs.existsSync(row.file_path))
+        ? row.file_path : null;
+    if (!src) {
+        return json(res, 409, {
+            error: namesLiveFile
+                ? `Version ${wanted}'s own picture was never kept — that row names the live file, `
+                  + 'which now holds a later attempt.'
+                : `The file for version ${wanted} is no longer on disk.`,
+            hint: 'The row survives, so the attempt is recorded — but the picture cannot be shown.',
         });
     }
-    if (sharesLiveFile) {
-        return json(res, 409, {
-            error: `v${row.version} was never archived — its picture was overwritten by a later `
-                + 'attempt, so there is nothing to restore.',
-            hint: 'It is listed because it is real history. Attempts made from now on are archived '
-                + 'before they are replaced.',
+
+    const current = currentFrameVersion(shotId);
+    if (current === wanted) {
+        return json(res, 200, {
+            shot_id: shotId, version: wanted, changed: false,
+            note: 'That version is already the frame on the board.',
         });
     }
 
     try {
-        ensureStoryboardDir(scene.project_id);
-        // Archive what is being replaced FIRST, or the current picture is
-        // overwritten by the restore and the attempt you were on is the one
-        // thing the history loses.
+        /*
+         * Before pointing elsewhere, make sure the picture currently on the
+         * board is stored under its own version. A freshly generated frame
+         * lives only at {code}.png until something archives it, so switching
+         * away without this would lose the newest attempt — the one thing this
+         * list exists to prevent.
+         */
         archiveExistingFrame(scene.project_id, shotId, shot.shot_code);
-        fs.copyFileSync(row.file_path, current);
+        fs.copyFileSync(src, live);
+        db.prepare('UPDATE film_shots SET current_frame_version = ? WHERE id = ?').run(wanted, shotId);
     } catch (err) {
-        return json(res, 500, { error: `Could not restore that frame: ${err.message}` });
+        return json(res, 500, { error: 'Could not restore that version: ' + err.message });
     }
 
-    const asset = registerStoryboardAsset(scene.project_id, shotId, current, `${shot.shot_code}.png`,
-        { restored_from: row.version });
-    db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('complete', shotId);
-
     return json(res, 200, {
-        shot_id: shotId, shot_code: shot.shot_code, changed: true,
-        restored_from: row.version, version: asset.version,
-        shows_version: row.version,
+        shot_id: shotId,
+        shot_code: shot.shot_code,
+        version: wanted,
+        changed: true,
+        versions_total: db.prepare(
+            `SELECT COUNT(*) n FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard'`)
+            .get(shotId).n,
+        note: `Now showing version ${wanted}. No new version was created — selecting an attempt `
+            + 'moves which one is on the board, it does not make another.',
         image_url: storyboardImageUrl(scene.project_id, shot.shot_code),
-        note: `v${row.version} is back on the board as v${asset.version}. Nothing was deleted.`,
     });
+}
+
+/**
+ * Which version a shot is currently showing.
+ *
+ * NULL means the highest, which is what a freshly generated shot shows and what
+ * every shot showed before selection existed — so the absence of a pointer is a
+ * meaningful default rather than missing data.
+ */
+function currentFrameVersion(shotId) {
+    const shot = db.prepare('SELECT current_frame_version FROM film_shots WHERE id = ?').get(shotId);
+    if (shot && shot.current_frame_version != null) return shot.current_frame_version;
+    const top = db.prepare(
+        `SELECT MAX(version) v FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard'`)
+        .get(shotId);
+    return top ? top.v : null;
 }
 
 /**

@@ -307,7 +307,10 @@ test('a superseded frame is archived before it is overwritten', () => {
     // archive's own `copyFileSync(current, dest)` reads FROM the live frame and
     // must not be counted as a write of it, or the archive would be required to
     // archive itself.
-    const LIVE_FRAME = /fs\.writeFileSync\(\s*(?:imgPath|current)\b|fs\.copyFileSync\([^,)]+,\s*(?:imgPath|current)\b/g;
+    // `live` joined imgPath/current when selecting a version became a pointer
+    // move: it copies the chosen attempt onto the live frame without
+    // registering anything, so it writes a frame under a third name.
+    const LIVE_FRAME = /fs\.writeFileSync\(\s*(?:imgPath|current|live)\b|fs\.copyFileSync\([^,)]+,\s*(?:imgPath|current|live)\b/g;
     const writes = (src.match(LIVE_FRAME) || []).length;
     const archives = (src.match(/archiveExistingFrame\(/g) || []).length - 1;   // minus the definition
     assert.ok(writes > 0, 'no frame is written anywhere');

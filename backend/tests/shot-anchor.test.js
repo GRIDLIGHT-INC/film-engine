@@ -656,16 +656,23 @@ test('the board can pick the anchor up, show it, and put it down', () => {
 
 // ── Every attempt, and the way back to one ──────────────────────────────
 
-test('a restore is a new version, never a rewind', async () => {
-    // Restoring must not truncate history to the version being restored: that
-    // would destroy the attempts made after it, and make "restore" destructive
-    // on the one list whose whole purpose is that nothing is lost.
+test('selecting a version changes what is shown and destroys nothing', async () => {
+    /*
+     * Selecting must not truncate history to the version chosen: that would
+     * destroy the attempts made after it, and make selecting destructive on the
+     * one list whose whole purpose is that nothing is lost.
+     *
+     * It used to protect that by moving FORWARD — copying the chosen attempt to
+     * a new highest version. History was safe and the count became a lie: three
+     * generations plus one selection read as four attempts. Selecting is a
+     * pointer now, so the count keeps meaning "images generated" and the
+     * attempts are all still there.
+     */
     const { handleStoryboard } = require('../routes/storyboard');
     const os_ = require('os');
     const { projectId, shots } = makeScene(['1A'], ['1A']);
     const shotId = shots['1A'];
 
-    // Three attempts, the way regeneration leaves them.
     const dir = fs.mkdtempSync(path.join(os_.tmpdir(), 'restore-'));
     for (const v of [2, 3]) {
         const f = path.join(dir, `1A_v${v}.png`);
@@ -678,18 +685,21 @@ test('a restore is a new version, never a rewind', async () => {
     const before = await callRoute(handleStoryboard, 'GET', `/film/shots/${shotId}/frames`);
     assert.strictEqual(before.status, 200);
     assert.strictEqual(before.body.versions.length, 3, 'not every attempt was listed');
-    assert.ok(before.body.note, 'the list does not say what restoring does');
+    assert.ok(before.body.note, 'the list does not say what selecting does');
 
     const r = await callRoute(handleStoryboard, 'POST', `/film/shots/${shotId}/frames/2/restore`);
     assert.strictEqual(r.status, 200, JSON.stringify(r.body));
-    assert.strictEqual(r.body.restored_from, 2);
-    assert.ok(r.body.version > 3, `restore rewound to v${r.body.version} instead of moving forward`);
+    assert.strictEqual(r.body.version, 2, 'selecting v2 reported a different version');
 
     const after = await callRoute(handleStoryboard, 'GET', `/film/shots/${shotId}/frames`);
-    assert.ok(after.body.versions.length > before.body.versions.length,
-        'restoring removed an attempt instead of adding one');
-    const versions = after.body.versions.map(v => v.version);
-    assert.ok(versions.includes(3), 'the attempt that was on the board when you restored is gone');
+    assert.strictEqual(after.body.versions.length, before.body.versions.length,
+        'selecting an attempt changed how many attempts exist');
+    assert.deepStrictEqual(
+        after.body.versions.map(v => v.version).sort((a, b) => a - b),
+        before.body.versions.map(v => v.version).sort((a, b) => a - b),
+        'selecting an attempt changed WHICH attempts exist');
+    assert.strictEqual(after.body.versions.find(v => v.is_current).version, 2,
+        'the board is not showing the version that was selected');
 });
 
 test('exactly one listed version is the frame on the board', () => {

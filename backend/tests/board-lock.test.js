@@ -21,17 +21,27 @@ const path = require('path');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
 
-/** Every function that writes a storyboard frame to disk and registers it. */
+/**
+ * Every function that WRITES THE LIVE FRAME.
+ *
+ * Derived from the destination rather than from `registerStoryboardAsset`,
+ * because those are different sets: selecting a version writes the live frame
+ * and deliberately registers nothing — it moves a pointer. A lock derived from
+ * "registers an asset" would have let a locked board be silently re-pointed at
+ * a different attempt, which is precisely what a lock exists to stop.
+ *
+ * Same rule tests/storyboard-annotation.test.js counts archives by, and for the
+ * same reason: a path that replaces the picture is a path that must be guarded,
+ * however it does the writing.
+ */
 const WRITING_PATHS = (() => {
+    const LIVE = /fs\.writeFileSync\(\s*(?:imgPath|current|live)\b|fs\.copyFileSync\([^,)]+,\s*(?:imgPath|current|live)\b/;
     const out = new Set();
-    const lines = SRC.split('\n');
-    let current = null;
-    for (const line of lines) {
+    let fn = null;
+    for (const line of SRC.split('\n')) {
         const m = line.match(/^(?:async )?function (\w+)\(/);
-        if (m) current = m[1];
-        if (/registerStoryboardAsset\(/.test(line) && current && current !== 'registerStoryboardAsset') {
-            out.add(current);
-        }
+        if (m) fn = m[1];
+        if (fn && fn !== 'archiveExistingFrame' && LIVE.test(line)) out.add(fn);
     }
     return [...out];
 })();

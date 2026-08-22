@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (76 migrations)
+│   │   └── migrations/     # SQL migration files (77 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -551,6 +551,17 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 **The free preview leads rather than hiding behind a toggle.** `GET /shots/:id/prompt` spends nothing and reports the assembled prompt, the ceiling, the headroom and every contributor with what it wanted and what survived — so the budget is a set of bars you read *before* paying, and the mode that costs money to try is the one you can look at first. Choosing a mode re-reads it, which is why the preview had to learn `direction_mode` in the first place. A mode that cannot run — camera mode with no anchor attached — says so **where it is chosen**, rather than as a 409 after the click.
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
+
+### A Version Is a Generation; Which One Shows Is a Pointer
+Selecting an earlier frame created a **new highest version** — v3 chosen became v6 — on the reasoning that history must never be destroyed. The history was safe and the **count became a lie**: five generations plus one selection read as six attempts, and *"which am I on"* stopped having an answer. `shows_version` was added to explain the confusing number, which is a label apologising for a model rather than fixing it.
+
+Versions are the **generations**: immutable, countable, one per image paid for. Which one is on the board is `film_shots.current_frame_version` (migration 079), and moving a pointer creates nothing. Select v3 and the board shows v3, the count stays at five, and every attempt survives.
+
+**NULL means "the highest"**, which is what a freshly generated shot shows and what every shot showed before selection existed — so there is no backfill and nothing changes for a shot nobody has selected on. A new generation **clears** the pointer rather than setting it to the new number, so one rule covers both cases and there is no second place for them to disagree.
+
+Two details are load-bearing. The live frame is still **written**, because every consumer — board, viewer, previs, the video pass — reads `{code}.png`; what is not written is a *row*. And the outgoing picture is **archived first**, since a freshly generated frame lives only at `{code}.png` until something copies it aside — switching away without archiving would lose the newest attempt, which is the one thing this list exists to prevent.
+
+A version whose row still names the **live file** is refused. Its own picture was never kept, so `existsSync` says yes and a copy would silently write the current frame onto itself and report success — `listShotFrames` already calls these `overwritten` and hides Restore, and the route now agrees rather than accepting what the UI knows is impossible.
 
 ### Locking a Board
 A storyboard is finished work. Every frame on it was paid for, judged and kept — and every one sits behind a Regen button that costs money and **replaces** the picture. Nothing distinguished *"this is a draft"* from *"this is the shot"*, so the only protection was remembering.
@@ -1159,7 +1170,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (76 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (77 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
