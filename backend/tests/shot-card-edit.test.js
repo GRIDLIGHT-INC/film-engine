@@ -210,15 +210,41 @@ test('a list replaces, so a character can be removed from a shot', async () => {
         'a character could not be removed from a shot');
 });
 
-test('which blocks merge is declared, not decided per field', () => {
-    const src = require('fs').readFileSync(
-        require('path').join(__dirname, '..', 'routes', 'shots.js'), 'utf8');
-    const m = src.match(/const MERGED_BLOCKS\s*=\s*new Set\(\[([^\]]*)\]/);
+test('every object-valued card block merges — derived from the validator', () => {
+    // Derived, not listed. Naming camera and lighting here would pass forever
+    // while a third nested block added to the scene card kept the destructive
+    // behaviour, which is the bug this test exists to catch — the original
+    // defect was exactly "the field nobody thought about got replaced".
+    //
+    // The validator is the authority on which fields are objects, because it is
+    // what refuses a card that gets it wrong.
+    const fs = require('fs'), pathMod = require('path');
+    const schema = fs.readFileSync(pathMod.join(__dirname, '..', 'lib', 'scene-card-schema.js'), 'utf8');
+    const routes = fs.readFileSync(pathMod.join(__dirname, '..', 'routes', 'shots.js'), 'utf8');
+
+    // Every `typeof card.X !== 'object'` check: the blocks the card treats as objects.
+    const objectBlocks = [...schema.matchAll(/typeof card\.(\w+) !== 'object'/g)].map(m => m[1]);
+    assert.ok(objectBlocks.length >= 2,
+        `expected the validator to declare object blocks, found ${objectBlocks.length}`);
+
+    const m = routes.match(/const MERGED_BLOCKS\s*=\s*new Set\(\[([^\]]*)\]/);
     assert.ok(m, 'routes/shots.js does not declare which card blocks merge');
-    const merged = [...m[1].matchAll(/'(\w+)'/g)].map(x => x[1]);
-    assert.ok(merged.includes('camera'), 'camera does not merge');
-    assert.ok(merged.includes('lighting'), 'lighting does not merge');
-    for (const list of ['characters', 'props', 'dialogue', 'sfx_cues']) {
-        assert.ok(!merged.includes(list), `${list} merges, so it could never be shortened`);
-    }
+    const merged = new Set([...m[1].matchAll(/'(\w+)'/g)].map(x => x[1]));
+
+    const editable = (routes.match(/const EDITABLE = \[([\s\S]*?)\]/) || [, ''])[1];
+    const editableNames = new Set([...editable.matchAll(/'(\w+)'/g)].map(x => x[1]));
+
+    // Only editable blocks are this route's problem — an object the card allows
+    // but this route cannot write cannot be clobbered by it.
+    const shouldMerge = objectBlocks.filter(b => editableNames.has(b));
+    const missing = shouldMerge.filter(b => !merged.has(b));
+    assert.deepStrictEqual(missing, [],
+        `object-valued card blocks that REPLACE instead of merging: ${missing.join(', ')} `
+        + '— setting one facet of these silently drops every other facet');
+
+    // And nothing that is not an object may be in the set: merging a list would
+    // make it impossible to shorten.
+    const wrong = [...merged].filter(b => !objectBlocks.includes(b));
+    assert.deepStrictEqual(wrong, [],
+        `these merge but are not objects in the validator: ${wrong.join(', ')}`);
 });

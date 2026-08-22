@@ -897,6 +897,10 @@ async function generateStoryboard(req, res, projectId, query) {
                 input_refs: consistencyContext.input_refs,
                 provider: usedProvider,
                 provider_model: usedModel,
+                // Whole-board generation builds every frame from its card, so
+                // the mode is always 'action'. Recorded rather than left off:
+                // absent has to keep meaning "made before this was tracked".
+                direction_mode: 'action',
             });
             recordConsistencyCheck(
                 { ...shot, id: shot.shot_id },
@@ -1166,6 +1170,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
                 input_refs: consistencyContext.input_refs,
                 provider: metadata && metadata.provider,
                 provider_model: metadata && metadata.provider_model,
+                direction_mode: 'action',
             });
             recordConsistencyCheck(
                 { ...shot, id: shot.shot_id },
@@ -1883,8 +1888,17 @@ async function refineShot(req, res, shotId) {
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         archiveExistingFrame(project.id, shotId, shot.shot_code);
         fs.writeFileSync(imgPath, buffer);
+        // What this frame IS: a refine of a specific earlier version, with the
+        // sentence that asked for it. Both fields were already accepted by
+        // registerStoryboardAsset and travelled only in the JSON response, so
+        // the asset itself recorded nothing — a refined frame sat in the
+        // version list indistinguishable from a plain regeneration.
         const asset = registerStoryboardAsset(project.id, shotId, imgPath, `${shot.shot_code}.png`,
-            { provider, provider_model: model });
+            {
+                provider, provider_model: model,
+                refined_from: fromVersion === null ? 'current' : `v${fromVersion}`,
+                instruction,
+            });
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('complete', shotId);
 
         return json(res, 200, {

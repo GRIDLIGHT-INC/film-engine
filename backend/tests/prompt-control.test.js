@@ -267,3 +267,45 @@ test('shot_prompt reports the budget, contributor by contributor', async () => {
     }
     assert.ok(r.body.direction_mode, 'shot_prompt does not say which mode would be used');
 });
+
+/**
+ * Every generated frame says how it was directed.
+ *
+ * Derived over the registration call sites rather than listed, because the gap
+ * this closes was itself a "the path nobody thought about" bug: 2B accumulated
+ * twelve attempts and the version list — whose whole job is "which of these am
+ * I looking at" — could not say that eleven were built from prose and the
+ * twelfth from a locked scene.
+ *
+ * The classifier is `provider`. A call site that records which provider made
+ * the picture GENERATED it and must say how it was directed; one that does not
+ * is a file copy (restore), where no mode applies and `restored_from` is the
+ * honest record.
+ */
+test('every path that generates a frame records how it was directed', () => {
+    const fs = require('fs'), pathMod = require('path');
+    const src = fs.readFileSync(pathMod.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
+
+    // Each registerStoryboardAsset call and the options object it passes.
+    const sites = [];
+    const re = /registerStoryboardAsset\(/g;
+    let m;
+    while ((m = re.exec(src))) {
+        const line = src.slice(0, m.index).split('\n').length;
+        // The options object is whatever follows, up to the closing of the call.
+        const tail = src.slice(m.index, m.index + 600);
+        const end = tail.indexOf(');');
+        sites.push({ line, opts: end === -1 ? tail : tail.slice(0, end) });
+    }
+    assert.ok(sites.length >= 4, `expected several registration sites, found ${sites.length}`);
+
+    const generated = sites.filter(s => /provider[:,]/.test(s.opts));
+    assert.ok(generated.length >= 3,
+        `expected several GENERATING sites, found ${generated.length}`);
+
+    const silent = generated.filter(s =>
+        !/direction_mode/.test(s.opts) && !/refined_from/.test(s.opts));
+    assert.deepStrictEqual(silent.map(s => s.line), [],
+        'these paths generate a frame and record nothing about how it was directed, '
+        + `so its version cannot be told apart from any other: lines ${silent.map(s => s.line).join(', ')}`);
+});
