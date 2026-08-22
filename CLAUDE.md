@@ -247,6 +247,7 @@ film-engine/
 │       ├── mcp-first-writing.test.js # MCP is the default path; HTTP says it cost you something
 │       ├── act-structure.test.js   # Acts are sections; the table and its readers are gone
 │       ├── frame-versions.test.js  # Which attempt is which, and which can be chosen
+│       ├── mcp-guide.test.js       # The Claude Desktop guide, held to the tool registry
 │       ├── providers.test.js             # Provider registry + resolution
 │       ├── providers-api.test.js         # Provider settings/credentials API
 │       ├── providers-runway.test.js      # Runway adapter (mock server)
@@ -273,6 +274,7 @@ film-engine/
 │       ├── integration.test.js       # Integration test suite (43 tests)
 │       └── helpers.js                # Test utilities
 ├── docs/
+│   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
 │   ├── api-film.md         # Full API reference
 │   └── adr/                # Architecture decision records (5 ADRs)
 ├── src/
@@ -1242,6 +1244,7 @@ node --test backend/tests/screenplay-polish.test.js
 node --test backend/tests/mcp-first-writing.test.js
 node --test backend/tests/act-structure.test.js
 node --test backend/tests/frame-versions.test.js
+node --test backend/tests/mcp-guide.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js

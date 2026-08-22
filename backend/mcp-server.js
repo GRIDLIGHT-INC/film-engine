@@ -31,13 +31,45 @@ const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 
 const SERVER_INFO = { name: 'film-engine', version: '0.1.0' };
 
+/**
+ * What the connected model reads before it calls anything.
+ *
+ * This is not the user's guide — that is docs/claude-desktop-guide.md, written
+ * for a person. This is the model's orientation, and it was wrong by omission:
+ * it described `flow_*` and `node_*`, which is 38 of 133 tools, so a model
+ * reading it would reasonably conclude Film Engine is a graph-execution service
+ * and never discover that it writes screenplays and makes films.
+ *
+ * Ordered by the work rather than by the registry, because the first question
+ * is always "where do I start" and the answer is never "the alphabetically
+ * first tool".
+ */
 const INSTRUCTIONS = [
-    'Film Engine turns a screenplay into shots and generates the media for them.',
-    'Tools come in two families.',
-    'flow_* tools operate on whole graphs: list them, read one, validate it, estimate its cost, run it, inspect the run.',
-    'node_* tools execute a single node type in isolation — useful for trying one generation before committing to a run.',
-    'Read flow_node_types before authoring a graph; call flow_validate before flow_run; call flow_estimate before any fan-out.',
-    'Anything named gen.* resolves a provider and spends money.',
+    'Film Engine takes a screenplay all the way to a finished film, and every stage is here.',
+    'The order of the work: write or import a screenplay → break it into shots →',
+    'describe the characters, locations and props → generate reference plates for them →',
+    'generate storyboard frames → block shots in 3D previs → generate video, voice and music →',
+    'assemble and export to an editor.',
+    '',
+    'WRITING. script_get reads the screenplay; scene_append adds a chapter without re-sending',
+    'the rest, which is how a novel is imported chapter by chapter; scene_insert_after puts one',
+    'in the middle; scene_edit changes named phrases in place and is all-or-nothing per batch;',
+    'outline_get and outline_write handle acts and synopses; beats_get reports where the',
+    'structure has holes.',
+    '',
+    'YOU DO THE REASONING. No tool here calls another language model — writing a scene card, a',
+    'character description or a screenplay is your work, and the plain data tools exist so you',
+    'can do it: read with script_get, compose, then write with shot_create, character_update or',
+    'scene_update. There is deliberately no breakdown or convert tool.',
+    '',
+    'SPENDING. Anything named gen.*, and storyboard_generate / storyboard_regenerate /',
+    'storyboard_refine / plate_generate / plate_generate_all / flow_run, resolves a provider and',
+    'COSTS THE USER MONEY. shot_prompt shows exactly what a frame would send and spends nothing —',
+    'read it before regenerating. Ask before generating at volume.',
+    '',
+    'GRAPHS. flow_* tools operate on whole pipelines and node_* execute one node in isolation.',
+    'Read flow_node_types before authoring a graph, flow_validate before flow_run, and',
+    'flow_estimate before any fan-out.',
 ].join(' ');
 
 let tools = null;   // lazily required: importing opens the database
