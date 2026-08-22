@@ -199,6 +199,7 @@ film-engine/
 │       ├── frame-send.test.js      # A picture moves to another shot as a copy, never a move
 │       ├── reference-limit.test.js  # How many plates fit is the provider's answer, not a constant
 │       ├── current-frame.test.js   # Every surface paints the version you selected, not the newest
+│       ├── shot-insert.test.js    # A shot goes in mid-scene without renaming a single thing
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -555,6 +556,17 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 **The free preview leads rather than hiding behind a toggle.** `GET /shots/:id/prompt` spends nothing and reports the assembled prompt, the ceiling, the headroom and every contributor with what it wanted and what survived — so the budget is a set of bars you read *before* paying, and the mode that costs money to try is the one you can look at first. Choosing a mode re-reads it, which is why the preview had to learn `direction_mode` in the first place. A mode that cannot run — camera mode with no anchor attached — says so **where it is chosen**, rather than as a 409 after the click.
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
+
+### Inserting a Shot: 2AA, Not a Renumber
+A director adding a reaction shot after 2A wants it to come **next**. The tidy answer is to call it 2B and shift 2B→2C, 2C→2D, and that is what a clean-slate tool would do.
+
+Production does not do it, and the reason applies here **literally rather than by analogy**. On a set the existing codes are already on the slate, the call sheet, the continuity notes and the editor's bins. In this app they are also **filenames** — `2B.png`, `2B_v11.png`, with thirteen places deriving a path from the code — rows in the render ledger, and the word a director has been using for that shot all day. A renumber means moving every file every renamed shot ever generated, and a half-applied rename orphans frames on a shot nobody touched.
+
+So an insert is **additive**: after 2A comes **2AA**, exactly as a script supervisor numbers one, and nothing else changes. A second insert after the same shot walks the suffix to 2AB, so repeated inserts stay in the order they were made.
+
+**What does move is `sort_order`.** Order is the thing that actually changed; the codes deliberately did not. An insert that left the running order alone would just be a shot appended with a confusing name.
+
+The renumbering path was built first, complete with back-to-front renaming and file moves that rolled back on failure, and then deleted — the convention removes the need for all of it, which is the strongest argument for the convention.
 
 ### Nothing Generates Before You Have Seen What Is Sent
 Wingfall 2B took an afternoon of purchases, and every cause was visible in the assembled prompt before a credit was spent: a camera note contradicted by a staging line, a subject description overriding the anchor, and plates dropped for want of a slot. `GET /shots/:id/prompt` costs nothing and shows all of it — and it had no control on the page, so the only way to learn what a shot would send was to generate it and study the picture.
@@ -1378,6 +1390,7 @@ node --test backend/tests/board-lock.test.js
 node --test backend/tests/frame-send.test.js
 node --test backend/tests/reference-limit.test.js
 node --test backend/tests/current-frame.test.js
+node --test backend/tests/shot-insert.test.js
 node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js

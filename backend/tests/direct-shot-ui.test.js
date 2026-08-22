@@ -434,14 +434,10 @@ test('a shot can be added from the board', () => {
 
     const fn = html.slice(html.indexOf('async function insertShotAfter('),
         html.indexOf('async function insertShotAfter(') + 2600);
-    assert.ok(/scene_id: after\.scene_id/.test(fn),
-        'a new shot does not land in the scene of the shot it follows');
-    assert.ok(/cards: \[/.test(fn), 'it does not post a scene card, so the shot has nothing to generate from');
-
-    // The board must actually serve scene_id, or the insert posts undefined.
-    const routes = fs.readFileSync(path.join(__dirname, '..', 'routes', 'storyboard.js'), 'utf8');
-    assert.ok(/scene_id: shot\.scene_id/.test(routes),
-        'the board does not return scene_id, so an inserted shot has no scene');
+    assert.ok(/insert-after/.test(fn),
+        'the button does not use the insert route, so it cannot place the shot or number it');
+    assert.ok(/script supervisor/.test(fn),
+        'the prompt does not tell the director how the shot will be numbered before they commit');
 });
 
 test('every paid action shows what will be sent, and names the pictures', () => {

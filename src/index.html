@@ -4623,7 +4623,10 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     </div>
                 </div>
             </div>
-            <div id="storyboardGrid" class="entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
+            <!-- 340px, not 260: the card carries six controls now (anchor, refine,
+                 versions, regen, direct, add) and at 260 the last one overflowed off
+                 the card, so the way to add a shot was invisible rather than absent. -->
+            <div id="storyboardGrid" class="entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));"></div>
         </div>
 
         <!-- ── 7. CHARACTERS ────────────────────────────────────── -->
@@ -24362,16 +24365,17 @@ ${fountainText.slice(0, 50000)}`;
                             <canvas id="annot-${f.shot_id}" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
                         </div>
                         <div style="padding:10px;">
-                            <div class="flex-between">
-                                <strong>Sc${f.scene_number} / ${esc(f.shot_code)}</strong>
-                                <div style="display:flex;gap:4px;">
-                                    ${anchorButton(f)}
-                                    <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="${frameVersionTitle(f)}">${frameVersionLabel(f)}</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again from the card — costs credits">Regen</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="directShot('${f.shot_id}')" title="Who and what is in this shot, and where the camera is">Direct</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="insertShotAfter('${f.shot_id}')" title="Add a new shot immediately after this one, in the same scene">+ Shot</button>
-                                </div>
+                            <strong>Sc${f.scene_number} / ${esc(f.shot_code)}</strong>
+                            <!-- Its own wrapping row at full card width. Sharing a
+                                 flex-between line with the shot code gave the buttons
+                                 whatever was left over, and the sixth fell off the edge. -->
+                            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
+                                ${anchorButton(f)}
+                                <button class="btn btn-secondary btn-sm" onclick="directShot('${f.shot_id}')" title="Who and what is in this shot, and where the camera is">Direct</button>
+                                <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again from the card — shows you the prompt first">Regen</button>
+                                <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
+                                <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="${frameVersionTitle(f)}">${frameVersionLabel(f)}</button>
+                                <button class="btn btn-secondary btn-sm" onclick="insertShotAfter('${f.shot_id}')" title="Add a new shot immediately after this one, in the same scene">+ Shot</button>
                             </div>
                             ${storyboardFacetTags(f)}
                             ${f.description ? '<p class="text-sm" style="margin-top:6px;line-height:1.45;">' + esc(f.description) + '</p>' : ''}
@@ -26213,48 +26217,30 @@ ${fountainText.slice(0, 50000)}`;
      * conversation and the run plan.
      */
     async function insertShotAfter(afterShotId) {
-        if (!state.currentProject) return;
-        let board;
-        try {
-            board = await api(`/projects/${state.currentProject.id}/storyboard`);
-        } catch (err) { return setStatus('Could not read the board: ' + err.message); }
-
-        const frames = board.frames || [];
-        const idx = frames.findIndex(f => f.shot_id === afterShotId);
-        const after = frames[idx];
+        const board = (state.storyboard && state.storyboard.frames) || null;
+        let after = board && board.find(f => f.shot_id === afterShotId);
+        if (!after) {
+            try {
+                const d = await api(`/projects/${state.currentProject.id}/storyboard`);
+                after = (d.frames || []).find(f => f.shot_id === afterShotId);
+            } catch (err) { return setStatus('Could not read the board: ' + err.message); }
+        }
         if (!after) return setStatus('That shot is no longer on the board.');
 
-        // Suggest the next free letter in this scene: 2B -> 2C.
-        const inScene = frames.filter(f => f.scene_number === after.scene_number);
-        const used = new Set(inScene.map(f => String(f.shot_code || '').toUpperCase()));
-        const base = String(after.shot_code || '').replace(/[A-Z]+$/i, '');
-        let suggested = '';
-        for (const L of 'BCDEFGHIJKLMNOPQRSTUVWXYZ') {
-            if (!used.has((base + L).toUpperCase())) { suggested = base + L; break; }
-        }
-
-        const code = prompt(
-            `New shot in scene ${after.scene_number}, after ${after.shot_code}.\n\n`
-            + `Shot code (already used: ${[...used].sort().join(', ')}):`,
-            suggested);
-        if (!code || !code.trim()) return;
-
         const description = prompt(
-            'What happens in this shot?\n\n'
-            + 'Describe only what is IN the frame — an image model draws whatever you name, '
-            + 'so "off frame" and "we never see" put those things in the picture.');
+            `New shot straight after ${after.shot_code}.\n\n`
+            + `It will be numbered ${after.shot_code}A — the way a script supervisor numbers an insert, `
+            + 'so nothing already written down gets renamed.\n\n'
+            + 'What happens in this shot? Describe only what is IN the frame: an image model draws '
+            + 'whatever you name, so "off frame" and "we never see" put those things in the picture.');
         if (!description || !description.trim()) return;
 
         try {
-            await api('/shots', {
+            const r = await api(`/shots/${afterShotId}/insert-after`, {
                 method: 'POST',
-                body: JSON.stringify({
-                    scene_id: after.scene_id,
-                    cards: [{ shot_code: code.trim(), description: description.trim() }],
-                }),
+                body: JSON.stringify({ card: { description: description.trim() } }),
             });
-            setStatus(`${code.trim()} added after ${after.shot_code}. Open Direct to block it and set the camera, `
-                + 'then generate when you are ready.');
+            setStatus(r.note || `${r.shot_code} added.`);
             await loadStoryboard();
         } catch (err) {
             setStatus('Could not add the shot: ' + err.message);
