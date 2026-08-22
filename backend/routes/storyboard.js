@@ -549,13 +549,36 @@ function serveStoryboardImage(res, projectId, filename) {
         return json(res, 400, { error: 'Invalid project ID' });
     }
 
-    const filePath = path.join(DATA_DIR, 'storyboards', projectId, filename);
-    // Defense-in-depth: ensure the resolved path stays inside DATA_DIR.
-    const baseDir = path.resolve(DATA_DIR);
-    if (!path.resolve(filePath).startsWith(baseDir + path.sep)) {
-        return json(res, 400, { error: 'Invalid file path' });
-    }
-    if (!fs.existsSync(filePath)) {
+    /*
+     * Two places a frame can live, and this route knew only one.
+     *
+     * `archiveExistingFrame` copies the outgoing picture to
+     * `{project}/versions/{code}_v{n}.png`; the live frame stays at
+     * `{project}/{code}.png`. The URL is built from `file_name`, which carries
+     * no directory — so the archive and the server disagreed about where a
+     * version lives and nothing connected them. On a real shot, 9 of 11
+     * thumbnails 404'd and the version modal was a grid of broken images.
+     *
+     * The project root is tried first, so the live frame costs one stat and the
+     * common case is unchanged.
+     */
+    const projectDir = path.join(DATA_DIR, 'storyboards', projectId);
+    const candidates = [
+        path.join(projectDir, filename),
+        path.join(projectDir, 'versions', filename),
+    ];
+
+    // Containment is checked on the RESOLVED path of whichever candidate is
+    // used, not on the input. Widening where a route looks is exactly when a
+    // traversal creeps back in, and `filename` is already restricted to
+    // [\w.-]+ above — which excludes `/` and so cannot reach a sibling
+    // project, but the check stays because the sanitiser and this are
+    // independent defences and should not become one.
+    const baseDir = path.resolve(projectDir);
+    const filePath = candidates.find(p =>
+        path.resolve(p).startsWith(baseDir + path.sep) && fs.existsSync(p));
+
+    if (!filePath) {
         return json(res, 404, { error: 'Image not found' });
     }
 

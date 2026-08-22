@@ -104,6 +104,39 @@ function damagedShot() {
     return { projectId, shotId };
 }
 
+
+/**
+ * A shot whose versions were archived the way the app archives them: each
+ * outgoing picture copied to `versions/{code}_v{n}.png` and its row repointed.
+ * This is the shape every project has from now on.
+ */
+function archivedShot() {
+    const projectId = generateId(), sceneId = generateId(), shotId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Archived');
+    db.prepare("INSERT INTO film_scenes (id, project_id, scene_number, location) VALUES (?, ?, '1', 'STREET')")
+        .run(sceneId, projectId);
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+        .run(shotId, sceneId, '2B', JSON.stringify({ shot_code: '2B' }));
+
+    const dir = path.join(process.env.FILM_DATA_DIR, 'storyboards', projectId);
+    fs.mkdirSync(path.join(dir, 'versions'), { recursive: true });
+
+    for (let v = 1; v <= 3; v++) {
+        const f = path.join(dir, 'versions', `2B_v${v}.png`);
+        fs.writeFileSync(f, Buffer.concat([PNG, Buffer.from(`v${v}`)]));
+        db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, file_path, version, metadata)
+                    VALUES (?, ?, ?, 'storyboard', ?, ?, ?, '{}')`)
+            .run(generateId(), projectId, shotId, `2B_v${v}.png`, f, v);
+    }
+    const live = path.join(dir, '2B.png');
+    fs.writeFileSync(live, Buffer.concat([PNG, Buffer.from('live')]));
+    db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, file_path, version, metadata)
+                VALUES (?, ?, ?, 'storyboard', '2B.png', ?, 4, '{}')`)
+        .run(generateId(), projectId, shotId, live);
+
+    return { projectId, shotId };
+}
+
 const frames = shotId => {
     const { handleStoryboard } = require('../routes/storyboard');
     return callRoute(handleStoryboard, 'GET', `/film/shots/${shotId}/frames`);
@@ -282,4 +315,87 @@ test('the card names both numbers only when they differ', () => {
         html.indexOf('function frameVersionTitle'));
     assert.match(fn, /asset_shows_version/, 'the label ignores which picture is shown');
     assert.match(fn, /shows !== v/, 'the label does not compare the two, so it would always show an arrow');
+});
+
+
+// ── The pictures actually load ──────────────────────────────────────────
+
+test('every URL the modal renders serves real bytes', async () => {
+    // The defect this file was written for and did not catch: the DATA was
+    // fixed — distinct urls, honest is_current, origins — and 9 of 11 of those
+    // urls returned 404, so the modal was a grid of broken images. Asserting
+    // that two versions have different urls says nothing about whether either
+    // one loads.
+    //
+    // archiveExistingFrame writes to `{project}/versions/{code}_v{n}.png`, and
+    // serveStoryboardImage only ever looked in `{project}/`. The URL is built
+    // from file_name, which carries no directory, so the two halves disagreed
+    // about where a version lives and nothing connected them.
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { shotId, projectId } = archivedShot();
+
+    const list = await frames(shotId);
+    assert.ok(list.body.versions.length >= 3, 'the fixture has too few versions to be meaningful');
+
+    const broken = [];
+    for (const v of list.body.versions) {
+        const file = decodeURIComponent(v.url.split('/').pop());
+        const r = await new Promise(resolve => {
+            const chunks = [];
+            const res = new Writable({ write(c, _e, n) { chunks.push(c); n(); } });
+            res.statusCode = 200;
+            res.writeHead = function (code) { this.statusCode = code; return this; };
+            res.setHeader = function () {};
+            res.on('finish', () => resolve({ status: res.statusCode, bytes: Buffer.concat(chunks).length }));
+            handleStoryboard({ method: 'GET' }, res,
+                ['film', 'storyboards', projectId, file], {});
+        });
+        if (r.status !== 200 || r.bytes < 8) {
+            broken.push(`v${v.version}: ${file} → ${r.status} (${r.bytes} bytes)`);
+        }
+    }
+    assert.deepStrictEqual(broken, [], `\n  ${broken.join('\n  ')}`);
+});
+
+test('an archived version is served from where the archiver put it', async () => {
+    // Directly, because the round trip above could pass if the archiver ever
+    // stopped using a subdirectory — and then this test would be guarding
+    // nothing while still going green.
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { projectId } = archivedShot();
+    const dir = path.join(process.env.FILM_DATA_DIR, 'storyboards', projectId, 'versions');
+    assert.ok(fs.existsSync(dir), 'the archiver no longer writes to a versions/ subdirectory');
+
+    const file = fs.readdirSync(dir)[0];
+    const r = await new Promise(resolve => {
+        const chunks = [];
+        const res = new Writable({ write(c, _e, n) { chunks.push(c); n(); } });
+        res.statusCode = 200;
+        res.writeHead = function (code) { this.statusCode = code; return this; };
+        res.setHeader = function () {};
+        res.on('finish', () => resolve({ status: res.statusCode, bytes: Buffer.concat(chunks).length }));
+        handleStoryboard({ method: 'GET' }, res, ['film', 'storyboards', projectId, file], {});
+    });
+    assert.strictEqual(r.status, 200, `${file} is on disk in versions/ and the route returns ${r.status}`);
+    assert.ok(r.bytes > 0, 'the file served zero bytes');
+});
+
+test('a filename cannot escape the project directory', () => {
+    // Widening where the route looks is exactly when a traversal creeps back
+    // in. Asserted over the shapes that matter rather than one example.
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { projectId } = archivedShot();
+    const attempts = ['../../../etc/passwd', '..%2F..%2Fsecret.png', 'versions/../../escape.png',
+        '/etc/passwd', 'a/../../b.png'];
+    const leaked = [];
+    for (const bad of attempts) {
+        const st = { status: 0 };
+        const res = new Writable({ write(_c, _e, n) { n(); } });
+        res.statusCode = 200;
+        res.writeHead = function (code) { st.status = code; return this; };
+        res.setHeader = function () {};
+        handleStoryboard({ method: 'GET' }, res, ['film', 'storyboards', projectId, bad], {});
+        if (st.status === 200) leaked.push(bad);
+    }
+    assert.deepStrictEqual(leaked, [], `these escaped the project directory: ${leaked.join(', ')}`);
 });
