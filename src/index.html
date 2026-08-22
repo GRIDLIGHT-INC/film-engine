@@ -24389,10 +24389,16 @@ ${fountainText.slice(0, 50000)}`;
         return `
         <div class="form-group">
             <label>What the screenplay says
-                <span class="text-muted text-sm">the shot itself &mdash; this comes from the script</span>
+                <span class="text-muted text-sm">the shot itself &mdash; editable, but this is the script's half</span>
             </label>
-            <div id="${p}Written" class="text-sm"
-                 style="padding:9px 11px;border-radius:7px;background:rgba(148,163,184,.10);line-height:1.55;"></div>
+            <textarea id="${p}Written" rows="5"
+                style="width:100%;line-height:1.55;font-family:inherit;"
+                placeholder="What happens in this shot, as the screenplay has it."></textarea>
+            <div class="text-sm text-muted" style="line-height:1.45;">
+                Kept separate from Direction below so a screenplay revision can replace this half and
+                leave your direction standing &mdash; and so the board shows the writing rather than a
+                paraphrase of it.
+            </div>
         </div>
 
         <div class="form-group">
@@ -24484,20 +24490,18 @@ ${fountainText.slice(0, 50000)}`;
             return [...boxes].filter(b => b.checked).map(b => b.value);
         };
         const dir = document.getElementById(p + 'Direction');
+        const written = document.getElementById(p + 'Written');
         return {
             characters: pick('characters'),
             props: pick('props'),
             direction: dir ? dir.value.trim() : undefined,
+            description: written ? written.value.trim() : undefined,
         };
     }
 
     function fillBlockingPanel(p, card, shot) {
         const written = document.getElementById(p + 'Written');
-        if (written) {
-            const w = (card.description || card.action || '').trim();
-            written.innerHTML = w ? escapeHtml(w)
-                : '<span class="text-muted">This shot has no screenplay text. Tag a line on the script, or write a description.</span>';
-        }
+        if (written) written.value = (card.description || '').trim();
         const dir = document.getElementById(p + 'Direction');
         if (dir) dir.value = card.direction || '';
     }
@@ -24671,6 +24675,58 @@ ${fountainText.slice(0, 50000)}`;
     // that generation is a coin flip you already paid for, and v2 is often the
     // one you wanted.
 
+
+    /**
+     * Put a picture on a different shot.
+     *
+     * "There is a shot I'd like to put to 2A from 2B." Generation is a coin
+     * flip you already paid for, and the frame that came back on one shot is
+     * sometimes the right shot for another — without this the only way there
+     * was to regenerate and hope, paying twice for a picture already on the
+     * board.
+     *
+     * The picker lists the project's other shots by code, because a shot id is
+     * not something anyone can choose between. Shots that already have frames
+     * say so, since sending to one means its current frame moves into history
+     * rather than being replaced — true, and worth knowing before choosing.
+     */
+    async function sendFrameTo(shotId, version) {
+        if (!state.currentProject) return;
+        let board;
+        try {
+            board = await api(`/projects/${state.currentProject.id}/storyboard`);
+        } catch (err) { return setStatus('Could not read the shot list: ' + err.message); }
+
+        const others = (board.frames || []).filter(f => f.shot_id !== shotId);
+        if (!others.length) return setStatus('There is no other shot in this project to send it to.');
+
+        const lines = others.map((f, i) =>
+            `${i + 1}. ${f.shot_code}${f.scene_number != null ? ` (Sc${f.scene_number})` : ''}`
+            + (f.has_frame || f.image_url ? ' — has a frame' : ''));
+        const pick = prompt(
+            `Send v${version} to which shot?\n\n`
+            + 'It is COPIED: this shot keeps the version, and the target gains one.\n'
+            + "A shot that already has a frame keeps it in its history.\n\n"
+            + lines.join('\n') + '\n\nType the number:');
+        if (!pick) return;
+        const idx = parseInt(pick, 10) - 1;
+        const target = others[idx];
+        if (!target) return setStatus('That is not one of the shots listed.');
+
+        setStatus(`Sending v${version} to ${target.shot_code}...`, true);
+        try {
+            const r = await api(`/shots/${shotId}/frames/${version}/send`, {
+                method: 'POST', body: JSON.stringify({ target_shot_id: target.shot_id }),
+            });
+            setStatus(`${r.from_shot_code} v${r.from_version} is now ${r.to_shot_code} v${r.to_version}. `
+                + (r.caution || ''));
+            closeFrameVersions();
+            await loadStoryboard();
+        } catch (err) {
+            setStatus('Could not send that frame: ' + err.message);
+        }
+    }
+
     async function openFrameVersions(shotId) {
         let data;
         try {
@@ -24715,10 +24771,17 @@ ${fountainText.slice(0, 50000)}`;
                         ${v.reason ? '<br><span class="text-muted" style="font-style:italic;">'
                             + esc(v.reason) + '</span>' : ''}
                     </div>
+                    <div style="display:flex;flex-direction:column;gap:4px;">
                     ${v.restorable
                         ? `<button class="btn btn-primary btn-sm"
-                             onclick="restoreFrameVersion('${shotId}', ${v.version})">Restore</button>`
+                             onclick="restoreFrameVersion('${shotId}', ${v.version})">Select</button>`
                         : ''}
+                    ${v.exists && !v.reason
+                        ? `<button class="btn btn-secondary btn-sm"
+                             title="Put this picture on a different shot. It is copied — this shot keeps it too."
+                             onclick="sendFrameTo('${shotId}', ${v.version})">Send to&hellip;</button>`
+                        : ''}
+                    </div>
                 </div>
             </div>`;
         }).join('');
@@ -25695,14 +25758,22 @@ ${fountainText.slice(0, 50000)}`;
         set(lighting, 'type', val('shotCardLighting'));
 
         /*
-         * The description is NOT sent. It is what the screenplay says, and the
-         * route merges, so omitting it leaves the writing exactly as written.
-         * Changing what a shot IS means revising the script; what a director
-         * adds on top goes in `direction`, which is additive and its own field.
+         * Both halves are sent, and they stay two halves. `description` is the
+         * screenplay's account of the shot and `direction` is what a director
+         * added on top — kept apart so a script revision can replace its own
+         * half without discarding the direction, and so the board can show the
+         * writing rather than a paraphrase of it.
+         *
+         * A blank description is never SENT rather than being refused: the
+         * route merges, so omitting it leaves whatever the screenplay put
+         * there. Sending an empty string would quietly erase the shot's own
+         * account of itself, and a shot with no description generates from
+         * nothing at all.
          */
         const blocking = readBlockingPanel('shotCard');
         const body = { camera, lighting };
         if (blocking.direction !== undefined) body.direction = blocking.direction;
+        if (blocking.description) body.description = blocking.description;
         // Lists REPLACE on the route, which is what makes removing a character
         // from a shot expressible — so they are only sent when the panel is
         // actually present, never as an empty array that would silently clear

@@ -148,6 +148,30 @@ test('the direction box adds to the screenplay rather than replacing it', () => 
         'the panel never says the direction is on TOP of the screenplay, so it reads as a replacement');
 });
 
+test('the screenplay half is editable, and stays a separate half', () => {
+    // Editable, because sometimes the script's account of a shot needs fixing
+    // and going back to the screenplay to change one line is a long way round.
+    // Still its own field: the two are kept apart so a revision can replace the
+    // writing without discarding the direction.
+    const rendered = runFn('blockingPanel', 'shotCard');
+    assert.match(rendered, /<textarea[^>]*id="shotCardWritten"/,
+        'the screenplay half cannot be edited');
+    assert.ok(/id="shotCardDirection"/.test(rendered),
+        'direction lost its own field, so the two halves have merged');
+
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    const read = html.slice(html.indexOf('function readBlockingPanel('),
+        html.indexOf('function readBlockingPanel(') + 900);
+    assert.ok(/description:/.test(read), 'the edited screenplay is never read back');
+
+    // A blank one is omitted, not sent: the route merges, and sending '' would
+    // erase the shot's own account of itself.
+    const save = html.slice(html.indexOf('const blocking = readBlockingPanel('),
+        html.indexOf('const blocking = readBlockingPanel(') + 700);
+    assert.match(save, /if \(blocking\.description\)/,
+        'a blank description is sent, which would erase what the screenplay said');
+});
+
 // ── 4. Cinematography, with the mood board underneath ───────────────────
 
 test('every camera facet the schema validates has a control', () => {

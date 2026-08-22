@@ -195,6 +195,7 @@ film-engine/
 │       ├── blocking-and-directing.test.js # Both jobs, on both surfaces, from one panel each
 │       ├── direct-shot-ui.test.js  # The director's surface: screenplay, blocking, cinematography, no machinery
 │       ├── board-lock.test.js      # A finished board refuses everything that would replace a frame
+│       ├── frame-send.test.js      # A picture moves to another shot as a copy, never a move
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -551,6 +552,17 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 **The free preview leads rather than hiding behind a toggle.** `GET /shots/:id/prompt` spends nothing and reports the assembled prompt, the ceiling, the headroom and every contributor with what it wanted and what survived — so the budget is a set of bars you read *before* paying, and the mode that costs money to try is the one you can look at first. Choosing a mode re-reads it, which is why the preview had to learn `direction_mode` in the first place. A mode that cannot run — camera mode with no anchor attached — says so **where it is chosen**, rather than as a 409 after the click.
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
+
+### Sending a Frame to Another Shot
+*"There is a shot I'd like to put to 2A from 2B."* Generation is a coin flip you already paid for, and the picture that came back on one shot is sometimes the right shot for another. The only route there was to regenerate the target and hope — paying a second time for a frame already sitting on the board.
+
+`POST /shots/:id/frames/:version/send` is a **copy**, in all three senses that matter. The **source keeps every version it had**: moving the file would take the picture off the shot that generated it, a destructive verb hiding inside a helpful one. The **target gains a version** rather than overwriting — on the receiving side this genuinely is a new attempt, and whatever the target was showing has to survive, or a send destroys work in the one direction nobody is watching. And the **file is duplicated, never shared**: two rows on one path means deleting or regenerating either shot breaks the other, and the damage surfaces on the shot nobody touched.
+
+It archives **twice** for one write — the target's outgoing frame, then the arriving one, which is the live file and its own version at the same moment and would otherwise be overwritten before anything kept a copy. That is what moved `tests/storyboard-annotation.test.js` from comparing two totals to checking **per function** that nothing writes the live frame without archiving; equal totals was always a proxy for that.
+
+Refused across projects (a different project is a different film, and the asset would land where nothing expects it), refused to the shot it is already on, refused for a version whose own picture was never kept aside, and refused by the **board lock** — a send lands a picture on a board, which is exactly what a lock protects.
+
+The target records `sent_from`, because a frame on 2A generated from 2B's card is not stale and not wrong — it is **borrowed**, and a director looking at it later needs to know that without reconstructing it. The response says so too, as a `caution` rather than an error.
 
 ### Refining Against a Scene the Frame Cannot See
 Refine sent exactly **one** picture — the frame being changed — so *"make the street match 1A"* was unsayable: the only thing the model could look at was the shot being refined. The anchor existed and every other generation path used it; refine was the one that could not.
@@ -1324,6 +1336,7 @@ node --test backend/tests/shot-staging.test.js
 node --test backend/tests/blocking-and-directing.test.js
 node --test backend/tests/direct-shot-ui.test.js
 node --test backend/tests/board-lock.test.js
+node --test backend/tests/frame-send.test.js
 node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js

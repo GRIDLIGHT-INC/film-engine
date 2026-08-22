@@ -466,6 +466,17 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
      * was different about the request, which is how the same failed approach
      * gets tried again.
      */
+    /*
+     * Where a BORROWED picture came from.
+     *
+     * A frame sent from another shot was generated from that shot's card, not
+     * this one's. It is not stale and it is not wrong — it is borrowed, and a
+     * director looking at it three days later needs to know that without
+     * reconstructing it from timestamps.
+     */
+    if (opts.sent_from !== undefined) metadata.sent_from = opts.sent_from;
+    if (opts.sent_from_shot_id !== undefined) metadata.sent_from_shot_id = opts.sent_from_shot_id;
+    if (opts.sent_from_version !== undefined) metadata.sent_from_version = opts.sent_from_version;
     if (opts.direction_mode) metadata.direction_mode = opts.direction_mode;
     if (opts.anchor_shot_code) metadata.anchor_shot_code = opts.anchor_shot_code;
     if (opts.provider) metadata.provider = opts.provider;
@@ -553,6 +564,9 @@ function handleStoryboard(req, res, urlParts, query) {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid shot ID' });
         if (urlParts[4] && urlParts[5] === 'restore' && req.method === 'POST') {
             return restoreShotFrame(req, res, urlParts[2], urlParts[4]);
+        }
+        if (urlParts[4] && urlParts[5] === 'send' && req.method === 'POST') {
+            return sendFrameToShot(req, res, urlParts[2], urlParts[4]);
         }
         if (req.method === 'GET') return listShotFrames(req, res, urlParts[2]);
         return json(res, 405, { error: 'Method not allowed' });
@@ -1402,10 +1416,15 @@ function listShotFrames(req, res, shotId) {
             provider_model: meta.provider_model || null,
             // How it came to exist, which is often the thing you remember about
             // an attempt when you cannot remember its number.
-            origin: meta.restored_from ? `restored from v${meta.restored_from}`
+            origin: meta.sent_from ? `sent from ${meta.sent_from}`
+                : meta.restored_from ? `restored from v${meta.restored_from}`
                 : meta.refined_from ? `refine (${meta.refined_from})`
                 : meta.instruction ? 'refine'
                 : 'generated',
+            // A borrowed frame is a different thing from a generated one: it
+            // was made from another shot's card, so the card and the picture
+            // here describe different shots and that is not a fault to fix.
+            sent_from: meta.sent_from || null,
             restored_from: meta.restored_from || null,
             // Which attempt's picture this version is actually of. Differs from
             // `version` only after a restore, which is exactly when a number
@@ -1548,6 +1567,130 @@ function restoreShotFrame(req, res, shotId, version) {
             + 'moves which one is on the board, it does not make another.',
         image_url: storyboardImageUrl(scene.project_id, shot.shot_code),
     });
+}
+
+
+/**
+ * POST /film/shots/:id/frames/:version/send — put this picture on another shot.
+ *
+ * "There is a shot I'd like to put to 2A from 2B."
+ *
+ * Generation is a coin flip you already paid for, and sometimes the frame that
+ * came back on 2B is the right shot for 2A. Without this the only route there
+ * was to regenerate 2A and hope — paying a second time for a picture already
+ * sitting on the board.
+ *
+ * It is a COPY, in every sense that matters:
+ *
+ *   the source keeps every version it had. Moving the file would take the
+ *   picture off the shot that generated it, which is a destructive verb hiding
+ *   inside a helpful one.
+ *
+ *   the target gains a version rather than overwriting. On the receiving side
+ *   this genuinely is a new attempt, and whatever the target was showing has to
+ *   survive — a send that silently replaced it would destroy work in the one
+ *   direction nobody is watching.
+ *
+ *   the file is duplicated, never shared. Two rows pointing at one path means
+ *   deleting either shot, or regenerating either, breaks the other, and the
+ *   damage surfaces on the shot nobody touched.
+ */
+function sendFrameToShot(req, res, shotId, version) {
+    const body = req.body || {};
+    const targetId = String(body.target_shot_id || '').trim();
+    if (!targetId) {
+        return json(res, 400, { error: 'Name the shot to send this frame to (target_shot_id).' });
+    }
+    if (targetId === shotId) {
+        return json(res, 400, {
+            error: 'That is the shot the frame is already on.',
+            hint: 'To put an earlier attempt back on THIS shot, select it in the versions list.',
+        });
+    }
+
+    const source = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    const target = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(targetId);
+    if (!source) return json(res, 404, { error: 'Shot not found' });
+    if (!target) return json(res, 404, { error: 'That target shot does not exist.' });
+
+    const srcScene = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(source.scene_id);
+    const dstScene = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(target.scene_id);
+    if (!srcScene || !dstScene) return json(res, 404, { error: 'Scene not found' });
+    if (srcScene.project_id !== dstScene.project_id) {
+        // Assets live under a project directory and a different project is a
+        // different film; allowing this would put a file where nothing expects
+        // to find it, and would carry one production's look into another.
+        return json(res, 400, {
+            error: 'That shot is in a different project.',
+            hint: 'Frames can only be sent between shots in the same film.',
+        });
+    }
+    const projectId = srcScene.project_id;
+
+    const project = db.prepare(
+        'SELECT board_locked_at, provider_config FROM film_projects WHERE id = ?').get(projectId);
+    const lk = boardLocked(project, body);
+    if (lk) return json(res, 423, lk);
+
+    const wanted = Number(version);
+    const row = db.prepare(
+        `SELECT id, version, file_path, metadata FROM film_assets
+          WHERE shot_id = ? AND asset_type = 'storyboard' AND version = ?`).get(shotId, wanted);
+    if (!row) return json(res, 404, { error: `This shot has no version ${wanted}` });
+
+    // A row still naming the live file has no picture of its own — the file
+    // there is now some later attempt. Same rule the versions list applies.
+    const srcLive = storyboardImagePath(projectId, source.shot_code);
+    const namesLiveFile = row.file_path && path.resolve(row.file_path) === path.resolve(srcLive);
+    const from = (!namesLiveFile && row.file_path && fs.existsSync(row.file_path)) ? row.file_path : null;
+    if (!from) {
+        return json(res, 409, {
+            error: namesLiveFile
+                ? `Version ${wanted}'s own picture was never kept aside, so there is nothing to send.`
+                : `The file for version ${wanted} is no longer on disk.`,
+        });
+    }
+
+    try {
+        ensureStoryboardDir(projectId);
+        // Keep what the target is showing before pointing it at something else.
+        archiveExistingFrame(projectId, targetId, target.shot_code);
+
+        const live = storyboardImagePath(projectId, target.shot_code);
+        fs.copyFileSync(from, live);
+
+        const asset = registerStoryboardAsset(projectId, targetId, live, `${target.shot_code}.png`, {
+            provider: 'sent',
+            sent_from: `${source.shot_code} v${wanted}`,
+            sent_from_shot_id: shotId,
+            sent_from_version: wanted,
+        });
+
+        // The picture is now BOTH the live file and its own version, so archive
+        // it immediately — otherwise the next generation on the target would
+        // overwrite it before anything had kept a copy.
+        archiveExistingFrame(projectId, targetId, target.shot_code);
+
+        return json(res, 200, {
+            from_shot_id: shotId,
+            from_shot_code: source.shot_code,
+            from_version: wanted,
+            to_shot_id: targetId,
+            to_shot_code: target.shot_code,
+            to_version: asset.version,
+            note: `${source.shot_code} v${wanted} is now ${target.shot_code} v${asset.version}. `
+                + `${source.shot_code} keeps all of its own versions, and ${target.shot_code}'s `
+                + 'previous frame is still in its history.',
+            // A borrowed frame was not generated from the target's card. That is
+            // not a fault, but it is worth knowing before wondering why the card
+            // and the picture describe different things.
+            caution: `This picture was generated from ${source.shot_code}'s card, not `
+                + `${target.shot_code}'s.`,
+            image_url: storyboardImageUrl(projectId, target.shot_code),
+        });
+    } catch (err) {
+        return json(res, 500, { error: 'Could not send that frame: ' + err.message });
+    }
 }
 
 /**

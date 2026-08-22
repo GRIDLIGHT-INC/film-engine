@@ -310,12 +310,37 @@ test('a superseded frame is archived before it is overwritten', () => {
     // `live` joined imgPath/current when selecting a version became a pointer
     // move: it copies the chosen attempt onto the live frame without
     // registering anything, so it writes a frame under a third name.
-    const LIVE_FRAME = /fs\.writeFileSync\(\s*(?:imgPath|current|live)\b|fs\.copyFileSync\([^,)]+,\s*(?:imgPath|current|live)\b/g;
-    const writes = (src.match(LIVE_FRAME) || []).length;
-    const archives = (src.match(/archiveExistingFrame\(/g) || []).length - 1;   // minus the definition
-    assert.ok(writes > 0, 'no frame is written anywhere');
-    assert.strictEqual(archives, writes,
-        `${writes} paths write a frame and ${archives} archive first`);
+    /*
+     * Per FUNCTION, not by count.
+     *
+     * This compared two totals, which is a proxy: sending a frame to another
+     * shot archives TWICE for one write — the target's outgoing picture, then
+     * the arriving one, which is live and its own version at the same moment
+     * and would otherwise be overwritten before anything kept a copy. Equal
+     * totals said that was broken. What actually matters is that no function
+     * writes the live frame without archiving, which is the thing a shot's
+     * history depends on.
+     *
+     * Destination only: writeFileSync takes it first, copyFileSync second. The
+     * archive's own copyFileSync(current, dest) reads FROM the live frame and
+     * must not count as a write of it, or the archive would have to archive
+     * itself.
+     */
+    const LIVE_FRAME = /fs\.writeFileSync\(\s*(?:imgPath|current|live)\b|fs\.copyFileSync\([^,)]+,\s*(?:imgPath|current|live)\b/;
+    const writers = new Set(), archivers = new Set();
+    let fn = null;
+    for (const line of src.split('\n')) {
+        const m = line.match(/^(?:async )?function (\w+)\(/);
+        if (m) fn = m[1];
+        if (!fn || fn === 'archiveExistingFrame') continue;
+        if (LIVE_FRAME.test(line)) writers.add(fn);
+        if (/archiveExistingFrame\(/.test(line)) archivers.add(fn);
+    }
+    assert.ok(writers.size > 0, 'no frame is written anywhere');
+    const unarchived = [...writers].filter(f => !archivers.has(f));
+    assert.deepStrictEqual(unarchived, [],
+        `these replace the live frame without archiving it first, so a shot's history `
+        + `silently stops there: ${unarchived.join(', ')}`);
 });
 
 test('the archived row points at the archived file', () => {
