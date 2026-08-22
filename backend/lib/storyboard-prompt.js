@@ -141,6 +141,17 @@ const PROMPT_PRIORITY = [
       why: 'names the scene being re-shot; without it the attached frame is an unexplained picture' },
     { id: 'direction', protected: true,
       why: 'the shot itself. The only text in the prompt a person wrote about THIS frame' },
+    /*
+     * Where the subjects stand. Ranked with the shot rather than with the
+     * subjects, because "the dragon is in the near foreground with its back to
+     * us" is not a fact about dragons — it is what this frame IS, and it is the
+     * half of directing that had no way to reach a prompt at all. Protected and
+     * naturally short: it is bounded by the number of NAMED staged objects,
+     * which is a handful, so it cannot do what an unbounded field did to the
+     * budget once already.
+     */
+    { id: 'staging', protected: true,
+        why: 'where the subjects stand, said from this camera. Blocking, not decoration' },
     { id: 'camera', protected: true,
       why: 'framing, lens, angle and movement — a phrase list, cheap to keep and the shot without it is a guess' },
     { id: 'annotations', protected: true, cap: 0.25,
@@ -568,6 +579,18 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // movement alone — a blocked shot generated a vaguer frame than an
     // unblocked one, which is the exact opposite of the feature.
     const facets = previsFacets(opts.previs) || {};
+
+    /*
+     * Blocking reaches the prompt. Emitted from the RAW blocking rather than
+     * from `facets`, because the staging phrases are computed against the
+     * camera pose and the object rotations, neither of which survives the
+     * flattening into prompt facets.
+     */
+    {
+        const { stagingPhrase } = require('./shot-staging');
+        const staged = stagingPhrase(opts.previs);
+        if (staged) add('staging', staged);
+    }
     const cardCamera = sceneCard.camera || {};
 
     // One precedence rule, shared with the board. It used to live here alone,

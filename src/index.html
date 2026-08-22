@@ -5252,10 +5252,32 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 
                     <div class="card mt-16">
                         <div class="flex-between mb-8">
-                            <h3 style="font-size:13px;margin:0;">Stage</h3>
+                            <h3 style="font-size:13px;margin:0;">Blocking</h3>
                             <div id="previsAddButtons" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
                         </div>
+                        <div id="previsCast" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;"></div>
                         <div id="previsObjectList" class="text-sm text-muted">Empty stage.</div>
+                        <p class="text-sm text-muted" style="font-size:10px;margin:6px 0 0;line-height:1.45;">
+                            A NAMED object is blocking: where it stands reaches the image prompt, said from
+                            this camera &mdash; &ldquo;in the near foreground at frame left, with its back to
+                            camera&rdquo;. An unnamed one is scaffolding: staged, drawn, and deliberately
+                            silent, because describing a nameless box would put a literal box in the frame.
+                        </p>
+                    </div>
+
+                    <div class="card mt-16">
+                        <h3 class="mb-8" style="font-size:13px;">Camera note</h3>
+                        <textarea id="previsCameraNote" rows="3" maxlength="400"
+                            style="width:100%;font-size:11px;line-height:1.45;font-family:inherit;"
+                            oninput="cameraNoteCount('previs')"
+                            placeholder="Camera on the far side of the road, looking back toward her."></textarea>
+                        <div class="text-sm text-muted" id="previsCameraNoteCount" style="font-size:10px;"></div>
+                        <button class="btn btn-sm btn-secondary" style="width:100%;margin-top:5px;"
+                                onclick="previsSaveCameraNote()">Save note to card</button>
+                        <p class="text-sm text-muted" style="font-size:10px;margin:6px 0 0;line-height:1.45;">
+                            One sentence about where the camera is. It LEADS the prompt and is never
+                            trimmed, which is why it is capped &mdash; put the rest in the description.
+                        </p>
                     </div>
 
                     <div class="card mt-16">
@@ -5654,19 +5676,14 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <label>Notes <span class="text-muted text-sm">direction that is not part of the prompt</span></label>
                     <textarea id="shotCardNotes" rows="3" style="width:100%;line-height:1.5;font-family:inherit;"></textarea>
                 </div>
-                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
-                    <div class="form-group"><label>Framing</label><select id="shotCardShotType"></select></div>
-                    <div class="form-group">
-                        <label>Lens <span class="text-muted text-sm">free text</span></label>
-                        <input type="text" id="shotCardLens" placeholder="40mm anamorphic">
-                    </div>
-                    <div class="form-group"><label>Movement</label><select id="shotCardMovement"></select></div>
-                    <div class="form-group"><label>Lighting</label><select id="shotCardLighting"></select></div>
-                </div>
+                <h4 style="margin:14px 0 8px;">Blocking <span class="text-muted text-sm" style="font-weight:normal;">&mdash; what is in the shot</span></h4>
+                <div id="shotCardBlockingPanel"></div>
+                <h4 style="margin:14px 0 8px;">Directing <span class="text-muted text-sm" style="font-weight:normal;">&mdash; where the camera goes</span></h4>
+                <div id="shotCardDirectingPanel"></div>
                 <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
-                    These four reach the prompt directly, and movement also becomes the clip's
-                    <code>camera_control</code>. Blocking a shot in Previs overrides framing, lens and
-                    movement &mdash; what was staged beats what was written.
+                    Movement also becomes the clip's <code>camera_control</code>. Blocking a shot in
+                    Previs overrides framing, lens and movement &mdash; what was staged beats what was
+                    written &mdash; and staging subjects there says where they stand in this frame.
                 </p>
                 <div id="shotCardWarning" class="text-sm" style="display:none;margin-bottom:10px;"></div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;">
@@ -12870,6 +12887,18 @@ THREE.GLTFLoader = GLTFLoader;
     async function previsOpenShot(shotId) {
         PREVIS.shotId = shotId;
         PREVIS.playhead = null;
+        /*
+         * The card, for the two things previs could not do: name what it stages
+         * and read the camera note. Fire-and-forget alongside the blocking —
+         * the stage must open whether or not the card can be read, since a
+         * failed lookup should cost you the cast chips, not the shot.
+         */
+        api(`/shots/${shotId}`).then(shot => {
+            PREVIS.shot = shot || null;
+            const note = document.getElementById('previsCameraNote');
+            if (note) { note.value = ((shot && shot.card && shot.card.camera) || {}).note || ''; cameraNoteCount('previs'); }
+            previsRenderCast();
+        }).catch(() => { PREVIS.shot = null; previsRenderCast(); });
         // The direction drawn on this shot's frame, so it can be seen in the
         // stage. Fire-and-forget: a repaint follows, and a stage that waited on
         // markup would open slower for a shot that has none.
@@ -12912,6 +12941,7 @@ THREE.GLTFLoader = GLTFLoader;
                 };
                 previsRenderMoves();
                 previsRenderObjects();
+                previsRenderCast();
                 previsStatus('Blocking loaded.');
             } else {
                 PREVIS.blocking = null;
@@ -13275,6 +13305,10 @@ THREE.GLTFLoader = GLTFLoader;
                    </label>` : '';
             return `<div data-object="${i}" style="margin-bottom:7px;padding:4px;border-radius:5px;${chosen ? 'background:rgba(56,189,248,.12);outline:1px solid rgba(56,189,248,.5);' : ''}"
                         onmousedown="previsSelectRow(event, ${i})">
+                <input type="text" value="${escapeHtml(o.name || '')}" placeholder="name — MAYA, SEDAN…"
+                       onchange="previsSetObject(${i},'name',this.value.trim())"
+                       title="An object with a name is BLOCKING: its position reaches the image prompt as &quot;in the near foreground at frame left, facing camera&quot;. An unnamed one is scaffolding — staged, drawn, and deliberately silent, because describing a nameless box would put a literal box in the frame."
+                       style="font-size:11px;width:100%;margin-bottom:3px;${o.name ? '' : 'opacity:.75;'}">
                 <div style="display:grid;grid-template-columns:1fr 26px 24px;gap:4px;">
                     <select onchange="previsSetObject(${i},'kind',this.value)" style="font-size:11px;">${options}</select>
                     <button class="btn btn-sm" onclick="previsSetTarget(${i})" title="make this the framing subject"
@@ -13301,6 +13335,75 @@ THREE.GLTFLoader = GLTFLoader;
         }).join('');
     }
 
+
+    /**
+     * The cast this shot's card names, as one-click adds.
+     *
+     * Blocking a shot means putting the people who are IN it on the stage, and
+     * before this the only way was to add a generic primitive and type the name
+     * — which meant a typo silently produced a subject the plates and the card
+     * knew nothing about. These come from the card, so a staged name always
+     * matches one the rest of the pipeline recognises.
+     */
+    function previsRenderCast() {
+        const el = document.getElementById('previsCast');
+        if (!el) return;
+        const card = (PREVIS.shot && PREVIS.shot.card) || {};
+        const names = [
+            ...(Array.isArray(card.characters) ? card.characters : []).map(n => ({ n, kind: 'human' })),
+            ...(Array.isArray(card.props) ? card.props : []).map(n => ({ n, kind: 'cube' })),
+        ].filter(x => String(x.n || '').trim());
+        if (!names.length) {
+            el.innerHTML = '<span class="text-muted" style="font-size:10px;">'
+                + 'This card names no characters or props. Add them on the shot card and they appear here.</span>';
+            return;
+        }
+        el.innerHTML = names.map(x => {
+            const staged = PREVIS.objects.some(o => (o.name || '').toLowerCase() === String(x.n).toLowerCase());
+            return `<button class="btn btn-sm ${staged ? 'btn-secondary' : ''}" style="font-size:10px;${staged ? 'opacity:.55;' : ''}"
+                onclick="previsStageNamed('${escapeHtml(String(x.n)).replace(/'/g, "\\'")}','${x.kind}')"
+                title="${staged ? 'already on the stage' : 'put this subject on the stage'}">${staged ? '&#10003; ' : '+ '}${escapeHtml(String(x.n))}</button>`;
+        }).join('');
+    }
+
+    function previsStageNamed(name, kind) {
+        const already = PREVIS.objects.findIndex(o => (o.name || '').toLowerCase() === name.toLowerCase());
+        if (already >= 0) { PREVIS.selected = already; previsRenderObjects(); previsRefresh(); return; }
+        previsAddObject(null, kind);
+        const o = PREVIS.objects[PREVIS.objects.length - 1];
+        if (o) {
+            o.name = name;
+            // The camera sits on +Z looking back at the origin, and an object's
+            // forward is +Z turned by its yaw — so yaw 0 already faces it.
+            o.rotationDeg = [0, 0, 0];
+        }
+        previsRenderObjects();
+        previsRenderCast();
+        previsRefresh();
+    }
+
+    /**
+     * The note goes on the CARD, not on the blocking.
+     *
+     * Blocking is the geometry and it is already saved with the shot; the note
+     * is a sentence about the shot that every generation reads, blocked or not.
+     * Writing it into the blocking would make it vanish the moment someone
+     * re-seeded the stage from the card.
+     */
+    async function previsSaveCameraNote() {
+        const el = document.getElementById('previsCameraNote');
+        if (!el || !PREVIS.shotId) return;
+        try {
+            await api(`/shots/${PREVIS.shotId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ camera: { note: el.value.trim() || null } }),
+            });
+            setStatus('Camera note saved to the card. It leads the prompt on the next generation.');
+        } catch (err) {
+            setStatus('Could not save the note: ' + err.message);
+        }
+    }
+
     function previsAddObject(at, kindArg) {
         const kind = kindArg || (PREVIS.objects.length ? 'cube' : 'human');
         const spec = PREVIS.taxonomy.primitives[kind];
@@ -13308,7 +13411,7 @@ THREE.GLTFLoader = GLTFLoader;
         const position = Array.isArray(at)
             ? [+at[0].toFixed(3), 0, +at[2].toFixed(3)]
             : [PREVIS.objects.length * 1.2, 0, 0];
-        PREVIS.objects.push({ kind, position, sizeM: spec.defaultSizeM.slice(), rotationDeg: [0, 0, 0], src: '' });
+        PREVIS.objects.push({ kind, position, sizeM: spec.defaultSizeM.slice(), rotationDeg: [0, 0, 0], src: '', name: '' });
         PREVIS.selected = PREVIS.objects.length - 1;
         previsRenderObjects();
         previsRefresh();
@@ -13329,6 +13432,9 @@ THREE.GLTFLoader = GLTFLoader;
     }
 
     function previsRemoveObject(index) {
+        // The cast chips show which named subjects are already staged, so they
+        // go stale the moment one is removed.
+        setTimeout(previsRenderCast, 0);
         if (!PREVIS.objects[index]) return;
         PREVIS.objects.splice(index, 1);
         // Selection follows the list rather than pointing at whatever slid into
@@ -24250,6 +24356,144 @@ ${fountainText.slice(0, 50000)}`;
     const MARKUP_KINDS = ['arrow', 'line', 'rect', 'ellipse', 'freehand', 'text'];
 
     /** A markup toolbar, for whichever surface is showing the frame. */
+
+    /*
+     * ── Blocking and directing, built once for both surfaces ──────────────
+     *
+     * These are two different jobs and the app offered neither completely.
+     * BLOCKING is what is in the shot and where — characters, props, where they
+     * stand. DIRECTING is where the camera goes — framing, lens, angle,
+     * movement. The storyboard card editor had four directing fields and no
+     * blocking fields at all; previs had the full camera and staged one
+     * anonymous figure. So whichever surface you were on, half the job had no
+     * controls.
+     *
+     * Built from one definition each, on the precedent markupToolbar already
+     * set: two literals is exactly how the grid and the viewer came to disagree
+     * about their own tools. The prefix produces the ids, so
+     * directingPanel('shotCard') emits the ids the card modal was already wired
+     * to and nothing existing has to be rewired to adopt it.
+     */
+    function blockingPanel(p, opts) {
+        const o = opts || {};
+        return `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;">
+            <div class="form-group">
+                <label>Characters <span class="text-muted text-sm">who is in this shot</span></label>
+                <input type="text" id="${p}Characters" placeholder="MAYA, DRAGON">
+            </div>
+            <div class="form-group">
+                <label>Props <span class="text-muted text-sm">what is in this shot</span></label>
+                <input type="text" id="${p}Props" placeholder="SEDAN, sprinkler">
+            </div>
+        </div>
+        <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
+            Comma separated. Naming a subject here attaches its reference plate to every
+            generation of this shot, and seeds it onto the previs stage by name &mdash; an
+            unnamed figure on the stage is scaffolding and deliberately reaches no prompt.
+            ${o.stageHint || ''}
+        </p>`;
+    }
+
+    function directingPanel(p, opts) {
+        const o = opts || {};
+        return `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;">
+            <div class="form-group"><label>Framing</label><select id="${p}ShotType"></select></div>
+            <div class="form-group">
+                <label>Lens <span class="text-muted text-sm">free text</span></label>
+                <input type="text" id="${p}Lens" placeholder="40mm anamorphic">
+            </div>
+            <div class="form-group"><label>Movement</label><select id="${p}Movement"></select></div>
+            <div class="form-group"><label>Lighting</label><select id="${p}Lighting"></select></div>
+            <div class="form-group">
+                <label>Camera height <span class="text-muted text-sm">metres &mdash; the angle</span></label>
+                <input type="number" step="0.1" min="0" id="${p}HeightM" placeholder="1.6">
+            </div>
+            <div class="form-group"><label>Sensor</label><select id="${p}Sensor"></select></div>
+            <div class="form-group">
+                <label>Aperture <span class="text-muted text-sm">T-stop</span></label>
+                <input type="number" step="0.1" min="0" id="${p}Aperture" placeholder="2.8">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Camera note
+                <span class="text-muted text-sm">one sentence about where the camera is &mdash; leads the prompt, never trimmed</span>
+            </label>
+            <textarea id="${p}CameraNote" rows="2" maxlength="400"
+                style="width:100%;line-height:1.5;font-family:inherit;"
+                oninput="cameraNoteCount('${p}')"
+                placeholder="Camera on the far side of the road, looking back toward her."></textarea>
+            <div class="text-sm text-muted" id="${p}CameraNoteCount"></div>
+        </div>
+        <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
+            Camera height IS the angle: at or below 0.9m the shot reads as a low angle looking up,
+            at or above 2.2m as a high angle looking down. The note ranks above everything else in
+            the prompt and is capped at 400 characters because nothing trims it &mdash; put the rest
+            in the description. ${o.footer || ''}
+        </p>`;
+    }
+
+    /* The note is the one field nothing trims, so its length is worth seeing. */
+    function cameraNoteCount(p) {
+        const el = document.getElementById(p + 'CameraNote');
+        const out = document.getElementById(p + 'CameraNoteCount');
+        if (!el || !out) return;
+        const n = (el.value || '').length;
+        out.textContent = n ? `${n} of 400 characters` : '';
+        out.style.color = n > 360 ? 'var(--warning, #b8860b)' : '';
+    }
+
+    /* Fill the selects a panel declares, from the validator's own vocabulary. */
+    function fillDirectingPanel(p, vocab, cam, lighting) {
+        const light = lighting || {};
+        shotCardFill(p + 'ShotType', vocab.shot_types, cam.shot_type, '— no framing —');
+        shotCardFill(p + 'Movement', vocab.camera_moves, cam.movement, '— no movement —');
+        shotCardFill(p + 'Lighting', vocab.lighting,
+            typeof light === 'string' ? light : light.type, '— no lighting —');
+        shotCardFill(p + 'Sensor', vocab.sensors || [], cam.sensor, '— film default —');
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+        set(p + 'Lens', cam.lens || '');
+        set(p + 'HeightM', cam.height_m !== undefined && cam.height_m !== null ? cam.height_m : '');
+        set(p + 'Aperture', cam.aperture !== undefined && cam.aperture !== null ? cam.aperture : '');
+        set(p + 'CameraNote', cam.note || '');
+        cameraNoteCount(p);
+    }
+
+    /* Read a panel back into a camera block, merging so unseen facets survive. */
+    function readDirectingPanel(p, existingCamera) {
+        const camera = { ...(existingCamera || {}) };
+        const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+        const set = (k, v) => { if (v === '' || v === null || v === undefined) delete camera[k]; else camera[k] = v; };
+        set('shot_type', val(p + 'ShotType'));
+        set('movement', val(p + 'Movement'));
+        set('lens', val(p + 'Lens'));
+        set('sensor', val(p + 'Sensor'));
+        const h = val(p + 'HeightM'), a = val(p + 'Aperture');
+        set('height_m', h === '' ? '' : Number(h));
+        set('aperture', a === '' ? '' : Number(a));
+        set('note', val(p + 'CameraNote'));
+        return camera;
+    }
+
+    function readBlockingPanel(p) {
+        const list = id => {
+            const el = document.getElementById(id);
+            if (!el) return undefined;
+            return el.value.split(',').map(x => x.trim()).filter(Boolean);
+        };
+        return { characters: list(p + 'Characters'), props: list(p + 'Props') };
+    }
+
+    function fillBlockingPanel(p, card) {
+        const set = (id, arr) => {
+            const el = document.getElementById(id);
+            if (el) el.value = Array.isArray(arr) ? arr.join(', ') : '';
+        };
+        set(p + 'Characters', card.characters);
+        set(p + 'Props', card.props);
+    }
+
     function markupToolbar(shotId, canvasId, imgId) {
         const btn = k => `<button class="btn btn-sm" id="mk-${canvasId}-${k}"
             onclick="markupArm('${shotId}','${k}','${canvasId}','${imgId}')"
@@ -25238,14 +25482,14 @@ ${fountainText.slice(0, 50000)}`;
             document.getElementById('shotCardAction').value = SHOT_CARD.card.action || '';
             document.getElementById('shotCardNotes').value = SHOT_CARD.card.notes || '';
 
+            // Both halves of the job, from the one definition each surface uses.
+            document.getElementById('shotCardBlockingPanel').innerHTML = blockingPanel('shotCard');
+            document.getElementById('shotCardDirectingPanel').innerHTML = directingPanel('shotCard');
+
             const vocab = await shotCardVocab();
             const cam = SHOT_CARD.card.camera || {};
-            const light = SHOT_CARD.card.lighting || {};
-            shotCardFill('shotCardShotType', vocab.shot_types, cam.shot_type, '— no framing —');
-            shotCardFill('shotCardMovement', vocab.camera_moves, cam.movement, '— no movement —');
-            shotCardFill('shotCardLighting', vocab.lighting,
-                typeof light === 'string' ? light : light.type, '— no lighting —');
-            document.getElementById('shotCardLens').value = cam.lens || '';
+            fillBlockingPanel('shotCard', SHOT_CARD.card);
+            fillDirectingPanel('shotCard', vocab, cam, SHOT_CARD.card.lighting);
 
             document.getElementById('shotCardWarning').style.display = 'none';
             shotCardCount();
@@ -25288,15 +25532,13 @@ ${fountainText.slice(0, 50000)}`;
         // rebuilt from these four fields — a card carries sensor, aperture and
         // height the editor does not show, and rebuilding would drop whatever
         // previs wrote the last time a shot was blocked.
-        const camera = { ...(SHOT_CARD.card.camera || {}) };
+        const camera = readDirectingPanel('shotCard', SHOT_CARD.card.camera);
         const lighting = typeof SHOT_CARD.card.lighting === 'string'
             ? { type: SHOT_CARD.card.lighting } : { ...(SHOT_CARD.card.lighting || {}) };
         const set = (obj, key, value) => { if (value) obj[key] = value; else delete obj[key]; };
-        set(camera, 'shot_type', val('shotCardShotType'));
-        set(camera, 'movement', val('shotCardMovement'));
-        set(camera, 'lens', val('shotCardLens'));
         set(lighting, 'type', val('shotCardLighting'));
 
+        const blocking = readBlockingPanel('shotCard');
         const body = {
             description: val('shotCardDescription'),
             action: val('shotCardAction'),
@@ -25304,6 +25546,12 @@ ${fountainText.slice(0, 50000)}`;
             camera,
             lighting,
         };
+        // Lists REPLACE on the route, which is what makes removing a character
+        // from a shot expressible — so they are only sent when the panel is
+        // actually present, never as an empty array that would silently clear
+        // a cast the editor never showed.
+        if (blocking.characters !== undefined) body.characters = blocking.characters;
+        if (blocking.props !== undefined) body.props = blocking.props;
         if (!body.description) return fail('A shot with no description generates from nothing. Say what is in frame.');
 
         try {

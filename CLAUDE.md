@@ -122,6 +122,7 @@ film-engine/
 │   │   ├── capability-payloads.js # ONE provider payload path per capability (Phase 0)
 │   │   ├── annotation-prompt.js   # Markup a director drew, said in words a model can act on
 │   │   ├── shot-anchor.js        # The frame you are currently shooting from
+│   │   ├── shot-staging.js       # Where things stand, said from the camera about to shoot them
 │   │   ├── shot-references.js    # The plates a shot generates with, gathered once for every path
 │   │   ├── beat-sheets.js        # Four story frameworks, and the holes in a structure
 │   │   ├── agent-presence.js     # Is an agent host attached, and what it would replace
@@ -190,6 +191,8 @@ film-engine/
 │       ├── storyboard-annotation.test.js # Every shape round-trips; markup survives regeneration
 │       ├── annotation-feedback.test.js # Marks steer a prompt only when asked, and say when they cannot
 │       ├── shot-anchor.test.js   # One anchor, held deliberately; it carries the set and replaces the plates
+│       ├── shot-staging.test.js  # The words agree with the render; an unnamed object stays silent
+│       ├── blocking-and-directing.test.js # Both jobs, on both surfaces, from one panel each
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -537,6 +540,23 @@ The anchored shot **generates from its own card**: a frame conditioned on itself
 `KIND_SOURCE` declares where each reference kind comes from (`entity` / `frame` / `project`), because `tests/reference-plates.test.js` derived "every subject kind" from `KIND_RANK` by excluding `style` by name — and the moment a fifth kind arrived it demanded a table and a plate generator for a *generated frame*.
 
 Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project), at `GET|PUT|DELETE /film/projects/:id/anchor`, reported by `GET /shots/:id/prompt`, and as `anchor_get` / `anchor_set` / `anchor_clear` (**119 tools**). All four generation paths attach it — see below.
+
+### Blocking a Shot and Directing It Are Two Jobs
+*"There is blocking the shot with the characters, location and the props… and then there is directing the shot (camera selections, angles, movement). I should be able to do this on both the storyboard and the previs."*
+
+Neither surface did both. The storyboard card editor offered **four** directing fields — framing, lens, movement, lighting — and **no blocking fields at all**, so there was no way to say who was in a shot; the card's `characters` and `props` could only be written by whoever created it. Previs had the whole camera and staged **one anonymous 1.7m figure at the origin** regardless of who the card named, so a two-hander opened as a single nameless proxy.
+
+**And previs blocking never left previs.** `applyBlockingToCard` writes six things back and all six are camera; `previsPromptParts` emitted framing, focal length, angle, movement and distance — every one a fact about the *camera*. So a director could put the dragon in the near foreground with its back to us and MAYA across the road facing camera, and the image prompt said nothing about where either of them was. Previs was a camera calculator wearing the name of a blocking tool, which is the real reason a shot like 2B took twelve attempts: a *blocking* problem being solved with *directing* tools, on a surface that had neither.
+
+`lib/shot-staging.js` closes it. Positions become phrases from **this** camera — *"DRAGON in the near foreground at frame left, with its back to camera; MAYA in the mid-ground at frame right, facing camera"* — so the same blocking read from a new angle says something different, which is the point. Depth is measured against the framing subject's distance rather than in metres, because three metres is the foreground of a close-up and the background of a landscape.
+
+Three decisions carry it. **Only NAMED objects speak**: an unnamed staged object is scaffolding — a proxy wall, a mark on the floor — and describing it would put a literal box in the frame, so the rule is the one markup already follows (geometry says *where*, never *what*), and unnamed objects are **reported** as unsaid rather than dropped silently. **The basis comes from `previs-pick`**, the same function the renderer projects with: recomputing it here would be four lines and one sign, and a mirrored `right` vector produces perfectly fluent prose describing the opposite of what the director staged. And it **never throws** — an unknown sensor falls back rather than taking a paid generation down with it, the rule `stampAsset` already documents.
+
+Staging ranks with the **shot**, protected, below the written direction and above the camera: where a subject stands is what the frame *is*, not decoration on it. It is naturally short — bounded by the number of named objects — so it cannot do to the budget what an unbounded field did once already.
+
+`from-card` now seeds the real cast by name, with heights from the subject-scale columns where they exist and the default where they do not (an invented size is indistinguishable from a declared one). The storyboard editor and previs build their controls from **one** `blockingPanel()` / `directingPanel()` each, on the precedent `markupToolbar()` set — two literals is exactly how the grid and the viewer came to disagree about their own tools.
+
+`tests/blocking-and-directing.test.js` is set-based over **(surface × job)** because the failure was partial in exactly that shape, and it **executes** the panel builders rather than grepping for their ids: the ids are produced from `${p}Characters`, so a grep for the literal reports a working editor as broken and a grep for the template reports a broken one as working.
 
 ### A Low-Angle Wide Was Unsayable
 `VALID_SHOT_TYPES` mixes three independent axes — framing (`wide`, `medium`, `close-up`), angle (`low-angle`, `high-angle`, `dutch-angle`) and rig (`tracking`, `dolly`, `handheld`) — and `camera.shot_type` holds exactly one. So a card cannot say *"a low-angle wide"*: you pick the framing or the angle and silently lose the other. The previs plan recorded this as a finding on day one; the consequence in production is a director writing *"Locked-off low-angle wide on three house fronts"* in the action, setting `shot_type: wide`, and getting a frame at eye level.
@@ -1236,6 +1256,8 @@ node --test backend/tests/mood-board.test.js
 node --test backend/tests/storyboard-annotation.test.js
 node --test backend/tests/annotation-feedback.test.js
 node --test backend/tests/shot-anchor.test.js
+node --test backend/tests/shot-staging.test.js
+node --test backend/tests/blocking-and-directing.test.js
 node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js

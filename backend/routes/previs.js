@@ -149,6 +149,13 @@ function validateBlocking(body) {
             || !obj.rotationDeg.every(Number.isFinite))) {
             errors.push(`subjects[${i}].rotationDeg must be three finite numbers`);
         }
+        // The name is the link back to the card, and the only thing that makes
+        // a position sayable: an object with no name is scaffolding, and the
+        // prompt deliberately says nothing about it. Optional, because a proxy
+        // wall is a legitimate thing to stage.
+        if (obj.name !== undefined && typeof obj.name !== 'string') {
+            errors.push(`subjects[${i}].name must be a string naming a character or prop`);
+        }
     });
 
     // One subject, or none. Two things claiming to be what the shot is of makes
@@ -783,8 +790,100 @@ function fromCard(req, res, shotId) {
     const heightM = Number(cam.height_m) > 0 ? Number(cam.height_m) : DEFAULT_EYE_HEIGHT_M;
 
     const sensor = sensorFor(sensorId);
-    const subject = { position: [0, 0, 0], heightM: DEFAULT_SUBJECT_HEIGHT_M };
+
+    /*
+     * The people and things the card says are in this shot, staged by name.
+     *
+     * This seeded ONE anonymous 1.7m figure at the origin regardless of who the
+     * card named, so a two-hander opened as a single nameless proxy and a
+     * director had to rebuild the cast by hand before blocking anything. Worse,
+     * an unnamed object says nothing to the prompt by design — so the stage a
+     * seed produced could be arranged perfectly and still reach generation as
+     * silence.
+     *
+     * Heights come from the subject-scale columns where they exist and are left
+     * at the default where they do not, on the same rule those columns follow:
+     * an invented size is indistinguishable from a declared one and would be
+     * wrong silently in every frame the subject appears in.
+     *
+     * Positions are a starting arrangement, not a claim. Everything faces the
+     * camera and spreads laterally at the framing distance, which is the
+     * neutral opening a director then drags into the actual blocking — the
+     * point is that the cast is ON the stage with the right names and sizes.
+     */
+    const staged = [];
+    try {
+        const owner = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(shot.scene_id);
+        const pid = owner ? owner.project_id : null;
+        const names = [
+            ...(Array.isArray(card.characters) ? card.characters : []).map(n => ({ n: String(n), kind: 'character' })),
+            ...(Array.isArray(card.props) ? card.props : []).map(n => ({ n: String(n), kind: 'prop' })),
+        ].filter(x => x.n.trim());
+
+        const chars = pid ? db.prepare('SELECT name, height_m FROM film_characters WHERE project_id = ?').all(pid) : [];
+        const props = pid ? db.prepare('SELECT name, height_m, width_m, length_m FROM film_props WHERE project_id = ?').all(pid) : [];
+        const findRow = (list, name) =>
+            list.find(r => String(r.name || '').toLowerCase() === name.toLowerCase()) || null;
+
+        names.forEach((entry, i) => {
+            const row = findRow(entry.kind === 'character' ? chars : props, entry.n);
+            const h = Number(row && row.height_m) > 0 ? Number(row.height_m) : null;
+            // Spread left, right, left… around the framing point.
+            const step = 1.4 * Math.ceil(i / 2) * (i % 2 === 0 ? -1 : 1);
+            staged.push({
+                kind: entry.kind === 'character' ? 'human' : 'cube',
+                name: entry.n,
+                // Lateral placement is assigned below, once the framing is
+                // solved: a fixed 1.4m step puts a subject outside the frame on
+                // a close-up and on top of the target on a wide, and a seed
+                // that opens with the cast off-screen reads as broken.
+                position: [0, 0, 0],
+                spreadRank: i,
+                // The seeded camera sits on +Z looking back at the origin, and
+                // an object's forward is +Z turned by its yaw — so yaw 0 faces
+                // the camera. Seeding 180 pointed the whole cast away, which
+                // the staging phrase then reported perfectly accurately.
+                rotationDeg: [0, 0, 0],
+                isTarget: i === 0,
+                ...(entry.kind === 'character'
+                    ? (h ? { heightM: h } : {})
+                    : { sizeM: [
+                        Number(row && row.width_m) > 0 ? Number(row.width_m) : 0.6,
+                        h || 0.6,
+                        Number(row && row.length_m) > 0 ? Number(row.length_m) : 0.6] }),
+            });
+        });
+    } catch (_) { /* a stage with no cast is still a stage */ }
+
+    const targetHeight = (() => {
+        const t = staged.find(o => o.isTarget);
+        return t && Number(t.heightM) > 0 ? Number(t.heightM) : DEFAULT_SUBJECT_HEIGHT_M;
+    })();
+    const subject = { position: [0, 0, 0], heightM: targetHeight };
     const solution = solveShot({ shotType, focalMm, sensor, subject });
+
+    /*
+     * Spread the cast across the frame this shot actually covers.
+     *
+     * The framing subject holds the centre and everyone else steps out inside
+     * the frame width at that distance, alternating left and right. The point
+     * of a seed is that the cast is visible and roughly placed; the director
+     * then drags them into the real blocking.
+     */
+    try {
+        const cov = frameCoverage(solution.distanceM, focalMm, sensor);
+        const usable = (Number(cov.widthM) > 0 ? Number(cov.widthM) : 4) * 0.35;
+        staged.forEach(o => {
+            const r = o.spreadRank || 0;
+            delete o.spreadRank;
+            if (r === 0) return;
+            const sides = Math.max(1, Math.ceil((staged.length - 1) / 2));
+            const step = usable / sides;
+            o.position = [step * Math.ceil(r / 2) * (r % 2 ? 1 : -1), 0, 0];
+        });
+    } catch (_) {
+        staged.forEach(o => { delete o.spreadRank; });
+    }
 
     const camera = {
         position: [0, heightM, solution.distanceM],
@@ -802,7 +901,7 @@ function fromCard(req, res, shotId) {
         rig: solution.rig || 'dolly',
         movement,
         durationMs: shot.duration_ms || 0,
-        subjects: [],
+        subjects: staged,
         moves: [],
     };
 

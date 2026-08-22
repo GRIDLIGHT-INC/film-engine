@@ -562,6 +562,12 @@ function loadShotContext(shotId) {
                 // move is what was blocked; collapsing it to one word before it
                 // reaches a prompt loses the half a director spent time on.
                 moves: JSON.parse(row.moves_json || '[]'),
+                // What is ON the stage, not just where the camera is. Without
+                // this the loader carried the whole camera and dropped the
+                // blocking, so a scene arranged in 3D reached generation as
+                // silence — the exact gap staging exists to close, one layer
+                // below where it was closed.
+                subjects: JSON.parse(row.subjects_json || '[]'),
                 path: JSON.parse(row.path_json || '[]'),
             };
         }
