@@ -271,39 +271,71 @@ The route that does exist, and that draft 1 failed to mention:
 As written, draft 1's phase 1 could have been declared done with a screenplay
 that cannot become a movie — passing our plan and failing the goal.
 
-## The rabbit hole: AI queries that do not go through MCP
+## The rabbit hole: AI queries that do not go through MCP — **CLOSED, option (c)**
 
-The goal names this trap explicitly — *use MCPs wherever we can for AI queries* —
-and commitment (3) only covers the MCP surface. It says nothing about the UI,
-which is what Manny will actually be typing into.
+The goal names this trap explicitly, and it was half-honoured.
+`tests/mcp-no-server-llm.test.js` forbids any MCP tool from calling a
+server-side LLM — the agent host *is* the model, and handing the reasoning back
+asks for a second API key for a question the connected model has already read.
+That protected the MCP surface and said nothing about the UI, which is the
+surface actually typed into.
 
-Three routes call a **server-side** LLM, and the SPA uses them:
+Three route modules call `callProjectLLM` and the SPA uses all three:
 
-| route | line | used by the SPA |
+| route | line | replaced over MCP by |
 |---|---|---|
-| `routes/screenplay-ai.js` | `:9` `callProjectLLM`, `streamProjectLLM` | yes |
-| `routes/text-convert.js` | `:11` `callProjectLLM` | yes |
-| `routes/breakdown.js` | `:14` `callProjectLLM`, `streamProjectLLM` | yes |
+| `screenplay-ai.js` | `:9` | `script_get` + `scene_update` / `scene_edit` / `scene_append` |
+| `text-convert.js` | `:11` | `scene_append` (or `script_write` for a whole draft) |
+| `breakdown.js` | `:14` | `script_get` + `card_vocabulary` + `shot_create` / `shot_tag` |
 
-So writing "only in Film Engine" through the UI burns a server-side API key for
-questions the connected model would answer for free — the exact trap the goal
-says has already been paid for once.
+**Option (c), chosen: MCP is the default path, HTTP is the fallback when no agent
+host is attached.** Not (b) — removing them — because an editor that cannot write
+a line without a second app attached is a worse tool even if it is a cheaper one.
+Not (a) — leave it — because the whole point of the MCP surface is that the model
+is already there.
 
-**Decision required, not assumed.** Three options, and this plan does not pick
-one unilaterally:
+### The presence signal is a tool call, not a handshake
 
-- **(a) Leave them.** The UI works without Claude Desktop attached. Costs a key.
-- **(b) Retire them from the UI**, and drive all AI writing from Claude Desktop
-  over MCP. Cheapest and matches the goal; makes the UI non-autonomous.
-- **(c) Keep them, but make MCP the default path** and mark the HTTP routes as
-  the fallback for when no agent host is connected.
+`lib/agent-presence.js`. The evidence that a host is attached is **the MCP server
+calling a tool**: a host that is connected calls tools, and one that is not
+cannot fake it. No second protocol to keep in step.
 
-Recommendation: **(c)**, because the acceptance criterion is that everything is
-*managed from Film Engine*, and an editor that cannot write a line without a
-second app attached is a worse tool even if it is a cheaper one. Needs Manny's
-call before phase 2.
+It shares `film_app_settings` because the MCP server and the HTTP server are
+separate processes over one SQLite file — the arrangement `GET /film/events`
+already relies on, and the reason a heartbeat table would duplicate what the
+database does. It **goes stale after 20 minutes**: a host that connected last
+Tuesday is not attached now, and a signal that never expires routes every request
+to a fallback that is not there. `markAgentSeen` never throws, because observing
+must not break the thing observed.
 
----
+### Every AI endpoint declares its own replacement
+
+`MCP_ALTERNATIVE` is declared **in each route module**, not in a central list, so
+a sixth AI feature cannot be added without answering the question — the
+conformance test fails if a module that imports the LLM client declares nothing.
+`GET /film/agent` assembles them.
+
+`fallbackNotice()` is attached to every server-side-LLM response, **success and
+failure**, and the failure case is where it matters most: a key with no credit
+produces a 502 the reader cannot act on, and *"there is a free path and it is
+already connected"* is the actionable half of that error. One helper rather than
+three literals, or the three modules drift and only one ends up telling the truth.
+
+### The page says which path it will take
+
+The AI panel carries a badge, refreshed when it opens and before each send,
+cached for a minute — presence changes on the scale of a session, not a
+keystroke. Connected: *"Ask it to do the writing — it already has your screenplay
+in context and costs nothing extra."* Not connected: *"This panel will use the
+server-side model and spend this project's API key."*
+
+Verified live in both states:
+
+```
+connected: false | preferred: http
+  → 5 endpoints listed, each with its MCP alternative
+connected: true  | client: claude-desktop | preferred: mcp
+```
 
 ## Set 3 — writers-tool features
 

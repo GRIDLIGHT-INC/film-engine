@@ -42,6 +42,9 @@ const INSTRUCTIONS = [
 
 let tools = null;   // lazily required: importing opens the database
 
+/** Whatever the host called itself at initialize, for the presence report. */
+let CLIENT_NAME = null;
+
 function api() {
     if (!tools) tools = require('./lib/mcp-tools');
     return tools;
@@ -73,6 +76,12 @@ function toolResult(result) {
 const METHODS = {
     initialize(params) {
         const asked = params && params.protocolVersion;
+        // What the host calls itself, so the presence report can name it rather
+        // than saying only that something is attached. Optional in the protocol,
+        // so it is read defensively.
+        const info = params && params.clientInfo;
+        if (info && info.name) CLIENT_NAME = String(info.name).slice(0, 120);
+        try { require('./lib/agent-presence').markAgentSeen(CLIENT_NAME || 'mcp'); } catch (_) { /* observing */ }
         return {
             protocolVersion: SUPPORTED_PROTOCOLS.includes(asked) ? asked : DEFAULT_PROTOCOL,
             capabilities: { tools: { listChanged: false } },
@@ -92,6 +101,17 @@ const METHODS = {
     async 'tools/call'(params) {
         const name = params && params.name;
         if (!name) throw Object.assign(new Error('tools/call requires a name'), { code: -32602 });
+
+        // An agent host calling a tool is the only honest evidence that one is
+        // attached — a host that is connected calls tools, and one that is not
+        // cannot fake it. The HTTP side reads this to decide whether an AI
+        // request should go to the connected model (free, already holds the
+        // context) or fall back to a server-side key.
+        //
+        // Never throws: observing must not break the thing observed.
+        try {
+            require('./lib/agent-presence').markAgentSeen(CLIENT_NAME || 'mcp');
+        } catch (_) { /* presence is a convenience, not a precondition */ }
 
         const result = await api().callTool(name, (params && params.arguments) || {});
 

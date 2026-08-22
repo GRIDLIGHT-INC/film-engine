@@ -70,6 +70,7 @@ const { ensureSchema } = require('./db/schema');
 const { handleProjects, handleProjectSettingsPreset } = require('./routes/projects');
 const { handleScripts, handleComments } = require('./routes/scripts');
 const { handleStoryStructure } = require('./routes/story-structure');
+const { handleAgentPresence } = require('./routes/agent-presence');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
 const { handleAppSettings } = require('./routes/app-settings');
@@ -386,6 +387,13 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/projects/:id/scenes
+        // Route: /film/agent — is an agent host attached, and what would it
+        // replace? Above everything, because it takes no project id and would
+        // otherwise fall through to a project lookup.
+        if (parts[1] === 'agent' && !parts[2]) {
+            return handleAgentPresence(req, res, parts, query);
+        }
+
         // Route: /film/projects/:id/beats and /film/projects/:id/directives.
         // Above the generic project routes, or they swallow it — the trap that
         // has now bitten four times in this codebase.

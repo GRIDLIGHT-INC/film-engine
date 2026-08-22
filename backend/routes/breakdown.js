@@ -12,6 +12,33 @@ const { stampShot } = require('../lib/screenplay-drift');
 const { validateSceneCards } = require('../lib/scene-card-schema');
 const { parseFountain, ELEMENT_TYPES } = require('../lib/fountain-parser');
 const { callProjectLLM, streamProjectLLM } = require('../lib/llm-client');
+const { fallbackNotice } = require('../lib/agent-presence');
+
+/**
+ * What replaces this over MCP. See screenplay-ai.js for the reasoning.
+ *
+ * `breakdown_run` was added as an MCP tool once and came straight back out,
+ * taking `entities_describe` with it: both wrapped a route that calls a
+ * server-side LLM, which is the mistake this file's declaration exists to stop
+ * being made a third time. The replacements are plain data tools, and they are
+ * strictly better — a model composing a scene card has the whole revision in
+ * context rather than one scene of it.
+ */
+const MCP_ALTERNATIVE = [
+    {
+        route: 'POST /film/projects/:id/breakdown',
+        does: 'derive scenes and shot cards from the screenplay',
+        mcp_alternative: 'script_get + card_vocabulary + shot_create (or shot_tag)',
+        why: 'composing a card is reasoning, and the agent host IS the model',
+    },
+    {
+        route: 'POST /film/projects/:id/entities/describe',
+        does: 'write appearance/description/visual_prompt from the screenplay',
+        mcp_alternative: 'script_get + character_update / location_update / prop_update',
+        why: 'the connected model reads the screenplay and writes better descriptions from all of it',
+    },
+];
+
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -159,7 +186,8 @@ async function describeEntities(req, res, projectId) {
     const aiResult = await callProjectLLM(project, { question, stream: false });
     if (!aiResult.ok) {
         res.writeHead(502, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: 'AI service error', details: aiResult.error, provider: aiResult.provider }));
+        return res.end(JSON.stringify({ error: 'AI service error', details: aiResult.error, provider: aiResult.provider,
+            ai_path: fallbackNotice(MCP_ALTERNATIVE[0].mcp_alternative) }));
     }
 
     let parsed;
@@ -202,6 +230,7 @@ async function describeEntities(req, res, projectId) {
         // bare name, and that must not look like success.
         still_blank: missed,
         provider: aiResult.provider,
+            ai_path: fallbackNotice(MCP_ALTERNATIVE[0].mcp_alternative),
     }));
 }
 
@@ -247,6 +276,7 @@ async function breakdownSync(req, res, projectId) {
                 error: 'AI service error',
                 details: aiResult.error,
                 provider: aiResult.provider,
+            ai_path: fallbackNotice(MCP_ALTERNATIVE[0].mcp_alternative),
                 hint: 'Check the selected LLM provider in Settings and make sure its credentials/service are available.'
             }));
             return;
@@ -824,4 +854,4 @@ function autoSaveShots(sceneGroups) {
     return results;
 }
 
-module.exports = { handleBreakdown };
+module.exports = { MCP_ALTERNATIVE, handleBreakdown };

@@ -4468,6 +4468,13 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         <button class="ai-analyze-btn" onclick="runAIScriptAnalysis()" title="AI Script Analysis">Analyze</button>
                         <button class="ai-chat-close" onclick="toggleAIChat()" title="Close">×</button>
                     </div>
+                    <!-- Which path this panel's requests take. MCP is the default
+                         when a host is attached; these HTTP routes are the fallback
+                         and they spend this project's own API key. Shown rather than
+                         assumed, because a writer cannot otherwise tell that the
+                         same work is available for nothing. -->
+                    <div id="aiPathBadge" class="text-sm"
+                         style="display:none;padding:6px 10px;border-bottom:1px solid var(--gl-border-subtle);"></div>
                     <div class="ai-chat-messages" id="aiChatMessages">
                         <div class="ai-chat-message assistant">
                             Hi! I can help you brainstorm ideas, write scenes, rewrite dialogue, or convert content to screenplay format. What would you like to work on?
@@ -19093,6 +19100,9 @@ THREE.GLTFLoader = GLTFLoader;
         const btn = document.getElementById('aiChatToggle');
         if (panel) {
             const isVisible = panel.classList.toggle('visible');
+            // The moment the panel opens is the moment the answer matters, and
+            // it is the last chance to say so before a request is sent.
+            if (isVisible) aiPathBadge();
             if (btn) {
                 btn.classList.toggle('active', isVisible);
             }
@@ -19322,6 +19332,49 @@ THREE.GLTFLoader = GLTFLoader;
 
     // ── AI Chat: streaming send ────────────────────────────────────
 
+
+    // ── Which path an AI request takes ─────────────────────────────────────
+    //
+    // The goal's stated rabbit hole: use MCP wherever we can for AI queries. The
+    // MCP surface has always been protected by a test that forbids any tool from
+    // calling a server-side LLM — but that said nothing about this panel, which
+    // is the surface actually typed into. Option (c): MCP is the default when a
+    // host is attached, these routes are the fallback, and the writer is told
+    // which is which instead of finding out on a bill.
+
+    const AI_PATH = { connected: false, checked: 0 };
+
+    async function aiPathBadge() {
+        const el = document.getElementById('aiPathBadge');
+        if (!el) return;
+        // Cheap and cached: presence changes on the scale of a session, not a
+        // keystroke, and asking on every render would spend a request per typed
+        // character to learn the same thing.
+        if (Date.now() - AI_PATH.checked > 60000) {
+            try {
+                const r = await api('/agent');
+                AI_PATH.connected = !!r.connected;
+                AI_PATH.client = r.client;
+                AI_PATH.alternatives = r.ai_endpoints || [];
+            } catch (_) { AI_PATH.connected = false; }
+            AI_PATH.checked = Date.now();
+        }
+
+        el.style.display = 'block';
+        if (AI_PATH.connected) {
+            el.style.background = 'rgba(34,197,94,0.10)';
+            el.innerHTML = `<strong>${esc(AI_PATH.client || 'An agent host')} is connected.</strong> `
+                + 'Ask it to do the writing — it already has your screenplay in context and costs nothing '
+                + 'extra. Using this panel instead sends the request to the server and spends this '
+                + 'project\u2019s API key.';
+        } else {
+            el.style.background = 'rgba(245,158,11,0.10)';
+            el.innerHTML = '<strong>No agent host connected.</strong> This panel will use the server-side '
+                + 'model and spend this project\u2019s API key. Connect Claude Desktop to the MCP server '
+                + 'and the same work is done by the model you are already talking to.';
+        }
+    }
+
     async function sendAIMessage() {
         const input = document.getElementById('aiChatInput');
         const sendBtn = document.getElementById('aiSendBtn');
@@ -19340,6 +19393,7 @@ THREE.GLTFLoader = GLTFLoader;
         sendBtn.textContent = 'Sending...';
 
         // Render user message immediately then show typing dots
+        aiPathBadge();
         renderAIChatMessages();
         showTypingIndicator();
 
