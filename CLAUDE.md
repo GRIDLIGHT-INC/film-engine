@@ -200,6 +200,7 @@ film-engine/
 │       ├── reference-limit.test.js  # How many plates fit is the provider's answer, not a constant
 │       ├── current-frame.test.js   # Every surface paints the version you selected, not the newest
 │       ├── shot-insert.test.js    # A shot goes in mid-scene without renaming a single thing
+│       ├── playback-start.test.js # Playback opens on the shot you were working on
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -556,6 +557,15 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 **The free preview leads rather than hiding behind a toggle.** `GET /shots/:id/prompt` spends nothing and reports the assembled prompt, the ceiling, the headroom and every contributor with what it wanted and what survived — so the budget is a set of bars you read *before* paying, and the mode that costs money to try is the one you can look at first. Choosing a mode re-reads it, which is why the preview had to learn `direction_mode` in the first place. A mode that cannot run — camera mode with no anchor attached — says so **where it is chosen**, rather than as a 409 after the click.
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
+
+### Playback Opens on the Shot You Were On
+`loadPlayback` set `pb.index = 0` unconditionally, so watching the shot you had just spent an hour on meant scrubbing past everything before it — every time, on a board that only gets longer.
+
+Nothing on the board recorded which shot a director was working on, which is why the page had nothing better to start from: the frame viewer tracks its own index, the Direct modal knows its own shot, and neither left a mark anyone else could read. `markCurrentShot()` is that one mark, dropped by every action that means *"I am on this shot now"* — opening a frame, stepping through the viewer, directing, generating — because a mark left by some of them and not others gives playback a stale answer, which is worse than always starting at the top: right often enough to be trusted, wrong without saying so.
+
+An unknown or missing mark falls back to the first shot **explicitly**, since a mark can name a shot the timeline does not contain — deleted, or in a scene with nothing cut — and starting nowhere is worse than starting at the top. There is also a ▶ on each frame card, because the mark is a convenience and *"start here"* is an instruction.
+
+The first version looked up `pb.items`, which is always `undefined` — the timeline returns **`entries`** — so it silently returned 0 every time and the fix did nothing. The test now pins the shape, and the resolver was run against the real timeline: selecting 2B opens at index 5, 2AA at 4, 3B at 8.
 
 ### A Warning You Cannot Clear Is Worse Than No Warning
 Two banners sat on a real board permanently: *"the screenplay moved on without 11 shots"* and eleven items to regenerate. Every shot carried a fingerprint that **matched** its scene's stored one, and the report said they were all behind anyway.
@@ -1418,6 +1428,7 @@ node --test backend/tests/frame-send.test.js
 node --test backend/tests/reference-limit.test.js
 node --test backend/tests/current-frame.test.js
 node --test backend/tests/shot-insert.test.js
+node --test backend/tests/playback-start.test.js
 node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js

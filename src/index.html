@@ -24375,6 +24375,7 @@ ${fountainText.slice(0, 50000)}`;
                                 <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="${f.image_url ? 'Generate this frame again from the card — shows you the prompt first' : 'This shot has no frame yet — generate its first one. You will see the prompt before anything is spent.'}">${f.image_url ? 'Regen' : 'Generate'}</button>
                                 <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
                                 <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="${frameVersionTitle(f)}">${frameVersionLabel(f)}</button>
+                                <button class="btn btn-secondary btn-sm" onclick="playFromShot('${f.shot_id}')" title="Watch the cut starting from this shot">&#9654;</button>
                                 <button class="btn btn-secondary btn-sm" onclick="insertShotAfter('${f.shot_id}')" title="Add a new shot immediately after this one, in the same scene">+ Shot</button>
                             </div>
                             ${storyboardFacetTags(f)}
@@ -25366,6 +25367,7 @@ ${fountainText.slice(0, 50000)}`;
      * genuinely is not there, rather than returning as though it had worked.
      */
     async function openFrameViewer(shotId) {
+        markCurrentShot(shotId);
         let frames = FRAME_VIEWER.frames || [];
         let i = frames.findIndex(f => f.shot_id === shotId);
         if (i < 0) {
@@ -25409,6 +25411,10 @@ ${fountainText.slice(0, 50000)}`;
     function frameViewerPaint() {
         const f = (FRAME_VIEWER.frames || [])[FRAME_VIEWER.index];
         if (!f) return;
+        // Stepping through the viewer moves the mark: otherwise it names the
+        // shot you OPENED rather than the one you are looking at, which is the
+        // kind of nearly-right that gets trusted and then quietly misleads.
+        markCurrentShot(f.shot_id);
         // Stepping to another shot must not leave a tool armed on the one you
         // just left — the canvas is reused, so the next drag would land the
         // mark on the wrong frame.
@@ -25808,6 +25814,7 @@ ${fountainText.slice(0, 50000)}`;
 
     async function editShotCard(shotId, focusField) {
         try {
+        markCurrentShot(shotId);
             const shot = await api(`/shots/${shotId}`);
             SHOT_CARD = { shotId, card: shot.card || {} };
             document.getElementById('shotCardTitle').textContent =
@@ -26451,6 +26458,7 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     async function regenerateStoryboard(shotId, directionMode) {
+        markCurrentShot(shotId);
         const ok = await confirmGeneration(shotId, {
             mode: directionMode,
             title: 'Regenerate this frame',
@@ -27430,6 +27438,44 @@ ${fountainText.slice(0, 50000)}`;
         localMs: 0,
     };
 
+
+    /*
+     * ── Which shot are you on ─────────────────────────────────────────────
+     *
+     * Playback opened at the first shot every time, so watching the shot you
+     * had just spent an hour on meant scrubbing past everything before it.
+     *
+     * Nothing on the board recorded which shot a director was working on, which
+     * is why the page had nothing better to start from: the frame viewer tracks
+     * its own index, the Direct modal knows its own shot, and neither left a
+     * mark anyone else could read. One mark, dropped by every action that means
+     * "I am on this shot now".
+     */
+    function markCurrentShot(shotId) {
+        if (shotId) state.currentShotId = shotId;
+    }
+
+    /**
+     * Where playback should open.
+     *
+     * Falls back to the first shot explicitly rather than by exception: a mark
+     * can name a shot the timeline does not contain — deleted, or in a scene
+     * with nothing cut — and starting nowhere is worse than starting at the top.
+     */
+    function playbackStartIndex(items) {
+        const list = Array.isArray(items) ? items : [];
+        const want = state.currentShotId;
+        if (!want) return 0;
+        const idx = list.findIndex(x => x && (x.shot_id === want || x.id === want));
+        return idx < 0 ? 0 : idx;
+    }
+
+    /** Play from this shot, deliberately. */
+    function playFromShot(shotId) {
+        markCurrentShot(shotId);
+        navigateTo('playback');
+    }
+
     async function loadPlayback() {
         if (!state.currentProject) return;
         const summary = document.getElementById('playbackSummary');
@@ -27449,7 +27495,7 @@ ${fountainText.slice(0, 50000)}`;
             renderPlaybackSummary();
             document.getElementById('pbTotalTimecode').textContent = timeline.total_timecode;
 
-            pb.index = 0; pb.localMs = 0;
+            pb.index = playbackStartIndex((timeline && timeline.entries) || []); pb.localMs = 0;
             renderPlaylist();
             renderScrub();
             renderNoteList();
