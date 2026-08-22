@@ -366,6 +366,59 @@ test('every MCP tool call meters the tokens it moved, in both directions', async
         'only one agent host is recognised; ChatGPT Desktop over MCP would be unattributed');
 });
 
+test('every side effect declared on tools/call actually fires, and they agree on the host', () => {
+    // Two features landed on the same six lines from different branches:
+    // presence (an attached host is the free path for AI requests) and
+    // metering (that host's traffic draws down a subscription window). A merge
+    // that keeps one and drops the other leaves no error behind — presence
+    // silently routes to a paid key, or spend silently reads zero — so the set
+    // is derived from the SOURCE of tools/call rather than listed here.
+    const server = fs.readFileSync(path.join(__dirname, '..', 'mcp-server.js'), 'utf8');
+    const call = server.slice(server.indexOf("async 'tools/call'"));
+    const body = call.slice(0, call.indexOf('\n    },'));
+
+    const REQUIRED = {
+        presence: /markAgentSeen/,
+        metering: /meterHostCall|recordHostUsage/,
+    };
+    const missing = Object.entries(REQUIRED).filter(([, re]) => !re.test(body)).map(([k]) => k);
+    assert.deepStrictEqual(missing, [], `tools/call lost a side effect in the merge: ${missing.join(', ')}`);
+
+    // Both must read the SAME host identity. Presence learns the real client
+    // name at initialize; metering was guessing from an env var, which means
+    // two reports naming different hosts for one session.
+    assert.ok(/CLIENT_NAME/.test(body) || /meterHostCall\([^)]*CLIENT_NAME/.test(server),
+        'metering does not use the client name presence already captured');
+    assert.ok(!/process\.env\.MCP_HOST\s*\|\|\s*'claude-desktop'/.test(server),
+        'metering still guesses the host from an env var while the real name is available');
+});
+
+test('a real client name is resolved to a known host rather than collapsing to unknown', () => {
+    // CLIENT_NAME is whatever the client calls itself — "Claude Desktop",
+    // "claude-ai", "ChatGPT". A fixed id list matched literally sends every
+    // one of them to `unknown-host`, and the by-host breakdown becomes a single
+    // useless row that looks like the feature working.
+    const { resolveHost, HOSTS } = require('../lib/mcp-usage');
+    const CLIENTS = {
+        'Claude Desktop': 'claude-desktop',
+        'claude-desktop': 'claude-desktop',
+        'claude-ai': 'claude-desktop',
+        'Claude Code': 'claude-code',
+        'ChatGPT': 'chatgpt-desktop',
+        'ChatGPT Desktop': 'chatgpt-desktop',
+        'openai-mcp': 'chatgpt-desktop',
+        'some-other-tool': 'unknown-host',
+        '': 'unknown-host',
+    };
+    const wrong = [];
+    for (const [reported, expected] of Object.entries(CLIENTS)) {
+        const got = resolveHost(reported);
+        if (got !== expected) wrong.push(`${reported || '(empty)'} -> ${got}, expected ${expected}`);
+        assert.ok(HOSTS.includes(got), `${reported} resolved to ${got}, which is not a known host`);
+    }
+    assert.deepStrictEqual(wrong, [], `host identification is wrong: ${wrong.join('; ')}`);
+});
+
 test('the subscription gauge reports real windows and never invents a ceiling', () => {
     // Anthropic publishes plan MULTIPLIERS (Max 5x and 20x of Pro) and two
     // windows — a rolling 5-hour session and a weekly reset. It publishes no
