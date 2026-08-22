@@ -197,6 +197,7 @@ film-engine/
 │       ├── board-lock.test.js      # A finished board refuses everything that would replace a frame
 │       ├── frame-send.test.js      # A picture moves to another shot as a copy, never a move
 │       ├── reference-limit.test.js  # How many plates fit is the provider's answer, not a constant
+│       ├── current-frame.test.js   # Every surface paints the version you selected, not the newest
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -553,6 +554,13 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 **The free preview leads rather than hiding behind a toggle.** `GET /shots/:id/prompt` spends nothing and reports the assembled prompt, the ceiling, the headroom and every contributor with what it wanted and what survived — so the budget is a set of bars you read *before* paying, and the mode that costs money to try is the one you can look at first. Choosing a mode re-reads it, which is why the preview had to learn `direction_mode` in the first place. A mode that cannot run — camera mode with no anchor attached — says so **where it is chosen**, rather than as a 409 after the click.
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
+
+### Every Surface Paints the Version You Selected
+Selecting a version moves `current_frame_version` and copies that picture to the live file. Every surface that paints a frame still asked for `ORDER BY version DESC LIMIT 1` — the **highest** version — and keyed its image URL to that number. So after selecting v13 of 17 the picture on disk was v13 and the page requested `?v=17`, which the browser already had cached from when v17 *was* current: it served the frame you had just moved away from.
+
+Silent, and indistinguishable from selecting not working — reported twice from use before it was found.
+
+The board and previs now resolve the shot's **pointer** and key the URL to it. The check is **function-aware** rather than pattern-based: `archiveExistingFrame` and `registerStoryboardAsset` ask the same SQL question and are exempt by name, because for them "the newest" genuinely is the question — an exemption matching on text would quietly excuse the next surface that gets it wrong.
 
 ### How Many Plates Fit Is the Provider's Answer
 `MAX_REFERENCES = 3` was a single constant applied to every provider, and it is **Runway's** documented limit for `gen4_image`. Meshy accepts **five**; OpenAI's edits endpoint accepts many more. So a shot naming two characters, a location, a car and a bag silently dropped the last two plates before the request was built — whichever provider was actually running.
@@ -1350,6 +1358,7 @@ node --test backend/tests/direct-shot-ui.test.js
 node --test backend/tests/board-lock.test.js
 node --test backend/tests/frame-send.test.js
 node --test backend/tests/reference-limit.test.js
+node --test backend/tests/current-frame.test.js
 node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js

@@ -718,9 +718,24 @@ function getStoryboard(req, res, projectId, query) {
         const hasImage = fs.existsSync(imgPath);
 
         // Get latest asset info
+        /*
+         * The version this shot is SHOWING, not the newest one it has.
+         *
+         * Selecting an earlier attempt moves a pointer and copies that picture
+         * to the live file. This asked for the highest version and keyed the
+         * board's image URL to it — so after selecting v13 of 17 the picture on
+         * disk was v13 and the page requested `?v=17`, which the browser
+         * already had cached from when v17 was current. It served the frame you
+         * had just moved away from, silently, which looks exactly like
+         * selecting not working.
+         */
+        const showing = currentFrameVersion(shot.shot_id || shot.id);
         const asset = db.prepare(
-            'SELECT id, shot_id, version, created_at, metadata FROM film_assets WHERE shot_id = ? AND asset_type = \'storyboard\' ORDER BY version DESC LIMIT 1'
-        ).get(shot.shot_id);
+            `SELECT id, shot_id, version, created_at, metadata FROM film_assets
+              WHERE shot_id = ? AND asset_type = 'storyboard'
+                AND (? IS NULL OR version = ?)
+           ORDER BY version DESC LIMIT 1`
+        ).get(shot.shot_id, showing, showing);
 
         return {
             shot_id: shot.shot_id,

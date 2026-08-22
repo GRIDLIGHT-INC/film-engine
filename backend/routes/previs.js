@@ -656,10 +656,21 @@ function toStoryboard(req, res, shotId) {
  * whole point of iterating between the two views.
  */
 function shotKeyframe(shotId) {
+    /*
+     * The version the shot is SHOWING, not its newest.
+     *
+     * Selecting an earlier attempt moves a pointer; asking for the highest here
+     * made previs paint a different frame from the board, and key its URL to a
+     * version the file no longer is.
+     */
+    const shotRow = db.prepare('SELECT current_frame_version FROM film_shots WHERE id = ?').get(shotId);
+    const showing = shotRow && shotRow.current_frame_version != null
+        ? shotRow.current_frame_version : null;
     const row = db.prepare(
         `SELECT a.id, a.file_name, a.project_id, a.version FROM film_assets a
           WHERE a.shot_id = ? AND a.asset_type = 'storyboard'
-       ORDER BY a.version DESC, a.created_at DESC LIMIT 1`).get(shotId);
+            AND (? IS NULL OR a.version = ?)
+       ORDER BY a.version DESC, a.created_at DESC LIMIT 1`).get(shotId, showing, showing);
     if (!row) return null;
     return {
         asset_id: row.id,
