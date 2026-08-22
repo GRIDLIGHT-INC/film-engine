@@ -193,6 +193,7 @@ film-engine/
 │       ├── shot-anchor.test.js   # One anchor, held deliberately; it carries the set and replaces the plates
 │       ├── shot-staging.test.js  # The words agree with the render; an unnamed object stays silent
 │       ├── blocking-and-directing.test.js # Both jobs, on both surfaces, from one panel each
+│       ├── direct-shot-ui.test.js  # Every dial the regenerate route accepts has a control on the page
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -540,6 +541,15 @@ The anchored shot **generates from its own card**: a frame conditioned on itself
 `KIND_SOURCE` declares where each reference kind comes from (`entity` / `frame` / `project`), because `tests/reference-plates.test.js` derived "every subject kind" from `KIND_RANK` by excluding `style` by name — and the moment a fifth kind arrived it demanded a table and a plate generator for a *generated frame*.
 
 Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project), at `GET|PUT|DELETE /film/projects/:id/anchor`, reported by `GET /shots/:id/prompt`, and as `anchor_get` / `anchor_set` / `anchor_clear` (**119 tools**). All four generation paths attach it — see below.
+
+### Every Dial the Route Accepts Has a Control
+`regenerateShot` accepts **eight** parameters — `direction_mode`, `mode`, `negative_prompt`, `prompt_override`, `seed`, `style_override`, `use_anchor`, `use_annotations` — and the SPA posted an **empty body**. Every one of them was reachable only from an agent host or from curl, which is the literal content of *"it does a lot without my control in the background"*: the controls existed, on the far side of the app.
+
+**Direct this shot** puts all eight in one place, on both surfaces a frame is judged on — the grid card and the full-screen viewer, because a 260px thumbnail is not where you decide a shot is wrong.
+
+**The free preview leads rather than hiding behind a toggle.** `GET /shots/:id/prompt` spends nothing and reports the assembled prompt, the ceiling, the headroom and every contributor with what it wanted and what survived — so the budget is a set of bars you read *before* paying, and the mode that costs money to try is the one you can look at first. Choosing a mode re-reads it, which is why the preview had to learn `direction_mode` in the first place. A mode that cannot run — camera mode with no anchor attached — says so **where it is chosen**, rather than as a 409 after the click.
+
+`tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
 
 ### Blocking a Shot and Directing It Are Two Jobs
 *"There is blocking the shot with the characters, location and the props… and then there is directing the shot (camera selections, angles, movement). I should be able to do this on both the storyboard and the previs."*
@@ -1260,6 +1270,7 @@ node --test backend/tests/annotation-feedback.test.js
 node --test backend/tests/shot-anchor.test.js
 node --test backend/tests/shot-staging.test.js
 node --test backend/tests/blocking-and-directing.test.js
+node --test backend/tests/direct-shot-ui.test.js
 node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js

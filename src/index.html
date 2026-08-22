@@ -5651,6 +5651,80 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
     </div>
 
+    <!-- Direct this shot: every parameter the regenerate route accepts, in one place. -->
+    <div class="modal-overlay" id="directShotModal">
+        <div class="modal" style="max-width:880px;width:94vw;">
+            <div class="modal-header">
+                <h3 id="directShotTitle">Direct this shot</h3>
+                <button class="modal-close" onclick="closeModal('directShotModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>What are you directing?</label>
+                    <div id="directModeChoices" style="display:flex;flex-direction:column;gap:6px;"></div>
+                </div>
+
+                <div id="directPreview" style="margin:10px 0;"></div>
+
+                <details id="directAdvanced" style="margin:10px 0;">
+                    <summary style="cursor:pointer;font-size:13px;">Compose the prompt yourself, and the rest of the dials</summary>
+                    <div style="padding:10px 0 0;">
+                        <div class="form-group">
+                            <label>Prompt override
+                                <span class="text-muted text-sm">the whole prompt &mdash; nothing trims it, nothing is added</span>
+                            </label>
+                            <textarea id="directPromptOverride" rows="7"
+                                style="width:100%;line-height:1.5;font-family:ui-monospace,Menlo,monospace;font-size:11px;"
+                                oninput="directOverrideCount()"></textarea>
+                            <div class="text-sm text-muted" id="directOverrideCountOut"></div>
+                            <button class="btn btn-sm btn-secondary" style="margin-top:5px;"
+                                    onclick="directFillOverride()">Start from the assembled prompt</button>
+                        </div>
+                        <div class="form-group">
+                            <label>Negative prompt <span class="text-muted text-sm">what to keep out</span></label>
+                            <textarea id="directNegative" rows="2" style="width:100%;font-size:11px;line-height:1.5;font-family:inherit;"></textarea>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;">
+                            <div class="form-group">
+                                <label>Seed <span class="text-muted text-sm">blank = new each time</span></label>
+                                <input type="number" id="directSeed" placeholder="&mdash;">
+                            </div>
+                            <div class="form-group">
+                                <label>Ledger mode</label>
+                                <select id="directLedgerMode">
+                                    <option value="creative">creative &mdash; vary</option>
+                                    <option value="locked">locked &mdash; recreate exactly</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Style override <span class="text-muted text-sm">instead of the film&rsquo;s look, for this call only</span></label>
+                            <input type="text" id="directStyleOverride" placeholder="leave blank to use the project's style preset">
+                        </div>
+                    </div>
+                </details>
+
+                <div style="display:flex;flex-direction:column;gap:7px;margin:10px 0;">
+                    <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
+                        <input type="checkbox" id="directUseAnchor" checked style="margin-top:3px;">
+                        <span id="directAnchorLabel" class="text-sm"></span>
+                    </label>
+                    <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
+                        <input type="checkbox" id="directUseAnnotations" style="margin-top:3px;">
+                        <span id="directAnnotationsLabel" class="text-sm"></span>
+                    </label>
+                </div>
+
+                <div id="directWarning" class="text-sm" style="display:none;margin-bottom:10px;"></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button class="btn btn-secondary" onclick="closeModal('directShotModal')">Cancel</button>
+                    <button class="btn btn-secondary" onclick="directRefresh()">Refresh preview</button>
+                    <button class="btn btn-primary" id="directGenerateBtn" onclick="directGenerate()">Generate &mdash; costs credits</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="shotCardModal">
         <div class="modal" style="max-width:820px;width:92vw;">
             <div class="modal-header">
@@ -24320,6 +24394,7 @@ ${fountainText.slice(0, 50000)}`;
                                     <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
                                     <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="${frameVersionTitle(f)}">${frameVersionLabel(f)}</button>
                                     <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again from the card — costs credits">Regen</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="directShot('${f.shot_id}')" title="Choose what you are directing, see the prompt and the budget before spending, and set every dial the route accepts">Direct</button>
                                 </div>
                             </div>
                             ${storyboardFacetTags(f)}
@@ -25216,7 +25291,8 @@ ${fountainText.slice(0, 50000)}`;
             + `<span style="flex:1;"></span>`
             + `<button class="btn btn-sm btn-secondary" onclick="editShotCard('${f.shot_id}')">Edit description</button>`
             + `<button class="btn btn-sm btn-secondary" onclick="refineFrame('${f.shot_id}')">Refine</button>`
-            + `<button class="btn btn-sm btn-secondary" onclick="regenerateStoryboard('${f.shot_id}')">Regen</button>`;
+            + `<button class="btn btn-sm btn-secondary" onclick="regenerateStoryboard('${f.shot_id}')">Regen</button>`
+            + `<button class="btn btn-sm btn-secondary" onclick="directShot('${f.shot_id}')" title="Direct this shot — mode, prompt, seed, anchor, markup">Direct</button>`;
         document.getElementById('frameViewerCaption').innerHTML =
             `${f.description ? '<p style="line-height:1.5;">' + esc(f.description) + '</p>' : ''}
              ${storyboardDialogueHtml(f.dialogue)}`;
@@ -25767,6 +25843,185 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) {
             done();
             setStatus('Could not refine: ' + err.message);
+        }
+    }
+
+
+    /*
+     * ── Direct this shot ─────────────────────────────────────────────────
+     *
+     * The regenerate route accepts eight parameters — direction_mode, mode,
+     * negative_prompt, prompt_override, seed, style_override, use_anchor,
+     * use_annotations — and the page sent an EMPTY BODY. Every one of them was
+     * reachable only from an agent host or curl, which is the literal answer to
+     * "it does a lot without my control in the background": the controls
+     * existed, on the far side of the app.
+     *
+     * The free preview leads rather than hiding behind a toggle, because the
+     * whole point is seeing what a generation would send BEFORE paying for it —
+     * and the mode that costs money to try is exactly the one worth looking at
+     * first.
+     */
+    let DIRECT = { shotId: null, preview: null, mode: 'action' };
+
+    async function directShot(shotId) {
+        DIRECT = { shotId, preview: null, mode: 'action' };
+        document.getElementById('directPromptOverride').value = '';
+        document.getElementById('directNegative').value = '';
+        document.getElementById('directSeed').value = '';
+        document.getElementById('directStyleOverride').value = '';
+        document.getElementById('directLedgerMode').value = 'creative';
+        document.getElementById('directWarning').style.display = 'none';
+        document.getElementById('directAdvanced').open = false;
+        directOverrideCount();
+        showModal('directShotModal');
+        await directRefresh();
+    }
+
+    async function directRefresh() {
+        const box = document.getElementById('directPreview');
+        if (!DIRECT.shotId) return;
+        box.innerHTML = '<span class="text-muted text-sm">Reading what this would send&hellip;</span>';
+        const useAnn = document.getElementById('directUseAnnotations').checked;
+        try {
+            const q = `?direction_mode=${encodeURIComponent(DIRECT.mode)}&use_annotations=${useAnn ? 'true' : 'false'}`;
+            const p = await api(`/shots/${DIRECT.shotId}/prompt${q}`);
+            DIRECT.preview = p;
+            document.getElementById('directShotTitle').textContent = `Direct ${p.shot_code || 'shot'}`;
+            directRenderModes(p);
+            directRenderPreview(p);
+            directRenderSwitches(p);
+        } catch (err) {
+            box.innerHTML = `<span class="text-sm" style="color:var(--gl-danger,#ef4444);">Could not read the prompt: ${escapeHtml(err.message)}</span>`;
+        }
+    }
+
+    function directRenderModes(p) {
+        const el = document.getElementById('directModeChoices');
+        const modes = p.direction_modes || [];
+        el.innerHTML = modes.map(m => {
+            const on = m.id === DIRECT.mode;
+            // A mode that cannot run says so HERE, where it is chosen, rather
+            // than as a 409 after the click.
+            const blocked = m.id === p.direction_mode ? p.direction_mode_blocked : null;
+            return `<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;padding:8px;border-radius:7px;
+                        ${on ? 'background:rgba(56,189,248,.12);outline:1px solid rgba(56,189,248,.45);' : ''}">
+                <input type="radio" name="directMode" value="${m.id}" ${on ? 'checked' : ''}
+                       onchange="DIRECT.mode=this.value; directRefresh();" style="margin-top:3px;">
+                <span>
+                    <strong class="text-sm">${escapeHtml(m.label)}</strong>
+                    <div class="text-muted text-sm" style="line-height:1.45;">${escapeHtml(m.description)}</div>
+                    ${blocked ? `<div class="text-sm" style="color:var(--warning,#b8860b);margin-top:3px;">${escapeHtml(blocked)}</div>` : ''}
+                </span>
+            </label>`;
+        }).join('');
+    }
+
+    /*
+     * The budget, as bars. "Over by 946" is actionable; "the prompt was
+     * truncated" is not — and a contributor that wanted room and was cut is the
+     * single most useful thing to see before spending.
+     */
+    function directRenderPreview(p) {
+        const rows = (p.budget || []).map(b => {
+            const pct = b.wanted ? Math.round((b.chars / b.wanted) * 100) : 100;
+            const cut = b.cut > 0;
+            return `<div style="display:grid;grid-template-columns:110px 1fr 96px;gap:8px;align-items:center;margin-bottom:3px;">
+                <span class="text-sm" style="${b.protected ? 'font-weight:600;' : 'opacity:.8;'}"
+                      title="${escapeHtml(b.why || '')}">${escapeHtml(b.contributor)}</span>
+                <span style="height:7px;border-radius:4px;background:rgba(148,163,184,.18);overflow:hidden;display:block;">
+                    <span style="display:block;height:100%;width:${pct}%;background:${cut ? 'var(--warning,#d97706)' : 'rgba(56,189,248,.75)'};"></span>
+                </span>
+                <span class="text-sm text-muted" style="text-align:right;">${cut ? `cut ${b.cut}` : `${b.chars}`}</span>
+            </div>`;
+        }).join('');
+        const over = p.headroom !== null && p.headroom < 0;
+        document.getElementById('directPreview').innerHTML = `
+            <div class="card" style="padding:11px;">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px;">
+                    <strong class="text-sm">What this would send &mdash; costs nothing to look</strong>
+                    <span class="text-sm ${over ? '' : 'text-muted'}" style="${over ? 'color:var(--gl-danger,#ef4444);' : ''}">
+                        ${p.prompt_chars} of ${p.ceiling} characters${p.headroom !== null ? ` &middot; ${p.headroom} spare` : ''}
+                    </span>
+                </div>
+                ${rows || '<span class="text-muted text-sm">No contributors.</span>'}
+                <details style="margin-top:8px;">
+                    <summary style="cursor:pointer;font-size:12px;">Read the assembled prompt</summary>
+                    <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;margin:6px 0 0;">${escapeHtml(p.prompt || '')}</pre>
+                </details>
+                ${(p.references || []).length ? `<div class="text-sm text-muted" style="margin-top:7px;">
+                    Travelling as pictures: ${p.references.map(r => escapeHtml(`${r.subject || '?'} (${r.kind || '?'})`)).join(', ')}
+                </div>` : ''}
+            </div>`;
+    }
+
+    function directRenderSwitches(p) {
+        const a = p.anchor || {};
+        document.getElementById('directAnchorLabel').innerHTML = a.shot_code
+            ? `Generate from the anchor <strong>${escapeHtml(a.shot_code)}</strong>${a.attached ? '' : ' <span class="text-muted">(not attaching: ' + escapeHtml(a.reason || 'unavailable') + ')'}</span>`
+            : '<span class="text-muted">No anchor set for this project &mdash; nothing to keep the scene from.</span>';
+        document.getElementById('directUseAnchor').disabled = !a.shot_code;
+
+        const d = p.direction || {};
+        const ignored = (d.ignored || []).length;
+        document.getElementById('directAnnotationsLabel').innerHTML = d.marks
+            ? `Apply the ${d.marks} mark${d.marks === 1 ? '' : 's'} drawn on this frame`
+              + (ignored ? ` <span class="text-muted">&mdash; ${ignored} carry no note, so they cannot become an instruction</span>` : '')
+            : '<span class="text-muted">Nothing is drawn on this frame.</span>';
+        document.getElementById('directUseAnnotations').disabled = !d.marks;
+    }
+
+    function directOverrideCount() {
+        const el = document.getElementById('directPromptOverride');
+        const out = document.getElementById('directOverrideCountOut');
+        if (!el || !out) return;
+        const n = (el.value || '').length;
+        const ceiling = (DIRECT.preview && DIRECT.preview.ceiling) || 0;
+        if (!n) { out.textContent = 'Blank — the prompt is assembled for you and trimmed to fit.'; out.style.color = ''; return; }
+        out.textContent = ceiling
+            ? `${n} of ${ceiling} characters. Nothing trims an override — a provider truncates the TAIL.`
+            : `${n} characters.`;
+        out.style.color = (ceiling && n > ceiling) ? 'var(--gl-danger,#ef4444)' : '';
+    }
+
+    function directFillOverride() {
+        if (!DIRECT.preview) return;
+        document.getElementById('directPromptOverride').value = DIRECT.preview.prompt || '';
+        document.getElementById('directAdvanced').open = true;
+        directOverrideCount();
+    }
+
+    async function directGenerate() {
+        if (!DIRECT.shotId) return;
+        const val = id => (document.getElementById(id).value || '').trim();
+        const body = { direction_mode: DIRECT.mode };
+        if (val('directPromptOverride')) body.prompt_override = val('directPromptOverride');
+        if (val('directNegative')) body.negative_prompt = val('directNegative');
+        if (val('directSeed')) body.seed = Number(val('directSeed'));
+        if (val('directStyleOverride')) body.style_override = val('directStyleOverride');
+        if (val('directLedgerMode') === 'locked') body.mode = 'locked';
+        const anchorBox = document.getElementById('directUseAnchor');
+        if (!anchorBox.disabled && !anchorBox.checked) body.use_anchor = false;
+        const annBox = document.getElementById('directUseAnnotations');
+        if (!annBox.disabled && annBox.checked) body.use_annotations = true;
+
+        const shotId = DIRECT.shotId;
+        closeModal('directShotModal');
+        const done = frameBusy(shotId, 'Generating');
+        setStatus('Generating frame...', true);
+        try {
+            const res = await api(`/shots/${shotId}/storyboard/regenerate`,
+                { method: 'POST', body: JSON.stringify(body) });
+            done();
+            const via = res && (res.provider || (res.attempts && res.attempts.length > 1
+                ? res.attempts[res.attempts.length - 1].provider : null));
+            setStatus(`Frame generated in ${DIRECT.mode} mode${via ? ' via ' + via : ''}.`);
+            await loadStoryboard();
+            const modal = document.getElementById('frameViewerModal');
+            if (modal && modal.classList.contains('open')) frameViewerPaint();
+        } catch (err) {
+            done();
+            setStatus('Could not generate: ' + err.message);
         }
     }
 
