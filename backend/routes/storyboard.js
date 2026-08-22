@@ -2430,8 +2430,13 @@ async function regenerateShot(req, res, shotId) {
             provider: usedProvider,
             provider_model: usedModel,
             direction_mode: directionMode,
+            // activeAnchorFor returns { shot, reason, asset } — the code lives on
+            // .shot, not on the wrapper. Reading the wrapper recorded null for
+            // every anchored generation, so the version list could not say which
+            // frame a shot was made continuous with.
             anchor_shot_code: anchorAttached
-                ? ((anchorState.anchor && anchorState.anchor.shot_code) || null) : null,
+                ? ((anchorState.anchor && anchorState.anchor.shot && anchorState.anchor.shot.shot_code) || null)
+                : null,
         });
         recordConsistencyCheck(shot, scene, project, { context: consistencyContext, output_asset_id: asset.id, scorer: 'stub' });
 
