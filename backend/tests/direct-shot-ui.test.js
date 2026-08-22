@@ -463,15 +463,22 @@ test('every paid action shows what will be sent, and names the pictures', () => 
     const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
     assert.ok(/async function confirmGeneration\(/.test(html), 'there is no pre-spend confirmation');
 
-    const PAID = ['regenerateStoryboard', 'refineFrame'];
-    for (const fn of PAID) {
+    /*
+     * Each paid path confirms against ITS OWN payload. Refine does not send
+     * what a regeneration sends — the picture plus one instruction, no card, no
+     * plates — so confirming it against the regeneration preview would show a
+     * ~3,800-character prompt and five plates that never travel.
+     */
+    const PAID = [
+        { fn: 'regenerateStoryboard', gate: 'confirmGeneration' },
+        { fn: 'refineFrame', gate: 'confirmRefine' },
+    ];
+    for (const { fn, gate } of PAID) {
         const at = html.indexOf(`async function ${fn}(`);
         assert.ok(at > 0, `${fn} is gone`);
-        // Wide enough to reach past a long prompt() blurb: refineFrame asks for
-        // the instruction first, and the gate sits after it.
         const body = html.slice(at, at + 2600);
-        assert.ok(/await confirmGeneration\(/.test(body),
-            `${fn} spends credits without showing what is being sent`);
+        assert.ok(new RegExp(`await ${gate}\\(`).test(body),
+            `${fn} spends credits without showing what IT would send`);
         assert.ok(/if \(!ok\) return;/.test(body),
             `${fn} asks and then generates regardless of the answer`);
     }

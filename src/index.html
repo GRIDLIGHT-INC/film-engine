@@ -24372,7 +24372,7 @@ ${fountainText.slice(0, 50000)}`;
                             <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
                                 ${anchorButton(f)}
                                 <button class="btn btn-secondary btn-sm" onclick="directShot('${f.shot_id}')" title="Who and what is in this shot, and where the camera is">Direct</button>
-                                <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again from the card — shows you the prompt first">Regen</button>
+                                <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="${f.image_url ? 'Generate this frame again from the card — shows you the prompt first' : 'This shot has no frame yet — generate its first one. You will see the prompt before anything is spent.'}">${f.image_url ? 'Regen' : 'Generate'}</button>
                                 <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
                                 <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="${frameVersionTitle(f)}">${frameVersionLabel(f)}</button>
                                 <button class="btn btn-secondary btn-sm" onclick="insertShotAfter('${f.shot_id}')" title="Add a new shot immediately after this one, in the same scene">+ Shot</button>
@@ -26093,6 +26093,57 @@ ${fountainText.slice(0, 50000)}`;
      * picture already carries all of that, and repeating it in words pulls the
      * result back toward a fresh generation, which is the thing being avoided.
      */
+
+    /**
+     * What a REFINE would send — which is not what a regeneration would send.
+     *
+     * Refine carries the PICTURE plus one instruction: no scene card, no
+     * subject descriptions, no style preset, because the picture already holds
+     * all of that. This used to confirm against the regeneration preview, so it
+     * displayed a ~3,800-character prompt and listed five plates that a refine
+     * does not send — a dialog whose entire purpose is "see what will be sent"
+     * being confidently wrong, which is worse than not having one.
+     */
+    async function confirmRefine(shotId, instruction, version, useAnchor) {
+        const body = document.getElementById('confirmGenBody');
+        const title = document.getElementById('confirmGenTitle');
+        if (!body) return true;
+        title.textContent = version ? `Refine v${version}` : 'Refine this frame';
+        body.innerHTML = '<span class="text-muted text-sm">Reading what would be sent&hellip;</span>';
+        showModal('confirmGenModal');
+        const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
+
+        try {
+            const q = new URLSearchParams({ instruction });
+            if (version) q.set('version', version);
+            if (useAnchor) q.set('use_anchor', 'true');
+            const d = await api(`/shots/${shotId}/storyboard/refine-preview?${q}`);
+            const esc = escapeHtml;
+            body.innerHTML = `
+              <p class="text-sm text-muted" style="line-height:1.5;">${esc(d.note)}</p>
+              <div class="form-group">
+                <label>Pictures being sent (${d.references.length})</label>
+                <ul style="margin:2px 0 0 16px;padding:0;">${d.references.map(r =>
+                    `<li class="text-sm">${esc(r.subject)}
+                       <span class="text-muted">&mdash; ${esc(r.kind)}</span></li>`).join('')}</ul>
+                <div class="text-sm text-muted" style="line-height:1.45;">${esc(d.anchor_note)}</div>
+              </div>
+              <div class="form-group">
+                <label>The whole instruction
+                  <span class="text-muted text-sm">${d.prompt_chars} characters</span></label>
+                <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;margin:0;padding:8px;
+                            border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.prompt)}</pre>
+              </div>
+              <p class="text-sm text-muted" style="line-height:1.45;">Costs credits. The frame you are
+                 refining stays in the version list either way.</p>`;
+        } catch (err) {
+            body.innerHTML = `<p class="text-sm" style="color:var(--gl-danger,#ef4444);">
+                Could not read what would be sent: ${escapeHtml(err.message)}.
+                You can still refine, but you would be doing it blind.</p>`;
+        }
+        return decision;
+    }
+
     /**
      * Keep a picture and change one thing about it.
      *
@@ -26130,12 +26181,7 @@ ${fountainText.slice(0, 50000)}`;
                 + 'Cancel — refine from this frame alone.');
         }
 
-        const ok = await confirmGeneration(shotId, {
-            title: 'Refine this frame',
-            note: 'Refine sends the PICTURE plus your one instruction — the prompt below is what the '
-                + 'shot would send on a full regeneration, shown so you can see which plates and '
-                + 'settings are in play. Costs credits.',
-        });
+        const ok = await confirmRefine(shotId, instruction.trim(), version, useAnchor);
         if (!ok) return;
 
         const done = frameBusy(shotId, 'Refining');

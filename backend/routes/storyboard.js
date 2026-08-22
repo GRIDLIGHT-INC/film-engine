@@ -589,6 +589,13 @@ function handleStoryboard(req, res, urlParts, query) {
             return regenerateShot(req, res, shotId);
         }
 
+        // GET /film/shots/:id/storyboard/refine-preview — what a refine would
+        // send. Free, and deliberately NOT the regeneration prompt: a refine
+        // carries the picture and one instruction, nothing else.
+        if (urlParts[4] === 'refine-preview' && req.method === 'GET') {
+            return refinePreview(req, res, shotId, query);
+        }
+
         // POST /film/shots/:id/storyboard/refine — change one thing, keep the rest.
         if (urlParts[4] === 'refine' && req.method === 'POST') {
             return refineShot(req, res, shotId);
@@ -2054,6 +2061,82 @@ function annotationReport(a) {
     };
 }
 
+
+/**
+ * What a REFINE sends: the picture, plus one instruction.
+ *
+ * Refine is not a regeneration. It carries no scene card, no subject
+ * descriptions and no style preset, because the picture already carries all of
+ * that and repeating it in words pulls the result back toward a fresh
+ * generation.
+ *
+ * Extracted so the PREVIEW and the GENERATION are the same text. The
+ * confirmation dialog previously called the regeneration preview, so it showed
+ * a ~3,800-character prompt and listed five plates that refine does not send —
+ * a dialog whose whole purpose is "see what will be sent" being confidently
+ * wrong, which is worse than no dialog.
+ */
+function buildRefinePayload(instruction, withAnchor) {
+    const prompt = withAnchor
+        ? `${instruction}. Keep everything else in the FIRST reference image exactly as it is: `
+          + 'the same composition, framing, camera position and lens. '
+          + 'Match the SECOND reference image for continuity only — the same location, set dressing, '
+          + 'time of day, lighting and colour grade — without copying its composition or camera angle.'
+        : `${instruction}. Keep everything else in the reference image exactly as it is: `
+          + 'the same composition, framing, camera position, lighting and colour grade.';
+    return {
+        prompt,
+        negative_prompt: 'different composition, different camera angle, different framing, '
+            + 'recropped, restyled, different time of day',
+    };
+}
+
+/**
+ * GET /film/shots/:id/refine-preview — what a refine would send. Spends nothing.
+ */
+function refinePreview(req, res, shotId, query) {
+    const q = query || {};
+    const instruction = String(q.instruction || '').trim();
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+    const scene = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    if (!scene) return json(res, 404, { error: 'Scene not found' });
+
+    const wantAnchor = q.use_anchor === 'true' || q.use_anchor === '1';
+    let anchor = null;
+    if (wantAnchor) {
+        try {
+            const resolved = require('../lib/shot-anchor').activeAnchorFor(db, shotId);
+            if (resolved && resolved.shot && resolved.asset) anchor = resolved.shot.shot_code;
+        } catch (_) { anchor = null; }
+    }
+
+    const version = q.version ? Number(q.version) : null;
+    const built = buildRefinePayload(instruction || '<your instruction>', !!anchor);
+
+    return json(res, 200, {
+        shot_id: shotId,
+        shot_code: shot.shot_code,
+        from_version: version,
+        // The pictures, which is the whole point: a refine sends ONE frame, and
+        // optionally the anchor. Not the plates.
+        references: [
+            { subject: version ? `${shot.shot_code} v${version}` : `${shot.shot_code} (current frame)`,
+              kind: 'frame' },
+            ...(anchor ? [{ subject: anchor, kind: 'anchor' }] : []),
+        ],
+        prompt: built.prompt,
+        negative_prompt: built.negative_prompt,
+        prompt_chars: built.prompt.length,
+        note: 'A refine sends the PICTURE plus this one instruction — no scene card, no subject '
+            + 'descriptions, no style preset. The picture already carries those, and repeating them '
+            + 'in words pulls the result back toward a fresh generation.',
+        anchor_note: anchor
+            ? `${anchor} travels as a second reference, for continuity only.`
+            : 'No anchor attached — this refines from the picture alone.',
+    });
+}
+
 /**
  * Change one thing about a frame you already have.
  *
@@ -2197,22 +2280,14 @@ async function refineShot(req, res, shotId) {
         }
     }
 
-    // Short on purpose. The picture is the description.
-    const prompt = anchorRef
-        ? `${instruction}. Keep everything else in the FIRST reference image exactly as it is: `
-          + 'the same composition, framing, camera position and lens. '
-          + 'Match the SECOND reference image for continuity only — the same location, set dressing, '
-          + 'time of day, lighting and colour grade — without copying its composition or camera angle.'
-        : `${instruction}. Keep everything else in the reference image exactly as it is: `
-          + 'the same composition, framing, camera position, lighting and colour grade.';
+    const { prompt, negative_prompt } = buildRefinePayload(instruction, !!anchorRef);
 
     db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shotId);
     try {
         ensureStoryboardDir(project.id);
         const payload = {
             prompt,
-            negative_prompt: 'different composition, different camera angle, different framing, '
-                + 'recropped, restyled, different time of day',
+            negative_prompt,
             reference_images: anchorRef ? [reference, anchorRef] : [reference],
             aspect_ratio: project.aspect_ratio,
         };

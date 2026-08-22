@@ -460,10 +460,13 @@ test('refine can attach the anchor, and names each picture by its job', () => {
         'the anchor is resolved and never actually sent');
 
     // Two pictures with no jobs named is worse than one: the model cannot tell
-    // which it is supposed to be reproducing.
-    assert.ok(/FIRST reference image/.test(body) && /SECOND reference image/.test(body),
+    // which it is supposed to be reproducing. The wording lives in
+    // buildRefinePayload now, so preview and generation cannot disagree.
+    const builder = src.slice(src.indexOf('function buildRefinePayload('),
+        src.indexOf('function buildRefinePayload(') + 1400);
+    assert.ok(/FIRST reference image/.test(builder) && /SECOND reference image/.test(builder),
         'both pictures are attached and neither is named, so the model must guess which to keep');
-    assert.ok(/continuity only/.test(body),
+    assert.ok(/continuity only/.test(builder),
         'the anchor is not scoped to continuity, so it will pull the composition too');
 
     // Off by default.
@@ -519,4 +522,56 @@ test('any kept version can be refined from, not just the current one', () => {
     // frame was never kept aside has nothing to send.
     assert.ok(/v\.restorable|v\.exists/.test(modal),
         'Refine is offered on versions with no picture, which cannot work');
+});
+
+test('the refine confirmation shows what REFINE sends, not a regeneration', () => {
+    /*
+     * "When I refine, doesn't it just send the picture with my changes instead
+     * of a full prompt — which is what's showing?"
+     *
+     * Right, and the confirmation was lying. Refine sends the PICTURE plus one
+     * instruction: no scene card, no subject descriptions, no style preset,
+     * because the picture already carries all of that. The confirmation called
+     * the regeneration preview, so it displayed a ~3,800-character prompt and
+     * listed five plates that refine does not send.
+     *
+     * A dialog whose whole purpose is "see what will be sent" showing something
+     * else is worse than no dialog: it is confidently wrong, and a director
+     * reading it would conclude their plates were in play when they were not.
+     */
+    const routes = fs.readFileSync(path.join(ROOT, 'backend', 'routes', 'storyboard.js'), 'utf8');
+    assert.ok(/function buildRefinePayload\(/.test(routes),
+        'the refine prompt is built inline, so nothing can preview it without generating');
+    assert.ok(/refine-preview|refine\/preview/.test(routes),
+        'there is no free way to see what a refine would send');
+
+    const html = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+    const fn = html.slice(html.indexOf('async function refineFrame('),
+        html.indexOf('async function refineFrame(') + 3000);
+    assert.ok(/refine-preview|refinePreview|confirmRefine/.test(fn),
+        'refine still confirms against the regeneration prompt, which is not what it sends');
+});
+
+test('the refine payload is built in ONE place', () => {
+    // Otherwise the preview and the generation drift, and the preview becomes a
+    // plausible fiction — the exact failure it was introduced to prevent.
+    const routes = fs.readFileSync(path.join(ROOT, 'backend', 'routes', 'storyboard.js'), 'utf8');
+    /*
+     * One PLACE, not one occurrence: the builder has two branches (with and
+     * without an anchor) and both legitimately carry the phrase. What must not
+     * happen is the phrase appearing OUTSIDE the builder, which is how the
+     * preview and the generation drift apart.
+     */
+    const at = routes.indexOf('function buildRefinePayload(');
+    assert.ok(at > 0, 'buildRefinePayload is gone');
+    let i2 = routes.indexOf('{', at), depth = 0, end = -1;
+    for (let j = i2; j < routes.length; j++) {
+        if (routes[j] === '{') depth++;
+        else if (routes[j] === '}') { depth--; if (depth === 0) { end = j + 1; break; } }
+    }
+    const outside = routes.slice(0, at) + routes.slice(end);
+    const strays = (outside.match(/Keep everything else in the (?:FIRST )?reference image/g) || []).length;
+    assert.strictEqual(strays, 0,
+        `the refine instruction text appears ${strays} time(s) outside buildRefinePayload; the `
+        + 'preview and the generation can disagree about what is sent');
 });

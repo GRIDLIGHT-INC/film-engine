@@ -557,6 +557,15 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
 
+### A Refine Previews What a REFINE Sends
+The pre-spend confirmation was added for every paid path, and for refine it showed the **wrong thing**: it called the regeneration preview, so a director about to refine saw a ~3,800-character prompt and a list of five plates that a refine does not send.
+
+A refine carries the **picture plus one instruction** — no scene card, no subject descriptions, no style preset, because the picture already holds all of that and repeating it in words pulls the result back toward a fresh generation. On a real shot the difference is **165 characters and one picture** against 3,864 characters and five. A dialog whose entire purpose is *"see what will be sent"* being confidently wrong is worse than not having one.
+
+`buildRefinePayload` is now the single place that text exists, and `GET /shots/:id/storyboard/refine-preview` returns exactly what would go — free. The test asserts the phrase appears **nowhere outside** the builder, because one occurrence inside a two-branch function is correct and a stray copy elsewhere is how a preview becomes a plausible fiction.
+
+Refine also takes a **version** from the page now. The route always accepted one and the button never sent it, so reaching an earlier attempt meant selecting it first — which works, and changes what the whole board shows as a side effect of wanting to try something. Each row in the version list carries its own Refine.
+
 ### A Missing Anchor Is the Loudest Thing on the Confirm
 Wingfall 2B v19 came back with the road in the wrong place and the car parked where no kerb was, and the cause was not the prompt: it generated with **no anchor at all**. The street was built from words and a location plate, neither of which says where the driveway is in *this* cul-de-sac.
 
