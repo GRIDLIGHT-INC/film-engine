@@ -130,3 +130,95 @@ test('editing the card makes what was generated from it stale', async () => {
     await call('PUT', `/film/shots/${shotId}`, { description: 'Something else entirely happens here.' });
     assert.strictEqual(fresh(), true, 'the card changed and the frame still claims to match it');
 });
+
+
+// ── Nested blocks merge; they do not replace ────────────────────────────
+
+/**
+ * Found by using it. Setting `camera.note` on a real shot wiped `shot_type`,
+ * `lens` and `movement` in the same call, silently — `card[key] = body[key]` is
+ * a replace, and a camera block carries more than the caller is thinking about:
+ * sensor, aperture, height, and whatever previs wrote the last time the shot was
+ * blocked.
+ *
+ * The editor already learned this for itself — "rebuilding would drop whatever
+ * previs wrote the last time the shot was blocked" — and fixed it in the page.
+ * The route it posts to never got the same treatment, so every other caller
+ * (MCP, curl, a script) still had the destructive version.
+ */
+function makeCameraShot(camera) {
+    const projectId = generateId(), sceneId = generateId(), shotId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Merge Test');
+    db.prepare("INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, '1')").run(sceneId, projectId);
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml, duration_ms) VALUES (?, ?, ?, ?, 4000)')
+        .run(shotId, sceneId, '2B', JSON.stringify({
+            shot_code: '2B',
+            description: 'The dragon crosses the cul-de-sac.',
+            camera,
+            characters: ['MAYA', 'DRAGON'],
+        }));
+    return shotId;
+}
+
+function cardOf(shotId) {
+    return JSON.parse(db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId).scene_card_yaml);
+}
+
+test('setting one camera field keeps every other one', async () => {
+    const shotId = makeCameraShot({
+        shot_type: 'tracking', lens: '35mm anamorphic', movement: 'tracking-right',
+        sensor: 'super35', height_m: 1.6,
+    });
+
+    const r = await call('PUT', `/film/shots/${shotId}`,
+        { camera: { note: 'Camera on the far side of the road, looking back.' } });
+    assert.ok(r.status < 400, JSON.stringify(r.body));
+
+    const cam = cardOf(shotId).camera;
+    const lost = ['shot_type', 'lens', 'movement', 'sensor', 'height_m'].filter(k => cam[k] === undefined);
+    assert.deepStrictEqual(lost, [], `setting camera.note dropped: ${lost.join(', ')}`);
+    assert.strictEqual(cam.note, 'Camera on the far side of the road, looking back.');
+});
+
+test('a merged block can still overwrite the field it names', async () => {
+    // Merging must not make a value unchangeable — that would be the opposite
+    // failure, and just as silent.
+    const shotId = makeCameraShot({ shot_type: 'wide', lens: '24mm' });
+    await call('PUT', `/film/shots/${shotId}`, { camera: { lens: '85mm' } });
+    const cam = cardOf(shotId).camera;
+    assert.strictEqual(cam.lens, '85mm', 'a merged block could not change its own field');
+    assert.strictEqual(cam.shot_type, 'wide');
+});
+
+test('null clears one facet without clearing the block', async () => {
+    // With a merge, there has to be a way to say "remove this". Otherwise a
+    // camera note can be written and never taken back off.
+    const shotId = makeCameraShot({ shot_type: 'wide', lens: '24mm', note: 'from the far side' });
+    await call('PUT', `/film/shots/${shotId}`, { camera: { note: null } });
+    const cam = cardOf(shotId).camera;
+    assert.ok(!('note' in cam) || cam.note === undefined, 'a facet could not be cleared');
+    assert.strictEqual(cam.lens, '24mm', 'clearing one facet cleared another');
+});
+
+test('a list replaces, so a character can be removed from a shot', async () => {
+    // The right semantics differ by shape and getting either wrong is silent.
+    // An object merges — you set one facet and mean to keep the rest. A list
+    // replaces, because a merging array could never shrink.
+    const shotId = makeCameraShot({ shot_type: 'wide' });
+    await call('PUT', `/film/shots/${shotId}`, { characters: ['MAYA'] });
+    assert.deepStrictEqual(cardOf(shotId).characters, ['MAYA'],
+        'a character could not be removed from a shot');
+});
+
+test('which blocks merge is declared, not decided per field', () => {
+    const src = require('fs').readFileSync(
+        require('path').join(__dirname, '..', 'routes', 'shots.js'), 'utf8');
+    const m = src.match(/const MERGED_BLOCKS\s*=\s*new Set\(\[([^\]]*)\]/);
+    assert.ok(m, 'routes/shots.js does not declare which card blocks merge');
+    const merged = [...m[1].matchAll(/'(\w+)'/g)].map(x => x[1]);
+    assert.ok(merged.includes('camera'), 'camera does not merge');
+    assert.ok(merged.includes('lighting'), 'lighting does not merge');
+    for (const list of ['characters', 'props', 'dialogue', 'sfx_cues']) {
+        assert.ok(!merged.includes(list), `${list} merges, so it could never be shortened`);
+    }
+});

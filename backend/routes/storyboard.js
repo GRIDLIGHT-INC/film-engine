@@ -430,6 +430,18 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
     if (opts.restored_from !== undefined) metadata.restored_from = opts.restored_from;
     if (opts.refined_from !== undefined) metadata.refined_from = opts.refined_from;
     if (opts.instruction !== undefined) metadata.instruction = opts.instruction;
+    /*
+     * Which mode produced this frame.
+     *
+     * 2B accumulated twelve attempts before one was right, and the version list
+     * — whose whole job is "which of these am I looking at" — could not say
+     * that eleven were built from prose and the twelfth from a locked scene.
+     * A director comparing them is comparing pictures with no record of what
+     * was different about the request, which is how the same failed approach
+     * gets tried again.
+     */
+    if (opts.direction_mode) metadata.direction_mode = opts.direction_mode;
+    if (opts.anchor_shot_code) metadata.anchor_shot_code = opts.anchor_shot_code;
     if (opts.provider) metadata.provider = opts.provider;
     if (opts.provider_model) metadata.provider_model = opts.provider_model;
 
@@ -1484,6 +1496,28 @@ function shotPromptPreview(req, res, shotId, query) {
     if (wants) ctx.useAnnotations = true;
     if (query && (query.use_annotations === 'false' || query.use_annotations === '0')) ctx.useAnnotations = false;
 
+    /*
+     * The mode this preview is FOR. It was hardcoded to 'action', so the free
+     * dry-run could only ever show the mode that was already working — and the
+     * mode that costs money to try was the one you could not look at first.
+     * That inverts the reason this route exists.
+     *
+     * The anchor requirement is reported rather than refused. A 409 is right at
+     * generation time, where running anyway spends money producing the drift
+     * camera mode exists to prevent; here it would mean answering "what would
+     * this cost me" with an error instead of the answer.
+     */
+    const { DIRECTION_MODES } = require('../lib/storyboard-prompt');
+    const directionMode = String((query && query.direction_mode) || 'action');
+    if (!DIRECTION_MODES[directionMode]) {
+        return json(res, 400, {
+            error: `Unknown direction_mode '${directionMode}'.`,
+            modes: Object.keys(DIRECTION_MODES),
+        });
+    }
+    ctx.directionMode = directionMode;
+    const modeNeedsAnchor = !!DIRECTION_MODES[directionMode].requires_anchor;
+
     let built;
     try { built = buildCapabilityPayload('image', ctx); } catch (err) {
         return json(res, 409, { error: err.message, code: err.code });
@@ -1538,7 +1572,17 @@ function shotPromptPreview(req, res, shotId, query) {
          * shot that came back wrong can be diagnosed rather than re-rolled.
          */
         budget: (built.meta && built.meta.budget) || [],
-        direction_mode: 'action',
+        direction_mode: directionMode,
+        // Named here rather than refused, because this route spends nothing:
+        // the honest answer to "what would camera mode give me" on a shot with
+        // no anchor is "an unlocked scene, and here is why", not a 409.
+        direction_mode_ready: !modeNeedsAnchor || !!(built.payload
+            && (built.payload.reference_images || []).some(r => r.kind === 'anchor')),
+        direction_mode_blocked: (modeNeedsAnchor
+            && !(built.payload && (built.payload.reference_images || []).some(r => r.kind === 'anchor')))
+            ? 'Camera mode keeps the scene from an existing frame, and none is attached. '
+              + 'Set an anchor first, or this generation would be refused.'
+            : null,
         direction_modes: Object.entries(require('../lib/storyboard-prompt').DIRECTION_MODES)
             .map(([id, m]) => ({ id, label: m.label, description: m.description,
                 requires_anchor: !!m.requires_anchor })),
@@ -2048,6 +2092,9 @@ async function regenerateShot(req, res, shotId) {
             input_refs: consistencyContext.input_refs,
             provider: usedProvider,
             provider_model: usedModel,
+            direction_mode: directionMode,
+            anchor_shot_code: anchorAttached
+                ? ((anchorState.anchor && anchorState.anchor.shot_code) || null) : null,
         });
         recordConsistencyCheck(shot, scene, project, { context: consistencyContext, output_asset_id: asset.id, scorer: 'stub' });
 

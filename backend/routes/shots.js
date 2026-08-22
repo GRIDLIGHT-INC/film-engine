@@ -44,6 +44,47 @@ function deleteShot(req, res, shotId) {
 }
 
 /**
+ * Card blocks that MERGE rather than replace.
+ *
+ * `card[key] = body[key]` is right for a string and for a list, and wrong for
+ * these two. A camera block carries more than any one caller is thinking about
+ * — sensor, aperture, focus distance, height, and whatever previs wrote the last
+ * time the shot was blocked — so setting `camera.note` replaced the lens, the
+ * shot type and the movement on a real shot, in a single call, with no error.
+ * The card stayed valid, so nothing downstream could tell it had happened.
+ *
+ * The editor already learned this and fixed it for itself ("rebuilding would
+ * drop whatever previs wrote"). The route it posts to did not, so every other
+ * caller — MCP, curl, a script — still had the destructive version. Fixed here
+ * instead, which is the one place all of them pass through.
+ *
+ * Lists are deliberately NOT in this set. A merging array could never shorten,
+ * so removing a character from a shot would become unsayable — the same class
+ * of silent failure, pointing the other way.
+ */
+const MERGED_BLOCKS = new Set(['camera', 'lighting']);
+
+/**
+ * Merge one nested block, with `null` as the way to clear a single facet.
+ *
+ * Without an explicit clear, merging makes every value it holds permanent: a
+ * camera note could be written and never taken back off. `null` erases and an
+ * absent key means "leave it alone" — the same distinction the rest of this
+ * route already draws between the fields a caller named and the ones it did not.
+ */
+function mergeBlock(existing, incoming) {
+    if (incoming === null) return null;                        // clear the block itself
+    if (typeof incoming !== 'object' || Array.isArray(incoming)) return incoming;
+    const base = (existing && typeof existing === 'object' && !Array.isArray(existing))
+        ? { ...existing } : {};
+    for (const [k, v] of Object.entries(incoming)) {
+        if (v === null) delete base[k];
+        else base[k] = v;
+    }
+    return base;
+}
+
+/**
  * Edit a shot's scene card.
  *
  * There was no way to. PUT /shots/:id/order and /transition existed; the card
@@ -76,7 +117,7 @@ function updateShotCard(req, res, shotId) {
     const changed = [];
     for (const key of EDITABLE) {
         if (body[key] === undefined) continue;
-        card[key] = body[key];
+        card[key] = MERGED_BLOCKS.has(key) ? mergeBlock(card[key], body[key]) : body[key];
         changed.push(key);
     }
     if (!changed.length) {
