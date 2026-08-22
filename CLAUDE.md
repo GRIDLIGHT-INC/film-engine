@@ -554,6 +554,8 @@ Three decisions carry it. **Only NAMED objects speak**: an unnamed staged object
 
 Staging ranks with the **shot**, protected, below the written direction and above the camera: where a subject stands is what the frame *is*, not decoration on it. It is naturally short — bounded by the number of named objects — so it cannot do to the budget what an unbounded field did once already.
 
+**Location is the third thing a shot is blocked with, and the only one that is not a shot field.** It is the scene HEADING, so every shot in a scene inherits it — which is the sole reason one location plate means the same street in all of them. It is shown in the blocking panel with its source named, and reachable, but deliberately **not** an input: two shots in one scene claiming different places is precisely the drift the plate exists to prevent.
+
 `from-card` now seeds the real cast by name, with heights from the subject-scale columns where they exist and the default where they do not (an invented size is indistinguishable from a declared one). The storyboard editor and previs build their controls from **one** `blockingPanel()` / `directingPanel()` each, on the precedent `markupToolbar()` set — two literals is exactly how the grid and the viewer came to disagree about their own tools.
 
 `tests/blocking-and-directing.test.js` is set-based over **(surface × job)** because the failure was partial in exactly that shape, and it **executes** the panel builders rather than grepping for their ids: the ids are produced from `${p}Characters`, so a grep for the literal reports a working editor as broken and a grep for the template reports a broken one as working.

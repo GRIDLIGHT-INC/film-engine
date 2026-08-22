@@ -24387,10 +24387,22 @@ ${fountainText.slice(0, 50000)}`;
                 <input type="text" id="${p}Props" placeholder="SEDAN, sprinkler">
             </div>
         </div>
+        <div class="form-group" id="${p}LocationRow" style="display:none;">
+            <label>Location <span class="text-muted text-sm">from the scene heading &mdash; shared by every shot in the scene</span></label>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <div id="${p}Location" class="text-sm"
+                     style="flex:1;padding:7px 9px;border-radius:6px;background:rgba(148,163,184,.12);"></div>
+                <button class="btn btn-sm btn-secondary" onclick="${p}OpenScene && ${p}OpenScene()"
+                        id="${p}LocationEdit" style="display:none;">Edit scene</button>
+            </div>
+        </div>
         <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
             Comma separated. Naming a subject here attaches its reference plate to every
             generation of this shot, and seeds it onto the previs stage by name &mdash; an
             unnamed figure on the stage is scaffolding and deliberately reaches no prompt.
+            The location is <em>not</em> a per-shot field: it is the scene heading, so every shot
+            in the scene inherits it &mdash; which is exactly what makes one location plate mean
+            the same street in all of them. Change it by editing the scene.
             ${o.stageHint || ''}
         </p>`;
     }
@@ -24485,13 +24497,35 @@ ${fountainText.slice(0, 50000)}`;
         return { characters: list(p + 'Characters'), props: list(p + 'Props') };
     }
 
-    function fillBlockingPanel(p, card) {
+    function fillBlockingPanel(p, card, shot) {
         const set = (id, arr) => {
             const el = document.getElementById(id);
             if (el) el.value = Array.isArray(arr) ? arr.join(', ') : '';
         };
         set(p + 'Characters', card.characters);
         set(p + 'Props', card.props);
+
+        /*
+         * The third thing a shot is blocked with, and the one that is NOT a
+         * shot field. Location lives on the scene heading, so showing it as an
+         * editable box here would let two shots in one scene claim different
+         * places — and a location plate only means anything because they
+         * cannot. Shown, sourced, and reachable; not editable in place.
+         */
+        const row = document.getElementById(p + 'LocationRow');
+        const out = document.getElementById(p + 'Location');
+        if (!row || !out) return;
+        const loc = shot && (shot.location || '');
+        const tod = shot && shot.time_of_day;
+        row.style.display = '';
+        out.innerHTML = loc
+            ? `${escapeHtml(loc)}${tod ? ` <span class="text-muted">&middot; ${escapeHtml(tod)}</span>` : ''}`
+            : '<span class="text-muted">This scene has no location on its heading, so no location plate can attach.</span>';
+        const btn = document.getElementById(p + 'LocationEdit');
+        if (btn && shot && shot.scene_id) {
+            btn.style.display = '';
+            btn.onclick = () => { closeModal('shotCardModal'); showPage('scenes'); };
+        }
     }
 
     function markupToolbar(shotId, canvasId, imgId) {
@@ -25488,7 +25522,7 @@ ${fountainText.slice(0, 50000)}`;
 
             const vocab = await shotCardVocab();
             const cam = SHOT_CARD.card.camera || {};
-            fillBlockingPanel('shotCard', SHOT_CARD.card);
+            fillBlockingPanel('shotCard', SHOT_CARD.card, shot);
             fillDirectingPanel('shotCard', vocab, cam, SHOT_CARD.card.lighting);
 
             document.getElementById('shotCardWarning').style.display = 'none';

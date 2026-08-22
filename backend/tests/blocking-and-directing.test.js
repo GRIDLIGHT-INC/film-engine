@@ -26,7 +26,9 @@ const HTML = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html
 
 /** The controls each job needs, by the id suffix the shared panels emit. */
 const JOBS = {
-    blocking: ['Characters', 'Props'],
+    // "blocking the shot with the characters, location and the props" — all
+    // three, because location was the one silently left out of the first pass.
+    blocking: ['Characters', 'Props', 'Location'],
     directing: ['ShotType', 'Lens', 'Movement', 'HeightM', 'Sensor', 'Aperture', 'CameraNote'],
 };
 
@@ -198,4 +200,42 @@ test('the card seeds previs by name, so what is staged is what the pipeline know
         'the validator refuses a name, so a seeded cast could never be saved');
     assert.ok(!/subjects: \[\],\n        moves/.test(previs),
         'from-card still seeds an empty stage');
+});
+
+
+test('location is shown as the scene\'s, never as a per-shot field', () => {
+    /*
+     * The third thing the ask named, and the one that is not a shot property.
+     * Location is the scene HEADING: every shot in a scene inherits it, which
+     * is the only reason one location plate means the same street in all of
+     * them. So it must appear in the blocking panel — a director cannot block a
+     * shot without knowing where it is — and it must NOT be an input, because
+     * two shots in one scene claiming different places is precisely the drift
+     * the plate exists to prevent.
+     */
+    const rendered = runPanel('blockingPanel', 'shotCard');
+    assert.ok(rendered.includes('id="shotCardLocation"'),
+        'the blocking panel does not show the location this shot is in');
+    assert.ok(!/<input[^>]*id="shotCardLocation"/.test(rendered),
+        'location is an editable input — two shots in one scene could then claim different places');
+    assert.ok(/scene heading/i.test(rendered),
+        'the panel does not say where the location comes from, so a director cannot tell why it is not editable');
+
+    // And the route must actually supply it, or the panel renders an empty box.
+    const shots = fs.readFileSync(path.join(__dirname, '..', 'routes', 'shots.js'), 'utf8');
+    const getShot = shots.slice(shots.indexOf('function getShot('));
+    assert.ok(/location: shot\.location/.test(getShot.slice(0, 1500)),
+        'GET /shots/:id does not return the scene location');
+});
+
+test('every blocking control is filled from real data, not left blank', () => {
+    // A control that renders and is never populated looks identical to one
+    // showing a genuinely empty value.
+    const fill = HTML.slice(HTML.indexOf('function fillBlockingPanel('));
+    const body = fill.slice(0, 1800);
+    for (const f of JOBS.blocking) {
+        assert.ok(body.includes(f), `${f} is rendered but never filled`);
+    }
+    assert.ok(/fillBlockingPanel\('shotCard', SHOT_CARD\.card, shot\)/.test(HTML),
+        'the editor never passes the shot, so the location can only ever be blank');
 });
