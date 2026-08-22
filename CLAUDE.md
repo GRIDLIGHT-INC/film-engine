@@ -551,6 +551,30 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
 
+### Directing a Shot Is a Creative Act, Not a Control Panel
+The first version of this surface exposed every parameter the route accepts — seed, ledger mode, negative prompt, style override, prompt override, and a character-budget chart. All of that is the **machinery**. A director looking at a frame that came back wrong does not want to tune a sampler; they want to say who is in the shot, where the camera is, and what else should be true. The complexity actively worked against the thing it was built for.
+
+The surface is now exactly the work:
+
+| | |
+|---|---|
+| **description** | what the SCREENPLAY says. Nothing else. |
+| **anchor** | keep the previous shot as reference (unchanged) |
+| **Direct** | *Blocking* — who and what is in it, plus a direction box; then *Cinematography* — where the camera is |
+| **refine / regen / version** | keep a frame and change one thing; make it again; which attempt am I looking at |
+
+**`description` is the writing and `direction` is what a director adds on top** (migration-free, validated in the scene-card schema, capped at 2000). They are two fields rather than one blended string because a screenplay revision must be able to replace **its own half** without discarding the direction — and because a board showing a composed description is showing a paraphrase of the film. The screenplay **leads** in the prompt; the direction follows, because it modifies what is already there. The modal never sends `description` at all: the route merges, so the writing survives untouched, and changing what a shot IS means revising the script.
+
+**Blocking became a picker over what the project has.** Two free-text boxes meant typing `Maya` where the project says `MAYA` silently invented a subject with no plate, no size and no locked profile — the card stores any string. Choosing from the project's own cast makes that unsayable, and the list shows the fact that actually decides a frame: **which subjects have no plate**, and will therefore be invented fresh in every shot they appear in.
+
+**Every camera facet the schema validates has a control** — all **8**, derived from `card.camera.*` rather than the 4 the first version happened to offer — and each states what it would inherit if left blank (`↳ mood board: 40mm anamorphic`). A blank field that silently inherits is indistinguishable from one that reaches nothing, which is exactly how the mood board's specs sat validated and consumed by nobody.
+
+**Previs was painting the browser's cache.** A regeneration overwrites the file at a fixed name, so the URL never changes; the board learned to bust this with `?v=asset_version` and previs did not, so the stage kept showing the frame you had just replaced — which reads as previs being broken rather than as a cache. The version is now stamped into `src` **server-side**, because three surfaces paint this and only two of them remembered.
+
+**And directing in previs writes back.** `applyBlockingToCard` wrote six camera facets and nothing else, so a director who stood MAYA and the DRAGON on the stage had blocked the shot and the card did not know. Named staged subjects now **union** into the card's characters and props — union rather than replace, since a director may have named a subject they have not placed yet, and applying an angle must never delete part of the blocking.
+
+`tests/direct-shot-ui.test.js` is set-based over three registries — `KIND_RANK` for what can be blocked, the schema's own `card.camera.*` for cinematography, and `SPEC_KINDS` for what an unset facet inherits — and it asserts the machinery is **absent**, not merely collapsed behind a disclosure.
+
 ### Blocking a Shot and Directing It Are Two Jobs
 *"There is blocking the shot with the characters, location and the props… and then there is directing the shot (camera selections, angles, movement). I should be able to do this on both the storyboard and the previs."*
 

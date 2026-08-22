@@ -5651,108 +5651,16 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
     </div>
 
-    <!-- Direct this shot: every parameter the regenerate route accepts, in one place. -->
-    <div class="modal-overlay" id="directShotModal">
-        <div class="modal" style="max-width:880px;width:94vw;">
-            <div class="modal-header">
-                <h3 id="directShotTitle">Direct this shot</h3>
-                <button class="modal-close" onclick="closeModal('directShotModal')">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>What are you directing?</label>
-                    <div id="directModeChoices" style="display:flex;flex-direction:column;gap:6px;"></div>
-                </div>
-
-                <div id="directPreview" style="margin:10px 0;"></div>
-
-                <details id="directAdvanced" style="margin:10px 0;">
-                    <summary style="cursor:pointer;font-size:13px;">Compose the prompt yourself, and the rest of the dials</summary>
-                    <div style="padding:10px 0 0;">
-                        <div class="form-group">
-                            <label>Prompt override
-                                <span class="text-muted text-sm">the whole prompt &mdash; nothing trims it, nothing is added</span>
-                            </label>
-                            <textarea id="directPromptOverride" rows="7"
-                                style="width:100%;line-height:1.5;font-family:ui-monospace,Menlo,monospace;font-size:11px;"
-                                oninput="directOverrideCount()"></textarea>
-                            <div class="text-sm text-muted" id="directOverrideCountOut"></div>
-                            <button class="btn btn-sm btn-secondary" style="margin-top:5px;"
-                                    onclick="directFillOverride()">Start from the assembled prompt</button>
-                        </div>
-                        <div class="form-group">
-                            <label>Negative prompt <span class="text-muted text-sm">what to keep out</span></label>
-                            <textarea id="directNegative" rows="2" style="width:100%;font-size:11px;line-height:1.5;font-family:inherit;"></textarea>
-                        </div>
-                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;">
-                            <div class="form-group">
-                                <label>Seed <span class="text-muted text-sm">blank = new each time</span></label>
-                                <input type="number" id="directSeed" placeholder="&mdash;">
-                            </div>
-                            <div class="form-group">
-                                <label>Ledger mode</label>
-                                <select id="directLedgerMode">
-                                    <option value="creative">creative &mdash; vary</option>
-                                    <option value="locked">locked &mdash; recreate exactly</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>Style override <span class="text-muted text-sm">instead of the film&rsquo;s look, for this call only</span></label>
-                            <input type="text" id="directStyleOverride" placeholder="leave blank to use the project's style preset">
-                        </div>
-                    </div>
-                </details>
-
-                <div style="display:flex;flex-direction:column;gap:7px;margin:10px 0;">
-                    <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
-                        <input type="checkbox" id="directUseAnchor" checked style="margin-top:3px;">
-                        <span id="directAnchorLabel" class="text-sm"></span>
-                    </label>
-                    <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
-                        <input type="checkbox" id="directUseAnnotations" style="margin-top:3px;">
-                        <span id="directAnnotationsLabel" class="text-sm"></span>
-                    </label>
-                </div>
-
-                <div id="directWarning" class="text-sm" style="display:none;margin-bottom:10px;"></div>
-                <div style="display:flex;gap:8px;justify-content:flex-end;">
-                    <button class="btn btn-secondary" onclick="closeModal('directShotModal')">Cancel</button>
-                    <button class="btn btn-secondary" onclick="directRefresh()">Refresh preview</button>
-                    <button class="btn btn-primary" id="directGenerateBtn" onclick="directGenerate()">Generate &mdash; costs credits</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <div class="modal-overlay" id="shotCardModal">
         <div class="modal" style="max-width:820px;width:92vw;">
             <div class="modal-header">
-                <h3 id="shotCardTitle">Edit shot</h3>
+                <h3 id="shotCardTitle">Direct shot</h3>
                 <button class="modal-close" onclick="closeModal('shotCardModal')">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="text-sm text-muted" style="margin-bottom:10px;line-height:1.5;">
-                    This is what the frame is generated from. Describe the <strong>effect</strong> you want rather than
-                    the object &mdash; &ldquo;light drops across the house fronts as something passes overhead&rdquo;
-                    reads very differently to &ldquo;a winged shadow&rdquo;.
-                </p>
-                <div class="form-group">
-                    <label>Description <span class="text-muted text-sm" id="shotCardCount"></span></label>
-                    <textarea id="shotCardDescription" rows="12" style="width:100%;line-height:1.5;font-family:inherit;"
-                              oninput="shotCardCount()"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Action <span class="text-muted text-sm">optional &mdash; what moves in the shot</span></label>
-                    <textarea id="shotCardAction" rows="4" style="width:100%;line-height:1.5;font-family:inherit;"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Notes <span class="text-muted text-sm">direction that is not part of the prompt</span></label>
-                    <textarea id="shotCardNotes" rows="3" style="width:100%;line-height:1.5;font-family:inherit;"></textarea>
-                </div>
-                <h4 style="margin:14px 0 8px;">Blocking <span class="text-muted text-sm" style="font-weight:normal;">&mdash; what is in the shot</span></h4>
+                <h4 style="margin:14px 0 8px;">Blocking <span class="text-muted text-sm" style="font-weight:normal;">&mdash; who and what is in the shot</span></h4>
                 <div id="shotCardBlockingPanel"></div>
-                <h4 style="margin:14px 0 8px;">Directing <span class="text-muted text-sm" style="font-weight:normal;">&mdash; where the camera goes</span></h4>
+                <h4 style="margin:14px 0 8px;">Cinematography <span class="text-muted text-sm" style="font-weight:normal;">&mdash; where the camera is</span></h4>
                 <div id="shotCardDirectingPanel"></div>
                 <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
                     Movement also becomes the clip's <code>camera_control</code>. Blocking a shot in
@@ -12819,7 +12727,22 @@ THREE.GLTFLoader = GLTFLoader;
      */
     function previsKeyframe(keyframe) {
         const bar = document.getElementById('previsKeyframeBar');
-        PREVIS.keyframeUrl = (keyframe && keyframe.src) ? API_BASE + keyframe.src : null;
+        /*
+         * Keyed to the version, or previs paints the browser's cached copy.
+         *
+         * A regeneration overwrites the file at a fixed name, so the URL never
+         * changes — the board learned to bust this with ?v=asset_version and
+         * previs did not, which is why the stage kept showing the frame you had
+         * just replaced. The server now stamps the version into `src`; this
+         * appends it too when an older payload omits it, because the failure is
+         * silent and looks exactly like previs being broken.
+         */
+        PREVIS.keyframeUrl = null;
+        if (keyframe && keyframe.src) {
+            const hasVersion = /[?&]v=/.test(keyframe.src);
+            PREVIS.keyframeUrl = API_BASE + keyframe.src
+                + (!hasVersion && keyframe.asset_version ? `?v=${keyframe.asset_version}` : '');
+        }
         if (bar) bar.style.display = PREVIS.keyframeUrl ? 'flex' : 'none';
         previsRefresh();
     }
@@ -24390,11 +24313,10 @@ ${fountainText.slice(0, 50000)}`;
                                 <strong>Sc${f.scene_number} / ${esc(f.shot_code)}</strong>
                                 <div style="display:flex;gap:4px;">
                                     ${anchorButton(f)}
-                                    <button class="btn btn-secondary btn-sm" onclick="editShotCard('${f.shot_id}')" title="Change what this frame is generated from">Edit</button>
                                     <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
                                     <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="${frameVersionTitle(f)}">${frameVersionLabel(f)}</button>
                                     <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="Generate this frame again from the card — costs credits">Regen</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="directShot('${f.shot_id}')" title="Choose what you are directing, see the prompt and the budget before spending, and set every dial the route accepts">Direct</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="directShot('${f.shot_id}')" title="Who and what is in this shot, and where the camera is">Direct</button>
                                 </div>
                             </div>
                             ${storyboardFacetTags(f)}
@@ -24452,155 +24374,240 @@ ${fountainText.slice(0, 50000)}`;
     function blockingPanel(p, opts) {
         const o = opts || {};
         return `
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;">
-            <div class="form-group">
-                <label>Characters <span class="text-muted text-sm">who is in this shot</span></label>
-                <input type="text" id="${p}Characters" placeholder="MAYA, DRAGON">
-            </div>
-            <div class="form-group">
-                <label>Props <span class="text-muted text-sm">what is in this shot</span></label>
-                <input type="text" id="${p}Props" placeholder="SEDAN, sprinkler">
+        <div class="form-group">
+            <label>What the screenplay says
+                <span class="text-muted text-sm">the shot itself &mdash; this comes from the script</span>
+            </label>
+            <div id="${p}Written" class="text-sm"
+                 style="padding:9px 11px;border-radius:7px;background:rgba(148,163,184,.10);line-height:1.55;"></div>
+        </div>
+
+        <div class="form-group">
+            <label>Direction
+                <span class="text-muted text-sm">what you want on top of the screenplay &mdash; how it is blocked, what we see</span>
+            </label>
+            <textarea id="${p}Direction" rows="3"
+                style="width:100%;line-height:1.55;font-family:inherit;"
+                placeholder="Low and close on her. The dragon huge behind, out of focus, filling the top of frame."></textarea>
+            <div class="text-sm text-muted" style="line-height:1.45;">
+                Added to the screenplay, never replacing it &mdash; so a rewrite can replace its own half
+                and leave your direction standing.
             </div>
         </div>
-        <div class="form-group" id="${p}LocationRow" style="display:none;">
-            <label>Location <span class="text-muted text-sm">from the scene heading &mdash; shared by every shot in the scene</span></label>
-            <div style="display:flex;gap:8px;align-items:center;">
-                <div id="${p}Location" class="text-sm"
-                     style="flex:1;padding:7px 9px;border-radius:6px;background:rgba(148,163,184,.12);"></div>
-                <button class="btn btn-sm btn-secondary" onclick="${p}OpenScene && ${p}OpenScene()"
-                        id="${p}LocationEdit" style="display:none;">Edit scene</button>
-            </div>
-        </div>
-        <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
-            Comma separated. Naming a subject here attaches its reference plate to every
-            generation of this shot, and seeds it onto the previs stage by name &mdash; an
-            unnamed figure on the stage is scaffolding and deliberately reaches no prompt.
-            The location is <em>not</em> a per-shot field: it is the scene heading, so every shot
-            in the scene inherits it &mdash; which is exactly what makes one location plate mean
-            the same street in all of them. Change it by editing the scene.
-            ${o.stageHint || ''}
-        </p>`;
+
+        <div class="form-group">
+            <label>In this shot
+                <span class="text-muted text-sm">each one you choose sends its reference plate with the frame</span>
+            </label>
+            <div id="${p}Subjects" data-blocking-kind="character"
+                 style="display:flex;flex-direction:column;gap:12px;"></div>
+        </div>`;
+    }
+
+    /*
+     * Who and what is in the shot, as a picker over what the project HAS.
+     *
+     * It was two free-text boxes. Typing "Maya" where the project says "MAYA"
+     * silently invents a subject with no plate, no size and no locked profile —
+     * and nothing says so, because the card happily stores any string. Choosing
+     * from the project's own cast makes that unsayable, and lets the list show
+     * the thing a director actually needs to know: which of these has a plate
+     * and which will be invented from scratch in every frame.
+     */
+    function renderBlockingChoices(p, ctx) {
+        const el = document.getElementById(p + 'Subjects');
+        if (!el) return;
+        const card = ctx.card || {};
+        const chosen = kind => new Set((Array.isArray(card[kind]) ? card[kind] : [])
+            .map(x => String(x).toLowerCase()));
+
+        const groups = [
+            { kind: 'character', key: 'characters', label: 'Characters', rows: ctx.characters || [] },
+            { kind: 'prop', key: 'props', label: 'Props', rows: ctx.props || [] },
+        ];
+
+        let html = groups.map(g => {
+            const on = chosen(g.key);
+            if (!g.rows.length) {
+                return `<div><strong class="text-sm">${g.label}</strong>
+                    <div class="text-muted text-sm">This project has no ${g.kind}s yet.</div></div>`;
+            }
+            return `<div data-blocking-kind="${g.kind}">
+                <strong class="text-sm">${g.label}</strong>
+                <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:5px;">
+                ${g.rows.map(r => {
+                    const plated = !!r.has_plate;
+                    return `<label style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px;"
+                                   title="${plated ? 'has a reference plate' : 'no plate yet — this subject is invented fresh in every frame'}">
+                        <input type="checkbox" data-blocking="${g.key}" value="${escapeHtml(r.name)}"
+                               ${on.has(String(r.name).toLowerCase()) ? 'checked' : ''}>
+                        <span>${escapeHtml(r.name)}${plated ? '' : ' <span class="text-muted">(no plate)</span>'}</span>
+                    </label>`;
+                }).join('')}
+                </div></div>`;
+        }).join('');
+
+        // The location is the scene's, not the shot's — shown so a director can
+        // see what plate will attach, and switchable only in the sense of
+        // choosing whether to send it.
+        const loc = ctx.location;
+        html += `<div data-blocking-kind="location">
+            <strong class="text-sm">Location</strong>
+            <div style="margin-top:5px;">${loc && loc.name
+                ? `<label style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px;">
+                     <input type="checkbox" id="${p}UseLocation" data-blocking="location" checked>
+                     <span>${escapeHtml(loc.name)}${loc.has_plate ? '' : ' <span class="text-muted">(no plate)</span>'}
+                     <span class="text-muted">&mdash; from the scene heading</span></span>
+                   </label>`
+                : '<span class="text-muted text-sm">This scene names no location, so no location plate can attach.</span>'}
+            </div></div>`;
+        el.innerHTML = html;
+    }
+
+    function readBlockingPanel(p) {
+        const pick = key => {
+            const boxes = document.querySelectorAll(`[data-blocking="${key}"]`);
+            if (!boxes.length) return undefined;
+            return [...boxes].filter(b => b.checked).map(b => b.value);
+        };
+        const dir = document.getElementById(p + 'Direction');
+        return {
+            characters: pick('characters'),
+            props: pick('props'),
+            direction: dir ? dir.value.trim() : undefined,
+        };
+    }
+
+    function fillBlockingPanel(p, card, shot) {
+        const written = document.getElementById(p + 'Written');
+        if (written) {
+            const w = (card.description || card.action || '').trim();
+            written.innerHTML = w ? escapeHtml(w)
+                : '<span class="text-muted">This shot has no screenplay text. Tag a line on the script, or write a description.</span>';
+        }
+        const dir = document.getElementById(p + 'Direction');
+        if (dir) dir.value = card.direction || '';
+    }
+
+    /* The note is the one field nothing trims, so its length is worth seeing. */
+    function cameraNoteCount(p) {
+        const el = document.getElementById(p + 'Note');
+        const out = document.getElementById(p + 'NoteCount');
+        if (!el || !out) return;
+        const n = (el.value || '').length;
+        out.textContent = n ? `${n} of 400 characters` : '';
+        out.style.color = n > 360 ? 'var(--warning,#b8860b)' : '';
     }
 
     function directingPanel(p, opts) {
         const o = opts || {};
         return `
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;">
-            <div class="form-group"><label>Framing</label><select id="${p}ShotType"></select></div>
-            <div class="form-group">
-                <label>Lens <span class="text-muted text-sm">free text</span></label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px;">
+            <div class="form-group"><label>Framing</label>
+                <select id="${p}ShotType"></select>
+                <div class="text-sm text-muted" id="${p}ShotTypeHint"></div></div>
+            <div class="form-group"><label>Lens</label>
                 <input type="text" id="${p}Lens" placeholder="40mm anamorphic">
-            </div>
-            <div class="form-group"><label>Movement</label><select id="${p}Movement"></select></div>
-            <div class="form-group"><label>Lighting</label><select id="${p}Lighting"></select></div>
-            <div class="form-group">
-                <label>Camera height <span class="text-muted text-sm">metres &mdash; the angle</span></label>
+                <div class="text-sm text-muted" id="${p}LensHint"></div></div>
+            <div class="form-group"><label>Movement</label>
+                <select id="${p}Movement"></select>
+                <div class="text-sm text-muted" id="${p}MovementHint"></div></div>
+            <div class="form-group"><label>Lighting</label>
+                <select id="${p}Lighting"></select>
+                <div class="text-sm text-muted" id="${p}LightingHint"></div></div>
+            <div class="form-group"><label>Camera height <span class="text-muted text-sm">m &mdash; the angle</span></label>
                 <input type="number" step="0.1" min="0" id="${p}HeightM" placeholder="1.6">
-            </div>
-            <div class="form-group"><label>Sensor</label><select id="${p}Sensor"></select></div>
-            <div class="form-group">
-                <label>Aperture <span class="text-muted text-sm">T-stop</span></label>
+                <div class="text-sm text-muted" id="${p}HeightMHint"></div></div>
+            <div class="form-group"><label>Sensor</label>
+                <select id="${p}Sensor"></select>
+                <div class="text-sm text-muted" id="${p}SensorHint"></div></div>
+            <div class="form-group"><label>Aperture <span class="text-muted text-sm">T-stop</span></label>
                 <input type="number" step="0.1" min="0" id="${p}Aperture" placeholder="2.8">
-            </div>
+                <div class="text-sm text-muted" id="${p}ApertureHint"></div></div>
+            <div class="form-group"><label>Focus distance <span class="text-muted text-sm">m</span></label>
+                <input type="number" step="0.1" min="0" id="${p}FocusDistanceM" placeholder="&mdash;">
+                <div class="text-sm text-muted" id="${p}FocusDistanceMHint"></div></div>
         </div>
         <div class="form-group">
             <label>Camera note
                 <span class="text-muted text-sm">one sentence about where the camera is &mdash; leads the prompt, never trimmed</span>
             </label>
-            <textarea id="${p}CameraNote" rows="2" maxlength="400"
+            <textarea id="${p}Note" rows="2" maxlength="400"
                 style="width:100%;line-height:1.5;font-family:inherit;"
                 oninput="cameraNoteCount('${p}')"
                 placeholder="Camera on the far side of the road, looking back toward her."></textarea>
-            <div class="text-sm text-muted" id="${p}CameraNoteCount"></div>
+            <div class="text-sm text-muted" id="${p}NoteCount"></div>
         </div>
         <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
-            Camera height IS the angle: at or below 0.9m the shot reads as a low angle looking up,
-            at or above 2.2m as a high angle looking down. The note ranks above everything else in
-            the prompt and is capped at 400 characters because nothing trims it &mdash; put the rest
-            in the description. ${o.footer || ''}
+            Leave anything blank and it falls through to the mood board, then to the film&rsquo;s look
+            &mdash; each field says below it what it would inherit. Camera height IS the angle: at or
+            below 0.9m the shot reads as looking up, at or above 2.2m as looking down.
+            ${o.footer || ''}
         </p>`;
     }
 
-    /* The note is the one field nothing trims, so its length is worth seeing. */
-    function cameraNoteCount(p) {
-        const el = document.getElementById(p + 'CameraNote');
-        const out = document.getElementById(p + 'CameraNoteCount');
-        if (!el || !out) return;
-        const n = (el.value || '').length;
-        out.textContent = n ? `${n} of 400 characters` : '';
-        out.style.color = n > 360 ? 'var(--warning, #b8860b)' : '';
+    /*
+     * What an unset facet would inherit.
+     *
+     * "Whatever options we don't add should take from either moodboard or
+     * overall project look." A blank field that silently inherits is
+     * indistinguishable from one that reaches nothing at all — which is how the
+     * mood board's specs sat validated and consumed by nobody for weeks. Each
+     * field states its own fallback, computed from the same specs generation
+     * reads rather than written as placeholder text that would drift.
+     */
+    function directingFallbacks(specs) {
+        const sp = specs || {};
+        return {
+            ShotType: 'whatever previs solves, or a medium',
+            Lens: sp.lens ? `mood board: ${sp.lens}` : 'the film default',
+            Movement: 'static, unless previs blocks a move',
+            Lighting: "the scene's own time of day",
+            HeightM: 'eye level (1.6m), or what previs staged',
+            Sensor: sp.sensor ? `mood board: ${sp.sensor}` : 'the film default',
+            Aperture: sp.aperture ? `mood board: T${sp.aperture}` : 'the film default',
+            FocusDistanceM: 'the solved subject distance',
+        };
     }
 
-    /* Fill the selects a panel declares, from the validator's own vocabulary. */
-    function fillDirectingPanel(p, vocab, cam, lighting) {
+    function fillDirectingPanel(p, vocab, cam, lighting, fallbacks) {
         const light = lighting || {};
-        shotCardFill(p + 'ShotType', vocab.shot_types, cam.shot_type, '— no framing —');
-        shotCardFill(p + 'Movement', vocab.camera_moves, cam.movement, '— no movement —');
+        shotCardFill(p + 'ShotType', vocab.shot_types, cam.shot_type, '— from the film —');
+        shotCardFill(p + 'Movement', vocab.camera_moves, cam.movement, '— from the film —');
         shotCardFill(p + 'Lighting', vocab.lighting,
-            typeof light === 'string' ? light : light.type, '— no lighting —');
-        shotCardFill(p + 'Sensor', vocab.sensors || [], cam.sensor, '— film default —');
-        const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-        set(p + 'Lens', cam.lens || '');
-        set(p + 'HeightM', cam.height_m !== undefined && cam.height_m !== null ? cam.height_m : '');
-        set(p + 'Aperture', cam.aperture !== undefined && cam.aperture !== null ? cam.aperture : '');
-        set(p + 'CameraNote', cam.note || '');
+            typeof light === 'string' ? light : light.type, '— from the scene —');
+        shotCardFill(p + 'Sensor', vocab.sensors || [], cam.sensor, '— from the film —');
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v === undefined || v === null) ? '' : v; };
+        set(p + 'Lens', cam.lens);
+        set(p + 'HeightM', cam.height_m);
+        set(p + 'Aperture', cam.aperture);
+        set(p + 'FocusDistanceM', cam.focus_distance_m);
+        set(p + 'Note', cam.note);
         cameraNoteCount(p);
+
+        for (const [field, text] of Object.entries(fallbacks || {})) {
+            const hint = document.getElementById(p + field + 'Hint');
+            if (!hint) continue;
+            const el = document.getElementById(p + field);
+            hint.textContent = (!el || el.value === '' || el.value === null) ? `\u21b3 ${text}` : '';
+        }
     }
 
-    /* Read a panel back into a camera block, merging so unseen facets survive. */
     function readDirectingPanel(p, existingCamera) {
         const camera = { ...(existingCamera || {}) };
-        const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+        const val = id => { const el = document.getElementById(id); return el ? String(el.value).trim() : ''; };
         const set = (k, v) => { if (v === '' || v === null || v === undefined) delete camera[k]; else camera[k] = v; };
         set('shot_type', val(p + 'ShotType'));
         set('movement', val(p + 'Movement'));
         set('lens', val(p + 'Lens'));
         set('sensor', val(p + 'Sensor'));
-        const h = val(p + 'HeightM'), a = val(p + 'Aperture');
-        set('height_m', h === '' ? '' : Number(h));
-        set('aperture', a === '' ? '' : Number(a));
-        set('note', val(p + 'CameraNote'));
-        return camera;
-    }
-
-    function readBlockingPanel(p) {
-        const list = id => {
-            const el = document.getElementById(id);
-            if (!el) return undefined;
-            return el.value.split(',').map(x => x.trim()).filter(Boolean);
-        };
-        return { characters: list(p + 'Characters'), props: list(p + 'Props') };
-    }
-
-    function fillBlockingPanel(p, card, shot) {
-        const set = (id, arr) => {
-            const el = document.getElementById(id);
-            if (el) el.value = Array.isArray(arr) ? arr.join(', ') : '';
-        };
-        set(p + 'Characters', card.characters);
-        set(p + 'Props', card.props);
-
-        /*
-         * The third thing a shot is blocked with, and the one that is NOT a
-         * shot field. Location lives on the scene heading, so showing it as an
-         * editable box here would let two shots in one scene claim different
-         * places — and a location plate only means anything because they
-         * cannot. Shown, sourced, and reachable; not editable in place.
-         */
-        const row = document.getElementById(p + 'LocationRow');
-        const out = document.getElementById(p + 'Location');
-        if (!row || !out) return;
-        const loc = shot && (shot.location || '');
-        const tod = shot && shot.time_of_day;
-        row.style.display = '';
-        out.innerHTML = loc
-            ? `${escapeHtml(loc)}${tod ? ` <span class="text-muted">&middot; ${escapeHtml(tod)}</span>` : ''}`
-            : '<span class="text-muted">This scene has no location on its heading, so no location plate can attach.</span>';
-        const btn = document.getElementById(p + 'LocationEdit');
-        if (btn && shot && shot.scene_id) {
-            btn.style.display = '';
-            btn.onclick = () => { closeModal('shotCardModal'); showPage('scenes'); };
+        set('note', val(p + 'Note'));
+        for (const [field, key] of [['HeightM', 'height_m'], ['Aperture', 'aperture'],
+            ['FocusDistanceM', 'focus_distance_m']]) {
+            const raw = val(p + field);
+            set(key, raw === '' ? '' : Number(raw));
         }
+        return camera;
     }
 
     function markupToolbar(shotId, canvasId, imgId) {
@@ -25289,10 +25296,10 @@ ${fountainText.slice(0, 50000)}`;
         document.getElementById('frameViewerTools').innerHTML =
             markupToolbar(f.shot_id, 'frameViewerAnnot', 'frameViewerImg')
             + `<span style="flex:1;"></span>`
-            + `<button class="btn btn-sm btn-secondary" onclick="editShotCard('${f.shot_id}')">Edit description</button>`
+
             + `<button class="btn btn-sm btn-secondary" onclick="refineFrame('${f.shot_id}')">Refine</button>`
             + `<button class="btn btn-sm btn-secondary" onclick="regenerateStoryboard('${f.shot_id}')">Regen</button>`
-            + `<button class="btn btn-sm btn-secondary" onclick="directShot('${f.shot_id}')" title="Direct this shot — mode, prompt, seed, anchor, markup">Direct</button>`;
+            + `<button class="btn btn-sm btn-secondary" onclick="directShot('${f.shot_id}')" title="Who and what is in this shot, and where the camera is">Direct</button>`;
         document.getElementById('frameViewerCaption').innerHTML =
             `${f.description ? '<p style="line-height:1.5;">' + esc(f.description) + '</p>' : ''}
              ${storyboardDialogueHtml(f.dialogue)}`;
@@ -25582,15 +25589,23 @@ ${fountainText.slice(0, 50000)}`;
      * a paragraph, and you cannot see the words you are editing in a field that
      * shows forty characters of them.
      */
+    /**
+     * Direct a shot: who and what is in it, then where the camera is.
+     *
+     * One modal, two questions. It was two things — an "Edit" that rewrote the
+     * description and a "Direct" control panel with a seed, a sampler mode and
+     * a character-budget chart — and neither was the job. The description is
+     * the screenplay and is not a director's field; the machinery is the
+     * engine's business. What is left is the work: block it, then shoot it.
+     */
+    const directShot = (shotId) => editShotCard(shotId);
+
     async function editShotCard(shotId, focusField) {
         try {
             const shot = await api(`/shots/${shotId}`);
             SHOT_CARD = { shotId, card: shot.card || {} };
             document.getElementById('shotCardTitle').textContent =
                 `Edit Sc${shot.scene_number == null ? '?' : shot.scene_number} / ${shot.shot_code || 'shot'}`;
-            document.getElementById('shotCardDescription').value = SHOT_CARD.card.description || '';
-            document.getElementById('shotCardAction').value = SHOT_CARD.card.action || '';
-            document.getElementById('shotCardNotes').value = SHOT_CARD.card.notes || '';
 
             // Both halves of the job, from the one definition each surface uses.
             document.getElementById('shotCardBlockingPanel').innerHTML = blockingPanel('shotCard');
@@ -25599,10 +25614,42 @@ ${fountainText.slice(0, 50000)}`;
             const vocab = await shotCardVocab();
             const cam = SHOT_CARD.card.camera || {};
             fillBlockingPanel('shotCard', SHOT_CARD.card, shot);
-            fillDirectingPanel('shotCard', vocab, cam, SHOT_CARD.card.lighting);
+
+            /*
+             * What this project actually has to choose from, and what the mood
+             * board would supply for anything left blank. Both fetched here
+             * rather than assumed, so the pickers can never offer a subject the
+             * plates know nothing about and the fallback hints can never claim
+             * an inheritance that is not really configured.
+             */
+            let ctx = { card: SHOT_CARD.card, characters: [], props: [], location: null };
+            let specs = {};
+            try {
+                const pid = state.currentProject.id;
+                const [chars, props, locs, board] = await Promise.all([
+                    api(`/projects/${pid}/characters`).catch(() => []),
+                    api(`/projects/${pid}/props`).catch(() => []),
+                    api(`/projects/${pid}/locations`).catch(() => []),
+                    api(`/projects/${pid}/mood-board`).catch(() => ({})),
+                ]);
+                const platedBy = rows => (Array.isArray(rows) ? rows : []).map(r => ({
+                    name: r.name, has_plate: !!(r.plate_asset_id || r.has_plate || r.refsheet_asset_id),
+                }));
+                ctx.characters = platedBy(chars.characters || chars);
+                ctx.props = platedBy(props.props || props);
+                const locRows = platedBy(locs.locations || locs);
+                ctx.location = locRows.find(l => shot.location
+                    && String(l.name).toLowerCase() === String(shot.location).toLowerCase())
+                    || (shot.location ? { name: shot.location, has_plate: false } : null);
+                for (const e of (board.entries || board || [])) {
+                    if (e && e.spec_kind) specs[e.spec_kind] = e.spec_value;
+                }
+            } catch (_) { /* the panel still opens; it just offers less */ }
+
+            renderBlockingChoices('shotCard', ctx);
+            fillDirectingPanel('shotCard', vocab, cam, SHOT_CARD.card.lighting, directingFallbacks(specs));
 
             document.getElementById('shotCardWarning').style.display = 'none';
-            shotCardCount();
             showModal('shotCardModal');
             if (focusField) {
                 const el = document.getElementById(focusField);
@@ -25613,21 +25660,7 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
-    /**
-     * How much of this will survive into the prompt.
-     *
-     * The description is one ingredient among camera, lighting and style that
-     * must all fit one request, so a very long one is trimmed rather than
-     * refused — silently, at generation time. Saying so while it is being
-     * written is the difference between a deliberate choice and a surprise.
-     */
-    function shotCardCount() {
-        const n = (document.getElementById('shotCardDescription').value || '').length;
-        const el = document.getElementById('shotCardCount');
-        el.textContent = `${n} characters`;
-        el.style.color = n > 900 ? 'var(--gl-warning, #f59e0b)' : '';
-    }
-
+    
     async function saveShotCard(regenerate) {
         const shotId = SHOT_CARD.shotId;
         if (!shotId) return;
@@ -25648,21 +25681,21 @@ ${fountainText.slice(0, 50000)}`;
         const set = (obj, key, value) => { if (value) obj[key] = value; else delete obj[key]; };
         set(lighting, 'type', val('shotCardLighting'));
 
+        /*
+         * The description is NOT sent. It is what the screenplay says, and the
+         * route merges, so omitting it leaves the writing exactly as written.
+         * Changing what a shot IS means revising the script; what a director
+         * adds on top goes in `direction`, which is additive and its own field.
+         */
         const blocking = readBlockingPanel('shotCard');
-        const body = {
-            description: val('shotCardDescription'),
-            action: val('shotCardAction'),
-            notes: val('shotCardNotes'),
-            camera,
-            lighting,
-        };
+        const body = { camera, lighting };
+        if (blocking.direction !== undefined) body.direction = blocking.direction;
         // Lists REPLACE on the route, which is what makes removing a character
         // from a shot expressible — so they are only sent when the panel is
         // actually present, never as an empty array that would silently clear
         // a cast the editor never showed.
         if (blocking.characters !== undefined) body.characters = blocking.characters;
         if (blocking.props !== undefined) body.props = blocking.props;
-        if (!body.description) return fail('A shot with no description generates from nothing. Say what is in frame.');
 
         try {
             await api(`/shots/${shotId}`, { method: 'PUT', body: JSON.stringify(body) });
@@ -25846,184 +25879,6 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
-
-    /*
-     * ── Direct this shot ─────────────────────────────────────────────────
-     *
-     * The regenerate route accepts eight parameters — direction_mode, mode,
-     * negative_prompt, prompt_override, seed, style_override, use_anchor,
-     * use_annotations — and the page sent an EMPTY BODY. Every one of them was
-     * reachable only from an agent host or curl, which is the literal answer to
-     * "it does a lot without my control in the background": the controls
-     * existed, on the far side of the app.
-     *
-     * The free preview leads rather than hiding behind a toggle, because the
-     * whole point is seeing what a generation would send BEFORE paying for it —
-     * and the mode that costs money to try is exactly the one worth looking at
-     * first.
-     */
-    let DIRECT = { shotId: null, preview: null, mode: 'action' };
-
-    async function directShot(shotId) {
-        DIRECT = { shotId, preview: null, mode: 'action' };
-        document.getElementById('directPromptOverride').value = '';
-        document.getElementById('directNegative').value = '';
-        document.getElementById('directSeed').value = '';
-        document.getElementById('directStyleOverride').value = '';
-        document.getElementById('directLedgerMode').value = 'creative';
-        document.getElementById('directWarning').style.display = 'none';
-        document.getElementById('directAdvanced').open = false;
-        directOverrideCount();
-        showModal('directShotModal');
-        await directRefresh();
-    }
-
-    async function directRefresh() {
-        const box = document.getElementById('directPreview');
-        if (!DIRECT.shotId) return;
-        box.innerHTML = '<span class="text-muted text-sm">Reading what this would send&hellip;</span>';
-        const useAnn = document.getElementById('directUseAnnotations').checked;
-        try {
-            const q = `?direction_mode=${encodeURIComponent(DIRECT.mode)}&use_annotations=${useAnn ? 'true' : 'false'}`;
-            const p = await api(`/shots/${DIRECT.shotId}/prompt${q}`);
-            DIRECT.preview = p;
-            document.getElementById('directShotTitle').textContent = `Direct ${p.shot_code || 'shot'}`;
-            directRenderModes(p);
-            directRenderPreview(p);
-            directRenderSwitches(p);
-        } catch (err) {
-            box.innerHTML = `<span class="text-sm" style="color:var(--gl-danger,#ef4444);">Could not read the prompt: ${escapeHtml(err.message)}</span>`;
-        }
-    }
-
-    function directRenderModes(p) {
-        const el = document.getElementById('directModeChoices');
-        const modes = p.direction_modes || [];
-        el.innerHTML = modes.map(m => {
-            const on = m.id === DIRECT.mode;
-            // A mode that cannot run says so HERE, where it is chosen, rather
-            // than as a 409 after the click.
-            const blocked = m.id === p.direction_mode ? p.direction_mode_blocked : null;
-            return `<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;padding:8px;border-radius:7px;
-                        ${on ? 'background:rgba(56,189,248,.12);outline:1px solid rgba(56,189,248,.45);' : ''}">
-                <input type="radio" name="directMode" value="${m.id}" ${on ? 'checked' : ''}
-                       onchange="DIRECT.mode=this.value; directRefresh();" style="margin-top:3px;">
-                <span>
-                    <strong class="text-sm">${escapeHtml(m.label)}</strong>
-                    <div class="text-muted text-sm" style="line-height:1.45;">${escapeHtml(m.description)}</div>
-                    ${blocked ? `<div class="text-sm" style="color:var(--warning,#b8860b);margin-top:3px;">${escapeHtml(blocked)}</div>` : ''}
-                </span>
-            </label>`;
-        }).join('');
-    }
-
-    /*
-     * The budget, as bars. "Over by 946" is actionable; "the prompt was
-     * truncated" is not — and a contributor that wanted room and was cut is the
-     * single most useful thing to see before spending.
-     */
-    function directRenderPreview(p) {
-        const rows = (p.budget || []).map(b => {
-            const pct = b.wanted ? Math.round((b.chars / b.wanted) * 100) : 100;
-            const cut = b.cut > 0;
-            return `<div style="display:grid;grid-template-columns:110px 1fr 96px;gap:8px;align-items:center;margin-bottom:3px;">
-                <span class="text-sm" style="${b.protected ? 'font-weight:600;' : 'opacity:.8;'}"
-                      title="${escapeHtml(b.why || '')}">${escapeHtml(b.contributor)}</span>
-                <span style="height:7px;border-radius:4px;background:rgba(148,163,184,.18);overflow:hidden;display:block;">
-                    <span style="display:block;height:100%;width:${pct}%;background:${cut ? 'var(--warning,#d97706)' : 'rgba(56,189,248,.75)'};"></span>
-                </span>
-                <span class="text-sm text-muted" style="text-align:right;">${cut ? `cut ${b.cut}` : `${b.chars}`}</span>
-            </div>`;
-        }).join('');
-        const over = p.headroom !== null && p.headroom < 0;
-        document.getElementById('directPreview').innerHTML = `
-            <div class="card" style="padding:11px;">
-                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px;">
-                    <strong class="text-sm">What this would send &mdash; costs nothing to look</strong>
-                    <span class="text-sm ${over ? '' : 'text-muted'}" style="${over ? 'color:var(--gl-danger,#ef4444);' : ''}">
-                        ${p.prompt_chars} of ${p.ceiling} characters${p.headroom !== null ? ` &middot; ${p.headroom} spare` : ''}
-                    </span>
-                </div>
-                ${rows || '<span class="text-muted text-sm">No contributors.</span>'}
-                <details style="margin-top:8px;">
-                    <summary style="cursor:pointer;font-size:12px;">Read the assembled prompt</summary>
-                    <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;margin:6px 0 0;">${escapeHtml(p.prompt || '')}</pre>
-                </details>
-                ${(p.references || []).length ? `<div class="text-sm text-muted" style="margin-top:7px;">
-                    Travelling as pictures: ${p.references.map(r => escapeHtml(`${r.subject || '?'} (${r.kind || '?'})`)).join(', ')}
-                </div>` : ''}
-            </div>`;
-    }
-
-    function directRenderSwitches(p) {
-        const a = p.anchor || {};
-        document.getElementById('directAnchorLabel').innerHTML = a.shot_code
-            ? `Generate from the anchor <strong>${escapeHtml(a.shot_code)}</strong>${a.attached ? '' : ' <span class="text-muted">(not attaching: ' + escapeHtml(a.reason || 'unavailable') + ')'}</span>`
-            : '<span class="text-muted">No anchor set for this project &mdash; nothing to keep the scene from.</span>';
-        document.getElementById('directUseAnchor').disabled = !a.shot_code;
-
-        const d = p.direction || {};
-        const ignored = (d.ignored || []).length;
-        document.getElementById('directAnnotationsLabel').innerHTML = d.marks
-            ? `Apply the ${d.marks} mark${d.marks === 1 ? '' : 's'} drawn on this frame`
-              + (ignored ? ` <span class="text-muted">&mdash; ${ignored} carry no note, so they cannot become an instruction</span>` : '')
-            : '<span class="text-muted">Nothing is drawn on this frame.</span>';
-        document.getElementById('directUseAnnotations').disabled = !d.marks;
-    }
-
-    function directOverrideCount() {
-        const el = document.getElementById('directPromptOverride');
-        const out = document.getElementById('directOverrideCountOut');
-        if (!el || !out) return;
-        const n = (el.value || '').length;
-        const ceiling = (DIRECT.preview && DIRECT.preview.ceiling) || 0;
-        if (!n) { out.textContent = 'Blank — the prompt is assembled for you and trimmed to fit.'; out.style.color = ''; return; }
-        out.textContent = ceiling
-            ? `${n} of ${ceiling} characters. Nothing trims an override — a provider truncates the TAIL.`
-            : `${n} characters.`;
-        out.style.color = (ceiling && n > ceiling) ? 'var(--gl-danger,#ef4444)' : '';
-    }
-
-    function directFillOverride() {
-        if (!DIRECT.preview) return;
-        document.getElementById('directPromptOverride').value = DIRECT.preview.prompt || '';
-        document.getElementById('directAdvanced').open = true;
-        directOverrideCount();
-    }
-
-    async function directGenerate() {
-        if (!DIRECT.shotId) return;
-        const val = id => (document.getElementById(id).value || '').trim();
-        const body = { direction_mode: DIRECT.mode };
-        if (val('directPromptOverride')) body.prompt_override = val('directPromptOverride');
-        if (val('directNegative')) body.negative_prompt = val('directNegative');
-        if (val('directSeed')) body.seed = Number(val('directSeed'));
-        if (val('directStyleOverride')) body.style_override = val('directStyleOverride');
-        if (val('directLedgerMode') === 'locked') body.mode = 'locked';
-        const anchorBox = document.getElementById('directUseAnchor');
-        if (!anchorBox.disabled && !anchorBox.checked) body.use_anchor = false;
-        const annBox = document.getElementById('directUseAnnotations');
-        if (!annBox.disabled && annBox.checked) body.use_annotations = true;
-
-        const shotId = DIRECT.shotId;
-        closeModal('directShotModal');
-        const done = frameBusy(shotId, 'Generating');
-        setStatus('Generating frame...', true);
-        try {
-            const res = await api(`/shots/${shotId}/storyboard/regenerate`,
-                { method: 'POST', body: JSON.stringify(body) });
-            done();
-            const via = res && (res.provider || (res.attempts && res.attempts.length > 1
-                ? res.attempts[res.attempts.length - 1].provider : null));
-            setStatus(`Frame generated in ${DIRECT.mode} mode${via ? ' via ' + via : ''}.`);
-            await loadStoryboard();
-            const modal = document.getElementById('frameViewerModal');
-            if (modal && modal.classList.contains('open')) frameViewerPaint();
-        } catch (err) {
-            done();
-            setStatus('Could not generate: ' + err.message);
-        }
-    }
 
     async function regenerateStoryboard(shotId) {
         if (!confirm('Regenerate this storyboard frame?\n\nThis replaces the current image and costs credits.')) return;

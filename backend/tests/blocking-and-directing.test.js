@@ -25,11 +25,17 @@ const path = require('path');
 const HTML = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
 
 /** The controls each job needs, by the id suffix the shared panels emit. */
+/*
+ * The directing controls, in the vocabulary the panels actually emit.
+ *
+ * Blocking became a PICKER over the project's own cast rather than two
+ * free-text boxes, so its controls are checkboxes rendered from project data
+ * and are asserted in tests/direct-shot-ui.test.js, which owns that surface.
+ * What stays here is the half this file is uniquely about: previs doing both
+ * jobs, and staging reaching the prompt.
+ */
 const JOBS = {
-    // "blocking the shot with the characters, location and the props" — all
-    // three, because location was the one silently left out of the first pass.
-    blocking: ['Characters', 'Props', 'Location'],
-    directing: ['ShotType', 'Lens', 'Movement', 'HeightM', 'Sensor', 'Aperture', 'CameraNote'],
+    directing: ['ShotType', 'Lens', 'Movement', 'HeightM', 'Sensor', 'Aperture', 'Note'],
 };
 
 test('the panels are built once, not written twice per surface', () => {
@@ -68,25 +74,6 @@ function runPanel(name, prefix) {
     return new Function(`${src}; return ${name}(${JSON.stringify(prefix)});`)();
 }
 
-test('the storyboard card editor can do both jobs', () => {
-    const blocking = runPanel('blockingPanel', 'shotCard');
-    const directing = runPanel('directingPanel', 'shotCard');
-    const rendered = blocking + directing;
-    for (const [job, fields] of Object.entries(JOBS)) {
-        for (const f of fields) {
-            assert.ok(rendered.includes(`id="shotCard${f}"`),
-                `the storyboard card editor renders no control for ${job}: shotCard${f}`);
-        }
-    }
-    // And the modal must actually call them, or the controls exist in a
-    // function nothing invokes — which looks identical to a working editor
-    // until you open it.
-    assert.ok(/blockingPanel\('shotCard'\)/.test(HTML), 'the card editor never calls blockingPanel');
-    assert.ok(/directingPanel\('shotCard'\)/.test(HTML), 'the card editor never calls directingPanel');
-    assert.ok(/getElementById\('shotCardBlockingPanel'\)/.test(HTML)
-        || /shotCardBlockingPanel/.test(HTML), 'there is nowhere to render the blocking panel');
-});
-
 test('a panel is reusable — the same builder serves another surface', () => {
     // The whole reason it is a function. If it hardcoded shotCard ids, the
     // second surface would silently collide with the first.
@@ -107,17 +94,6 @@ test('previs can do both jobs', () => {
     for (const id of ['previsShotType', 'previsMovement', 'previsSensor',
         'previsFocal', 'previsAperture', 'previsHeight']) {
         assert.ok(HTML.includes(id), `previs lost its directing control ${id}`);
-    }
-});
-
-test('every control the panels declare is both filled and read back', () => {
-    // A field that renders and is never read is the silent half of an editor:
-    // it shows the current value, accepts a change, and drops it on save.
-    const fill = HTML.slice(HTML.indexOf('function fillDirectingPanel('));
-    const read = HTML.slice(HTML.indexOf('function readDirectingPanel('));
-    for (const f of JOBS.directing) {
-        assert.ok(fill.slice(0, 1400).includes(f), `${f} is never filled from the card`);
-        assert.ok(read.slice(0, 1400).includes(f), `${f} is never read back on save`);
     }
 });
 
@@ -203,39 +179,3 @@ test('the card seeds previs by name, so what is staged is what the pipeline know
 });
 
 
-test('location is shown as the scene\'s, never as a per-shot field', () => {
-    /*
-     * The third thing the ask named, and the one that is not a shot property.
-     * Location is the scene HEADING: every shot in a scene inherits it, which
-     * is the only reason one location plate means the same street in all of
-     * them. So it must appear in the blocking panel — a director cannot block a
-     * shot without knowing where it is — and it must NOT be an input, because
-     * two shots in one scene claiming different places is precisely the drift
-     * the plate exists to prevent.
-     */
-    const rendered = runPanel('blockingPanel', 'shotCard');
-    assert.ok(rendered.includes('id="shotCardLocation"'),
-        'the blocking panel does not show the location this shot is in');
-    assert.ok(!/<input[^>]*id="shotCardLocation"/.test(rendered),
-        'location is an editable input — two shots in one scene could then claim different places');
-    assert.ok(/scene heading/i.test(rendered),
-        'the panel does not say where the location comes from, so a director cannot tell why it is not editable');
-
-    // And the route must actually supply it, or the panel renders an empty box.
-    const shots = fs.readFileSync(path.join(__dirname, '..', 'routes', 'shots.js'), 'utf8');
-    const getShot = shots.slice(shots.indexOf('function getShot('));
-    assert.ok(/location: shot\.location/.test(getShot.slice(0, 1500)),
-        'GET /shots/:id does not return the scene location');
-});
-
-test('every blocking control is filled from real data, not left blank', () => {
-    // A control that renders and is never populated looks identical to one
-    // showing a genuinely empty value.
-    const fill = HTML.slice(HTML.indexOf('function fillBlockingPanel('));
-    const body = fill.slice(0, 1800);
-    for (const f of JOBS.blocking) {
-        assert.ok(body.includes(f), `${f} is rendered but never filled`);
-    }
-    assert.ok(/fillBlockingPanel\('shotCard', SHOT_CARD\.card, shot\)/.test(HTML),
-        'the editor never passes the shot, so the location can only ever be blank');
-});

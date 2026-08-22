@@ -59,6 +59,25 @@ function validateSceneCard(card) {
         }
     }
 
+    /*
+     * Optional: direction — what the DIRECTOR adds on top of the screenplay.
+     *
+     * `description` is the writing: what the screenplay says this shot is. It
+     * is the source, and a board that shows something else is showing a
+     * paraphrase of the film. So a director's contribution is a SEPARATE,
+     * ADDITIVE field rather than an edit to the description — which keeps the
+     * screenplay half re-derivable when the script is revised, and makes
+     * "what was written" and "what I asked for on top" two answerable
+     * questions instead of one blended string nobody can unpick.
+     */
+    if (card.direction !== undefined && card.direction !== null) {
+        if (typeof card.direction !== 'string') {
+            errors.push('direction must be a string');
+        } else if (card.direction.length > 2000) {
+            errors.push('direction must be 2000 characters or less');
+        }
+    }
+
     // Optional: camera object
     if (card.camera !== undefined) {
         if (typeof card.camera !== 'object') {

@@ -112,8 +112,8 @@ function updateShotCard(req, res, shotId) {
     try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
 
     const body = req.body || {};
-    const EDITABLE = ['description', 'action', 'camera', 'lighting', 'characters', 'props', 'dialogue',
-        'sfx_cues', 'duration_seconds', 'notes'];
+    const EDITABLE = ['description', 'direction', 'action', 'camera', 'lighting', 'characters', 'props',
+        'dialogue', 'sfx_cues', 'duration_seconds', 'notes'];
     const changed = [];
     for (const key of EDITABLE) {
         if (body[key] === undefined) continue;

@@ -559,6 +559,44 @@ function applyBlockingToCard(req, res, shotId) {
     if (Number(camera.f_stop) > 0) card.camera.aperture = Number(camera.f_stop);
     if (Number(camera.height_m) > 0) card.camera.height_m = Number(camera.height_m);
 
+    /*
+     * What was STAGED becomes what the shot is blocked with.
+     *
+     * Previs is a way of deciding the same facts as the Direct panel — who is
+     * in the shot and where the camera goes — so a director who stands MAYA and
+     * the DRAGON on the stage has blocked the shot, and the card has to know.
+     * Without this the two surfaces disagree: previs says two subjects, the
+     * card says none, and the plates attach from the card.
+     *
+     * Named objects only, on the same rule the prompt follows: an unnamed
+     * object is scaffolding. And the card's own lists are UNIONED rather than
+     * replaced — a director may have named a subject that is not staged (an
+     * off-screen voice, something they have not placed yet), and silently
+     * dropping it would make applying an angle delete part of the blocking.
+     */
+    const stagedNames = (Array.isArray(blocking.subjects) ? blocking.subjects : [])
+        .map(o => String((o && o.name) || '').trim()).filter(Boolean);
+    if (stagedNames.length) {
+        const project = db.prepare(
+            'SELECT project_id FROM film_scenes WHERE id = ?').get(shot.scene_id);
+        const pid = project ? project.project_id : null;
+        const known = (table) => pid
+            ? db.prepare(`SELECT name FROM ${table} WHERE project_id = ?`).all(pid)
+                .map(r => String(r.name || '')) : [];
+        const chars = known('film_characters');
+        const props = known('film_props');
+        const matches = (list, n) => list.find(x => x.toLowerCase() === n.toLowerCase());
+        const union = (existing, add) => {
+            const out = Array.isArray(existing) ? existing.slice() : [];
+            for (const n of add) if (!out.some(x => String(x).toLowerCase() === n.toLowerCase())) out.push(n);
+            return out;
+        };
+        const asChars = stagedNames.filter(n => matches(chars, n));
+        const asProps = stagedNames.filter(n => matches(props, n));
+        if (asChars.length) card.characters = union(card.characters, asChars);
+        if (asProps.length) card.props = union(card.props, asProps);
+    }
+
     const validation = validateSceneCards([card]);
     if (!validation.valid) {
         return json(res, 400, { error: 'Blocking produced an invalid scene card', details: validation.errors });
@@ -572,6 +610,7 @@ function applyBlockingToCard(req, res, shotId) {
         shot_code: shot.shot_code,
         camera_before: before,
         camera_after: card.camera,
+        blocking_after: { characters: card.characters, props: card.props },
         applied: true,
     });
 }
@@ -618,16 +657,29 @@ function toStoryboard(req, res, shotId) {
  */
 function shotKeyframe(shotId) {
     const row = db.prepare(
-        `SELECT a.id, a.file_name, a.project_id FROM film_assets a
+        `SELECT a.id, a.file_name, a.project_id, a.version FROM film_assets a
           WHERE a.shot_id = ? AND a.asset_type = 'storyboard'
        ORDER BY a.version DESC, a.created_at DESC LIMIT 1`).get(shotId);
     if (!row) return null;
     return {
         asset_id: row.id,
         file_name: row.file_name,
-        // The URL the viewer can actually paint from, same route the
-        // storyboard pane uses. Serving a disk path here would draw nothing.
-        src: `/film/storyboards/${row.project_id}/${row.file_name}`,
+        asset_version: row.version,
+        /*
+         * The URL the viewer paints from, KEYED TO THE VERSION.
+         *
+         * A regeneration overwrites the file at a fixed name, so the URL never
+         * changes and the browser serves whatever it cached — previs sat there
+         * showing the frame you replaced, which reads as previs being broken
+         * rather than as a cache. The board learned this and busts with
+         * ?v=asset_version; previs used the raw path and did not.
+         *
+         * Emitted from the SERVER rather than left to each client to remember,
+         * because the board, the viewer and previs each paint this and only two
+         * of them got it right.
+         */
+        src: `/film/storyboards/${row.project_id}/${row.file_name}`
+            + (row.version ? `?v=${row.version}` : ''),
     };
 }
 

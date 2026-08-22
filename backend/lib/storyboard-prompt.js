@@ -523,8 +523,23 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         }
     }
 
-    // 2. Subject / action description
-    const subject = sceneCard.action || sceneCard.description || '';
+    /*
+     * 2. What the shot IS: the screenplay, then what the director added.
+     *
+     * These are two different things and they are kept two different things.
+     * `description` is the writing — the source, re-derivable from the script.
+     * `direction` is what a director asked for ON TOP of it while looking at a
+     * frame that came back wrong. Joining them here rather than storing one
+     * blended string is what keeps a screenplay revision able to replace its
+     * own half without discarding the direction, and lets the board show the
+     * writing rather than a paraphrase of it.
+     *
+     * The screenplay leads, because it is what the shot is; the direction
+     * follows, because it is a modification of that.
+     */
+    const written = sceneCard.action || sceneCard.description || '';
+    const directed = String(sceneCard.direction || '').trim();
+    const subject = [written, directed].filter(Boolean).join('. ').replace(/\.\.\s/g, '. ');
     if (subject) {
         add('direction', subject);
     }
