@@ -959,7 +959,7 @@ async function generateStoryboard(req, res, projectId, query) {
                 maxPromptChars: imagePromptLimitFor(project),
                 // Subjects standing in the attached frame keep their NAME and
                 // lose their paragraph.
-                anchorCovers: anchorCoversFor(anchorState, anchorState_.anchorAttached),
+                anchorCovers: anchorCoversFor(anchorState, anchorState_.anchorAttached, keepPlatesFor(body, sceneCard)),
             });
             const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
                 await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, spendContext(project, shot));
@@ -1226,7 +1226,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
                 maxPromptChars: imagePromptLimitFor(project),
                 // Subjects standing in the attached frame keep their NAME and
                 // lose their paragraph.
-                anchorCovers: anchorCoversFor(anchorState, anchorState_.anchorAttached),
+                anchorCovers: anchorCoversFor(anchorState, anchorState_.anchorAttached, keepPlatesFor(body, sceneCard)),
             });
             const { buffer: imageBuffer, metadata } = await callImageGenStream(
                 imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
@@ -2000,9 +2000,30 @@ function activeAnchorFor_(shotId, project, body, canAttach) {
  * description because of a picture that is not in the payload is the exact
  * failure the contract shortening was reverted for.
  */
-function anchorCoversFor(anchorState, attached) {
+
+/**
+ * Which plates must travel even though the anchor names their subject.
+ *
+ * The director's explicit `keep_plates`, plus whatever this shot's own framing
+ * demands. An anchor covers where a subject STANDS; it covers who they ARE only
+ * if it shows them, and a wide with someone's back to camera carries their
+ * position and the light and not one pixel of a face. Three attempts at a
+ * close-up reaction built on such an anchor each came back as a different
+ * woman.
+ */
+function keepPlatesFor(body, sceneCard) {
+    const asked = (body && Array.isArray(body.keep_plates)) ? body.keep_plates : [];
+    return [...asked, ...require('../lib/shot-anchor').platesForcedBy(sceneCard || {})];
+}
+
+/**
+ * @param {string[]} [keepPlates] - subjects whose plate travels anyway. A
+ *   director's explicit choice, plus whatever the shot's own framing demands:
+ *   an anchor covers where a subject stands, not who they are in close-up.
+ */
+function anchorCoversFor(anchorState, attached, keepPlates) {
     if (!attached || !anchorState || !anchorState.anchor) return [];
-    return [...require('../lib/shot-anchor').subjectsCoveredBy(db, anchorState.anchor)];
+    return [...require('../lib/shot-anchor').subjectsCoveredBy(db, anchorState.anchor, keepPlates)];
 }
 
 /** Did the anchor claim a reference slot, and may the prompt name it? */
@@ -2467,7 +2488,7 @@ async function regenerateShot(req, res, shotId) {
                 // subjects the locked frame already carries, so they travel as
                 // names rather than paragraphs.
                 directionMode,
-                anchorCovers: anchorCoversFor(anchorState, anchorAttached),
+                anchorCovers: anchorCoversFor(anchorState, anchorAttached, keepPlatesFor(body, sceneCard)),
             }
         );
         prompt = result.prompt;

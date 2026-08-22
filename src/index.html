@@ -24502,12 +24502,18 @@ ${fountainText.slice(0, 50000)}`;
                 <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:5px;">
                 ${g.rows.map(r => {
                     const plated = !!r.has_plate;
-                    return `<label style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px;"
-                                   title="${plated ? 'has a reference plate' : 'no plate yet — this subject is invented fresh in every frame'}">
+                    return `<span style="display:inline-flex;gap:4px;align-items:center;">
+                      <label style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px;"
+                             title="${plated ? 'has a reference plate' : 'no plate yet — this subject is invented fresh in every frame'}">
                         <input type="checkbox" data-blocking="${g.key}" value="${escapeHtml(r.name)}"
                                ${on.has(String(r.name).toLowerCase()) ? 'checked' : ''}>
                         <span>${escapeHtml(r.name)}${plated ? '' : ' <span class="text-muted">(no plate)</span>'}</span>
-                    </label>`;
+                      </label>
+                      ${plated ? `<label style="cursor:pointer;font-size:11px;"
+                          title="Send ${escapeHtml(r.name)}'s plate even when an anchor is attached. An anchor covers where a subject STANDS; it covers who they ARE only if it shows them — a wide with someone's back to camera carries no face at all.">
+                        <input type="checkbox" data-keep-plate value="${escapeHtml(r.name)}"> 📌
+                      </label>` : ''}
+                    </span>`;
                 }).join('')}
                 </div></div>`;
         }).join('');
@@ -24535,6 +24541,8 @@ ${fountainText.slice(0, 50000)}`;
             if (!boxes.length) return undefined;
             return [...boxes].filter(b => b.checked).map(b => b.value);
         };
+        const pinned = [...document.querySelectorAll('[data-keep-plate]')]
+            .filter(b => b.checked).map(b => b.value);
         const dir = document.getElementById(p + 'Direction');
         const written = document.getElementById(p + 'Written');
         return {
@@ -24542,6 +24550,7 @@ ${fountainText.slice(0, 50000)}`;
             props: pick('props'),
             direction: dir ? dir.value.trim() : undefined,
             description: written ? written.value.trim() : undefined,
+            keep_plates: pinned,
         };
     }
 
@@ -25952,7 +25961,7 @@ ${fountainText.slice(0, 50000)}`;
         closeModal('shotCardModal');
         if (regenerate) {
             const picked = document.querySelector('input[name="shotCardMode"]:checked');
-            await regenerateStoryboard(shotId, picked ? picked.value : 'action');
+            await regenerateStoryboard(shotId, picked ? picked.value : 'action', blocking.keep_plates);
         } else {
             setStatus('Card saved. The existing frame is now stale — regenerate to see the change.');
         }
@@ -26457,7 +26466,7 @@ ${fountainText.slice(0, 50000)}`;
         return decision;
     }
 
-    async function regenerateStoryboard(shotId, directionMode) {
+    async function regenerateStoryboard(shotId, directionMode, keepPlates) {
         markCurrentShot(shotId);
         const ok = await confirmGeneration(shotId, {
             mode: directionMode,
@@ -26471,7 +26480,10 @@ ${fountainText.slice(0, 50000)}`;
         try {
             const res = await api('/shots/' + shotId + '/storyboard/regenerate', {
                 method: 'POST',
-                body: JSON.stringify(directionMode ? { direction_mode: directionMode } : {}),
+                body: JSON.stringify({
+                    ...(directionMode ? { direction_mode: directionMode } : {}),
+                    ...(keepPlates && keepPlates.length ? { keep_plates: keepPlates } : {}),
+                }),
             });
             done();
             // Which provider actually served it. The chain walks past a

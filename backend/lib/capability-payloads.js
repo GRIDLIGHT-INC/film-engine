@@ -471,7 +471,7 @@ function buildCapabilityPayload(capability, ctx) {
  * The DB is required here rather than at module scope so that building a
  * payload from an already-loaded context needs no database at all.
  */
-function loadShotContext(shotId) {
+function loadShotContext(shotId, opts) {
     const fs = require('fs');
     const { db } = require('../db/database');
     const { getFilePath } = storage();
@@ -597,6 +597,16 @@ function loadShotContext(shotId) {
             require('./shot-references');
         const locations = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(scene.project_id);
         const anchor = require('./shot-anchor').activeAnchorFor(db, shotId);
+        /*
+         * Plates that must travel even though the anchor names their subject.
+         * An anchor covers where a subject STANDS; it covers who they ARE only
+         * if it shows them, and a wide with someone's back to camera shows no
+         * face at all. A close-up built on that has nothing to go on.
+         */
+        const keepPlates = [
+            ...(opts && Array.isArray(opts.keepPlates) ? opts.keepPlates : []),
+            ...require('./shot-anchor').platesForcedBy(sceneCard),
+        ];
         const gathered = shotReferencesFor(db, {
             projectId: scene.project_id,
             providerConfig: providerConfigOf(project),
@@ -604,9 +614,10 @@ function loadShotContext(shotId) {
             location: matchLocation(scene.location, locations),
             props: matchProps(sceneCard, props),
             anchor: anchor.shot ? anchor : null,
+            keepPlates,
         });
         anchorCovers = anchor.shot
-            ? [...require('./shot-anchor').subjectsCoveredBy(db, anchor)] : [];
+            ? [...require('./shot-anchor').subjectsCoveredBy(db, anchor, keepPlates)] : [];
         references = gathered.references;
         tagged = gathered.tagged;
         anchorTag = gathered.anchorTag;

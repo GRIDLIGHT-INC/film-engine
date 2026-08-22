@@ -178,16 +178,64 @@ function anchorCandidate(anchor) {
  * costs room; a missing one costs the shot, which is the lesson the contract
  * shortening was reverted for.
  */
-function subjectsCoveredBy(db, anchor) {
+/**
+ * Framings where the anchor cannot stand in for a subject's plate.
+ *
+ * An anchor covers where a subject STANDS. It covers who they ARE only if it
+ * shows them — and a wide with someone's back to camera carries their position,
+ * their wardrobe colour and the light, and not one pixel of a face.
+ *
+ * A close-up is nothing BUT the face, so it keeps its character plates whatever
+ * the anchor claims to cover. Left to be remembered, the next close-up fails
+ * the same way: on a real board, three attempts at a reaction shot each came
+ * back as a different woman.
+ *
+ * Deliberately narrow. A wide or an establishing genuinely is covered, and
+ * forcing plates there spends reference slots on subjects the anchor shows
+ * perfectly well.
+ */
+const IDENTITY_FRAMINGS = new Set(['close-up', 'extreme-close-up', 'over-the-shoulder', 'insert']);
+
+/**
+ * Plates this shot must keep, derived from its own framing.
+ *
+ * Props are included for `insert`, which is a close-up of an object and has the
+ * same problem for the same reason.
+ */
+function platesForcedBy(card) {
+    const forced = new Set();
+    const c = card || {};
+    const framing = String((c.camera && c.camera.shot_type) || '').toLowerCase();
+    if (!IDENTITY_FRAMINGS.has(framing)) return forced;
+    const keys = framing === 'insert' ? ['props', 'characters'] : ['characters'];
+    for (const key of keys) {
+        for (const raw of (Array.isArray(c[key]) ? c[key] : [])) {
+            const name = typeof raw === 'string' ? raw : (raw && raw.name);
+            if (name) forced.add(String(name).trim().toUpperCase());
+        }
+    }
+    return forced;
+}
+
+/**
+ * @param {string[]} [keep] - subjects whose plate must travel even though the
+ *   anchor names them. The director's override, and what `platesForcedBy`
+ *   feeds in automatically for a close-up.
+ */
+function subjectsCoveredBy(db, anchor, keep) {
     const covered = new Set();
     if (!anchor || !anchor.shot || !anchor.shot.id) return covered;
+    // Case- and space-insensitive: a card says "Maya" and a director types MAYA.
+    const forced = new Set((Array.isArray(keep) ? keep : [])
+        .map(n => String(n || '').trim().toUpperCase()).filter(Boolean));
     try {
         const row = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(anchor.shot.id);
         const card = JSON.parse((row && row.scene_card_yaml) || '{}');
         for (const key of ['characters', 'props']) {
             for (const raw of (Array.isArray(card[key]) ? card[key] : [])) {
                 const name = typeof raw === 'string' ? raw : (raw && raw.name);
-                if (name) covered.add(String(name).trim().toUpperCase());
+                const key = name && String(name).trim().toUpperCase();
+                if (key && !forced.has(key)) covered.add(key);
             }
         }
 
@@ -204,7 +252,8 @@ function subjectsCoveredBy(db, anchor) {
             const loc = db.prepare(
                 'SELECT sc.location FROM film_shots s JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?')
                 .get(anchor.shot.id);
-            if (loc && loc.location) covered.add(String(loc.location).trim().toUpperCase());
+            const locKey = loc && loc.location && String(loc.location).trim().toUpperCase();
+            if (locKey && !forced.has(locKey)) covered.add(locKey);
         }
     } catch (_) { /* an unreadable card covers nothing, which keeps every plate */ }
     return covered;
@@ -212,5 +261,5 @@ function subjectsCoveredBy(db, anchor) {
 
 module.exports = {
     pickAnchor, ref, anchorLeadPhrase, anchorPhrase, ANCHOR_NEGATIVE,
-    activeAnchorFor, anchorCandidate, subjectsCoveredBy,
+    activeAnchorFor, anchorCandidate, subjectsCoveredBy, platesForcedBy, IDENTITY_FRAMINGS,
 };

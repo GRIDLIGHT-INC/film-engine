@@ -47,6 +47,9 @@ function database() {
  *   sending fewer plates.
  */
 function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCardProps, anchor, opts) {
+    // Subjects whose plate must travel even though the anchor names them: the
+    // director's explicit choice, plus whatever this shot's own framing demands.
+    const keepPlates = (opts && opts.keepPlates) || [];
     const candidates = [];
 
     // The scene as it was actually rendered — location, dressing and subjects
@@ -61,7 +64,7 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
     // whole budget, so a plate of a character standing in the attached frame is
     // a slot taken from a subject that is not in it — which is exactly the
     // subject that still needs establishing.
-    const covered = anchorRef ? sceneAnchor.subjectsCoveredBy(database(), anchor) : new Set();
+    const covered = anchorRef ? sceneAnchor.subjectsCoveredBy(database(), anchor, keepPlates) : new Set();
     const isCovered = name => covered.has(String(name || '').trim().toUpperCase());
 
     for (const ch of matchedChars || []) {
@@ -211,9 +214,10 @@ function shotReferencesFor(db, opts) {
     }
     const references = gatherShotReferences(
         o.projectId, o.characters || [], o.location || null, o.props || [], o.anchor || null,
+        // eslint-disable-next-line no-multi-spaces
         // The ceiling of the provider this config resolves to, so the shared
         // path agrees with the per-route ones about how many plates fit.
-        { limit: support.maxReferenceImages });
+        { limit: support.maxReferenceImages, keepPlates: o.keepPlates || [] });
     const anchorRef = references.find(r => r && r.kind === 'anchor');
     return {
         references,

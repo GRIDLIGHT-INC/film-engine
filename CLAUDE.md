@@ -201,6 +201,7 @@ film-engine/
 │       ├── current-frame.test.js   # Every surface paints the version you selected, not the newest
 │       ├── shot-insert.test.js    # A shot goes in mid-scene without renaming a single thing
 │       ├── playback-start.test.js # Playback opens on the shot you were working on
+│       ├── anchor-plate-override.test.js # An anchor covers where a subject stands, not who they are in close-up
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -557,6 +558,17 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 **The free preview leads rather than hiding behind a toggle.** `GET /shots/:id/prompt` spends nothing and reports the assembled prompt, the ceiling, the headroom and every contributor with what it wanted and what survived — so the budget is a set of bars you read *before* paying, and the mode that costs money to try is the one you can look at first. Choosing a mode re-reads it, which is why the preview had to learn `direction_mode` in the first place. A mode that cannot run — camera mode with no anchor attached — says so **where it is chosen**, rather than as a 409 after the click.
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
+
+### An Anchor Covers Where a Subject Stands, Not Who They Are
+Anchoring drops a subject's plate when the anchor's card names them, on the reasoning that the frame already shows them. That is true of **placement** and false of **identity** the moment the anchor does not show a face.
+
+2A has MAYA with her back to camera. It carries her position, her wardrobe colour and the light, and not one pixel of what she looks like — so a close-up reaction built on it had nothing to go on, and three attempts each came back as a different woman.
+
+Two things follow, and both are needed. A director can force a plate through explicitly with `keep_plates` (📌 beside each subject in the Blocking panel) — *anchor the scene, and pin the subjects too*. And a **close-up keeps its character plates automatically**: `IDENTITY_FRAMINGS` is close-up, extreme-close-up, over-the-shoulder and insert, because those framings are nothing *but* the subject, and leaving it to be remembered means the next close-up fails the same way. It stays deliberately narrow — a wide genuinely is covered, and forcing plates there spends reference slots on subjects the anchor shows perfectly well.
+
+Threaded through **all three** places coverage is computed — the shared payload path, the plate gatherer and the per-shot regenerate — because an override honoured by two of them is worse than none: the prompt would shorten a subject to a name while the picture that gives the name meaning was dropped, which is precisely the state the contract-shortening revert exists to prevent.
+
+On the shot that reported it, 2AA went from `[2A]` to `[2A, MAYA]` with her full 817-character appearance surviving.
 
 ### Playback Opens on the Shot You Were On
 `loadPlayback` set `pb.index = 0` unconditionally, so watching the shot you had just spent an hour on meant scrubbing past everything before it — every time, on a board that only gets longer.
@@ -1429,6 +1441,7 @@ node --test backend/tests/reference-limit.test.js
 node --test backend/tests/current-frame.test.js
 node --test backend/tests/shot-insert.test.js
 node --test backend/tests/playback-start.test.js
+node --test backend/tests/anchor-plate-override.test.js
 node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js
