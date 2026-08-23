@@ -282,9 +282,13 @@ const server = http.createServer(async (req, res) => {
 
     // Parse body for POST/PUT (larger limit for bundle import)
     if (req.method === 'POST' || req.method === 'PUT') {
-        const maxSize = (parts[1] === 'projects' && parts[2] === 'import')
-            ? 500 * 1024 * 1024  // 500MB for bundle import
-            : 10 * 1024 * 1024;  // 10MB default
+        const isBundleImport = parts[1] === 'projects' && parts[2] === 'import';
+        const isMediaImport = (parts[1] === 'projects' && parts[3] === 'models' && parts[4] === 'import')
+            || (parts[1] === 'shots' && parts[3] === 'storyboard' && parts[4] === 'import')
+            || (parts[1] === 'shots' && parts[3] === 'previs' && parts[4] === 'image' && parts[5] === 'import');
+        const maxSize = isBundleImport ? 500 * 1024 * 1024
+            : isMediaImport ? 150 * 1024 * 1024 // base64-encoded Meshy GLBs can be large
+            : 10 * 1024 * 1024;
         try {
             req.body = await readBody(req, maxSize);
         } catch (err) {

@@ -30,7 +30,7 @@ const glb = require('../lib/glb-parser');
  * parser depends on is visible in the test, and a spec detail we get wrong is
  * wrong in one place instead of two.
  */
-function buildGlb({ scale = 1, withIndices = true, nodeMatrix = null } = {}) {
+function buildGlb({ scale = 1, withIndices = true, nodeMatrix = null, countOverride = null, cyclic = false } = {}) {
     const positions = new Float32Array([
         0, 0, 0,  1, 0, 0,  1, 1, 0,  0, 1, 0,
         0, 0, 1,  1, 0, 1,  1, 1, 1,  0, 1, 1,
@@ -53,6 +53,7 @@ function buildGlb({ scale = 1, withIndices = true, nodeMatrix = null } = {}) {
 
     const node = { mesh: 0 };
     if (nodeMatrix) node.matrix = nodeMatrix;
+    if (cyclic) node.children = [0];
 
     const json = {
         asset: { version: '2.0' },
@@ -61,7 +62,7 @@ function buildGlb({ scale = 1, withIndices = true, nodeMatrix = null } = {}) {
         nodes: [node],
         meshes: [{ primitives: [Object.assign({ attributes: { POSITION: 0 } }, withIndices ? { indices: 1 } : {})] }],
         accessors: [
-            { bufferView: 0, componentType: 5126, count: 8, type: 'VEC3' },
+            { bufferView: 0, componentType: 5126, count: countOverride === null ? 8 : countOverride, type: 'VEC3' },
             { bufferView: 1, componentType: 5123, count: indices.length, type: 'SCALAR' },
         ],
         bufferViews: [
@@ -150,4 +151,12 @@ test('rubbish is refused with a reason, not a stack trace', () => {
     for (const bad of [Buffer.alloc(0), Buffer.from('hello world'), Buffer.alloc(64)]) {
         assert.throws(() => glb.parseGlb(bad), /glb/i, `accepted ${bad.length} bytes of nonsense`);
     }
+});
+
+test('an accessor cannot allocate beyond the uploaded binary data', () => {
+    assert.throws(() => glb.parseGlb(buildGlb({ countOverride: 1_000_000_000 })), /accessor|budget/i);
+});
+
+test('a cyclic scene graph is rejected instead of recursing forever', () => {
+    assert.throws(() => glb.parseGlb(buildGlb({ cyclic: true })), /cyclic/i);
 });

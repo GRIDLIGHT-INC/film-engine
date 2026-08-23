@@ -1179,6 +1179,17 @@ function handlePrevis(req, res, urlParts) {
             if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
             return exportPrevis(req, res, shotId);
         }
+        if (urlParts[4] === 'image' && urlParts[5] === 'import') {
+            if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+            try {
+                const imported = require('../lib/media-imports').importMedia('previs-image', {
+                    shotId, name: req.body && req.body.name, data: req.body && req.body.data,
+                });
+                return json(res, 201, imported);
+            } catch (err) {
+                return json(res, /not found/i.test(err.message) ? 404 : 400, { error: err.message });
+            }
+        }
         if (urlParts[4] === 'to-video') {
             if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
             return toVideo(req, res, shotId);

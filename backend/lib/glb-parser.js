@@ -92,11 +92,21 @@ function readAccessor(json, bin, index) {
 
     const view = json.bufferViews[accessor.bufferView];
     if (!view) throw new Error('glb: accessor has no bufferView');
+    if (!Number.isSafeInteger(accessor.count) || accessor.count < 0 || accessor.count * per > 5_000_000) {
+        throw new Error('glb: accessor count is invalid or exceeds the previs geometry budget');
+    }
     const start = (view.byteOffset || 0) + (accessor.byteOffset || 0);
 
     // A byteStride means the data is interleaved with other attributes, so it
     // has to be walked element by element rather than read as one block.
     const stride = view.byteStride || 0;
+    const elementBytes = per * bytes;
+    const requiredEnd = accessor.count
+        ? start + (accessor.count - 1) * (stride || elementBytes) + elementBytes
+        : start;
+    if (!Number.isSafeInteger(start) || start < 0 || requiredEnd > bin.length) {
+        throw new Error('glb: accessor runs past the binary chunk');
+    }
     const out = new Array(accessor.count * per);
     if (!stride || stride === per * bytes) {
         const flat = new Type(bin.buffer, bin.byteOffset + start, accessor.count * per);
@@ -175,12 +185,19 @@ function parseGlb(input) {
         }
     };
 
+    const visiting = new Set();
+    let visitedNodes = 0;
     const walk = (nodeIndex, parent) => {
+        if (!Number.isSafeInteger(nodeIndex) || nodeIndex < 0) throw new Error('glb: invalid node index');
+        if (visiting.has(nodeIndex)) throw new Error('glb: cyclic node graph');
+        if (++visitedNodes > 100_000) throw new Error('glb: scene graph exceeds the previs node budget');
         const node = json.nodes && json.nodes[nodeIndex];
         if (!node) return;
+        visiting.add(nodeIndex);
         const matrix = multiply(parent, nodeMatrix(node));
         if (node.mesh !== undefined) emitMesh(node.mesh, matrix);
         for (const child of (node.children || [])) walk(child, matrix);
+        visiting.delete(nodeIndex);
     };
 
     const scene = json.scenes && json.scenes[json.scene || 0];

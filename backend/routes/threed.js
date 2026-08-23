@@ -157,6 +157,16 @@ function handleThreeD(req, res, urlParts, query) {
         if (!UUID_RE.test(projectId)) return json(res, 400, { error: 'Invalid project ID' });
 
         const sub = urlParts[4];
+        if (req.method === 'POST' && sub === 'import') {
+            try {
+                const imported = require('../lib/media-imports').importMedia('three-d-model', {
+                    projectId, name: req.body && req.body.name, data: req.body && req.body.data,
+                });
+                return json(res, 201, imported);
+            } catch (err) {
+                return json(res, /not found/i.test(err.message) ? 404 : 400, { error: err.message });
+            }
+        }
         if (req.method === 'POST' && sub === 'batch') {
             if (urlParts[5] === 'stream') return batchModelsStream(req, res, projectId);
             return batchModels(req, res, projectId);

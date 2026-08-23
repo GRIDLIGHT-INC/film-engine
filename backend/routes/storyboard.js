@@ -615,6 +615,22 @@ function handleStoryboard(req, res, urlParts, query) {
             return regenerateShot(req, res, shotId);
         }
 
+        if (urlParts[4] === 'import' && req.method === 'POST') {
+            try {
+                const project = db.prepare(`SELECT p.board_locked_at, p.provider_config FROM film_projects p
+                    JOIN film_scenes sc ON sc.project_id = p.id
+                    JOIN film_shots sh ON sh.scene_id = sc.id WHERE sh.id = ?`).get(shotId);
+                const locked = boardLocked(project, req.body);
+                if (locked) return json(res, 423, locked);
+                const imported = require('../lib/media-imports').importMedia('storyboard-image', {
+                    shotId, name: req.body && req.body.name, data: req.body && req.body.data,
+                });
+                return json(res, 201, imported);
+            } catch (err) {
+                return json(res, /not found/i.test(err.message) ? 404 : 400, { error: err.message });
+            }
+        }
+
         if (urlParts[4] === 'recompose-preview' && req.method === 'GET') {
             return recomposePreview(req, res, shotId, query);
         }
@@ -1481,6 +1497,7 @@ function listShotFrames(req, res, shotId) {
                 : meta.restored_from ? `restored from v${meta.restored_from}`
                 : meta.refined_from ? `refine (${meta.refined_from})`
                 : meta.instruction ? 'refine'
+                : meta.kind === 'storyboard_import' ? 'imported'
                 : 'generated',
             // A borrowed frame is a different thing from a generated one: it
             // was made from another shot's card, so the card and the picture

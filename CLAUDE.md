@@ -88,6 +88,7 @@ film-engine/
 │   │   ├── image-fallback.js      # Walk credentialed image providers on refusal
 │   │   ├── gridlight-client.js    # Shared HTTP client + request queue + 429 retry
 │   │   ├── file-storage.js        # Shared file storage utilities
+│   │   ├── media-imports.js       # Validated persistent Storyboard, Previs image, and GLB imports
 │   │   ├── dialogue-builder.js    # Dialogue extraction + voice payloads
 │   │   ├── video-prompt.js        # Video prompt builder + camera control
 │   │   ├── music-prompt.js        # Music/SFX/ambient prompt builder
@@ -216,6 +217,7 @@ film-engine/
 │       ├── provider-prompt-limit.test.js # Each provider's own ceiling; allowances scale with it
 │       ├── image-prompt-ceiling.test.js  # The ceiling every image prompt is built against, pinned to evidence
 │       ├── prompt-quality.test.js       # Is the request we send a good one: fallback ceilings, one resolver, full accounting, priority, negatives
+│       ├── media-imports.test.js        # Registry-derived persistent Storyboard, Previs image, and GLB import contract
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests

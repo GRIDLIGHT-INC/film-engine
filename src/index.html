@@ -5057,7 +5057,13 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         <div class="page" id="page-threed">
             <div class="flex-between mb-16">
                 <h2>3D Models</h2>
-                <button class="btn btn-primary" onclick="generateAllModels()">Generate All Models</button>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <label class="btn btn-secondary" style="cursor:pointer;">
+                        Import GLB
+                        <input data-import-target="three-d-model" type="file" accept=".glb,model/gltf-binary" style="display:none" onchange="importThreeDModel(event)">
+                    </label>
+                    <button class="btn btn-primary" onclick="generateAllModels()">Generate All Models</button>
+                </div>
             </div>
             <div id="threedProgress" style="display:none;" class="mb-16">
                 <div class="text-sm text-muted mb-8" id="threedProgressLabel">Starting...</div>
@@ -5162,6 +5168,10 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <button class="btn btn-secondary" onclick="previsPlay()" id="previsPlayBtn">Play move</button>
                     <button class="btn btn-secondary" onclick="previsExportFrame()" id="previsFrameBtn">Save frame</button>
                     <button class="btn btn-secondary" onclick="previsExportMove()" id="previsRecBtn">Record move</button>
+                    <label class="btn btn-secondary" style="cursor:pointer;">
+                        Import GLB
+                        <input data-import-target="three-d-model" data-import-surface="previs" type="file" accept=".glb,model/gltf-binary" style="display:none" onchange="importThreeDModel(event)">
+                    </label>
                     <button class="btn btn-primary" onclick="previsSave()" id="previsSaveBtn">Save blocking</button>
                 </div>
             </div>
@@ -13554,7 +13564,7 @@ THREE.GLTFLoader = GLTFLoader;
                    </select>
                    <label class="btn btn-sm btn-secondary" style="font-size:10px;margin-top:3px;display:block;text-align:center;cursor:pointer;">
                        Use a file&hellip;
-                       <input type="file" accept="image/*" style="display:none;" onchange="previsPickFile(event, ${i})">
+                       <input data-import-target="previs-image" type="file" accept="image/*" style="display:none;" onchange="previsPickFile(event, ${i})">
                    </label>` : '';
             return `<div data-object="${i}" style="margin-bottom:7px;padding:4px;border-radius:5px;${chosen ? 'background:rgba(56,189,248,.12);outline:1px solid rgba(56,189,248,.5);' : ''}"
                         onmousedown="previsSelectRow(event, ${i})">
@@ -13694,18 +13704,33 @@ THREE.GLTFLoader = GLTFLoader;
         previsRefresh();
     }
 
-    /** Read a local image straight into the card. No upload, no round trip. */
-    function previsPickFile(event, index) {
+    /** Upload a local image, then save its project URL into the blocking. */
+    async function previsPickFile(event, index) {
         const file = event.target.files && event.target.files[0];
         if (!file || !PREVIS.objects[index]) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            PREVIS.objects[index].src = reader.result;
+        if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
+        const shotId = PREVIS.shotId;
+        const object = PREVIS.objects[index];
+        try {
+            const data = await importImageAsPng(file);
+            const imported = await api(`/shots/${shotId}/previs/image/import`, {
+                method: 'POST', body: JSON.stringify({ name: file.name, data }),
+            });
+            if (PREVIS.shotId !== shotId || !PREVIS.objects.includes(object)) {
+                return previsStatus('Image uploaded, but the stage changed before it could be attached.');
+            }
+            object.src = imported.url;
+            PREVIS.images.push({ url: imported.url, label: file.name });
             previsMarkStaged();
             previsRenderObjects();
             previsRefresh();
-        };
-        reader.readAsDataURL(file);
+            await api(`/shots/${shotId}/previs`, {
+                method: 'PUT', body: JSON.stringify(previsReadInspector()),
+            });
+            previsStatus(`${file.name} uploaded and saved with this blocking.`);
+        } catch (err) {
+            previsStatus('Image import failed: ' + err.message);
+        } finally { event.target.value = ''; }
     }
 
     function previsSetObjectVec(index, field, axis, value) {
@@ -21414,7 +21439,76 @@ ${fountainText.slice(0, 50000)}`;
                 <div style="flex:1 1 340px;min-width:280px;">
                     ${fields || '<p class="text-sm text-muted">Nothing described yet. An entity with no description reaches the image prompt as a bare name, and every frame invents its own version of it.</p>'}
                 </div>
+            </div>
+            ${kind === 'location' ? `<div id="locationViewsSection" style="margin-top:18px;"></div>` : ''}`;
+
+        // A LOCATION OWNS ITS VIEWS, so they live on the location.
+        //
+        // Views shipped with their only control inside a shot's blocking panel,
+        // so the plates belonging to a place could be added from anywhere except
+        // that place. GET /plate/views has always returned all of them with
+        // their images; nothing here asked.
+        if (kind === 'location') renderLocationViews(id);
+    }
+
+    /**
+     * Every photographed view of a location, and the way to add another.
+     *
+     * A location has ONE default plate and a growing set of views; a shot points
+     * at whichever it is facing. Generated independently, four views of a
+     * cul-de-sac produce four different cul-de-sacs — so a new view is anchored
+     * on an existing plate and is the same street from a new position.
+     */
+    async function renderLocationViews(locationId) {
+        const host = document.getElementById('locationViewsSection');
+        if (!host) return;
+        host.innerHTML = '<p class="text-sm text-muted">Loading views…</p>';
+
+        let views = [];
+        try { views = (await api(`/locations/${locationId}/plate/views`)).views || []; }
+        catch (err) { host.innerHTML = `<p class="text-sm text-muted">Could not read the views: ${esc(err.message)}</p>`; return; }
+
+        const card = v => `
+            <div style="flex:0 0 200px;">
+                ${v.available
+                    ? `<img src="${API_BASE}${esc(v.image_url)}" style="width:100%;border-radius:6px;display:block;">`
+                    : `<div class="text-sm text-muted" style="padding:20px;border:1px dashed var(--gl-border,#444);border-radius:6px;">
+                         ${esc(v.unavailable_reason || 'the file for this view is missing')}
+                       </div>`}
+                <div class="text-sm" style="margin-top:6px;line-height:1.4;">${esc(v.label)}</div>
             </div>`;
+
+        host.innerHTML = `
+            <h4 style="margin:0 0 6px;">Views of this location</h4>
+            <p class="text-sm text-muted" style="margin:0 0 10px;line-height:1.5;">
+                A shot uses the view it is pointed at. A reverse angle given the only view you have
+                is handed a photograph of what is behind its camera — which is where invented streets
+                come from. Generate the angles you actually shoot; each one is paid for once.
+            </p>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;">${views.map(card).join('')}</div>
+            <button class="btn btn-secondary btn-sm" style="margin-top:12px;"
+                    onclick="addLocationView('${locationId}')"
+                    title="Describe a camera position; it is photographed from the plate you already have">
+                + Photograph a new view…
+            </button>`;
+    }
+
+    /** Ask for a camera position and photograph it, anchored on what exists. */
+    async function addLocationView(locationId) {
+        const view = prompt('Describe where the camera stands, the way you would tell a photographer.\n\n'
+            + 'For example: from the far kerb, looking back across the bulb');
+        if (!view || !view.trim()) return;
+        setStatus(`Photographing ${view.trim()}…`, true);
+        try {
+            const r = await api(`/locations/${locationId}/plate/generate`, {
+                method: 'POST', body: JSON.stringify({ view: view.trim() }),
+            });
+            setStatus(r.error ? ('Could not photograph it: ' + r.error)
+                : `New view added: ${view.trim()}. Every shot pointed this way can use it now.`);
+        } catch (err) {
+            setStatus('Could not photograph it: ' + err.message);
+        }
+        renderLocationViews(locationId);
     }
 
     /** Keep the image, record it as current for the inputs it now sits beside. */
@@ -24334,6 +24428,43 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
+    async function importThreeDModel(event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file || !state.currentProject) return;
+        const projectId = state.currentProject.id;
+        const fromPrevis = event.target.dataset.importSurface === 'previs';
+        if (fromPrevis && !PREVIS.shotId) return previsStatus('Pick a shot before importing a model onto its stage.');
+        setStatus('Importing 3D model…');
+        try {
+            const data = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error('The selected GLB could not be read.'));
+                reader.readAsDataURL(file);
+            });
+            const normalized = String(data).replace(/^data:[^;]*;base64,/, 'data:model/gltf-binary;base64,');
+            const imported = await api(`/projects/${projectId}/models/import`, {
+                method: 'POST', body: JSON.stringify({ name: file.name, data: normalized }),
+            });
+            setStatus(`${file.name} imported and available in Previs.`);
+            if (!state.currentProject || state.currentProject.id !== projectId) return;
+            await loadThreeD();
+            if (PREVIS && PREVIS.shotId) {
+                await previsLoadModels();
+                if (fromPrevis) {
+                    previsAddObject(null, 'mesh');
+                    const object = PREVIS.objects[PREVIS.objects.length - 1];
+                    if (object) {
+                        object.assetId = imported.asset_id;
+                        object.name = file.name.replace(/\.glb$/i, '');
+                    }
+                }
+                previsRenderObjects(); previsRefresh();
+            }
+        } catch (err) { setStatus('3D import failed: ' + err.message); }
+        finally { event.target.value = ''; }
+    }
+
     function generateAllModels() {
         if (!state.currentProject) return;
         const prog = document.getElementById('threedProgress');
@@ -24657,6 +24788,7 @@ ${fountainText.slice(0, 50000)}`;
                                 <button class="btn btn-secondary btn-sm" onclick="directShot('${f.shot_id}')" title="Who and what is in this shot, and where the camera is">Direct</button>
                                 <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="${f.image_url ? 'Generate this frame again from the card — shows you the prompt first' : 'This shot has no frame yet — generate its first one. You will see the prompt before anything is spent.'}">${f.image_url ? 'Regen' : 'Generate'}</button>
                                 <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
+                                ${storyboardImportButton(f)}
                                 <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="${frameVersionTitle(f)}">${frameVersionLabel(f)}</button>
                                 <button class="btn btn-secondary btn-sm" onclick="playFromShot('${f.shot_id}')" title="Watch the cut starting from this shot">&#9654;</button>
                                 <button class="btn btn-secondary btn-sm" onclick="insertShotAfter('${f.shot_id}')" title="Add a new shot immediately after this one, in the same scene">+ Shot</button>
@@ -24672,6 +24804,47 @@ ${fountainText.slice(0, 50000)}`;
             }
             setStatus(frames.length + ' storyboard frame(s)');
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /** Normalise browser-supported images to the one durable board format. */
+    function storyboardImportButton(frame) {
+        return `<label class="btn btn-secondary btn-sm" style="cursor:pointer;" title="Use a local image as this shot's storyboard frame">
+            Import<input data-import-target="storyboard-image" type="file" accept="image/*" style="display:none" onchange="importStoryboardImage(event,'${frame.shot_id}')">
+        </label>`;
+    }
+
+    function importImageAsPng(file) {
+        return new Promise((resolve, reject) => {
+            if (!file || !String(file.type || '').startsWith('image/')) return reject(new Error('Choose an image file.'));
+            const url = URL.createObjectURL(file);
+            const image = new Image();
+            image.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+                    canvas.getContext('2d').drawImage(image, 0, 0);
+                    resolve(canvas.toDataURL('image/png'));
+                } catch (err) { reject(err); }
+                finally { URL.revokeObjectURL(url); }
+            };
+            image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('The selected image could not be read.')); };
+            image.src = url;
+        });
+    }
+
+    async function importStoryboardImage(event, shotId) {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        setStatus('Importing storyboard frame…');
+        try {
+            const data = await importImageAsPng(file);
+            const result = await api(`/shots/${shotId}/storyboard/import`, {
+                method: 'POST', body: JSON.stringify({ name: file.name, data }),
+            });
+            setStatus(`Imported ${file.name} as storyboard v${result.version}.`);
+            await loadStoryboard();
+        } catch (err) { setStatus('Storyboard import failed: ' + err.message); }
+        finally { event.target.value = ''; }
     }
 
     // Dialogue under a storyboard frame, the way a board is actually read:
@@ -26899,7 +27072,7 @@ ${fountainText.slice(0, 50000)}`;
               + 'Editing cards and previewing prompts still work.'
             : 'Lock the board when you are happy with it — nothing that replaces a frame will run until you unlock';
         // The buttons that spend money say so, rather than failing on click.
-        document.querySelectorAll('[onclick*="generateAllStoryboards"], [onclick*="regenerateStoryboard"], [onclick*="refineFrame"]')
+        document.querySelectorAll('[onclick*="generateAllStoryboards"], [onclick*="regenerateStoryboard"], [onclick*="refineFrame"], [data-import-target="storyboard-image"]')
             .forEach(b => { if (b.id !== 'boardLockBtn') b.disabled = !!BOARD_LOCK.locked; });
     }
 

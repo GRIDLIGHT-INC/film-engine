@@ -426,3 +426,37 @@ test('every surface that sets a location view offers the views that exist', () =
     }
     assert.deepStrictEqual(broken, [], 'a surface asks a director to type a view rather than pick one');
 });
+
+test('the location itself is where its pictures are managed', () => {
+    /*
+     * Views shipped with their only control inside a SHOT's blocking panel. So
+     * the plates belonging to a location could be seen and added from anywhere
+     * except the location — a director opening SUBURBAN STREET saw its fields,
+     * one plate, and a Regenerate button that replaces the default.
+     *
+     * That is backwards. A location owns a growing set of views; the shot
+     * merely points at one. The set belongs where the thing it belongs to is,
+     * and burying it in a per-shot panel is why it read as unbuilt.
+     *
+     * GET /locations/:id/plate/views already returns every view with its
+     * image_url, label and availability — the data was there the whole time and
+     * nothing on the location page asked for it.
+     */
+    const html = fs.readFileSync(path.join(ROOT, '..', 'src', 'index.html'), 'utf8');
+
+    const inspector = html.slice(html.indexOf('async function inspectEntity('),
+        html.indexOf('async function regeneratePlate('));
+    assert.ok(inspector.length, 'the entity inspector is gone');
+
+    const missing = [];
+    if (!/plate\/views/.test(inspector) && !/locationViewsSection|renderLocationViews/.test(inspector)) {
+        missing.push('the location inspector never asks for the views that exist, so a location '
+            + 'with three plates still shows one');
+    }
+    if (!/photograph|add.*view|newView/i.test(inspector)) {
+        missing.push('the location inspector offers no way to add a view, so the only route to '
+            + 'one is through a shot');
+    }
+    assert.deepStrictEqual(missing, [],
+        'a location cannot manage its own pictures');
+});
