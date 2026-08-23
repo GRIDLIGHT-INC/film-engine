@@ -365,3 +365,180 @@ test('unapplied previs staging is disclosed as staged (3b)', () => {
 
     assert.deepStrictEqual(gaps, [], 'the Apply boundary is not disclosed');
 });
+
+// ── Behavioural: a previs round trip must not destroy board decisions ───────
+//
+// The probes above are mention-based, which makes a FAILURE strong and a PASS
+// weak: `camera` reads ok partly because the word appears everywhere in these
+// files. That asymmetry is fine for finding gaps and useless for confirming
+// they are closed -- and this suite exists to be believed once it goes green.
+//
+// So the round-trip link is also checked by running it. A director sets a value
+// on the board, opens previs, and applies an angle. Every decision they had
+// already made must still be there. This is the failure that costs real work:
+// applying a camera angle silently dropping the direction, the location view or
+// the dialogue, discovered later as a frame generated from a card that quietly
+// lost half of itself.
+//
+// Sample values are DISCOVERED, not typed: each field is offered a ladder of
+// candidate shapes and the first one the real validator accepts is used. A
+// hand-written fixture per field is a second copy of the schema and goes stale
+// the first time a rule changes -- silently, because the test keeps passing on
+// the shape it still remembers.
+
+const os = require('os');
+const crypto = require('crypto');
+const { Writable } = require('stream');
+
+process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
+    || path.join(os.tmpdir(), 'film-engine-parity-' + crypto.randomUUID().slice(0, 8));
+
+const { db, generateId } = require('../db/database');
+const { ensureSchema } = require('../db/schema');
+ensureSchema();
+const { handlePrevis } = require('../routes/previs');
+const { validateSceneCards } = require('../lib/scene-card-schema');
+
+const CANDIDATES = [
+    'parity-probe-value',
+    ['PARITY_PROBE'],
+    [{ character: 'PARITY_PROBE', line: 'Mark.' }],
+    { type: 'day', notes: 'parity probe' },
+    { shot_type: 'wide' },
+    4,
+];
+
+function sampleFor(field) {
+    for (const v of CANDIDATES) {
+        const card = { shot_code: 'P1', description: 'Probe.' , [field]: v };
+        if (validateSceneCards([card]).valid) return v;
+    }
+    return undefined;
+}
+
+function callPrevis(method, urlPath, body) {
+    return new Promise(resolve => {
+        const parts = urlPath.split('?')[0].split('/').filter(Boolean);
+        const req = { method, body: body || {} };
+        const chunks = [];
+        const res = new Writable({ write(c, _e, n) { chunks.push(c); n(); } });
+        res.statusCode = 200;
+        res.writeHead = function (code) { this.statusCode = code; return this; };
+        res.setHeader = function () {};
+        res.on('finish', () => {
+            const raw = Buffer.concat(chunks).toString();
+            let parsed = raw;
+            try { parsed = JSON.parse(raw); } catch (_) { /* not json */ }
+            resolve({ status: res.statusCode, body: parsed });
+        });
+        Promise.resolve(handlePrevis(req, res, parts, {}))
+            .catch(err => resolve({ status: 500, body: { error: err.message } }));
+    });
+}
+
+function seedShot(card) {
+    const projectId = generateId(), sceneId = generateId(), shotId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Parity');
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)')
+        .run(sceneId, projectId, '1');
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml, duration_ms) VALUES (?, ?, ?, ?, ?)')
+        .run(shotId, sceneId, 'P1', JSON.stringify(card), 4000);
+    return shotId;
+}
+
+test('a previs round trip preserves every board decision', async () => {
+    const fields = deriveCardDecisions();
+    const lost = [];
+    const unsampled = [];
+
+    for (const field of fields) {
+        const sample = sampleFor(field);
+        if (sample === undefined) { unsampled.push(field); continue; }
+
+        const card = { shot_code: 'P1', description: 'Probe.',
+            camera: { shot_type: 'close-up', lens: '50mm', movement: 'dolly-in' },
+            [field]: sample };
+        if (!validateSceneCards([card]).valid) { unsampled.push(field); continue; }
+
+        const shotId = seedShot(card);
+        const seeded = await callPrevis('POST', `/film/shots/${shotId}/previs/from-card`);
+        if (seeded.status >= 400) { lost.push(`${field}: from-card refused (${seeded.status})`); continue; }
+        const applied = await callPrevis('POST', `/film/shots/${shotId}/previs/apply`);
+        if (applied.status >= 400) { lost.push(`${field}: apply refused (${applied.status})`); continue; }
+
+        const row = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
+        const after = JSON.parse(row.scene_card_yaml || '{}');
+        if (JSON.stringify(after[field]) !== JSON.stringify(sample)) {
+            lost.push(`${field}: ${JSON.stringify(sample)} -> ${JSON.stringify(after[field])}`);
+        }
+    }
+
+    assert.deepStrictEqual(unsampled, [],
+        'no value could be found that the validator accepts for these fields — the '
+        + 'candidate ladder needs a shape, or the field is not settable at all');
+    assert.deepStrictEqual(lost, [],
+        'board decisions destroyed or altered by a previs round trip');
+});
+
+// ── Approval is about the ANGLE ─────────────────────────────────────────────
+//
+// blockingFingerprint() hashes camera_json WHOLESALE. So any decision routed
+// through previs by stashing it inside camera_json silently joins the approval
+// fingerprint, and editing a sentence of direction on a shot whose camera never
+// moved marks the approval stale -- which /to-video and /to-storyboard turn
+// into a 409 STALE_APPROVAL.
+//
+// That failure is worth a test rather than a comment because it is invisible
+// until it is expensive: the director approves a framing, adjusts a word, and
+// is refused at generation time for a shot they never restaged. Approval means
+// "this is the angle I signed off". A non-camera decision must not revoke it.
+//
+// Set-based over exactly the contract entries that reach previs but are not
+// camera optics -- derived from the contract, so a decision routed this way
+// tomorrow is covered with nothing to remember.
+
+test('a non-camera decision does not stale a previs approval', async () => {
+    const contract = loadContract();
+    if (!contract) { assert.fail('lib/decision-contract.js does not exist'); }
+
+    const { approvalState } = require('../routes/previs');
+    const routed = (contract.DECISIONS || [])
+        .filter(d => d.previs && d.id !== 'shot.camera' && !/^camera_json$/.test(d.previs));
+    if (!routed.length) return; // nothing routed through previs yet
+
+    const stales = [];
+    for (const d of routed) {
+        const card = { shot_code: 'P1', description: 'Probe.',
+            camera: { shot_type: 'close-up', lens: '50mm', movement: 'dolly-in' } };
+        const shotId = seedShot(card);
+        const saved = await callPrevis('PUT', `/film/shots/${shotId}/previs`, {
+            camera: { position: [0, 1.6, 3], rotation: [0, 0, 0], focalMm: 50,
+                sensorId: 'super35', fStop: 2.8, focusDistanceM: 3 },
+            subject: { position: [0, 0, 0], heightM: 1.7 },
+            stage: { widthM: 12, depthM: 12 }, rig: 'dolly', movement: 'dolly-in',
+        });
+        if (saved.status >= 400) { stales.push(`${d.id}: fixture blocking refused`); continue; }
+        const ok = await callPrevis('POST', `/film/shots/${shotId}/previs/approve`);
+        if (ok.status >= 400) { stales.push(`${d.id}: approve refused`); continue; }
+        if (approvalState(shotId).stale) { stales.push(`${d.id}: stale before any edit`); continue; }
+
+        // Write the decision where the contract says it lives, and change
+        // NOTHING about the camera.
+        const [col, ...rest] = d.previs.split('.');
+        const row = db.prepare(`SELECT ${col} FROM film_previs_blocking WHERE shot_id = ?`).get(shotId);
+        let blob = {};
+        try { blob = JSON.parse(row[col] || '{}'); } catch (_) { blob = {}; }
+        let cursor = blob;
+        for (const k of rest.slice(0, -1)) { cursor[k] = cursor[k] || {}; cursor = cursor[k]; }
+        if (rest.length) cursor[rest[rest.length - 1]] = 'parity probe';
+        db.prepare(`UPDATE film_previs_blocking SET ${col} = ? WHERE shot_id = ?`)
+            .run(JSON.stringify(blob), shotId);
+
+        if (approvalState(shotId).stale) {
+            stales.push(`${d.id} (stored at ${d.previs}) revokes an approval the camera never changed`);
+        }
+    }
+
+    assert.deepStrictEqual(stales, [],
+        'approval means "this is the angle I signed off" — these decisions revoke it');
+});
