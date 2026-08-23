@@ -282,3 +282,52 @@ test('#6 sub-perceptual rotation is not narrated as a camera move', () => {
         `a twelve-degree pan was swallowed as '${real.dominantMovement}'`);
     assert.ok(MOVEMENTS[real.dominantMovement], 'the named move is not a real MOVEMENTS id');
 });
+
+// ── #4b Both samplers held to one recorded outcome ─────────────────────────
+
+test('#4b neither sampler drifts from the corrected sampling contract', () => {
+    /*
+     * The parity test above holds the two samplers to EACH OTHER, which catches
+     * one diverging and is blind to both moving together — a rewritten
+     * interpolation, a changed rotation order, an easing applied in the shared
+     * helper. Two implementations kept in step by a mutual test can still walk
+     * off in the same direction.
+     *
+     * So the corrected behaviour is recorded. Deliberately NOT captured during
+     * the critique round: at that point the sampler took the long way round the
+     * seam, and freezing it would have made the bug the specification. It is
+     * worth freezing now that seam-crossing frame 1 reads 173.33 (the short
+     * way) and no-endpoints frame 0 reads 0 (clamped) — both of which are the
+     * fixes, visible in the fixture.
+     *
+     * Same precedent and same rule as previs-preset-paths.json: if a sampled
+     * value legitimately has to change, move it deliberately and say why.
+     * Regenerating it to go green deletes the guarantee instead of checking it.
+     */
+    const golden = JSON.parse(
+        fs.readFileSync(path.join(__dirname, 'fixtures/previs-key-sampling.json'), 'utf8'));
+
+    const shapes = Object.fromEntries(PARITY_SHAPES.map(s => [s.id, s.keys]));
+    assert.deepStrictEqual(Object.keys(shapes).sort(), Object.keys(golden).sort(),
+        'the parity shapes and the recorded fixture describe different sets');
+
+    const round = frame => ({
+        t: +Number(frame.t).toFixed(6),
+        position: frame.position.map(v => +Number(v).toFixed(6)),
+        rotation: frame.rotation.map(v => +Number(v).toFixed(6)),
+        focalMm: +Number(frame.focalMm).toFixed(6),
+    });
+
+    const drifted = [];
+    for (const [id, keys] of Object.entries(shapes)) {
+        const server = sampleCameraKeys(keys, { frames: 7 }).map(round);
+        if (JSON.stringify(server) !== JSON.stringify(golden[id])) drifted.push(`server:${id}`);
+
+        let client;
+        try { client = runFn('previsSampleCameraKeys', keys, 7).map(round); }
+        catch (err) { drifted.push(`browser:${id} would not run (${err.message})`); continue; }
+        if (JSON.stringify(client) !== JSON.stringify(golden[id])) drifted.push(`browser:${id}`);
+    }
+    assert.deepStrictEqual(drifted, [],
+        'a sampler no longer produces the path recorded when the seam and clamp were fixed');
+});
