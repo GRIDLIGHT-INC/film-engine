@@ -382,9 +382,19 @@ test('a failed preview disarms Generate, in every confirmation', () => {
         const body = HTML.slice(at, end);
         assert.ok(/confirmGenArm\(false\)/.test(body),
             `${fn} does not disarm before the preview loads, so a previous success leaves it armed`);
-        assert.ok(/confirmGenArm\(true\)/.test(body),
+        /*
+         * Any arming expression, not the literal `true`. A confirmation may
+         * legitimately arm CONDITIONALLY -- the board refuses to spend on
+         * unapplied staging, so it arms on `!(staged || card_ahead ||
+         * conflict)`. Matching the literal reported that correct code as "never
+         * arms on success", which is the follow-the-writer-not-the-string trap
+         * this suite has now hit twice. What must hold is unchanged: something
+         * arms, it is not the disarm, and it sits on the success path.
+         */
+        const ARM = /confirmGenArm\(\s*(?!false\s*\))/;
+        assert.ok(ARM.test(body),
             `${fn} never arms on success, so nothing could ever be generated`);
-        const armAt = body.indexOf('confirmGenArm(true)');
+        const armAt = body.search(ARM);
         const catchAt = body.indexOf('} catch (err)');
         assert.ok(armAt > 0 && catchAt > 0 && armAt < catchAt,
             `${fn} arms outside the success path, so a failed preview still permits the spend`);

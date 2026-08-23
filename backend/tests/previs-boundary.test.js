@@ -441,3 +441,53 @@ test('#6 every paid confirmation that can read previs discloses staged intent', 
     assert.deepStrictEqual(silent, [],
         'a paid confirmation is silent about staging the director has not applied');
 });
+
+// ── #7 A refusal a director cannot get past ─────────────────────────────────
+
+test('#7 every generation gate can be overridden deliberately', () => {
+    /*
+     * This codebase refuses a paid action in five places, and until now every
+     * one of them could be got past on purpose: the board lock takes
+     * ignore_lock, a stale previs approval takes ignore_approval, the budget
+     * gate takes ignore_budget, stale inputs take ignore_stale. The reasoning
+     * is written down in each: "a refusal you cannot get past is a reason never
+     * to lock at all".
+     *
+     * The staged gate added this round has no override, and it is the only one
+     * that DISABLES THE BUTTON rather than refusing with an explanation. So a
+     * shot carrying blocking somebody staged and never applied — which is the
+     * normal resting state of exploration, and the state this whole boundary
+     * exists to make safe — can no longer be generated from the board at all.
+     * Not from the stage, not from the card that is sitting there valid and
+     * unchanged. Exploring in previs now costs you the ability to generate.
+     *
+     * That inverts the Apply boundary. The point was that trying an angle must
+     * not commit it; the cost of that must not become "and now you cannot shoot
+     * the shot as written".
+     *
+     * Derived from the gates themselves rather than listed, so a sixth added
+     * later is held to the same rule.
+     */
+    const sources = ['routes/storyboard.js', 'routes/previs.js'];
+    const gates = new Set();
+    for (const rel of sources) {
+        for (const m of readCode(rel).matchAll(/\bignore_([a-z_]+)\b/g)) gates.add(m[1]);
+    }
+    assert.ok(gates.size >= 3, 'no override gates derived — the derivation is wrong');
+
+    // The staged refusal is a gate in exactly the same sense: it stops a paid
+    // action on a condition the director may legitimately disagree with.
+    const ui = readUi();
+    const board = ui.match(/async function confirmGeneration\([\s\S]*?\n    \}/);
+    assert.ok(board, 'confirmGeneration is gone');
+
+    const refuses = /confirmGenArm\(false\)[^\n]*\n|if \([^)]*staged[^)]*\)\s*confirmGenArm\(false\)/.test(board[0])
+        && /staged/.test(board[0]);
+    if (!refuses) return;   // no staged refusal to override
+
+    const overridable = gates.has('staged') || gates.has('previs')
+        || /generate anyway|ignore_staged|ignore_previs/i.test(board[0]);
+    assert.ok(overridable,
+        'the staged gate refuses a paid action with no way past it, while every other '
+        + `gate here (${[...gates].map(g => 'ignore_' + g).join(', ')}) can be overridden deliberately`);
+});
