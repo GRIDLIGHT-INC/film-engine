@@ -579,6 +579,21 @@ const adapter = {
     // characters of appearance with a token meaning nothing.
     supportsReferenceImages: true,
     supportsReferenceTags: false,
+    /*
+     * What attaching a reference MEANS here.
+     *
+     * 'condition' — the reference informs a newly generated image.
+     * 'edit'      — the reference IS the image, and the result is a modified
+     *               copy of it. An edit cannot move the camera.
+     *
+     * Attaching any reference routes to /openapi/v1/image-to-image, which MODIFIES
+     * the picture it is given. Three anchored views of one cul-de-sac came back
+     * as three regrades of the same photograph, whatever the prompt said.
+     *
+     * The plate code assumed 'condition' for every provider, which is correct
+     * on one adapter and structurally incapable on the others.
+     */
+    referenceMode: 'edit',
     maxReferenceImages: MAX_REFERENCE_IMAGES,
 
     connection: {

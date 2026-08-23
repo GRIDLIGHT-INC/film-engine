@@ -404,6 +404,20 @@ const adapter = {
      * needs that size is a timeout waiting to happen — raise it if a shot
      * genuinely wants more.
      */
+    /*
+     * What attaching a reference MEANS here.
+     *
+     * 'condition' — the reference informs a newly generated image.
+     * 'edit'      — the reference IS the image, and the result is a modified
+     *               copy of it. An edit cannot move the camera.
+     *
+     * References are sent to /images/edits, which edits the image it is handed.
+     * It cannot move the camera, whatever the instruction says.
+     *
+     * The plate code assumed 'condition' for every provider, which is correct
+     * on one adapter and structurally incapable on the others.
+     */
+    referenceMode: 'edit',
     maxReferenceImages: 8,
     supportsReferenceImages: true,
     // Forwarded as edit inputs; there is no tag syntax to address them with.

@@ -211,7 +211,14 @@ test('a new view leads with the camera move, and refuses the old angle', () => {
 
     const src = fs.readFileSync(path.join(ROOT, 'lib', 'reference-plates.js'), 'utf8');
     assert.ok(/VIEW_NEGATIVE/.test(src), 'nothing refuses the reference viewpoint');
-    assert.ok(/anchorPath \? `\$\{NEGATIVE\}, \$\{VIEW_NEGATIVE\}`/.test(src),
+    /*
+     * Gated on whether the anchor was actually SENT, not on whether one
+     * existed. An edit-mode provider now has its references dropped for a view
+     * (see "an edit cannot move the camera"), and refusing "the same camera
+     * position" when no picture is attached spends the negative on a risk that
+     * is not present.
+     */
+    assert.ok(/anchored \? `\$\{NEGATIVE\}, \$\{VIEW_NEGATIVE\}`/.test(src),
         'the view negative is defined and never sent');
 });
 
@@ -711,4 +718,111 @@ test('every GLB refusal names a remedy, and reaches the page', () => {
     const body = importer.slice(0, importer.indexOf('\n    function generateAllModels'));
     assert.ok(/catch\s*\(\s*err\s*\)\s*\{\s*reportImportFailure\(/.test(body),
         'the importer still swallows its failure into setStatus alone');
+});
+
+// ── 12. An edit cannot move the camera ──────────────────────────────────
+//
+// The reverse view came back as the establishing view with a colder grade —
+// three times, on three differently-worded prompts, which is what proved the
+// wording was never the problem. lib/providers/meshy.js routes ANY reference
+// to /openapi/v1/image-to-image, and OpenAI's to /images/edits; both hand back
+// a modified copy of the picture they were given. A new camera position is the
+// one thing an edit cannot produce.
+//
+// Set-based over the image adapters in the registry, because the same code is
+// correct on one of them and structurally incapable on the others — so an
+// example test written against whichever provider is configured today passes
+// while the feature cannot work at all on the provider actually running.
+
+test('every image adapter says what attaching a reference MEANS', () => {
+    const providers = require('../lib/providers');
+    // Derived from the registry, never a typed list: the next image adapter
+    // must declare this or arrive silently assumed to condition.
+    const imageAdapters = providers.list()
+        .filter(e => (e.capabilities || []).includes('image'));
+    assert.ok(imageAdapters.length >= 3,
+        `the image adapter set collapsed (${imageAdapters.length})`);
+
+    for (const entry of imageAdapters) {
+        const name = entry.id;
+        const adapter = entry;
+        assert.ok(adapter, `${name}: no adapter entry`);
+        assert.ok(['condition', 'edit'].includes(adapter.referenceMode),
+            `${name} declares referenceMode ${JSON.stringify(adapter.referenceMode)} — an adapter that `
+            + 'does not say whether a reference is conditioned on or edited will be assumed to '
+            + 'condition, which is how a request for the opposite side of a street came back as '
+            + 'the same side');
+    }
+});
+
+test('a view request drops its references on an edit-mode provider, and keeps them on a conditioning one', async () => {
+    const { generatePlate, COMPASS_VIEWS } = require('../lib/reference-plates');
+
+    const projectId = generateId();
+    const locationId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Modes');
+    db.prepare('INSERT INTO film_locations (id, project_id, name, description) VALUES (?, ?, ?, ?)')
+        .run(locationId, projectId, 'STREET', 'A quiet cul-de-sac of seven houses.');
+
+    const dir = path.join(process.env.FILM_DATA_DIR, 'refsheets', projectId);
+    fs.mkdirSync(dir, { recursive: true });
+    const anchorPath = path.join(dir, 'anchor.png');
+    fs.writeFileSync(anchorPath, Buffer.from('89504e470d0a1a0a', 'hex'));
+
+    const spyFor = mode => {
+        const seen = [];
+        return {
+            adapter: {
+                id: `spy-${mode}`, referenceMode: mode,
+                async generate(_cap, payload) {
+                    seen.push(payload);
+                    return { ok: false, error: 'spy: not generating' };
+                },
+            },
+            seen,
+        };
+    };
+
+    const side = COMPASS_VIEWS.find(v => !v.isAnchor).name;
+
+    for (const mode of ['edit', 'condition']) {
+        const spy = spyFor(mode);
+        const res = await generatePlate({
+            projectId, kind: 'location',
+            subject: db.prepare('SELECT * FROM film_locations WHERE id = ?').get(locationId),
+            stylePreset: 'photoreal', provider: spy.adapter, view: side, anchorPath, db,
+        });
+        assert.strictEqual(spy.seen.length >= 1, true, `${mode}: the provider was never called`);
+        const payload = spy.seen[0];
+        const attached = (payload.reference_images || []).length;
+
+        if (mode === 'edit') {
+            assert.strictEqual(attached, 0,
+                'an edit-mode provider was handed the existing plate for a NEW VIEW — it will return '
+                + 'that plate with a different grade, which is the reported defect');
+            assert.strictEqual(res.anchored, false, 'the result claims it was anchored when it was not');
+            assert.ok(res.anchor_dropped && /description/i.test(res.anchor_dropped),
+                'nothing tells the director the side was painted from the description instead');
+            // The negative refuses the old viewpoint only when the old viewpoint
+            // is present; with nothing attached there is nothing to repeat.
+            assert.ok(!/same camera position/i.test(payload.negative_prompt || ''),
+                'the negative still refuses a viewpoint that was never attached');
+        } else {
+            assert.ok(attached >= 1,
+                'a conditioning provider lost its anchor — the four sides will not agree with each other');
+            assert.strictEqual(res.anchored, true, 'a conditioned view does not report itself anchored');
+        }
+    }
+
+    // A subject's FIRST plate has no view and no anchor, so nothing about it
+    // changes on either kind of provider.
+    for (const mode of ['edit', 'condition']) {
+        const spy = spyFor(mode);
+        await generatePlate({
+            projectId, kind: 'location',
+            subject: db.prepare('SELECT * FROM film_locations WHERE id = ?').get(locationId),
+            stylePreset: 'photoreal', provider: spy.adapter, db,
+        });
+        assert.ok(spy.seen.length, `${mode}: the first plate never reached the provider`);
+    }
 });

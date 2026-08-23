@@ -92,16 +92,19 @@ const COMPASS_VIEWS = Object.freeze([
         name: 'east', bearing: 90, isAnchor: false,
         turn: 'turned 90° to the RIGHT, on the spot',
         gone: 'what the reference image shows has swung away to the LEFT and is NOT in this frame',
+        solo: 'standing in the middle of this place and facing EAST \u2014 the side to the RIGHT of an establishing view of it, and not that establishing view',
     }),
     Object.freeze({
         name: 'south', bearing: 180, isAnchor: false,
         turn: 'turned right round, 180° on the spot, to face the OPPOSITE way',
         gone: 'what the reference image shows is now directly BEHIND the camera and is NOT in this frame',
+        solo: 'looking back the way an establishing photograph of this place faces \u2014 the side BEHIND that camera, so none of what an establishing shot of it shows is in frame',
     }),
     Object.freeze({
         name: 'west', bearing: 270, isAnchor: false,
         turn: 'turned 90° to the LEFT, on the spot',
         gone: 'what the reference image shows has swung away to the RIGHT and is NOT in this frame',
+        solo: 'standing in the middle of this place and facing WEST \u2014 the side to the LEFT of an establishing view of it, and not that establishing view',
     }),
 ]);
 
@@ -252,8 +255,15 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
      * so the view is simply what was photographed.
      */
     if (view && !anchored) {
+        /*
+         * No picture to turn from, so the side has to be said in words a model
+         * can act on. "photographed facing south" is a fact about a compass and
+         * describes nothing; what distinguishes a side, with no reference, is
+         * its relationship to the establishing view of the same place — which
+         * is a thing the description already implies.
+         */
         parts.push(compass
-            ? `photographed facing ${compass.name}`
+            ? (compass.solo || `photographed facing ${compass.name}`)
             : `photographed ${String(view).trim()}`);
     }
     // visual_prompt is the generation-facing field for a prop — it is what
@@ -409,16 +419,52 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         } catch (_) { anchorRef = null; }
     }
 
-    const refs = [...(anchorRef ? [anchorRef] : []), ...styleRefs];
+    /*
+     * AN EDIT CANNOT MOVE THE CAMERA.
+     *
+     * Whether attaching a reference means "condition a new image on this" or
+     * "modify this picture" is a property of the PROVIDER, and this code
+     * assumed the first for all of them. Meshy routes any reference to
+     * /image-to-image and OpenAI to /images/edits; both hand back a modified
+     * copy of what they were given. So a request for the OPPOSITE SIDE of a
+     * street, anchored on a plate of this side, came back as that plate with a
+     * colder grade — three times, on three differently-worded prompts, which is
+     * what proved the wording was never the problem.
+     *
+     * A new VIEW is the one thing an edit cannot produce. On an edit-mode
+     * provider it is generated from WORDS: the subject's own description and
+     * the project's style preset, which is also the honest place for continuity
+     * to come from here — the existing plate's geometry says nothing about what
+     * is behind its own camera.
+     *
+     * Every reference goes, not just the anchor: a single mood-board image is
+     * enough to route the call to the edit endpoint, so dropping the anchor
+     * alone would leave a view that is an edit of the look plate instead.
+     *
+     * A subject's FIRST plate is unaffected — it has no view and no anchor.
+     */
+    const referenceMode = (provider && provider.referenceMode) || 'edit';
+    const viewNeedsNewCamera = !!(view && String(view).trim());
+    const editCannotTurn = viewNeedsNewCamera && referenceMode !== 'condition';
+
+    const refs = editCannotTurn ? [] : [...(anchorRef ? [anchorRef] : []), ...styleRefs];
+    const sentStyleRefs = editCannotTurn ? [] : styleRefs;
+    const anchored = !!anchorPath && !editCannotTurn;
+
     const basePayload = {
-        negative_prompt: anchorPath ? `${NEGATIVE}, ${VIEW_NEGATIVE}` : NEGATIVE,
+        // The negative refuses the old viewpoint only where the old viewpoint
+        // is actually attached. With nothing to repeat, refusing "identical
+        // framing" spends the negative on a risk that is not present.
+        negative_prompt: anchored ? `${NEGATIVE}, ${VIEW_NEGATIVE}` : NEGATIVE,
         aspect_ratio: aspectRatio || undefined,
         ...(refs.length ? { reference_images: refs } : {}),
     };
 
     let result = await provider.generate('image', {
         ...basePayload,
-        prompt: platePrompt(stylePreset, styleRefs),
+        prompt: buildPlatePrompt(kind, subject, stylePreset, view, anchored)
+            + ((sentStyleRefs.length && sentStyleRefs[0].tag)
+                ? `, in the light, palette and colour grade of @${sentStyleRefs[0].tag}` : ''),
     }, { timeout: timeout || 300000 });
 
     // Same refusal path as character sheets: retry once without the style
@@ -431,12 +477,33 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         delete basePayload.reference_images;
         result = await provider.generate('image', {
             ...basePayload,
-            prompt: buildPlatePrompt(kind, subject, null, view, !!anchorPath),
+            prompt: buildPlatePrompt(kind, subject, null, view, anchored),
         }, { timeout: timeout || 300000 });
         if (result.ok) styleApplied = false;
     }
 
-    if (!result.ok) return { ok: false, error: result.error, style_applied: styleApplied };
+    /*
+     * How this plate was made, reported rather than assumed.
+     *
+     * "Anchored on the existing plate" and "painted from the description" give
+     * visibly different results, and a director who is not told which one they
+     * got will read a loose match as the feature not working. It also names the
+     * lever: on the un-anchored path the location's DESCRIPTION is what carries
+     * continuity, so a thin description gives a thin match.
+     */
+    const provenance = {
+        anchored,
+        reference_mode: referenceMode,
+        ...(editCannotTurn ? {
+            anchor_dropped: 'This provider edits the picture it is given rather than generating a new '
+                + 'one from it, and an edit cannot move the camera — an anchored view comes back as the '
+                + 'same view. This side was painted from the description and the style instead, so it '
+                + 'shares the materials, era and light but not the exact layout. The location '
+                + "description is what carries the match: the fuller it is, the closer the sides look.",
+        } : {}),
+    };
+
+    if (!result.ok) return { ok: false, error: result.error, style_applied: styleApplied, ...provenance };
 
     ensureDir(projectId, spec.subdir);
     const fileName = plateFileName(kind, subject.name, view);
@@ -445,7 +512,7 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
     try {
         filePath = await persistProviderMedia(projectId, spec.subdir, fileName, result.data, { serveDir: 'images' });
     } catch (err) {
-        return { ok: false, error: `plate generated but could not be stored: ${err.message}`, style_applied: styleApplied };
+        return { ok: false, error: `plate generated but could not be stored: ${err.message}`, style_applied: styleApplied, ...provenance };
     }
 
     /*
@@ -488,6 +555,7 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         file_name: fileName,
         image_url: getFileUrl(spec.subdir, projectId, fileName),
         style_applied: styleApplied,
+        ...provenance,
     };
 }
 

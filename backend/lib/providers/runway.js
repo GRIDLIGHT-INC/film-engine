@@ -420,6 +420,21 @@ const adapter = {
     supportsReferenceImages: true,
     // { uri, tag } — the prompt addresses them as @tag.
     supportsReferenceTags: true,
+    /*
+     * What attaching a reference MEANS here.
+     *
+     * 'condition' — the reference informs a newly generated image.
+     * 'edit'      — the reference IS the image, and the result is a modified
+     *               copy of it. An edit cannot move the camera.
+     *
+     * gen4_image takes references and GENERATES a new image conditioned on them,
+     * with @tags naming each. A reference here informs the result; it is not
+     * the thing being altered.
+     *
+     * The plate code assumed 'condition' for every provider, which is correct
+     * on one adapter and structurally incapable on the others.
+     */
+    referenceMode: 'condition',
     maxReferenceImages: 3,
 
     connection: {

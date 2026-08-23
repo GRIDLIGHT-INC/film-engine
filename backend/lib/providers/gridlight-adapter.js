@@ -148,6 +148,21 @@ const gridlightAdapter = {
      * upward, the same call its promptLimit makes. Over-guessing produces a
      * request the provider rejects, which is worse than sending fewer plates.
      */
+    /*
+     * What attaching a reference MEANS here.
+     *
+     * 'condition' — the reference informs a newly generated image.
+     * 'edit'      — the reference IS the image, and the result is a modified
+     *               copy of it. An edit cannot move the camera.
+     *
+     * A swappable local agent: reference_images / ip_adapter_image may condition or
+     * may edit, and we cannot know which is wired up. Held at the conservative
+     * answer, because over-trusting is what produced four copies of one street.
+     *
+     * The plate code assumed 'condition' for every provider, which is correct
+     * on one adapter and structurally incapable on the others.
+     */
+    referenceMode: 'edit',
     maxReferenceImages: 3,
     supportsReferenceImages: true,
     // reference_images / ip_adapter_image condition the result; no tag syntax.
