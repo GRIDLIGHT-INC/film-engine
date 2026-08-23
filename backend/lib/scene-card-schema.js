@@ -78,6 +78,21 @@ function validateSceneCard(card) {
         }
     }
 
+    /*
+     * Optional: location_view — WHICH view of the scene's location this shot
+     * sees. A location owns a growing set of plates (from the entrance looking
+     * in, from the far kerb looking back); the shot says which one it is
+     * pointed at. Absent means the default plate, which is what every project
+     * had when a location could only have one.
+     */
+    if (card.location_view !== undefined && card.location_view !== null) {
+        if (typeof card.location_view !== 'string') {
+            errors.push('location_view must be a string naming one of the location\'s views');
+        } else if (card.location_view.length > 120) {
+            errors.push('location_view must be 120 characters or less');
+        }
+    }
+
     // Optional: camera object
     if (card.camera !== undefined) {
         if (typeof card.camera !== 'object') {

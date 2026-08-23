@@ -82,13 +82,38 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
     // The anchor IS the location, rendered, so its plate is the most redundant
     // of all when one is attached.
     if (matchedLocation && matchedLocation.id && !anchorRef) {
-        const plate = database().prepare(
-            `SELECT file_path, file_name FROM film_assets
+        /*
+         * The view this shot is looking at, not simply the newest plate.
+         *
+         * A location had one plate and every shot got it, whichever way the
+         * camera pointed — so a reverse angle was handed a photograph of what
+         * was behind it and invented the rest.
+         *
+         * An unknown or unset view falls back to the default plate rather than
+         * to nothing: a card naming a view someone deleted must still get its
+         * location, or a silent gap replaces a wrong reference with no
+         * reference, which is worse.
+         */
+        const locationView = (opts && opts.locationView) ? String(opts.locationView).trim() : '';
+        const all = database().prepare(
+            `SELECT file_path, file_name, metadata FROM film_assets
              WHERE project_id = ? AND location_id = ?
                AND asset_type IN ('reference_image', 'character_sheet')
-             ORDER BY version DESC, created_at DESC LIMIT 1`
-        ).get(projectId, matchedLocation.id);
-        if (plate) candidates.push({ name: matchedLocation.name, kind: 'location', file_path: plate.file_path });
+             ORDER BY version DESC, created_at DESC`
+        ).all(projectId, matchedLocation.id);
+        const viewOf = row => {
+            try { return String((JSON.parse(row.metadata || '{}').view) || '').trim(); }
+            catch (_) { return ''; }
+        };
+        const plate = (locationView && all.find(r => viewOf(r).toLowerCase() === locationView.toLowerCase()))
+            || all.find(r => !viewOf(r))     // the default, view-less plate
+            || all[0] || null;               // anything rather than nothing
+        if (plate) {
+            candidates.push({
+                name: matchedLocation.name, kind: 'location', file_path: plate.file_path,
+                view: viewOf(plate) || null,
+            });
+        }
     }
 
     // The film's look, as a picture. lib/reference-images has had a `style`
@@ -217,7 +242,8 @@ function shotReferencesFor(db, opts) {
         // eslint-disable-next-line no-multi-spaces
         // The ceiling of the provider this config resolves to, so the shared
         // path agrees with the per-route ones about how many plates fit.
-        { limit: support.maxReferenceImages, keepPlates: o.keepPlates || [] });
+        { limit: support.maxReferenceImages, keepPlates: o.keepPlates || [],
+          locationView: o.locationView || '' });
     const anchorRef = references.find(r => r && r.kind === 'anchor');
     return {
         references,

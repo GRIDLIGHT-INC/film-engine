@@ -202,6 +202,7 @@ film-engine/
 │       ├── shot-insert.test.js    # A shot goes in mid-scene without renaming a single thing
 │       ├── playback-start.test.js # Playback opens on the shot you were working on
 │       ├── anchor-plate-override.test.js # An anchor covers where a subject stands, not who they are in close-up
+│       ├── location-views.test.js  # A location has views; a shot picks the one it is pointed at
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -558,6 +559,17 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 **The free preview leads rather than hiding behind a toggle.** `GET /shots/:id/prompt` spends nothing and reports the assembled prompt, the ceiling, the headroom and every contributor with what it wanted and what survived — so the budget is a set of bars you read *before* paying, and the mode that costs money to try is the one you can look at first. Choosing a mode re-reads it, which is why the preview had to learn `direction_mode` in the first place. A mode that cannot run — camera mode with no anchor attached — says so **where it is chosen**, rather than as a 409 after the click.
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
+
+### A Location Has Views; a Shot Picks One
+A location had exactly **one** plate, selected with `ORDER BY version DESC LIMIT 1`, with no record of which way it faced. On Wingfall that plate looks from the entrance **into** the cul-de-sac — so 1A and 2A had a photograph, and 2B and 2AA, which shoot back the other way, were handed a picture of what was **behind** the camera and invented the rest. Every wrong road, missing kerb and misplaced car traces to it.
+
+Which view a shot needs is a property of the **shot**: the location owns a growing set of views, and the card's `location_view` says which one it is looking at. Chosen from a dropdown of what exists rather than typed, because a typed view matching nothing falls back silently and looks like it worked.
+
+Three things had to change together. **Plates are named per view** (`location_STREET__from_the_far_kerb.png`) — they were one file per subject, so a second view overwrote the first and the set could never grow past one; the default keeps *exactly* its old name, or every project loses the plate it already has. **Replacement is scoped to the same view**, for the same reason. And **selection is by view** with the default as an explicit fallback: a card naming a view somebody deleted must still get its location, since a silent gap replaces a wrong reference with no reference.
+
+**A new view is anchored on an existing one.** Generated independently, four views of a cul-de-sac produce four different cul-de-sacs — the blue house on the right of one is not the blue house you see when you turn. The existing plate travels as the first reference and the prompt says *the same location, photographed from a different position — same buildings, same materials and colours, same driveways, same streetlights*. It is the shot anchor's mechanism pointed at plates.
+
+Generated **on demand** rather than as a fixed compass set: you pay for angles you actually shoot, there is no 45° error because the plate is made at the angle you are using, and the set grows to fit the film. The cost is one extra generation the first time you shoot a new angle — and the second shot at that angle is free.
 
 ### An Anchor Covers Where a Subject Stands, Not Who They Are
 Anchoring drops a subject's plate when the anchor's card names them, on the reasoning that the frame already shows them. That is true of **placement** and false of **identity** the moment the anchor does not show a face.
@@ -1442,6 +1454,7 @@ node --test backend/tests/current-frame.test.js
 node --test backend/tests/shot-insert.test.js
 node --test backend/tests/playback-start.test.js
 node --test backend/tests/anchor-plate-override.test.js
+node --test backend/tests/location-views.test.js
 node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js

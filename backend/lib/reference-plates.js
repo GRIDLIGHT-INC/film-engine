@@ -52,7 +52,12 @@ const PLATE_KINDS = {
  * framing, then the project look. `stylePreset` is applied when present and
  * dropped by the caller on a moderation refusal — see generatePlate.
  */
-function buildPlatePrompt(kind, subject, stylePreset) {
+/**
+ * @param {string} [view] - which view of the subject this plate is.
+ * @param {boolean} [anchored] - a plate of the same subject is travelling as a
+ *   reference, so this one must MATCH it rather than invent the place again.
+ */
+function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
     const spec = PLATE_KINDS[kind];
     if (!spec) throw new Error(`reference-plates: unknown kind '${kind}'`);
 
@@ -69,6 +74,26 @@ function buildPlatePrompt(kind, subject, stylePreset) {
     ];
 
     if (subject.name) parts.push(String(subject.name).toLowerCase());
+
+    /*
+     * Which view of the place this is, and — when another view is travelling as
+     * a reference — that it must MATCH that one rather than invent the location
+     * again.
+     *
+     * Generated independently, four views of a cul-de-sac produce four
+     * different cul-de-sacs: the blue house on the right of one is not the blue
+     * house you see when you turn. Anchoring each new view on an existing one
+     * is what closes the set, and it is the same mechanism the shot anchor uses,
+     * pointed at plates.
+     */
+    if (view) {
+        parts.push(`photographed ${String(view).trim()}`);
+        if (anchored) {
+            parts.push('the same location as the reference image, photographed from a different '
+                + 'position — same buildings, same materials and colours, same driveways, same '
+                + 'streetlights, same ground and same time of day');
+        }
+    }
     // visual_prompt is the generation-facing field for a prop — it is what
     // prop_create documents as "what reaches the image prompt" — and the plate
     // builder only ever read `description`, so the one field written for
@@ -130,6 +155,27 @@ function styleReferencesFor(db, projectId) {
     } catch (_) { return []; }
 }
 
+
+/**
+ * The file a plate lives in, including which VIEW of the subject it is.
+ *
+ * Plates were named `location_<name>.png` — one file per subject — so
+ * generating a second view of a place wrote over the first and the set could
+ * never grow past one. A location has one plate looking into the cul-de-sac,
+ * and every shot pointing the other way was handed a picture of what was behind
+ * the camera.
+ *
+ * The default (no view) keeps EXACTLY its old name, or every project that
+ * already has a plate loses it the moment this ships.
+ */
+function plateFileName(kind, subjectName, view) {
+    const safe = String(subjectName || kind).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const v = String(view || '').trim();
+    if (!v) return `${kind}_${safe}.png`;
+    const safeView = v.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48).replace(/_+$/, '');
+    return `${kind}_${safe}__${safeView}.png`;
+}
+
 /**
  * Generate, store and register one plate.
  *
@@ -140,7 +186,8 @@ function styleReferencesFor(db, projectId) {
  * plate generated without the style is still worth having — but a director who
  * is told nothing will believe their look is anchored when it is not.
  */
-async function generatePlate({ projectId, kind, subject, stylePreset, provider, aspectRatio, timeout, db }) {
+async function generatePlate({ projectId, kind, subject, stylePreset, provider, aspectRatio, timeout, db,
+    view, anchorPath }) {
     const spec = PLATE_KINDS[kind];
     if (!spec) return { ok: false, error: `unknown plate kind '${kind}'` };
     if (!subject || !subject.id) return { ok: false, error: `${kind} not found` };
@@ -167,16 +214,32 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
      */
     const styleRefs = styleReferencesFor(db, projectId);
     const platePrompt = (style, refs) => {
-        const base = buildPlatePrompt(kind, subject, style);
+        const base = buildPlatePrompt(kind, subject, style, view, !!anchorPath);
         return (refs && refs.length && refs[0].tag)
             ? `${base}, in the light, palette and colour grade of @${refs[0].tag}`
             : base;
     };
 
+    /*
+     * The existing view of this subject, so a new one MATCHES rather than
+     * invents the place again. It leads the reference list: the prompt tells
+     * the model this is the same location from a different position, and the
+     * picture it means has to be the first thing attached.
+     */
+    let anchorRef = null;
+    if (anchorPath) {
+        try {
+            const { toDataUri } = require('./reference-images');
+            const uri = toDataUri(anchorPath);
+            if (uri) anchorRef = { name: subject.name, kind: 'anchor', tag: 'sameplace', uri };
+        } catch (_) { anchorRef = null; }
+    }
+
+    const refs = [...(anchorRef ? [anchorRef] : []), ...styleRefs];
     const basePayload = {
         negative_prompt: NEGATIVE,
         aspect_ratio: aspectRatio || undefined,
-        ...(styleRefs.length ? { reference_images: styleRefs } : {}),
+        ...(refs.length ? { reference_images: refs } : {}),
     };
 
     let result = await provider.generate('image', {
@@ -194,7 +257,7 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         delete basePayload.reference_images;
         result = await provider.generate('image', {
             ...basePayload,
-            prompt: buildPlatePrompt(kind, subject, null),
+            prompt: buildPlatePrompt(kind, subject, null, view, !!anchorPath),
         }, { timeout: timeout || 300000 });
         if (result.ok) styleApplied = false;
     }
@@ -202,8 +265,7 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
     if (!result.ok) return { ok: false, error: result.error, style_applied: styleApplied };
 
     ensureDir(projectId, spec.subdir);
-    const safeName = String(subject.name || kind).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const fileName = `${kind}_${safeName}.png`;
+    const fileName = plateFileName(kind, subject.name, view);
 
     let filePath;
     try {
@@ -212,12 +274,18 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         return { ok: false, error: `plate generated but could not be stored: ${err.message}`, style_applied: styleApplied };
     }
 
-    // Replace rather than accumulate: a plate is the current canonical
-    // reference for its subject, and leaving stale ones behind would let the
-    // gather query pick an older look at random.
+    /*
+     * Replace THIS VIEW, not every plate the subject has.
+     *
+     * A plate is the current canonical reference for a subject seen a
+     * particular way, and leaving stale copies of the same view behind would
+     * let the gather query pick an older look at random. But deleting them all
+     * would mean generating a second view of a location destroys the first,
+     * which is the whole reason a location could only ever have one.
+     */
     db.prepare(`DELETE FROM film_assets
-                WHERE project_id = ? AND ${spec.fkColumn} = ? AND asset_type = ?`)
-        .run(projectId, subject.id, spec.assetType);
+                WHERE project_id = ? AND ${spec.fkColumn} = ? AND asset_type = ? AND file_name = ?`)
+        .run(projectId, subject.id, spec.assetType, fileName);
 
     const assetId = generateId();
     db.prepare(
@@ -227,7 +295,10 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
     ).run(assetId, projectId, subject.id, spec.assetType,
         typeof filePath === 'string' ? filePath : (filePath && filePath.path) || '',
         fileName,
-        JSON.stringify({ kind: `${kind}_plate`, style_applied: styleApplied }),
+        JSON.stringify({ kind: `${kind}_plate`, style_applied: styleApplied,
+            // Which view of the subject this is. Absent means the original,
+            // view-less plate, which is what every existing project has.
+            ...(view ? { view: String(view).trim() } : {}) }),
         result.provider || provider.id || null,
         result.provider_model || null);
 
@@ -246,4 +317,5 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
     };
 }
 
-module.exports = { PLATE_KINDS, buildPlatePrompt, generatePlate, styleReferencesFor, NEGATIVE };
+module.exports = {
+    plateFileName, PLATE_KINDS, buildPlatePrompt, generatePlate, styleReferencesFor, NEGATIVE };

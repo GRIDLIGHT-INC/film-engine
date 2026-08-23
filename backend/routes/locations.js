@@ -50,6 +50,28 @@ async function generateSubjectPlate(req, res, kind, subjectId) {
         return res.end(JSON.stringify({ error: 'Project not found' }));
     }
 
+    /*
+     * Which VIEW of this subject to photograph, and the existing plate to match
+     * it against.
+     *
+     * Generated independently, four views of a cul-de-sac produce four
+     * different cul-de-sacs — the blue house on the right of one is not the
+     * blue house you see when you turn. Each new view is anchored on one that
+     * already exists so the set agrees with itself, which is the whole reason
+     * for having a set.
+     */
+    const body = req.body || {};
+    const view = String(body.view || '').trim();
+    let anchorPath = null;
+    if (view) {
+        const existing = db.prepare(
+            `SELECT file_path FROM film_assets
+              WHERE project_id = ? AND ${spec.fkColumn} = ?
+                AND asset_type IN ('reference_image', 'character_sheet')
+           ORDER BY created_at ASC LIMIT 1`).get(project.id, subjectId);
+        anchorPath = (existing && existing.file_path) || null;
+    }
+
     const provider = resolve('image', parseProjectConfig(subject.project_id));
     const result = await generatePlate({
         projectId: project.id,
@@ -58,6 +80,8 @@ async function generateSubjectPlate(req, res, kind, subjectId) {
         stylePreset: project.style_preset,
         aspectRatio: project.aspect_ratio,
         provider,
+        view,
+        anchorPath,
         // So the board's pinned look travels as a picture, not only as the
         // words it composed into style_preset.
         db,
@@ -69,6 +93,57 @@ async function generateSubjectPlate(req, res, kind, subjectId) {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ kind, [`${kind}_id`]: subjectId, name: subject.name, ...result }));
+}
+
+
+/**
+ * The views a location has been photographed from.
+ *
+ * A location owned exactly one plate and every shot got it, whichever way the
+ * camera pointed — so a reverse angle was handed a picture of what was behind
+ * it. A shot now says which view it is looking at, and this is what it chooses
+ * between.
+ *
+ * The default, view-less plate is listed first and named plainly rather than
+ * left blank: it is the one every existing project has, and an unlabelled row
+ * in a dropdown reads as a bug.
+ */
+function listPlateViews(res, locationId) {
+    const loc = db.prepare('SELECT id, project_id, name FROM film_locations WHERE id = ?').get(locationId);
+    if (!loc) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Location not found' }));
+    }
+    const rows = db.prepare(
+        `SELECT id, file_name, metadata, created_at FROM film_assets
+          WHERE project_id = ? AND location_id = ?
+            AND asset_type IN ('reference_image', 'character_sheet')
+       ORDER BY created_at ASC`).all(loc.project_id, locationId);
+
+    const views = rows.map(r => {
+        let meta = {};
+        try { meta = JSON.parse(r.metadata || '{}'); } catch (_) { meta = {}; }
+        const view = String(meta.view || '').trim();
+        return {
+            asset_id: r.id,
+            view,                       // '' is the default plate
+            label: view || 'default view',
+            file_name: r.file_name,
+            image_url: getFileUrl('refsheets', loc.project_id, r.file_name),
+            created_at: r.created_at,
+        };
+    });
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        location_id: locationId,
+        location: loc.name,
+        views,
+        note: views.length > 1
+            ? 'A shot picks the view it is pointed at. Anything else falls back to the default plate.'
+            : 'One view so far. A shot looking the other way is handed this one, which is a picture '
+              + 'of what is behind its camera — generate the view it needs.',
+    }));
 }
 
 /** The current plate, if one has been generated. */
@@ -108,6 +183,8 @@ function handleLocations(req, res, urlParts, query) {
         const locId = urlParts[2];
         if (!UUID_RE.test(locId)) return badReq(res, 'Invalid location ID');
         if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'location', locId);
+        // /film/locations/:id/plate/views — what a shot can choose between.
+        if (urlParts[4] === 'views' && req.method === 'GET') return listPlateViews(res, locId);
         if (req.method === 'GET') return getSubjectPlate(res, 'location', locId);
     }
 

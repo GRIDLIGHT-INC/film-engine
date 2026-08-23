@@ -615,6 +615,8 @@ function loadShotContext(shotId, opts) {
             props: matchProps(sceneCard, props),
             anchor: anchor.shot ? anchor : null,
             keepPlates,
+            // Which view of the location this shot is pointed at.
+            locationView: sceneCard.location_view || '',
         });
         anchorCovers = anchor.shot
             ? [...require('./shot-anchor').subjectsCoveredBy(db, anchor, keepPlates)] : [];

@@ -113,7 +113,7 @@ function updateShotCard(req, res, shotId) {
 
     const body = req.body || {};
     const EDITABLE = ['description', 'direction', 'action', 'camera', 'lighting', 'characters', 'props',
-        'dialogue', 'sfx_cues', 'duration_seconds', 'notes'];
+        'dialogue', 'sfx_cues', 'duration_seconds', 'notes', 'location_view'];
     const changed = [];
     for (const key of EDITABLE) {
         if (body[key] === undefined) continue;

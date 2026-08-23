@@ -24469,6 +24469,74 @@ ${fountainText.slice(0, 50000)}`;
         </div>`;
     }
 
+
+    /*
+     * ── Which view of the location this shot is looking at ────────────────
+     *
+     * A location owned exactly one plate and every shot got it, whichever way
+     * the camera pointed — so a reverse angle was handed a photograph of what
+     * was BEHIND its camera and invented the rest. Every wrong road and missing
+     * kerb on this board traces to that.
+     *
+     * The location owns a growing set of views; the shot says which one it
+     * sees. Chosen from what exists rather than typed, because a typed view
+     * that matches nothing silently falls back to the default and looks like it
+     * worked.
+     */
+    async function fillLocationViews(prefix, locationId, chosen) {
+        const sel = document.getElementById(prefix + 'LocationView');
+        const hint = document.getElementById(prefix + 'LocationViewHint');
+        if (!sel) return;
+        let views = [];
+        try {
+            if (locationId) views = (await api(`/locations/${locationId}/plate/views`)).views || [];
+        } catch (_) { views = []; }
+
+        const opts = views.map(v =>
+            `<option value="${escapeHtml(v.view)}"${(v.view || '') === (chosen || '') ? ' selected' : ''}>`
+            + `${escapeHtml(v.label)}</option>`).join('');
+        sel.innerHTML = (views.length ? opts : '<option value="">— no plate yet —</option>')
+            + '<option value="__new__">+ photograph a new view…</option>';
+
+        if (hint) {
+            hint.textContent = views.length > 1
+                ? 'The view this shot is pointed at. Anything else falls back to the default plate.'
+                : (views.length === 1
+                    ? 'Only one view exists. A shot looking the other way gets this one — which is a '
+                      + 'picture of what is behind its camera.'
+                    : 'No location plate yet.');
+        }
+    }
+
+    /** Picking "new view" asks for it and generates immediately. */
+    async function locationViewChanged(prefix, locationId) {
+        const sel = document.getElementById(prefix + 'LocationView');
+        if (!sel || sel.value !== '__new__') return;
+        sel.value = '';
+
+        const view = prompt(
+            'Photograph this location from a new position.\n\n'
+            + 'Say where the camera is and what it looks at, the way you would brief a location '
+            + 'scout:\n\n'
+            + '  from the far kerb, looking back across the bulb\n'
+            + '  from MAYA\u2019s driveway, looking at the houses opposite\n\n'
+            + 'It is generated from the view you already have, so the houses, materials and light '
+            + 'match. Costs one image.');
+        if (!view || !view.trim()) return;
+
+        setStatus(`Photographing ${view.trim()}\u2026`, true);
+        try {
+            const r = await api(`/locations/${locationId}/plate/generate`, {
+                method: 'POST', body: JSON.stringify({ view: view.trim() }),
+            });
+            setStatus(r.error ? ('Could not photograph it: ' + r.error)
+                : `New view added: ${view.trim()}. Every shot pointed this way can use it now.`);
+            await fillLocationViews(prefix, locationId, view.trim());
+        } catch (err) {
+            setStatus('Could not photograph it: ' + err.message);
+        }
+    }
+
     /*
      * Who and what is in the shot, as a picker over what the project HAS.
      *
@@ -24529,7 +24597,13 @@ ${fountainText.slice(0, 50000)}`;
                      <input type="checkbox" id="${p}UseLocation" data-blocking="location" checked>
                      <span>${escapeHtml(loc.name)}${loc.has_plate ? '' : ' <span class="text-muted">(no plate)</span>'}
                      <span class="text-muted">&mdash; from the scene heading</span></span>
-                   </label>`
+                   </label>
+                   <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+                     <label class="text-sm text-muted" style="white-space:nowrap;">Seen from</label>
+                     <select id="${p}LocationView" style="flex:1;font-size:12px;"
+                             onchange="locationViewChanged('${p}', '${escapeHtml(loc.id || '')}')"></select>
+                   </div>
+                   <div class="text-sm text-muted" id="${p}LocationViewHint" style="line-height:1.45;"></div>`
                 : '<span class="text-muted text-sm">This scene names no location, so no location plate can attach.</span>'}
             </div></div>`;
         el.innerHTML = html;
@@ -24551,6 +24625,11 @@ ${fountainText.slice(0, 50000)}`;
             direction: dir ? dir.value.trim() : undefined,
             description: written ? written.value.trim() : undefined,
             keep_plates: pinned,
+            location_view: (() => {
+                const el = document.getElementById(p + 'LocationView');
+                const v = el ? el.value : '';
+                return v === '__new__' ? undefined : v;
+            })(),
         };
     }
 
@@ -25876,6 +25955,8 @@ ${fountainText.slice(0, 50000)}`;
             } catch (_) { /* the panel still opens; it just offers less */ }
 
             renderBlockingChoices('shotCard', ctx);
+            fillLocationViews('shotCard', ctx.location && ctx.location.id,
+                SHOT_CARD.card.location_view || '');
 
             /*
              * Whether camera mode can actually run, said WHERE IT IS CHOSEN.
@@ -25946,6 +26027,7 @@ ${fountainText.slice(0, 50000)}`;
         const body = { camera, lighting };
         if (blocking.direction !== undefined) body.direction = blocking.direction;
         if (blocking.description) body.description = blocking.description;
+        if (blocking.location_view !== undefined) body.location_view = blocking.location_view;
         // Lists REPLACE on the route, which is what makes removing a character
         // from a shot expressible — so they are only sent when the panel is
         // actually present, never as an empty array that would silently clear
