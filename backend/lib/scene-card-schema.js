@@ -148,6 +148,14 @@ function validateSceneCard(card) {
                 && (typeof card.camera.height_m !== 'number' || !Number.isFinite(card.camera.height_m))) {
                 errors.push('camera.height_m must be a number of metres above the floor');
             }
+            const validVector3 = value => Array.isArray(value) && value.length === 3
+                && value.every(component => typeof component === 'number' && Number.isFinite(component));
+            if (card.camera.position !== undefined && !validVector3(card.camera.position)) {
+                errors.push('camera.position must be an array of three finite numbers');
+            }
+            if (card.camera.rotation !== undefined && !validVector3(card.camera.rotation)) {
+                errors.push('camera.rotation must be an array of three finite numbers');
+            }
         }
     }
 

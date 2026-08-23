@@ -210,6 +210,8 @@ async function registerModel(projectId, subject, kind, format, data, jobId, meta
     const metadata = {
         kind: metaKind || 'model_3d',
         subject_kind: kind,
+        subject_name: subject.name,
+        subject_id: subject.id,
         format,
         character_id: kind === 'character' ? subject.id : null,
         prop_id: kind === 'prop' ? subject.id : null,
@@ -264,7 +266,7 @@ async function generateModel(req, res, kind, subjectId, stream) {
         jobId, projectId,
         kind === 'character' ? subjectId : null,
         kind === 'prop' ? subjectId : null,
-        kind, payload.model, format, payload.seed, payload.prompt, JSON.stringify(payload)
+        kind === 'location' ? 'set' : kind, payload.model, format, payload.seed, payload.prompt, JSON.stringify(payload)
     );
 
     if (stream) {
@@ -600,11 +602,14 @@ function listModelJobs(req, res, projectId) {
     const assets = db.prepare(
         `SELECT * FROM film_assets WHERE project_id = ? AND asset_type = 'other'
            AND json_extract(metadata, '$.kind') LIKE 'model%' ORDER BY created_at DESC`
-    ).all(projectId).map(a => ({
+    ).all(projectId).map(a => {
+        const metadata = safeParse(a.metadata);
+        return {
         asset_id: a.id, file_name: a.file_name, format: a.format,
         model_url: a.file_name ? getFileUrl(SUBDIR, projectId, a.file_name) : null,
-        metadata: safeParse(a.metadata),
-    }));
+        subject_name: metadata.subject_name || String(a.file_name || 'model').replace(/\.[^.]+$/, ''),
+        kind: metadata.subject_kind || 'model', metadata,
+    }; });
 
     return json(res, 200, { project_id: projectId, total_jobs: jobs.length, jobs, models: assets });
 }

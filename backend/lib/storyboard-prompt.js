@@ -385,7 +385,8 @@ function previsPromptParts(rawPrevis) {
         else if (h >= 2.2) parts.push('high angle, camera looking down');
     }
 
-    if (previs.movement && MOVEMENT_MAP[previs.movement]) parts.push(MOVEMENT_MAP[previs.movement]);
+    if (previs.movement_description) parts.push(`camera move: ${previs.movement_description}`);
+    else if (previs.movement && MOVEMENT_MAP[previs.movement]) parts.push(MOVEMENT_MAP[previs.movement]);
 
     // A solved distance is what makes framing a measurement rather than a word.
     const d = Number(previs.distance_m);

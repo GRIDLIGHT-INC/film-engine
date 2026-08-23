@@ -68,8 +68,8 @@ const EXCEPTIONS = [
     },
     {
         id: 'previs.spatial-workspace',
-        covers: ['stage_json', 'rig', 'movement', 'path_json', 'moves_json', 'duration_ms'],
-        why: 'These are Previs-native spatial and timing decisions. Their semantic projection reaches generation, but raw coordinates and sampled paths do not belong in the Shot Board form.',
+        covers: ['stage_json', 'rig', 'movement', 'path_json', 'moves_json', 'camera_keys_json', 'duration_ms'],
+        why: 'These are Previs-native spatial and timing decisions. Authored camera keys are the source and their sampled path and semantic motion reach generation, but raw coordinates do not belong in the Shot Board form.',
     },
     {
         id: 'project.generation-policy',
@@ -123,7 +123,8 @@ function applicationFingerprints(row, card, options) {
     const known = new Set(normalizeNames((options && options.knownNames) || []));
     const stagedNames = normalizeNames(subjects.map(o => o && o.name));
     const staged = {
-            camera: { focalMm: camera.focalMm, sensorId: camera.sensorId, fStop: camera.fStop,
+            camera: { position: camera.position, rotation: camera.rotation,
+                focalMm: camera.focalMm, sensorId: camera.sensorId, fStop: camera.fStop,
                 heightM: Array.isArray(camera.position) ? camera.position[1] : undefined,
                 focusDistanceM: camera.focusDistanceM },
             movement: row.movement,
@@ -131,7 +132,8 @@ function applicationFingerprints(row, card, options) {
             names: known.size ? stagedNames.filter(name => known.has(name)) : stagedNames,
         };
     const projectedCard = {
-            camera: { lens: cardCamera.lens, movement: cardCamera.movement, sensor: cardCamera.sensor,
+            camera: { position: cardCamera.position, rotation: cardCamera.rotation,
+                lens: cardCamera.lens, movement: cardCamera.movement, sensor: cardCamera.sensor,
                 aperture: cardCamera.aperture, height_m: cardCamera.height_m,
                 focus_distance_m: cardCamera.focus_distance_m },
             direction: scene.direction || '', location_view: scene.location_view || '',

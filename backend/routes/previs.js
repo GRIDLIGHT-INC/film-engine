@@ -60,6 +60,7 @@ function loadBlocking(shotId) {
         moves: parse(row.moves_json, []),
         subjects: parse(row.subjects_json, []),
         path: parse(row.path_json, []),
+        cameraKeys: parse(row.camera_keys_json, []),
         updated_at: row.updated_at,
     };
 }
@@ -152,11 +153,26 @@ function validateBlocking(body) {
     if (camera.fStop !== undefined && !(typeof camera.fStop === 'number' && camera.fStop > 0)) {
         errors.push('camera.fStop must be a positive f-number');
     }
+    if (camera.focusDistanceM !== undefined && !(typeof camera.focusDistanceM === 'number'
+        && Number.isFinite(camera.focusDistanceM) && camera.focusDistanceM > 0)) {
+        errors.push('camera.focusDistanceM must be a positive distance in metres');
+    }
     for (const field of ['position', 'rotation']) {
         if (camera[field] !== undefined && (!Array.isArray(camera[field]) || camera[field].length !== 3
             || !camera[field].every(Number.isFinite))) {
             errors.push(`camera.${field} must be three finite numbers`);
         }
+    }
+    if (body.cameraKeys !== undefined) {
+        if (!Array.isArray(body.cameraKeys)) errors.push('cameraKeys must be an array');
+        else body.cameraKeys.forEach((key, i) => {
+            if (!key || !Number.isFinite(key.t) || key.t < 0 || key.t > 1
+                || !Array.isArray(key.position) || key.position.length !== 3 || !key.position.every(Number.isFinite)
+                || !Array.isArray(key.rotation) || key.rotation.length !== 3 || !key.rotation.every(Number.isFinite)
+                || !(Number.isFinite(key.focalMm) && key.focalMm > 0)) {
+                errors.push(`cameraKeys[${i}] must contain t 0..1, finite position/rotation triples and a positive focalMm`);
+            }
+        });
     }
 
     // Move legs. Each names a movement and may state how far in its own unit.
@@ -286,6 +302,7 @@ function putBlocking(req, res, shotId, internal) {
         movement: body.movement || dominantMovement(body.moves) || 'static',
         moves: Array.isArray(body.moves) ? body.moves : [],
         subjects: Array.isArray(body.subjects) ? body.subjects : [],
+        cameraKeys: Array.isArray(body.cameraKeys) ? body.cameraKeys : [],
     };
 
     // The subject is DERIVED from whichever staged object is the target, so
@@ -311,15 +328,20 @@ function putBlocking(req, res, shotId, internal) {
     // sampled as one continuous path; a lone movement keeps the old call, which
     // is what makes every blocking saved before phase 5 reload unchanged.
     const frames = body.frames || 24;
-    const path = blocking.moves.length
-        ? sampleSequence(blocking.moves, blocking, { frames })
-        : samplePath(blocking.movement, blocking, { frames });
+    const path = blocking.cameraKeys.length
+        ? require('../lib/previs-blocking').sampleCameraKeys(blocking.cameraKeys, { frames })
+        : blocking.moves.length
+            ? sampleSequence(blocking.moves, blocking, { frames })
+            : samplePath(blocking.movement, blocking, { frames });
+    if (blocking.cameraKeys.length) {
+        blocking.movement = require('../lib/previs-blocking').analyzePath(path).dominantMovement;
+    }
 
     const id = existing ? existing.id : generateId();
 
     db.prepare(`
-        INSERT INTO film_previs_blocking (id, shot_id, camera_json, subject_json, stage_json, rig, movement, path_json, moves_json, subjects_json, duration_ms, director_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO film_previs_blocking (id, shot_id, camera_json, subject_json, stage_json, rig, movement, path_json, moves_json, subjects_json, duration_ms, director_json, camera_keys_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(shot_id) DO UPDATE SET
             camera_json = excluded.camera_json,
             subject_json = excluded.subject_json,
@@ -331,11 +353,12 @@ function putBlocking(req, res, shotId, internal) {
             subjects_json = excluded.subjects_json,
             duration_ms = excluded.duration_ms,
             director_json = excluded.director_json,
+            camera_keys_json = excluded.camera_keys_json,
             updated_at = datetime('now')
     `).run(id, shotId, JSON.stringify(blocking.camera), JSON.stringify(blocking.subject),
         JSON.stringify(blocking.stage), blocking.rig, blocking.movement, JSON.stringify(path),
         JSON.stringify(blocking.moves), JSON.stringify(blocking.subjects), blocking.durationMs,
-        JSON.stringify(blocking.director));
+        JSON.stringify(blocking.director), JSON.stringify(blocking.cameraKeys));
 
     // A stage seeded from the card agrees with it by construction. Record the
     // projected fingerprint after persistence so later edits are derived as
@@ -389,7 +412,8 @@ function solve(req, res, shotId) {
     const target = resolveTarget(stored || {});
     const subject = { position: target.position, heightM: target.heightM };
 
-    const solution = solveShot({ shotType, focalMm, sensor, subject, rig: body.rig });
+    const solution = solveShot({ shotType, focalMm, sensor, subject, rig: body.rig,
+        azimuthDeg: Number.isFinite(body.azimuth_deg) ? body.azimuth_deg : 0 });
 
     return json(res, 200, {
         shot_id: shotId,
@@ -661,6 +685,8 @@ function applyBlockingToCard(req, res, shotId) {
     if (Number(fStop) > 0) card.camera.aperture = Number(fStop);
     if (Number(cameraHeight) > 0) card.camera.height_m = Number(cameraHeight);
     if (Number(focusDistance) > 0) card.camera.focus_distance_m = Number(focusDistance);
+    if (Array.isArray(camera.position) && camera.position.length === 3) card.camera.position = camera.position;
+    if (Array.isArray(camera.rotation) && camera.rotation.length === 3) card.camera.rotation = camera.rotation;
     const director = parse(blocking.director_json, {});
     applyDirectorIntent(card, director);
 
@@ -1069,7 +1095,13 @@ function fromCard(req, res, shotId) {
         return t && Number(t.heightM) > 0 ? Number(t.heightM) : DEFAULT_SUBJECT_HEIGHT_M;
     })();
     const subject = { position: [0, 0, 0], heightM: targetHeight };
-    const solution = solveShot({ shotType, focalMm, sensor, subject });
+    const savedRotation = Array.isArray(cam.rotation) && cam.rotation.length === 3 ? cam.rotation : null;
+    const solution = solveShot({ shotType, focalMm, sensor, subject,
+        azimuthDeg: savedRotation && Number.isFinite(savedRotation[0]) ? savedRotation[0] : 0 });
+    if (Array.isArray(cam.position) && cam.position.length === 3 && cam.position.every(Number.isFinite)) {
+        solution.position = cam.position.slice();
+    }
+    if (savedRotation && savedRotation.every(Number.isFinite)) solution.rotation = savedRotation.slice();
 
     /*
      * Spread the cast across the frame this shot actually covers.

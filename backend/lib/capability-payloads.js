@@ -583,6 +583,7 @@ function loadShotContext(shotId, opts) {
                 // move is what was blocked; collapsing it to one word before it
                 // reaches a prompt loses the half a director spent time on.
                 moves: JSON.parse(row.moves_json || '[]'),
+                cameraKeys: JSON.parse(row.camera_keys_json || '[]'),
                 // What is ON the stage, not just where the camera is. Without
                 // this the loader carried the whole camera and dropped the
                 // blocking, so a scene arranged in 3D reached generation as

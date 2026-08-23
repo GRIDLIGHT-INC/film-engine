@@ -83,7 +83,10 @@ function buildVideoPrompt(sceneCard, characters, location, stylePreset, options)
     );
 
     // Map camera movement
-    const movement = sceneCard.camera && sceneCard.camera.movement;
+    const pathAnalysis = opts.previs && Array.isArray(opts.previs.cameraKeys) && opts.previs.cameraKeys.length > 1
+        ? require('./previs-blocking').analyzePath(opts.previs.path || opts.previs.cameraKeys) : null;
+    const movement = (pathAnalysis && pathAnalysis.dominantMovement)
+        || (sceneCard.camera && sceneCard.camera.movement);
     const camera_control = (movement && CAMERA_CONTROL_MAP[movement])
         ? { ...CAMERA_CONTROL_MAP[movement] }
         : { type: 'static', intensity: 0.0 };

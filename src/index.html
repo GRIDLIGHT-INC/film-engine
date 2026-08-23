@@ -5169,7 +5169,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
             <div class="previs-workspace">
                 <div class="previs-pane" id="previsStagePane">
                     <canvas id="previsStage"></canvas>
-                    <div class="previs-label">Stage &mdash; drag to orbit, scroll to zoom</div>
+                    <div class="previs-label">Stage &mdash; drag camera to move, Shift-drag it to aim; empty space orbits</div>
                     <div class="previs-viewbar">
                         <button class="btn btn-sm" onclick="previsReframe()" title="fit everything back in view">Reframe</button>
                         <button class="btn btn-sm" onclick="previsViewFrom('front')" title="look from the front">Front</button>
@@ -5219,6 +5219,8 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         <h3 class="mb-8" style="font-size:13px;">Camera</h3>
                         <label>Sensor</label>
                         <select id="previsSensor" onchange="previsRefresh()"></select>
+                        <label>Camera X (m)</label>
+                        <input type="number" id="previsCameraX" step="0.1" value="0" oninput="previsRefresh()">
                         <div class="previs-row">
                             <div>
                                 <label>Lens (mm)</label>
@@ -5239,6 +5241,14 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                                 <input type="number" id="previsDistance" step="0.1" value="3" oninput="previsRefresh()">
                             </div>
                         </div>
+                        <label>Yaw / pitch / roll (&deg;)</label>
+                        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;">
+                            <input type="number" id="previsCameraYaw" step="1" value="0" oninput="previsRefresh()">
+                            <input type="number" id="previsCameraPitch" step="1" value="0" oninput="previsRefresh()">
+                            <input type="number" id="previsCameraRoll" step="1" value="0" oninput="previsRefresh()">
+                        </div>
+                        <label>Focus distance (m)</label>
+                        <input type="number" id="previsFocusDistance" step="0.1" min="0.1" value="3" oninput="previsRefresh()">
                         <label>Intensity</label>
                         <input type="range" id="previsIntensity" min="0" max="1" step="0.05" value="0.5" oninput="previsRefresh()">
                     </div>
@@ -5254,6 +5264,10 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                             </div>
                         </div>
                         <div id="previsMoveList" class="text-sm text-muted">Single move &mdash; add legs to build a compound one.</div>
+                        <div class="flex-between" style="margin-top:8px;"><strong style="font-size:11px;">Authored camera keys</strong>
+                            <span><button class="btn btn-sm" onclick="previsAddCameraKey()">+ Key</button>
+                            <button class="btn btn-sm" onclick="previsClearCameraKeys()">Clear</button></span></div>
+                        <div id="previsCameraKeys" class="text-sm text-muted">No authored keys — preset drives the path.</div>
                     </div>
 
                     <div class="card mt-16">
@@ -12454,6 +12468,8 @@ THREE.GLTFLoader = GLTFLoader;
         selected: -1,    // index into objects, -1 for none, SUBJECT_SEL for the subject
         objectDrag: null,
         staged: false,           // exploration differs from the durable scene card
+        cameraKeys: [],          // authored full poses; the sampled path is derived
+        cameraDrag: null,
     };
 
     // The framing subject is not in PREVIS.objects — it predates them, and it
@@ -12461,6 +12477,7 @@ THREE.GLTFLoader = GLTFLoader;
     // it. It still has to be draggable, so it is picked as a pseudo-object at
     // this sentinel rather than being demoted into the ordinary list.
     const SUBJECT_SEL = -2;
+    const CAMERA_SEL = -3;
 
     const P_DEG = Math.PI / 180;
 
@@ -13017,6 +13034,8 @@ THREE.GLTFLoader = GLTFLoader;
         PREVIS.shotId = shotId;
         PREVIS.playhead = null;
         PREVIS.blocking = null;
+        PREVIS.cameraKeys = [];
+        previsRenderCameraKeys();
         PREVIS.staged = false;
         const stagedBadge = document.getElementById('previsStagedBadge');
         if (stagedBadge) stagedBadge.style.display = 'none';
@@ -13066,9 +13085,18 @@ THREE.GLTFLoader = GLTFLoader;
                 if (c.focalMm) document.getElementById('previsFocal').value = String(c.focalMm);
                 if (c.fStop) document.getElementById('previsAperture').value = String(c.fStop);
                 if (c.position) {
+                    document.getElementById('previsCameraX').value = c.position[0];
                     document.getElementById('previsHeight').value = c.position[1];
                     document.getElementById('previsDistance').value = c.position[2];
                 }
+                if (c.rotation) {
+                    document.getElementById('previsCameraYaw').value = c.rotation[0];
+                    document.getElementById('previsCameraPitch').value = c.rotation[1];
+                    document.getElementById('previsCameraRoll').value = c.rotation[2];
+                }
+                document.getElementById('previsFocusDistance').value = c.focusDistanceM || 3;
+                PREVIS.cameraKeys = Array.isArray(res.blocking.cameraKeys) ? res.blocking.cameraKeys : [];
+                previsRenderCameraKeys();
                 // Subject height is no longer a field: it is the target
                 // object's own height, restored with the objects below.
                 PREVIS.subjectPos = (res.blocking.subject && Array.isArray(res.blocking.subject.position))
@@ -13163,6 +13191,34 @@ THREE.GLTFLoader = GLTFLoader;
             </div>`;
         }).join('');
     }
+
+    function previsRenderCameraKeys() {
+        const el = document.getElementById('previsCameraKeys');
+        if (!el) return;
+        el.innerHTML = PREVIS.cameraKeys.length ? PREVIS.cameraKeys.map((k, i) =>
+            `<div style="display:flex;gap:5px;align-items:center;margin-top:4px;">
+              <strong>K${i + 1}</strong><span>${Math.round(k.t * 100)}% · ${k.position.map(v => Number(v).toFixed(1)).join(', ')} · ${Math.round(k.focalMm)}mm</span>
+              <button class="btn btn-sm" onclick="previsRemoveCameraKey(${i})">&times;</button></div>`).join('')
+            : 'No authored keys — preset drives the path.';
+    }
+
+    function previsAddCameraKey() {
+        const b = previsReadInspector();
+        let t = 0;
+        if (PREVIS.cameraKeys.length === 1) t = 1;
+        else if (PREVIS.cameraKeys.length > 1) {
+            const sorted = PREVIS.cameraKeys.slice().sort((a, b) => a.t - b.t);
+            let gap = -1;
+            for (let i = 0; i < sorted.length - 1; i++) if (sorted[i + 1].t - sorted[i].t > gap) {
+                gap = sorted[i + 1].t - sorted[i].t; t = (sorted[i + 1].t + sorted[i].t) / 2;
+            }
+        }
+        PREVIS.cameraKeys.push({ t, position: b.camera.position.slice(), rotation: b.camera.rotation.slice(), focalMm: b.camera.focalMm, rotationUnit: 'degrees' });
+        PREVIS.cameraKeys.sort((a, b) => a.t - b.t);
+        previsRenderCameraKeys(); previsRefresh(); previsMarkStaged();
+    }
+    function previsRemoveCameraKey(i) { PREVIS.cameraKeys.splice(i, 1); previsRenderCameraKeys(); previsRefresh(); previsMarkStaged(); }
+    function previsClearCameraKeys() { PREVIS.cameraKeys = []; previsRenderCameraKeys(); previsRefresh(); previsMarkStaged(); }
 
     /**
      * How the duration divides between legs, mirroring lib/previs-blocking.js.
@@ -13952,18 +14008,19 @@ THREE.GLTFLoader = GLTFLoader;
         };
         return {
             camera: {
-                position: [0, num('previsHeight', 1.6), num('previsDistance', 3)],
-                rotation: [0, 0, 0],
+                position: [num('previsCameraX', 0), num('previsHeight', 1.6), num('previsDistance', 3)],
+                rotation: [num('previsCameraYaw', 0), num('previsCameraPitch', 0), num('previsCameraRoll', 0)],
                 focalMm: num('previsFocal', 50),
                 sensorId: document.getElementById('previsSensor').value || 'super35',
                 fStop: num('previsAperture', 2.8),
-                focusDistanceM: Math.max(0.1, num('previsDistance', 3)),
+                focusDistanceM: Math.max(0.1, num('previsFocusDistance', num('previsDistance', 3))),
             },
             subject: previsDerivedSubject(),
             stage: { widthM: num('previsStageSize', 12), depthM: num('previsStageSize', 12) },
             rig: document.getElementById('previsRig').value,
             movement: document.getElementById('previsMovement').value,
             moves: PREVIS.moves,
+            cameraKeys: PREVIS.cameraKeys,
             subjects: PREVIS.objects,
             durationMs: Math.max(100, (parseFloat(document.getElementById('previsDuration').value) || 4) * 1000),
             director: {
@@ -14456,6 +14513,7 @@ THREE.GLTFLoader = GLTFLoader;
      * counts — this is a preview of it, not a second source of truth.
      */
     function previsSamplePath(blocking) {
+        if (PREVIS.cameraKeys.length) return previsSampleCameraKeys(PREVIS.cameraKeys, 24);
         // A sequence is sampled leg by leg, each starting where the last ended.
         if (PREVIS.moves.length) return previsSampleSequence(blocking);
         const move = PREVIS.taxonomy.movements[blocking.movement];
@@ -14495,6 +14553,19 @@ THREE.GLTFLoader = GLTFLoader;
             keys.push({ t, position, rotation, focalMm: blocking.camera.focalMm * Math.pow(move.focalScale, intensity * t) });
         }
         return keys;
+    }
+
+    function previsSampleCameraKeys(keys, frames) {
+        const src = keys.slice().sort((a, b) => a.t - b.t);
+        if (src.length < 2) return src;
+        const mix = (a, b, f) => a + (b - a) * f;
+        return Array.from({ length: frames }, (_, i) => {
+            const t = i / (frames - 1); let n = 0;
+            while (n < src.length - 2 && src[n + 1].t < t) n++;
+            const a = src[n], b = src[n + 1], f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
+            return { t, position: a.position.map((v, x) => mix(v, b.position[x], f)),
+                rotation: a.rotation.map((v, x) => mix(v, b.rotation[x], f)), focalMm: mix(a.focalMm, b.focalMm, f) };
+        });
     }
 
     /** Sample the leg list, carrying the camera state from one leg to the next. */
@@ -14657,10 +14728,15 @@ THREE.GLTFLoader = GLTFLoader;
                     // deliberately chosen. Only a shot type that REQUIRES a rig
                     // (aerial needs a drone) is allowed to override it.
                     rig: document.getElementById('previsRig').value,
+                    azimuth_deg: parseFloat(document.getElementById('previsCameraYaw').value) || 0,
                 }),
             });
             document.getElementById('previsDistance').value = res.solution.distanceM.toFixed(3);
+            document.getElementById('previsCameraX').value = res.solution.position[0].toFixed(3);
             document.getElementById('previsHeight').value = res.solution.position[1].toFixed(3);
+            document.getElementById('previsCameraYaw').value = res.solution.rotation[0].toFixed(2);
+            document.getElementById('previsCameraPitch').value = res.solution.rotation[1].toFixed(2);
+            document.getElementById('previsCameraRoll').value = res.solution.rotation[2].toFixed(2);
             if (res.solution.rig) document.getElementById('previsRig').value = res.solution.rig;
             previsStatus(`${shotType}: stand ${res.solution.distanceM.toFixed(2)}m out on the ${res.solution.focalMm}mm.`);
             previsRefresh();
@@ -14893,6 +14969,15 @@ THREE.GLTFLoader = GLTFLoader;
             // through the view it started in.
             PREVIS.dragView = stageProjector();
             const { pr, eye, focus, view } = PREVIS.dragView;
+            const cameraPose = previsReadInspector().camera;
+            const cameraPoint = pr(cameraPose.position);
+            if (cameraPoint && Math.hypot(at.x - cameraPoint.x, at.y - cameraPoint.y) < 16) {
+                PREVIS.selected = CAMERA_SEL;
+                PREVIS.cameraDrag = e.shiftKey
+                    ? { rotate: true, x: e.clientX, y: e.clientY, rotation: cameraPose.rotation.slice() }
+                    : { ...previsGrab(CAMERA_SEL, cameraPose.position, at, pr), rotate: false };
+                previsRefresh(); return;
+            }
             // The lift knob wins over everything: it is drawn on top of the
             // object it belongs to, so a click there must not select through it.
             const chosen = PREVIS.objects[PREVIS.selected];
@@ -14935,6 +15020,21 @@ THREE.GLTFLoader = GLTFLoader;
         });
 
         window.addEventListener('mousemove', e => {
+            if (PREVIS.cameraDrag) {
+                if (PREVIS.cameraDrag.rotate) {
+                    document.getElementById('previsCameraYaw').value = +(PREVIS.cameraDrag.rotation[0] - (e.clientX - PREVIS.cameraDrag.x) * .35).toFixed(2);
+                    document.getElementById('previsCameraPitch').value = +(PREVIS.cameraDrag.rotation[1] + (e.clientY - PREVIS.cameraDrag.y) * .25).toFixed(2);
+                } else {
+                    const at = local(e), { eye, focus, view } = PREVIS.dragView;
+                    const ground = previsGroundPoint(at.x - PREVIS.cameraDrag.offsetX,
+                        at.y - PREVIS.cameraDrag.offsetY, eye, focus, 45, view);
+                    if (ground) {
+                        document.getElementById('previsCameraX').value = +ground[0].toFixed(3);
+                        document.getElementById('previsDistance').value = +ground[2].toFixed(3);
+                    }
+                }
+                previsRefresh(); return;
+            }
             if (PREVIS.yDrag) {
                 const at = local(e);   // scaled by the pixels-per-metre frozen at grab time
                 const o = PREVIS.objects[PREVIS.yDrag.index];
@@ -14975,6 +15075,7 @@ THREE.GLTFLoader = GLTFLoader;
 
         window.addEventListener('mouseup', () => {
             PREVIS.dragView = null;
+            if (PREVIS.cameraDrag) { PREVIS.cameraDrag = null; previsMarkStaged(); }
             if (PREVIS.yDrag) { PREVIS.yDrag = null; previsRenderObjects(); }
             if (PREVIS.objectDrag) { PREVIS.objectDrag = null; previsRenderObjects(); }
             PREVIS.drag = null;
@@ -14999,6 +15100,10 @@ THREE.GLTFLoader = GLTFLoader;
                 // solveShot and the orbit with nothing to aim at.
                 if (PREVIS.selected === SUBJECT_SEL) {
                     previsStatus('The framing subject cannot be deleted — drag it, or change its height.');
+                    return;
+                }
+                if (PREVIS.selected === CAMERA_SEL) {
+                    previsStatus('The shot camera cannot be deleted — move it or edit its pose.');
                     return;
                 }
                 previsRemoveObject(PREVIS.selected);
