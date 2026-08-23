@@ -5310,8 +5310,18 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                             oninput="previsMarkStaged()" style="width:100%;font-size:11px;line-height:1.45;font-family:inherit;"
                             placeholder="Hold her eyeline; the dragon is behind camera."></textarea>
                         <label>Background view</label>
-                        <input id="previsLocationView" type="text" maxlength="120" oninput="previsMarkStaged()"
-                            placeholder="from the far kerb, looking back across the bulb" style="font-size:11px;width:100%;">
+                        <!--
+                          A PICKER, not a text box.
+                          This was free text, and a typed view matching nothing does not fail — the
+                          gatherer falls back to the DEFAULT plate, which on a reverse angle is a
+                          photograph of what is behind the camera. Silent, and indistinguishable
+                          from working. Previs is where a director is most likely to be pointing
+                          the camera somewhere new, so it is the worst surface to have had it.
+                        -->
+                        <select id="previsLocationView" style="font-size:11px;width:100%;"
+                                onchange="previsLocationViewChanged()"></select>
+                        <div class="text-sm text-muted" id="previsLocationViewHint"
+                             style="font-size:10px;line-height:1.45;"></div>
                         <label>Lighting</label>
                         <select id="previsLighting" onchange="previsMarkStaged()" style="font-size:11px;width:100%;">
                             <option value="">— from the scene —</option>
@@ -12701,7 +12711,29 @@ THREE.GLTFLoader = GLTFLoader;
 
     function previsFillDirectorIntent(intent) {
         const d = intent || {};
-        const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
+        /*
+         * Setting .value on a SELECT does nothing when the option is not there
+         * — silently. The view picker is filled asynchronously, and a card can
+         * also name a view whose plate has since been deleted, so a saved
+         * choice would simply disappear and the picker would show something
+         * else with no indication anything had changed.
+         *
+         * A value with no matching option is added and labelled, so it stays
+         * visible and stays the selection.
+         */
+        const set = (id, value) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const v = value || '';
+            if (el.tagName === 'SELECT' && v
+                && !Array.prototype.some.call(el.options, o => o.value === v)) {
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = `${v} (no plate)`;
+                el.insertBefore(opt, el.firstChild);
+            }
+            el.value = v;
+        };
         set('previsDirection', d.direction);
         set('previsLocationView', d.location_view);
         const lighting = typeof d.lighting === 'string' ? d.lighting : (d.lighting && d.lighting.type);
@@ -13048,6 +13080,11 @@ THREE.GLTFLoader = GLTFLoader;
          * failed lookup should cost you the cast chips, not the shot.
          */
         api(`/shots/${shotId}`).then(shot => {
+            // The view picker needs the location before it can list what has
+            // been photographed; the shot carries the name, the project the id.
+            PREVIS.locationId = previsLocationId(shot && shot.location);
+            fillLocationViews('previs', PREVIS.locationId,
+                (shot && shot.card && shot.card.location_view) || '');
             PREVIS.shot = shot || null;
             previsFillDirectorIntent((shot && shot.card) || {});
             const note = document.getElementById('previsCameraNote');
@@ -24729,6 +24766,27 @@ ${fountainText.slice(0, 50000)}`;
      * that matches nothing silently falls back to the default and looks like it
      * worked.
      */
+    /**
+     * The location this previs shot stands in, resolved to an id.
+     *
+     * GET /shots/:id returns the location by NAME (it is the scene heading, so
+     * every shot in a scene inherits it). fillLocationViews needs an id to ask
+     * which views have been photographed, so the name is matched against the
+     * project's own locations rather than guessed.
+     */
+    function previsLocationId(name) {
+        const wanted = String(name || '').trim().toLowerCase();
+        if (!wanted) return null;
+        const hit = (state.locations || []).find(l => String(l.name || '').trim().toLowerCase() === wanted);
+        return hit ? hit.id : null;
+    }
+
+    /** Previs's own change handler: keep the staged badge honest, then delegate. */
+    async function previsLocationViewChanged() {
+        previsMarkStaged();
+        await locationViewChanged('previs', PREVIS.locationId || '');
+    }
+
     async function fillLocationViews(prefix, locationId, chosen) {
         const sel = document.getElementById(prefix + 'LocationView');
         const hint = document.getElementById(prefix + 'LocationViewHint');

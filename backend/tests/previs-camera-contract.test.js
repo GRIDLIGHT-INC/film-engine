@@ -114,9 +114,25 @@ test('#2 every camera control the inspector reads marks the stage staged', () =>
     const list = UI.match(/\[\s*'previsShotType'[\s\S]{0,600}?\]\s*\.forEach/);
     if (list) for (const m of list[0].matchAll(/'([A-Za-z0-9_]+)'/g)) bound.add(m[1]);
 
+    /*
+     * A control counts as bound when its handler marks the stage — directly,
+     * or through a function that does. The location-view picker calls
+     * previsLocationViewChanged(), which marks staged and then delegates, and a
+     * literal match reported that correct code as unbound.
+     *
+     * Follow the writer, not the string. This suite has needed that rule five
+     * times now, and every time the literal version has been the one that lied.
+     */
+    const marksStaged = new Set(['previsMarkStaged']);
+    for (const m of UI.matchAll(/function ([A-Za-z0-9_]+)\s*\([^)]*\)\s*\{([\s\S]{0,800}?)\n    \}/g)) {
+        if (/previsMarkStaged\s*\(/.test(m[2])) marksStaged.add(m[1]);
+    }
+    const marks = attrs => [...marksStaged].some(fn => new RegExp(`\\b${fn}\\s*\\(`).test(attrs));
+
     const inline = new Set();
-    for (const m of HTML.matchAll(/id="([A-Za-z0-9_]+)"[^>]*previsMarkStaged/g)) inline.add(m[1]);
-    for (const m of HTML.matchAll(/previsMarkStaged[^>]*id="([A-Za-z0-9_]+)"/g)) inline.add(m[1]);
+    for (const m of HTML.matchAll(/<\w+([^>]*\bid="([A-Za-z0-9_]+)"[^>]*)>/g)) {
+        if (marks(m[1])) inline.add(m[2]);
+    }
 
     const silent = [...read].filter(id => !bound.has(id) && !inline.has(id));
     assert.deepStrictEqual(silent, [],

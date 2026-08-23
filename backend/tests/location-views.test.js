@@ -372,3 +372,57 @@ test('a view replaces the default framing for every plate kind, anchored or not'
         assert.ok(!noView.includes(SENTINEL), `${kind}: a view leaked into a plate that has none`);
     }
 });
+
+// ── Both surfaces pick a view; neither asks you to type one ────────────────
+
+test('every surface that sets a location view offers the views that exist', () => {
+    /*
+     * A location owns a growing set of views and the card names which one the
+     * shot is pointed at. On the board that is a dropdown of what has actually
+     * been photographed, plus "+ photograph a new view…".
+     *
+     * In previs it was a free-text box. Typing a view that matches nothing does
+     * not fail — the gatherer falls back to the DEFAULT plate, which on a
+     * reverse angle is a photograph of what is behind the camera. That is the
+     * exact failure the picker was built to prevent, still live on the surface
+     * where a director is most likely to be pointing the camera somewhere new.
+     *
+     * fillLocationViews is keyed on a PREFIX and expects `<prefix>LocationView`
+     * to be a select it can fill. Derived from that contract rather than from a
+     * list of surfaces typed here, so a third surface is held to it too.
+     */
+    const html = fs.readFileSync(path.join(ROOT, '..', 'src', 'index.html'), 'utf8');
+
+    const prefixes = [...new Set([...html.matchAll(/fillLocationViews\(\s*'([A-Za-z0-9_]+)'/g)]
+        .map(m => m[1]))];
+    // Both spellings: a literal id, and one built from a panel's prefix
+    // (`id="${p}LocationView"`). Matching only the literal reported the shared
+    // blocking panel as missing, which is the template-vs-literal trap.
+    const declared = [...new Set([
+        ...[...html.matchAll(/id="([A-Za-z0-9_]+)LocationView"/g)].map(m => m[1]),
+        ...[...html.matchAll(/id="\$\{(\w+)\}LocationView"/g)].map(() => '__panel__'),
+    ])];
+    assert.ok(declared.length >= 2,
+        `expected at least two surfaces with a location view control, found ${declared.join(', ') || 'none'}`);
+
+    const broken = [];
+    for (const prefix of declared) {
+        // The control must be a select — an input silently swallows the
+        // innerHTML of <option>s and goes on accepting free text.
+        const idPattern = prefix === '__panel__' ? '\\$\\{\\w+\\}LocationView' : `${prefix}LocationView`;
+        const tag = html.match(new RegExp(`<(\\w+)[^>]*id="${idPattern}"`));
+        if (!tag || tag[1] !== 'select') {
+            broken.push(`${prefix}: the view control is a <${tag ? tag[1] : 'missing'}>, so a typed `
+                + 'view matching nothing falls back to the default plate and looks like it worked');
+        }
+        if (prefix === '__panel__') continue;   // the shared panel is filled by its caller
+        if (!prefixes.includes(prefix)) {
+            broken.push(`${prefix}: nothing ever calls fillLocationViews('${prefix}'), so the list `
+                + 'of photographed views never reaches it');
+        }
+        if (!new RegExp(`locationViewChanged\\(\\s*'${prefix}'`).test(html)) {
+            broken.push(`${prefix}: "+ photograph a new view…" is offered with no handler wired`);
+        }
+    }
+    assert.deepStrictEqual(broken, [], 'a surface asks a director to type a view rather than pick one');
+});
