@@ -31,17 +31,32 @@ const PLATE_KINDS = {
         fkColumn: 'location_id',
         subdir: 'refsheets',
         assetType: 'reference_image',
-        // An establishing plate, deliberately empty of people: the plate defines
-        // the PLACE, and a figure in it would be re-described by every shot that
-        // references it and fight the shot's own blocking.
-        framing: 'establishing wide shot of the location, no people, no characters, eye level, natural perspective',
+        /*
+         * DEFAULT framing — what to photograph when nobody said. A view
+         * replaces it, because a view IS a framing.
+         */
+        framing: 'establishing wide shot of the location, eye level, natural perspective',
+        /*
+         * INVARIANTS — what makes this a plate rather than a shot. These survive
+         * any view.
+         *
+         * A plate defines the PLACE, and a figure in it would be re-described by
+         * every shot that references it and fight that shot's own blocking. So
+         * "no people" is not a framing choice, it is the thing that makes the
+         * reference reusable.
+         */
+        constraints: ['no people', 'no characters'],
     },
     prop: {
         table: 'film_props',
         fkColumn: 'prop_id',
         subdir: 'refsheets',
         assetType: 'reference_image',
-        framing: 'single object product shot, centred, plain seamless background, no people',
+        framing: 'single object product shot, centred',
+        // A prop plate must isolate its subject: a plain ground and nobody
+        // holding it, or the plate carries a room and a hand into every frame
+        // that references the object.
+        constraints: ['plain seamless background', 'no people'],
     },
 };
 
@@ -87,12 +102,28 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
            + 'colours, the same driveways and streetlights, the same ground and the same time of day']
         : [];
 
+    /*
+     * The view REPLACES the default framing; the invariants always survive.
+     *
+     * `framing` and `constraints` were one fused string, so the default framing
+     * was appended to EVERY plate — including one asked for a specific view.
+     * A request for "standing in the middle of the bulb looking at MAYA's
+     * house" was told, in the same prompt, to produce an establishing wide of
+     * the whole location, and did: the boilerplate outranked what was asked
+     * for. A view IS a framing.
+     *
+     * Registry-driven rather than a `kind === 'location'` conditional, because
+     * `prop` fuses the same two ideas and would rot the same way.
+     */
+    const framing = [view ? null : spec.framing, ...(spec.constraints || [])]
+        .filter(Boolean).join(', ');
+
     const parts = [
         ...lead,
         // "reference plate" reads as a document to an image model the same way
         // "reference sheet" does. Ask for the photograph itself.
         style ? `${style}. Photograph of the ${kind}` : `photoreal cinematic photograph of the ${kind}`,
-        spec.framing,
+        framing,
     ];
 
     if (subject.name) parts.push(String(subject.name).toLowerCase());

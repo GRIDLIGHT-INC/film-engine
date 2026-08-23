@@ -264,3 +264,68 @@ test('an explicitly chosen view survives an attached anchor', () => {
     assert.ok(kinds('from the far kerb').includes('anchor'),
         'sending the view dropped the anchor, which carries the light and where people stand');
 });
+
+// ── A view IS a framing; it replaces the default, it does not queue behind it ──
+
+/**
+ * Every plate kind lets a view replace its default framing, and keeps its
+ * invariants.
+ *
+ * `PLATE_KINDS` buries two different things in one `framing` string:
+ *
+ *   location: 'establishing wide shot of the location, no people, no
+ *              characters, eye level, natural perspective'
+ *   prop:     'single object product shot, centred, plain seamless background,
+ *              no people'
+ *
+ * The first half of each is a DEFAULT FRAMING — what to shoot when nobody said.
+ * The second half is an INVARIANT — what makes the result a plate rather than a
+ * shot. Fused into one string, the default framing is appended to every plate
+ * including one that was asked for a specific view, so "standing in the middle
+ * of the bulb looking at MAYA's house" was still told, in the same prompt, to
+ * produce an establishing wide of the whole location. It did, twice: the
+ * boilerplate outranked the thing being asked for.
+ *
+ * Set-based over the registry rather than fixed for `location`, because a
+ * kind-specific conditional is a special case waiting to rot — and `prop` has
+ * exactly the same fusion with exactly the same consequence.
+ */
+test('a view replaces the default framing for every plate kind', () => {
+    const { PLATE_KINDS, buildPlatePrompt } = require('../lib/reference-plates');
+    const kinds = Object.keys(PLATE_KINDS);
+    assert.ok(kinds.length >= 2, `expected the plate registry, found ${kinds.length}`);
+
+    const SENTINEL = 'zzsentinelviewzz standing where nobody stands';
+
+    for (const kind of kinds) {
+        const spec = PLATE_KINDS[kind];
+        assert.ok(typeof spec.framing === 'string' && spec.framing,
+            `${kind} declares no default framing`);
+        assert.ok(Array.isArray(spec.constraints) && spec.constraints.length,
+            `${kind} declares no invariant constraints, so a view would strip what makes it a `
+            + 'plate — a location reference with a stranger standing in it, or a prop shot in a room');
+
+        const subject = { name: `THE ${kind.toUpperCase()}`, description: 'a thing' };
+        const withView = buildPlatePrompt(kind, subject, 'a look', SENTINEL, false);
+        const noView = buildPlatePrompt(kind, subject, 'a look', null, false);
+
+        // The view is what the framing IS.
+        assert.strictEqual((withView.match(new RegExp(SENTINEL, 'g')) || []).length, 1,
+            `${kind}: the view appears ${(withView.match(new RegExp(SENTINEL, 'g')) || []).length} `
+            + 'times; it must be stated exactly once');
+        assert.ok(!withView.includes(spec.framing),
+            `${kind}: the default framing is still in the prompt alongside the view, so the `
+            + 'boilerplate can outrank what was actually asked for');
+
+        // The invariants survive it.
+        for (const c of spec.constraints) {
+            assert.ok(withView.includes(c),
+                `${kind}: the invariant "${c}" was dropped when a view was given`);
+        }
+
+        // And with no view, the default is exactly what you get.
+        assert.ok(noView.includes(spec.framing),
+            `${kind}: asking for no particular view lost the default framing`);
+        assert.ok(!noView.includes(SENTINEL), `${kind}: a view leaked into a plate that has none`);
+    }
+});
