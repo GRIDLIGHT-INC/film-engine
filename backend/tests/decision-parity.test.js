@@ -911,8 +911,22 @@ test('staged is derived from what Apply wrote, never stored as a flag', () => {
      */
     const applyFn = PREVIS.match(/function applyBlockingToCard[\s\S]*?\n}/);
     if (!applyFn) gaps.push('no applyBlockingToCard to derive the projected subset from');
-    else if (!/applied_fingerprint/.test(applyFn[0])) {
-        gaps.push('Apply does not record what it applied');
+    else {
+        // Follow the WRITER rather than the string: whichever functions write
+        // applied_fingerprint are the recorders, and Apply must either be one
+        // or call one. Matching the column name inside Apply would fail the
+        // moment somebody factors the write out into a helper, which is the
+        // better code and would have looked like the feature missing.
+        const recorders = new Set();
+        const re = /function ([A-Za-z0-9_]+)\s*\([\s\S]*?\n}/g;
+        let f;
+        while ((f = re.exec(PREVIS))) {
+            if (/UPDATE film_previs_blocking SET applied_fingerprint/.test(f[0])) recorders.add(f[1]);
+        }
+        const records = /applied_fingerprint/.test(applyFn[0])
+            || [...recorders].some(n => new RegExp(`\\b${n}\\s*\\(`).test(applyFn[0]));
+        if (!recorders.size) gaps.push('nothing writes applied_fingerprint');
+        else if (!records) gaps.push('Apply does not record what it applied');
     }
 
     assert.deepStrictEqual(gaps, [], 'the applied state is not derived');

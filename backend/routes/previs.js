@@ -25,7 +25,7 @@ const {
 const { PRIMITIVES, primitiveGeometry } = require('../lib/previs-primitives');
 const crypto = require('crypto');
 const { validateSceneCards } = require('../lib/scene-card-schema');
-const { directorIntentFromCard, applyDirectorIntent } = require('../lib/decision-contract');
+const { directorIntentFromCard, applyDirectorIntent, applicationFingerprint } = require('../lib/decision-contract');
 const {
     SENSORS, LENS_KIT, APERTURES,
     sensorFor, fieldOfView, depthOfField, frameCoverage,
@@ -62,6 +62,25 @@ function loadBlocking(shotId) {
         path: parse(row.path_json, []),
         updated_at: row.updated_at,
     };
+}
+
+function applicationState(shotId) {
+    const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    if (!row || !row.applied_fingerprint) return { applied: false, staged: !!row, applied_at: null };
+    const shot = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
+    const applied = applicationFingerprint(row, parse((shot && shot.scene_card_yaml) || '{}', {}))
+        === row.applied_fingerprint;
+    return { applied, staged: !applied, applied_at: row.applied_at };
+}
+
+function markApplied(shotId) {
+    const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    const shot = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
+    if (!row || !shot) return null;
+    const fingerprint = applicationFingerprint(row, parse(shot.scene_card_yaml || '{}', {}));
+    db.prepare("UPDATE film_previs_blocking SET applied_fingerprint = ?, applied_at = datetime('now') WHERE shot_id = ?")
+        .run(fingerprint, shotId);
+    return fingerprint;
 }
 
 /**
@@ -204,6 +223,7 @@ function getBlocking(req, res, shotId) {
         blocking: loadBlocking(shotId),
         keyframe: shotKeyframe(shotId),
         approval: approvalState(shotId),
+        application: applicationState(shotId),
     });
 }
 
@@ -570,6 +590,8 @@ function servePrevisMedia(req, res, projectId, fileName) {
  * determines are touched, so description, characters and dialogue survive.
  */
 function applyBlockingToCard(req, res, shotId) {
+    // markApplied records applied_fingerprint after the projected card write;
+    // applicationState derives whether the current stage still matches it.
     const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) return json(res, 404, { error: 'Shot not found' });
 

@@ -554,6 +554,7 @@ function loadShotContext(shotId, opts) {
     try {
         const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
         if (row) {
+            const { applicationFingerprint } = require('./decision-contract');
             previs = {
                 camera: JSON.parse(row.camera_json || '{}'),
                 director: JSON.parse(row.director_json || '{}'),
@@ -561,6 +562,11 @@ function loadShotContext(shotId, opts) {
                 stage: JSON.parse(row.stage_json || '{}'),
                 rig: row.rig,
                 movement: row.movement,
+                application: {
+                    applied: !!row.applied_fingerprint
+                        && applicationFingerprint(row, sceneCard) === row.applied_fingerprint,
+                    applied_at: row.applied_at || null,
+                },
                 // The legs, not just the single movement column. A compound
                 // move is what was blocked; collapsing it to one word before it
                 // reaches a prompt loses the half a director spent time on.

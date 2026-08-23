@@ -8,6 +8,8 @@
  * boundaries so a missing link cannot quietly become "intentional" later.
  */
 
+const crypto = require('crypto');
+
 const DECISIONS = [
     {
         id: 'shot.camera', covers: ['camera', 'camera_json'], canonical: 'scene_card',
@@ -107,4 +109,32 @@ function applyDirectorIntent(card, intent) {
     return out;
 }
 
-module.exports = { DECISIONS, EXCEPTIONS, directorIntentFromCard, applyDirectorIntent };
+function applicationFingerprint(row, card) {
+    if (!row) return null;
+    const camera = typeof row.camera_json === 'string' ? JSON.parse(row.camera_json || '{}') : (row.camera || {});
+    const director = typeof row.director_json === 'string' ? JSON.parse(row.director_json || '{}') : (row.director || {});
+    const subjects = typeof row.subjects_json === 'string' ? JSON.parse(row.subjects_json || '[]') : (row.subjects || []);
+    const scene = card || {};
+    const cardCamera = scene.camera || {};
+    const material = {
+        staged: {
+            camera: { focalMm: camera.focalMm, sensorId: camera.sensorId, fStop: camera.fStop,
+                heightM: Array.isArray(camera.position) ? camera.position[1] : undefined,
+                focusDistanceM: camera.focusDistanceM },
+            movement: row.movement,
+            director,
+            names: subjects.map(o => String((o && o.name) || '').trim()).filter(Boolean),
+        },
+        card: {
+            camera: { lens: cardCamera.lens, movement: cardCamera.movement, sensor: cardCamera.sensor,
+                aperture: cardCamera.aperture, height_m: cardCamera.height_m,
+                focus_distance_m: cardCamera.focus_distance_m },
+            direction: scene.direction || '', location_view: scene.location_view || '',
+            lighting: scene.lighting || null,
+            characters: scene.characters || [], props: scene.props || [],
+        },
+    };
+    return crypto.createHash('sha256').update(JSON.stringify(material)).digest('hex').slice(0, 32);
+}
+
+module.exports = { DECISIONS, EXCEPTIONS, directorIntentFromCard, applyDirectorIntent, applicationFingerprint };

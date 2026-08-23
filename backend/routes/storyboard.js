@@ -1489,7 +1489,6 @@ function listShotFrames(req, res, shotId) {
     });
 
     const lost = versions.filter(v => !v.restorable && !v.is_current).length;
-    const staged = !!ctx.previs && !ctx.previs.application?.applied;
     return json(res, 200, {
         shot_id: shotId, shot_code: shot.shot_code, versions,
         current_version: currentVersion,
@@ -1842,6 +1841,8 @@ function shotPromptPreview(req, res, shotId, query) {
             trimmed: item.text.length - kept,
         };
     });
+
+    const staged = !!ctx.previs && !ctx.previs.application?.applied;
 
     return json(res, 200, {
         shot_id: shotId,
