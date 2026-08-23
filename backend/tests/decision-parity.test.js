@@ -134,7 +134,7 @@ function deriveCardDecisions() {
 // director decides about a shot. Anything else the stage stores IS a decision
 // and has to be accounted for.
 
-const STAGE_BOOKKEEPING = /^(id|shot_id|created_at|updated_at|approved_fingerprint|approved_at)$/;
+const STAGE_BOOKKEEPING = /^(id|shot_id|created_at|updated_at|approved_(fingerprint|at)|applied_(fingerprint|at))$/;
 
 function deriveStageDecisions() {
     const sql = fs.readFileSync(path.join(ROOT, 'db/migrations/058_previs_blocking.sql'), 'utf8');
@@ -399,17 +399,49 @@ ensureSchema();
 const { handlePrevis } = require('../routes/previs');
 const { validateSceneCards } = require('../lib/scene-card-schema');
 
+/*
+ * Ordered MOST STRUCTURED FIRST, and that order is load-bearing.
+ *
+ * The card validator does not type-check every field: `{ props: 'a string' }`
+ * validates. Taking the first accepted candidate therefore handed `props` a
+ * string, which the seeder then iterated CHARACTER BY CHARACTER and created
+ * twelve props called z, q, p, r, o... The payload naturally did not change,
+ * and the probe reported prop plates as unreachable when the fixture had never
+ * built one. A probe that manufactures its own failure costs more than no probe.
+ *
+ * Preferring the richest shape a field accepts also just describes reality:
+ * props and characters are lists, camera and lighting are blocks, direction is
+ * prose. Where the schema is loose, the realistic shape is the right guess.
+ */
 const CANDIDATES = [
-    'parity-probe-value',
-    ['PARITY_PROBE'],
-    [{ character: 'PARITY_PROBE', line: 'Mark.' }],
     { type: 'day', notes: 'parity probe' },
     { shot_type: 'wide' },
+    [{ character: 'PARITY_PROBE', line: 'Mark.' }],
+    ['PARITY_PROBE'],
+    'parity-probe-value',
     4,
 ];
 
+/*
+ * Fields the board MERGES rather than replaces, derived from routes/shots.js
+ * rather than named here. This matters to the ladder: the card validator
+ * checks `typeof card.camera !== 'object'`, and an ARRAY is an object, so
+ * ["PARITY_PROBE"] validates as a camera and then merges into one, producing a
+ * spliced hybrid that looks exactly like previs having corrupted the card.
+ *
+ * That is a probe defect, not a product defect, and it nearly went out as a
+ * finding. A test that manufactures its own bug is worse than no test: it
+ * spends someone's afternoon and teaches them to distrust the suite.
+ */
+const MERGED_BLOCKS = (() => {
+    const m = SHOTS.match(/MERGED_BLOCKS\s*=\s*new Set\(\[([\s\S]*?)\]\)/);
+    if (!m) return new Set();
+    return new Set(m[1].split(',').map(x => x.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean));
+})();
+
 function sampleFor(field) {
     for (const v of CANDIDATES) {
+        if (MERGED_BLOCKS.has(field) && (Array.isArray(v) || typeof v !== 'object')) continue;
         const card = { shot_code: 'P1', description: 'Probe.' , [field]: v };
         if (validateSceneCards([card]).valid) return v;
     }
@@ -446,6 +478,23 @@ function seedShot(card) {
     return shotId;
 }
 
+/*
+ * Facets that applying a stage LEGITIMATELY writes onto the card, derived from
+ * applyBlockingToCard's own assignments. Apply is not meant to be a no-op: it
+ * solves an angle and writes it down, so demanding byte-exact equality after it
+ * would report the feature working as the feature broken. What must survive is
+ * what the director DECLARED and the stage does not decide.
+ */
+const PROJECTED_CAMERA = (() => {
+    const m = PREVIS.match(/function applyBlockingToCard[\s\S]*?\n}/);
+    if (!m) return new Set();
+    const out = new Set();
+    const re = /card\.camera\.([a-z_]+)\s*=/g;
+    let a;
+    while ((a = re.exec(m[0]))) out.add(a[1]);
+    return out;
+})();
+
 test('a previs round trip preserves every board decision', async () => {
     const fields = deriveCardDecisions();
     const lost = [];
@@ -459,6 +508,7 @@ test('a previs round trip preserves every board decision', async () => {
             camera: { shot_type: 'close-up', lens: '50mm', movement: 'dolly-in' },
             [field]: sample };
         if (!validateSceneCards([card]).valid) { unsampled.push(field); continue; }
+        const declared = JSON.parse(JSON.stringify(card[field]));
 
         const shotId = seedShot(card);
         const seeded = await callPrevis('POST', `/film/shots/${shotId}/previs/from-card`);
@@ -467,15 +517,24 @@ test('a previs round trip preserves every board decision', async () => {
         if (applied.status >= 400) { lost.push(`${field}: apply refused (${applied.status})`); continue; }
 
         const row = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
-        const after = JSON.parse(row.scene_card_yaml || '{}');
-        if (JSON.stringify(after[field]) !== JSON.stringify(sample)) {
-            lost.push(`${field}: ${JSON.stringify(sample)} -> ${JSON.stringify(after[field])}`);
+        const after = (JSON.parse(row.scene_card_yaml || '{}'))[field];
+
+        if (declared && typeof declared === 'object' && !Array.isArray(declared)) {
+            // A merged block: every facet the director declared must still be
+            // there, except the ones the stage is entitled to decide.
+            for (const [k, v] of Object.entries(declared)) {
+                if (field === 'camera' && PROJECTED_CAMERA.has(k)) continue;
+                if (!after || JSON.stringify(after[k]) !== JSON.stringify(v)) {
+                    lost.push(`${field}.${k}: ${JSON.stringify(v)} -> ${JSON.stringify(after && after[k])}`);
+                }
+            }
+        } else if (JSON.stringify(after) !== JSON.stringify(declared)) {
+            lost.push(`${field}: ${JSON.stringify(declared)} -> ${JSON.stringify(after)}`);
         }
     }
 
     assert.deepStrictEqual(unsampled, [],
-        'no value could be found that the validator accepts for these fields — the '
-        + 'candidate ladder needs a shape, or the field is not settable at all');
+        'no value could be found that the validator accepts for these fields');
     assert.deepStrictEqual(lost, [],
         'board decisions destroyed or altered by a previs round trip');
 });
@@ -541,4 +600,320 @@ test('a non-camera decision does not stale a previs approval', async () => {
 
     assert.deepStrictEqual(stales, [],
         'approval means "this is the angle I signed off" — these decisions revoke it');
+});
+
+// ── Does the model actually receive the choice? ─────────────────────────────
+//
+// The other half of the director's ask is not "do the two screens agree" but
+// "is the AI fed what I decided". Those are different questions and the second
+// is the one that costs money to get wrong: a decision can round-trip between
+// board and previs perfectly and still never reach a provider, which looks
+// exactly like the model ignoring you.
+//
+// This codebase has shipped that failure repeatedly -- mood-board specs that
+// validated and were consumed nowhere; camera height validated on the card
+// since previs phase 0 and read only from blocking; a keyframe path that
+// gathered plates and put them on no payload. Every one was invisible, because
+// a stored choice and an applied choice look identical from the outside.
+//
+// DIFFERENTIAL, not sentinel-matching. The first version of this probe looked
+// for a magic string in the payload and reported four decisions as unreachable
+// that were nothing of the kind: `characters: ['zqparityprobe']` names a
+// character that does not exist in the project, so of course no plate and no
+// description resolved. The probe had manufactured its own failure. Changing
+// the value and asserting the payload CHANGES asks the real question and works
+// for enums, objects and name lists alike -- the same shape as the mood-board
+// spec-consumption suite, for the same reason.
+//
+// Named entities are seeded, because an unknown name is a fair thing for the
+// builder to ignore and an unfair thing to test it on.
+
+const { VALID_LIGHTING } = require('../lib/scene-card-schema');
+
+/*
+ * Two valid, meaningfully different values for one card field.
+ *
+ * Validation-driven rather than shape-guessed: each candidate PAIR is offered
+ * to the real validator and the first pair both halves of which are accepted is
+ * used. Guessing from a single sampled shape is what produced the last two
+ * fixture bugs -- the schema is loose in places, so "what validates" and "what
+ * the field means" are not the same question, and only trying pairs closes it.
+ */
+function variantPair(field) {
+    const PAIRS = [
+        [{ note: 'hold on the door' }, { note: 'drift past the window' }],          // camera
+        [{ type: VALID_LIGHTING[0], notes: 'alpha' }, { type: VALID_LIGHTING[1], notes: 'beta' }],
+        [['ZQALPHA'], ['ZQBETA']],                                                   // name lists
+        [[{ character: 'ZQALPHA', line: 'Alpha.' }], [{ character: 'ZQBETA', line: 'Beta.' }]],
+        ['zqprobealpha', 'zqprobebeta'],                                             // prose
+    ];
+    // The view picker can only choose between plates that exist, and the
+    // fixture seeds these two.
+    if (field === 'location_view') return ['north', 'south'];
+
+    /*
+     * A merged block takes object pairs; everything else takes list-or-prose.
+     * MERGED_BLOCKS is derived from routes/shots.js, so this is the card's own
+     * distinction rather than a second opinion about it -- and without it the
+     * loose validator hands `characters` a { note } object, which the seeder
+     * then cannot iterate.
+     */
+    const shaped = PAIRS.filter(([v]) => {
+        const isObj = v && typeof v === 'object' && !Array.isArray(v);
+        return MERGED_BLOCKS.has(field) ? isObj : !isObj;
+    });
+
+    /*
+     * Among object pairs, prefer the one whose KEYS this field's validator
+     * actually constrains. The loose schema accepts { note } on lighting as
+     * readily as on camera, and a probe that sets lighting.note is asking
+     * whether a field nothing reads reaches the model -- the answer is no, and
+     * it says nothing about whether LIGHTING reaches it. Derived from the
+     * schema source so it tracks the validator rather than describing it.
+     */
+    const SCHEMA_SRC = readCode('lib/scene-card-schema.js');
+    const constrained = pair => {
+        const [v] = pair;
+        if (!v || typeof v !== 'object' || Array.isArray(v)) return 0;
+        return Object.keys(v).filter(k => SCHEMA_SRC.includes(`card.${field}.${k}`)).length;
+    };
+    shaped.sort((a, b) => constrained(b) - constrained(a));
+
+    for (const pair of shaped) {
+        const ok = pair.every(v => {
+            const card = { shot_code: 'P1', description: 'Probe.',
+                camera: { shot_type: 'close-up', lens: '50mm', movement: 'dolly-in' } };
+            card[field] = (v && typeof v === 'object' && !Array.isArray(v))
+                ? { ...(card[field] || {}), ...v } : v;
+            return validateSceneCards([card]).valid;
+        });
+        // A name list is only meaningful for a field the builder reads as one.
+        if (ok) return pair;
+    }
+    return null;
+}
+
+function seedNamed(projectId, table, names) {
+    const col = table === 'film_characters' ? 'appearance_prompt' : 'visual_prompt';
+    for (const n of names) {
+        const id = generateId();
+        db.prepare(`INSERT INTO ${table} (id, project_id, name, ${col}) VALUES (?, ?, ?, ?)`)
+            .run(id, projectId, n, `distinctive look for ${n}`);
+        // A prop's prose reaches an image prompt only through a locked contract
+        // or a declared size; what a props change actually moves is its PLATE.
+        if (table === 'film_props') {
+            db.prepare(`INSERT INTO film_assets (id, project_id, prop_id, asset_type, file_name, file_path)
+                        VALUES (?, ?, ?, 'reference_image', ?, ?)`)
+                .run(generateId(), projectId, id, `${n}.png`, plateFile(`${n}.png`));
+        }
+    }
+}
+
+/*
+ * location_view selects WHICH plate of a place travels with the shot, so it can
+ * only change a payload where more than one plate exists. Seeding both views is
+ * what makes the question askable at all; without them the probe would report
+ * a working feature as broken because it had staged nothing to choose between.
+ */
+function plateFile(name) {
+    // A real file, because reference gathering inlines local plates as data
+    // URIs and a path that does not exist throws -- which the gatherer catches
+    // and turns into "no references at all". A probe seeding a phantom path
+    // would report the view picker broken when it was the fixture that was.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'parity-plate-'));
+    const file = path.join(dir, name);
+    // 1x1 PNG, with bytes that DIFFER per plate. Identical bytes would make two
+    // different plates inline to the same data URI, and a differential probe
+    // would then report a working picker as broken -- the fixture proving the
+    // fixture.
+    fs.writeFileSync(file, Buffer.concat([
+        Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'),
+        Buffer.from(name),
+    ]));
+    return file;
+}
+
+function seedLocationWithViews(projectId, sceneId, views) {
+    const locId = generateId();
+    db.prepare('INSERT INTO film_locations (id, project_id, name) VALUES (?, ?, ?)')
+        .run(locId, projectId, 'PROBE LOCATION');
+    db.prepare('UPDATE film_scenes SET location = ? WHERE id = ?').run('PROBE LOCATION', sceneId);
+    for (const v of views) {
+        db.prepare(`INSERT INTO film_assets (id, project_id, location_id, asset_type, file_name, file_path, metadata)
+                    VALUES (?, ?, ?, 'reference_image', ?, ?, ?)`)
+            .run(generateId(), projectId, locId, `plate_${v}.png`,
+                plateFile(`plate_${v}.png`), JSON.stringify({ view: v }));
+    }
+}
+
+function seedShotIn(projectId, card, onScene) {
+    const sceneId = generateId(), shotId = generateId();
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)')
+        .run(sceneId, projectId, '1');
+    if (onScene) onScene(sceneId);
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml, duration_ms) VALUES (?, ?, ?, ?, ?)')
+        .run(shotId, sceneId, 'P1', JSON.stringify(card), 4000);
+    return shotId;
+}
+
+test('a contracted decision reaches the payloads it claims', async () => {
+    const contract = loadContract();
+    if (!contract) { assert.fail('lib/decision-contract.js does not exist'); }
+    const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
+    const cardFields = deriveCardDecisions();
+
+    const missing = [];
+    const unprobeable = [];
+
+    for (const d of contract.DECISIONS || []) {
+        for (const cand of d.covers || []) {
+            if (!cardFields.includes(cand)) continue;
+            const pair = variantPair(cand);
+            if (!pair) { unprobeable.push(`${d.id}:${cand} (no two valid values)`); continue; }
+
+            const built = [];
+            for (const value of pair) {
+                const card = { shot_code: 'P1', description: 'Probe.',
+                    camera: { shot_type: 'close-up', lens: '50mm', movement: 'dolly-in' } };
+                card[cand] = (value && typeof value === 'object' && !Array.isArray(value))
+                    ? { ...(card[cand] || {}), ...value } : value;
+                if (!validateSceneCards([card]).valid) { built.push(null); continue; }
+
+                const projectId = generateId();
+                db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Parity');
+                // A name only means something if the project has that subject.
+                if (cand === 'characters') seedNamed(projectId, 'film_characters', value);
+                if (cand === 'props') seedNamed(projectId, 'film_props', value);
+                const shotId = seedShotIn(projectId, card, sceneId => {
+                    if (cand === 'location_view') seedLocationWithViews(projectId, sceneId, pair);
+                });
+
+                const perCap = {};
+                for (const cap of d.payloads || []) {
+                    try {
+                        const ctx = await loadShotContext(shotId);
+                        const out = await buildCapabilityPayload(cap, ctx);
+                        perCap[cap] = JSON.stringify(out && out.payload !== undefined ? out.payload : out);
+                    } catch (err) {
+                        perCap[cap] = err && err.code === 'PRECONDITION' ? `__precondition__${err.message}` : `__threw__${err && err.message}`;
+                    }
+                }
+                built.push(perCap);
+            }
+
+            if (built.some(b => !b)) { unprobeable.push(`${d.id}:${cand} (a variant did not validate)`); continue; }
+            for (const cap of d.payloads || []) {
+                const [a, b] = [built[0][cap], built[1][cap]];
+                if (String(a).startsWith('__precondition__')) {
+                    // A clip needs a keyframe nobody has generated. Not a parity
+                    // failure, but not a proven claim either -- so it is named.
+                    unprobeable.push(`${d.id}:${cand}:${cap} ${String(a).slice(16)}`);
+                    continue;
+                }
+                if (String(a).startsWith('__threw__')) {
+                    missing.push(`${d.id}:${cand} -> ${cap} ${String(a).slice(9)}`);
+                    continue;
+                }
+                if (a === b) missing.push(`${d.id}:${cand} changes nothing in the ${cap} payload (${String(a).slice(0, 240)})`);
+            }
+        }
+    }
+
+    assert.deepStrictEqual(missing, [],
+        'the contract claims these decisions reach a payload, and changing them changes nothing in it:');
+    assert.deepStrictEqual(unprobeable, [],
+        'these could not be probed, so the claim is untested rather than true');
+});
+
+// ── The Apply boundary, exercised ───────────────────────────────────────────
+//
+// Staged-vs-applied is carried by a marker (`director_json._applied`) rather
+// than by a fingerprint of what Apply wrote. A maintained flag is normally the
+// weaker choice -- it records that somebody pressed Apply once, not that the
+// stage still matches the card, and it goes wrong the moment a write path
+// forgets to clear it. It goes wrong in the DANGEROUS direction too: it reports
+// applied when it is not, so the confirmation tells a director their staging is
+// committed, they spend, and the frame is built from a card that never got it.
+//
+// It is sound here for one specific reason: film_previs_blocking has exactly
+// ONE insert path, so there is only one place that can forget. That is a real
+// property of the code rather than a hope about it, so the test below pins it.
+// The moment a second writer appears, the marker needs to become a fingerprint
+// of the projected subset -- the shape migration 062 already chose for approval,
+// for the same "X" versus "X as it is now" reason.
+
+test('save stages, apply applies, and saving again stages', async () => {
+    const card = { shot_code: 'P1', description: 'Probe.',
+        camera: { shot_type: 'close-up', lens: '50mm', movement: 'dolly-in' } };
+    const shotId = seedShot(card);
+    const blocking = {
+        camera: { position: [0, 1.6, 3], rotation: [0, 0, 0], focalMm: 50,
+            sensorId: 'super35', fStop: 2.8, focusDistanceM: 3 },
+        subject: { position: [0, 0, 0], heightM: 1.7 },
+        stage: { widthM: 12, depthM: 12 }, rig: 'dolly', movement: 'dolly-in',
+    };
+
+    const preview = async () => {
+        const r = await callPrevis('POST', `/film/shots/${shotId}/previs/to-storyboard`);
+        return r.body || {};
+    };
+
+    assert.ok((await callPrevis('PUT', `/film/shots/${shotId}/previs`, blocking)).status < 400,
+        'fixture blocking did not save');
+    const afterSave = await preview();
+    assert.strictEqual(afterSave.staged, true, 'a saved-but-unapplied stage must preview as staged');
+    assert.strictEqual(afterSave.applied, false, 'nothing has been applied yet');
+
+    assert.ok((await callPrevis('POST', `/film/shots/${shotId}/previs/apply`)).status < 400,
+        'apply refused');
+    const afterApply = await preview();
+    assert.strictEqual(afterApply.applied, true, 'after Apply the stage IS the card');
+    assert.strictEqual(afterApply.staged, false, 'nothing is outstanding after Apply');
+
+    // Restaging is the common case and the one the boundary exists for: a
+    // director keeps trying angles after applying one, and the board must not
+    // go on claiming the card holds what is now on screen.
+    assert.ok((await callPrevis('PUT', `/film/shots/${shotId}/previs`,
+        { ...blocking, camera: { ...blocking.camera, focalMm: 85 } })).status < 400,
+        'restage did not save');
+    const afterRestage = await preview();
+    assert.strictEqual(afterRestage.staged, true, 'restaging after Apply must go back to staged');
+    assert.strictEqual(afterRestage.applied, false, 'the card no longer holds what is staged');
+});
+
+test('staged is derived from what Apply wrote, never stored as a flag', () => {
+    /*
+     * "Applied" and "applied AS IT IS NOW" are different questions, and a
+     * boolean can only answer the first. A stored flag records that somebody
+     * pressed Apply once; it says nothing about whether the stage still matches
+     * the card, and it goes wrong the moment any write path forgets to clear
+     * it -- in the dangerous direction, reporting applied when it is not, so
+     * the confirmation tells a director their staging is committed, they spend,
+     * and the frame is generated from a card that never received it.
+     *
+     * Migration 062 already chose this shape for approval, for this reason.
+     * The second use should be cheaper than the first.
+     */
+    const gaps = [];
+    if (/_applied/.test(PREVIS)) {
+        gaps.push('routes/previs.js still reads a stored _applied flag');
+    }
+    if (!/applied_fingerprint/.test(PREVIS)) {
+        gaps.push('nothing compares an applied fingerprint, so staged cannot be derived');
+    }
+
+    /*
+     * The fingerprint must cover only what Apply actually WRITES to the card.
+     * Fingerprinting the whole blocking would make dragging a background cube
+     * report the card as out of date when it is not -- and a warning that fires
+     * on work nobody needs to redo is one people learn to dismiss, which is
+     * exactly why the screenplay-drift fingerprint was narrowed to four fields.
+     */
+    const applyFn = PREVIS.match(/function applyBlockingToCard[\s\S]*?\n}/);
+    if (!applyFn) gaps.push('no applyBlockingToCard to derive the projected subset from');
+    else if (!/applied_fingerprint/.test(applyFn[0])) {
+        gaps.push('Apply does not record what it applied');
+    }
+
+    assert.deepStrictEqual(gaps, [], 'the applied state is not derived');
 });

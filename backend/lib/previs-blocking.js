@@ -732,6 +732,9 @@ function previsFacets(blocking) {
         facets.moves = blocking.moves.map(m => m && m.movement).filter(Boolean);
     }
     if (Number.isFinite(focalMm) && focalMm > 0) facets.focal_mm = focalMm;
+    if (camera.sensorId || camera.sensor) facets.sensor = camera.sensorId || camera.sensor;
+    if (Number(camera.fStop) > 0) facets.aperture = Number(camera.fStop);
+    if (Number(camera.focusDistanceM) > 0) facets.focus_distance_m = Number(camera.focusDistanceM);
     if (position && Number.isFinite(Number(position[1]))) facets.camera_height_m = Number(position[1]);
 
     const target = resolveTarget(blocking);
@@ -811,10 +814,20 @@ function effectiveCamera(cardCamera, previs, filmOptics, opts) {
         ? { value: facets.movement, source: 'blocking' }
         : (card.movement ? { value: card.movement, source: 'card' } : { value: null, source: null });
 
+    const stagedOrCard = (staged, written, filmValue) => {
+        if (staged !== undefined && staged !== null && staged !== '') return { value: staged, source: 'blocking' };
+        if (written !== undefined && written !== null && written !== '') return { value: written, source: 'card' };
+        if (filmValue !== undefined && filmValue !== null && filmValue !== '') return { value: filmValue, source: 'film' };
+        return { value: null, source: null };
+    };
+
     return {
         shot_type: shotType,
         lens,
         movement,
+        sensor: stagedOrCard(facets.sensor, card.sensor, film.sensorId),
+        aperture: stagedOrCard(facets.aperture, card.aperture, film.fStop),
+        focus_distance_m: stagedOrCard(facets.focus_distance_m, card.focus_distance_m, null),
         // Blocking-only measurements. A card has never held either, so there is
         // nothing to merge them against.
         distance_m: Number.isFinite(Number(facets.distance_m)) ? Number(facets.distance_m) : null,

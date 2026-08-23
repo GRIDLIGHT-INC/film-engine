@@ -161,6 +161,10 @@ test('the path a blocked payload carries is the one the blocking stored', () => 
 });
 
 test('blocking only ever adds to camera_control, never rewrites it', () => {
+    // Still true, and still worth its own test: the movement type and intensity
+    // are what the enum says a move IS, and a stage that re-tuned them would
+    // make the same movement mean different things depending on whether anyone
+    // had opened the 3D view.
     for (const movement of VALID_CAMERA_MOVES) {
         const [card, chars, loc, style, opts] = goldenCall(movement, 'wide');
         const plain = buildVideoPayload(card, chars, loc, style, opts);
@@ -171,10 +175,57 @@ test('blocking only ever adds to camera_control, never rewrites it', () => {
             assert.strictEqual(blocked.camera_control[key], plain.camera_control[key],
                 `${movement}: blocking changed camera_control.${key}`);
         }
-        // Everything outside camera_control is untouched.
-        const stripped = { ...blocked, camera_control: plain.camera_control };
-        assert.deepStrictEqual(stripped, plain, `${movement}: blocking changed the rest of the payload`);
     }
+});
+
+/*
+ * This test used to also assert that everything OUTSIDE camera_control was
+ * byte-identical when a shot was blocked. That was phase 3 being deliberately
+ * conservative: blocking had just been allowed to reach the clip at all, and
+ * confining it to one field was how that landed safely.
+ *
+ * It is no longer the behaviour we want, and the reason is the parity contract:
+ * a decision the director makes in previs has to reach BOTH payloads or the two
+ * surfaces disagree about the same shot. The image prompt has described staged
+ * framing since previs/storyboard closed the loop -- staged beats written,
+ * because the card is what was typed and the blocking is what was stood up and
+ * looked at. A clip built from the same blocking describing it differently is
+ * the divergence this whole exercise exists to remove.
+ *
+ * What is NOT relaxed: the unblocked golden fixture above. A shot nobody has
+ * staged still produces byte-identical output to before phase 3 existed, and
+ * that guarantee is the one that must never move -- it is what makes this a
+ * feature for people who use previs rather than a change to everyone's films.
+ */
+test('a blocked shot describes its staged framing, and changes nothing else', () => {
+    const wrong = [];
+    for (const movement of VALID_CAMERA_MOVES) {
+        const [card, chars, loc, style, opts] = goldenCall(movement, 'wide');
+        const plain = buildVideoPayload(card, chars, loc, style, opts);
+        const blocked = buildVideoPayload(card, chars, loc, style,
+            { ...opts, previs: { ...defaultBlocking(), movement } });
+
+        // Everything that is not the prompt and not camera_control is untouched.
+        const stripPrompt = o => { const { prompt, camera_control, ...rest } = o; return rest; };
+        try {
+            assert.deepStrictEqual(stripPrompt(blocked), stripPrompt(plain));
+        } catch (_) {
+            wrong.push(`${movement}: blocking changed a payload field other than the prompt`);
+        }
+
+        // The prompt carries what was staged. Checked by CONTENT rather than by
+        // difference: a prompt that merely differs could differ by having lost
+        // something, which is the failure mode that matters here.
+        if (blocked.prompt === plain.prompt) {
+            wrong.push(`${movement}: the staged framing never reached the clip prompt`);
+            continue;
+        }
+        const solved = /camera [\d.]+m from subject/.test(blocked.prompt);
+        const lens = /\d+mm lens/.test(blocked.prompt);
+        if (!solved) wrong.push(`${movement}: no solved camera distance in the clip prompt`);
+        if (!lens) wrong.push(`${movement}: no focal length in the clip prompt`);
+    }
+    assert.deepStrictEqual(wrong, [], wrong.slice(0, 5).join('; '));
 });
 
 // ── Through the one payload path ────────────────────────────────────────────

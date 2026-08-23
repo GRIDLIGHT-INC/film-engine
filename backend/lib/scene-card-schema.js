@@ -95,7 +95,7 @@ function validateSceneCard(card) {
 
     // Optional: camera object
     if (card.camera !== undefined) {
-        if (typeof card.camera !== 'object') {
+        if (typeof card.camera !== 'object' || Array.isArray(card.camera) || card.camera === null) {
             errors.push('camera must be an object');
         } else {
             if (card.camera.shot_type && !VALID_SHOT_TYPES.includes(card.camera.shot_type)) {
@@ -178,6 +178,24 @@ function validateSceneCard(card) {
                 }
                 if (!ch.name || typeof ch.name !== 'string') {
                     errors.push(`characters[${i}].name is required`);
+                }
+            });
+        }
+    }
+
+    // Props use the same name-or-record shape as characters. This field was
+    // editable but unvalidated, so a bare string passed validation and was
+    // later iterated as individual letters by reference/context code.
+    if (card.props !== undefined) {
+        if (!Array.isArray(card.props)) {
+            errors.push('props must be an array');
+        } else {
+            card.props.forEach((prop, i) => {
+                if (typeof prop === 'string') return;
+                if (!prop || typeof prop !== 'object' || Array.isArray(prop)) {
+                    errors.push(`props[${i}] must be a string or object`);
+                } else if (!prop.name || typeof prop.name !== 'string') {
+                    errors.push(`props[${i}].name is required`);
                 }
             });
         }

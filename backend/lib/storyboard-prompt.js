@@ -523,6 +523,23 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         }
     }
 
+    // Props are director choices too. They previously reached the image only
+    // when a plate happened to attach or a dimension happened to be declared;
+    // a named prop with a visual brief otherwise vanished from the prompt.
+    // Identify it even beside an untagged reference so the model knows which
+    // object that picture defines.
+    for (const cardProp of (Array.isArray(sceneCard.props) ? sceneCard.props : [])) {
+        const propName = typeof cardProp === 'string' ? cardProp : cardProp && cardProp.name;
+        if (!propName) continue;
+        const dbProp = (opts.props || []).find(
+            p => p && p.name && p.name.toUpperCase() === String(propName).toUpperCase());
+        if (!dbProp) continue;
+        const propTag = tagFor.get(String(propName).toUpperCase());
+        if (propTag) add('appearance', `@${propTag}`);
+        else add('appearance', [String(propName).toUpperCase(), dbProp.visual_prompt || dbProp.description]
+            .filter(Boolean).join(': '));
+    }
+
     /*
      * 2. What the shot IS: the screenplay, then what the director added.
      *
@@ -625,6 +642,19 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // the board: without it the choice only reached shots someone had opened
     // the 3D stage for.
     if (effective.lens.value) add('camera', `${effective.lens.value} lens`);
+
+    // Optical choices are visual direction, not render-ledger trivia. An
+    // aperture says how much of the set is legible; focus distance says which
+    // plane owns attention; sensor format changes the field of view behind the
+    // same lens. They already round-trip through the card and Previs, so
+    // dropping them here made a saved choice look like a model refusal.
+    if (effective.sensor.value) add('camera', `${effective.sensor.value} sensor`);
+    if (Number(effective.aperture.value) > 0) {
+        add('camera', `f/${Number(effective.aperture.value)} aperture`);
+    }
+    if (Number(effective.focus_distance_m.value) > 0) {
+        add('camera', `focus set ${Number(effective.focus_distance_m.value).toFixed(1)}m from camera`);
+    }
 
     // 4b. Camera height against a standing eyeline IS the angle.
     //

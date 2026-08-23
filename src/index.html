@@ -5279,10 +5279,31 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                             placeholder="Camera on the far side of the road, looking back toward her."></textarea>
                         <div class="text-sm text-muted" id="previsCameraNoteCount" style="font-size:10px;"></div>
                         <button class="btn btn-sm btn-secondary" style="width:100%;margin-top:5px;"
-                                onclick="previsSaveCameraNote()">Save note to card</button>
+                                onclick="previsSaveCameraNote()">Stage camera note</button>
                         <p class="text-sm text-muted" style="font-size:10px;margin:6px 0 0;line-height:1.45;">
                             One sentence about where the camera is. It LEADS the prompt and is never
                             trimmed, which is why it is capped &mdash; put the rest in the description.
+                        </p>
+                    </div>
+
+                    <div class="card mt-16">
+                        <div class="flex-between mb-8">
+                            <h3 style="font-size:13px;margin:0;">Director intent</h3>
+                            <span id="previsStagedBadge" class="tag" style="display:none;background:rgba(245,158,11,.18);">staged · not applied</span>
+                        </div>
+                        <label>Direction</label>
+                        <textarea id="previsDirection" rows="3" maxlength="2000"
+                            oninput="previsMarkStaged()" style="width:100%;font-size:11px;line-height:1.45;font-family:inherit;"
+                            placeholder="Hold her eyeline; the dragon is behind camera."></textarea>
+                        <label>Background view</label>
+                        <input id="previsLocationView" type="text" maxlength="120" oninput="previsMarkStaged()"
+                            placeholder="from the far kerb, looking back across the bulb" style="font-size:11px;width:100%;">
+                        <label>Lighting</label>
+                        <select id="previsLighting" onchange="previsMarkStaged()" style="font-size:11px;width:100%;">
+                            <option value="">— from the scene —</option>
+                        </select>
+                        <p class="text-sm text-muted" style="font-size:10px;margin:6px 0 0;line-height:1.45;">
+                            These choices are staged while you explore. Apply to card commits them so the Shot Board and generation use the same direction.
                         </p>
                     </div>
 
@@ -12432,6 +12453,7 @@ THREE.GLTFLoader = GLTFLoader;
         subjectPos: [0, 0, 0],   // the framing subject; SUBJECT_SEL selects it
         selected: -1,    // index into objects, -1 for none, SUBJECT_SEL for the subject
         objectDrag: null,
+        staged: false,           // exploration differs from the durable scene card
     };
 
     // The framing subject is not in PREVIS.objects — it predates them, and it
@@ -12579,7 +12601,20 @@ THREE.GLTFLoader = GLTFLoader;
         if (!state.currentProject) return;
         try {
             if (!PREVIS.taxonomy) PREVIS.taxonomy = await api('/previs/taxonomy');
+            if (!PREVIS.cardVocabulary) PREVIS.cardVocabulary = await api('/shots/vocabulary');
             previsFillInspector();
+            ['previsShotType', 'previsMovement', 'previsRig', 'previsSensor', 'previsFocal',
+                'previsAperture', 'previsHeight', 'previsDistance', 'previsIntensity',
+                'previsDuration', 'previsStageSize'].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el || el.dataset.stagedBound) return;
+                el.addEventListener('input', previsMarkStaged);
+                el.addEventListener('change', previsMarkStaged);
+                el.dataset.stagedBound = '1';
+            });
+            const lighting = document.getElementById('previsLighting');
+            if (lighting) lighting.innerHTML = '<option value="">— from the scene —</option>'
+                + (PREVIS.cardVocabulary.lighting || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
 
             const data = await api(`/projects/${state.currentProject.id}/shotlist`);
             PREVIS.shots = data.shots || [];
@@ -12639,6 +12674,21 @@ THREE.GLTFLoader = GLTFLoader;
     function previsStatus(message) {
         const el = document.getElementById('previsStatus');
         if (el) el.textContent = message || '';
+    }
+
+    function previsMarkStaged() {
+        PREVIS.staged = true;
+        const badge = document.getElementById('previsStagedBadge');
+        if (badge) badge.style.display = '';
+    }
+
+    function previsFillDirectorIntent(intent) {
+        const d = intent || {};
+        const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
+        set('previsDirection', d.direction);
+        set('previsLocationView', d.location_view);
+        const lighting = typeof d.lighting === 'string' ? d.lighting : (d.lighting && d.lighting.type);
+        set('previsLighting', lighting);
     }
 
     /** Populate every picker from the served taxonomy. */
@@ -12707,11 +12757,23 @@ THREE.GLTFLoader = GLTFLoader;
                 method: 'POST', body: JSON.stringify({}),
             });
             const p = (res.payload || {});
+            const facts = res.film_facts || {};
+            const light = typeof facts.lighting === 'string' ? facts.lighting
+                : (facts.lighting && (facts.lighting.type || facts.lighting.notes));
+            const refs = (facts.references || []).map(r => [r.kind, r.name, r.view].filter(Boolean).join(' · '));
             card.style.display = '';
             body.innerHTML = '<p style="line-height:1.5;">' + esc(p.prompt || '(no prompt)') + '</p>'
                 + '<p class="text-muted" style="margin-top:8px;">'
                 + (res.blocked ? 'Built from your blocking.' : 'No blocking — built from the scene card.')
-                + ' ' + String(p.prompt || '').length + ' chars.</p>';
+                + ' ' + String(p.prompt || '').length + ' chars.</p>'
+                + (res.staged_notice ? `<p style="color:var(--gl-warning,#f59e0b);margin-top:8px;">${esc(res.staged_notice)}</p>` : '')
+                + `<div style="margin-top:8px;line-height:1.5;"><strong>Film facts</strong><br>`
+                + `Direction: ${esc(facts.direction || 'none')}<br>`
+                + `Background: ${esc(facts.location_view || 'default location view')}<br>`
+                + `Lighting: ${esc(light || 'scene / film default')}<br>`
+                + `Anchor: ${facts.anchor_attached ? 'attached' : 'none'} · Markup feedback: ${facts.annotation_feedback ? 'on' : 'off'}`
+                + (refs.length ? `<br>Pictures sent: ${refs.map(esc).join(', ')}` : '<br>Pictures sent: none')
+                + '</div>';
             previsStatus('Frame preview built. Nothing was generated.');
         } catch (err) {
             if (/STALE_APPROVAL|changed after it was approved/i.test(err.message)) {
@@ -12735,6 +12797,9 @@ THREE.GLTFLoader = GLTFLoader;
         try {
             const res = await api(`/shots/${PREVIS.shotId}/previs/apply`, { method: 'POST', body: JSON.stringify({}) });
             const a = res.camera_after || {};
+            PREVIS.staged = false;
+            const badge = document.getElementById('previsStagedBadge');
+            if (badge) badge.style.display = 'none';
             previsStatus(`Card updated — ${[a.shot_type, a.lens, a.movement].filter(Boolean).join(', ')}.`);
         } catch (err) {
             previsStatus('Apply failed: ' + err.message);
@@ -12951,6 +13016,10 @@ THREE.GLTFLoader = GLTFLoader;
     async function previsOpenShot(shotId) {
         PREVIS.shotId = shotId;
         PREVIS.playhead = null;
+        PREVIS.blocking = null;
+        PREVIS.staged = false;
+        const stagedBadge = document.getElementById('previsStagedBadge');
+        if (stagedBadge) stagedBadge.style.display = 'none';
         /*
          * The card, for the two things previs could not do: name what it stages
          * and read the camera note. Fire-and-forget alongside the blocking —
@@ -12959,6 +13028,7 @@ THREE.GLTFLoader = GLTFLoader;
          */
         api(`/shots/${shotId}`).then(shot => {
             PREVIS.shot = shot || null;
+            previsFillDirectorIntent((shot && shot.card) || {});
             const note = document.getElementById('previsCameraNote');
             if (note) { note.value = ((shot && shot.card && shot.card.camera) || {}).note || ''; cameraNoteCount('previs'); }
             previsRenderCast();
@@ -12975,6 +13045,9 @@ THREE.GLTFLoader = GLTFLoader;
             previsKeyframe(res.keyframe);
             if (res.blocking) {
                 PREVIS.blocking = res.blocking;
+                PREVIS.staged = !(res.application && res.application.applied);
+                if (stagedBadge) stagedBadge.style.display = PREVIS.staged ? '' : 'none';
+                previsFillDirectorIntent(res.blocking.director || ((PREVIS.shot && PREVIS.shot.card) || {}));
                 const c = res.blocking.camera || {};
                 document.getElementById('previsMovement').value = res.blocking.movement || 'static';
                 document.getElementById('previsRig').value = res.blocking.rig || 'dolly';
@@ -13268,8 +13341,8 @@ THREE.GLTFLoader = GLTFLoader;
      */
     async function previsRenderShot() {
         if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
-        if (!confirm('Apply this blocking to the scene card and generate the frame?\n\n'
-            + 'This replaces the existing keyframe and costs credits.')) return;
+        if (!confirm('This Previs intent is staged and not yet applied.\n\n'
+            + 'Apply it to the scene card and generate the frame? This replaces the existing keyframe and costs credits.')) return;
 
         setStatus('Rendering this angle...', true);
         try {
@@ -13339,7 +13412,11 @@ THREE.GLTFLoader = GLTFLoader;
         // The subject always leads the list: it is what the shot is of.
         const subjectRow = '';   // the subject is an object now, marked in its own row
         if (!PREVIS.objects.length) { el.innerHTML = '<span class="text-muted" style="font-size:11px;">Empty stage. The camera aims at the floor mark until you place something.</span>'; return; }
-        el.innerHTML = subjectRow + PREVIS.objects.map((o, i) => {
+        const unnamed = PREVIS.objects.filter(o => !String((o && o.name) || '').trim()).length;
+        const unnamedWarning = unnamed
+            ? `<div style="color:var(--gl-warning,#f59e0b);font-size:10px;margin-bottom:7px;">${unnamed} unnamed staging object${unnamed === 1 ? '' : 's'} ${unnamed === 1 ? 'is' : 'are'} not sent to generation. Name it when it is part of the set.</div>`
+            : '';
+        el.innerHTML = unnamedWarning + subjectRow + PREVIS.objects.map((o, i) => {
             const options = kinds.map(([id, p]) =>
                 `<option value="${id}"${id === o.kind ? ' selected' : ''}>${escapeHtml(p.label)}</option>`).join('');
             const chosen = i === PREVIS.selected;
@@ -13457,15 +13534,8 @@ THREE.GLTFLoader = GLTFLoader;
     async function previsSaveCameraNote() {
         const el = document.getElementById('previsCameraNote');
         if (!el || !PREVIS.shotId) return;
-        try {
-            await api(`/shots/${PREVIS.shotId}`, {
-                method: 'PUT',
-                body: JSON.stringify({ camera: { note: el.value.trim() || null } }),
-            });
-            setStatus('Camera note saved to the card. It leads the prompt on the next generation.');
-        } catch (err) {
-            setStatus('Could not save the note: ' + err.message);
-        }
+        previsMarkStaged();
+        setStatus('Camera note staged. Apply to card when this is the angle you want to keep.');
     }
 
     function previsAddObject(at, kindArg) {
@@ -13476,6 +13546,7 @@ THREE.GLTFLoader = GLTFLoader;
             ? [+at[0].toFixed(3), 0, +at[2].toFixed(3)]
             : [PREVIS.objects.length * 1.2, 0, 0];
         PREVIS.objects.push({ kind, position, sizeM: spec.defaultSizeM.slice(), rotationDeg: [0, 0, 0], src: '', name: '' });
+        previsMarkStaged();
         PREVIS.selected = PREVIS.objects.length - 1;
         previsRenderObjects();
         previsRefresh();
@@ -13490,6 +13561,7 @@ THREE.GLTFLoader = GLTFLoader;
         const o = PREVIS.objects[index];
         if (!o) return;
         o[field] = value;
+        previsMarkStaged();
         if (field === 'kind') o.sizeM = PREVIS.taxonomy.primitives[value].defaultSizeM.slice();
         previsRenderObjects();
         previsRefresh();
@@ -13501,6 +13573,7 @@ THREE.GLTFLoader = GLTFLoader;
         setTimeout(previsRenderCast, 0);
         if (!PREVIS.objects[index]) return;
         PREVIS.objects.splice(index, 1);
+        previsMarkStaged();
         // Selection follows the list rather than pointing at whatever slid into
         // the gap, which would silently arm the next Delete on a bystander.
         if (PREVIS.selected === index) PREVIS.selected = -1;
@@ -13516,6 +13589,7 @@ THREE.GLTFLoader = GLTFLoader;
         const reader = new FileReader();
         reader.onload = () => {
             PREVIS.objects[index].src = reader.result;
+            previsMarkStaged();
             previsRenderObjects();
             previsRefresh();
         };
@@ -13528,6 +13602,7 @@ THREE.GLTFLoader = GLTFLoader;
         // Blocking saved before rotation existed has no array to write into.
         if (!Array.isArray(o[field])) o[field] = [0, 0, 0];
         o[field][axis] = value;
+        previsMarkStaged();
         previsRefresh();
     }
 
@@ -13543,6 +13618,7 @@ THREE.GLTFLoader = GLTFLoader;
         if (!o) return;
         if (!Array.isArray(o.rotationDeg)) o.rotationDeg = [0, 0, 0];
         o.rotationDeg[2] = Math.abs(o.rotationDeg[2] % 180) < 1e-6 ? 90 : 0;
+        previsMarkStaged();
         previsRenderObjects();
         previsRefresh();
     }
@@ -13879,6 +13955,15 @@ THREE.GLTFLoader = GLTFLoader;
             moves: PREVIS.moves,
             subjects: PREVIS.objects,
             durationMs: Math.max(100, (parseFloat(document.getElementById('previsDuration').value) || 4) * 1000),
+            director: {
+                direction: (document.getElementById('previsDirection').value || '').trim(),
+                location_view: (document.getElementById('previsLocationView').value || '').trim(),
+                lighting: (() => {
+                    const value = document.getElementById('previsLighting').value;
+                    return value ? { type: value } : null;
+                })(),
+                camera_note: (document.getElementById('previsCameraNote').value || '').trim(),
+            },
         };
     }
 
@@ -14581,7 +14666,8 @@ THREE.GLTFLoader = GLTFLoader;
             });
             PREVIS.blocking = res.blocking;
             const warnings = (res.warnings || []).join(' ');
-            previsStatus('Blocking saved.' + (warnings ? ' ' + warnings : ''));
+            previsMarkStaged();
+            previsStatus('Blocking saved as staged intent — not applied to the Shot Board yet.' + (warnings ? ' ' + warnings : ''));
         } catch (err) {
             previsStatus('Save failed: ' + err.message);
         }

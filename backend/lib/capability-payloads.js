@@ -285,6 +285,8 @@ const CAPABILITY_BUILDERS = {
             // differently. Undefined when unblocked, which is what keeps the
             // payload byte-identical for every shot nobody has blocked.
             previs: ctx.previs || undefined,
+            filmOptics: filmOpticsFor(ctx.project),
+            props: ctx.props || [],
             // The direction drawn on the board. A still can only show a state;
             // an arrow is about what happens next, which is exactly what a clip
             // has room for and a frame does not.
@@ -554,6 +556,7 @@ function loadShotContext(shotId, opts) {
         if (row) {
             previs = {
                 camera: JSON.parse(row.camera_json || '{}'),
+                director: JSON.parse(row.director_json || '{}'),
                 subject: JSON.parse(row.subject_json || '{}'),
                 stage: JSON.parse(row.stage_json || '{}'),
                 rig: row.rig,

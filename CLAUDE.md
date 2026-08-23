@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (77 migrations)
+│   │   └── migrations/     # SQL migration files (78 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -125,6 +125,7 @@ film-engine/
 │   │   ├── shot-staging.js       # Where things stand, said from the camera about to shoot them
 │   │   ├── prompt-lint.js        # Language that describes what is NOT in the frame
 │   │   ├── shot-references.js    # The plates a shot generates with, gathered once for every path
+│   │   ├── decision-contract.js  # Which stored choices are the same director decision, seen twice
 │   │   ├── beat-sheets.js        # Four story frameworks, and the holes in a structure
 │   │   ├── agent-presence.js     # Is an agent host attached, and what it would replace
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
@@ -166,6 +167,7 @@ film-engine/
 │       ├── reference-capability.test.js # Tags only reach providers that can read them
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop
+│       ├── decision-parity.test.js     # Every director decision, held to five links across both surfaces
 │       ├── screenplay-to-entities.test.js # A screenplay creates the entities generation reads
 │       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
 │       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
@@ -1153,6 +1155,20 @@ Three edges closed the loop. `POST /shots/:id/previs/from-card` seeds the stage 
 
 `tests/previs-loop.test.js` is set-based over the loop's eight **directed** edges, because direction is the identity: `blocking → card` existing says nothing about `card → blocking`, and it was the second that was missing while the pair was called a round trip.
 
+
+### One Decision, Two Surfaces
+A director explores on the board and explores in previs, and expects a choice made in either to be true in the other. Some already were — camera facets round-trip through `/previs/apply` and `/previs/from-card` — which is exactly what made the gap hard to see: a test written against the lens passed while `direction`, `location_view`, `anchor`, `keep_plates` and `annotation_feedback` appeared **zero times** in `routes/previs.js`. Twenty percent green reads as working.
+
+`lib/decision-contract.js` is a **projection map, not storage**. It says which stored choices are the same decision seen twice; `scene_card` stays the durable statement of intent and `film_previs_blocking` stays a workspace. Nothing renders a UI from it — previs's 3D beats a form for camera, the board's pickers beat a stage for cast, and a registry that tried to own both would make each worse.
+
+**The Apply boundary is the load-bearing constraint.** Previs is where you *try* an angle; if trying it commits it, you stop trying. So applied decisions round-trip, and unapplied staging stays staged — visibly, in the surface and in the pre-spend confirmation, because the failure mode of an uncommitted choice is silence. This is why the parity matrix splits *rehydrates* into **3a** (applied decisions reappear on the other surface) and **3b** (unapplied intent is disclosed as staged): with a single link, the cheapest way to turn the suite green is to auto-apply every drag, which passes and deletes exploration.
+
+Each decision is held to five links — operable on both surfaces, persists to its canonical home, 3a, 3b, appears in the pre-spend preview, and reaches both the image and video payloads. A decision the contract declares single-surface must state a non-empty `why`, which is what stops a gap being retro-labelled a boundary once closing it turns out to be work. Unnamed staging is such a rule and a real one: anonymous helpers are scaffolding, and serialising them puts literal boxes and markers in the frame — so naming or typing a `set_piece` is what makes geometry semantic, and the surface must *say* it dropped the rest.
+
+**Director intent lives in its own column, and that was found by measurement.** The first draft stashed it in `camera_json`, which `blockingFingerprint()` hashes wholesale — so editing one sentence of direction on a shot whose camera never moved flipped an approval from fresh to stale, and `/to-video` and `/to-storyboard` would have refused it with a 409 the director could not explain. Migration 080 gives it `director_json`, outside the fingerprint by construction. Approval means *this is the angle I signed off*; prose must not revoke it.
+
+`tests/decision-parity.test.js` derives its denominator from three code sources — `EDITABLE` in `routes/shots.js`, the `film_previs_blocking` columns, and the `film_projects` switches the board actually reads — so a field added later is accounted for or fails. Its probes are behavioural where it matters: the round trip is **run**, and payload reachability is **differential** (change the value, assert what a provider would receive changes), because a stored choice and an applied choice look identical from the outside. Three of its early findings were the fixture's fault rather than the product's — a phantom plate path, byte-identical plate images, and a string accepted as `props` and then iterated character by character — and each was cheap to mistake for a real defect. Where the schema is loose, *what validates* and *what a field means* are different questions, so every sample the probe builds is now derived from something that constrains behaviour rather than from what the validator will tolerate.
+
 `lib/nav-flow.js` regroups all 34 pages into the nine `PROJECT_PHASES` the status machine already declares, so the sidebar and the phase a project reports itself in cannot disagree. Served over `GET /film/nav-flow`; the SPA **moves** the existing buttons rather than rebuilding them, keeping every tooltip and handler. **Two views, two questions, two technologies.** The wireframe stage answers *where does this stand and how does it read in frame* — that stays hand-rolled canvas 2D, and `lib/glb-parser.js` feeds it silhouettes with materials deliberately stripped. The textured pane answers *is that actually the character*, and a real material cannot be faked with a 4×4 matrix and a polygon painter, so it runs **three.js r149 + GLTFLoader, vendored inline** against the same `.glb`. Inlined rather than linked because `build.target: single-html` — index.html is ~1.6MB as a result, which is the price of the constraint. `GLTFLoader` ships ESM-only, so it is converted to a classic script by the same mechanical transform three's own `examples/js` build used to perform: the `three` import becomes a destructure from the global, the one helper it borrows from `BufferGeometryUtils` is inlined, and the export becomes an assignment.
 
 `GET /models/:assetId/file` serves the .glb to the viewer; `GET /models/:assetId/geometry` serves decimated points and triangles to the stage. Two endpoints because they answer different questions — the geometry one strips exactly what the viewer exists to show.
@@ -1330,7 +1346,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (77 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (78 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -1447,6 +1463,7 @@ node --test backend/tests/image-fallback.test.js
 node --test backend/tests/reference-capability.test.js
 node --test backend/tests/previs-storyboard.test.js
 node --test backend/tests/previs-loop.test.js
+node --test backend/tests/decision-parity.test.js
 node --test backend/tests/screenplay-to-entities.test.js
 node --test backend/tests/storyboard-prerequisites.test.js
 node --test backend/tests/previs-explore-ui.test.js

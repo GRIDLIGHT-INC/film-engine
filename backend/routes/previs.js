@@ -25,6 +25,7 @@ const {
 const { PRIMITIVES, primitiveGeometry } = require('../lib/previs-primitives');
 const crypto = require('crypto');
 const { validateSceneCards } = require('../lib/scene-card-schema');
+const { directorIntentFromCard, applyDirectorIntent } = require('../lib/decision-contract');
 const {
     SENSORS, LENS_KIT, APERTURES,
     sensorFor, fieldOfView, depthOfField, frameCoverage,
@@ -46,8 +47,11 @@ const parse = (text, fallback) => {
 function loadBlocking(shotId) {
     const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
     if (!row) return null;
+    const camera = parse(row.camera_json, {});
+    const director = parse(row.director_json, null);
     return {
-        camera: parse(row.camera_json, {}),
+        camera,
+        director,
         subject: parse(row.subject_json, {}),
         stage: parse(row.stage_json, {}),
         rig: row.rig,
@@ -214,6 +218,7 @@ function putBlocking(req, res, shotId) {
     const base = defaultBlocking();
     const blocking = {
         camera: { ...base.camera, ...(body.camera || {}) },
+        director: body.director || {},
         stage: { ...base.stage, ...(body.stage || {}) },
         rig: body.rig || base.rig,
         // Derived from the legs when a sequence was saved without naming one.
@@ -266,8 +271,8 @@ function putBlocking(req, res, shotId) {
     const id = existing ? existing.id : generateId();
 
     db.prepare(`
-        INSERT INTO film_previs_blocking (id, shot_id, camera_json, subject_json, stage_json, rig, movement, path_json, moves_json, subjects_json, duration_ms)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO film_previs_blocking (id, shot_id, camera_json, subject_json, stage_json, rig, movement, path_json, moves_json, subjects_json, duration_ms, director_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(shot_id) DO UPDATE SET
             camera_json = excluded.camera_json,
             subject_json = excluded.subject_json,
@@ -278,10 +283,17 @@ function putBlocking(req, res, shotId) {
             moves_json = excluded.moves_json,
             subjects_json = excluded.subjects_json,
             duration_ms = excluded.duration_ms,
+            director_json = excluded.director_json,
             updated_at = datetime('now')
     `).run(id, shotId, JSON.stringify(blocking.camera), JSON.stringify(blocking.subject),
         JSON.stringify(blocking.stage), blocking.rig, blocking.movement, JSON.stringify(path),
-        JSON.stringify(blocking.moves), JSON.stringify(blocking.subjects), blocking.durationMs);
+        JSON.stringify(blocking.moves), JSON.stringify(blocking.subjects), blocking.durationMs,
+        JSON.stringify(blocking.director));
+
+    // A stage seeded from the card agrees with it by construction. Record the
+    // projected fingerprint after persistence so later edits are derived as
+    // staged; no writer has to remember to clear a flag.
+    if (body._seededFromCard) markApplied(shotId);
 
     return json(res, 200, {
         shot_id: shotId,
@@ -384,6 +396,11 @@ function toVideo(req, res, shotId) {
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
     const ctx = loadShotContext(shotId);
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
+    if (ctx.previs && ctx.previs.director) {
+        ctx.sceneCard = applyDirectorIntent({
+            ...ctx.sceneCard, camera: { ...(ctx.sceneCard.camera || {}) },
+        }, ctx.previs.director);
+    }
 
     let built;
     try {
@@ -395,7 +412,25 @@ function toVideo(req, res, shotId) {
     }
 
     const payload = Array.isArray(built.payload) ? built.payload[0] : built.payload;
-    return json(res, 200, { shot_id: shotId, blocked: !!ctx.previs, ...payload });
+    const appliedState = applicationState(shotId);
+    const staged = !!ctx.previs && !appliedState.applied;
+    return json(res, 200, {
+        shot_id: shotId,
+        blocked: !!ctx.previs,
+        staged,
+        applied: !staged,
+        staged_notice: staged
+            ? 'This video preview includes staged Previs intent. Apply it before generating from the Shot Board.'
+            : null,
+        film_facts: {
+            direction: ctx.sceneCard.direction || '',
+            location_view: ctx.sceneCard.location_view || '',
+            lighting: ctx.sceneCard.lighting || null,
+            anchor_attached: !!ctx.anchorAttached,
+            annotation_feedback: !!ctx.useAnnotations,
+        },
+        ...payload,
+    });
 }
 
 /**
@@ -553,11 +588,20 @@ function applyBlockingToCard(req, res, shotId) {
     // Only what the stage decides. shot_type comes from the solved framing,
     // lens from the actual focal length, movement from what was blocked.
     if (blocking.shot_type) card.camera.shot_type = blocking.shot_type;
-    if (Number(camera.focal_mm) > 0) card.camera.lens = `${Math.round(Number(camera.focal_mm))}mm`;
+    const focalMm = camera.focalMm !== undefined ? camera.focalMm : camera.focal_mm;
+    const sensorId = camera.sensorId || camera.sensor;
+    const fStop = camera.fStop !== undefined ? camera.fStop : camera.f_stop;
+    const cameraHeight = Array.isArray(camera.position) ? camera.position[1] : camera.height_m;
+    const focusDistance = camera.focusDistanceM !== undefined
+        ? camera.focusDistanceM : camera.focus_distance_m;
+    if (Number(focalMm) > 0) card.camera.lens = `${Math.round(Number(focalMm))}mm`;
     if (blocking.movement) card.camera.movement = blocking.movement;
-    if (camera.sensor) card.camera.sensor = camera.sensor;
-    if (Number(camera.f_stop) > 0) card.camera.aperture = Number(camera.f_stop);
-    if (Number(camera.height_m) > 0) card.camera.height_m = Number(camera.height_m);
+    if (sensorId) card.camera.sensor = sensorId;
+    if (Number(fStop) > 0) card.camera.aperture = Number(fStop);
+    if (Number(cameraHeight) > 0) card.camera.height_m = Number(cameraHeight);
+    if (Number(focusDistance) > 0) card.camera.focus_distance_m = Number(focusDistance);
+    const director = parse(blocking.director_json, {});
+    applyDirectorIntent(card, director);
 
     /*
      * What was STAGED becomes what the shot is blocked with.
@@ -604,13 +648,17 @@ function applyBlockingToCard(req, res, shotId) {
 
     db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?')
         .run(JSON.stringify(card), shotId);
+    markApplied(shotId);
 
     return json(res, 200, {
         shot_id: shotId,
         shot_code: shot.shot_code,
         camera_before: before,
         camera_after: card.camera,
-        blocking_after: { characters: card.characters, props: card.props },
+        blocking_after: {
+            characters: card.characters, props: card.props,
+            direction: card.direction, location_view: card.location_view, lighting: card.lighting,
+        },
         applied: true,
     });
 }
@@ -633,10 +681,37 @@ function toStoryboard(req, res, shotId) {
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
 
     try {
+        // Previs Preview is allowed to show the experiment before Apply. Keep
+        // that overlay local to this free preview; the durable card remains
+        // untouched until the director commits it.
+        if (ctx.previs && ctx.previs.director) {
+            ctx.sceneCard = applyDirectorIntent({
+                ...ctx.sceneCard, camera: { ...(ctx.sceneCard.camera || {}) },
+            }, ctx.previs.director);
+        }
         const { payload, meta } = buildCapabilityPayload('image', ctx);
+        const appliedState = applicationState(shotId);
+        const staged = !!ctx.previs && !appliedState.applied;
         return json(res, 200, {
             shot_id: shotId,
             blocked: !!ctx.previs,
+            staged,
+            applied: !staged,
+            staged_notice: staged
+                ? 'Previewing staged Previs intent. It is not applied to the Shot Board until you choose Apply to card.'
+                : null,
+            film_facts: {
+                direction: ctx.sceneCard.direction || '',
+                location_view: ctx.sceneCard.location_view || '',
+                lighting: ctx.sceneCard.lighting || null,
+                anchor_attached: !!ctx.anchorAttached,
+                annotation_feedback: !!ctx.useAnnotations,
+                references: (ctx.references || []).map(r => ({
+                    kind: r.kind || null, name: r.name || null,
+                    view: r.view || null, role: r.role || null,
+                })),
+                prompt_budget: (meta && meta.budget) || [],
+            },
             previs: ctx.previs || null,
             payload,
             meta: meta || undefined,
@@ -821,6 +896,12 @@ function fromCard(req, res, shotId) {
     let card = {};
     try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
     const cam = card.camera || {};
+    const stagedDirector = {
+        ...directorIntentFromCard(card),
+        direction: card.direction || '',
+        location_view: card.location_view || '',
+        lighting: card.lighting || null,
+    };
 
     // The film's own optics, chosen once on the mood board. Without these a
     // card that says nothing opens on a 50mm super35 default that belongs to
@@ -966,11 +1047,13 @@ function fromCard(req, res, shotId) {
         durationMs: shot.duration_ms || 0,
         subjects: staged,
         moves: [],
+        director: stagedDirector,
     };
 
     // Saved through the same validator and sampler the editor writes through,
     // so a seeded blocking is indistinguishable from a hand-made one.
     req.body = blocking;
+    req.body._seededFromCard = true;
     return putBlocking(req, res, shotId);
 }
 

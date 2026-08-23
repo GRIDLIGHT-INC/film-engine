@@ -679,7 +679,7 @@ const PRODUCTION_TOOLS = [
     {
         name: 'previs_set',
         handler: handlePrevis, method: 'PUT',
-        description: 'Save blocking for a shot: camera {position,rotation,focalMm,sensorId,fStop}, subject, stage, rig, movement. This is how you try a different angle — set it, preview the frame with previs_to_storyboard, and set it again. Errors block a save; warnings (a slider asked to crane) do not.',
+        description: 'Save staged blocking and director intent for a shot: camera optics/position, subjects, stage, rig, movement, plus director {direction,location_view,lighting,camera_note}. This is exploratory and does NOT change the Shot Board until previs_apply. Preview freely with previs_to_storyboard before committing.',
         path: a => `/film/shots/${a.shot_id}/previs`,
         body: a => { const { shot_id, ...rest } = a || {}; return rest; },
         schema: {
@@ -690,13 +690,14 @@ const PRODUCTION_TOOLS = [
             rig: { type: 'string' },
             movement: { type: 'string' },
             subjects: { type: 'array', description: 'Staged objects: figures, boxes, image cards.' },
+            director: { type: 'object', description: '{ direction, location_view, lighting:{type,notes}, camera_note }. Saved as staged intent; apply explicitly.' },
         },
         required: ['shot_id'],
     },
     {
         name: 'previs_to_storyboard',
         handler: handlePrevis, method: 'POST',
-        description: 'Preview the exact image payload this blocking would generate, WITHOUT generating it or spending anything. Use between angles to see how a framing reads as a prompt before committing a credit to it.',
+        description: 'Preview the exact image payload this staged blocking and director intent would generate, WITHOUT applying, generating or spending. The response says staged/applied explicitly; use it between angles before committing.',
         path: a => `/film/shots/${a.shot_id}/previs/to-storyboard`,
         body: a => ({ ignore_approval: !!a.ignore_approval }),
         schema: {
@@ -708,7 +709,7 @@ const PRODUCTION_TOOLS = [
     {
         name: 'previs_apply',
         handler: handlePrevis, method: 'POST',
-        description: 'Write the staged camera back onto the scene card — shot type, lens, movement, sensor, aperture, height. Only the camera facets the stage determines; description, characters and dialogue survive. Do this when an angle is the one you want to keep.',
+        description: 'Commit staged Previs intent to the scene card: framing, lens, movement, sensor, aperture, focus distance, height, direction, background view, lighting, and named subjects. Screenplay description and dialogue survive. Do this only when the explored angle is the one to keep.',
         path: a => `/film/shots/${a.shot_id}/previs/apply`,
         schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
     },

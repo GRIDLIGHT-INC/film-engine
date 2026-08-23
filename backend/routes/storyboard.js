@@ -1489,6 +1489,7 @@ function listShotFrames(req, res, shotId) {
     });
 
     const lost = versions.filter(v => !v.restorable && !v.is_current).length;
+    const staged = !!ctx.previs && !ctx.previs.application?.applied;
     return json(res, 200, {
         shot_id: shotId, shot_code: shot.shot_code, versions,
         current_version: currentVersion,
@@ -1845,6 +1846,18 @@ function shotPromptPreview(req, res, shotId, query) {
     return json(res, 200, {
         shot_id: shotId,
         shot_code: ctx.shot.shot_code,
+        // A board preview can be reading saved-but-unapplied Previs. Say which
+        // state supplied the film facts before the director spends anything.
+        staged,
+        applied: !staged,
+        staged_notice: staged
+            ? 'This preview includes staged Previs intent. Apply it to the card before generating from the board.'
+            : null,
+        film_facts: {
+            direction: ctx.sceneCard.direction || '',
+            lighting: ctx.sceneCard.lighting || null,
+            location_view: ctx.sceneCard.location_view || '',
+        },
         prompt,
         negative_prompt: payload.negative_prompt || '',
         prompt_chars: prompt.length,

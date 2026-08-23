@@ -55,9 +55,19 @@ const DEFAULT_GUIDANCE = 7.5;
  */
 function buildVideoPrompt(sceneCard, characters, location, stylePreset, options) {
     const opts = options || {};
+    // Keep the director-owned card fields explicit at the hand-off. The video
+    // prompt reuses the storyboard builder, so direction, lighting and the
+    // chosen location_view must cross this boundary together with staged
+    // camera/blocking context rather than relying on an opaque whole object.
+    const promptedCard = {
+        ...sceneCard,
+        direction: sceneCard && sceneCard.direction,
+        lighting: sceneCard && sceneCard.lighting,
+        location_view: sceneCard && sceneCard.location_view,
+    };
     // Reuse storyboard prompt for text prompt
     const { prompt, negative_prompt } = buildStoryboardPrompt(
-        sceneCard, characters, location, stylePreset, {
+        promptedCard, characters, location, stylePreset, {
             prompt_additions: opts.prompt_additions,
             negative_additions: opts.negative_additions,
             // The markup a director drew on the board. It reaches the clip for
@@ -66,6 +76,9 @@ function buildVideoPrompt(sceneCard, characters, location, stylePreset, options)
             // that. Undefined unless the project opted in, so an unmarked shot
             // builds byte-identically.
             annotations: opts.annotations,
+            previs: opts.previs,
+            filmOptics: opts.filmOptics,
+            props: opts.props,
         }
     );
 

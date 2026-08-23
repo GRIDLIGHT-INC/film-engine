@@ -136,9 +136,10 @@ frame that has the scene right, and the next shots are generated **from** it.
 `previs_get` · `previs_set` · `previs_solve` · `previs_from_card` ·
 `previs_apply` · `previs_approve` · `previs_to_storyboard`
 
-Block a shot in 3D — lens, height, distance, movement — then `previs_apply`
-writes the camera back onto the card. `previs_to_storyboard` previews the image
-payload and spends nothing.
+Block a shot in 3D — lens, height, distance, movement, named staging, direction,
+background view and lighting — then `previs_apply` commits those staged choices
+to the card. `previs_to_storyboard` returns the exact staged image payload and
+states that it is unapplied; it generates nothing and spends nothing.
 
 ### 7. Video and audio
 
