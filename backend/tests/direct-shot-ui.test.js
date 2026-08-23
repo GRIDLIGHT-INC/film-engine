@@ -57,9 +57,33 @@ const BLOCKING_KINDS = (() => {
 })();
 
 /** Every camera facet the validator accepts — the cinematography set. */
+/*
+ * Camera facets a DIRECTOR types on the board.
+ *
+ * Excludes the 3-vector pose facets, and the rule is mechanical rather than a
+ * list of names: a facet the schema checks with validVector3 is a position or
+ * an orientation, and those are authored by standing the camera on the previs
+ * stage, not by typing three numbers into a board form. Offering "rotation
+ * [_, _, _]" beside a lens dropdown would be the machinery this surface was
+ * explicitly built to remove.
+ *
+ * They still round-trip — Apply writes them and from-card reads them back —
+ * so this is a statement about which SURFACE authors them, not permission to
+ * drop them. Derived from the validator so a fourth vector facet is excluded
+ * for the same reason with nothing to remember, and a new SCALAR facet is
+ * still demanded here.
+ */
 const CAMERA_FACETS = (() => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'scene-card-schema.js'), 'utf8');
-    return [...new Set([...src.matchAll(/card\.camera\.([a-z_]+)/g)].map(m => m[1]))];
+    const all = [...new Set([...src.matchAll(/card\.camera\.([a-z_]+)/g)].map(m => m[1]))];
+    const vectors = new Set([...src.matchAll(/validVector3\(card\.camera\.([a-z_]+)\)/g)].map(m => m[1]));
+    return all.filter(f => !vectors.has(f));
+})();
+
+/** The pose facets previs authors instead. Asserted below, not merely skipped. */
+const POSE_FACETS = (() => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'scene-card-schema.js'), 'utf8');
+    return [...new Set([...src.matchAll(/validVector3\(card\.camera\.([a-z_]+)\)/g)].map(m => m[1]))];
 })();
 
 /** Specs a shot's cinematography can fall through to. */
@@ -182,6 +206,22 @@ test('every camera facet the schema validates has a control', () => {
     });
     assert.deepStrictEqual(missing, [],
         `the schema validates these camera facets and the page cannot set them: ${missing.join(', ')}`);
+});
+
+test('the pose facets the board excludes are authored on the previs stage', () => {
+    /*
+     * An exclusion that is only an exclusion is how a facet goes missing from
+     * every surface at once. These are not offered on the board BECAUSE previs
+     * authors them, so previs has to actually author them — otherwise a
+     * director can set a camera position nowhere at all.
+     */
+    if (!POSE_FACETS.length) return;
+    const ui = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    const reader = ui.slice(ui.indexOf('function previsReadInspector()'),
+        ui.indexOf('function previsReadInspector()') + 1600);
+    const orphaned = POSE_FACETS.filter(f => !new RegExp(`${f}:`).test(reader));
+    assert.deepStrictEqual(orphaned, [],
+        'excluded from the board and not authored in previs either — settable nowhere');
 });
 
 test('an unset facet says what it will fall through to', () => {
