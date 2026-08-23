@@ -139,7 +139,16 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
      * is what closes the set, and it is the same mechanism the shot anchor uses,
      * pointed at plates.
      */
-    if (view) {
+    /*
+     * The view is stated ONCE, and where depends on whether there is an anchor.
+     *
+     * Anchored, it is already the subject of the leading camera-change clause —
+     * repeating it here as "photographed <view>" said the same thing twice, and
+     * the second statement competes with the lead for exactly the instruction
+     * the lead was placed first to win. Unanchored there is no move to describe,
+     * so the view is simply what was photographed.
+     */
+    if (view && !anchored) {
         parts.push(`photographed ${String(view).trim()}`);
     }
     // visual_prompt is the generation-facing field for a prop — it is what

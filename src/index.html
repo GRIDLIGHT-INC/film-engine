@@ -5155,6 +5155,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <button class="btn btn-secondary" onclick="previsFromCard()" data-tooltip="Set the stage from what the scene card already says — framing, lens, movement" data-tooltip-pos="bottom">From card</button>
                     <button class="btn btn-secondary" onclick="previsSolve()">Solve framing</button>
                     <button class="btn btn-secondary" onclick="previsPreviewFrame()" data-tooltip="See the prompt this angle would generate. Costs nothing." data-tooltip-pos="bottom">Preview frame</button>
+                    <button class="btn btn-secondary" onclick="previsRecompose()" data-tooltip="Keep this shot's performance and framing, and put a different background behind it" data-tooltip-pos="bottom">New background&hellip;</button>
                     <button class="btn btn-secondary" onclick="previsApplyToCard()" data-tooltip="Write this angle back onto the scene card" data-tooltip-pos="bottom">Apply to card</button>
                     <button class="btn btn-primary" onclick="previsRenderShot()" data-tooltip="Apply this blocking and regenerate the frame — costs credits" data-tooltip-pos="bottom">Render this angle</button>
                     <button class="btn btn-secondary" onclick="previsApprove()" id="previsApproveBtn" data-tooltip="Sign off this angle. Restaging afterwards blocks generation until you re-approve." data-tooltip-pos="bottom">Approve</button>
@@ -5657,6 +5658,27 @@ table, .render-table { border-radius:12px; overflow:hidden; }
     </div>
 
     <!-- What is about to be sent, before a credit is spent. -->
+    <!-- Which background goes behind them. Pictures, not names. -->
+    <div class="modal-overlay" id="backgroundPickerModal">
+        <div class="modal" style="max-width:900px;width:94vw;">
+            <div class="modal-header">
+                <h3 id="backgroundPickerTitle">Which background goes behind them?</h3>
+                <button class="modal-close" onclick="backgroundPickerResolve(null)">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-sm text-muted" style="line-height:1.5;">
+                    These are the views of this location you have photographed. The performance,
+                    framing and wardrobe stay as they are &mdash; only what is behind them changes.
+                </p>
+                <div id="backgroundPickerChoices"
+                     style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;"></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                    <button class="btn btn-secondary" onclick="backgroundPickerResolve(null)">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="confirmGenModal">
         <div class="modal" style="max-width:820px;width:94vw;">
             <div class="modal-header">
@@ -24917,6 +24939,11 @@ ${fountainText.slice(0, 50000)}`;
                         : ''}
                     ${v.exists && !v.reason
                         ? `<button class="btn btn-secondary btn-sm"
+                             title="Keep this performance and framing, and put a different background behind it."
+                             onclick="recomposeFrame('${shotId}', ${v.version})">New background&hellip;</button>`
+                        : ''}
+                    ${v.exists && !v.reason
+                        ? `<button class="btn btn-secondary btn-sm"
                              title="Put this picture on a different shot. It is copied — this shot keeps it too."
                              onclick="sendFrameTo('${shotId}', ${v.version})">Send to&hellip;</button>`
                         : ''}
@@ -26240,6 +26267,217 @@ ${fountainText.slice(0, 50000)}`;
                 You can still refine, but you would be doing it blind.</p>`;
         }
         return decision;
+    }
+
+
+    /*
+     * ── Recompose: keep the performance, change the place ─────────────────
+     *
+     * "V6's framing and reaction are perfect, but not the background."
+     *
+     * Refine cannot do this — its negative refuses composition changes, and on
+     * a close-up the background IS most of the composition. Regenerate rebuilds
+     * everything and loses the performance. This keeps one and replaces the
+     * other.
+     *
+     * ONE implementation, reached from both the board and previs, because two
+     * surfaces with separately written confirmations come to disagree about
+     * what they are about to spend money on.
+     */
+    let RECOMPOSE = null;
+
+    /** The location's views, as a picture-led choice rather than an id. */
+    let BACKGROUND_PICKER = null;
+
+    function backgroundPickerResolve(choice) {
+        closeModal('backgroundPickerModal');
+        const fn = BACKGROUND_PICKER;
+        BACKGROUND_PICKER = null;
+        if (fn) fn(choice || null);
+    }
+
+    /**
+     * Every view as a picture you click.
+     *
+     * The first draft asked for a number typed into a window.prompt. That
+     * fails the whole purpose: this feature exists because a director could not
+     * tell which way a plate faced, and "type 2" asks them to hold the geometry
+     * in their head — the exact thing that has gone wrong on every reverse
+     * angle so far. A view IS a picture; choosing one means looking at it.
+     *
+     * Asset ids never appear. They are what the API takes; they are not what a
+     * director chooses between.
+     */
+    function renderBackgroundChoices(views) {
+        const el = document.getElementById('backgroundPickerChoices');
+        if (!el) return;
+        el.innerHTML = views.map((v, i) => `
+            <button class="btn btn-secondary" style="padding:0;overflow:hidden;text-align:left;display:block;"
+                    onclick="backgroundPickerResolve(BACKGROUND_PICKER_VIEWS[${i}])">
+              ${v.image_url
+                  ? `<img src="${escapeHtml(API_BASE + v.image_url)}" alt="${escapeHtml(v.label)}"
+                         style="width:100%;display:block;">`
+                  : '<div style="padding:28px 10px;" class="text-muted text-sm">no picture</div>'}
+              <div style="padding:7px 9px;" class="text-sm">${escapeHtml(v.label)}</div>
+            </button>`).join('');
+    }
+
+    let BACKGROUND_PICKER_VIEWS = [];
+
+    async function pickBackgroundView(shotId) {
+        let shot;
+        try { shot = await api(`/shots/${shotId}`); } catch (err) {
+            setStatus('Could not read the shot: ' + err.message); return null;
+        }
+        const locName = shot.location;
+        if (!locName) { setStatus('This scene names no location, so there are no views to choose.'); return null; }
+
+        let views = [];
+        try {
+            const locs = await api(`/projects/${state.currentProject.id}/locations`);
+            const rows = locs.locations || locs;
+            const loc = (Array.isArray(rows) ? rows : []).find(l =>
+                String(l.name).toLowerCase() === String(locName).toLowerCase());
+            if (loc) views = (await api(`/locations/${loc.id}/plate/views`)).views || [];
+        } catch (_) { views = []; }
+
+        // Only views with a picture: one that cannot be seen cannot be chosen
+        // by looking, which is the only way this choice is safe to make.
+        views = views.filter(v => v.image_url);
+        if (!views.length) {
+            setStatus(`${locName} has no photographed views yet. Open Direct and photograph the one you need.`);
+            return null;
+        }
+
+        BACKGROUND_PICKER_VIEWS = views;
+        document.getElementById('backgroundPickerTitle').textContent =
+            `Which background goes behind them? — ${locName}`;
+        renderBackgroundChoices(views);
+        showModal('backgroundPickerModal');
+        return new Promise(resolve => { BACKGROUND_PICKER = resolve; });
+    }
+
+    /**
+     * The film facts first; the mechanics one disclosure down.
+     *
+     * A director decides with "which performance, which background, what is
+     * held" — not with a character budget and a reference ordering. Those stay
+     * available because they are the only free feedback loop, but they are not
+     * the interface.
+     */
+    async function confirmRecompose(shotId, fromVersion, background, instruction) {
+        const body = document.getElementById('confirmGenBody');
+        const title = document.getElementById('confirmGenTitle');
+        if (!body) return true;
+        title.textContent = 'Change the background, keep the performance';
+        body.innerHTML = '<span class="text-muted text-sm">Reading what would be sent&hellip;</span>';
+        showModal('confirmGenModal');
+        const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
+
+        try {
+            const q = new URLSearchParams({ background_asset_id: background.asset_id });
+            if (fromVersion) q.set('from_version', fromVersion);
+            if (instruction) q.set('instruction', instruction);
+            const d = await api(`/shots/${shotId}/storyboard/recompose-preview?${q}`);
+            const esc = escapeHtml;
+            body.innerHTML = `
+              <div class="form-group">
+                <label>Keeping</label>
+                <div class="text-sm"><strong>${esc(d.keeping.from)}</strong>
+                  <span class="text-muted">&mdash; ${esc(d.keeping.what)}</span></div>
+              </div>
+              <div class="form-group">
+                <label>Background</label>
+                <div style="display:flex;gap:10px;align-items:center;">
+                  ${background.image_url
+                      ? `<img src="${esc(API_BASE + background.image_url)}" alt=""
+                             style="width:132px;border-radius:6px;display:block;">` : ''}
+                  <div class="text-sm"><strong>${esc(d.background.location)}</strong><br>
+                    <span class="text-muted">${esc(d.background.view)}</span></div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Holding</label>
+                <div class="text-sm">${d.holding.map(esc).join(' &middot; ')}</div>
+                <label style="margin-top:6px;">Taking from the background</label>
+                <div class="text-sm">${d.adopting.map(esc).join(' &middot; ')}</div>
+              </div>
+              <div class="form-group">
+                <label>Cost</label>
+                <div class="text-sm">${d.spend && d.spend.provider
+                    ? `${esc(d.spend.provider)}${d.spend.native_quantity
+                        ? ` &middot; ${d.spend.native_quantity} ${esc(d.spend.native_unit || 'units')}` : ''}`
+                      + `${Number.isFinite(d.spend.usd) ? ` &middot; about $${d.spend.usd.toFixed(2)}` : ''}`
+                      + `${d.spend.estimated ? ' <span class="text-muted">(estimated rate)</span>' : ''}`
+                    : '<span class="text-muted">Cost could not be read.</span>'}</div>
+                <div class="text-sm text-muted" style="line-height:1.45;">The frame you are working from
+                  stays in the version list either way.</div>
+              </div>
+              <details>
+                <summary style="cursor:pointer;font-size:12px;">Technical details</summary>
+                <div style="padding:8px 0 0;">
+                  <div class="text-sm text-muted">${esc(d.note)}</div>
+                  <ul style="margin:4px 0 8px 16px;padding:0;">${d.references.map(r =>
+                    `<li class="text-sm"><strong>${esc(r.role)}</strong> ${esc(r.subject)}
+                       <span class="text-muted">&mdash; ${esc(r.why)}</span></li>`).join('')}</ul>
+                  <div class="text-sm text-muted">${d.prompt_chars} characters</div>
+                  <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;margin:4px 0 0;padding:8px;
+                              border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.prompt)}</pre>
+                  <div class="text-sm text-muted" style="margin-top:6px;">Negative</div>
+                  <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;margin:2px 0 0;padding:8px;
+                              border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.negative_prompt)}</pre>
+                </div>
+              </details>`;
+        } catch (err) {
+            body.innerHTML = `<p class="text-sm" style="color:var(--gl-danger,#ef4444);">
+                Could not read what would be sent: ${escapeHtml(err.message)}.</p>`;
+        }
+        return decision;
+    }
+
+    /** Shared by both surfaces. */
+    async function runRecompose(shotId, fromVersion) {
+        const background = await pickBackgroundView(shotId);
+        if (!background) return;
+        const instruction = prompt(
+            'Anything to add? (optional)\n\n'
+            + 'The performance, framing and wardrobe are kept from the frame; the place, light and '
+            + 'grade come from the background. Leave blank unless you want something on top.') || '';
+
+        const ok = await confirmRecompose(shotId, fromVersion, background, instruction.trim());
+        if (!ok) return;
+
+        const done = frameBusy(shotId, 'Recomposing');
+        setStatus('Recomposing\u2026', true);
+        try {
+            const r = await api(`/shots/${shotId}/storyboard/recompose`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    from_version: fromVersion || undefined,
+                    background_asset_id: background.asset_id,
+                    instruction: instruction.trim() || undefined,
+                }),
+            });
+            done();
+            setStatus(`v${r.version}: kept ${r.kept_from}, background from ${r.background}.`);
+            await loadStoryboard();
+        } catch (err) {
+            done();
+            setStatus('Could not recompose: ' + err.message);
+        }
+    }
+
+    /** From the board — you are looking at the version you want to keep. */
+    async function recomposeFrame(shotId, version) {
+        markCurrentShot(shotId);
+        closeFrameVersions();
+        await runRecompose(shotId, version);
+    }
+
+    /** From previs — you are looking at the angle and deciding what is behind it. */
+    async function previsRecompose() {
+        if (!PREVIS.shotId) return setStatus('Open a shot in previs first.');
+        await runRecompose(PREVIS.shotId, null);
     }
 
     /**

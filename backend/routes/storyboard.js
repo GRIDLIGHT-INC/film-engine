@@ -474,6 +474,14 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
      * director looking at it three days later needs to know that without
      * reconstructing it from timestamps.
      */
+    /*
+     * A recomposed frame kept its performance from one version and took its
+     * place from a location view. Neither "generated" nor "refined" describes
+     * it, and the version list exists to answer "which of these am I looking
+     * at".
+     */
+    if (opts.recomposed_from !== undefined) metadata.recomposed_from = opts.recomposed_from;
+    if (opts.recomposed_background !== undefined) metadata.recomposed_background = opts.recomposed_background;
     if (opts.sent_from !== undefined) metadata.sent_from = opts.sent_from;
     if (opts.sent_from_shot_id !== undefined) metadata.sent_from_shot_id = opts.sent_from_shot_id;
     if (opts.sent_from_version !== undefined) metadata.sent_from_version = opts.sent_from_version;
@@ -587,6 +595,13 @@ function handleStoryboard(req, res, urlParts, query) {
 
         if (urlParts[4] === 'regenerate' && req.method === 'POST') {
             return regenerateShot(req, res, shotId);
+        }
+
+        if (urlParts[4] === 'recompose-preview' && req.method === 'GET') {
+            return recomposePreview(req, res, shotId, query);
+        }
+        if (urlParts[4] === 'recompose' && req.method === 'POST') {
+            return recomposeShot(req, res, shotId);
         }
 
         // GET /film/shots/:id/storyboard/refine-preview — what a refine would
@@ -1446,7 +1461,9 @@ function listShotFrames(req, res, shotId) {
             provider_model: meta.provider_model || null,
             // How it came to exist, which is often the thing you remember about
             // an attempt when you cannot remember its number.
-            origin: meta.sent_from ? `sent from ${meta.sent_from}`
+            origin: meta.recomposed_from
+                ? `${meta.recomposed_from} on ${meta.recomposed_background || 'a new background'}`
+                : meta.sent_from ? `sent from ${meta.sent_from}`
                 : meta.restored_from ? `restored from v${meta.restored_from}`
                 : meta.refined_from ? `refine (${meta.refined_from})`
                 : meta.instruction ? 'refine'
@@ -2158,6 +2175,296 @@ function refinePreview(req, res, shotId, query) {
     });
 }
 
+
+/**
+ * What a RECOMPOSE sends: keep the performance from one frame, take the place
+ * from another.
+ *
+ * No existing operation could express this. `regenerate` rebuilds the whole
+ * frame from the card; `refine` sends one picture and a negative that refuses
+ * `different composition, different framing` — and on a close-up the background
+ * IS most of the composition it is told to preserve, so refine is structurally
+ * incapable of replacing it.
+ *
+ * Two ordered references: [0] the frame whose performance is kept, [1] the
+ * plate whose place is adopted. Roles are POSITIONAL, never tagged: only Runway
+ * preserves @tags, while Meshy and Gridlight flatten the array and OpenAI's
+ * edit input has no tag syntax — and this project runs Meshy.
+ *
+ * The CHANGE leads. Three separate failures in one day had continuity language
+ * outranking the change, and each time the model returned the source unchanged.
+ *
+ * ONE SOURCE OF TRUTH PER ROLE. The FIRST supplies the performance; the SECOND
+ * supplies the environment INCLUDING its light and grade. Claiming the original
+ * lighting while adopting a new place asks one question twice and lets the
+ * model pick.
+ */
+function buildRecomposePayload(opts) {
+    const o = opts || {};
+    const note = String(o.instruction || '').trim();
+    const prompt = 'Replace the entire background in the FIRST reference image with the location '
+        + 'shown in the SECOND reference image. '
+        + 'Keep the person and foreground performance from the FIRST image exactly: same identity, '
+        + 'face, expression, pose, eyeline, wardrobe, scale, crop, composition, camera position, '
+        + 'lens and framing. '
+        + 'Use the SECOND image only for the environment behind them: its architecture, set '
+        + 'dressing, time of day, lighting and colour grade; do not copy its camera framing or add '
+        + 'any people from it.'
+        /*
+         * The director's own words, LABELLED as additive.
+         *
+         * Unlabelled and last, a note sits after the invariants and competes
+         * with them — "push the rain harder" reads as licence to change the
+         * grade the SECOND image was just made authoritative for. Naming it
+         * non-conflicting keeps it additive.
+         */
+        + (note ? ` Additional non-conflicting direction: ${note.replace(/\.?$/, '.')}` : '');
+
+    return {
+        prompt,
+        negative_prompt: 'original background, unchanged background, same backdrop, '
+            + 'different person, different identity, different face, different expression, '
+            + 'different pose, different eyeline, different wardrobe, recropped, '
+            + 'different composition, different camera position, different lens, different framing, '
+            + 'extra person, duplicate person',
+    };
+}
+
+/**
+ * Which plate supplies the new background.
+ *
+ * `background_asset_id` is canonical; `background_view` is the convenience a
+ * picker uses. Either way the plate must belong to THIS shot's location: a
+ * plate from elsewhere is a different film, and accepting one would put another
+ * production's street behind this actor with nothing to notice.
+ */
+function resolveRecomposeBackground(shotId, body) {
+    const b = body || {};
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return { error: 'Shot not found', status: 404 };
+    const scene = db.prepare('SELECT project_id, location FROM film_scenes WHERE id = ?')
+        .get(shot.scene_id);
+    if (!scene) return { error: 'Scene not found', status: 404 };
+
+    const loc = scene.location
+        ? db.prepare('SELECT id, name FROM film_locations WHERE project_id = ? AND LOWER(name) = LOWER(?)')
+            .get(scene.project_id, scene.location)
+        : null;
+    if (!loc) {
+        return { error: 'This scene names no location, so there are no background views to choose from.',
+            status: 409 };
+    }
+
+    const plates = db.prepare(
+        `SELECT id, file_path, file_name, metadata FROM film_assets
+          WHERE project_id = ? AND location_id = ?
+            AND asset_type IN ('reference_image', 'character_sheet')
+       ORDER BY created_at ASC`).all(scene.project_id, loc.id);
+    const viewOf = r => {
+        try { return String((JSON.parse(r.metadata || '{}').view) || '').trim(); }
+        catch (_) { return ''; }
+    };
+
+    let plate = null;
+    if (b.background_asset_id) {
+        plate = plates.find(r => r.id === b.background_asset_id) || null;
+        if (!plate) {
+            // Named explicitly and not found HERE: either it does not exist or
+            // it belongs to another location. Refused rather than fallen back,
+            // because falling back would silently use a different place than
+            // the one asked for.
+            return { error: 'That background does not belong to this shot\'s location.', status: 409 };
+        }
+    } else if (b.background_view) {
+        const want = String(b.background_view).trim().toLowerCase();
+        plate = plates.find(r => viewOf(r).toLowerCase() === want) || null;
+        if (!plate) return { error: `This location has no view called "${b.background_view}".`, status: 404 };
+    } else {
+        return { error: 'Name the background to use (background_asset_id, or background_view).',
+            status: 400 };
+    }
+
+    if (!plate.file_path || !fs.existsSync(plate.file_path)) {
+        return { error: 'That view\'s picture is no longer on disk.', status: 409 };
+    }
+    return { plate, view: viewOf(plate), location: loc, scene, shot };
+}
+
+/** The source frame: a kept version, or whatever the shot currently shows. */
+function resolveRecomposeSource(shotId, projectId, shotCode, version) {
+    if (version) {
+        const row = db.prepare(
+            `SELECT file_path, version FROM film_assets
+              WHERE shot_id = ? AND asset_type = 'storyboard' AND version = ?`).get(shotId, Number(version));
+        if (!row) return { error: `This shot has no version ${version}`, status: 404 };
+        const live = storyboardImagePath(projectId, shotCode);
+        if (row.file_path && path.resolve(row.file_path) === path.resolve(live)) {
+            return { error: `Version ${version}'s own picture was never kept aside.`, status: 409 };
+        }
+        if (!row.file_path || !fs.existsSync(row.file_path)) {
+            return { error: `The file for version ${version} is no longer on disk.`, status: 409 };
+        }
+        return { path: row.file_path, version: row.version };
+    }
+    const live = storyboardImagePath(projectId, shotCode);
+    if (!fs.existsSync(live)) return { error: 'This shot has no frame yet.', status: 409 };
+    return { path: live, version: currentFrameVersion(shotId) };
+}
+
+/**
+ * GET /film/shots/:id/storyboard/recompose-preview — free.
+ *
+ * Film facts first: which performance, which place, what is held. The prompt
+ * and the ordering are reported too, but a director should not have to read
+ * them to know what they are about to buy.
+ */
+function recomposePreview(req, res, shotId, query) {
+    const q = query || {};
+    const bg = resolveRecomposeBackground(shotId, {
+        background_asset_id: q.background_asset_id, background_view: q.background_view });
+    if (bg.error) return json(res, bg.status || 400, { error: bg.error });
+
+    const src = resolveRecomposeSource(shotId, bg.scene.project_id, bg.shot.shot_code, q.from_version);
+    if (src.error) return json(res, src.status || 409, { error: src.error });
+
+    const built = buildRecomposePayload({ instruction: q.instruction });
+    return json(res, 200, {
+        shot_id: shotId,
+        shot_code: bg.shot.shot_code,
+        // ── the film facts ──
+        keeping: {
+            from: src.version ? `${bg.shot.shot_code} v${src.version}` : `${bg.shot.shot_code} (current frame)`,
+            version: src.version,
+            what: 'performance, framing, camera position, lens and wardrobe',
+        },
+        background: {
+            location: bg.location.name,
+            view: bg.view || 'default view',
+            asset_id: bg.plate.id,
+            // The picture itself, built with the same helper the views list
+            // uses. The first draft shipped a dead expression here that always
+            // yielded undefined, so the confirmation had nothing to show and a
+            // director would have been approving a NAME.
+            image_url: require('../lib/file-storage').getFileUrl(
+                'refsheets', bg.scene.project_id, bg.plate.file_name),
+            file_name: bg.plate.file_name,
+        },
+        holding: ['framing and crop', 'eyeline', 'identity and wardrobe', 'camera position and lens'],
+        adopting: ['architecture and set dressing', 'time of day', 'lighting and colour grade'],
+        // ── the mechanics, for the collapsed panel ──
+        references: [
+            { role: 'FIRST', subject: `${bg.shot.shot_code} v${src.version}`, kind: 'frame',
+              why: 'the performance is kept from this' },
+            { role: 'SECOND', subject: `${bg.location.name} — ${bg.view || 'default view'}`, kind: 'location',
+              why: 'the environment is taken from this' },
+        ],
+        /*
+         * What it will cost, from the published rate book rather than a
+         * disclaimer. "Costs credits" tells a director nothing they can decide
+         * with; the provider and the real figure are the difference between
+         * choosing to spend and being told you did.
+         */
+        spend: (() => {
+            try {
+                const { rateFor } = require('../lib/provider-pricing');
+                const chain = imageProviderChain(spendContext(
+                    db.prepare('SELECT id, provider_config FROM film_projects WHERE id = ?')
+                        .get(bg.scene.project_id), bg.shot));
+                const lead = chain[0];
+                const rate = lead ? rateFor(lead.id, 'image') : null;
+                if (!lead) return { provider: null, note: 'No image provider is configured.' };
+                return {
+                    provider: lead.id,
+                    images: 1,
+                    native_quantity: rate ? rate.native_per_unit : null,
+                    native_unit: rate ? rate.native_unit : null,
+                    usd: rate && Number.isFinite(rate.usd_per_unit) ? rate.usd_per_unit : null,
+                    // Named rather than hidden: a rate this install has not
+                    // corrected is an estimate, and a confident wrong number is
+                    // worse than an admitted approximate one.
+                    estimated: !!(rate && rate.inferred),
+                    source: rate ? rate.source : null,
+                };
+            } catch (_) { return { provider: null, note: 'Cost could not be read.' }; }
+        })(),
+        prompt: built.prompt,
+        negative_prompt: built.negative_prompt,
+        prompt_chars: built.prompt.length,
+        note: 'The performance comes from the FIRST picture and the place from the SECOND. Roles are '
+            + 'by ORDER, not by name, because most providers flatten reference tags.',
+    });
+}
+
+/** POST /film/shots/:id/storyboard/recompose — costs credits. */
+async function recomposeShot(req, res, shotId) {
+    const body = req.body || {};
+    const bg = resolveRecomposeBackground(shotId, body);
+    if (bg.error) return json(res, bg.status || 400, { error: bg.error });
+
+    const project = db.prepare(
+        'SELECT id, title, style_preset, provider_config, aspect_ratio, board_locked_at FROM film_projects WHERE id = ?')
+        .get(bg.scene.project_id);
+    const lk = boardLocked(project, body);
+    if (lk) return json(res, 423, lk);
+
+    const src = resolveRecomposeSource(shotId, project.id, bg.shot.shot_code, body.from_version);
+    if (src.error) return json(res, src.status || 409, { error: src.error });
+
+    const { toDataUri } = require('../lib/reference-images');
+    let subjectUri, placeUri;
+    try {
+        subjectUri = toDataUri(src.path);
+        placeUri = toDataUri(bg.plate.file_path);
+    } catch (err) {
+        return json(res, 500, { error: `Could not read a reference: ${err.message}` });
+    }
+    if (!subjectUri || !placeUri) {
+        return json(res, 409, { error: 'A reference could not be inlined.' });
+    }
+
+    const built = buildRecomposePayload({ instruction: body.instruction });
+    db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shotId);
+    try {
+        ensureStoryboardDir(project.id);
+        const payload = {
+            prompt: built.prompt,
+            negative_prompt: built.negative_prompt,
+            // ORDER IS THE CONTRACT: subject first, place second.
+            reference_images: [
+                { name: bg.shot.shot_code, kind: 'frame', tag: 'performance', uri: subjectUri, weight: 0.9 },
+                { name: bg.location.name, kind: 'location', tag: 'place', uri: placeUri, weight: 0.6 },
+            ],
+            aspect_ratio: project.aspect_ratio,
+        };
+        const { buffer, provider, model } = await callImageGen(
+            payload.prompt, payload.negative_prompt, undefined, payload, spendContext(project, bg.shot));
+
+        const imgPath = storyboardImagePath(project.id, bg.shot.shot_code);
+        archiveExistingFrame(project.id, shotId, bg.shot.shot_code);
+        fs.writeFileSync(imgPath, buffer);
+
+        const asset = registerStoryboardAsset(project.id, shotId, imgPath, `${bg.shot.shot_code}.png`, {
+            provider, provider_model: model,
+            recomposed_from: `${bg.shot.shot_code} v${src.version}`,
+            recomposed_background: bg.view || 'default view',
+        });
+        db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('complete', shotId);
+
+        return json(res, 200, {
+            shot_id: shotId,
+            shot_code: bg.shot.shot_code,
+            version: asset.version,
+            provider,
+            kept_from: `${bg.shot.shot_code} v${src.version}`,
+            background: `${bg.location.name} — ${bg.view || 'default view'}`,
+            image_url: storyboardImageUrl(project.id, bg.shot.shot_code),
+        });
+    } catch (err) {
+        db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('complete', shotId);
+        return json(res, 502, { error: 'Recompose failed: ' + err.message });
+    }
+}
+
 /**
  * Change one thing about a frame you already have.
  *
@@ -2687,4 +2994,5 @@ function selectReferenceImage(sceneCard, matchedChars, matchedLocation, projectI
     return { ip_adapter_image: null, ip_adapter_weight: null, source: null };
 }
 
-module.exports = { handleStoryboard, matchProps };
+module.exports = {
+    buildRecomposePayload, handleStoryboard, matchProps };

@@ -290,13 +290,33 @@ test('an explicitly chosen view survives an attached anchor', () => {
  * kind-specific conditional is a special case waiting to rot — and `prop` has
  * exactly the same fusion with exactly the same consequence.
  */
-test('a view replaces the default framing for every plate kind', () => {
+test('a view replaces the default framing for every plate kind, anchored or not', () => {
     const { PLATE_KINDS, buildPlatePrompt } = require('../lib/reference-plates');
     const kinds = Object.keys(PLATE_KINDS);
     assert.ok(kinds.length >= 2, `expected the plate registry, found ${kinds.length}`);
 
     const SENTINEL = 'zzsentinelviewzz standing where nobody stands';
 
+    /*
+     * BOTH anchor modes, because the anchored one is the path that actually
+     * runs. Creating an additional view of a location always attaches the
+     * existing plate — so a test that only exercised `anchored=false` proved
+     * nothing about the real feature, and passed while the view was being
+     * stated TWICE (once in the leading camera-change clause, once in the later
+     * "photographed <view>"). codex caught that on review; verified before
+     * fixing: location 2, prop 2.
+     *
+     * Saying it twice is not harmless. The lead clause exists because whatever
+     * leads a prompt is what the image is OF, and a second statement further
+     * down competes with it for exactly the instruction the lead was placed
+     * first to win.
+     *
+     * BOUNDARY, by derivation rather than deferral: the character reference
+     * sheet is not a PLATE_KINDS consumer and is deliberately excluded. Its
+     * front/side/back is SUBJECT ORIENTATION inside a fixed full-body identity
+     * frame, not an environmental camera view — a different axis, which is why
+     * it has its own builder and why widening this registry would not reach it.
+     */
     for (const kind of kinds) {
         const spec = PLATE_KINDS[kind];
         assert.ok(typeof spec.framing === 'string' && spec.framing,
@@ -306,24 +326,46 @@ test('a view replaces the default framing for every plate kind', () => {
             + 'plate — a location reference with a stranger standing in it, or a prop shot in a room');
 
         const subject = { name: `THE ${kind.toUpperCase()}`, description: 'a thing' };
-        const withView = buildPlatePrompt(kind, subject, 'a look', SENTINEL, false);
-        const noView = buildPlatePrompt(kind, subject, 'a look', null, false);
 
-        // The view is what the framing IS.
-        assert.strictEqual((withView.match(new RegExp(SENTINEL, 'g')) || []).length, 1,
-            `${kind}: the view appears ${(withView.match(new RegExp(SENTINEL, 'g')) || []).length} `
-            + 'times; it must be stated exactly once');
-        assert.ok(!withView.includes(spec.framing),
-            `${kind}: the default framing is still in the prompt alongside the view, so the `
-            + 'boilerplate can outrank what was actually asked for');
+        for (const anchored of [false, true]) {
+            const withView = buildPlatePrompt(kind, subject, 'a look', SENTINEL, anchored);
+            const count = (withView.match(new RegExp(SENTINEL, 'g')) || []).length;
 
-        // The invariants survive it.
-        for (const c of spec.constraints) {
-            assert.ok(withView.includes(c),
-                `${kind}: the invariant "${c}" was dropped when a view was given`);
+            assert.strictEqual(count, 1,
+                `${kind} (anchored=${anchored}): the view is stated ${count} times. It must be `
+                + 'stated exactly once — a second statement competes with the leading clause for '
+                + 'the very instruction the lead was placed first to win');
+
+            assert.ok(!withView.includes(spec.framing),
+                `${kind} (anchored=${anchored}): the default framing is still in the prompt `
+                + 'alongside the view, so the boilerplate can outrank what was asked for');
+
+            for (const c of spec.constraints) {
+                assert.ok(withView.includes(c),
+                    `${kind} (anchored=${anchored}): the invariant "${c}" was dropped`);
+            }
+
+            // Where the single statement lives differs by mode, and that is the
+            // point: anchored, the view IS the camera change and belongs in the
+            // lead; unanchored there is nothing to change from, so it is simply
+            // what was photographed.
+            const leadIdx = withView.indexOf(SENTINEL);
+            if (anchored) {
+                assert.ok(leadIdx < 160,
+                    `${kind}: anchored, the view starts ${leadIdx} chars in — it must lead, `
+                    + 'because whatever leads a prompt is what the image is of');
+                assert.ok(!/photographed zzsentinel/.test(withView),
+                    `${kind}: anchored, the view is repeated in the "photographed" clause`);
+            } else {
+                assert.ok(/photographed zzsentinel/.test(withView),
+                    `${kind}: unanchored, the view is not stated as what was photographed`);
+                assert.ok(!/different camera position/i.test(withView),
+                    `${kind}: unanchored, the prompt claims a move from a reference that does not exist`);
+            }
         }
 
-        // And with no view, the default is exactly what you get.
+        // With no view, the default is exactly what you get.
+        const noView = buildPlatePrompt(kind, subject, 'a look', null, false);
         assert.ok(noView.includes(spec.framing),
             `${kind}: asking for no particular view lost the default framing`);
         assert.ok(!noView.includes(SENTINEL), `${kind}: a view leaked into a plate that has none`);

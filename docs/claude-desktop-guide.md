@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**137 tools, 37 families.** Everything the app can do, you can ask for in a
+**138 tools, 37 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -121,6 +121,7 @@ first so the card validates.
 ### 5. Storyboard
 
 `storyboard_generate` · `storyboard_regenerate` · `storyboard_refine` ·
+- `storyboard_recompose` — keep the PERFORMANCE from one frame and replace its BACKGROUND with a photographed view of the shot's location. Use it when the acting, framing and camera are right and the place behind them is wrong; `storyboard_refine` cannot, because its contract refuses composition changes and on a close-up the background is most of the composition. The background must be a view of that shot's own location — photograph the view you need first. Costs credits.
 `anchor_get` · `anchor_set` · `anchor_clear` · `annotation_list` ·
 `annotation_delete`
 

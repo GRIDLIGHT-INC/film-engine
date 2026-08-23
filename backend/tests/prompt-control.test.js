@@ -305,8 +305,12 @@ test('every path that generates a frame records how it was directed', () => {
 
     // `sent_from` counts: a borrowed frame was directed on ANOTHER shot, and
     // naming where it came from says more than a mode would.
+    // `recomposed_from` counts too: keeping a performance and swapping the
+    // place is a directing decision, and naming it is what lets the version
+    // list tell one attempt from another.
     const silent = generated.filter(s =>
-        !/direction_mode/.test(s.opts) && !/refined_from/.test(s.opts) && !/sent_from/.test(s.opts));
+        !/direction_mode/.test(s.opts) && !/refined_from/.test(s.opts)
+        && !/sent_from/.test(s.opts) && !/recomposed_from/.test(s.opts));
     assert.deepStrictEqual(silent.map(s => s.line), [],
         'these paths generate a frame and record nothing about how it was directed, '
         + `so its version cannot be told apart from any other: lines ${silent.map(s => s.line).join(', ')}`);

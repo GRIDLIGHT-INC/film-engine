@@ -203,6 +203,7 @@ film-engine/
 │       ├── playback-start.test.js # Playback opens on the shot you were working on
 │       ├── anchor-plate-override.test.js # An anchor covers where a subject stands, not who they are in close-up
 │       ├── location-views.test.js  # A location has views; a shot picks the one it is pointed at
+│       ├── recompose.test.js       # Keep the performance from one frame, take the place from another
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -559,6 +560,21 @@ Served on the board (`anchor.is_anchor` per frame, `anchor_shot_id` per project)
 **The free preview leads rather than hiding behind a toggle.** `GET /shots/:id/prompt` spends nothing and reports the assembled prompt, the ceiling, the headroom and every contributor with what it wanted and what survived — so the budget is a set of bars you read *before* paying, and the mode that costs money to try is the one you can look at first. Choosing a mode re-reads it, which is why the preview had to learn `direction_mode` in the first place. A mode that cannot run — camera mode with no anchor attached — says so **where it is chosen**, rather than as a 409 after the click.
 
 `tests/direct-shot-ui.test.js` **derives** the parameter set from the route, including the two read through shared helpers (`activeAnchorFor_` → `use_anchor`, `annotationsFor` → `use_annotations`). A hand-written list is only ever as complete as whoever wrote it that afternoon, and the next parameter added to the route would be silently unreachable again with nothing failing. It also checks each sent parameter has a control **a person can operate**, since sending a hardcoded value is not the same as offering control over it.
+
+### Recompose: Keep the Performance, Change the Place
+*"V6's framing and reaction are perfect, but not the background — it should be the opposite side, as she's looking at the dragon."*
+
+No existing operation could express that. `regenerate` rebuilds the whole frame from the card and loses the performance. `refine` sends one picture and a negative that refuses `different composition, different framing` — and on a close-up **the background IS most of the composition it is told to preserve**, so refine is structurally incapable of replacing it. Every path treated references as *things to be consistent with*; none assigned them **roles**.
+
+`recompose` sends two ordered references: **[0]** the frame whose performance is kept, **[1]** the plate whose place is adopted. Roles are **positional, never tagged** — only Runway preserves `@tags`, while Meshy and Gridlight flatten the array and OpenAI's edit input has no tag syntax, and this project runs Meshy.
+
+**The change leads.** Three separate failures in one day had continuity language outranking the change, and each time the model returned the source unchanged. So the prompt opens *"Replace the entire background in the FIRST reference image with the location shown in the SECOND"*, and what is preserved follows.
+
+**One source of truth per role.** The FIRST supplies identity, face, expression, pose, eyeline, wardrobe, scale, crop, composition, camera position, lens and framing. The SECOND supplies architecture, set dressing, time of day, **lighting and colour grade**. Claiming the original lighting while adopting a new place asks one question twice and lets the model pick. The negative refuses **both** directions — `original background, unchanged background` and `different person, different pose, different framing, extra person`.
+
+**The background must belong to this shot's own location.** A plate from elsewhere is a different film, and a named-but-absent one is **refused rather than fallen back**, since falling back would silently use a different place than the one asked for.
+
+Reachable from **both** directing surfaces — the board's version list and previs — through **one** runner and **one** confirmation, because two separately written confirmations are how two surfaces come to disagree about what they are about to buy. The confirmation leads with **film facts** (what is kept, which background, what is held, what is adopted) and puts the prompt, the negative and the reference ordering under a collapsed *Technical details*: the mechanics stay available because they are the only free feedback loop, but they are not the directing interface.
 
 ### A Location Has Views; a Shot Picks One
 A location had exactly **one** plate, selected with `ORDER BY version DESC LIMIT 1`, with no record of which way it faced. On Wingfall that plate looks from the entrance **into** the cul-de-sac — so 1A and 2A had a photograph, and 2B and 2AA, which shoot back the other way, were handed a picture of what was **behind** the camera and invented the rest. Every wrong road, missing kerb and misplaced car traces to it.
@@ -1455,6 +1471,7 @@ node --test backend/tests/shot-insert.test.js
 node --test backend/tests/playback-start.test.js
 node --test backend/tests/anchor-plate-override.test.js
 node --test backend/tests/location-views.test.js
+node --test backend/tests/recompose.test.js
 node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js

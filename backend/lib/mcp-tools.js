@@ -1243,6 +1243,49 @@ const PRODUCTION_TOOLS = [
         required: ['shot_id', 'version'],
     },
     {
+        name: 'storyboard_recompose',
+        handler: handleStoryboard, method: 'POST',
+        description: 'Keep the PERFORMANCE from one frame and replace its BACKGROUND with a photographed '
+            + 'view of the shot\u2019s location. Use this when the acting, framing and camera are right '
+            + 'and the place behind them is wrong \u2014 storyboard_refine cannot do it, because its '
+            + 'contract refuses composition changes and on a close-up the background IS most of the '
+            + 'composition. Two references travel in ORDER: the frame first, the background view second. '
+            + 'The background must be a view of this shot\u2019s own location; photograph one first if the '
+            + 'angle you need does not exist. Costs credits.',
+        path: a => `/film/shots/${a.shot_id}/storyboard/recompose`,
+        body: a => ({
+            from_version: a.from_version,
+            background_asset_id: a.background_asset_id,
+            background_view: a.background_view,
+            instruction: a.instruction,
+        }),
+        schema: {
+            shot_id: { type: 'string' },
+            from_version: {
+                type: 'number',
+                description: 'Which kept version supplies the performance. Omit for the frame the shot '
+                    + 'currently shows.',
+            },
+            background_asset_id: {
+                type: 'string',
+                description: 'The location view to put behind them. Canonical; get it from the location\u2019s '
+                    + 'views. Must belong to this shot\u2019s location.',
+            },
+            background_view: {
+                type: 'string',
+                description: 'The view by NAME instead of id, e.g. "from the far kerb, looking back across '
+                    + 'the bulb". Convenience; the id is exact.',
+            },
+            instruction: {
+                type: 'string',
+                description: 'Optional, additive. The performance, framing and wardrobe are already held '
+                    + 'and the light and grade already come from the background \u2014 say something only '
+                    + 'if you want it ON TOP of that.',
+            },
+        },
+        required: ['shot_id'],
+    },
+    {
         name: 'storyboard_refine',
         handler: handleStoryboard, method: 'POST',
         description: 'Keep an existing frame and change ONE thing about it. Sends the picture itself plus a single instruction — no scene card, no subject descriptions, no style preset, because the picture already carries all of that and repeating it in words pulls the result back toward a fresh generation. Use this instead of storyboard_regenerate whenever the composition is right and one element is wrong: "remove the sprinkler", "move the car to the kerb". Pass version to refine an earlier attempt rather than the current frame. Costs credits.',
