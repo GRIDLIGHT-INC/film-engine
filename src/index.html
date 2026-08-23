@@ -21408,25 +21408,20 @@ ${fountainText.slice(0, 50000)}`;
         // detection existed and had one remedy — regenerate — which spends
         // money to replace an image someone chose, and cannot promise to
         // reproduce it. "Still right" needed to be sayable.
+        /*
+         * THE BANNER MUST NOT HOLD THE MODAL SHUT.
+         *
+         * This awaited the whole-project staleness report before writing a
+         * single character of the body, so opening a location with a plate
+         * showed a titled, empty box for as long as that report took — which
+         * grows with the number of generated assets. It read as "modals are
+         * slow when a picture is involved"; the picture had nothing to do with
+         * it, and neither did the modal.
+         *
+         * The body renders now. The banner is information about the plate, not
+         * a gate on reading the record, so it arrives when it arrives.
+         */
         let staleBanner = '';
-        try {
-            const rep = await api(`/projects/${state.currentProject.id}/staleness`);
-            const hit = (rep.stale || []).find(x => x.shot_id === undefined
-                && String(x.file_name || '').toLowerCase().includes(String(row.name || '').toLowerCase().replace(/\s+/g, '_')));
-            if (hit) {
-                staleBanner = `<div class="card" style="margin-bottom:12px;border-color:var(--gl-warning,#f59e0b);">
-                    <strong>Plate is out of date</strong>
-                    <p class="text-sm" style="margin:6px 0;">${esc(hit.reason || 'inputs changed since it was generated')}</p>
-                    <div style="display:flex;gap:8px;">
-                        <button class="btn btn-secondary btn-sm" onclick="acceptPlate('${hit.asset_id}','${kind}')"
-                                title="Keep this image and record it as current">Still correct</button>
-                        <button class="btn btn-secondary btn-sm" onclick="regeneratePlate('${kind}','${id}')"
-                                title="Generate a new plate — replaces this one and costs credits">Regenerate</button>
-                    </div>
-                </div>`;
-            }
-        } catch (_) { /* the banner is information, not a gate */ }
-
         body.innerHTML = `
             ${staleBanner}
             <div style="display:flex;gap:20px;flex-wrap:wrap;">
@@ -21441,6 +21436,29 @@ ${fountainText.slice(0, 50000)}`;
                 </div>
             </div>
             ${kind === 'location' ? `<div id="locationViewsSection" style="margin-top:18px;"></div>` : ''}`;
+
+        // Now that the record is readable, ask whether the plate is behind.
+        (async () => {
+            try {
+                const rep = await api(`/projects/${state.currentProject.id}/staleness`);
+                const hit = (rep.stale || []).find(x => x.shot_id === undefined
+                    && String(x.file_name || '').toLowerCase()
+                        .includes(String(row.name || '').toLowerCase().replace(/\s+/g, '_')));
+                if (!hit || !body.isConnected) return;
+                const banner = document.createElement('div');
+                banner.className = 'card';
+                banner.style.cssText = 'margin-bottom:12px;border-color:var(--gl-warning,#f59e0b);';
+                banner.innerHTML = `<strong>Plate is out of date</strong>
+                    <p class="text-sm" style="margin:6px 0;">${esc(hit.reason || 'inputs changed since it was generated')}</p>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-secondary btn-sm" onclick="acceptPlate('${hit.asset_id}','${kind}')"
+                                title="Keep this image and record it as current">Still correct</button>
+                        <button class="btn btn-secondary btn-sm" onclick="regeneratePlate('${kind}','${id}')"
+                                title="Generate a new plate — replaces this one and costs credits">Regenerate</button>
+                    </div>`;
+                body.insertBefore(banner, body.firstChild);
+            } catch (_) { /* the banner is information, not a gate */ }
+        })();
 
         // A LOCATION OWNS ITS VIEWS, so they live on the location.
         //

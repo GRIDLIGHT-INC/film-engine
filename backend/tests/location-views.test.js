@@ -460,3 +460,27 @@ test('the location itself is where its pictures are managed', () => {
     assert.deepStrictEqual(missing, [],
         'a location cannot manage its own pictures');
 });
+
+test('the entity modal renders before it asks whether the plate is stale', () => {
+    /*
+     * inspectEntity awaited the whole-project staleness report before writing
+     * a single character of the body, so opening a location with a plate
+     * showed a titled, empty box for as long as that report took — and that
+     * report grows with every generated asset in the project.
+     *
+     * It read as "modals are slow when a picture is involved". The picture had
+     * nothing to do with it. The banner is information ABOUT the plate, not a
+     * gate on reading the record, so the body must not wait for it.
+     */
+    const html = fs.readFileSync(path.join(ROOT, '..', 'src', 'index.html'), 'utf8');
+    const fn = html.slice(html.indexOf('async function inspectEntity('),
+        html.indexOf('async function renderLocationViews('));
+    assert.ok(fn.length, 'inspectEntity is gone');
+
+    const renders = fn.indexOf('body.innerHTML = `');
+    const asksStaleness = fn.indexOf('/staleness');
+    assert.ok(renders > 0, 'the modal never renders a body');
+    assert.ok(asksStaleness < 0 || renders < asksStaleness,
+        'the staleness report is awaited before the body is written, so the modal stays '
+        + 'empty until a whole-project report returns');
+});
