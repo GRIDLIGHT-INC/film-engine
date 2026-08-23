@@ -51,9 +51,22 @@ function validateBytes(spec, mime, bytes) {
         // Validate with the same parser Previs uses. A header-only GLB or a
         // scene without drawable triangles is an upload that succeeds and a
         // stage object that can never render.
-        const geometry = parseGlb(bytes);
+        let geometry;
+        try { geometry = parseGlb(bytes); }
+        catch (err) {
+            /*
+             * The parser's reason, kept and made actionable.
+             *
+             * "invalid GLB" alone is why two imports read as a broken importer:
+             * the file was refused for a nameable reason (compression, an
+             * external .bin, an extension) and the user was told only that it
+             * did not work, on a status bar at the bottom of the screen.
+             */
+            throw new Error(`This GLB could not be read — ${String(err.message).replace(/^glb:\s*/, '')}.`);
+        }
         if (!geometry.vertices.length || !geometry.triangles.length) {
-            throw new Error('invalid GLB: the model has no drawable triangle geometry');
+            throw new Error('This GLB has no drawable triangle geometry — it may be a points or lines '
+                + 'export, or contain only cameras and lights. Re-export it as a triangle mesh.');
         }
     }
 }

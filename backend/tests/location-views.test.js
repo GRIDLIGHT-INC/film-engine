@@ -484,3 +484,231 @@ test('the entity modal renders before it asks whether the plate is stale', () =>
         'the staleness report is awaited before the body is written, so the modal stays '
         + 'empty until a whole-project report returns');
 });
+
+// ── 10. The compass sweep: one picture becomes four sides ───────────────
+//
+// Every view a director generated on the real production came back the same
+// side of the street, so 2AA — which shoots back the other way — was blocked.
+// The cause is the anchor: the plate contains no information about what is
+// behind its own camera, so a model asked to turn round re-photographs what it
+// can see. Refusing the old viewpoint is not enough; the prompt has to say
+// where the old content WENT, and by how much the camera turned.
+//
+// Set-based over COMPASS_VIEWS, because the failure is per-bearing: a 90° turn
+// is a plausible picture of the same street and passes any eyeball check, while
+// the 180° — the one that unblocks 2AA — is the one that comes back identical.
+
+test('every compass view has a bearing, a name and a file of its own', () => {
+    const { COMPASS_VIEWS, plateFileName } = require('../lib/reference-plates');
+    assert.ok(Array.isArray(COMPASS_VIEWS) && COMPASS_VIEWS.length === 4,
+        'the compass is not a registry of four sides');
+
+    const seen = new Set();
+    for (const v of COMPASS_VIEWS) {
+        assert.ok(v.name && typeof v.name === 'string', `compass view has no name: ${JSON.stringify(v)}`);
+        assert.ok(Number.isInteger(v.bearing) && v.bearing % 90 === 0 && v.bearing < 360,
+            `${v.name}: bearing must be a quarter turn, got ${v.bearing}`);
+        const file = plateFileName('location', 'SUBURBAN STREET', v.name);
+        assert.ok(!seen.has(file), `${v.name} shares a file with another side: ${file}`);
+        seen.add(file);
+    }
+    // Exactly one is the side the others turn FROM — the plate the director
+    // already has. Generating it again would buy a duplicate of a picture we
+    // were handed for free.
+    const anchors = COMPASS_VIEWS.filter(v => v.isAnchor);
+    assert.strictEqual(anchors.length, 1, 'the compass must have exactly one anchor side');
+    assert.strictEqual(anchors[0].bearing, 0, 'the anchor side is the one at bearing 0');
+});
+
+test('each generated side states the turn, the bearing, and that the reference is out of frame', () => {
+    const { COMPASS_VIEWS, buildPlatePrompt } = require('../lib/reference-plates');
+    const subject = { id: 'l1', name: 'SUBURBAN STREET', description: 'A quiet cul-de-sac.' };
+
+    for (const v of COMPASS_VIEWS.filter(x => !x.isAnchor)) {
+        const prompt = buildPlatePrompt('location', subject, 'photoreal, blue hour', v.name, true);
+        const head = prompt.slice(0, 200).toLowerCase();
+
+        // Whatever leads a prompt is what the image is OF. If continuity leads,
+        // the model reproduces the reference — which is exactly what happened.
+        assert.ok(/turn|round|opposite|face/.test(head),
+            `${v.name}: the turn does not lead the prompt — got: ${prompt.slice(0, 120)}`);
+
+        // A bearing is unambiguous where "looking back across the bulb" is not.
+        assert.ok(prompt.includes(`${v.bearing}`),
+            `${v.name}: the prompt never states the ${v.bearing}° turn`);
+
+        // The sentence that was missing. Refusing the old viewpoint in the
+        // negative told the model not to repeat a framing; nothing told it the
+        // things in the reference are no longer in shot.
+        assert.ok(/not in (this )?frame|out of frame|no longer in (this )?(frame|shot)/i.test(prompt),
+            `${v.name}: the prompt never says the reference's content has left the frame`);
+
+        // Continuity still has to survive, or four sides are four streets.
+        assert.ok(/same (buildings|materials|ground|place|location)/i.test(prompt),
+            `${v.name}: nothing holds the place continuous with the reference`);
+    }
+});
+
+test('the sweep generates the sides that are missing and never the anchor', async () => {
+    const { COMPASS_VIEWS } = require('../lib/reference-plates');
+    const { planCompassSweep } = require('../lib/reference-plates');
+    assert.ok(typeof planCompassSweep === 'function',
+        'nothing plans a compass sweep, so the button has no behaviour to call');
+
+    const anchor = COMPASS_VIEWS.find(v => v.isAnchor).name;
+    const generated = COMPASS_VIEWS.filter(v => !v.isAnchor).map(v => v.name);
+
+    // Nothing photographed yet but the default plate: the three others are due.
+    const fresh = planCompassSweep({ existingViews: [''], overwrite: false });
+    assert.deepStrictEqual(fresh.generate.map(v => v.name).sort(), [...generated].sort(),
+        'a fresh sweep does not cover every side');
+    assert.ok(!fresh.generate.some(v => v.name === anchor),
+        `the sweep regenerates ${anchor}, which is the picture the director already gave us`);
+
+    // A side already photographed is not bought twice.
+    const partial = planCompassSweep({ existingViews: ['', generated[0]], overwrite: false });
+    assert.ok(!partial.generate.some(v => v.name === generated[0]),
+        'the sweep pays again for a side that already exists');
+    assert.strictEqual(partial.skipped.length, 1, 'the sweep does not report what it skipped');
+
+    // Overwrite is a deliberate act and must reach every generated side.
+    const forced = planCompassSweep({ existingViews: ['', generated[0]], overwrite: true });
+    assert.strictEqual(forced.generate.length, generated.length,
+        'overwrite does not re-shoot every side');
+
+    // Without the anchor plate there is nothing to keep continuous with, and
+    // four independently generated views are four different streets. Refused
+    // rather than attempted, because attempting it looks like it worked.
+    const none = planCompassSweep({ existingViews: [], overwrite: false });
+    assert.strictEqual(none.generate.length, 0, 'the sweep generates with no plate to turn from');
+    assert.ok(none.refused && /plate/i.test(none.reason || ''),
+        'the sweep does not say why it refused without a plate');
+});
+
+test('a shot can name any compass side and be handed that plate', () => {
+    /*
+     * Generated, stored, and unselectable is the same as not generated. This
+     * runs the real selector against real rows rather than asserting the
+     * picker's markup, because the picker showing a side proves nothing about
+     * what the payload attaches.
+     */
+    const { COMPASS_VIEWS } = require('../lib/reference-plates');
+    const { gatherShotReferences } = require('../lib/shot-references');
+
+    const projectId = generateId();
+    const locationId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Compass');
+    db.prepare('INSERT INTO film_locations (id, project_id, name, description) VALUES (?, ?, ?, ?)')
+        .run(locationId, projectId, 'SUBURBAN STREET', 'A quiet cul-de-sac.');
+
+    const dir = path.join(process.env.FILM_DATA_DIR, 'refsheets', projectId);
+    fs.mkdirSync(dir, { recursive: true });
+    const png = Buffer.from(
+        '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154'
+        + '789c6300010000050001',
+        'hex');
+
+    for (const v of COMPASS_VIEWS) {
+        const file = `location_SUBURBAN_STREET__${v.name}.png`;
+        const full = path.join(dir, file);
+        // Distinct bytes per side, or "it picked the right one" cannot be told
+        // from "it picked any one".
+        fs.writeFileSync(full, Buffer.concat([png, Buffer.from(v.name)]));
+        db.prepare(`INSERT INTO film_assets
+            (id, project_id, location_id, asset_type, file_path, file_name, format, version, metadata)
+            VALUES (?, ?, ?, 'reference_image', ?, ?, 'png', 1, ?)`)
+            .run(generateId(), projectId, locationId, full, file, JSON.stringify({ view: v.name }));
+    }
+
+    for (const v of COMPASS_VIEWS) {
+        const gathered = gatherShotReferences(
+            projectId, [], { id: locationId, name: 'SUBURBAN STREET' }, [], null,
+            { locationView: v.name });
+        const list = Array.isArray(gathered) ? gathered
+            : (gathered.candidates || gathered.references || []);
+        const loc = list.find(c => c.kind === 'location');
+        assert.ok(loc, `${v.name}: no location reference was gathered at all`);
+
+        /*
+         * Assert on the BYTES, not the label. The gatherer inlines the plate as
+         * a data URI and reports the view alongside it, so checking `view`
+         * alone would pass on a gather that labelled the side correctly and
+         * attached a different picture — which is the failure this whole
+         * feature exists to stop, one level up.
+         */
+        const sent = Buffer.from(String(loc.uri).split(',')[1] || '', 'base64').toString('latin1');
+        assert.ok(sent.endsWith(v.name),
+            `a shot looking ${v.name} was sent the ${sent.slice(-8)} plate`);
+        assert.strictEqual(loc.view, v.name,
+            `${v.name}: the gathered reference reports view '${loc.view}'`);
+    }
+});
+
+// ── 11. A refused import says which file, why, and what to do ───────────
+//
+// "I tried uploading two models and they never showed." The importer is sound
+// — a 4.4MB Meshy GLB round-trips through the real browser path and lists — so
+// what the director met was a REFUSAL they never saw: one line on a status bar
+// at the bottom of the screen, and then the file input was cleared.
+//
+// Set-based over the refusal reasons, because the useless one is per-reason: a
+// Draco file died three functions deep on "accessor has no bufferView", which
+// is true, unactionable, and identical to what a corrupt file produces.
+
+test('every GLB refusal names a remedy, and reaches the page', () => {
+    const { parseGlb } = require('../lib/glb-parser');
+    const { validateBytes, MEDIA_IMPORTS } = require('../lib/media-imports');
+
+    const glb = (json, binLen = 4) => {
+        const text = JSON.stringify(json);
+        const jb = Buffer.from(text.padEnd(Math.ceil(text.length / 4) * 4, ' '));
+        const total = 12 + 8 + jb.length + (binLen === null ? 0 : 8 + binLen);
+        const b = Buffer.alloc(total);
+        b.write('glTF', 0, 'ascii'); b.writeUInt32LE(2, 4); b.writeUInt32LE(total, 8);
+        b.writeUInt32LE(jb.length, 12); b.write('JSON', 16, 'ascii'); jb.copy(b, 20);
+        if (binLen !== null) {
+            b.writeUInt32LE(binLen, 20 + jb.length); b.write('BIN\0', 24 + jb.length, 'ascii');
+        }
+        return b;
+    };
+
+    // The ways an export a director would plausibly hand us gets refused.
+    const CASES = [
+        { name: 'draco', bytes: glb({ asset: { version: '2.0' }, extensionsRequired: ['KHR_draco_mesh_compression'], meshes: [{ primitives: [] }] }) },
+        { name: 'meshopt', bytes: glb({ asset: { version: '2.0' }, extensionsRequired: ['EXT_meshopt_compression'], meshes: [{ primitives: [] }] }) },
+        { name: 'unknown required extension', bytes: glb({ asset: { version: '2.0' }, extensionsRequired: ['KHR_materials_variants'], meshes: [{ primitives: [] }] }) },
+        { name: 'external .bin', bytes: glb({ asset: { version: '2.0' }, meshes: [{ primitives: [] }] }, null) },
+        { name: 'no meshes', bytes: glb({ asset: { version: '2.0' }, meshes: [] }) },
+    ];
+
+    for (const c of CASES) {
+        let message = null;
+        try { parseGlb(c.bytes); } catch (err) { message = err.message; }
+        assert.ok(message, `${c.name}: parsed a file it cannot render, so the import succeeds and the stage stays empty`);
+
+        // Actionable means it names the thing to change, not merely that
+        // something is wrong. "invalid GLB" sends a director back to Meshy
+        // with nothing to try.
+        assert.ok(/re-export|not supported|cannot read|no meshes|turned off/i.test(message),
+            `${c.name}: refusal names no remedy — "${message}"`);
+
+        // And the import layer must carry that reason out rather than
+        // flattening every cause into one string.
+        let imported = null;
+        try { validateBytes(MEDIA_IMPORTS['three-d-model'], 'model/gltf-binary', c.bytes); }
+        catch (err) { imported = err.message; }
+        assert.ok(imported, `${c.name}: validateBytes accepted a GLB the parser refuses`);
+        assert.ok(!/^invalid GLB:?$/i.test(imported.trim()),
+            `${c.name}: the import layer discards the reason`);
+    }
+
+    // The page has to show it. A refusal on the bottom status bar is what made
+    // two failed imports read as "they never showed".
+    const html = fs.readFileSync(path.join(ROOT, '..', 'src', 'index.html'), 'utf8');
+    assert.ok(/function reportImportFailure\s*\(/.test(html),
+        'nothing renders an import failure anywhere but the status bar');
+    const importer = html.slice(html.indexOf('async function importThreeDModel('));
+    const body = importer.slice(0, importer.indexOf('\n    function generateAllModels'));
+    assert.ok(/catch\s*\(\s*err\s*\)\s*\{\s*reportImportFailure\(/.test(body),
+        'the importer still swallows its failure into setStatus alone');
+});

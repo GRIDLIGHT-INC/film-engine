@@ -688,11 +688,19 @@ function listModelJobs(req, res, projectId) {
            AND json_extract(metadata, '$.kind') LIKE 'model%' ORDER BY created_at DESC`
     ).all(projectId).map(a => {
         const metadata = safeParse(a.metadata);
+        let declared_height_m = null;
+        if (metadata.subject_id && metadata.subject_kind === 'character') {
+            const subject = db.prepare('SELECT height_m FROM film_characters WHERE id = ?').get(metadata.subject_id);
+            if (subject && Number(subject.height_m) > 0) declared_height_m = Number(subject.height_m);
+        } else if (metadata.subject_id && metadata.subject_kind === 'prop') {
+            const subject = db.prepare('SELECT height_m FROM film_props WHERE id = ?').get(metadata.subject_id);
+            if (subject && Number(subject.height_m) > 0) declared_height_m = Number(subject.height_m);
+        }
         return {
         asset_id: a.id, file_name: a.file_name, format: a.format,
         model_url: a.file_name ? getFileUrl(SUBDIR, projectId, a.file_name) : null,
         subject_name: metadata.subject_name || String(a.file_name || 'model').replace(/\.[^.]+$/, ''),
-        kind: metadata.subject_kind || 'model', metadata,
+        kind: metadata.subject_kind || 'model', declared_height_m, metadata,
     }; });
 
     return json(res, 200, { project_id: projectId, total_jobs: jobs.length, jobs, models: assets });

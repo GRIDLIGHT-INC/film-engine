@@ -150,6 +150,33 @@ function parseGlb(input) {
         offset = start + length;
     }
     if (!json) throw new Error('glb: no JSON chunk');
+
+    /*
+     * A REQUIRED extension is a refusal, and it must say which one.
+     *
+     * glTF's contract is that extensionsRequired may not be ignored: a
+     * Draco-compressed file keeps its POSITION accessor as a stub with no
+     * bufferView, so reading on regardless died three functions later on
+     * "accessor has no bufferView" — true, useless, and indistinguishable from
+     * a corrupt file. A director export from Meshy with compression on then
+     * looked like a broken importer.
+     *
+     * Named per extension with the remedy, because the remedy differs: Draco
+     * and meshopt are export switches you turn off; anything else is a file
+     * this parser genuinely cannot read.
+     */
+    const REQUIRED_EXTENSION_HELP = {
+        KHR_draco_mesh_compression:
+            'this model is Draco-compressed. Re-export it with mesh compression turned OFF '
+            + '(in Meshy, choose GLB without Draco) and import it again',
+        EXT_meshopt_compression:
+            'this model uses meshopt compression. Re-export it uncompressed and import it again',
+    };
+    for (const ext of json.extensionsRequired || []) {
+        const help = REQUIRED_EXTENSION_HELP[ext];
+        throw new Error(`glb: ${help || `this model requires the ${ext} extension, which previs cannot read. `
+            + 'Re-export it as plain glTF 2.0 binary'}`);
+    }
     if (!json.meshes || !json.meshes.length) throw new Error('glb: file contains no meshes');
     if (!bin) throw new Error('glb: no binary chunk (external .bin files are not supported)');
 

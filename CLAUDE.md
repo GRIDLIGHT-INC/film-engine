@@ -245,6 +245,7 @@ film-engine/
 │       ├── previs-blocking.test.js       # All 18 moves sample, all framings solve (Phase 1)
 │       ├── previs-plan.test.js           # 3D previs plan conformance (18 moves, 18 shots, 12 ratios)
 │       ├── previs-camera-freedom.test.js  # 6-DOF camera, authored paths, models, preset compatibility
+│       ├── previs-director-readiness.test.js # Model visibility/scale and direct six-axis stage camera actions
 │       ├── previs-camera-contract.test.js # Camera-key units, seams, browser/server parity, staged controls
 │       ├── e2e-readiness.test.js         # Preflight covers every stage screenplay→final
 │       ├── fixtures/thirty-second.fountain # 30-second E2E test screenplay
@@ -609,6 +610,28 @@ Three things had to change together. **Plates are named per view** (`location_ST
 **A new view is anchored on an existing one.** Generated independently, four views of a cul-de-sac produce four different cul-de-sacs — the blue house on the right of one is not the blue house you see when you turn. The existing plate travels as the first reference and the prompt says *the same location, photographed from a different position — same buildings, same materials and colours, same driveways, same streetlights*. It is the shot anchor's mechanism pointed at plates.
 
 Generated **on demand** rather than as a fixed compass set: you pay for angles you actually shoot, there is no 45° error because the plate is made at the angle you are using, and the set grows to fit the film. The cost is one extra generation the first time you shoot a new angle — and the second shot at that angle is free.
+
+### One Picture Becomes Four Sides
+*"All the views are on the same side. We don't have a single picture of the opposite side, which is what is needed for 2AA."*
+
+Views were already per-location and already anchored on an existing plate, and every one still came back the same half of the street. The anchoring is not the bug — it is the reason four views are four sides of **one** place rather than four different streets — but a plate contains no information about what is behind its own camera, so a model asked to turn round re-photographs what it can see, because that is the only thing it has.
+
+Two things were missing, and neither is the negative. `VIEW_NEGATIVE` refuses `same camera position, same viewpoint, identical framing` — which tells the model not to repeat a **framing** and says nothing about the content. So the prompt now states **how far the camera turned**, and **where what you can see in the reference has gone**: *"…has swung away to the LEFT and is NOT in this frame"*, *"…is now directly BEHIND the camera and is NOT in this frame."* The second clause is the one that was never said.
+
+**The compass is a convention, not a survey.** We cannot know true north, and the prose views a director actually writes — *"looking back across the bulb"*, *"looking at MAYA's house"* — are positions relative to a scene the model cannot see, which is why they resolved to whatever it could see. So the plate that already exists **is** north, and east, south and west follow by right-hand quarter turns: arbitrary, consistent, and sayable by a card, a picker and an agent alike. Prose views still work and still lead with the turn; they simply cannot carry a bearing.
+
+**One press, three generations.** Every side is anchored on the **default** plate, never on the previously generated one, so drift introduced in `east` cannot compound into `south` — each side is exactly one turn from the picture the director approved. Sides generate in **sequence**: three concurrent image calls against one provider is how a queue earns a 429, and the retry costs more than the wait. A provider that has started refusing stops the sweep rather than being asked twice more, and the sides not attempted are **named**, because a partial sweep reported as success is how a reverse angle gets shot against a plate that was never generated.
+
+The anchor side is never regenerated — buying a duplicate of the picture we were handed for free is the one certain waste — and a location with **no** plate is **refused** rather than swept, since four independently generated views are four different places and attempting it looks exactly like it worked. `GET …/plate/compass/plan` prices the sweep for **free** through the same planner the sweep runs, so the number in the confirmation is the number that will be charged.
+
+Served at `POST /film/locations/:id/plate/compass` and `GET …/compass/plan`, on the Locations page beside the views, and as `plate_compass` (**139 tools**).
+
+### A Refused Import Has to Say Which File and Why
+Two GLB imports "never showed". The importer is sound — a 4.4MB Meshy GLB round-trips through the real browser path, lands in `film_assets` and lists — so what was met was a **refusal nobody saw**: one line on the status bar at the bottom of the screen, and then the file input was cleared. Indistinguishable from nothing having happened, which is precisely how it was reported.
+
+The reason was also useless. `parseGlb` ignored `extensionsRequired`, and glTF's contract is that it may not be: a Draco-compressed file keeps its `POSITION` accessor as a stub with no `bufferView`, so reading on regardless died three functions later on *"accessor has no bufferView"* — true, unactionable, and identical to what a corrupt file produces. Required extensions are now refused **by name with the remedy** (Draco and meshopt are export switches you turn off; anything else is a file previs cannot read), and the import layer carries that reason out instead of flattening every cause into `invalid GLB`.
+
+The refusal is rendered **on the page**, and stays until it is read or another import is tried — the same rule the markup toolbar and the regenerate spinner already follow: feedback belongs on the thing you touched. A successful import clears a stale banner, or the warning outlives the problem.
 
 ### An Anchor Covers Where a Subject Stands, Not Who They Are
 Anchoring drops a subject's plate when the anchor's card names them, on the reasoning that the frame already shows them. That is true of **placement** and false of **identity** the moment the anchor does not show a face.

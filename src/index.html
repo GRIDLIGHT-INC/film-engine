@@ -5180,6 +5180,11 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <div class="previs-pane" id="previsStagePane">
                     <canvas id="previsStage"></canvas>
                     <div class="previs-label">Stage &mdash; drag camera to move, Shift-drag it to aim; empty space orbits</div>
+                    <div id="previsCameraStageControls" style="position:absolute;right:8px;bottom:42px;display:grid;grid-template-columns:repeat(4,auto);gap:4px;background:rgba(7,8,12,.82);padding:6px;border:1px solid var(--gl-border,rgba(255,255,255,.2));border-radius:6px;" title="Select the camera, then nudge its full pose directly on the stage">
+                        <button class="btn btn-sm" onclick="previsNudgeCamera('camera-truck-left')" title="truck left">&#8592;</button><button class="btn btn-sm" onclick="previsNudgeCamera('camera-dolly-in')" title="dolly in">&#8593;</button><button class="btn btn-sm" onclick="previsNudgeCamera('camera-dolly-out')" title="dolly out">&#8595;</button><button class="btn btn-sm" onclick="previsNudgeCamera('camera-truck-right')" title="truck right">&#8594;</button>
+                        <button class="btn btn-sm" onclick="previsNudgeCamera('camera-pedestal-up')" title="pedestal up">Y+</button><button class="btn btn-sm" onclick="previsNudgeCamera('camera-pedestal-down')" title="pedestal down">Y&minus;</button><button class="btn btn-sm" onclick="previsNudgeCamera('camera-pan-left')" title="pan left">Pan&#8592;</button><button class="btn btn-sm" onclick="previsNudgeCamera('camera-pan-right')" title="pan right">Pan&#8594;</button>
+                        <button class="btn btn-sm" onclick="previsNudgeCamera('camera-tilt-up')" title="tilt up">Tilt&#8593;</button><button class="btn btn-sm" onclick="previsNudgeCamera('camera-tilt-down')" title="tilt down">Tilt&#8595;</button><button class="btn btn-sm" onclick="previsNudgeCamera('camera-roll-left')" title="roll counter-clockwise">Roll&#8634;</button><button class="btn btn-sm" onclick="previsNudgeCamera('camera-roll-right')" title="roll clockwise">Roll&#8635;</button>
+                    </div>
                     <div class="previs-viewbar">
                         <button class="btn btn-sm" onclick="previsReframe()" title="fit everything back in view">Reframe</button>
                         <button class="btn btn-sm" onclick="previsViewFrom('front')" title="look from the front">Front</button>
@@ -12627,6 +12632,7 @@ THREE.GLTFLoader = GLTFLoader;
             PREVIS.models = (res.models || []).map(m => ({
                 id: m.asset_id || m.id,
                 label: `${m.subject_name || m.name || 'model'}${m.kind ? ' · ' + m.kind : ''}`,
+                declaredHeightM: Number(m.declared_height_m) > 0 ? Number(m.declared_height_m) : null,
             })).filter(m => m.id);
         } catch (_) { PREVIS.models = []; }
     }
@@ -13361,6 +13367,35 @@ THREE.GLTFLoader = GLTFLoader;
 
     const SOLID = { renderer: null, scene: null, camera: null, model: null, url: null, raf: null };
 
+    // Every stored pose component has a stage action. Keeping this as data is
+    // what prevents the next pose field from existing only in the inspector.
+    const PREVIS_CAMERA_STAGE_ACTIONS = Object.freeze({
+        'camera-truck-left': { id: 'previsCameraX', delta: -0.25 },
+        'camera-truck-right': { id: 'previsCameraX', delta: 0.25 },
+        'camera-dolly-in': { id: 'previsDistance', delta: -0.25, min: 0.1 },
+        'camera-dolly-out': { id: 'previsDistance', delta: 0.25, min: 0.1 },
+        'camera-pedestal-up': { id: 'previsHeight', delta: 0.1 },
+        'camera-pedestal-down': { id: 'previsHeight', delta: -0.1 },
+        'camera-pan-left': { id: 'previsCameraYaw', delta: 2 },
+        'camera-pan-right': { id: 'previsCameraYaw', delta: -2 },
+        'camera-tilt-up': { id: 'previsCameraPitch', delta: -2 },
+        'camera-tilt-down': { id: 'previsCameraPitch', delta: 2 },
+        'camera-roll-left': { id: 'previsCameraRoll', delta: -2 },
+        'camera-roll-right': { id: 'previsCameraRoll', delta: 2 },
+    });
+
+    function previsNudgeCamera(actionId) {
+        const action = PREVIS_CAMERA_STAGE_ACTIONS[actionId];
+        const input = action && document.getElementById(action.id);
+        if (!input) return;
+        const current = Number(input.value) || 0;
+        input.value = +Math.max(action.min === undefined ? -Infinity : action.min,
+            current + action.delta).toFixed(3);
+        PREVIS.selected = CAMERA_SEL;
+        previsMarkStaged();
+        previsRefresh();
+    }
+
     function previsSolidInit() {
         if (SOLID.renderer || typeof THREE === 'undefined') return SOLID.renderer;
         const canvas = document.getElementById('previsSolid');
@@ -13550,7 +13585,7 @@ THREE.GLTFLoader = GLTFLoader;
             // exists, stages as its bounding box, and there is no way to say
             // what it is — which reads as the feature not working.
             const modelPicker = spec.acceptsModel
-                ? `<select onchange="previsSetObject(${i},'assetId',this.value)" style="font-size:10px;margin-top:3px;width:100%;">
+                ? `<select onchange="previsChooseModel(${i},this.value)" style="font-size:10px;margin-top:3px;width:100%;">
                        <option value="">— choose a 3D model —</option>
                        ${(PREVIS.models || []).map(m => `<option value="${escapeHtml(m.id)}"${m.id === o.assetId ? ' selected' : ''}>${escapeHtml(m.label)}</option>`).join('')}
                    </select>${(PREVIS.models || []).length ? '' : '<div class="text-sm text-muted" style="font-size:10px;">No models generated yet.</div>'}`
@@ -13685,6 +13720,35 @@ THREE.GLTFLoader = GLTFLoader;
         o[field] = value;
         previsMarkStaged();
         if (field === 'kind') o.sizeM = PREVIS.taxonomy.primitives[value].defaultSizeM.slice();
+        previsRenderObjects();
+        previsRefresh();
+    }
+
+    /** Select the mesh and, when the subject has a declared real-world height,
+     * scale its GLB bounds to that height instead of the generic 1.8m box. */
+    async function previsChooseModel(index, assetId) {
+        const o = PREVIS.objects[index];
+        if (!o) return;
+        o.assetId = assetId;
+        const model = (PREVIS.models || []).find(m => m.id === assetId);
+        if (model) {
+            try {
+                const geometry = PREVIS.meshes[assetId] && PREVIS.meshes[assetId] !== false
+                    ? PREVIS.meshes[assetId]
+                    : await api(`/models/${assetId}/geometry?budget=2500`);
+                PREVIS.meshes[assetId] = geometry;
+                const src = geometry.size || [1, 1, 1];
+                // A generated subject may declare its metric height. An
+                // imported model does not, so preserve its GLB units rather
+                // than silently turning every creature into a 1.8m human.
+                const k = model.declaredHeightM
+                    ? model.declaredHeightM / Math.max(1e-6, src[1]) : 1;
+                o.sizeM = src.map(v => +(v * k).toFixed(3));
+            } catch (err) {
+                previsStatus('Model selected, but its declared scale could not be read: ' + err.message);
+            }
+        }
+        previsMarkStaged();
         previsRenderObjects();
         previsRefresh();
     }
@@ -14574,6 +14638,7 @@ THREE.GLTFLoader = GLTFLoader;
         previsDrawStage(blocking, sensor);
         previsDrawCamera(blocking, sensor);
         previsShowOptics(blocking, sensor);
+        previsSolidSync();
     }
 
     /**
@@ -21504,11 +21569,84 @@ ${fountainText.slice(0, 50000)}`;
                 come from. Generate the angles you actually shoot; each one is paid for once.
             </p>
             <div style="display:flex;gap:12px;flex-wrap:wrap;">${views.map(card).join('')}</div>
-            <button class="btn btn-secondary btn-sm" style="margin-top:12px;"
-                    onclick="addLocationView('${locationId}')"
-                    title="Describe a camera position; it is photographed from the plate you already have">
-                + Photograph a new view…
-            </button>`;
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+                <button class="btn btn-primary btn-sm" id="compassSweepBtn"
+                        onclick="sweepLocationCompass('${locationId}', this)"
+                        title="Photograph east, south and west as quarter turns from the plate you already have">
+                    &#129517; Photograph all four sides
+                </button>
+                <button class="btn btn-secondary btn-sm"
+                        onclick="addLocationView('${locationId}')"
+                        title="Describe a camera position; it is photographed from the plate you already have">
+                    + Photograph a new view&hellip;
+                </button>
+            </div>
+            <p class="text-sm text-muted" style="margin:8px 0 0;line-height:1.5;">
+                All four sides turns the plate you have into north, east, south and west &mdash; each one
+                a quarter turn from it, so they agree with each other. It is what a reverse angle needs.
+            </p>`;
+    }
+
+    /**
+     * All four sides of a place, from the one plate it already has.
+     *
+     * A location with one plate hands every shot the same side of the street,
+     * so a shot pointing the other way is given a picture of what is BEHIND
+     * its camera and invents the rest — which is what blocked 2AA.
+     *
+     * The cost leads the confirmation, because this is the one control on the
+     * page that spends more than one generation in a press.
+     */
+    async function sweepLocationCompass(locationId, btn) {
+        let plan;
+        try { plan = await api(`/locations/${locationId}/plate/compass/plan`); }
+        catch (_) { plan = null; }
+
+        const due = plan && Array.isArray(plan.generate) ? plan.generate.map(v => v.name) : null;
+        if (plan && plan.refused) {
+            return alert('This location has no plate yet.\n\n' + plan.reason
+                + '\n\nGenerate its reference plate first, then press this again.');
+        }
+        if (due && !due.length) {
+            return alert('All four sides are already photographed. '
+                + 'To re-shoot them, delete the ones you want replaced first.');
+        }
+        const names = due ? due.join(', ') : 'east, south and west';
+        const count = due ? due.length : 3;
+        if (!confirm(`Photograph ${names}?\n\n`
+            + `${count} image${count === 1 ? '' : 's'} will be generated — this costs credits.\n\n`
+            + 'Each side is a quarter turn from the plate you already have, so the four agree with '
+            + 'each other. North is that existing plate and is not regenerated.')) return;
+
+        const label = btn && btn.innerHTML;
+        if (btn) { btn.disabled = true; btn.textContent = 'Photographing…'; }
+        setStatus('Photographing the other sides — this takes a minute…', true);
+        try {
+            const r = await api(`/locations/${locationId}/plate/compass`,
+                { method: 'POST', body: JSON.stringify({}) });
+            const made = (r.generated || []).filter(g => g.ok).map(g => g.view);
+            const failed = (r.generated || []).filter(g => !g.ok);
+            /*
+             * A partial sweep is REPORTED as partial. Saying "done" after two of
+             * three succeeded is how a director shoots a reverse angle against a
+             * side that was never generated and blames the model.
+             */
+            if (failed.length) {
+                const stopped = (r.not_attempted || []).length
+                    ? ` ${r.not_attempted.join(' and ')} not attempted — a provider that has started `
+                      + 'refusing will refuse those too.'
+                    : '';
+                setStatus(`${made.length ? made.join(', ') + ' photographed. ' : ''}`
+                    + `${failed[0].view} failed: ${failed[0].error || 'the provider refused it'}.${stopped}`);
+            } else {
+                setStatus(`${made.join(', ')} photographed. A shot picks its side in the scene card.`);
+            }
+        } catch (err) {
+            setStatus('Could not photograph the other sides: ' + err.message);
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = label; }
+        }
+        renderLocationViews(locationId);
     }
 
     /** Ask for a camera position and photograph it, anchored on what exists. */
@@ -24446,6 +24584,40 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
+    /**
+     * An import that failed has to say so where the person is looking.
+     *
+     * This wrote one line to the status bar at the bottom of the screen and
+     * then cleared the file input, so a refused GLB was indistinguishable from
+     * nothing having happened — which is exactly how it was reported: "I tried
+     * uploading two models and they never showed."
+     *
+     * The refusal now stays on the page until it is read or another import is
+     * tried, and it carries the reason the parser gave, which names the remedy
+     * (compression off, an external .bin, a points-only export). Same rule the
+     * markup toolbar and the regenerate spinner already follow: feedback
+     * belongs on the thing you touched.
+     */
+    function reportImportFailure(fileName, reason, fromPrevis) {
+        setStatus('3D import failed: ' + reason);
+        if (fromPrevis && typeof previsStatus === 'function') previsStatus('Import failed: ' + reason);
+        const page = document.getElementById(fromPrevis ? 'page-previs' : 'page-threed');
+        if (!page) return;
+        let box = document.getElementById('importFailureBanner');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'importFailureBanner';
+            box.className = 'card';
+            box.style.cssText = 'margin-bottom:16px;border-color:var(--gl-danger,#ef4444);';
+            page.insertBefore(box, page.firstChild.nextSibling || page.firstChild);
+        }
+        box.innerHTML = `<strong>${esc(fileName)} was not imported</strong>
+            <p class="text-sm" style="margin:6px 0 0;line-height:1.5;">${esc(reason)}</p>
+            <button class="btn btn-secondary btn-sm" style="margin-top:8px;"
+                    onclick="this.parentElement.remove()">Dismiss</button>`;
+        box.scrollIntoView({ block: 'nearest' });
+    }
+
     async function importThreeDModel(event) {
         const file = event.target.files && event.target.files[0];
         if (!file || !state.currentProject) return;
@@ -24464,6 +24636,8 @@ ${fountainText.slice(0, 50000)}`;
             const imported = await api(`/projects/${projectId}/models/import`, {
                 method: 'POST', body: JSON.stringify({ name: file.name, data: normalized }),
             });
+            const stale = document.getElementById('importFailureBanner');
+            if (stale) stale.remove();
             setStatus(`${file.name} imported and available in Previs.`);
             if (!state.currentProject || state.currentProject.id !== projectId) return;
             await loadThreeD();
@@ -24479,7 +24653,7 @@ ${fountainText.slice(0, 50000)}`;
                 }
                 previsRenderObjects(); previsRefresh();
             }
-        } catch (err) { setStatus('3D import failed: ' + err.message); }
+        } catch (err) { reportImportFailure(file.name, err.message, fromPrevis); }
         finally { event.target.value = ''; }
     }
 

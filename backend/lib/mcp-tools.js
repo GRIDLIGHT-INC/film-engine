@@ -1750,6 +1750,27 @@ const BATCH_TOOLS = [
         },
     },
     {
+        name: 'plate_compass',
+        description:
+            'Photograph all FOUR sides of a location from the one plate it already has: north (the existing plate), '
+            + 'east, south and west, each a quarter turn from it. SPENDS CREDITS \u2014 up to three images. '
+            + 'Use this when a shot needs the reverse angle: a location with one plate hands every shot the same '
+            + 'side of the street, so a shot pointing the other way is given a picture of what is BEHIND its camera '
+            + 'and invents the rest. Each side is anchored on the existing plate so the four agree with each other. '
+            + 'Refused if the location has no plate yet \u2014 generate one with plate_generate first, because four '
+            + 'independently generated views are four different places. A shot then names its side in the scene '
+            + "card's location_view.",
+        schema: {
+            location_id: { type: 'string' },
+            overwrite: { type: 'boolean', description: 'Re-shoot sides that already exist. Off by default: a side already photographed is not bought twice.' },
+        },
+        required: ['location_id'],
+        async run(a) {
+            return callRoute('POST', `/film/locations/${a.location_id}/plate/compass`,
+                a.overwrite ? { overwrite: true } : {}, handleLocations);
+        },
+    },
+    {
         name: 'plate_generate_all',
         description:
             'Generate the reference plates every shot will attach: a three-view sheet per character, an establishing plate per location, '

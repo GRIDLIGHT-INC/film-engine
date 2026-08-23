@@ -61,6 +61,92 @@ const PLATE_KINDS = {
 };
 
 /**
+ * THE FOUR SIDES OF A PLACE.
+ *
+ * Every view generated on the real production came back the same side of the
+ * street, so 2AA — which shoots back the other way — could not be built. The
+ * cause is the anchor, and it is not a bug in it: a plate contains no
+ * information about what is behind its own camera, so a model asked to turn
+ * round re-photographs what it can see, because that is the only thing it has.
+ *
+ * Refusing the old viewpoint in the negative was not enough. It told the model
+ * not to repeat a FRAMING; nothing told it that the things in the reference are
+ * no longer in shot. So each side states three things the old prose views could
+ * not: how far the camera turned, which way, and where what you can see in the
+ * reference has GONE.
+ *
+ * The compass is a convention, not a survey. We cannot know true north, and
+ * "looking back across the bulb" is a sentence only the person who wrote it can
+ * act on. So the plate the director already has IS north, and east, south and
+ * west follow by right-hand quarter turns — arbitrary, consistent, and sayable
+ * by a card, a picker and an agent alike.
+ */
+const COMPASS_VIEWS = Object.freeze([
+    Object.freeze({
+        name: 'north', bearing: 0, isAnchor: true,
+        // Never generated. It is the picture the director gave us, and buying a
+        // duplicate of it is the one certain waste in a sweep.
+        turn: null, gone: null,
+    }),
+    Object.freeze({
+        name: 'east', bearing: 90, isAnchor: false,
+        turn: 'turned 90° to the RIGHT, on the spot',
+        gone: 'what the reference image shows has swung away to the LEFT and is NOT in this frame',
+    }),
+    Object.freeze({
+        name: 'south', bearing: 180, isAnchor: false,
+        turn: 'turned right round, 180° on the spot, to face the OPPOSITE way',
+        gone: 'what the reference image shows is now directly BEHIND the camera and is NOT in this frame',
+    }),
+    Object.freeze({
+        name: 'west', bearing: 270, isAnchor: false,
+        turn: 'turned 90° to the LEFT, on the spot',
+        gone: 'what the reference image shows has swung away to the RIGHT and is NOT in this frame',
+    }),
+]);
+
+/** The compass side a view name refers to, or null for a prose view. */
+function compassView(name) {
+    const n = String(name || '').trim().toLowerCase();
+    return COMPASS_VIEWS.find(v => v.name === n) || null;
+}
+
+/**
+ * Which sides a sweep would buy, and which it already has.
+ *
+ * Pure, so the button, the route and the agent tool all price the same sweep —
+ * and so the refusal below is testable without spending anything.
+ *
+ * Refused outright with no anchor plate. Four sides generated independently are
+ * four different streets: the blue house on the right of one is not the blue
+ * house you see when you turn. Attempting it anyway would produce four
+ * plausible pictures and a location that does not exist, which is worse than
+ * refusing because it looks like it worked.
+ */
+function planCompassSweep({ existingViews = [], overwrite = false } = {}) {
+    const have = new Set((existingViews || []).map(v => String(v || '').trim().toLowerCase()));
+    const anchor = COMPASS_VIEWS.find(v => v.isAnchor);
+    // The default, view-less plate IS the anchor side — that is what every
+    // project already has, and re-labelling it would orphan it.
+    const hasAnchor = have.has('') || have.has(anchor.name);
+    if (!hasAnchor) {
+        return {
+            refused: true,
+            reason: 'This location has no plate to turn from. Generate its reference plate first — '
+                + 'the four sides are photographed FROM it, so that they are four sides of one place '
+                + 'rather than four different streets.',
+            anchor: anchor.name, generate: [], skipped: [],
+        };
+    }
+    const sides = COMPASS_VIEWS.filter(v => !v.isAnchor);
+    return {
+        refused: false, anchor: anchor.name,
+        generate: sides.filter(v => overwrite || !have.has(v.name)),
+        skipped: overwrite ? [] : sides.filter(v => have.has(v.name)),
+    };
+}
+
+/**
  * The prompt for a plate.
  *
  * Mirrors buildRefSheetPrompt's shape deliberately: description first, then
@@ -95,12 +181,24 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
      * plainly. So the new position leads, what stays continuous follows, and
      * the negative refuses the old viewpoint outright.
      */
-    const lead = (view && anchored)
-        ? [`A DIFFERENT camera position in the same place as the reference image: `
-           + `${String(view).trim()}. The camera has moved — this is a new angle on it, not the same `
-           + 'photograph. Everything else is continuous: the same buildings, the same materials and '
-           + 'colours, the same driveways and streetlights, the same ground and the same time of day']
-        : [];
+    /*
+     * A COMPASS side states the turn as a measurement; a prose view can only
+     * state it as a sentence. Both lead, because whatever leads a prompt is
+     * what the image is OF — and continuity leading is precisely how a "new
+     * angle" came back as a regrade of the plate it was given.
+     */
+    const compass = compassView(view);
+    const CONTINUOUS = 'Everything else is continuous: the same place, the same buildings, the same '
+        + 'materials and colours, the same driveways and streetlights, the same ground and the same '
+        + 'time of day';
+    const lead = !view || !anchored ? []
+        : compass
+            ? [`The camera has ${compass.turn} from where the reference image was taken `
+               + `(a bearing of ${compass.bearing}\u00b0 from it), and photographs a DIFFERENT side of `
+               + `the same place. It is a new picture, not the same one: ${compass.gone}. ${CONTINUOUS}`]
+            : [`A DIFFERENT camera position in the same place as the reference image: `
+               + `${String(view).trim()}. The camera has moved — this is a new angle on it, not the same `
+               + `photograph, and what the reference image shows is NOT in this frame. ${CONTINUOUS}`];
 
     /*
      * The view REPLACES the default framing; the invariants always survive.
@@ -115,7 +213,12 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
      * Registry-driven rather than a `kind === 'location'` conditional, because
      * `prop` fuses the same two ideas and would rot the same way.
      */
-    const framing = [view ? null : spec.framing, ...(spec.constraints || [])]
+    // A compass side is still an ESTABLISHING plate — of that side. A prose
+    // view replaces the framing because it IS one ("standing in the middle of
+    // the bulb looking at MAYA's house"); "east" is a direction and says
+    // nothing about how wide the shot is, so dropping the framing there would
+    // leave the model to invent one and the four sides would not match.
+    const framing = [(view && !compass) ? null : spec.framing, ...(spec.constraints || [])]
         .filter(Boolean).join(', ');
 
     const parts = [
@@ -149,7 +252,9 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
      * so the view is simply what was photographed.
      */
     if (view && !anchored) {
-        parts.push(`photographed ${String(view).trim()}`);
+        parts.push(compass
+            ? `photographed facing ${compass.name}`
+            : `photographed ${String(view).trim()}`);
     }
     // visual_prompt is the generation-facing field for a prop — it is what
     // prop_create documents as "what reaches the image prompt" — and the plate
@@ -387,4 +492,5 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
 }
 
 module.exports = {
+    COMPASS_VIEWS, compassView, planCompassSweep,
     plateFileName, PLATE_KINDS, buildPlatePrompt, generatePlate, styleReferencesFor, NEGATIVE };

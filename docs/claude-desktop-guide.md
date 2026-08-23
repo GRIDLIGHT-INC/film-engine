@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**138 tools, 37 families.** Everything the app can do, you can ask for in a
+**139 tools, 37 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -95,7 +95,13 @@ metric sense, so a 30cm sprinkler comes back the size of a car.
 
 ### 3. Plates
 
-`plate_generate` · `plate_generate_all` · `consistency_create` ·
+A location plate is one side of a place. Every shot pointed the other way is
+handed a picture of what is BEHIND its camera and invents the rest — which is
+how a reverse angle acquires a road that is not there. `plate_compass` turns
+the plate you have into all four sides, each a quarter turn from it, and a shot
+then names the side it is looking at in its scene card's location_view field.
+
+`plate_generate` · `plate_compass` · `plate_generate_all` · `consistency_create` ·
 `consistency_lock` · `consistency_list` · `consistency_unlock` ·
 `consistency_delete` · `mood_board_add` · `mood_board_compose` ·
 `mood_board_list` · `mood_board_remove`

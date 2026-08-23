@@ -99,6 +99,127 @@ async function generateSubjectPlate(req, res, kind, subjectId) {
 
 
 /**
+ * Photograph all four sides of a location from the one plate it already has.
+ *
+ * The director's report: "all the views are on the same side. We don't have a
+ * single picture of the opposite side, which is what is needed for 2AA." Every
+ * prose view they had written — "looking back across the bulb", "looking at
+ * MAYA's house" — is a position relative to a scene the model cannot see, so it
+ * re-photographed the half it could. See COMPASS_VIEWS for why the fix is a
+ * bearing and a sentence about where the old content went.
+ *
+ * One press, three generations, and the whole place is covered. Anchored on the
+ * existing plate every time — not on the previously generated side — so a drift
+ * introduced in `east` cannot compound into `south`: each side is one turn away
+ * from the picture the director actually approved.
+ *
+ * Sides are generated in SEQUENCE, not in parallel. Three concurrent image
+ * calls against one provider is how a queue earns a 429, and the retry costs
+ * more than the wait.
+ */
+/**
+ * What a sweep would buy, without buying it.
+ *
+ * Free, because the sweep is the one control that spends three generations in a
+ * press, and a confirmation that cannot name what it is about to cost teaches
+ * people to click past it. Same planner the sweep itself runs, so the number in
+ * the dialog is the number that will be charged.
+ */
+function compassPlan(res, locationId) {
+    const { planCompassSweep } = require('../lib/reference-plates');
+    const location = db.prepare('SELECT id, project_id, name FROM film_locations WHERE id = ?').get(locationId);
+    if (!location) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'location not found' }));
+    }
+    const rows = db.prepare(
+        `SELECT metadata FROM film_assets
+          WHERE project_id = ? AND location_id = ?
+            AND asset_type IN ('reference_image', 'character_sheet')`).all(location.project_id, locationId);
+    const plan = planCompassSweep({
+        existingViews: rows.map(r => {
+            try { return String((JSON.parse(r.metadata || '{}').view) || '').trim(); }
+            catch (_) { return ''; }
+        }),
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ location_id: locationId, location: location.name, ...plan }));
+}
+
+async function sweepCompassViews(req, res, locationId) {
+    const { planCompassSweep, generatePlate } = require('../lib/reference-plates');
+    const location = db.prepare('SELECT * FROM film_locations WHERE id = ?').get(locationId);
+    if (!location) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'location not found' }));
+    }
+    const project = db.prepare('SELECT id, style_preset, aspect_ratio FROM film_projects WHERE id = ?')
+        .get(location.project_id);
+    if (!project) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Project not found' }));
+    }
+
+    const plates = db.prepare(
+        `SELECT file_path, metadata FROM film_assets
+          WHERE project_id = ? AND location_id = ?
+            AND asset_type IN ('reference_image', 'character_sheet')
+       ORDER BY created_at ASC`).all(project.id, locationId);
+    const viewOf = row => {
+        try { return String((JSON.parse(row.metadata || '{}').view) || '').trim(); }
+        catch (_) { return ''; }
+    };
+    const plan = planCompassSweep({
+        existingViews: plates.map(viewOf),
+        overwrite: !!(req.body && req.body.overwrite),
+    });
+
+    if (plan.refused) {
+        // 409 rather than 502: nothing failed, the prerequisite is missing, and
+        // the fix is one button away on the same page.
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'NO_ANCHOR_PLATE', ...plan, location: location.name }));
+    }
+
+    /*
+     * The anchor is the DEFAULT plate — the one the director generated and
+     * kept. Falling back to "whatever exists" would let a sweep re-run turn
+     * from a generated side, and each generation is one more step away from the
+     * place they signed off.
+     */
+    const anchorRow = plates.find(r => !viewOf(r)) || plates[0];
+    const provider = resolve('image', parseProjectConfig(location.project_id));
+
+    const generated = [];
+    for (const side of plan.generate) {
+        // eslint-disable-next-line no-await-in-loop
+        const result = await generatePlate({
+            projectId: project.id, kind: 'location', subject: location,
+            stylePreset: project.style_preset, aspectRatio: project.aspect_ratio,
+            provider, view: side.name, anchorPath: anchorRow.file_path, db,
+        });
+        generated.push({ view: side.name, bearing: side.bearing, ...result });
+        // A provider that has started refusing will refuse the next two as
+        // well; stopping reports the reason once instead of three times, and
+        // does not spend the retry budget finding out.
+        if (!result.ok) break;
+    }
+
+    const failed = generated.filter(g => !g.ok);
+    res.writeHead(failed.length && !generated.some(g => g.ok) ? 502 : 200,
+        { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        location_id: locationId, location: location.name,
+        anchor: plan.anchor,
+        generated,
+        skipped: plan.skipped.map(v => v.name),
+        not_attempted: plan.generate.slice(generated.length).map(v => v.name),
+        note: `${plan.anchor} is the plate you already had — the other sides are turns from it. `
+            + 'A shot picks the side it is pointed at in its scene card.',
+    }));
+}
+
+/**
  * The views a location has been photographed from.
  *
  * A location owned exactly one plate and every shot got it, whichever way the
@@ -147,7 +268,10 @@ function listPlateViews(res, locationId) {
         return {
             asset_id: r.id,
             view,                       // '' is the default plate
-            label: view || 'default view',
+            // The default plate IS the compass anchor. Naming it 'default view'
+            // beside east, south and west reads as a fifth, different thing;
+            // it is the side the others are turns from.
+            label: view || 'north — the plate the other sides turn from',
             file_name: r.file_name,
             available,
             unavailable_reason: available ? null
@@ -208,6 +332,9 @@ function handleLocations(req, res, urlParts, query) {
         if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'location', locId);
         // /film/locations/:id/plate/views — what a shot can choose between.
         if (urlParts[4] === 'views' && req.method === 'GET') return listPlateViews(res, locId);
+        // All four sides from the one plate this location already has.
+        if (urlParts[4] === 'compass' && urlParts[5] === 'plan' && req.method === 'GET') return compassPlan(res, locId);
+        if (urlParts[4] === 'compass' && req.method === 'POST') return sweepCompassViews(req, res, locId);
         if (req.method === 'GET') return getSubjectPlate(res, 'location', locId);
     }
 
