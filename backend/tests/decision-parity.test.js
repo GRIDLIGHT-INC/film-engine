@@ -931,3 +931,85 @@ test('staged is derived from what Apply wrote, never stored as a flag', () => {
 
     assert.deepStrictEqual(gaps, [], 'the applied state is not derived');
 });
+
+// ── Which side moved? ───────────────────────────────────────────────────────
+//
+// applicationFingerprint covers the stage AND the card, so it goes stale when
+// EITHER moves. That is right for detecting disagreement and wrong for naming
+// it, because the two cases need opposite actions:
+//
+//   the stage moved ahead  -> Apply. The stage is the newer intent.
+//   the card moved ahead   -> do NOT apply. Applying reverts the newer edit.
+//
+// Both currently report `staged: true`, which is a sentence about the stage,
+// and the surface offers Apply. So a director who applies an angle, then
+// rewrites the direction on the board, is told their previs is unapplied and
+// invited to press the button that silently throws their rewrite away.
+//
+// Set-based over the contract's own previs-projected card decisions, because
+// the failure is per-field: direction, lighting and location_view each travel
+// through director_json independently, and a test written against one passes
+// while another is being reverted.
+
+test('a board edit made after Apply is not silently reverted by applying again', async () => {
+    const contract = loadContract();
+    if (!contract) { assert.fail('lib/decision-contract.js does not exist'); }
+    const cardFields = deriveCardDecisions();
+
+    const routed = (contract.DECISIONS || []).filter(d =>
+        d.canonical === 'scene_card' && d.previs && (d.covers || []).some(c => cardFields.includes(c)));
+
+    const lost = [];
+    for (const d of routed) {
+        for (const cand of (d.covers || []).filter(c => cardFields.includes(c))) {
+            const pair = variantPair(cand);
+            if (!pair) continue;
+            const [staged, onBoard] = pair;
+
+            const card = { shot_code: 'P1', description: 'Probe.',
+                camera: { shot_type: 'close-up', lens: '50mm', movement: 'dolly-in' } };
+            const shotId = seedShot(card);
+
+            // 1. Stage it in previs and apply, so the two agree.
+            const blocking = {
+                camera: { position: [0, 1.6, 3], rotation: [0, 0, 0], focalMm: 50,
+                    sensorId: 'super35', fStop: 2.8, focusDistanceM: 3 },
+                subject: { position: [0, 0, 0], heightM: 1.7 },
+                stage: { widthM: 12, depthM: 12 }, rig: 'dolly', movement: 'dolly-in',
+                director: { [cand]: staged },
+            };
+            if ((await callPrevis('PUT', `/film/shots/${shotId}/previs`, blocking)).status >= 400) continue;
+            if ((await callPrevis('POST', `/film/shots/${shotId}/previs/apply`)).status >= 400) continue;
+
+            // 2. The director then changes their mind ON THE BOARD.
+            const row = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
+            const edited = JSON.parse(row.scene_card_yaml || '{}');
+            edited[cand] = onBoard;
+            if (!validateSceneCards([edited]).valid) continue;
+            db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?')
+                .run(JSON.stringify(edited), shotId);
+
+            // 3. The surface says "staged", so they press Apply.
+            await callPrevis('POST', `/film/shots/${shotId}/previs/apply`);
+            const after = JSON.parse(
+                db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId).scene_card_yaml || '{}');
+
+            // A merged block legitimately gains the facets Apply solves, so only
+            // the keys the director actually typed are checked -- otherwise the
+            // feature working reads as the feature reverting.
+            if (onBoard && typeof onBoard === 'object' && !Array.isArray(onBoard)) {
+                for (const [k, v] of Object.entries(onBoard)) {
+                    if (JSON.stringify((after[cand] || {})[k]) !== JSON.stringify(v)) {
+                        lost.push(`${cand}.${k}: board edit ${JSON.stringify(v)} reverted to ${JSON.stringify((after[cand] || {})[k])}`);
+                    }
+                }
+            } else if (JSON.stringify(after[cand]) !== JSON.stringify(onBoard)) {
+                lost.push(`${cand}: board edit ${JSON.stringify(onBoard)} reverted to ${JSON.stringify(after[cand])}`);
+            }
+        }
+    }
+
+    assert.deepStrictEqual(lost, [],
+        'applying reverted a newer board edit — the surface must distinguish "the stage '
+        + 'moved" from "the card moved", because only the first is an invitation to Apply');
+});
