@@ -293,6 +293,86 @@ function listPlateViews(res, locationId) {
     }));
 }
 
+/**
+ * Delete one view of a location.
+ *
+ * A location's view set could only GROW. Four views were generated on the real
+ * production, all four were the same side, and removing the three duplicates
+ * meant editing the database by hand — while the compass sweep SKIPS a side
+ * that already exists, so a bad side was permanent and blocked the good one
+ * from ever being bought.
+ *
+ * The file goes with the row. Half a delete is worse than none: an orphan row
+ * lists a view whose picture is gone, and an orphan file is disk nobody can
+ * find.
+ *
+ * It does NOT rewrite the scene cards that named this view — it REPORTS them.
+ * Which side a shot looks at is a decision the director made, and silently
+ * repointing it at another direction is precisely the class of bug views exist
+ * to prevent. Left alone the card falls back to the default plate, which is the
+ * documented behaviour and is visible in the shot's own prompt preview.
+ */
+function deletePlateView(res, locationId, rawView) {
+    const loc = db.prepare('SELECT id, project_id, name FROM film_locations WHERE id = ?').get(locationId);
+    if (!loc) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Location not found' }));
+    }
+    // The default plate has no view string, so it needs a name that can travel
+    // in a URL path. An empty segment would be indistinguishable from a
+    // malformed request.
+    const wanted = rawView === '__default__' ? '' : String(rawView || '').trim();
+
+    const rows = db.prepare(
+        `SELECT id, file_name, file_path, metadata FROM film_assets
+          WHERE project_id = ? AND location_id = ?
+            AND asset_type IN ('reference_image', 'character_sheet')`).all(loc.project_id, locationId);
+    const viewOf = row => {
+        try { return String((JSON.parse(row.metadata || '{}').view) || '').trim(); }
+        catch (_) { return ''; }
+    };
+    const matched = rows.filter(r => viewOf(r).toLowerCase() === wanted.toLowerCase());
+    if (!matched.length) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: 'view not found',
+            view: wanted,
+            available: rows.map(viewOf).map(v => v || '(default)'),
+        }));
+    }
+
+    // Whoever is pointed here, named rather than repointed.
+    const shots = db.prepare(
+        `SELECT sh.shot_code, sh.scene_card_yaml AS card
+           FROM film_shots sh JOIN film_scenes sc ON sc.id = sh.scene_id
+          WHERE sc.project_id = ?`).all(loc.project_id)
+        .filter(row => {
+            try { return String((JSON.parse(row.card || '{}').location_view) || '').trim().toLowerCase() === wanted.toLowerCase() && wanted; }
+            catch (_) { return false; }
+        })
+        .map(row => row.shot_code);
+
+    for (const r of matched) {
+        try { if (r.file_path) fs.unlinkSync(r.file_path); } catch (_) { /* already gone is fine */ }
+        db.prepare('DELETE FROM film_assets WHERE id = ?').run(r.id);
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        location_id: locationId, location: loc.name,
+        deleted: matched.length, view: wanted || null,
+        was_default: !wanted,
+        shots_pointing_here: shots,
+        note: shots.length
+            ? `${shots.join(', ')} named this view. Their cards are unchanged and now fall back to the `
+              + 'default plate — point them at another side, or photograph this one again.'
+            : (!wanted
+                ? 'That was the plate the other sides turn from. Photograph the location again before '
+                  + 'sweeping the compass: without it there is nothing to keep the sides continuous.'
+                : 'Nothing was pointed at this view.'),
+    }));
+}
+
 /** The current plate, if one has been generated. */
 function getSubjectPlate(res, kind, subjectId) {
     const { PLATE_KINDS } = require('../lib/reference-plates');
@@ -331,7 +411,11 @@ function handleLocations(req, res, urlParts, query) {
         if (!UUID_RE.test(locId)) return badReq(res, 'Invalid location ID');
         if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'location', locId);
         // /film/locations/:id/plate/views — what a shot can choose between.
-        if (urlParts[4] === 'views' && req.method === 'GET') return listPlateViews(res, locId);
+        if (urlParts[4] === 'views' && !urlParts[5] && req.method === 'GET') return listPlateViews(res, locId);
+        // Remove one view. The set could only grow, so a bad side was permanent.
+        if (urlParts[4] === 'views' && urlParts[5] && req.method === 'DELETE') {
+            return deletePlateView(res, locId, decodeURIComponent(urlParts[5]));
+        }
         // All four sides from the one plate this location already has.
         if (urlParts[4] === 'compass' && urlParts[5] === 'plan' && req.method === 'GET') return compassPlan(res, locId);
         if (urlParts[4] === 'compass' && req.method === 'POST') return sweepCompassViews(req, res, locId);

@@ -1771,6 +1771,41 @@ const BATCH_TOOLS = [
         },
     },
     {
+        name: 'plate_view_list',
+        description:
+            'The views a location has been photographed from, and whether each picture is really on disk. '
+            + 'Free. A location owns a growing set of views and a shot names the one it is pointed at in '
+            + "its scene card's location_view; anything else falls back to the original plate, which for a "
+            + 'shot looking the other way is a photograph of what is behind its own camera. Read this '
+            + 'before plate_view_delete, and before pointing a shot at a side.',
+        schema: { location_id: { type: 'string' } },
+        required: ['location_id'],
+        async run(a) {
+            return callRoute('GET', `/film/locations/${a.location_id}/plate/views`, {}, handleLocations);
+        },
+    },
+    {
+        name: 'plate_view_delete',
+        description:
+            "Delete ONE view of a location's plate set. Free. The image is removed and photographing it "
+            + 'again costs credits. Use view="__default__" for the original, view-less plate \u2014 which is '
+            + 'also the plate the compass sides turn from and the fallback for every shot that names no '
+            + 'view, so removing it stops plate_compass working until the location is photographed again. '
+            + 'Scene cards naming the deleted view are NOT rewritten: they are reported back, because '
+            + 'which side a shot looks at is a decision to be made deliberately. plate_compass skips a '
+            + 'side that already exists, so deleting one is how you have it re-shot.',
+        schema: {
+            location_id: { type: 'string' },
+            view: { type: 'string', description: 'The view name, or __default__ for the original plate.' },
+        },
+        required: ['location_id', 'view'],
+        async run(a) {
+            return callRoute('DELETE',
+                `/film/locations/${a.location_id}/plate/views/${encodeURIComponent(a.view)}`,
+                {}, handleLocations);
+        },
+    },
+    {
         name: 'plate_generate_all',
         description:
             'Generate the reference plates every shot will attach: a three-view sheet per character, an establishing plate per location, '

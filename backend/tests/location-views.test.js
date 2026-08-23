@@ -826,3 +826,109 @@ test('a view request drops its references on an edit-mode provider, and keeps th
         assert.ok(spy.seen.length, `${mode}: the first plate never reached the provider`);
     }
 });
+
+// ── 13. A view can be deleted ───────────────────────────────────────────
+//
+// Four views were generated and all four were the same side; removing the
+// three duplicates had to be done by hand against the database, because the
+// app can create a view and cannot remove one. A set that only grows is not a
+// set a director can curate — and the compass sweep SKIPS a side that already
+// exists, so a bad side is permanent until something can delete it.
+//
+// Set-based over what a delete must leave behind, because each is silently
+// wrong on its own: a row removed with the file left behind leaks disk, a file
+// removed with the row left behind lists a view whose picture is gone, and a
+// delete that says nothing about the shots pointing at it repoints them
+// silently to a picture of a different direction.
+
+test('deleting a view removes the row, the file, and reports what pointed at it', async () => {
+    const { handleLocations } = require('../routes/locations');
+    const { COMPASS_VIEWS } = require('../lib/reference-plates');
+
+    const projectId = generateId();
+    const locationId = generateId();
+    const sceneId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Curate');
+    db.prepare('INSERT INTO film_locations (id, project_id, name) VALUES (?, ?, ?)')
+        .run(locationId, projectId, 'STREET');
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number, location) VALUES (?, ?, ?, ?)')
+        .run(sceneId, projectId, 1, 'STREET');
+
+    const dir = path.join(process.env.FILM_DATA_DIR, 'refsheets', projectId);
+    fs.mkdirSync(dir, { recursive: true });
+    const png = Buffer.from('89504e470d0a1a0a', 'hex');
+
+    // The default plate plus every compass side, so the delete is exercised
+    // over the whole vocabulary rather than one convenient example.
+    const made = [];
+    for (const v of ['', ...COMPASS_VIEWS.map(c => c.name)]) {
+        const file = `location_STREET${v ? '__' + v : ''}.png`;
+        const full = path.join(dir, file);
+        fs.writeFileSync(full, png);
+        const id = generateId();
+        db.prepare(`INSERT INTO film_assets
+            (id, project_id, location_id, asset_type, file_path, file_name, format, version, metadata)
+            VALUES (?, ?, ?, 'reference_image', ?, ?, 'png', 1, ?)`)
+            .run(id, projectId, locationId, full, file, JSON.stringify(v ? { view: v } : {}));
+        made.push({ view: v, id, full });
+    }
+
+    // A shot pointed at one of them, so the delete has something to warn about.
+    const targeted = COMPASS_VIEWS.find(c => !c.isAnchor).name;
+    const shotId = generateId();
+    db.prepare(`INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml)
+        VALUES (?, ?, ?, ?)`)
+        .run(shotId, sceneId, '1A', JSON.stringify({ shot_code: '1A', location_view: targeted }));
+
+    const call = (method, url, body) => new Promise(resolve => {
+        const chunks = [];
+        const res = {
+            writeHead(status) { this.statusCode = status; return this; },
+            end(payload) { chunks.push(payload || ''); resolve({ status: this.statusCode || 200, body: JSON.parse(chunks.join('') || '{}') }); },
+        };
+        handleLocations({ method, url, body: body || {} }, res, url.split('?')[0].split('/').filter(Boolean));
+    });
+
+    for (const m of made) {
+        const before = (await call('GET', `/film/locations/${locationId}/plate/views`)).body.views;
+        assert.ok(before.some(v => v.view === m.view),
+            `${m.view || '(default)'}: not listed before deleting it`);
+
+        const del = await call('DELETE',
+            `/film/locations/${locationId}/plate/views/${encodeURIComponent(m.view || '__default__')}`);
+        assert.strictEqual(del.status, 200,
+            `${m.view || '(default)'}: delete returned ${del.status} — ${JSON.stringify(del.body)}`);
+
+        assert.ok(!fs.existsSync(m.full), `${m.view || '(default)'}: the row went and the file stayed`);
+        assert.ok(!db.prepare('SELECT id FROM film_assets WHERE id = ?').get(m.id),
+            `${m.view || '(default)'}: the file went and the row stayed`);
+
+        const after = (await call('GET', `/film/locations/${locationId}/plate/views`)).body.views;
+        assert.ok(!after.some(v => v.view === m.view),
+            `${m.view || '(default)'}: still listed after deleting it`);
+
+        // A card naming a deleted view falls back silently to a picture of a
+        // different direction, which is the exact defect views exist to stop.
+        // The delete must SAY so; it must not quietly rewrite the card.
+        if (m.view === targeted) {
+            assert.ok(Array.isArray(del.body.shots_pointing_here)
+                && del.body.shots_pointing_here.includes('1A'),
+                'the delete never named the shot that was pointed at this view');
+            const card = JSON.parse(db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?')
+                .get(shotId).scene_card_yaml);
+            assert.strictEqual(card.location_view, targeted,
+                'deleting a view rewrote a scene card; which side a shot looks at is a director choice');
+        }
+        if (!m.view) {
+            assert.strictEqual(del.body.was_default, true,
+                'deleting the anchor plate is not reported as deleting the anchor plate');
+        }
+    }
+
+    // Deleted, so the sweep offers it again rather than skipping it forever.
+    const plan = (await call('GET', `/film/locations/${locationId}/plate/compass/plan`)).body;
+    assert.ok(plan.refused, 'with every plate deleted the sweep still claims it can turn from one');
+
+    const missing = await call('DELETE', `/film/locations/${locationId}/plate/views/nosuchview`);
+    assert.strictEqual(missing.status, 404, 'deleting a view that does not exist reports success');
+});

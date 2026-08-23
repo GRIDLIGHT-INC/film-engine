@@ -5195,8 +5195,9 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 </div>
 
                 <div class="previs-pane">
-                    <canvas id="previsCamera"></canvas>
-                    <div class="previs-label">Camera</div>
+                    <canvas id="previsCameraSolid" style="position:absolute;inset:0;z-index:0;"></canvas>
+                    <canvas id="previsCamera" style="position:absolute;inset:0;z-index:1;background:transparent;"></canvas>
+                    <div class="previs-label" style="z-index:2;">Camera</div>
                     <div class="previs-readout" id="previsCameraReadout"></div>
                     <!-- The generated frame sits INSIDE the delivered frame,
                          behind the wireframe, so moving the camera changes the
@@ -13366,6 +13367,10 @@ THREE.GLTFLoader = GLTFLoader;
     // .glb the stage is drawing as a silhouette.
 
     const SOLID = { renderer: null, scene: null, camera: null, model: null, url: null, raf: null };
+    const CAMERA3D = {
+        renderer: null, scene: null, camera: null, instances: null,
+        assets: new Map(), loading: new Set(),
+    };
 
     // Every stored pose component has a stage action. Keeping this as data is
     // what prevents the next pose field from existing only in the inspector.
@@ -13482,6 +13487,111 @@ THREE.GLTFLoader = GLTFLoader;
         const assetId = sel && sel.kind === 'mesh' ? sel.assetId : null;
         const model = assetId && (PREVIS.models || []).find(m => m.id === assetId);
         previsSolidLoad(model ? `${API_BASE}/film/models/${assetId}/file` : null);
+    }
+
+    /** The full shot camera, rendered with the GLB's real materials. */
+    function previsCamera3DInit() {
+        if (CAMERA3D.renderer || typeof THREE === 'undefined') return CAMERA3D.renderer;
+        const canvas = document.getElementById('previsCameraSolid');
+        if (!canvas) return null;
+        CAMERA3D.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+        CAMERA3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        CAMERA3D.scene = new THREE.Scene();
+        CAMERA3D.scene.background = new THREE.Color(0x07080c);
+        CAMERA3D.camera = new THREE.PerspectiveCamera(35, 16 / 9, 0.01, 2000);
+        CAMERA3D.scene.add(new THREE.HemisphereLight(0xc8ddff, 0x25180f, 1.25));
+        const key = new THREE.DirectionalLight(0xffffff, 2.1);
+        key.position.set(4, 7, 5);
+        CAMERA3D.scene.add(key);
+        const fill = new THREE.DirectionalLight(0x8aafff, 0.7);
+        fill.position.set(-5, 3, -4);
+        CAMERA3D.scene.add(fill);
+        CAMERA3D.instances = new THREE.Group();
+        CAMERA3D.scene.add(CAMERA3D.instances);
+        return CAMERA3D.renderer;
+    }
+
+    function previsCamera3DLoad(assetId) {
+        if (!assetId || CAMERA3D.assets.has(assetId) || CAMERA3D.loading.has(assetId)) return;
+        CAMERA3D.loading.add(assetId);
+        new THREE.GLTFLoader().load(`${API_BASE}/film/models/${assetId}/file`, gltf => {
+            const source = gltf.scene;
+            const box = new THREE.Box3().setFromObject(source);
+            CAMERA3D.assets.set(assetId, {
+                source,
+                min: box.min.clone(),
+                size: box.getSize(new THREE.Vector3()),
+                centre: box.getCenter(new THREE.Vector3()),
+            });
+            CAMERA3D.loading.delete(assetId);
+            previsRefresh();
+        }, undefined, err => {
+            CAMERA3D.loading.delete(assetId);
+            CAMERA3D.assets.set(assetId, false);
+            previsStatus('Camera view could not load the textured model: '
+                + (err && err.message ? err.message : 'unknown error'));
+            previsRefresh();
+        });
+    }
+
+    /**
+     * Render every staged mesh through the authored shot camera. The canvas-2D
+     * layer remains above this one for frame lines and non-mesh blocking, but
+     * meshes are not redrawn there as polygon edges.
+     */
+    function previsRenderCameraModels(blocking, sensor) {
+        if (!previsCamera3DInit()) return false;
+        const meshes = (PREVIS.objects || []).filter(o => o && o.kind === 'mesh' && o.assetId);
+        meshes.forEach(o => previsCamera3DLoad(o.assetId));
+
+        const ready = meshes.filter(o => CAMERA3D.assets.get(o.assetId));
+        CAMERA3D.instances.clear();
+        for (const o of ready) {
+            const assetId = o.assetId;
+            const asset = CAMERA3D.assets.get(assetId);
+            const model = asset.source.clone(true);
+            const src = asset.size;
+            const want = o.sizeM || [src.x, src.y, src.z];
+            const scale = Math.min(
+                src.x > 1e-6 ? want[0] / src.x : 1,
+                src.y > 1e-6 ? want[1] / src.y : 1,
+                src.z > 1e-6 ? want[2] / src.z : 1);
+            model.position.set(-asset.centre.x, -asset.min.y, -asset.centre.z);
+
+            const placed = new THREE.Group();
+            placed.add(model);
+            placed.scale.setScalar(scale);
+            placed.position.set(o.position[0], o.position[1], o.position[2]);
+            const rot = o.rotationDeg || [0, 0, 0];
+            placed.rotation.order = 'YXZ';
+            placed.rotation.set((rot[1] || 0) * P_DEG, (rot[0] || 0) * P_DEG,
+                (rot[2] || 0) * P_DEG);
+            CAMERA3D.instances.add(placed);
+        }
+
+        const canvas = document.getElementById('previsCameraSolid');
+        const rect = canvas.parentElement.getBoundingClientRect();
+        const width = Math.max(2, Math.floor(rect.width));
+        const height = Math.max(2, Math.floor(rect.height));
+        CAMERA3D.renderer.setSize(width, height, false);
+
+        const view = previsFrameView({ width, height });
+        const pose = previsPose(blocking);
+        const fov = previsDeliveredFov(pose.focalMm, sensor);
+        CAMERA3D.camera.position.set(...pose.position);
+        CAMERA3D.camera.up.set(0, 1, 0);
+        CAMERA3D.camera.lookAt(...previsAim(pose));
+        CAMERA3D.camera.rotateZ(-(pose.rotation[2] || 0) * P_DEG);
+        CAMERA3D.camera.fov = fov.v;
+        CAMERA3D.camera.aspect = view.w / Math.max(1, view.h);
+        CAMERA3D.camera.updateProjectionMatrix();
+
+        CAMERA3D.renderer.setScissorTest(true);
+        CAMERA3D.renderer.setScissor(view.x, height - view.y - view.h, view.w, view.h);
+        CAMERA3D.renderer.setViewport(view.x, height - view.y - view.h, view.w, view.h);
+        CAMERA3D.renderer.render(CAMERA3D.scene, CAMERA3D.camera);
+        CAMERA3D.renderer.setScissorTest(false);
+        return ready.length > 0;
     }
 
     /**
@@ -14072,9 +14182,10 @@ THREE.GLTFLoader = GLTFLoader;
         }
     }
 
-    function previsDrawObjects(ctx, pr, colour, width, showSelection) {
+    function previsDrawObjects(ctx, pr, colour, width, showSelection, skipMeshes) {
         const targetIndex = previsTargetIndex();
         PREVIS.objects.forEach((o, i) => {
+            if (skipMeshes && o.kind === 'mesh' && CAMERA3D.assets.get(o.assetId)) return;
             const chosen = showSelection && i === PREVIS.selected;
             // The subject wears pink wherever selection is not overriding it,
             // so what the shot is of is legible in one glance.
@@ -14535,13 +14646,16 @@ THREE.GLTFLoader = GLTFLoader;
     }
 
     /** What the camera sees: the same projection, from the camera's pose. */
-    function previsDrawCamera(blocking, sensor) {
+    function previsDrawCamera(blocking, sensor, texturedModels) {
         const canvas = document.getElementById('previsCamera');
         if (!canvas) return;
         previsFit(canvas);
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#07080c';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!texturedModels) {
+            ctx.fillStyle = '#07080c';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
         const pose = previsPose(blocking);
         const fov = previsDeliveredFov(pose.focalMm, sensor);
@@ -14587,7 +14701,7 @@ THREE.GLTFLoader = GLTFLoader;
 
         // Staged objects. Absent here until now, so anything placed on the stage
         // was invisible in the one pane that answers "is it in the shot".
-        previsDrawObjects(ctx, pr, 'rgba(203,213,225,.9)', 1.4);
+        previsDrawObjects(ctx, pr, 'rgba(203,213,225,.9)', 1.4, false, texturedModels);
 
         ctx.restore();
 
@@ -14636,7 +14750,8 @@ THREE.GLTFLoader = GLTFLoader;
 
         PREVIS.path = previsSamplePath(blocking);
         previsDrawStage(blocking, sensor);
-        previsDrawCamera(blocking, sensor);
+        const texturedModels = previsRenderCameraModels(blocking, sensor);
+        previsDrawCamera(blocking, sensor, texturedModels);
         previsShowOptics(blocking, sensor);
         previsSolidSync();
     }
@@ -21552,12 +21667,16 @@ ${fountainText.slice(0, 50000)}`;
         catch (err) { host.innerHTML = `<p class="text-sm text-muted">Could not read the views: ${esc(err.message)}</p>`; return; }
 
         const card = v => `
-            <div style="flex:0 0 200px;">
+            <div style="flex:0 0 200px;position:relative;">
                 ${v.available
                     ? `<img src="${API_BASE}${esc(v.image_url)}" style="width:100%;border-radius:6px;display:block;">`
                     : `<div class="text-sm text-muted" style="padding:20px;border:1px dashed var(--gl-border,#444);border-radius:6px;">
                          ${esc(v.unavailable_reason || 'the file for this view is missing')}
                        </div>`}
+                <button class="btn btn-secondary btn-sm"
+                        style="position:absolute;top:6px;right:6px;padding:2px 7px;line-height:1;"
+                        title="Delete this view"
+                        onclick="deleteLocationView('${locationId}', ${JSON.stringify(v.view || '__default__').replace(/"/g, '&quot;')})">&times;</button>
                 <div class="text-sm" style="margin-top:6px;line-height:1.4;">${esc(v.label)}</div>
             </div>`;
 
@@ -21613,10 +21732,23 @@ ${fountainText.slice(0, 50000)}`;
         }
         const names = due ? due.join(', ') : 'east, south and west';
         const count = due ? due.length : 3;
+        /*
+         * Name what is being SKIPPED and why.
+         *
+         * "Photograph all four sides" that quietly buys two of them reads as the
+         * button half-working. A side already on disk is skipped so it is not
+         * paid for twice — which is only obvious if the dialog says so, and only
+         * actionable now that a view can be deleted.
+         */
+        const held = (plan && plan.skipped || []).map(v => v.name);
         if (!confirm(`Photograph ${names}?\n\n`
             + `${count} image${count === 1 ? '' : 's'} will be generated — this costs credits.\n\n`
-            + 'Each side is a quarter turn from the plate you already have, so the four agree with '
-            + 'each other. North is that existing plate and is not regenerated.')) return;
+            + 'Each side is a quarter turn from the plate you already have. North is that existing '
+            + 'plate and is never regenerated.'
+            + (held.length
+                ? `\n\nAlready photographed, so not bought again: ${held.join(', ')}. `
+                  + 'Delete a side with the × on it to have this re-shoot it.'
+                : ''))) return;
 
         const label = btn && btn.innerHTML;
         if (btn) { btn.disabled = true; btn.textContent = 'Photographing…'; }
@@ -21645,6 +21777,40 @@ ${fountainText.slice(0, 50000)}`;
             setStatus('Could not photograph the other sides: ' + err.message);
         } finally {
             if (btn) { btn.disabled = false; btn.innerHTML = label; }
+        }
+        renderLocationViews(locationId);
+    }
+
+    /**
+     * Remove one view. The set could only grow before this.
+     *
+     * The compass sweep SKIPS a side that already exists, so without a delete a
+     * bad side was permanent AND blocked the good one from ever being bought.
+     *
+     * The confirmation names what is lost, because a plate is a picture that was
+     * paid for, and it names the shots pointed at it AFTER the fact rather than
+     * repointing them: which side a shot looks at is a decision the director
+     * made, and silently moving it to another direction is the bug views exist
+     * to prevent.
+     */
+    async function deleteLocationView(locationId, view) {
+        const isDefault = view === '__default__';
+        if (!confirm(isDefault
+            ? 'Delete the original plate?\n\nIt is the picture the other sides are turns from, and the '
+              + 'fallback for every shot that names no view. The compass sweep cannot run without it.'
+            : `Delete the "${view}" view?\n\nThe image is removed and cannot be recovered — `
+              + 'photographing it again costs credits.')) return;
+        setStatus('Deleting the view…', true);
+        try {
+            const r = await api(`/locations/${locationId}/plate/views/${encodeURIComponent(view)}`,
+                { method: 'DELETE' });
+            const pointed = (r.shots_pointing_here || []);
+            setStatus(pointed.length
+                ? `View deleted. ${pointed.join(', ')} named it — those shots now fall back to the `
+                  + 'original plate until you point them at another side.'
+                : 'View deleted.');
+        } catch (err) {
+            setStatus('Could not delete the view: ' + err.message);
         }
         renderLocationViews(locationId);
     }
