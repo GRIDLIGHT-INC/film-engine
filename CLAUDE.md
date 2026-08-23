@@ -215,6 +215,7 @@ film-engine/
 │       ├── prompt-budget.test.js       # Plates are photographs, not documents; prose drops only where tags bind
 │       ├── provider-prompt-limit.test.js # Each provider's own ceiling; allowances scale with it
 │       ├── image-prompt-ceiling.test.js  # The ceiling every image prompt is built against, pinned to evidence
+│       ├── prompt-quality.test.js       # Is the request we send a good one: fallback ceilings, one resolver, full accounting, priority, negatives
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -1554,6 +1555,7 @@ node --test backend/tests/project-delete.test.js
 node --test backend/tests/prompt-budget.test.js
 node --test backend/tests/provider-prompt-limit.test.js
 node --test backend/tests/image-prompt-ceiling.test.js
+node --test backend/tests/prompt-quality.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/music-prompt.test.js

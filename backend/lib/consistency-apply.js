@@ -121,6 +121,43 @@ function fitAdditions(basePrompt, ctx, opts) {
     items.sort((a, b) => (ADDITION_RANK[a.profile_type] ?? 5) - (ADDITION_RANK[b.profile_type] ?? 5));
 
     /*
+     * ADDITION_RANK orders by KIND — identity before place before objects —
+     * which is the right tiebreak and is not the same question as "what is this
+     * shot of". It cannot tell the protagonist from a parked car, because both
+     * are subjects; on a real frame that left the SEDAN's 1936-character
+     * contract outweighing MAYA's 817.
+     *
+     * While the ceiling was 4000 the trimmer hid it: the sedan was cut to 210
+     * and priority appeared to work. Raising the ceiling removed the pressure
+     * and with it the only thing enforcing order — so the ranking has to be
+     * explicit now that nothing is accidentally doing it.
+     *
+     * rankContributions is derived from DECLARED data — the framing subject,
+     * then what the card puts in shot, then merely-locked incidentals — never
+     * from a type hierarchy and never from first textual mention, because a car
+     * can be a hero object and prose routinely opens on geography.
+     */
+    const shot = (opts && opts.shot) || null;
+    if (shot) {
+        // Required here rather than at module scope: storyboard-prompt is the
+        // heavier module and a top-level import risks a cycle through it.
+        const { trimToAllowance, rankContributions } = require('./storyboard-prompt');
+        const ranked = rankContributions(
+            items.map(i => ({ subject: i.subject_name, kind: i.profile_type,
+                chars: String(i.text || '').length, __item: i })), shot);
+        items.length = 0;
+        for (const r of ranked) {
+            const item = r.__item;
+            // A capped contribution is cut at a clause boundary, never to a
+            // character count — that is the mid-clause amputation this work
+            // exists to remove.
+            items.push(r.chars < String(item.text || '').length
+                ? { ...item, text: trimToAllowance(item.text, r.chars) }
+                : item);
+        }
+    }
+
+    /*
      * NOT shortened because a plate is attached.
      *
      * That was tried and reverted. The reasoning was sound — a plate shows what

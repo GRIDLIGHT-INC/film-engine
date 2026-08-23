@@ -30,7 +30,10 @@ const {
 } = require('../lib/shot-references');
 const { endpointFor: gridlightEndpointFor } = require('../lib/providers/gridlight-adapter');
 const { extractMediaUrl, resolveMediaUrl, isGatewayUrl } = require('../lib/provider-media');
-const { imageRequestPayload, providerConfigOf, loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
+const {
+    imageRequestPayload, providerConfigOf, loadShotContext, buildCapabilityPayload,
+    buildImagePayloadForAdapter,
+} = require('../lib/capability-payloads');
 const { loadBlocking, approvalState } = require('./previs');
 const { effectiveCamera } = require('../lib/previs-blocking');
 const { filmOptics } = require('../lib/look-development');
@@ -162,7 +165,7 @@ async function imageResultToBuffer(data) {
  *
  * @param {object} [projectConfig] - parsed film_projects.provider_config
  */
-async function callImageGen(prompt, negativePrompt, seed, options, projectConfig) {
+async function callImageGen(prompt, negativePrompt, seed, options, projectConfig, payloadFactory) {
     const requestBody = imageRequestPayload({
         ...(options || {}),
         prompt,
@@ -174,7 +177,13 @@ async function callImageGen(prompt, negativePrompt, seed, options, projectConfig
     // one. Runway's moderation is non-deterministic on this material — the same
     // prompt for the same shot passed and then failed minutes apart — so a
     // refusal is a condition to route around, not a verdict on the shot.
-    const result = await generateImageWithFallback(requestBody, projectConfig || {}, { timeout: 300000 });
+    // Storyboard generation supplies a factory closed over structured shot
+    // context, so every fallback rebuilds prompt assembly and consistency at
+    // its own ceiling. Fixed refine/recompose prompts may use the flat form;
+    // the chain skips an incompatible adapter rather than slicing that string.
+    const result = await generateImageWithFallback(
+        typeof payloadFactory === 'function' ? payloadFactory : requestBody,
+        projectConfig || {}, { timeout: 300000 });
 
     if (!result || !result.ok) {
         const tried = (result && result._chain || [])
@@ -205,7 +214,8 @@ async function callImageGen(prompt, negativePrompt, seed, options, projectConfig
  * Returns { buffer, metadata } where buffer is the PNG image data.
  * Calls onProgress callback with progress events during generation.
  */
-async function callImageGenStream(prompt, negativePrompt, seed, options, onProgress, projectConfig) {
+async function callImageGenStream(prompt, negativePrompt, seed, options, onProgress, projectConfig,
+    payloadFactory) {
     const payload = imageRequestPayload({
         ...(options || {}),
         prompt,
@@ -222,7 +232,8 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
     // being that selecting Runway or OpenAI for `image` must actually reach
     // them, where before this whole function posted to Gridlight regardless.
     if (provider.id !== 'gridlight') {
-        const { buffer, model } = await callImageGen(prompt, negativePrompt, seed, options, projectConfig);
+        const { buffer, model } = await callImageGen(prompt, negativePrompt, seed, options,
+            projectConfig, payloadFactory);
         if (onProgress) onProgress({ type: 'progress', step: 1, total_steps: 1 });
         return {
             buffer,
@@ -968,9 +979,22 @@ async function generateStoryboard(req, res, projectId, query) {
                 // Subjects standing in the attached frame keep their NAME and
                 // lose their paragraph.
                 anchorCovers: anchorCoversFor(anchorState, anchorState_.anchorAttached, keepPlatesFor(body, sceneCard)),
+                shot: { framingSubject: sceneCard.framing_subject || null, card: sceneCard },
             });
+            const payloadFactory = adapter => buildImagePayloadForAdapter({
+                ...generationCtx,
+                consistency: consistencyContext,
+                anchorCovers: anchorCoversFor(anchorState, anchorState_.anchorAttached,
+                    keepPlatesFor(body, sceneCard)),
+                overrides: {
+                    seed: styleParams.seed,
+                    ip_adapter_image: styleParams.ip_adapter_image,
+                    ip_adapter_weight: styleParams.ip_adapter_weight,
+                },
+            }, adapter);
             const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
-                await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, spendContext(project, shot));
+                await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
+                    imagePayload, spendContext(project, shot), payloadFactory);
 
             // Save image to disk
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
@@ -1219,7 +1243,19 @@ async function generateStoryboardStream(req, res, projectId, query) {
                 // Subjects standing in the attached frame keep their NAME and
                 // lose their paragraph.
                 anchorCovers: anchorCoversFor(anchorState, anchorState_.anchorAttached, keepPlatesFor(body, sceneCard)),
+                shot: { framingSubject: sceneCard.framing_subject || null, card: sceneCard },
             });
+            const payloadFactory = adapter => buildImagePayloadForAdapter({
+                ...generationCtx,
+                consistency: consistencyContext,
+                anchorCovers: anchorCoversFor(anchorState, anchorState_.anchorAttached,
+                    keepPlatesFor(body, sceneCard)),
+                overrides: {
+                    seed: styleParams.seed,
+                    ip_adapter_image: styleParams.ip_adapter_image,
+                    ip_adapter_weight: styleParams.ip_adapter_weight,
+                },
+            }, adapter);
             const { buffer: imageBuffer, metadata } = await callImageGenStream(
                 imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
                 imagePayload,
@@ -1234,7 +1270,8 @@ async function generateStoryboardStream(req, res, projectId, query) {
                         ...progressData,
                     });
                 },
-                spendContext(project, shot)
+                spendContext(project, shot),
+                payloadFactory
             );
 
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
@@ -1868,7 +1905,32 @@ function shotPromptPreview(req, res, shotId, query) {
          * "it does a lot in the background" — the negotiation is visible, so a
          * shot that came back wrong can be diagnosed rather than re-rolled.
          */
-        budget: (built.meta && built.meta.budget) || [],
+        /*
+         * The budget must account for the WHOLE prompt, not the part the
+         * builder assembled. Locked contracts are appended afterwards by the
+         * consistency pass, so they used to appear only as `contributors` and
+         * never as a budget row — on a real shot that left 5,209 of 11,671
+         * characters, 45% of the request, invisible on the one screen that
+         * exists so a director can see what will be sent. And the invisible
+         * half was the part that dominated the prompt.
+         *
+         * Merged as a single `contracts` row, which is the id PROMPT_PRIORITY
+         * already declares for them, so what is reported sums to what is sent.
+         */
+        budget: (() => {
+            const rows = ((built.meta && built.meta.budget) || []).slice();
+            const kept = contributors.reduce((n, c) => n + (Number(c.survived) || 0), 0);
+            const wanted = contributors.reduce((n, c) => n + (Number(c.wrote) || 0), 0);
+            if (kept > 0 && !rows.some(r => r.contributor === 'contracts')) {
+                rows.push({
+                    contributor: 'contracts', protected: false,
+                    wanted, chars: kept, cut: Math.max(0, wanted - kept),
+                    why: 'locked profile prose, appended after assembly — reported here so the '
+                        + 'budget sums to the prompt that is actually sent',
+                });
+            }
+            return rows;
+        })(),
         /*
          * Phrases that describe what is NOT in the frame.
          *
@@ -1959,15 +2021,19 @@ function longestPrefixIn(prompt, text) {
     return lo;
 }
 
-function imagePromptLimitFor(project) {
-    try {
-        const { resolveGenerator } = require('../lib/providers');
-        let config = {};
-        try { config = JSON.parse((project && project.provider_config) || '{}'); } catch (_) { config = {}; }
-        const adapter = resolveGenerator('image', config);
-        return (adapter && Number(adapter.promptLimit) > 0) ? Number(adapter.promptLimit) : null;
-    } catch (_) { return null; }
-}
+/*
+ * The image prompt ceiling comes from ONE place.
+ *
+ * This file used to carry its own copy — resolveGenerator, promptLimit, same
+ * null fallback — used at four call sites including the consistency pass. It
+ * agreed with the shared resolver, and two copies of a rule is how a display
+ * comes to disagree with a generator: effectiveCamera, markupToolbar and
+ * AUDIO_LANES were all the same shape. The test that was supposed to guarantee
+ * preview/purchase parity only counted builder calls and could not see it.
+ */
+const imagePromptLimitFor = require('../lib/capability-payloads').imagePromptLimit;
+
+
 
 /**
  * Is this frame the one the project is currently shooting from?
@@ -2873,6 +2939,7 @@ async function regenerateShot(req, res, shotId) {
 
     // Build or use override prompt
     let prompt, negative_prompt;
+    let generationCtx = null;
 
     if (body.prompt_override) {
         prompt = body.prompt_override;
@@ -2900,7 +2967,7 @@ async function regenerateShot(req, res, shotId) {
         // Read staged state long enough to enforce the Apply boundary. A
         // deliberate ignore_staged override generates from the committed card
         // and leaves the director's Previs experiment untouched.
-        const generationCtx = loadShotContext(shotId);
+        generationCtx = loadShotContext(shotId);
         const application = generationCtx.previsApplication;
         if (application && !application.applied) {
             if (body.ignore_staged !== true) {
@@ -2963,8 +3030,20 @@ async function regenerateShot(req, res, shotId) {
             // visible in the picture travelling beside them.
             anchorCovers: anchorCoversFor(anchorState, anchorAttached),
         });
+        const payloadFactory = generationCtx && !body.prompt_override
+            ? adapter => buildImagePayloadForAdapter({
+                ...generationCtx,
+                consistency: consistencyContext,
+                overrides: {
+                    seed,
+                    ip_adapter_image: primaryRef && (primaryRef.file_path || primaryRef.file_name),
+                    ip_adapter_weight: primaryRef && primaryRef.weight,
+                },
+            }, adapter)
+            : null;
         const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
-            await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed, imagePayload, spendContext(project, shot));
+            await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
+                imagePayload, spendContext(project, shot), payloadFactory);
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         // Keep what is about to be replaced. Every attempt cost money.

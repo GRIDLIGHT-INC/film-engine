@@ -246,7 +246,20 @@ function buildImageRequest(payload) {
     const p = payload || {};
     const body = {
         model: pickModel(p.model, KNOWN_IMAGE_MODELS, DEFAULT_IMAGE_MODEL),
-        promptText: p.promptText || p.prompt || '',
+        // text_to_image documents no negative field, so a negative handed here
+        // was dropped. Folded into the positive, as OpenAI's adapter does.
+        promptText: (() => {
+            const base = p.promptText || p.prompt || '';
+            const neg = String(p.negative_prompt || '').trim();
+            if (!neg) return base;
+            const joined = `${base}\n\nAvoid: ${neg}`;
+            // The fold happens after budgeting, so it must fit inside the
+            // declared ceiling rather than push the request past it.
+            const ceiling = adapter.promptLimit;
+            if (!ceiling || joined.length <= ceiling) return joined;
+            const room = ceiling - base.length - 9;
+            return room > 12 ? `${base}\n\nAvoid: ${neg.slice(0, room)}` : base;
+        })(),
     };
     // ratio is required, so it is always sent. Precedence: an explicit pixel
     // pair, then whatever ratio/aspect the caller named, then the default.
@@ -397,6 +410,10 @@ const adapter = {
         // Runway's text_to_image caps the prompt at 1000 characters. This is the
     // number the engine used to impose on everyone.
     promptLimit: 1000,
+    // Declared honestly: the negative is folded into the positive because
+    // text_to_image has no negative field, and the seed is not carried.
+    supportsNegativePrompt: 'folded',
+    supportsSeed: false,
     capabilities: ['video', 'image'],
     // gen4_image takes up to three { uri, tag } references and lets the prompt
     // name them, which is what makes @tags meaningful here.

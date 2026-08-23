@@ -64,12 +64,45 @@ function snapMeshyRatio(requested, model) {
  * produces several angles in one image — the thing the character refsheet route
  * currently spends three separate generations on.
  */
+/**
+ * Carry a negative into a prompt for a provider with no negative field.
+ *
+ * Same shape OpenAI's adapter uses. It is not as strong as a native negative
+ * and it is infinitely stronger than discarding it, which is what happened
+ * here until now.
+ */
+function foldNegative(prompt, negative, ceiling) {
+    const n = String(negative || '').trim();
+    if (!n) return prompt;
+    const joined = `${prompt}\n\nAvoid: ${n}`;
+    // The fold happens AFTER the prompt was budgeted, so a prompt built to
+    // exactly the ceiling plus "Avoid: ..." overruns it. The negative is the
+    // part that yields: it is a hint rather than the description of the shot.
+    if (!ceiling || joined.length <= ceiling) return joined;
+    const room = ceiling - prompt.length - 9;
+    return room > 12 ? `${prompt}\n\nAvoid: ${n.slice(0, room)}` : prompt;
+}
+
 function buildImageRequest(payload) {
+    /*
+     * Meshy's image endpoint takes a prompt and a model. It documents no
+     * negative field, so a negative_prompt handed to this adapter used to be
+     * DROPPED — silently, on the provider this production actually runs. Every
+     * shot-specific negative ever written was dead code here, including the
+     * ones added to stop expensive failures: recompose's "original background,
+     * unchanged background" and the anchor's "different location, rebuilt set".
+     *
+     * Folded into the positive rather than invented as a field, because we have
+     * no endpoint evidence that Meshy accepts one. This is what OpenAI's
+     * adapter already does for the same reason. If Meshy ever documents a
+     * native negative, send it there and delete this.
+     */
+
     const p = payload || {};
     const model = IMAGE_MODELS.includes(p.model) ? p.model : DEFAULT_IMAGE_MODEL;
     const body = {
         ai_model: model,
-        prompt: p.prompt || p.promptText || '',
+        prompt: foldNegative(p.prompt || p.promptText || '', p.negative_prompt, adapter.promptLimit),
     };
 
     const requested = (Number(p.width) > 0 && Number(p.height) > 0)
@@ -508,16 +541,31 @@ const adapter = {
      * nine of nine between 3632 and 3992 — and eight of them ended MID-CLAUSE,
      * with a parked car's paint description as the last thing the model read
      * and the closing quality tags cut entirely. Untrimmed those prompts want
-     * 4311 to 6955 characters. The ceiling was not protecting anything; it was
-     * amputating the back of every request in the film.
+     * 4311 to 6955 characters.
      *
-     * 16000 is not a documented Meshy number either — there is no such number
-     * to document. It is set well above what any real shot asks for, so the
-     * trimmer stops binding on ordinary work, and it is verified by generation
-     * rather than by reading. If a provider ever refuses a long prompt, that
-     * refusal is visible and catchable; the failure this replaces was silent.
+     * WHAT IS ACTUALLY MEASURED, and what is not. One request of **11,671
+     * characters** was accepted by Meshy and returned an image (Wingfall 2B,
+     * v22, 2026-08-23). That is the evidence, and it establishes a FLOOR.
+     *
+     * 16000 is NOT a verified number and no documented Meshy limit exists to
+     * verify it against. It is headroom chosen above what any real shot asks
+     * for, so the trimmer stops binding on ordinary work. The builder already
+     * emits 12,934 on one shot — above the only length ever proven to work — so
+     * lengths between 11,671 and 16,000 are being sent on the strength of a
+     * reasonable expectation rather than an observation. Saying so is the
+     * point: a comment claiming verification for a figure nobody verified is
+     * how the next person inherits a guess believing it is a measurement.
+     *
+     * If a long prompt is ever refused, that refusal is visible and catchable.
+     * The failure this replaces was silent.
      */
     promptLimit: 16000,
+    // Declared, not assumed. The negative is FOLDED into the positive because
+    // Meshy documents no negative field; the seed is not carried at all, so a
+    // "same seed" comparison on this provider is not controlled and the render
+    // ledger's seed means nothing here.
+    supportsNegativePrompt: 'folded',
+    supportsSeed: false,
     capabilities: ['model3d', 'image'],
     // image-to-image takes 1-5 reference images as a plain array, so pictures
     // DO condition the result — but they carry no names, so the prompt must

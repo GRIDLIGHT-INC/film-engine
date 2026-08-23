@@ -910,7 +910,86 @@ function applyStyleLock(baseSeed, shotIndex, options) {
     return { seed, ip_adapter_image: null, ip_adapter_weight: null };
 }
 
+
+/**
+ * Order subject contributions by what the shot is OF.
+ *
+ * Once the ceiling stopped binding, nothing enforced priority any more: the
+ * trimmer had accidentally been the only thing doing it. On a real shot the
+ * locked contracts landed as SEDAN 1936, DRAGON 891, location 856, MAYA 817 —
+ * a parked background car became the largest voice in the prompt, more than
+ * twice the protagonist, because it happened to have the longest description.
+ *
+ * Prominence is derived from DECLARED data, never from a type hierarchy and
+ * never from first textual mention. A car can be a hero object, and screenplay
+ * prose routinely opens on foreground geography before the person the scene is
+ * about — so "characters beat props" and "whoever is named first wins" would
+ * each replace one accidental policy with another.
+ *
+ * The order that IS defensible, because every term already exists in the code:
+ *   0  the framing subject / blocking target — what the camera is measured on
+ *   1  subjects the scene card explicitly puts in shot, or the camera note names
+ *   2  profiles that are merely locked and incidental to this frame
+ *
+ * Ties keep their original order, so this re-ranks and never reshuffles.
+ */
+function rankContributions(contributions, shot) {
+    const list = Array.isArray(contributions) ? contributions.slice() : [];
+    const s = shot || {};
+    const card = s.card || {};
+    const norm = v => String(v || '').trim().toLowerCase();
+
+    const framed = new Set([s.framingSubject, s.blockingTarget, card.framing_subject]
+        .map(norm).filter(Boolean));
+    const inShot = new Set([
+        ...(Array.isArray(card.characters) ? card.characters : []),
+        ...(Array.isArray(card.props) ? card.props : []),
+    ].map(norm));
+    const noted = norm((card.camera && card.camera.note) || '') + ' ' + norm(card.direction || '');
+
+    const tier = c => {
+        const n = norm(c && c.subject);
+        if (!n) return 2;
+        if (framed.has(n)) return 0;
+        if (inShot.has(n)) return 1;
+        if (noted.includes(n)) return 1;
+        return 2;
+    };
+
+    const ordered = list
+        .map((c, i) => ({ c, i, tier: tier(c) }))
+        .sort((a, b) => (a.tier - b.tier) || (a.i - b.i));
+
+    /*
+     * Ranking alone does not change what gets sent — it only changes the order
+     * things are cut in, and once the ceiling is generous nothing is cut at
+     * all. So the allowance follows the rank: a contribution may not occupy
+     * more of the prompt than the largest contribution of any HIGHER tier.
+     *
+     * That is a cap, not a trim. Where it binds, the caller cuts at a clause
+     * boundary the way every other allowance here is applied — cutting to a
+     * character count is the mid-clause amputation this work exists to remove.
+     */
+    let ceilingSoFar = Infinity;
+    let currentTier = ordered.length ? ordered[0].tier : 0;
+    let maxInTier = 0;
+
+    return ordered.map(({ c, tier: t }) => {
+        if (t !== currentTier) {
+            ceilingSoFar = Math.min(ceilingSoFar, maxInTier || Infinity);
+            currentTier = t;
+            maxInTier = 0;
+        }
+        const chars = Number(c && c.chars) || 0;
+        const allowed = Number.isFinite(ceilingSoFar) ? Math.min(chars, ceilingSoFar) : chars;
+        maxInTier = Math.max(maxInTier, allowed);
+        return allowed === chars ? c : { ...c, chars: allowed, capped_from: chars };
+    });
+}
+
 module.exports = {
+    rankContributions,
+    trimToAllowance,
     PROMPT_PRIORITY,
     DIRECTION_MODES,
     allowancesFor,

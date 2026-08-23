@@ -51,7 +51,16 @@ function buildImageRequest(payload) {
 
     let prompt = String(p.prompt || '').trim();
     // OpenAI has no negative_prompt; fold it into the prompt so intent survives.
-    if (p.negative_prompt) prompt = `${prompt}\n\nAvoid: ${p.negative_prompt}`;
+    if (p.negative_prompt) {
+        const joined = `${prompt}\n\nAvoid: ${p.negative_prompt}`;
+        // Fits inside the declared ceiling: the fold happens after budgeting.
+        const ceiling = adapter.promptLimit;
+        if (!ceiling || joined.length <= ceiling) prompt = joined;
+        else {
+            const room = ceiling - prompt.length - 9;
+            if (room > 12) prompt = `${prompt}\n\nAvoid: ${String(p.negative_prompt).slice(0, room)}`;
+        }
+    }
 
     // Map width/height → a supported size; honor an explicit size if valid.
     let size = 'auto';
@@ -381,6 +390,10 @@ const adapter = {
 
         // The Images API documents a 4000-character prompt for gpt-image-1.
     promptLimit: 4000,
+    // The Images API has no negative field; this adapter has always folded it
+    // into the positive. Seeds are not accepted.
+    supportsNegativePrompt: 'folded',
+    supportsSeed: false,
     capabilities: ['llm', 'image'],
     // The image builder reads p.reference_images and forwards them as edit
     // inputs, so a tag has a picture behind it.

@@ -135,6 +135,11 @@ const gridlightAdapter = {
     // than guessed upward: over-guessing produces a rejected request at the
     // provider, which is worse than trimming here where it can be reported.
     promptLimit: 1000,
+    // The gateway receives the payload verbatim, so a negative and a seed both
+    // reach it natively — whether the local service acts on them is its own
+    // business, but this adapter does not discard them.
+    supportsNegativePrompt: 'native',
+    supportsSeed: true,
     capabilities: Object.keys(ENDPOINTS),
     // Gridlight receives the capability payload verbatim, including
     // reference_images and ip_adapter_image, so references survive the hop.

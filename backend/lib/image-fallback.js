@@ -114,16 +114,49 @@ function imageProviderChain(projectConfig) {
  * Each provider is tried at most once, so worst-case spend is bounded by the
  * number of credentialed providers rather than by a retry count.
  */
-async function generateImageWithFallback(payload, projectConfig, opts) {
-    const chain = imageProviderChain(projectConfig);
-    if (!chain.length) {
+/**
+ * Walk a chain, asking for the payload each adapter should receive.
+ *
+ * `payloadOrFactory` is either a function — called once per adapter, so the
+ * caller can rebuild the request against THAT adapter's ceiling — or a single
+ * prebuilt payload for callers that predate the factory.
+ *
+ * The flat form cannot be rebudgeted. By the time a payload exists the prompt
+ * is one string with its contributor boundaries, priorities and shot context
+ * gone, so the only thing an implementation could do is slice it — which is the
+ * mid-clause amputation the ceiling work exists to remove. So a flat payload
+ * that overruns an adapter's declared limit SKIPS that adapter and says why.
+ * That sacrifices fallback coverage and lies about nothing.
+ *
+ * Injectable so it can be exercised over fakes. The test that used to observe
+ * this had to patch real credentialed adapters, bound its patch to objects the
+ * metered chain never called, and billed a live generation while proving
+ * nothing.
+ */
+async function runImageFallbackChain(chain, payloadOrFactory, opts) {
+    const adapters = Array.isArray(chain) ? chain : [];
+    if (!adapters.length) {
         return { ok: false, error: 'no credentialed image provider is available', _chain: [] };
     }
+    const factory = typeof payloadOrFactory === 'function' ? payloadOrFactory : null;
 
     const attempts = [];
     let last = null;
 
-    for (const adapter of chain) {
+    for (const adapter of adapters) {
+        const payload = factory ? factory(adapter) : payloadOrFactory;
+        const limit = Number(adapter && adapter.promptLimit) || 0;
+        const chars = String((payload && payload.prompt) || '').length;
+
+        // Only the flat path can overrun: a factory is expected to build to fit.
+        if (limit && chars > limit) {
+            attempts.push({ provider: adapter.id, ok: false, skipped: true,
+                error: `skipped: prompt is ${chars} characters against this provider's `
+                    + `${limit}-character limit, and a prebuilt prompt cannot be rebudgeted `
+                    + 'without cutting it mid-clause' });
+            continue;
+        }
+
         const result = await adapter.generate('image', payload, opts || {});
         attempts.push({ provider: adapter.id, ok: !!result.ok, error: result.ok ? null : result.error });
 
@@ -139,7 +172,12 @@ async function generateImageWithFallback(payload, projectConfig, opts) {
     return { ...(last || { ok: false, error: 'image generation failed' }), _chain: attempts };
 }
 
+async function generateImageWithFallback(payloadOrFactory, projectConfig, opts) {
+    return runImageFallbackChain(imageProviderChain(projectConfig), payloadOrFactory, opts);
+}
+
 module.exports = {
+    runImageFallbackChain,
     imageProviderChain,
     generateImageWithFallback,
     isRefusal,

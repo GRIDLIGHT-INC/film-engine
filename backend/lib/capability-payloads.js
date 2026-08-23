@@ -180,6 +180,9 @@ const CAPABILITY_BUILDERS = {
         requireCtx(ctx, ['sceneCard', 'project'], 'image');
         const overrides = ctx.overrides || {};
         const cc = ctx.consistency || null;
+        const promptLimit = Number(ctx.imagePromptLimit) > 0
+            ? Number(ctx.imagePromptLimit)
+            : imagePromptLimit(ctx.project);
 
         // Blocking shapes the keyframe, not only the clip. Passing it here is
         // what makes the frame a director approves the frame they staged.
@@ -193,7 +196,7 @@ const CAPABILITY_BUILDERS = {
                 // Resolved here rather than passed in, so the orchestrator and
                 // the per-domain route cannot disagree about how much prompt a
                 // provider accepts — the same reason this file exists at all.
-                maxPromptChars: imagePromptLimit(ctx.project),
+                maxPromptChars: promptLimit,
                 // The production's own optics, for shots nobody has blocked.
                 filmOptics: filmOpticsFor(ctx.project),
                 // Declared dimensions, so the prompt can say how big things are
@@ -242,12 +245,17 @@ const CAPABILITY_BUILDERS = {
         ctx.__budget = base.budget || null;
         return cc
             ? applyConsistencyToImagePayload(payload, cc, {
-                maxPromptChars: imagePromptLimit(ctx.project),
+                maxPromptChars: promptLimit,
                 // Subjects standing in the attached frame keep their name and
                 // lose their paragraph — but only when the frame really is in
                 // this payload, since shortening against a picture that did not
                 // travel is the failure the contract shortening was reverted for.
                 anchorCovers: ctx.anchorAttached ? (ctx.anchorCovers || []) : [],
+                // What this shot is OF, so priority can govern allocation once
+                // the ceiling stops binding. Without it the longest contract
+                // wins and a parked car outweighs the protagonist.
+                shot: { framingSubject: (ctx.sceneCard && ctx.sceneCard.framing_subject) || null,
+                    card: ctx.sceneCard || {} },
             })
             : payload;
     },
@@ -399,6 +407,33 @@ const CAPABILITY_BUILDERS = {
         return base;
     },
 };
+
+/**
+ * Build the complete image payload for the adapter that will receive it.
+ *
+ * This deliberately starts from structured shot context on every call. A
+ * finished prompt cannot be safely adapted to a smaller provider: its
+ * contributor boundaries and priority information are already gone. Providers
+ * that fold the negative into the positive also need that text reserved inside
+ * their declared prompt ceiling before either prompt assembly or consistency
+ * contracts are budgeted.
+ */
+function buildImagePayloadForAdapter(ctx, adapter) {
+    const declared = Number(adapter && adapter.promptLimit) || imagePromptLimit(ctx && ctx.project);
+    const firstCtx = { ...(ctx || {}), imagePromptLimit: declared };
+    const first = CAPABILITY_BUILDERS.image(firstCtx);
+    const firstPayload = Array.isArray(first) ? first[0] : first;
+    const negative = String((firstPayload && firstPayload.negative_prompt) || '').trim();
+    const reserve = adapter && adapter.supportsNegativePrompt === 'folded' && negative
+        ? negative.length + '\n\nAvoid: '.length
+        : 0;
+    const available = declared ? Math.max(1, declared - reserve) : declared;
+    if (!declared || available === declared) return firstPayload;
+
+    const rebuiltCtx = { ...(ctx || {}), imagePromptLimit: available };
+    const rebuilt = CAPABILITY_BUILDERS.image(rebuiltCtx);
+    return Array.isArray(rebuilt) ? rebuilt[0] : rebuilt;
+}
 
 /**
  * Build the provider payload for a capability.
@@ -713,6 +748,7 @@ async function persistCapabilityResult(capability, result, ctx, filename) {
 
 module.exports = {
     imagePromptLimit,
+    buildImagePayloadForAdapter,
     dimensionsForAspect,
     IMAGE_DEFAULTS,
     CAPABILITY_BUILDERS,

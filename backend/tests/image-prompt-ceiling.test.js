@@ -151,8 +151,11 @@ test('preview and paid generation resolve the same ceiling', () => {
      */
     const payloadSrc = fs.readFileSync(
         path.join(__dirname, '..', 'lib/capability-payloads.js'), 'utf8');
-    const uses = (payloadSrc.match(/maxPromptChars:\s*imagePromptLimit\(/g) || []).length;
-    assert.ok(uses >= 1, 'the shared payload path no longer derives its ceiling from the adapter');
+    const derives = /const\s+promptLimit\s*=\s*[\s\S]{0,180}imagePromptLimit\(ctx\.project\)/
+        .test(payloadSrc);
+    const uses = (payloadSrc.match(/maxPromptChars:\s*promptLimit/g) || []).length;
+    assert.ok(derives && uses >= 1,
+        'the shared payload path no longer derives its default ceiling from the adapter');
 
     const boardSrc = fs.readFileSync(
         path.join(__dirname, '..', 'routes/storyboard.js'), 'utf8');
