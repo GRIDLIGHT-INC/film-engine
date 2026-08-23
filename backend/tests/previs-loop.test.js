@@ -145,10 +145,22 @@ const LOOP_EDGES = [
         what: 'the keyframe is generated from the blocking, not the written card',
         async check() {
             const { shotId } = await blockedShot();
+            // Durable generation reads APPLIED blocking only; an unapplied
+            // experiment is not what the board is about to shoot. Committing it
+            // is what this edge has always meant -- "what I staged reaches the
+            // keyframe" -- said in the vocabulary the boundary now uses.
+            const applied = await call('POST', `/film/shots/${shotId}/previs/apply`);
+            if (applied.status >= 400) return `apply refused: ${JSON.stringify(applied.body)}`;
             const ctx = loadShotContext(shotId);
             if (!ctx || !ctx.previs) return 'loadShotContext does not carry previs';
             const { payload } = buildCapabilityPayload('image', ctx);
-            if (!/50mm/.test(payload.prompt || '')) return `image prompt does not carry the staged lens: ${payload.prompt}`;
+            // Deliberately NOT the lens: Apply writes the lens onto the card, so
+            // asserting on it would pass from the card alone and the edge would
+            // prove nothing. The solved camera distance exists only on the
+            // stage, so it is the honest evidence that blocking reached here.
+            if (!/\d+(\.\d+)?m from subject/.test(payload.prompt || '')) {
+                return `image prompt does not carry the solved staging: ${payload.prompt}`;
+            }
             return null;
         },
     },
@@ -168,9 +180,13 @@ const LOOP_EDGES = [
         what: 'the clip is generated from the blocking',
         async check() {
             const { shotId } = await blockedShot();
+            const applied = await call('POST', `/film/shots/${shotId}/previs/apply`);
+            if (applied.status >= 400) return `apply refused: ${JSON.stringify(applied.body)}`;
             const ctx = loadShotContext(shotId);
             const { payload } = buildCapabilityPayload('video', ctx);
             const cc = payload.camera_control || {};
+            // rig and the sampled path are never written to the card, so this
+            // stays a real test of blocking -> payload after Apply.
             if (!cc.rig && !cc.path) return 'camera_control carries neither rig nor path';
             return null;
         },

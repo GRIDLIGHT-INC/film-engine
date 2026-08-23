@@ -257,7 +257,7 @@ function callRoute(method, urlPath, body) {
     });
 }
 
-test('loadShotContext carries blocking so every caller sees it', () => {
+test('loadShotContext carries blocking so every caller sees it', async () => {
     // The Phase 0 discipline: one payload path. If blocking only reached the
     // per-domain route, the orchestrator would generate a different shot.
     const { shotId } = makeBlockedShot('dolly-in');
@@ -270,19 +270,26 @@ test('loadShotContext carries blocking so every caller sees it', () => {
             JSON.stringify(defaultBlocking().subject), JSON.stringify(defaultBlocking().stage),
             'dolly', 'dolly-in', JSON.stringify(samplePath('dolly-in', defaultBlocking(), { frames: 8 })));
 
+    // Durable callers see APPLIED blocking only, so committing it is part of
+    // stating this guarantee rather than a weakening of it: what a director
+    // staged and applied must reach every caller, exactly as before.
+    await callRoute('POST', `/film/shots/${shotId}/previs/apply`);
+
     const after = loadShotContext(shotId);
     assert.ok(after.previs, 'blocking did not reach the shot context');
     assert.strictEqual(after.previs.movement, 'dolly-in');
     assert.strictEqual(after.previs.path.length, 8);
 });
 
-test('the shared video builder emits the path for a blocked shot', () => {
+test('the shared video builder emits the path for a blocked shot', async () => {
     const { shotId } = makeBlockedShot('crane-up');
     db.prepare(`INSERT INTO film_previs_blocking (id, shot_id, camera_json, subject_json, stage_json, rig, movement, path_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(generateId(), shotId, JSON.stringify(defaultBlocking().camera),
             JSON.stringify(defaultBlocking().subject), JSON.stringify(defaultBlocking().stage),
             'crane', 'crane-up', JSON.stringify(samplePath('crane-up', defaultBlocking(), { frames: 12 })));
+
+    await callRoute('POST', `/film/shots/${shotId}/previs/apply`);
 
     const ctx = loadShotContext(shotId);
     const payload = CAPABILITY_BUILDERS.video(ctx);
