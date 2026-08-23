@@ -241,6 +241,7 @@ film-engine/
 │       ├── previs-blocking.test.js       # All 18 moves sample, all framings solve (Phase 1)
 │       ├── previs-plan.test.js           # 3D previs plan conformance (18 moves, 18 shots, 12 ratios)
 │       ├── previs-camera-freedom.test.js  # 6-DOF camera, authored paths, models, preset compatibility
+│       ├── previs-camera-contract.test.js # Camera-key units, seams, browser/server parity, staged controls
 │       ├── e2e-readiness.test.js         # Preflight covers every stage screenplay→final
 │       ├── fixtures/thirty-second.fountain # 30-second E2E test screenplay
 │       ├── phase6-live-runs.test.js       # SSE streaming, orchestrator persistence (Phase 6)
@@ -1204,6 +1205,8 @@ Design: [`docs/plans/previs-camera-implementation-plan.md`](docs/plans/previs-ca
 The shot camera is a full six-degree-of-freedom pose: position x/y/z and yaw/pitch/roll, with lens, sensor, stop and focus distance. It can be dragged on the frozen stage projection, turned with Shift-drag, entered numerically, and captured as ordered camera keys. The route already persisted nine of those ten components before this work; the limits were the page and the frontal-only solver. Focus distance was the missing validation and must remain positive and finite.
 
 `camera_keys_json` is the authored source; `path_json` is the sampled result that was actually previewed. The original 18 movement presets remain shortcuts and compile byte-identically to their captured paths. One analyzer names a flown path twice: a provider-safe dominant movement id and honest compound prose for prompts. It accumulates every leg (endpoint subtraction makes an out-and-back move look static), converts world translation into camera space (world +X is not camera-right after a turn), and ranks physical magnitudes so centimetres of drift cannot outrank metres of travel. In its prose, **while** means concurrent axes in one leg and **then** means ordered legs; that distinction is generation intent, not style.
+
+The browser samples keys locally because sending every drag and playback frame through an asynchronous route would make the camera network-dependent, and the app deliberately ships as one HTML file with no build step. That leaves two implementations by design, so `previs-camera-contract.test.js` holds browser and server to each other over the edge-case set while `previs-key-sampling.json` holds both to the corrected golden outcome. Key times are director-editable; rotations normalize to degrees at the route boundary, interpolate across the shortest angular seam, and ignore sub-half-degree noise in generation prose.
 
 Previs remains scoped to an existing shot. **Render this angle** saves the keys, applies the blocking, and regenerates that shot's Storyboard frame. There is one saved blocking per shot: exploring is free until Save, and saving replaces the previously saved angle. The stage painter is intentionally grey-box: it has no occlusion and texture mapping is affine per triangle, so flying behind a wall may show through it; use the camera output and generated frame to judge final visibility.
 

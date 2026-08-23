@@ -267,9 +267,36 @@ function solveShot(opts) {
     };
 }
 
+const ROTATION_UNITS = new Set(['degrees', 'radians']);
+
+function keyRotationDegrees(key) {
+    const rotation = Array.isArray(key && key.rotation) ? key.rotation : [0, 0, 0];
+    const unit = (key && key.rotationUnit) || 'radians';
+    if (!ROTATION_UNITS.has(unit)) throw new Error(`previs: unknown rotation unit '${unit}'`);
+    return unit === 'degrees' ? rotation.map(Number) : rotation.map(value => Number(value) / DEG);
+}
+
+function shortestAngleDeltaDegrees(from, to) {
+    let delta = (Number(to) - Number(from)) % 360;
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    return delta;
+}
+
+/** Convert public/MCP keys into the one unit persisted by Previs. */
+function normalizeCameraKeys(keys) {
+    return (Array.isArray(keys) ? keys : []).map(key => ({
+        ...key,
+        position: Array.isArray(key.position) ? key.position.map(Number) : key.position,
+        rotation: keyRotationDegrees(key),
+        focalMm: Number(key.focalMm),
+        rotationUnit: 'degrees',
+    }));
+}
+
 /** Interpolate director-authored full camera keys into the stored preview path. */
 function sampleCameraKeys(keys, opts) {
-    const source = (Array.isArray(keys) ? keys : []).filter(k => k && Number.isFinite(k.t))
+    const source = normalizeCameraKeys(keys).filter(k => k && Number.isFinite(k.t))
         .slice().sort((a, b) => a.t - b.t);
     if (!source.length) return [];
     if (source.length === 1) return [JSON.parse(JSON.stringify(source[0]))];
@@ -284,12 +311,9 @@ function sampleCameraKeys(keys, opts) {
         const f = b.t === a.t ? 0 : Math.max(0, Math.min(1, (t - a.t) / (b.t - a.t)));
         out.push({ t,
             position: a.position.map((v, x) => mix(v, b.position[x], f)),
-            rotation: a.rotation.map((v, x) => mix(v, b.rotation[x], f)),
+            rotation: a.rotation.map((v, x) => v + shortestAngleDeltaDegrees(v, b.rotation[x]) * f),
             focalMm: mix(a.focalMm, b.focalMm, f),
-            // Authored browser keys are degrees; an unmarked external/glTF key
-            // uses radians. Carrying the unit removes an otherwise impossible
-            // guess at analysis time (3 can mean three degrees or three radians).
-            rotationUnit: a.rotationUnit || b.rotationUnit || 'radians' });
+            rotationUnit: 'degrees' });
     }
     return out;
 }
@@ -304,13 +328,12 @@ function analyzePath(path) {
         scores.set(id, (scores.get(id) || 0) + score);
     };
     const legs = [];
-    const degrees = (value, key) => (key && key.rotationUnit === 'degrees')
-        ? value : value / DEG;
+    const source = normalizeCameraKeys(keys);
 
     // Accumulate every leg. Endpoint subtraction calls an out-and-back move
     // static, even though both the prompt and provider must know it moved.
-    for (let i = 0; i < keys.length - 1; i++) {
-        const a = keys[i] || {}, b = keys[i + 1] || {};
+    for (let i = 0; i < source.length - 1; i++) {
+        const a = source[i] || {}, b = source[i + 1] || {};
         const pa = Array.isArray(a.position) ? a.position : [0, 0, 0];
         const pb = Array.isArray(b.position) ? b.position : pa;
         const ra = Array.isArray(a.rotation) ? a.rotation : [0, 0, 0];
@@ -318,10 +341,10 @@ function analyzePath(path) {
         const worldDelta = pb.map((v, axis) => Number(v) - Number(pa[axis]));
         // A move is named from what the operator sees, not from the stage's
         // world axes. Inverting the starting yaw expresses it camera-locally.
-        const local = yawVector(worldDelta, -degrees(Number(ra[0]) || 0, a));
-        const yaw = degrees((Number(rb[0]) || 0) - (Number(ra[0]) || 0), a);
-        const pitch = degrees((Number(rb[1]) || 0) - (Number(ra[1]) || 0), a);
-        const roll = degrees((Number(rb[2]) || 0) - (Number(ra[2]) || 0), a);
+        const local = yawVector(worldDelta, -(Number(ra[0]) || 0));
+        const yaw = shortestAngleDeltaDegrees(ra[0], rb[0]);
+        const pitch = shortestAngleDeltaDegrees(ra[1], rb[1]);
+        const roll = shortestAngleDeltaDegrees(ra[2], rb[2]);
         const fa = Number(a.focalMm), fb = Number(b.focalMm);
         const events = [];
         const event = (id, score, words) => {
@@ -335,11 +358,11 @@ function analyzePath(path) {
         if (Math.abs(local[0]) > .01) event(local[0] > 0 ? 'tracking-right' : 'tracking-left', Math.abs(local[0]) / 2);
         if (Math.abs(worldDelta[1]) > .01) event(worldDelta[1] > 0 ? 'crane-up' : 'crane-down', Math.abs(worldDelta[1]) / 2.5);
         if (Math.abs(local[2]) > .01) event(local[2] < 0 ? 'dolly-in' : 'dolly-out', Math.abs(local[2]) / 2);
-        if (Math.abs(yaw) > .1) event(yaw > 0 ? 'pan-left' : 'pan-right', Math.abs(yaw) / 30);
-        if (Math.abs(pitch) > .1) event(pitch > 0 ? 'tilt-up' : 'tilt-down', Math.abs(pitch) / 20);
+        if (Math.abs(yaw) >= .5) event(yaw > 0 ? 'pan-left' : 'pan-right', Math.abs(yaw) / 30);
+        if (Math.abs(pitch) >= .5) event(pitch > 0 ? 'tilt-up' : 'tilt-down', Math.abs(pitch) / 20);
         // Roll has no provider enum. Orbit is the closest honest supported
         // control while the prose explicitly names the roll.
-        if (Math.abs(roll) > .1) {
+        if (Math.abs(roll) >= .5) {
             event('orbit', Math.abs(roll) / 90,
                 roll > 0 ? 'roll clockwise' : 'roll counterclockwise');
         }
@@ -934,7 +957,8 @@ function effectiveCamera(cardCamera, previs, filmOptics, opts) {
 module.exports = {
     RIGS, MOVEMENTS, SHOT_TYPES, SENSORS,
     DEFAULT_EYE_HEIGHT_M, DEFAULT_SUBJECT_HEIGHT_M,
-    defaultBlocking, solveShot, samplePath, sampleSequence, sampleCameraKeys, analyzePath, moveAmount, resolveTarget,
+    defaultBlocking, solveShot, samplePath, sampleSequence, sampleCameraKeys, normalizeCameraKeys,
+    shortestAngleDeltaDegrees, analyzePath, moveAmount, resolveTarget,
     rigCanPerform, toCameraControl, legTimings, movePace, groupLegs, DEFAULT_MOVE_MS,
     poseAt, EASINGS, easeT,
     previsFacets,

@@ -18,7 +18,7 @@ const { saveFile, serveFile } = require('../lib/file-storage');
 const { EASINGS } = require('../lib/previs-blocking');
 const {
     RIGS, MOVEMENTS, SHOT_TYPES,
-    solveShot, samplePath, sampleSequence, rigCanPerform, defaultBlocking, resolveTarget,
+    solveShot, samplePath, sampleSequence, normalizeCameraKeys, rigCanPerform, defaultBlocking, resolveTarget,
     legTimings, DEFAULT_MOVE_MS,
     DEFAULT_EYE_HEIGHT_M, DEFAULT_SUBJECT_HEIGHT_M,
 } = require('../lib/previs-blocking');
@@ -169,6 +169,7 @@ function validateBlocking(body) {
             if (!key || !Number.isFinite(key.t) || key.t < 0 || key.t > 1
                 || !Array.isArray(key.position) || key.position.length !== 3 || !key.position.every(Number.isFinite)
                 || !Array.isArray(key.rotation) || key.rotation.length !== 3 || !key.rotation.every(Number.isFinite)
+                || (key.rotationUnit !== undefined && !['degrees', 'radians'].includes(key.rotationUnit))
                 || !(Number.isFinite(key.focalMm) && key.focalMm > 0)) {
                 errors.push(`cameraKeys[${i}] must contain t 0..1, finite position/rotation triples and a positive focalMm`);
             }
@@ -302,7 +303,7 @@ function putBlocking(req, res, shotId, internal) {
         movement: body.movement || dominantMovement(body.moves) || 'static',
         moves: Array.isArray(body.moves) ? body.moves : [],
         subjects: Array.isArray(body.subjects) ? body.subjects : [],
-        cameraKeys: Array.isArray(body.cameraKeys) ? body.cameraKeys : [],
+        cameraKeys: Array.isArray(body.cameraKeys) ? normalizeCameraKeys(body.cameraKeys) : [],
     };
 
     // The subject is DERIVED from whichever staged object is the target, so

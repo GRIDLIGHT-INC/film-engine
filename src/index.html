@@ -5220,7 +5220,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         <label>Sensor</label>
                         <select id="previsSensor" onchange="previsRefresh()"></select>
                         <label>Camera X (m)</label>
-                        <input type="number" id="previsCameraX" step="0.1" value="0" oninput="previsRefresh()">
+                        <input type="number" id="previsCameraX" step="0.1" value="0" oninput="previsRefresh();previsMarkStaged()">
                         <div class="previs-row">
                             <div>
                                 <label>Lens (mm)</label>
@@ -5243,12 +5243,12 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         </div>
                         <label>Yaw / pitch / roll (&deg;)</label>
                         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;">
-                            <input type="number" id="previsCameraYaw" step="1" value="0" oninput="previsRefresh()">
-                            <input type="number" id="previsCameraPitch" step="1" value="0" oninput="previsRefresh()">
-                            <input type="number" id="previsCameraRoll" step="1" value="0" oninput="previsRefresh()">
+                            <input type="number" id="previsCameraYaw" step="1" value="0" oninput="previsRefresh();previsMarkStaged()">
+                            <input type="number" id="previsCameraPitch" step="1" value="0" oninput="previsRefresh();previsMarkStaged()">
+                            <input type="number" id="previsCameraRoll" step="1" value="0" oninput="previsRefresh();previsMarkStaged()">
                         </div>
                         <label>Focus distance (m)</label>
-                        <input type="number" id="previsFocusDistance" step="0.1" min="0.1" value="3" oninput="previsRefresh()">
+                        <input type="number" id="previsFocusDistance" step="0.1" min="0.1" value="3" oninput="previsRefresh();previsMarkStaged()">
                         <label>Intensity</label>
                         <input type="range" id="previsIntensity" min="0" max="1" step="0.05" value="0.5" oninput="previsRefresh()">
                     </div>
@@ -5289,7 +5289,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         <h3 class="mb-8" style="font-size:13px;">Camera note</h3>
                         <textarea id="previsCameraNote" rows="3" maxlength="400"
                             style="width:100%;font-size:11px;line-height:1.45;font-family:inherit;"
-                            oninput="cameraNoteCount('previs')"
+                            oninput="cameraNoteCount('previs');previsMarkStaged()"
                             placeholder="Camera on the far side of the road, looking back toward her."></textarea>
                         <div class="text-sm text-muted" id="previsCameraNoteCount" style="font-size:10px;"></div>
                         <button class="btn btn-sm btn-secondary" style="width:100%;margin-top:5px;"
@@ -12614,9 +12614,9 @@ THREE.GLTFLoader = GLTFLoader;
     async function loadPrevisPage() {
         // The stage's model picker needs to know what exists before a mesh
         // can be pointed at anything.
-        previsLoadModels();
         if (!state.currentProject) return;
         try {
+            await previsLoadModels();
             if (!PREVIS.taxonomy) PREVIS.taxonomy = await api('/previs/taxonomy');
             if (!PREVIS.cardVocabulary) PREVIS.cardVocabulary = await api('/shots/vocabulary');
             previsFillInspector();
@@ -13197,7 +13197,9 @@ THREE.GLTFLoader = GLTFLoader;
         if (!el) return;
         el.innerHTML = PREVIS.cameraKeys.length ? PREVIS.cameraKeys.map((k, i) =>
             `<div style="display:flex;gap:5px;align-items:center;margin-top:4px;">
-              <strong>K${i + 1}</strong><span>${Math.round(k.t * 100)}% · ${k.position.map(v => Number(v).toFixed(1)).join(', ')} · ${Math.round(k.focalMm)}mm</span>
+              <strong>K${i + 1}</strong><input type="number" min="0" max="100" step="1" value="${Math.round(k.t * 100)}"
+                title="time through the shot (%)" onchange="previsSetCameraKeyTime(${i},this.value)" style="width:52px;font-size:10px;">%
+              <span>${k.position.map(v => Number(v).toFixed(1)).join(', ')} · ${Math.round(k.focalMm)}mm</span>
               <button class="btn btn-sm" onclick="previsRemoveCameraKey(${i})">&times;</button></div>`).join('')
             : 'No authored keys — preset drives the path.';
     }
@@ -13219,6 +13221,12 @@ THREE.GLTFLoader = GLTFLoader;
     }
     function previsRemoveCameraKey(i) { PREVIS.cameraKeys.splice(i, 1); previsRenderCameraKeys(); previsRefresh(); previsMarkStaged(); }
     function previsClearCameraKeys() { PREVIS.cameraKeys = []; previsRenderCameraKeys(); previsRefresh(); previsMarkStaged(); }
+    function previsSetCameraKeyTime(i, percent) {
+        if (!PREVIS.cameraKeys[i]) return;
+        PREVIS.cameraKeys[i].t = Math.max(0, Math.min(1, (Number(percent) || 0) / 100));
+        PREVIS.cameraKeys.sort((a, b) => a.t - b.t);
+        previsRenderCameraKeys(); previsRefresh(); previsMarkStaged();
+    }
 
     /**
      * How the duration divides between legs, mirroring lib/previs-blocking.js.
@@ -14556,15 +14564,29 @@ THREE.GLTFLoader = GLTFLoader;
     }
 
     function previsSampleCameraKeys(keys, frames) {
-        const src = keys.slice().sort((a, b) => a.t - b.t);
+        const DEGREE = Math.PI / 180;
+        const src = keys.map(key => {
+            const unit = key.rotationUnit || 'radians';
+            if (unit !== 'degrees' && unit !== 'radians') throw new Error(`unknown rotation unit '${unit}'`);
+            return { ...key, rotation: unit === 'degrees' ? key.rotation.map(Number)
+                : key.rotation.map(v => Number(v) / DEGREE), rotationUnit: 'degrees' };
+        }).sort((a, b) => a.t - b.t);
         if (src.length < 2) return src;
         const mix = (a, b, f) => a + (b - a) * f;
+        const angleDelta = (a, b) => {
+            let d = (b - a) % 360;
+            if (d > 180) d -= 360;
+            if (d < -180) d += 360;
+            return d;
+        };
         return Array.from({ length: frames }, (_, i) => {
             const t = i / (frames - 1); let n = 0;
             while (n < src.length - 2 && src[n + 1].t < t) n++;
-            const a = src[n], b = src[n + 1], f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
+            const a = src[n], b = src[n + 1], f = b.t === a.t ? 0
+                : Math.max(0, Math.min(1, (t - a.t) / (b.t - a.t)));
             return { t, position: a.position.map((v, x) => mix(v, b.position[x], f)),
-                rotation: a.rotation.map((v, x) => mix(v, b.rotation[x], f)), focalMm: mix(a.focalMm, b.focalMm, f) };
+                rotation: a.rotation.map((v, x) => v + angleDelta(v, b.rotation[x]) * f),
+                focalMm: mix(a.focalMm, b.focalMm, f), rotationUnit: 'degrees' };
         });
     }
 
