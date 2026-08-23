@@ -424,3 +424,105 @@ test('every model subject kind can be staged, and arrives labelled', async () =>
     assert.ok(readsIdentity,
         'the picker reads no subject identity, so every model is labelled the same');
 });
+
+// ── The analyzer has to be right about direction, size and shape ───────────
+
+test('an authored path is named from the CAMERA, not from the world axes', () => {
+    /*
+     * analyzePath reads `dp[0] > 0 ? 'tracking-right' : 'tracking-left'` — world
+     * +X is "right". That was true while the camera could not turn. Six degrees
+     * of freedom is exactly the change that makes it false: a camera yawed 180°
+     * and moving +X is tracking LEFT from its own point of view, and the prompt
+     * will confidently say the opposite.
+     *
+     * This codebase has already paid for this exact bug once, in shot-staging:
+     * "a mirrored right vector produces perfectly fluent prose describing the
+     * opposite of what the director staged". Fluent and backwards is the worst
+     * failure mode available here, because nothing looks broken — the frame
+     * simply comes back with the move mirrored and no one can say why.
+     */
+    const { analyzePath } = require('../lib/previs-blocking');
+    const key = (t, position, rotation) => ({ t, position, rotation: rotation || [0, 0, 0], focalMm: 50 });
+
+    const facingAway = analyzePath([
+        key(0, [0, 1.6, 3], [Math.PI, 0, 0]),
+        key(1, [2, 1.6, 3], [Math.PI, 0, 0]),
+    ]);
+    assert.strictEqual(facingAway.dominantMovement, 'tracking-left',
+        'a camera turned to face the other way still names its lateral move from world +X, '
+        + `got '${facingAway.dominantMovement}' where the camera is moving to its own left`);
+});
+
+test('the dominant movement is the largest one, not the first axis checked', () => {
+    /*
+     * `dominantMovement: motions[0]` returns the first entry in a hardcoded
+     * axis order — x, y, z, yaw, pitch, focal — so a three-metre push with two
+     * centimetres of lateral drift reports `tracking-right`. That value is what
+     * reaches camera_control.type, so the provider is told the wrong move while
+     * the prose beside it says both. The field is named dominant; it should be.
+     */
+    const { analyzePath } = require('../lib/previs-blocking');
+    const key = (t, position) => ({ t, position, rotation: [0, 0, 0], focalMm: 50 });
+
+    const push = analyzePath([key(0, [0, 1.6, 5]), key(1, [0.02, 1.6, 2])]);
+    assert.strictEqual(push.dominantMovement, 'dolly-in',
+        `a 3m push with 2cm of drift reported '${push.dominantMovement}' as dominant`);
+});
+
+test('a path that moves and returns is not reported as locked off', () => {
+    /*
+     * THE BUG THE ANALYZER EXISTS TO PREVENT, REPRODUCED INSIDE IT. analyzePath
+     * compares only keys[0] with keys[last], so a push-in-and-settle-back — one
+     * of the most ordinary moves there is — has a zero net delta and reports
+     * `static`, description "locked-off camera". camera_control goes out static
+     * beside a path that plainly moves, and MOVEMENT_MAP['static'] is '' so the
+     * still says nothing at all. That is "A Blocked Sequence Reported Itself as
+     * Static", one level up, in the code written to stop it.
+     *
+     * My own probe missed this at first because it only tested a monotonic
+     * path — a moving path that also ENDS somewhere else. The shape that fails
+     * is the one that comes home.
+     */
+    const { analyzePath } = require('../lib/previs-blocking');
+    const key = (t, position) => ({ t, position, rotation: [0, 0, 0], focalMm: 50 });
+
+    const thereAndBack = analyzePath([
+        key(0, [0, 1.6, 5]), key(0.5, [0, 1.6, 1.5]), key(1, [0, 1.6, 5]),
+    ]);
+    assert.notStrictEqual(thereAndBack.dominantMovement, 'static',
+        'a camera that pushes three and a half metres and comes back reported itself locked off');
+    assert.ok(/\w/.test(thereAndBack.description || '') && thereAndBack.description !== 'locked-off camera',
+        `the description calls a real move '${thereAndBack.description}'`);
+});
+
+test('a camera pose written onto the card is validated like every other facet', () => {
+    /*
+     * applyBlockingToCard now writes card.camera.position and
+     * card.camera.rotation, and the scene-card schema checks neither. The card
+     * is the DURABLE statement of intent and PUT /shots/:id merges the camera
+     * block, so `position: "banana"` or a two-element rotation is storable by
+     * the card editor or by shot_update over MCP.
+     *
+     * fromCard is defensive — it guards with Number.isFinite before trusting a
+     * stored pose — so nothing crashes today. That is exactly why it is worth
+     * pinning now: the failure is silent, the guard is one caller's politeness
+     * rather than a property of the data, and the next reader will not know to
+     * be careful. Same class as focusDistanceM, which was storable as negative
+     * or NaN until this round and is now checked.
+     *
+     * Set-based over the pose facets Apply actually writes, derived from its
+     * own assignments so a facet added later is covered with nothing to
+     * remember.
+     */
+    const applySrc = readCode('routes/previs.js').match(/function applyBlockingToCard[\s\S]*?\n}/);
+    assert.ok(applySrc, 'applyBlockingToCard is gone');
+    const written = [...applySrc[0].matchAll(/card\.camera\.([a-z_]+)\s*=/g)].map(m => m[1]);
+    const vectors = written.filter(f => /^(position|rotation)$/.test(f));
+    if (!vectors.length) return;   // Apply writes no vector pose onto the card
+
+    const schema = readCode('lib/scene-card-schema.js');
+    const unguarded = vectors.filter(f => !new RegExp(`card\\.camera\\.${f}\\b`).test(schema));
+    assert.deepStrictEqual(unguarded, [],
+        'Apply writes these onto the card and the card validator checks none of them, '
+        + 'so a malformed pose is storable through the card editor or shot_update');
+});
