@@ -224,11 +224,32 @@ test('the length warning quotes the allowance THIS project actually gets', () =>
     db.prepare("UPDATE film_projects SET provider_config = ? WHERE id = ?")
         .run(JSON.stringify({ image: 'meshy' }), projectId);
 
+    /*
+     * Derived from the adapter, not written down here. The rule this test
+     * protects is "quote the allowance THIS project gets" — and pinning
+     * meshy's number as a literal is the same mistake one level up: when the
+     * ceiling legitimately moved from 4000 to 16000 on measured evidence, a
+     * hardcoded 4000 failed while the behaviour was still correct.
+     *
+     * What must hold is that the limit comes from the project's own adapter
+     * and the allowance is computed from it — never from the base constant,
+     * which is Runway's share and would tell a Meshy director nine tenths of
+     * their look was being discarded when almost all of it survives.
+     */
+    const providers = require('../lib/providers');
+    const meshy = providers.list().find(a => (a.id || a.provider || a.name) === 'meshy');
+    assert.ok(meshy && Number(meshy.promptLimit) > 0, 'no meshy adapter to derive the ceiling from');
+
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
     const limit = imagePromptLimit(project);
-    assert.strictEqual(limit, 4000, `meshy should give 4000, got ${limit}`);
-    assert.strictEqual(allowancesFor(limit).style, 560,
-        'the style allowance at meshy\'s ceiling is not what the warning should quote');
+    assert.strictEqual(limit, Number(meshy.promptLimit),
+        `the project resolved ${limit} where its adapter declares ${meshy.promptLimit}`);
+
+    const base = allowancesFor(1000).style;
+    assert.strictEqual(allowancesFor(limit).style, allowancesFor(Number(meshy.promptLimit)).style,
+        'the allowance is not computed from this project\'s ceiling');
+    assert.ok(allowancesFor(limit).style > base,
+        `a roomier ceiling gave no more style allowance than Runway's ${base}`);
 });
 
 

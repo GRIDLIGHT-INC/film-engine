@@ -498,11 +498,26 @@ const adapter = {
     label: 'Meshy (3D + image)',
     requiresKey: true,
 
-        // Meshy's text-to-image documents no prompt limit, and it routes to
-    // nano-banana and gpt-image-2 underneath — models that take long
-    // prompts. 4000 matches those rather than inventing a ceiling Meshy
-    // never stated; raise it if a longer prompt is ever seen to work.
-    promptLimit: 4000,
+    /*
+     * Meshy's text-to-image documents no prompt limit, and it routes to
+     * nano-banana and gpt-image-2 underneath — models that take long prompts.
+     * 4000 was our own guess matched to those, with a note to raise it if a
+     * longer prompt was ever seen to work.
+     *
+     * It was seen. Every shot in a real production sat against that ceiling —
+     * nine of nine between 3632 and 3992 — and eight of them ended MID-CLAUSE,
+     * with a parked car's paint description as the last thing the model read
+     * and the closing quality tags cut entirely. Untrimmed those prompts want
+     * 4311 to 6955 characters. The ceiling was not protecting anything; it was
+     * amputating the back of every request in the film.
+     *
+     * 16000 is not a documented Meshy number either — there is no such number
+     * to document. It is set well above what any real shot asks for, so the
+     * trimmer stops binding on ordinary work, and it is verified by generation
+     * rather than by reading. If a provider ever refuses a long prompt, that
+     * refusal is visible and catchable; the failure this replaces was silent.
+     */
+    promptLimit: 16000,
     capabilities: ['model3d', 'image'],
     // image-to-image takes 1-5 reference images as a plain array, so pictures
     // DO condition the result — but they carry no names, so the prompt must
