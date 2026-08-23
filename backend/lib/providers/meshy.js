@@ -348,7 +348,10 @@ function buildRequest(payload) {
  * @param {function} [onProgress] (percent, phase) — forwarded to SSE callers.
  */
 async function run(payload, onProgress) {
-    const apiKey = getCredential('meshy', 'MESHY_API_KEY');
+    // getCredential returns { apiKey, meta } — the image path destructures it
+    // and these two did not, so the mesh routes sent `Bearer [object Object]`
+    // and Meshy answered 401 Invalid API key with a perfectly good key saved.
+    const { apiKey } = getCredential('meshy', 'MESHY_API_KEY');
     if (!apiKey) return missingKey();
 
     const request = buildRequest(payload);
@@ -488,7 +491,10 @@ async function generateStream(capability, payload, res, callbacks = {}) {
 }
 
 async function health() {
-    const apiKey = getCredential('meshy', 'MESHY_API_KEY');
+    // getCredential returns { apiKey, meta } — the image path destructures it
+    // and these two did not, so the mesh routes sent `Bearer [object Object]`
+    // and Meshy answered 401 Invalid API key with a perfectly good key saved.
+    const { apiKey } = getCredential('meshy', 'MESHY_API_KEY');
     if (!apiKey) return { ok: false, error: 'no API key' };
     const started = Date.now();
     // Listing tasks is the cheapest authenticated read; a 401 tells us the key

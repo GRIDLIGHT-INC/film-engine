@@ -349,11 +349,85 @@ async function generateFromImage(req, res, kind, subjectId, stream) {
     });
 }
 
+
+/**
+ * The provider this project chose for meshes, and a payload it can act on.
+ *
+ * Every other capability resolves through the registry; this router called the
+ * gateway directly, so a project configured `model3d: meshy` — with a funded
+ * Meshy account already generating its storyboard frames — sent every request
+ * to a local service on :8080 that was not running. What a director saw was
+ * "Backend offline": the Film Engine backend was fine, and the provider that
+ * could have served the request was never contacted.
+ *
+ * The payload needs translating as well as routing. These payloads are
+ * gateway-shaped, and Meshy infers image-to-mesh from `image_url` — so a
+ * from-image request carrying `init_image` would be read as text-to-mesh and
+ * refused for having no prompt. Resolving without translating would trade one
+ * confusing error for another.
+ */
+function threedProviderFor(projectId) {
+    try {
+        const { resolveGenerator } = require('../lib/providers');
+        const { providerConfigFor } = require('../lib/provider-config');
+        return resolveGenerator('model3d', providerConfigFor(projectId));
+    } catch (_) { return null; }
+}
+
+/** Gateway payload -> what the resolved adapter expects. */
+function threedPayloadFor(adapter, endpoint, payload) {
+    const p = { ...(payload || {}) };
+    if ((adapter && (adapter.id || adapter.provider)) !== 'meshy') return p;
+
+    /*
+     * The gateway's model names are not Meshy's. build3DPayload sets a
+     * Gridlight default, and Meshy answers
+     * "AIModel must be one of [meshy-4 … meshy-t2]". Dropping an unrecognised
+     * name lets the adapter apply its own default rather than guessing a
+     * mapping between two vendors' model families.
+     */
+    const MESHY_MODELS = /^(meshy-4|meshy-5|meshy-6|meshy-7|latest|meshy-t1|meshy-t2)$/;
+    if (p.model && !MESHY_MODELS.test(String(p.model))) delete p.model;
+
+    if (endpoint === THREED_ENDPOINTS.fromImage) {
+        // Meshy decides image-to-mesh by the presence of this field.
+        if (!p.image_url && !p.image) p.image_url = p.init_image || p.image_url;
+        p.operation = 'image_to_mesh';
+    } else if (endpoint === THREED_ENDPOINTS.generate) {
+        p.operation = 'text_to_mesh';
+    } else if (endpoint === THREED_ENDPOINTS.rig) {
+        p.operation = 'rig';
+    } else if (endpoint === THREED_ENDPOINTS.animate) {
+        p.operation = 'animate';
+    }
+    return p;
+}
+
+/**
+ * Run a 3D generation on the resolved provider, falling back to the gateway.
+ *
+ * The fallback is deliberate: Gridlight remains the default for installs that
+ * run it, and an adapter that cannot serve an operation should not take the
+ * feature down with it.
+ */
+async function callThreeD(endpoint, payload, projectId) {
+    const adapter = threedProviderFor(projectId);
+    const id = adapter && (adapter.id || adapter.provider);
+    if (adapter && id !== 'gridlight' && typeof adapter.generate === 'function') {
+        const result = await adapter.generate('model3d', threedPayloadFor(adapter, endpoint, payload));
+        if (result && result.ok) return result;
+        // A provider that refuses is reported as itself, not as the gateway
+        // being offline — the misdiagnosis this whole change exists to end.
+        if (result && result.error) return result;
+    }
+    return callGridlight(endpoint, payload);
+}
+
 // ── Shared generate runners ───────────────────────────────────────────────
 
 async function runGenerateSync(res, endpoint, payload, ctx) {
     try {
-        const result = await callGridlight(endpoint, payload);
+        const result = await callThreeD(endpoint, payload, ctx.projectId);
         if (!result.ok) {
             db.prepare('UPDATE film_3d_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, ctx.jobId);
             if (result.status === 503) return json(res, 503, serviceUnavailableError(endpoint, '3d'));
@@ -473,7 +547,7 @@ async function meshOp(req, res, assetId, op) {
     ).run(jobId, asset.project_id, asset.character_id, meta.subject_kind || 'character', genType, assetId, payload.model, format, JSON.stringify(payload));
 
     try {
-        const result = await callGridlight(endpoint, payload);
+        const result = await callThreeD(endpoint, payload, asset.project_id);
         if (!result.ok) {
             db.prepare('UPDATE film_3d_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
             if (result.status === 503) return json(res, 503, serviceUnavailableError(endpoint, '3d'));
@@ -574,7 +648,7 @@ async function batchModelsStream(req, res, projectId) {
         );
 
         try {
-            const result = await callGridlight(THREED_ENDPOINTS.generate, payload);
+            const result = await callThreeD(THREED_ENDPOINTS.generate, payload, projectId);
             if (!result.ok) throw new Error(result.error);
 
             const reg = await registerModel(projectId, subject, s.kind, format, result.data, jobId, 'model_3d');
@@ -626,4 +700,4 @@ function listModelJobs(req, res, projectId) {
 
 function safeParse(s) { try { return JSON.parse(s || '{}'); } catch (_) { return {}; } }
 
-module.exports = { handleThreeD };
+module.exports = { handleThreeD, threedPayloadFor, threedProviderFor };

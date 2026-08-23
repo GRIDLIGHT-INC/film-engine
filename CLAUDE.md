@@ -287,6 +287,7 @@ film-engine/
 │       ├── video-gen.test.js             # Video generation integration
 │       ├── music-gen.test.js             # Music generation integration
 │       ├── threed.test.js                # 3D integration (mock Gridlight)
+│       ├── threed-provider.test.js       # Mesh generation goes to the provider the project chose
 │       ├── threed-prompt.test.js         # 3D payload builders
 │       ├── timeline.test.js              # Timeline assembly
 │       ├── editorial-routes.test.js      # Editorial routes
