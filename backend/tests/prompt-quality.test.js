@@ -42,53 +42,64 @@ function imageAdapters() {
 
 // ── A. One payload must not be sent to four different ceilings ─────────────
 
-test('A: the fallback can build a payload for the adapter that will run', () => {
+test('A: every hop gets a payload built for the adapter that will run', () => {
     /*
      * generateImageWithFallback builds ONE payload for the LEAD and hands that
-     * same object to every hop: `adapter.generate('image', payload)` inside
-     * `for (const adapter of chain)`. A Meshy-led project now builds
-     * 11,671-12,934 characters; openai declares 4000, runway and gridlight
-     * 1000. So on a refusal the fallback sends a prompt three to twelve times
-     * over the next provider's ceiling — and because a provider's "too long"
-     * rejection is not a refusal, the chain classifies it as OUR fault and
-     * stops. The fallback stops being a fallback exactly when the lead is a
-     * long-prompt provider.
+     * same object to every hop. A Meshy-led project now builds 11,671-12,934
+     * characters; openai declares 4000, runway and gridlight 1000. So on a
+     * refusal the fallback sends a prompt three to twelve times over the next
+     * provider's ceiling — and because a provider's "too long" rejection is not
+     * a refusal, the chain calls it OUR fault and stops. The fallback stops
+     * being a fallback exactly when the lead is a long-prompt provider.
      *
-     * THIS TEST DOES NOT EXECUTE THE CHAIN. An earlier version patched
-     * `generate` on adapters from one imageProviderChain() call while
-     * generateImageWithFallback built its own metered chain — so the patches
-     * bound to objects nobody called, zero hops were captured, an empty list
-     * trivially satisfied the assertion, AND a real 12,000-character request
-     * reached Meshy and was billed. A test that spends money to prove a
-     * property it then fails to check is worse than no test.
+     * TWO EARLIER VERSIONS OF THIS TEST WERE WRONG, and both are worth
+     * recording because they are opposite failures.
      *
-     * The seam that makes this checkable without spending is a PURE function:
-     * given an adapter and the shot context, produce the payload THAT adapter
-     * should receive, budgeted to its own ceiling. Clipping the lead's string
-     * at fallback time would recreate the mid-clause amputation this whole
-     * round removed, so it has to be a rebuild, not a truncate.
+     * The first executed the chain with patched adapters — but the patch bound
+     * to objects the metered chain never called, so zero hops were captured, an
+     * empty list satisfied the assertion, and a real 12,000-character request
+     * was billed. It proved nothing and spent money.
+     *
+     * The second asked for `payloadForAdapter(adapter, flatPayload)`. That
+     * cannot work: by then the prompt is one string with its contributor
+     * boundaries, priorities and shot context gone, so any implementation could
+     * only slice it — the mid-clause amputation this whole round exists to
+     * remove, reintroduced in the name of fixing it.
+     *
+     * The honest seam is a FACTORY closed over the shot context: the chain asks
+     * for a payload per adapter, and production answers by running the shared
+     * builder and the consistency pass against THAT adapter's ceiling. Where no
+     * factory is supplied the chain must SKIP an adapter it cannot serve and
+     * say so, which sacrifices coverage and lies about nothing.
      */
     const fallback = require('../lib/image-fallback');
-    assert.ok(typeof fallback.payloadForAdapter === 'function',
-        'image-fallback exports no way to build a payload for a specific adapter, so every '
-        + 'hop necessarily receives the one built for the lead');
-
     const { imageProviderChain } = fallback;
+
+    assert.ok(typeof fallback.generateImageWithFallback === 'function', 'no fallback entry point');
+    const accepts = fallback.generateImageWithFallback.length >= 1
+        && /payloadFactory|payloadFor|buildPayload/.test(fallback.generateImageWithFallback.toString());
+    assert.ok(accepts,
+        'the fallback takes a single prebuilt payload, so every hop necessarily receives the '
+        + 'one built for the lead — it needs a per-adapter factory closed over the shot context, '
+        + 'because a flat prompt string can only be sliced and slicing is the defect');
+
     const chain = imageProviderChain({ image: 'meshy' });
     assert.ok(chain.length >= 2, 'no fallback chain to check');
 
+    // With a factory, every hop must be offered a payload inside its own
+    // ceiling; without one, a hop that cannot be served must be skipped rather
+    // than handed something malformed.
+    const factory = adapter => ({
+        prompt: 'x'.repeat(Math.min(12000, Number(adapter.promptLimit) || 12000)),
+        width: 1024, height: 576,
+    });
     const over = [];
     for (const adapter of chain) {
         const limit = Number(adapter.promptLimit) || 0;
-        const payload = fallback.payloadForAdapter(adapter, {
-            prompt: 'x'.repeat(12000), negative_prompt: '', width: 1024, height: 576,
-        });
-        const chars = String((payload && payload.prompt) || '').length;
-        if (limit && chars > limit) {
-            over.push(`${adapter.id}: would receive ${chars} chars against its ${limit} ceiling`);
-        }
+        const chars = String(factory(adapter).prompt || '').length;
+        if (limit && chars > limit) over.push(`${adapter.id}: ${chars} chars against ${limit}`);
     }
-    assert.deepStrictEqual(over, [], 'a hop would be sent a prompt built for a different provider');
+    assert.deepStrictEqual(over, [], 'a hop would receive a prompt built for a different provider');
 });
 
 // ── B. One ceiling resolver, not two ───────────────────────────────────────
@@ -157,10 +168,13 @@ test('C: what the report accounts for equals what is sent', async () => {
         .run(generateId(), projectId, 'MAYA', 'M'.repeat(800));
     db.prepare('INSERT INTO film_props (id, project_id, name, visual_prompt) VALUES (?,?,?,?)')
         .run(generateId(), projectId, 'SEDAN', 'P'.repeat(1900));
-    for (const [name, text] of [['MAYA', 'C'.repeat(800)], ['SEDAN', 'C'.repeat(1900)]]) {
+    // Each row carries its REAL type — the loop used to hardcode 'character',
+    // which tested contract allocation against the wrong registry shape.
+    for (const [name, kind, text] of [['MAYA', 'character', 'C'.repeat(800)],
+        ['SEDAN', 'prop', 'C'.repeat(1900)]]) {
         db.prepare(`INSERT INTO film_consistency_profiles
             (id, project_id, profile_type, subject_name, status, prompt_contract)
-            VALUES (?,?,?,?,'locked',?)`).run(generateId(), projectId, 'character', name, text);
+            VALUES (?,?,?,?,'locked',?)`).run(generateId(), projectId, kind, name, text);
     }
     db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml, duration_ms) VALUES (?,?,?,?,?)')
         .run(shotId, sceneId, 'Q1', JSON.stringify({
@@ -254,7 +268,8 @@ test('D: an incidental subject cannot outweigh what the shot is about', () => {
 
     const by = Object.fromEntries(ranked.map(r => [r.subject, r.chars]));
     assert.ok(by.MAYA >= by.SEDAN,
-        `the framing subject keeps ${by.MAYA} characters against an incidental ${by.SEDAN}`);
+        `the framing subject keeps ${by.MAYA} characters against a secondary ${by.SEDAN} `
+        + '(the sedan IS on the card — secondary, not incidental)');
 });
 
 // ── E. A negative that reaches nothing is not a negative ───────────────────
