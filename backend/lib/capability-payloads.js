@@ -554,7 +554,13 @@ function loadShotContext(shotId, opts) {
     try {
         const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
         if (row) {
-            const { applicationFingerprint } = require('./decision-contract');
+            const { applicationFingerprints } = require('./decision-contract');
+            const applicationNow = applicationFingerprints(row, sceneCard);
+            const stageMoved = applicationNow.stage !== row.applied_fingerprint;
+            const cardMoved = applicationNow.card !== row.applied_card_fingerprint;
+            const applicationState = !row.applied_fingerprint || !row.applied_card_fingerprint ? 'staged'
+                : stageMoved && cardMoved ? 'conflict'
+                    : stageMoved ? 'staged' : cardMoved ? 'card_ahead' : 'applied';
             previs = {
                 camera: JSON.parse(row.camera_json || '{}'),
                 director: JSON.parse(row.director_json || '{}'),
@@ -563,8 +569,11 @@ function loadShotContext(shotId, opts) {
                 rig: row.rig,
                 movement: row.movement,
                 application: {
-                    applied: !!row.applied_fingerprint
-                        && applicationFingerprint(row, sceneCard) === row.applied_fingerprint,
+                    state: applicationState,
+                    applied: applicationState === 'applied',
+                    staged: applicationState === 'staged',
+                    card_ahead: applicationState === 'card_ahead',
+                    conflict: applicationState === 'conflict',
                     applied_at: row.applied_at || null,
                 },
                 // The legs, not just the single movement column. A compound

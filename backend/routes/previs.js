@@ -25,7 +25,7 @@ const {
 const { PRIMITIVES, primitiveGeometry } = require('../lib/previs-primitives');
 const crypto = require('crypto');
 const { validateSceneCards } = require('../lib/scene-card-schema');
-const { directorIntentFromCard, applyDirectorIntent, applicationFingerprint } = require('../lib/decision-contract');
+const { directorIntentFromCard, applyDirectorIntent, applicationFingerprints } = require('../lib/decision-contract');
 const {
     SENSORS, LENS_KIT, APERTURES,
     sensorFor, fieldOfView, depthOfField, frameCoverage,
@@ -66,21 +66,27 @@ function loadBlocking(shotId) {
 
 function applicationState(shotId) {
     const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
-    if (!row || !row.applied_fingerprint) return { applied: false, staged: !!row, applied_at: null };
+    if (!row || !row.applied_fingerprint || !row.applied_card_fingerprint) {
+        return { state: row ? 'staged' : 'none', applied: false, staged: !!row, card_ahead: false, applied_at: null };
+    }
     const shot = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
-    const applied = applicationFingerprint(row, parse((shot && shot.scene_card_yaml) || '{}', {}))
-        === row.applied_fingerprint;
-    return { applied, staged: !applied, applied_at: row.applied_at };
+    const now = applicationFingerprints(row, parse((shot && shot.scene_card_yaml) || '{}', {}));
+    const stageMoved = now.stage !== row.applied_fingerprint;
+    const cardMoved = now.card !== row.applied_card_fingerprint;
+    const state = stageMoved && cardMoved ? 'conflict'
+        : stageMoved ? 'staged' : cardMoved ? 'card_ahead' : 'applied';
+    return { state, applied: state === 'applied', staged: state === 'staged',
+        card_ahead: state === 'card_ahead', conflict: state === 'conflict', applied_at: row.applied_at };
 }
 
 function markApplied(shotId) {
     const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
     const shot = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
     if (!row || !shot) return null;
-    const fingerprint = applicationFingerprint(row, parse(shot.scene_card_yaml || '{}', {}));
-    db.prepare("UPDATE film_previs_blocking SET applied_fingerprint = ?, applied_at = datetime('now') WHERE shot_id = ?")
-        .run(fingerprint, shotId);
-    return fingerprint;
+    const fingerprints = applicationFingerprints(row, parse(shot.scene_card_yaml || '{}', {}));
+    db.prepare("UPDATE film_previs_blocking SET applied_fingerprint = ?, applied_card_fingerprint = ?, applied_at = datetime('now') WHERE shot_id = ?")
+        .run(fingerprints.stage, fingerprints.card, shotId);
+    return fingerprints;
 }
 
 /**
@@ -433,15 +439,19 @@ function toVideo(req, res, shotId) {
 
     const payload = Array.isArray(built.payload) ? built.payload[0] : built.payload;
     const appliedState = applicationState(shotId);
-    const staged = !!ctx.previs && !appliedState.applied;
+    const staged = !!ctx.previs && appliedState.staged;
     return json(res, 200, {
         shot_id: shotId,
         blocked: !!ctx.previs,
         staged,
-        applied: !staged,
+        applied: appliedState.applied,
+        card_ahead: appliedState.card_ahead,
+        conflict: appliedState.conflict,
+        application_state: appliedState.state,
         staged_notice: staged
             ? 'This video preview includes staged Previs intent. Apply it before generating from the Shot Board.'
-            : null,
+            : appliedState.card_ahead || appliedState.conflict
+                ? 'The Shot Board changed after this Previs was applied. Re-seed Previs before applying again.' : null,
         film_facts: {
             direction: ctx.sceneCard.direction || '',
             location_view: ctx.sceneCard.location_view || '',
@@ -597,6 +607,14 @@ function applyBlockingToCard(req, res, shotId) {
 
     const blocking = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
     if (!blocking) return json(res, 409, { error: 'Shot has no blocking to apply' });
+    const application = applicationState(shotId);
+    if (application.card_ahead || application.conflict) {
+        return json(res, 409, {
+            error: 'The Shot Board changed after this Previs was applied', code: 'CARD_AHEAD',
+            detail: 'Re-seed Previs from the card before applying again so the newer board direction is not overwritten.',
+            application,
+        });
+    }
 
     let card = {};
     try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
@@ -713,15 +731,19 @@ function toStoryboard(req, res, shotId) {
         }
         const { payload, meta } = buildCapabilityPayload('image', ctx);
         const appliedState = applicationState(shotId);
-        const staged = !!ctx.previs && !appliedState.applied;
+        const staged = !!ctx.previs && appliedState.staged;
         return json(res, 200, {
             shot_id: shotId,
             blocked: !!ctx.previs,
             staged,
-            applied: !staged,
+            applied: appliedState.applied,
+            card_ahead: appliedState.card_ahead,
+            conflict: appliedState.conflict,
+            application_state: appliedState.state,
             staged_notice: staged
                 ? 'Previewing staged Previs intent. It is not applied to the Shot Board until you choose Apply to card.'
-                : null,
+                : appliedState.card_ahead || appliedState.conflict
+                    ? 'The Shot Board changed after this Previs was applied. Re-seed Previs before applying again.' : null,
             film_facts: {
                 direction: ctx.sceneCard.direction || '',
                 location_view: ctx.sceneCard.location_view || '',

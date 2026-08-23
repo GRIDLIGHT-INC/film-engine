@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (78 migrations)
+│   │   └── migrations/     # SQL migration files (79 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -1167,6 +1167,8 @@ Each decision is held to five links — operable on both surfaces, persists to i
 
 **Director intent lives in its own column, and that was found by measurement.** The first draft stashed it in `camera_json`, which `blockingFingerprint()` hashes wholesale — so editing one sentence of direction on a shot whose camera never moved flipped an approval from fresh to stale, and `/to-video` and `/to-storyboard` would have refused it with a 409 the director could not explain. Migration 080 gives it `director_json`, outside the fingerprint by construction. Approval means *this is the angle I signed off*; prose must not revoke it.
 
+Migration 081 fingerprints the applied stage and applied card separately. A mismatch can therefore say which side moved: stage-ahead invites Apply, while board-ahead disables Apply and asks the director to re-seed Previs. Treating both as merely “staged” invited the exact destructive action when the board contained the newer rewrite.
+
 `tests/decision-parity.test.js` derives its denominator from three code sources — `EDITABLE` in `routes/shots.js`, the `film_previs_blocking` columns, and the `film_projects` switches the board actually reads — so a field added later is accounted for or fails. Its probes are behavioural where it matters: the round trip is **run**, and payload reachability is **differential** (change the value, assert what a provider would receive changes), because a stored choice and an applied choice look identical from the outside. Three of its early findings were the fixture's fault rather than the product's — a phantom plate path, byte-identical plate images, and a string accepted as `props` and then iterated character by character — and each was cheap to mistake for a real defect. Where the schema is loose, *what validates* and *what a field means* are different questions, so every sample the probe builds is now derived from something that constrains behaviour rather than from what the validator will tolerate.
 
 `lib/nav-flow.js` regroups all 34 pages into the nine `PROJECT_PHASES` the status machine already declares, so the sidebar and the phase a project reports itself in cannot disagree. Served over `GET /film/nav-flow`; the SPA **moves** the existing buttons rather than rebuilding them, keeping every tooltip and handler. **Two views, two questions, two technologies.** The wireframe stage answers *where does this stand and how does it read in frame* — that stays hand-rolled canvas 2D, and `lib/glb-parser.js` feeds it silhouettes with materials deliberately stripped. The textured pane answers *is that actually the character*, and a real material cannot be faked with a 4×4 matrix and a polygon painter, so it runs **three.js r149 + GLTFLoader, vendored inline** against the same `.glb`. Inlined rather than linked because `build.target: single-html` — index.html is ~1.6MB as a result, which is the price of the constraint. `GLTFLoader` ships ESM-only, so it is converted to a classic script by the same mechanical transform three's own `examples/js` build used to perform: the `three` import becomes a destructure from the global, the one helper it borrows from `BufferGeometryUtils` is inlined, and the export becomes an assignment.
@@ -1346,7 +1348,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (78 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (79 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status

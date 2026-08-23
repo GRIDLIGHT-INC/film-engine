@@ -1842,7 +1842,7 @@ function shotPromptPreview(req, res, shotId, query) {
         };
     });
 
-    const staged = !!ctx.previs && !ctx.previs.application?.applied;
+    const staged = !!ctx.previs && ctx.previs.application?.staged;
 
     return json(res, 200, {
         shot_id: shotId,
@@ -1850,10 +1850,14 @@ function shotPromptPreview(req, res, shotId, query) {
         // A board preview can be reading saved-but-unapplied Previs. Say which
         // state supplied the film facts before the director spends anything.
         staged,
-        applied: !staged,
+        applied: !!ctx.previs?.application?.applied || !ctx.previs,
+        card_ahead: !!ctx.previs?.application?.card_ahead,
+        conflict: !!ctx.previs?.application?.conflict,
+        application_state: ctx.previs?.application?.state || 'none',
         staged_notice: staged
             ? 'This preview includes staged Previs intent. Apply it to the card before generating from the board.'
-            : null,
+            : ctx.previs?.application?.card_ahead || ctx.previs?.application?.conflict
+                ? 'The Shot Board is newer than this Previs. Re-seed Previs before applying it again.' : null,
         film_facts: {
             direction: ctx.sceneCard.direction || '',
             lighting: ctx.sceneCard.lighting || null,

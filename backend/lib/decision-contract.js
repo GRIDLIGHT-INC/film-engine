@@ -109,32 +109,31 @@ function applyDirectorIntent(card, intent) {
     return out;
 }
 
-function applicationFingerprint(row, card) {
+function applicationFingerprints(row, card) {
     if (!row) return null;
     const camera = typeof row.camera_json === 'string' ? JSON.parse(row.camera_json || '{}') : (row.camera || {});
     const director = typeof row.director_json === 'string' ? JSON.parse(row.director_json || '{}') : (row.director || {});
     const subjects = typeof row.subjects_json === 'string' ? JSON.parse(row.subjects_json || '[]') : (row.subjects || []);
     const scene = card || {};
     const cardCamera = scene.camera || {};
-    const material = {
-        staged: {
+    const staged = {
             camera: { focalMm: camera.focalMm, sensorId: camera.sensorId, fStop: camera.fStop,
                 heightM: Array.isArray(camera.position) ? camera.position[1] : undefined,
                 focusDistanceM: camera.focusDistanceM },
             movement: row.movement,
             director,
             names: subjects.map(o => String((o && o.name) || '').trim()).filter(Boolean),
-        },
-        card: {
+        };
+    const projectedCard = {
             camera: { lens: cardCamera.lens, movement: cardCamera.movement, sensor: cardCamera.sensor,
                 aperture: cardCamera.aperture, height_m: cardCamera.height_m,
                 focus_distance_m: cardCamera.focus_distance_m },
             direction: scene.direction || '', location_view: scene.location_view || '',
             lighting: scene.lighting || null,
             characters: scene.characters || [], props: scene.props || [],
-        },
     };
-    return crypto.createHash('sha256').update(JSON.stringify(material)).digest('hex').slice(0, 32);
+    const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 32);
+    return { stage: hash(staged), card: hash(projectedCard) };
 }
 
-module.exports = { DECISIONS, EXCEPTIONS, directorIntentFromCard, applyDirectorIntent, applicationFingerprint };
+module.exports = { DECISIONS, EXCEPTIONS, directorIntentFromCard, applyDirectorIntent, applicationFingerprints };

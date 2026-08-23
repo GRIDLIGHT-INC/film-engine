@@ -134,7 +134,7 @@ function deriveCardDecisions() {
 // director decides about a shot. Anything else the stage stores IS a decision
 // and has to be accounted for.
 
-const STAGE_BOOKKEEPING = /^(id|shot_id|created_at|updated_at|approved_(fingerprint|at)|applied_(fingerprint|at))$/;
+const STAGE_BOOKKEEPING = /^(id|shot_id|created_at|updated_at|approved_(fingerprint|at)|applied_.*)$/;
 
 function deriveStageDecisions() {
     const sql = fs.readFileSync(path.join(ROOT, 'db/migrations/058_previs_blocking.sql'), 'utf8');

@@ -5156,7 +5156,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <button class="btn btn-secondary" onclick="previsSolve()">Solve framing</button>
                     <button class="btn btn-secondary" onclick="previsPreviewFrame()" data-tooltip="See the prompt this angle would generate. Costs nothing." data-tooltip-pos="bottom">Preview frame</button>
                     <button class="btn btn-secondary" onclick="previsRecompose()" data-tooltip="Keep this shot's performance and framing, and put a different background behind it" data-tooltip-pos="bottom">New background&hellip;</button>
-                    <button class="btn btn-secondary" onclick="previsApplyToCard()" data-tooltip="Write this angle back onto the scene card" data-tooltip-pos="bottom">Apply to card</button>
+                    <button id="previsApplyBtn" class="btn btn-secondary" onclick="previsApplyToCard()" data-tooltip="Write this angle back onto the scene card" data-tooltip-pos="bottom">Apply to card</button>
                     <button class="btn btn-primary" onclick="previsRenderShot()" data-tooltip="Apply this blocking and regenerate the frame — costs credits" data-tooltip-pos="bottom">Render this angle</button>
                     <button class="btn btn-secondary" onclick="previsApprove()" id="previsApproveBtn" data-tooltip="Sign off this angle. Restaging afterwards blocks generation until you re-approve." data-tooltip-pos="bottom">Approve</button>
                     <button class="btn btn-secondary" onclick="previsPlay()" id="previsPlayBtn">Play move</button>
@@ -13045,8 +13045,17 @@ THREE.GLTFLoader = GLTFLoader;
             previsKeyframe(res.keyframe);
             if (res.blocking) {
                 PREVIS.blocking = res.blocking;
-                PREVIS.staged = !(res.application && res.application.applied);
-                if (stagedBadge) stagedBadge.style.display = PREVIS.staged ? '' : 'none';
+                PREVIS.staged = !!(res.application && res.application.staged);
+                const boardAhead = !!(res.application && (res.application.card_ahead || res.application.conflict));
+                if (stagedBadge) {
+                    stagedBadge.style.display = PREVIS.staged || boardAhead ? '' : 'none';
+                    stagedBadge.textContent = boardAhead ? 'board changed · re-seed previs' : 'staged · not applied';
+                }
+                const applyBtn = document.getElementById('previsApplyBtn');
+                if (applyBtn) {
+                    applyBtn.disabled = boardAhead;
+                    applyBtn.title = boardAhead ? 'Re-seed Previs from the newer Shot Board before applying.' : '';
+                }
                 previsFillDirectorIntent(res.blocking.director || ((PREVIS.shot && PREVIS.shot.card) || {}));
                 const c = res.blocking.camera || {};
                 document.getElementById('previsMovement').value = res.blocking.movement || 'static';
