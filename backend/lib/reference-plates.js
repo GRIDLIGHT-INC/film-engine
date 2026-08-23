@@ -66,7 +66,29 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
     // style meant the plate's kind was settled before the film's look was
     // mentioned — survivable for a street, fatal for a person.
     const style = stylePreset && String(stylePreset).trim();
+
+    /*
+     * When another view is travelling as a reference, the CAMERA MOVE leads.
+     *
+     * The first version trailed it behind "the same location as the reference
+     * image", and the model reproduced the reference almost exactly: same
+     * houses in the same places, same basketball hoop, same storm drain — a
+     * regrade of the plate it was given rather than a new angle on the street.
+     *
+     * The shot anchor learned this already: "the same scene as this picture"
+     * reads as "reproduce this picture" unless the change is stated first and
+     * plainly. So the new position leads, what stays continuous follows, and
+     * the negative refuses the old viewpoint outright.
+     */
+    const lead = (view && anchored)
+        ? [`A DIFFERENT camera position in the same place as the reference image: `
+           + `${String(view).trim()}. The camera has moved — this is a new angle on it, not the same `
+           + 'photograph. Everything else is continuous: the same buildings, the same materials and '
+           + 'colours, the same driveways and streetlights, the same ground and the same time of day']
+        : [];
+
     const parts = [
+        ...lead,
         // "reference plate" reads as a document to an image model the same way
         // "reference sheet" does. Ask for the photograph itself.
         style ? `${style}. Photograph of the ${kind}` : `photoreal cinematic photograph of the ${kind}`,
@@ -88,11 +110,6 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
      */
     if (view) {
         parts.push(`photographed ${String(view).trim()}`);
-        if (anchored) {
-            parts.push('the same location as the reference image, photographed from a different '
-                + 'position — same buildings, same materials and colours, same driveways, same '
-                + 'streetlights, same ground and same time of day');
-        }
     }
     // visual_prompt is the generation-facing field for a prop — it is what
     // prop_create documents as "what reaches the image prompt" — and the plate
@@ -134,6 +151,18 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
 // A plate is a photograph of a subject, not a page about it. "text, watermark"
 // was too narrow: what actually appeared on the first real plate was captions,
 // a colour-swatch chart and handwriting, none of which those two words cover.
+/*
+ * Refusing the reference's own viewpoint.
+ *
+ * A new view generated against an existing plate came back as that plate: the
+ * positive said "different position" and the negative said nothing, so the
+ * cheapest way to satisfy "same location" was to copy it. This is the mirror of
+ * the shot anchor's negative, which refuses DIScontinuity — here the thing to
+ * refuse is sameness of angle.
+ */
+const VIEW_NEGATIVE = 'same camera position, same viewpoint, identical framing, repeated composition, '
+    + 'copy of the reference image, unchanged angle';
+
 const NEGATIVE = 'blurry, low quality, distorted, multiple angles, collage, '
     + 'text, label, labels, annotation, annotations, caption, handwriting, chart, colour chart, '
     + 'swatch, swatches, watermark, logo, arrows, callouts, measurement marks';
@@ -237,7 +266,7 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
 
     const refs = [...(anchorRef ? [anchorRef] : []), ...styleRefs];
     const basePayload = {
-        negative_prompt: NEGATIVE,
+        negative_prompt: anchorPath ? `${NEGATIVE}, ${VIEW_NEGATIVE}` : NEGATIVE,
         aspect_ratio: aspectRatio || undefined,
         ...(refs.length ? { reference_images: refs } : {}),
     };

@@ -81,7 +81,19 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
 
     // The anchor IS the location, rendered, so its plate is the most redundant
     // of all when one is attached.
-    if (matchedLocation && matchedLocation.id && !anchorRef) {
+    /*
+     * The anchor normally stands in for the location plate — it IS that place,
+     * rendered, which is better than a plate of it.
+     *
+     * Unless the director has explicitly chosen a VIEW. That is the case the
+     * views feature exists for: the anchor shows one side of the street and the
+     * shot is pointed at the other, so the anchor carries the light, the
+     * dressing and where people stand, and the view carries the half of the
+     * place the anchor cannot see. Choosing a view is a deliberate act; leaving
+     * it silently overridden would make the whole picker decorative.
+     */
+    const explicitView = (opts && opts.locationView) ? String(opts.locationView).trim() : '';
+    if (matchedLocation && matchedLocation.id && (!anchorRef || explicitView)) {
         /*
          * The view this shot is looking at, not simply the newest plate.
          *
@@ -94,7 +106,7 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
          * location, or a silent gap replaces a wrong reference with no
          * reference, which is worse.
          */
-        const locationView = (opts && opts.locationView) ? String(opts.locationView).trim() : '';
+        const locationView = explicitView;
         const all = database().prepare(
             `SELECT file_path, file_name, metadata FROM film_assets
              WHERE project_id = ? AND location_id = ?
