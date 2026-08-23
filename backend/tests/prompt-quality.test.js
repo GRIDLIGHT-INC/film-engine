@@ -656,3 +656,69 @@ test('E3: the request a provider receives fits that provider ceiling', () => {
     }
     assert.deepStrictEqual(over, [], 'folding the negative pushed the request past the ceiling');
 });
+
+test('D4: priority still governs when no framing subject is declared', async () => {
+    /*
+     * THE FIFTH FALSE GREEN, AND THE ONE THAT SURVIVED INTO A COMMIT.
+     *
+     * rankContributions tiers on the framing subject first, then what the card
+     * puts in shot, then incidentals — and the cap only binds BETWEEN tiers.
+     * Both of D's fixtures set framing_subject, so both passed.
+     *
+     * No real card sets it. Checked every shot on a live production — 1A, 1B,
+     * 1C, 2A, 3A, 3B — all `(none)`. So on real data the cast and the props all
+     * land in tier 1 together, nothing is capped, and the longest contract wins
+     * exactly as before. Measured on the running server after the fix shipped:
+     *
+     *   SEDAN:1936  DRAGON:891  SUBURBAN STREET:856  MAYA:817  Grocery bag:685
+     *
+     * A parked car, still the largest voice in the prompt. I wrote fixtures
+     * that supplied the one field production never supplies.
+     *
+     * So this fixture deliberately OMITS framing_subject, which is the shape
+     * every real card has.
+     */
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { db, generateId } = require('../db/database');
+
+    const projectId = generateId(), sceneId = generateId(), shotId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title, provider_config) VALUES (?,?,?)')
+        .run(projectId, 'NoFraming', JSON.stringify({ image: 'meshy' }));
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number, location) VALUES (?,?,?,?)')
+        .run(sceneId, projectId, '1', 'STREET');
+    db.prepare('INSERT INTO film_characters (id, project_id, name, appearance_prompt) VALUES (?,?,?,?)')
+        .run(generateId(), projectId, 'MAYA', 'm'.repeat(300));
+    db.prepare('INSERT INTO film_props (id, project_id, name, visual_prompt) VALUES (?,?,?,?)')
+        .run(generateId(), projectId, 'SEDAN', 's'.repeat(300));
+    for (const [name, kind, text] of [['MAYA', 'character', 'MAYAWEARS ' + 'm'.repeat(790)],
+        ['SEDAN', 'prop', 'SEDANPAINT ' + 's'.repeat(1889)]]) {
+        db.prepare(`INSERT INTO film_consistency_profiles
+            (id, project_id, profile_type, subject_name, status, prompt_contract)
+            VALUES (?,?,?,?,'locked',?)`).run(generateId(), projectId, kind, name, text);
+    }
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml, duration_ms) VALUES (?,?,?,?,?)')
+        .run(shotId, sceneId, 'N1', JSON.stringify({
+            shot_code: 'N1',
+            description: 'MAYA on the kerb, the SEDAN behind her.',
+            // NO framing_subject — the shape of every real card.
+            camera: { shot_type: 'close-up', lens: '85mm', movement: 'static' },
+            characters: ['MAYA'], props: ['SEDAN'],
+        }), 4000);
+
+    const res = await new Promise(resolve => {
+        const chunks = [];
+        const r = new (require('stream').Writable)({ write(c, _e, n) { chunks.push(c); n(); } });
+        r.statusCode = 200; r.writeHead = function (c) { this.statusCode = c; return this; };
+        r.setHeader = function () {};
+        r.on('finish', () => { let b = Buffer.concat(chunks).toString(); try { b = JSON.parse(b); } catch (_) {} resolve(b); });
+        Promise.resolve(handleStoryboard({ method: 'GET', body: {} }, r, ['film', 'shots', shotId, 'prompt'], {}))
+            .catch(e => resolve({ error: e.message }));
+    });
+
+    const by = Object.fromEntries((res.contributors || []).map(c => [c.subject, c.survived]));
+    assert.ok(by.MAYA !== undefined && by.SEDAN !== undefined,
+        `both subjects should be reported, got ${JSON.stringify(by)}`);
+    assert.ok(by.SEDAN <= by.MAYA,
+        `with no framing subject declared, the prop kept ${by.SEDAN} characters against the `
+        + `character's ${by.MAYA} — the longest description still wins on every real card`);
+});

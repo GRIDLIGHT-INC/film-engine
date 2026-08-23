@@ -27,7 +27,7 @@
  * lazy-requires it, keeping `require('./capability-payloads')` side-effect free.
  */
 
-const { buildStoryboardPrompt } = require('./storyboard-prompt');
+const { buildStoryboardPrompt, rankContributions, trimToAllowance } = require('./storyboard-prompt');
 const { buildVideoPayload } = require('./video-prompt');
 const { extractDialogue, buildVoicePayload } = require('./dialogue-builder');
 const { buildMusicPrompt, buildSFXPrompts, buildAmbientPrompt } = require('./music-prompt');
@@ -48,6 +48,76 @@ const LIPSYNC_DEFAULTS = { model: 'wav2lip', quality: 'high' };
 // Which post sub-type the single orchestrated `post` step runs. Composite is the
 // existing full pipeline, so an unconfigured run keeps doing what it did.
 const DEFAULT_POST_JOB_TYPE = 'composite';
+
+/**
+ * Put a locked contract in the prompt once, at the priority this shot gives it.
+ *
+ * Real consistency contracts are commonly exact copies of the registry visual
+ * brief. Passing both unchanged made every locked subject appear twice: once
+ * in buildStoryboardPrompt's appearance block and again in the consistency
+ * appendix. Ranking the appendix therefore changed a synthetic fixture while
+ * the full 1,936-character sedan still survived through the base prompt.
+ *
+ * Exact matches are projected into the registry copy after ranking/capping and
+ * removed only from the appendix used for this build. The original consistency
+ * context is left untouched so the preview can attribute how much of each
+ * director contract actually survived in the final prompt.
+ */
+function projectLockedContracts(ctx, shot) {
+    const cc = ctx && ctx.consistency;
+    const items = cc && Array.isArray(cc.prompt_addition_items)
+        ? cc.prompt_addition_items : [];
+    if (!items.length) return null;
+
+    const ranked = rankContributions(items.map(item => ({
+        subject: item.subject_name,
+        kind: item.profile_type,
+        chars: String(item.text || '').length,
+        item,
+    })), shot);
+    const byName = new Map();
+    for (const rankedItem of ranked) {
+        const item = rankedItem.item;
+        const original = String(item && item.text || '');
+        const text = rankedItem.chars < original.length
+            ? trimToAllowance(original, rankedItem.chars) : original;
+        byName.set(String(item && item.subject_name || '').trim().toUpperCase(), { item, text });
+    }
+
+    const consumed = new Set();
+    const characters = (ctx.characters || []).map(character => {
+        const found = byName.get(String(character && character.name || '').trim().toUpperCase());
+        if (!found || String(character.appearance_prompt || '') !== String(found.item.text || '')) return character;
+        consumed.add(found.item);
+        return { ...character, appearance_prompt: found.text };
+    });
+    const props = (ctx.props || []).map(prop => {
+        const found = byName.get(String(prop && prop.name || '').trim().toUpperCase());
+        if (!found || String(prop.visual_prompt || '') !== String(found.item.text || '')) return prop;
+        consumed.add(found.item);
+        return { ...prop, visual_prompt: found.text };
+    });
+    let location = ctx.location || null;
+    if (location) {
+        const found = byName.get(String(location.name || '').trim().toUpperCase());
+        const field = String(location.visual_prompt || '') === String(found && found.item.text || '')
+            ? 'visual_prompt'
+            : String(location.description || '') === String(found && found.item.text || '') ? 'description' : null;
+        if (found && field) {
+            consumed.add(found.item);
+            location = { ...location, [field]: found.text };
+        }
+    }
+
+    const remaining = items.filter(item => !consumed.has(item));
+    return {
+        characters,
+        props,
+        location,
+        consistency: { ...cc, prompt_addition_items: remaining,
+            prompt_additions: remaining.map(item => item.text) },
+    };
+}
 
 /** Fail with a message that names the capability and what was missing. */
 function requireCtx(ctx, fields, capability) {
@@ -183,10 +253,17 @@ const CAPABILITY_BUILDERS = {
         const promptLimit = Number(ctx.imagePromptLimit) > 0
             ? Number(ctx.imagePromptLimit)
             : imagePromptLimit(ctx.project);
+        const shotPriority = { framingSubject: (ctx.sceneCard && ctx.sceneCard.framing_subject) || null,
+            card: ctx.sceneCard || {} };
+        const projected = projectLockedContracts(ctx, shotPriority);
+        const promptCharacters = projected ? projected.characters : ctx.characters;
+        const promptProps = projected ? projected.props : ctx.props;
+        const promptLocation = projected ? projected.location : ctx.location;
+        const promptConsistency = projected ? projected.consistency : cc;
 
         // Blocking shapes the keyframe, not only the clip. Passing it here is
         // what makes the frame a director approves the frame they staged.
-        const base = buildStoryboardPrompt(ctx.sceneCard, ctx.characters, ctx.location,
+        const base = buildStoryboardPrompt(ctx.sceneCard, promptCharacters, promptLocation,
             ctx.project.style_preset, {
                 // Which job the director is doing. Defaults to `action`, so a
                 // caller that says nothing gets exactly what it got before.
@@ -201,7 +278,7 @@ const CAPABILITY_BUILDERS = {
                 filmOptics: filmOpticsFor(ctx.project),
                 // Declared dimensions, so the prompt can say how big things are
                 // relative to the frame and to each other.
-                props: ctx.props || [],
+                props: promptProps || [],
                 // PAR-026: markup reaches the prompt only when this shot's
                 // project has opted in, or a caller has said so for this one
                 // generation. Undefined otherwise — which is what keeps the
@@ -244,7 +321,7 @@ const CAPABILITY_BUILDERS = {
         // measures the wrong string.
         ctx.__budget = base.budget || null;
         return cc
-            ? applyConsistencyToImagePayload(payload, cc, {
+            ? applyConsistencyToImagePayload(payload, promptConsistency, {
                 maxPromptChars: promptLimit,
                 // Subjects standing in the attached frame keep their name and
                 // lose their paragraph — but only when the frame really is in
@@ -254,8 +331,7 @@ const CAPABILITY_BUILDERS = {
                 // What this shot is OF, so priority can govern allocation once
                 // the ceiling stops binding. Without it the longest contract
                 // wins and a parked car outweighs the protagonist.
-                shot: { framingSubject: (ctx.sceneCard && ctx.sceneCard.framing_subject) || null,
-                    card: ctx.sceneCard || {} },
+                shot: shotPriority,
             })
             : payload;
     },

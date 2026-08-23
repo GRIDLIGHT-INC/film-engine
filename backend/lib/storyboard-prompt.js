@@ -947,13 +947,37 @@ function rankContributions(contributions, shot) {
     ].map(norm));
     const noted = norm((card.camera && card.camera.note) || '') + ' ' + norm(card.direction || '');
 
+    /*
+     * KIND breaks the tie when nothing else does, and that is load-bearing.
+     *
+     * The first version tiered on the framing subject, then on what the card
+     * puts in shot, then incidentals — and NO REAL CARD SETS framing_subject.
+     * Checked across a live production: every shot `(none)`. So the cast and
+     * the props landed in one tier together, the cap never bound, and the
+     * longest contract won exactly as before: SEDAN 1936 against MAYA 817, on
+     * the running server, after the fix had shipped.
+     *
+     * The tie-break is ADDITION_RANK — identity, then place, then objects —
+     * which is EXISTING declared policy in consistency-apply, already used to
+     * order these same items. Reusing it for the cap is consistent rather than
+     * a new hierarchy invented here.
+     *
+     * And it is a DEFAULT, not a rule about the world: a director who is
+     * shooting the car sets framing_subject and the car goes to tier 0, above
+     * every character. That is what keeps "a car can be a hero object" true
+     * while stopping a parked one outweighing the protagonist by default.
+     */
+    const KIND_RANK = { character: 0, location: 1, prop: 2, style: 3 };
+    const kindTier = c => KIND_RANK[String((c && c.kind) || '').toLowerCase()] ?? 2;
+
     const tier = c => {
         const n = norm(c && c.subject);
-        if (!n) return 2;
+        if (!n) return 90;
         if (framed.has(n)) return 0;
-        if (inShot.has(n)) return 1;
-        if (noted.includes(n)) return 1;
-        return 2;
+        const known = inShot.has(n) || noted.includes(n);
+        // 10..13 for what the card puts in shot, 20..23 for incidentals, so a
+        // named-in-shot prop still outranks an incidental character.
+        return (known ? 10 : 20) + kindTier(c);
     };
 
     const ordered = list
