@@ -526,3 +526,57 @@ test('a camera pose written onto the card is validated like every other facet', 
         'Apply writes these onto the card and the card validator checks none of them, '
         + 'so a malformed pose is storable through the card editor or shot_update');
 });
+
+test('simultaneous motion is described as simultaneous, not as a sequence', () => {
+    /*
+     * Accumulating across legs fixed the there-and-back bug and lost the
+     * distinction between "at the same time" and "after that". One leg in which
+     * the camera dollies in WHILE tracking right now reads "tracking right then
+     * dolly in" — a two-beat move that was never staged.
+     *
+     * This is not a wording preference. previs already models concurrency
+     * deliberately: legs marked `with` are sampled from the same start pose and
+     * composed, because "a push-while-panning is one move sharing one time
+     * slice" and chaining them "would zoom a camera that had already moved,
+     * which is a different shot". A dolly-zoom is the canonical case — describe
+     * it as a sequence and the model is being asked for something else.
+     *
+     * The original analyzer joined with ' while ' and was right about this and
+     * wrong about accumulation; the fix traded one for the other.
+     */
+    const { analyzePath } = require('../lib/previs-blocking');
+    const key = (t, position) => ({ t, position, rotation: [0, 0, 0], focalMm: 50 });
+
+    const together = analyzePath([key(0, [0, 1.6, 5]), key(1, [3, 1.6, 2])]).description;
+    const afterEachOther = analyzePath([
+        key(0, [0, 1.6, 5]), key(0.5, [0, 1.6, 2]), key(1, [3, 1.6, 2]),
+    ]).description;
+
+    assert.ok(!/\bthen\b/.test(together),
+        `one leg moving on two axes at once is described as a sequence: '${together}'`);
+    assert.ok(/\bthen\b/.test(afterEachOther),
+        `two legs one after the other lost their order: '${afterEachOther}'`);
+});
+
+test('the description leads with the motion that dominates', () => {
+    /*
+     * dominantMovement now ranks by normalised magnitude; the DESCRIPTION still
+     * emits in axis order, so a three-metre push with two centimetres of drift
+     * reads "tracking right then dolly in". The prompt opens on the smallest
+     * thing the camera did.
+     *
+     * Whatever leads a prompt is what the image is of — this codebase learned
+     * that expensively enough to write it down, and it applies to a movement
+     * clause as much as to a subject. The two outputs of one analyzer should
+     * also not disagree about which move this is: dominantMovement says
+     * dolly-in while the prose says tracking right first.
+     */
+    const { analyzePath } = require('../lib/previs-blocking');
+    const key = (t, position) => ({ t, position, rotation: [0, 0, 0], focalMm: 50 });
+
+    const drifty = analyzePath([key(0, [0, 1.6, 5]), key(1, [0.02, 1.6, 2])]);
+    const lead = String(drifty.description || '').split(/\s+(?:then|while|and)\s+/)[0];
+    const dominantWords = String(drifty.dominantMovement || '').replace(/-/g, ' ');
+    assert.ok(lead.includes(dominantWords),
+        `the description opens on '${lead}' while the dominant move is '${drifty.dominantMovement}'`);
+});
