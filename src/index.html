@@ -12618,7 +12618,7 @@ THREE.GLTFLoader = GLTFLoader;
         try {
             await previsLoadModels();
             if (!PREVIS.taxonomy) PREVIS.taxonomy = await api('/previs/taxonomy');
-            if (!PREVIS.cardVocabulary) PREVIS.cardVocabulary = await api('/shots/vocabulary');
+            if (!PREVIS.cardVocabulary) PREVIS.cardVocabulary = await api('/card-vocabulary');
             previsFillInspector();
             ['previsShotType', 'previsMovement', 'previsRig', 'previsSensor', 'previsFocal',
                 'previsAperture', 'previsHeight', 'previsDistance', 'previsIntensity',
