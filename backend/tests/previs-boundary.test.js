@@ -442,52 +442,92 @@ test('#6 every paid confirmation that can read previs discloses staged intent', 
         'a paid confirmation is silent about staging the director has not applied');
 });
 
-// ── #7 A refusal a director cannot get past ─────────────────────────────────
+// ── #7 The board refuses in the UI what the server permits ─────────────────
 
-test('#7 every generation gate can be overridden deliberately', () => {
+test('#7 the board does not block a generation the server would accept', () => {
     /*
-     * This codebase refuses a paid action in five places, and until now every
-     * one of them could be got past on purpose: the board lock takes
-     * ignore_lock, a stale previs approval takes ignore_approval, the budget
-     * gate takes ignore_budget, stale inputs take ignore_stale. The reasoning
-     * is written down in each: "a refusal you cannot get past is a reason never
-     * to lock at all".
+     * confirmGeneration disarms Generate whenever previs is staged, card_ahead
+     * or conflict. But the SERVER does not refuse any of those: board
+     * generation loads the shot with the default previsMode 'applied', so it
+     * builds from the card plus applied blocking and never touches the
+     * experiment. There is nothing unsafe to prevent — and there is no
+     * ignore_staged to pass, because there is no server-side gate to override.
      *
-     * The staged gate added this round has no override, and it is the only one
-     * that DISABLES THE BUTTON rather than refusing with an explanation. So a
-     * shot carrying blocking somebody staged and never applied — which is the
-     * normal resting state of exploration, and the state this whole boundary
-     * exists to make safe — can no longer be generated from the board at all.
-     * Not from the stage, not from the card that is sitting there valid and
-     * unchanged. Exploring in previs now costs you the ability to generate.
+     * So the button is dead for a request that is correct, safe and exactly
+     * what the director asked for. Unapplied staging is not an error state, it
+     * is the resting state of exploration: staging three angles on Friday and
+     * applying none now means the shot cannot be generated on Monday, from a
+     * card sitting there valid and unchanged. Trying an angle was never
+     * supposed to cost the ability to shoot the shot as written.
      *
-     * That inverts the Apply boundary. The point was that trying an angle must
-     * not commit it; the cost of that must not become "and now you cannot shoot
-     * the shot as written".
-     *
-     * Derived from the gates themselves rather than listed, so a sixth added
-     * later is held to the same rule.
+     * Every other refusal here explains itself and offers a way past —
+     * ignore_lock, ignore_approval, ignore_budget, ignore_stale — and CLAUDE.md
+     * states the reason: a refusal you cannot get past is a reason never to
+     * lock at all. This one neither refuses on the server nor lets you through
+     * on the client.
      */
-    const sources = ['routes/storyboard.js', 'routes/previs.js'];
-    const gates = new Set();
-    for (const rel of sources) {
-        for (const m of readCode(rel).matchAll(/\bignore_([a-z_]+)\b/g)) gates.add(m[1]);
+    const previsGates = new Set();
+    for (const rel of ['routes/storyboard.js', 'routes/previs.js']) {
+        for (const m of readCode(rel).matchAll(/\bignore_([a-z_]+)\b/g)) previsGates.add(m[1]);
     }
-    assert.ok(gates.size >= 3, 'no override gates derived — the derivation is wrong');
 
-    // The staged refusal is a gate in exactly the same sense: it stops a paid
-    // action on a condition the director may legitimately disagree with.
+    const board = readCode('routes/storyboard.js');
+    const serverRefuses = /\bstaged\b[\s\S]{0,200}?\b(409|423|402)\b/.test(board)
+        || previsGates.has('staged') || previsGates.has('previs');
+
     const ui = readUi();
-    const board = ui.match(/async function confirmGeneration\([\s\S]*?\n    \}/);
-    assert.ok(board, 'confirmGeneration is gone');
+    const fn = ui.match(/async function confirmGeneration\([\s\S]*?\n    \}/);
+    assert.ok(fn, 'confirmGeneration is gone');
+    const uiRefuses = /staged[\s\S]{0,120}?confirmGenArm\(false\)/.test(fn[0]);
 
-    const refuses = /confirmGenArm\(false\)[^\n]*\n|if \([^)]*staged[^)]*\)\s*confirmGenArm\(false\)/.test(board[0])
-        && /staged/.test(board[0]);
-    if (!refuses) return;   // no staged refusal to override
+    if (!uiRefuses) return;   // nothing to reconcile
+    assert.ok(serverRefuses,
+        'the board disables Generate on staged previs while the server accepts that '
+        + 'request and builds it applied-only — a dead button for a safe action. Either '
+        + `refuse on the server with an override (as ${[...previsGates].map(g => 'ignore_' + g).join(', ')} `
+        + 'do), or arm the button and let the disclosure do its job');
+});
 
-    const overridable = gates.has('staged') || gates.has('previs')
-        || /generate anyway|ignore_staged|ignore_previs/i.test(board[0]);
-    assert.ok(overridable,
-        'the staged gate refuses a paid action with no way past it, while every other '
-        + `gate here (${[...gates].map(g => 'ignore_' + g).join(', ')}) can be overridden deliberately`);
+// ── #8 The board's preview must be built the way the board generates ───────
+
+test('#8 the pre-spend preview matches what the board would actually send', () => {
+    /*
+     * THE REGRESSION THIS MILESTONE WAS ABOUT, RE-ENTERING THROUGH THE FIX.
+     *
+     * routes/storyboard.js:1756 builds the board's own prompt preview with
+     * { previsMode: 'staged' }, while board generation uses the default
+     * 'applied'. So on any shot with unapplied staging the confirmation shows
+     * one prompt and the purchase sends another. Measured on a shot staged at
+     * 137mm and never applied:
+     *
+     *   confirmation shows : ... close-up shot, 137mm lens, super35 sensor ...
+     *   generation sends   : ... close-up shot, 50mm lens, camera moving closer ...
+     *
+     * The staged_notice warns that staging is unapplied, which is necessary and
+     * not sufficient: the director is still reading a prompt that will not be
+     * sent, and the prompt is the thing they are being asked to approve. This
+     * is the refine-preview lie again, one route over.
+     *
+     * The previs previews SHOULD opt into staged — that is their job, showing
+     * an experiment before it is committed. The BOARD's preview is a preview of
+     * a purchase, so it has to be built the way the purchase is.
+     */
+    const { shotId } = seedShot(baseCard());
+    return callPrevis('PUT', `/film/shots/${shotId}/previs`,
+        { ...BLOCKING, director: { direction: SENTINEL } }).then(saved => {
+        assert.ok(saved.status < 400, 'fixture blocking did not save');
+
+        const boardSrc = readCode('routes/storyboard.js');
+        const previewsStaged = /previsMode:\s*'staged'/.test(boardSrc);
+        if (!previewsStaged) return;   // already built the way it generates
+
+        const shown = buildCapabilityPayload('image',
+            loadShotContext(shotId, { previsMode: 'staged' })).payload;
+        const sent = buildCapabilityPayload('image', loadShotContext(shotId)).payload;
+
+        assert.strictEqual(shown.prompt, sent.prompt,
+            'the board confirmation shows a prompt built from unapplied staging while '
+            + 'generation sends one built without it — the director approves text that '
+            + 'is not what gets bought');
+    });
 });
