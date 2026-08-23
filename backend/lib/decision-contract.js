@@ -109,20 +109,26 @@ function applyDirectorIntent(card, intent) {
     return out;
 }
 
-function applicationFingerprints(row, card) {
+function normalizeNames(values) {
+    return [...new Set((values || []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean))].sort();
+}
+
+function applicationFingerprints(row, card, options) {
     if (!row) return null;
     const camera = typeof row.camera_json === 'string' ? JSON.parse(row.camera_json || '{}') : (row.camera || {});
     const director = typeof row.director_json === 'string' ? JSON.parse(row.director_json || '{}') : (row.director || {});
     const subjects = typeof row.subjects_json === 'string' ? JSON.parse(row.subjects_json || '[]') : (row.subjects || []);
     const scene = card || {};
     const cardCamera = scene.camera || {};
+    const known = new Set(normalizeNames((options && options.knownNames) || []));
+    const stagedNames = normalizeNames(subjects.map(o => o && o.name));
     const staged = {
             camera: { focalMm: camera.focalMm, sensorId: camera.sensorId, fStop: camera.fStop,
                 heightM: Array.isArray(camera.position) ? camera.position[1] : undefined,
                 focusDistanceM: camera.focusDistanceM },
             movement: row.movement,
             director,
-            names: subjects.map(o => String((o && o.name) || '').trim()).filter(Boolean),
+            names: known.size ? stagedNames.filter(name => known.has(name)) : stagedNames,
         };
     const projectedCard = {
             camera: { lens: cardCamera.lens, movement: cardCamera.movement, sensor: cardCamera.sensor,
@@ -130,10 +136,10 @@ function applicationFingerprints(row, card) {
                 focus_distance_m: cardCamera.focus_distance_m },
             direction: scene.direction || '', location_view: scene.location_view || '',
             lighting: scene.lighting || null,
-            characters: scene.characters || [], props: scene.props || [],
+            characters: normalizeNames(scene.characters || []), props: normalizeNames(scene.props || []),
     };
     const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 32);
     return { stage: hash(staged), card: hash(projectedCard) };
 }
 
-module.exports = { DECISIONS, EXCEPTIONS, directorIntentFromCard, applyDirectorIntent, applicationFingerprints };
+module.exports = { DECISIONS, EXCEPTIONS, directorIntentFromCard, applyDirectorIntent, applicationFingerprints, normalizeNames };

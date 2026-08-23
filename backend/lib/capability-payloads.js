@@ -551,11 +551,14 @@ function loadShotContext(shotId, opts) {
     // 3D blocking, when the shot has any. Null rather than absent so a caller
     // can tell "not blocked" from "context built before previs existed".
     let previs = null;
+    let previsApplication = null;
     try {
         const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
         if (row) {
             const { applicationFingerprints } = require('./decision-contract');
-            const applicationNow = applicationFingerprints(row, sceneCard);
+            const applicationNow = applicationFingerprints(row, sceneCard, {
+                knownNames: [...characters, ...props].map(subject => subject.name),
+            });
             const stageMoved = applicationNow.stage !== row.applied_fingerprint;
             const cardMoved = applicationNow.card !== row.applied_card_fingerprint;
             const applicationState = !row.applied_fingerprint || !row.applied_card_fingerprint ? 'staged'
@@ -588,6 +591,11 @@ function loadShotContext(shotId, opts) {
                 subjects: JSON.parse(row.subjects_json || '[]'),
                 path: JSON.parse(row.path_json || '[]'),
             };
+            previsApplication = previs.application;
+            // Durable generation consumes only decisions the director applied.
+            // Previs's free what-if previews opt into staged blocking explicitly.
+            const mode = (opts && opts.previsMode) || 'applied';
+            if (mode === 'none' || (mode === 'applied' && !previs.application.applied)) previs = null;
         }
     } catch (_) { previs = null; }
 
@@ -654,6 +662,9 @@ function loadShotContext(shotId, opts) {
         keyframeAsset, videoAsset, audioAsset, musicCue, initImage,
         consistency: consistencyContext,
         previs,
+        // State is useful for disclosure even when the durable payload rightly
+        // excludes the unapplied blocking itself.
+        previsApplication,
         references, tagged, anchorTag, anchorAttached, anchorCovers,
         annotations,
         // The project's standing answer to PAR-026. A route may override it per

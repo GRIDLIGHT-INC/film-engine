@@ -15,7 +15,7 @@ const { db, generateId } = require('../db/database');
 const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, getFilePath, ensureDir, serveFile } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
-const { buildVideoPayload } = require('../lib/video-prompt');
+const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
 const { needsStitching, planClips, buildStitchPayload, calculateTransitions } = require('../lib/video-stitcher');
 const { resolve } = require('../lib/providers');
 const { providerConfigFor, spendContext } = require('../lib/provider-config');
@@ -82,44 +82,6 @@ function handleVideoGen(req, res, urlParts, query) {
     json(res, 404, { error: 'Not found' });
 }
 
-// -- Helpers -------------------------------------------------------------
-
-function loadShotContext(shotId) {
-    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
-    if (!shot) return null;
-
-    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
-    if (!scene) return null;
-
-    let sceneCard = {};
-    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
-
-    const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(scene.project_id);
-    const location = scene.location_id
-        ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id)
-        : null;
-    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
-
-    // Find storyboard keyframe asset for init_image
-    const keyframeAsset = db.prepare(
-        "SELECT * FROM film_assets WHERE shot_id = ? AND asset_type IN ('keyframe', 'storyboard') ORDER BY created_at DESC LIMIT 1"
-    ).get(shotId);
-
-    let initImage = null;
-    if (keyframeAsset && keyframeAsset.file_name) {
-        // A file_name that escapes the project directory is refused by
-        // getFilePath; generate without an init image rather than 500.
-        try {
-            const imgPath = getFilePath(scene.project_id, 'storyboards', keyframeAsset.file_name);
-            if (fs.existsSync(imgPath)) {
-                initImage = fs.readFileSync(imgPath).toString('base64');
-            }
-        } catch (_) { initImage = null; }
-    }
-
-    return { shot, scene, sceneCard, characters, location, project, keyframeAsset, initImage };
-}
-
 // -- Generate Video for a Shot -------------------------------------------
 
 async function generateVideo(req, res, shotId) {
@@ -130,15 +92,12 @@ async function generateVideo(req, res, shotId) {
     const videoProvider = resolve('video', spendContext({ id: scene.project_id }, shot, scene));
     const consistencyContext = buildShotReferencePayload(shot, scene, project);
 
-    const stylePreset = project ? project.style_preset : null;
-    const payload = buildVideoPayload(sceneCard, characters, location, stylePreset, {
-        init_image: initImage,
+    ctx.consistency = consistencyContext;
+    ctx.overrides = {
         seed: req.body && req.body.seed ? req.body.seed : consistencyContext.locked_seed,
         model: req.body && req.body.model ? req.body.model : undefined,
-        prompt_additions: consistencyContext.prompt_additions,
-        negative_additions: consistencyContext.negative_additions,
-        input_refs: consistencyContext.input_refs,
-    });
+    };
+    const payload = buildCapabilityPayload('video', ctx).payload;
 
     const jobId = generateId();
     db.prepare(
@@ -217,14 +176,9 @@ async function generateVideoStream(req, res, shotId) {
     const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
     const videoProvider = resolve('video', spendContext({ id: scene.project_id }, shot, scene));
     const consistencyContext = buildShotReferencePayload(shot, scene, project);
-    const stylePreset = project ? project.style_preset : null;
-    const payload = buildVideoPayload(sceneCard, characters, location, stylePreset, {
-        init_image: initImage,
-        seed: consistencyContext.locked_seed,
-        prompt_additions: consistencyContext.prompt_additions,
-        negative_additions: consistencyContext.negative_additions,
-        input_refs: consistencyContext.input_refs,
-    });
+    ctx.consistency = consistencyContext;
+    ctx.overrides = { seed: consistencyContext.locked_seed };
+    const payload = buildCapabilityPayload('video', ctx).payload;
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',
@@ -339,13 +293,9 @@ async function batchVideoStream(req, res, projectId) {
         sendEvent({ type: 'shot_start', shot_id: shot.shot_id, shot_code: shot.shot_code });
         const consistencyContext = buildShotReferencePayload(ctx.shot, ctx.scene, project);
 
-        const payload = buildVideoPayload(ctx.sceneCard, ctx.characters, ctx.location, project.style_preset, {
-            init_image: ctx.initImage,
-            seed: consistencyContext.locked_seed,
-            prompt_additions: consistencyContext.prompt_additions,
-            negative_additions: consistencyContext.negative_additions,
-            input_refs: consistencyContext.input_refs,
-        });
+        ctx.consistency = consistencyContext;
+        ctx.overrides = { seed: consistencyContext.locked_seed };
+        const payload = buildCapabilityPayload('video', ctx).payload;
 
         try {
             const result = await videoProvider.generate('video', payload, { timeout: 300000 });
@@ -467,10 +417,11 @@ async function stitchVideo(req, res, shotId) {
 
     for (const clip of clips) {
         const clipCard = { ...sceneCard, duration_ms: clip.duration_ms };
-        const payload = buildVideoPayload(clipCard, characters, location, stylePreset, {
-            init_image: initImage,
-            seed: req.body && req.body.seed ? req.body.seed + clip.index : null,
-        });
+        const clipCtx = {
+            ...ctx, sceneCard: clipCard,
+            overrides: { seed: req.body && req.body.seed ? req.body.seed + clip.index : null },
+        };
+        const payload = buildCapabilityPayload('video', clipCtx).payload;
 
         try {
             const result = await callGridlight(VIDEO_ENDPOINT, payload);

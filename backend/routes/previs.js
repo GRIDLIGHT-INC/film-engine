@@ -70,7 +70,9 @@ function applicationState(shotId) {
         return { state: row ? 'staged' : 'none', applied: false, staged: !!row, card_ahead: false, applied_at: null };
     }
     const shot = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
-    const now = applicationFingerprints(row, parse((shot && shot.scene_card_yaml) || '{}', {}));
+    const now = applicationFingerprints(row, parse((shot && shot.scene_card_yaml) || '{}', {}), {
+        knownNames: recognizedSubjectNames(shotId),
+    });
     const stageMoved = now.stage !== row.applied_fingerprint;
     const cardMoved = now.card !== row.applied_card_fingerprint;
     const state = stageMoved && cardMoved ? 'conflict'
@@ -83,10 +85,23 @@ function markApplied(shotId) {
     const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
     const shot = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
     if (!row || !shot) return null;
-    const fingerprints = applicationFingerprints(row, parse(shot.scene_card_yaml || '{}', {}));
+    const fingerprints = applicationFingerprints(row, parse(shot.scene_card_yaml || '{}', {}), {
+        knownNames: recognizedSubjectNames(shotId),
+    });
     db.prepare("UPDATE film_previs_blocking SET applied_fingerprint = ?, applied_card_fingerprint = ?, applied_at = datetime('now') WHERE shot_id = ?")
         .run(fingerprints.stage, fingerprints.card, shotId);
     return fingerprints;
+}
+
+function recognizedSubjectNames(shotId) {
+    const owner = db.prepare(`
+        SELECT sc.project_id FROM film_shots sh
+        JOIN film_scenes sc ON sc.id = sh.scene_id WHERE sh.id = ?`).get(shotId);
+    if (!owner) return [];
+    return [
+        ...db.prepare('SELECT name FROM film_characters WHERE project_id = ?').all(owner.project_id),
+        ...db.prepare('SELECT name FROM film_props WHERE project_id = ?').all(owner.project_id),
+    ].map(row => row.name);
 }
 
 /**
@@ -233,18 +248,25 @@ function getBlocking(req, res, shotId) {
     });
 }
 
-function putBlocking(req, res, shotId) {
+function putBlocking(req, res, shotId, internal) {
     const shot = db.prepare('SELECT id FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) return json(res, 404, { error: 'Shot not found' });
 
-    const body = req.body || {};
+    // Underscore-prefixed fields are server bookkeeping, never caller
+    // authority. Copying only public keys prevents HTTP and MCP clients from
+    // forging the from-card path that records a blocking as applied.
+    const body = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => !key.startsWith('_')));
     const { errors, warnings } = validateBlocking(body);
     if (errors.length) return json(res, 400, { error: 'Invalid blocking', errors });
 
     const base = defaultBlocking();
+    const existing = db.prepare('SELECT id, director_json FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    const existingDirector = existing ? parse(existing.director_json || '{}', {}) : {};
     const blocking = {
         camera: { ...base.camera, ...(body.camera || {}) },
-        director: body.director || {},
+        // A camera-only save is not an instruction to erase the director's
+        // words. Explicit null clears; omission preserves the staged intent.
+        director: body.director === undefined ? existingDirector : (body.director || {}),
         stage: { ...base.stage, ...(body.stage || {}) },
         rig: body.rig || base.rig,
         // Derived from the legs when a sequence was saved without naming one.
@@ -293,7 +315,6 @@ function putBlocking(req, res, shotId) {
         ? sampleSequence(blocking.moves, blocking, { frames })
         : samplePath(blocking.movement, blocking, { frames });
 
-    const existing = db.prepare('SELECT id FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
     const id = existing ? existing.id : generateId();
 
     db.prepare(`
@@ -319,7 +340,7 @@ function putBlocking(req, res, shotId) {
     // A stage seeded from the card agrees with it by construction. Record the
     // projected fingerprint after persistence so later edits are derived as
     // staged; no writer has to remember to clear a flag.
-    if (body._seededFromCard) markApplied(shotId);
+    if (internal && internal.seededFromCard) markApplied(shotId);
 
     return json(res, 200, {
         shot_id: shotId,
@@ -420,7 +441,7 @@ function toVideo(req, res, shotId) {
     if (stale) return json(res, 409, stale);
 
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
-    const ctx = loadShotContext(shotId);
+    const ctx = loadShotContext(shotId, { previsMode: 'staged' });
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
     if (ctx.previs && ctx.previs.director) {
         ctx.sceneCard = applyDirectorIntent({
@@ -715,7 +736,7 @@ function toStoryboard(req, res, shotId) {
 
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
     let ctx;
-    try { ctx = loadShotContext(shotId); } catch (err) {
+    try { ctx = loadShotContext(shotId, { previsMode: 'staged' }); } catch (err) {
         return json(res, 400, { error: err.message, code: err.code || undefined });
     }
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
@@ -1097,8 +1118,7 @@ function fromCard(req, res, shotId) {
     // Saved through the same validator and sampler the editor writes through,
     // so a seeded blocking is indistinguishable from a hand-made one.
     req.body = blocking;
-    req.body._seededFromCard = true;
-    return putBlocking(req, res, shotId);
+    return putBlocking(req, res, shotId, { seededFromCard: true });
 }
 
 function handlePrevis(req, res, urlParts) {

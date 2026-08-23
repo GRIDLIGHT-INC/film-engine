@@ -168,6 +168,7 @@ film-engine/
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop
 │       ├── decision-parity.test.js     # Every director decision, held to five links across both surfaces
+│       ├── previs-boundary.test.js     # Paid routes share one payload path and honor the Apply boundary
 │       ├── screenplay-to-entities.test.js # A screenplay creates the entities generation reads
 │       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
 │       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
@@ -1466,6 +1467,7 @@ node --test backend/tests/reference-capability.test.js
 node --test backend/tests/previs-storyboard.test.js
 node --test backend/tests/previs-loop.test.js
 node --test backend/tests/decision-parity.test.js
+node --test backend/tests/previs-boundary.test.js
 node --test backend/tests/screenplay-to-entities.test.js
 node --test backend/tests/storyboard-prerequisites.test.js
 node --test backend/tests/previs-explore-ui.test.js

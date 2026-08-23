@@ -13020,6 +13020,8 @@ THREE.GLTFLoader = GLTFLoader;
         PREVIS.staged = false;
         const stagedBadge = document.getElementById('previsStagedBadge');
         if (stagedBadge) stagedBadge.style.display = 'none';
+        const applyBtn = document.getElementById('previsApplyBtn');
+        if (applyBtn) { applyBtn.disabled = false; applyBtn.title = ''; }
         /*
          * The card, for the two things previs could not do: name what it stages
          * and read the camera note. Fire-and-forget alongside the blocking —
@@ -26803,6 +26805,7 @@ ${fountainText.slice(0, 50000)}`;
      * the frame comes back wrong, which is the most expensive kind of wrong.
      */
     let CONFIRM_GEN = null;
+    let CONFIRM_GEN_IGNORE_STAGED = false;
 
     /*
      * The Generate button is armed only by a preview that succeeded.
@@ -26835,6 +26838,7 @@ ${fountainText.slice(0, 50000)}`;
         title.textContent = o.title || 'Before we spend a credit';
         body.innerHTML = '<span class="text-muted text-sm">Reading what would be sent&hellip;</span>';
         confirmGenArm(false);
+        CONFIRM_GEN_IGNORE_STAGED = false;
         showModal('confirmGenModal');
 
         const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
@@ -26850,6 +26854,10 @@ ${fountainText.slice(0, 50000)}`;
 
             body.innerHTML = `
               ${o.note ? `<p class="text-sm text-muted" style="line-height:1.5;">${esc(o.note)}</p>` : ''}
+
+              ${d.staged_notice ? `<p class="text-sm" style="color:var(--warning,#b8860b);line-height:1.5;">
+                  <strong>${d.card_ahead || d.conflict ? 'Resolve the board/Previs conflict.' : 'Apply this Previs first.'}</strong>
+                  ${esc(d.staged_notice)}</p>` : ''}
 
               <div class="form-group">
                 <label>Continuity</label>
@@ -26927,7 +26935,21 @@ ${fountainText.slice(0, 50000)}`;
                 <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;max-height:260px;overflow:auto;
                             margin:0;padding:8px;border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.prompt || '')}</pre>
               </div>`;
-            confirmGenArm(true);
+            // A preview may inspect an experiment, but a paid Board action may
+            // not silently consume it. Apply staged blocking, or re-seed when
+            // the board is newer, then reopen this confirmation.
+            if (d.staged || d.card_ahead || d.conflict) {
+                // Exploration is not a dead end. This deliberate override shoots
+                // the committed card while leaving the staged Previs untouched.
+                CONFIRM_GEN_IGNORE_STAGED = true;
+                const go = document.getElementById('confirmGenGo');
+                if (go) go.textContent = 'Generate from board anyway';
+                confirmGenArm(true);
+            } else {
+                const go = document.getElementById('confirmGenGo');
+                if (go) go.textContent = 'Generate';
+                confirmGenArm(true);
+            }
         } catch (err) {
             /*
              * Disarmed rather than "you can still generate blind".
@@ -26962,6 +26984,7 @@ ${fountainText.slice(0, 50000)}`;
                 body: JSON.stringify({
                     ...(directionMode ? { direction_mode: directionMode } : {}),
                     ...(keepPlates && keepPlates.length ? { keep_plates: keepPlates } : {}),
+                    ...(CONFIRM_GEN_IGNORE_STAGED ? { ignore_staged: true } : {}),
                 }),
             });
             done();

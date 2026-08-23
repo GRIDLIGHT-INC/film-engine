@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { db, generateId } = require('../db/database');
-const { buildStoryboardPrompt, applyStyleLock } = require('../lib/storyboard-prompt');
+const { applyStyleLock } = require('../lib/storyboard-prompt');
 const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
 const { buildShotReferencePayload, applyConsistencyToImagePayload, recordConsistencyCheck, auditProjectReadiness } = require('../lib/consistency-context');
 const { resolveGenerator } = require('../lib/providers');
@@ -30,7 +30,7 @@ const {
 } = require('../lib/shot-references');
 const { endpointFor: gridlightEndpointFor } = require('../lib/providers/gridlight-adapter');
 const { extractMediaUrl, resolveMediaUrl, isGatewayUrl } = require('../lib/provider-media');
-const { imageRequestPayload, providerConfigOf } = require('../lib/capability-payloads');
+const { imageRequestPayload, providerConfigOf, loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
 const { loadBlocking, approvalState } = require('./previs');
 const { effectiveCamera } = require('../lib/previs-blocking');
 const { filmOptics } = require('../lib/look-development');
@@ -934,30 +934,16 @@ async function generateStoryboard(req, res, projectId, query) {
             : [];
         const anchorState_ = anchorIn(shotRefs, canTag);
         const shotMarks = annotationsFor(shot.shot_id, project, body);
-        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
-            // The ceiling of the provider that will actually run, not a
-            // constant. Meshy documents no prompt limit and routes to models
-            // that take long ones; imposing Runway's 1000 on it threw away
-            // description nobody asked to lose.
-            {
-                references: shotRefs, tagged: canTag,
-                maxPromptChars: leadProvider && leadProvider.promptLimit,
-                // Prop rows, for their declared dimensions. The builder has
-                // never been handed props — they reach the prompt through the
-                // consistency contract, which carries no measurements.
-                props,
-                // PAR-026. The board path honours markup for the same reason
-                // it honours plates: a regenerate-one that conditions
-                // differently from a generate-all is how a board comes to
-                // disagree with itself, and the plate bug that cost a day was
-                // exactly that shape.
-                annotations: shotMarks.enabled ? shotMarks.marks : undefined,
-                // Only when the anchor actually claimed one of the three slots.
-                // Naming a tag the payload does not carry is strictly worse than
-                // saying nothing — the same defect as a prompt carrying @maya
-                // with no matching image.
-                ...anchorState_,
-            });
+        const generationCtx = loadShotContext(shot.shot_id);
+        Object.assign(generationCtx, {
+            sceneCard, characters: matchedChars, location: matchedLocation, props,
+            consistency: null, references: shotRefs, tagged: canTag,
+            anchorAttached: anchorState_.anchorAttached, anchorTag: anchorState_.anchorTag,
+            annotations: shotMarks.marks, useAnnotations: shotMarks.enabled,
+        });
+        const basePrompt = buildCapabilityPayload('image', generationCtx).payload;
+        /* Prompt policy is centralized in capability-payloads. Provider-specific
+           references and consistency are still applied by this route below. */
 
         // Update shot status
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shot.shot_id);
@@ -1191,30 +1177,14 @@ async function generateStoryboardStream(req, res, projectId, query) {
             : [];
         const anchorState_ = anchorIn(shotRefs, canTag);
         const shotMarks = annotationsFor(shot.shot_id, project, body);
-        const basePrompt = buildStoryboardPrompt(sceneCard, matchedChars, matchedLocation, project.style_preset,
-            // The ceiling of the provider that will actually run, not a
-            // constant. Meshy documents no prompt limit and routes to models
-            // that take long ones; imposing Runway's 1000 on it threw away
-            // description nobody asked to lose.
-            {
-                references: shotRefs, tagged: canTag,
-                maxPromptChars: leadProvider && leadProvider.promptLimit,
-                // Prop rows, for their declared dimensions. The builder has
-                // never been handed props — they reach the prompt through the
-                // consistency contract, which carries no measurements.
-                props,
-                // PAR-026. The board path honours markup for the same reason
-                // it honours plates: a regenerate-one that conditions
-                // differently from a generate-all is how a board comes to
-                // disagree with itself, and the plate bug that cost a day was
-                // exactly that shape.
-                annotations: shotMarks.enabled ? shotMarks.marks : undefined,
-                // Only when the anchor actually claimed one of the three slots.
-                // Naming a tag the payload does not carry is strictly worse than
-                // saying nothing — the same defect as a prompt carrying @maya
-                // with no matching image.
-                ...anchorState_,
-            });
+        const generationCtx = loadShotContext(shot.shot_id);
+        Object.assign(generationCtx, {
+            sceneCard, characters: matchedChars, location: matchedLocation, props,
+            consistency: null, references: shotRefs, tagged: canTag,
+            anchorAttached: anchorState_.anchorAttached, anchorTag: anchorState_.anchorTag,
+            annotations: shotMarks.marks, useAnnotations: shotMarks.enabled,
+        });
+        const basePrompt = buildCapabilityPayload('image', generationCtx).payload;
 
         sendEvent({
             type: 'progress',
@@ -1783,7 +1753,11 @@ function shotPromptPreview(req, res, shotId, query) {
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
 
     let ctx;
-    try { ctx = loadShotContext(shotId); } catch (err) {
+    try {
+        // The paid Board preview must be byte-for-byte honest about the durable
+        // payload. Application state travels separately for disclosure.
+        ctx = loadShotContext(shotId);
+    } catch (err) {
         return json(res, err.code === 'PRECONDITION' ? 409 : 404, { error: err.message });
     }
     if (!ctx || !ctx.shot) return json(res, 404, { error: 'Shot not found' });
@@ -1842,7 +1816,8 @@ function shotPromptPreview(req, res, shotId, query) {
         };
     });
 
-    const staged = !!ctx.previs && ctx.previs.application?.staged;
+    const application = ctx.previsApplication || null;
+    const staged = !!application?.staged;
 
     return json(res, 200, {
         shot_id: shotId,
@@ -1850,13 +1825,13 @@ function shotPromptPreview(req, res, shotId, query) {
         // A board preview can be reading saved-but-unapplied Previs. Say which
         // state supplied the film facts before the director spends anything.
         staged,
-        applied: !!ctx.previs?.application?.applied || !ctx.previs,
-        card_ahead: !!ctx.previs?.application?.card_ahead,
-        conflict: !!ctx.previs?.application?.conflict,
-        application_state: ctx.previs?.application?.state || 'none',
+        applied: !!application?.applied || !application,
+        card_ahead: !!application?.card_ahead,
+        conflict: !!application?.conflict,
+        application_state: application?.state || 'none',
         staged_notice: staged
-            ? 'This preview includes staged Previs intent. Apply it to the card before generating from the board.'
-            : ctx.previs?.application?.card_ahead || ctx.previs?.application?.conflict
+            ? 'This prompt uses the Shot Board, not your staged Previs experiment. Apply the Previs to use it, or generate from the board and leave the experiment untouched.'
+            : application?.card_ahead || application?.conflict
                 ? 'The Shot Board is newer than this Previs. Re-seed Previs before applying it again.' : null,
         film_facts: {
             direction: ctx.sceneCard.direction || '',
@@ -2922,32 +2897,32 @@ async function regenerateShot(req, res, shotId) {
         const matchedLocation = matchLocation(scene.location, locations);
 
         const props = db.prepare('SELECT * FROM film_props WHERE project_id = ?').all(scene.project_id);
-        const result = buildStoryboardPrompt(
-            sceneCard, matchedChars, matchedLocation,
-            body.style_override || project.style_preset,
-            {
-                props,
-                annotations: annots.enabled ? annots.marks : undefined,
-                anchorAttached, anchorTag,
-                // The same plates the board path names. This path used to build
-                // its prompt in prose while attaching the pictures anyway, so
-                // two shots on one board generated two ways described their
-                // subjects differently — the divergence this work exists to
-                // remove, surviving inside the one route that does both.
-                //
-                // Safe only because the plates are gathered ABOVE and go on the
-                // payload below: a subject shortened to @maya with no picture
-                // attached travels with neither words nor image, which is the
-                // failure the contract-shortening revert was about.
-                references: shotRefs, tagged: canTag,
-                maxPromptChars: imagePromptLimitFor(project),
-                // Which job the director is doing, and — in camera mode — which
-                // subjects the locked frame already carries, so they travel as
-                // names rather than paragraphs.
-                directionMode,
-                anchorCovers: anchorCoversFor(anchorState, anchorAttached, keepPlatesFor(body, sceneCard)),
+        // Read staged state long enough to enforce the Apply boundary. A
+        // deliberate ignore_staged override generates from the committed card
+        // and leaves the director's Previs experiment untouched.
+        const generationCtx = loadShotContext(shotId);
+        const application = generationCtx.previsApplication;
+        if (application && !application.applied) {
+            if (body.ignore_staged !== true) {
+                return json(res, 409, {
+                    error: 'This shot has unapplied Previs blocking.',
+                    code: 'STAGED_PREVIS',
+                    state: application.state,
+                    action: 'Apply the Previs, re-seed it from the board, or pass ignore_staged to generate from the board deliberately.',
+                });
             }
-        );
+            // The default loader has already excluded this unapplied Previs.
+        }
+        Object.assign(generationCtx, {
+            sceneCard, characters: matchedChars, location: matchedLocation, props,
+            project: { ...project, style_preset: body.style_override || project.style_preset },
+            consistency: null, references: shotRefs, tagged: canTag,
+            anchorAttached, anchorTag,
+            directionMode,
+            anchorCovers: anchorCoversFor(anchorState, anchorAttached, keepPlatesFor(body, sceneCard)),
+            annotations: annots.marks, useAnnotations: annots.enabled,
+        });
+        const result = buildCapabilityPayload('image', generationCtx).payload;
         prompt = result.prompt;
         negative_prompt = result.negative_prompt;
     }
