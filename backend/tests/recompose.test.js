@@ -185,7 +185,7 @@ test('the confirmation leads with film facts, not prompt mechanics', () => {
     // The director's language first.
     for (const [needle, why] of [
         ['Keeping', 'which performance is being kept'],
-        ['Background', 'which place is being adopted'],
+        ['Putting it here', 'which place is being adopted'],
         ['Holding', 'what continuity is preserved'],
         ['Technical details', 'the mechanics, collapsed rather than absent'],
     ]) {
@@ -264,9 +264,17 @@ test('every view the picker offers is image-backed', () => {
     // only way this choice is safe to make.
     const locations = fs.readFileSync(path.join(ROOT, 'routes', 'locations.js'), 'utf8');
     const at = locations.indexOf('function listPlateViews(');
-    const body = locations.slice(at, at + 1800);
-    assert.ok(/image_url/.test(body), 'the views list serves no picture for each view');
-    assert.ok(/getFileUrl\(/.test(body), 'the views list builds its URL by hand rather than with the shared builder');
+    let li = locations.indexOf('{', at), ld = 0, lend = -1;
+    for (let j = li; j < locations.length; j++) {
+        if (locations[j] === '{') ld++;
+        else if (locations[j] === '}') { ld--; if (ld === 0) { lend = j + 1; break; } }
+    }
+    const body = locations.slice(at, lend);
+    assert.ok(/file_path/.test(body),
+        'the views list does not read file_path, so it cannot know whether the picture exists — and '
+        + 'a picker filtering on image_url would be filtering on something always truthy');
+    assert.ok(/available/.test(body), 'a view does not report whether its picture is usable');
+    assert.ok(/existsSync/.test(body), 'availability is asserted without checking the disk');
 });
 
 test('the preview returns the background picture, not a dead expression', () => {
@@ -282,8 +290,28 @@ test('the preview returns the background picture, not a dead expression', () => 
     const body = ROUTES.slice(at, end);
     assert.ok(!/\?\s*undefined\s*:\s*undefined/.test(body),
         'the preview still contains a dead expression that always yields undefined');
-    assert.ok(/getFileUrl\(/.test(body),
-        'the preview does not build the background URL with the shared file-URL builder');
+    assert.ok(/servedUrlFor\(/.test(body),
+        'the preview builds the background URL from an assumed directory rather than from the '
+        + 'plate\'s validated path');
+    /*
+     * Asserted on PROPERTIES, not on the arithmetic. The first version matched
+     * `basename(path.dirname` and broke the moment the derivation was corrected
+     * for archived frames — a test of how the code is spelled, not what it
+     * does. The behaviour itself is proved in recompose-payload.test.js, which
+     * fetches the URL and requires a 200.
+     */
+    const hAt = ROUTES.indexOf('function servedUrlFor(');
+    let hi = ROUTES.indexOf('{', hAt), hd = 0, hend = -1;
+    for (let j = hi; j < ROUTES.length; j++) {
+        if (ROUTES[j] === '{') hd++;
+        else if (ROUTES[j] === '}') { hd--; if (hd === 0) { hend = j + 1; break; } }
+    }
+    const helper = ROUTES.slice(hAt, hend);
+    assert.ok(/storyboardImageUrl\(/.test(helper),
+        'servedUrlFor does not use the storyboard serving route for storyboard frames, whose '
+        + 'archived copies sit one directory deeper than every other asset');
+    assert.ok(/return null/.test(helper),
+        'servedUrlFor guesses instead of admitting it cannot build a URL');
 });
 
 test('the gate names the provider and what it will cost', () => {
@@ -293,10 +321,21 @@ test('the gate names the provider and what it will cost', () => {
      * difference between a director choosing to spend and being told they did.
      */
     const at = ROUTES.indexOf('function recomposePreview(');
-    const body = ROUTES.slice(at, at + 4000);
+    let pi = ROUTES.indexOf('{', at), pd = 0, pend = -1;
+    for (let j = pi; j < ROUTES.length; j++) {
+        if (ROUTES[j] === '{') pd++;
+        else if (ROUTES[j] === '}') { pd--; if (pd === 0) { pend = j + 1; break; } }
+    }
+    const body = ROUTES.slice(at, pend);
     assert.ok(/rateFor\(/.test(body),
         'the preview invents or omits a cost instead of reading the rate book');
-    assert.ok(/provider/.test(body), 'the preview does not say which provider would run');
+    // And it must not PROMISE that cost: callImageGen walks the chain past a
+    // refusal, so a different provider may serve it and a refused attempt may
+    // already have been billed.
+    assert.ok(/first_attempt_only/.test(body),
+        'the cost is presented as definitive while the provider chain can move past it');
+    assert.ok(/fallback_chain/.test(body),
+        'the preview does not disclose which providers could be tried after the first');
 
     const dlgAt = HTML.indexOf('async function confirmRecompose(');
     const dlg = HTML.slice(dlgAt, dlgAt + 5000);
@@ -313,4 +352,88 @@ test('a director note cannot contradict the preservation contract', () => {
         'the director note is not labelled as additive, so it reads as an override');
     assert.ok(p.indexOf('do not copy its camera framing') < p.indexOf('push the rain harder'),
         'the note is not placed after the role assignment it must not contradict');
+});
+
+// ── Revise: the critique, made permanent ────────────────────────────────
+
+test('a failed preview disarms Generate, in every confirmation', () => {
+    /*
+     * THE BLOCKER. `confirmGenGo` was enabled markup that nothing ever
+     * disabled, so a preview that failed to load still let a director click
+     * Generate — and the unresolved promise resolved true. A gate whose entire
+     * purpose is inspection before spending, that permits the spend when the
+     * inspection fails, is worse than no gate: it teaches people the check
+     * happened.
+     *
+     * Set-based over the confirmations, because one that re-arms and one that
+     * does not is the partial state where the guarantee reads as true.
+     */
+    assert.ok(/function confirmGenArm\(/.test(HTML), 'nothing arms or disarms the Generate button');
+
+    const CONFIRMS = ['confirmGeneration', 'confirmRefine', 'confirmRecompose'];
+    for (const fn of CONFIRMS) {
+        const at = HTML.indexOf(`async function ${fn}(`);
+        assert.ok(at > 0, `${fn} is gone`);
+        let i = HTML.indexOf('{', at), d = 0, end = -1;
+        for (let j = i; j < HTML.length; j++) {
+            if (HTML[j] === '{') d++;
+            else if (HTML[j] === '}') { d--; if (d === 0) { end = j + 1; break; } }
+        }
+        const body = HTML.slice(at, end);
+        assert.ok(/confirmGenArm\(false\)/.test(body),
+            `${fn} does not disarm before the preview loads, so a previous success leaves it armed`);
+        assert.ok(/confirmGenArm\(true\)/.test(body),
+            `${fn} never arms on success, so nothing could ever be generated`);
+        const armAt = body.indexOf('confirmGenArm(true)');
+        const catchAt = body.indexOf('} catch (err)');
+        assert.ok(armAt > 0 && catchAt > 0 && armAt < catchAt,
+            `${fn} arms outside the success path, so a failed preview still permits the spend`);
+        /*
+         * Comments stripped first. The check fired on my own explanation —
+         * `Disarmed rather than "you can still generate blind"` — which is
+         * prose ABOUT the fix, not the fix being absent. Substring matching
+         * cannot tell a claim from a description of it, and this codebase has
+         * now paid for that three times.
+         */
+        const code = body.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+        assert.ok(!/still (generate|refine)/i.test(code),
+            `${fn} still invites a blind spend in its error text`);
+    }
+});
+
+test('an unusable view is shown disabled, not silently dropped', () => {
+    // Dropping it makes a view a director photographed simply vanish, which
+    // reads as the app losing their work. Shown with the reason, it reads as
+    // what it is.
+    const at = HTML.indexOf('function renderBackgroundChoices(');
+    const body = HTML.slice(at, at + 2200);
+    assert.ok(/available === false/.test(body), 'the picker does not distinguish an unusable view');
+    assert.ok(/unavailable_reason|Picture unavailable/.test(body),
+        'an unusable view does not say why it cannot be chosen');
+    assert.ok(/cursor:not-allowed|aria-disabled/.test(body),
+        'an unusable view is still clickable');
+
+    const picker = HTML.slice(HTML.indexOf('async function pickBackgroundView('),
+        HTML.indexOf('async function pickBackgroundView(') + 2200);
+    assert.ok(!/views\.filter\(v => v\.image_url\)/.test(picker),
+        'unusable views are filtered out, so a photographed view can vanish without explanation');
+});
+
+test('the confirmation shows BOTH pictures, not just the background', () => {
+    // "V6's reaction is the one" is the load-bearing decision, and it was shown
+    // only as a name. Seeing it beside the background also catches a
+    // version-pointer mistake before the money goes.
+    const at = HTML.indexOf('async function confirmRecompose(');
+    let i = HTML.indexOf('{', at), d = 0, end = -1;
+    for (let j = i; j < HTML.length; j++) {
+        if (HTML[j] === '{') d++;
+        else if (HTML[j] === '}') { d--; if (d === 0) { end = j + 1; break; } }
+    }
+    const dlg = HTML.slice(at, end);
+    assert.ok(/d\.keeping\.image_url/.test(dlg), 'the source frame is not shown as a picture');
+    assert.ok(/d\.background\.image_url/.test(dlg), 'the background is not shown as a picture');
+    assert.ok(/anchor_bypassed/.test(dlg),
+        'a bypassed project anchor is not disclosed, though every other path honours it');
+    assert.ok(/first_attempt_only/.test(dlg),
+        'the cost is presented without saying it covers only the first attempt');
 });

@@ -174,8 +174,9 @@ test('the confirmation names the view that is travelling', () => {
         if (html[j] === '{') d++;
         else if (html[j] === '}') { d--; if (d === 0) { end = j + 1; break; } }
     }
-    assert.ok(/r\.view|view/.test(html.slice(at, end)),
-        'the confirmation shows the location name but not which view of it is being sent');
+    assert.ok(/r\.view/.test(html.slice(at, end)),
+        'the confirmation shows the location name but not which view of it is being sent — once a '
+        + 'location has several plates its name alone cannot say which half of the street travelled');
 });
 
 test('a new view leads with the camera move, and refuses the old angle', () => {

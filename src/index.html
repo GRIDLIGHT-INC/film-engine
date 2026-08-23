@@ -25881,7 +25881,8 @@ ${fountainText.slice(0, 50000)}`;
                 <div class="text-sm" style="margin-top:7px;">
                   <strong>Travelling as pictures:</strong>
                   ${(d.references || []).length
-                      ? (d.references || []).map(r => esc(`${r.subject || '?'} (${r.kind || '?'})`)).join(', ')
+                      ? (d.references || []).map(r => esc(
+                          `${r.subject || '?'}${r.view ? ` — ${r.view}` : ''} (${r.kind || '?'})`)).join(', ')
                       : '<span class="text-muted">none &mdash; every subject is being invented from words</span>'}
                 </div>
                 ${staging ? `<div class="text-sm" style="margin-top:5px;">
@@ -26235,6 +26236,7 @@ ${fountainText.slice(0, 50000)}`;
         if (!body) return true;
         title.textContent = version ? `Refine v${version}` : 'Refine this frame';
         body.innerHTML = '<span class="text-muted text-sm">Reading what would be sent&hellip;</span>';
+        confirmGenArm(false);
         showModal('confirmGenModal');
         const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
 
@@ -26261,10 +26263,13 @@ ${fountainText.slice(0, 50000)}`;
               </div>
               <p class="text-sm text-muted" style="line-height:1.45;">Costs credits. The frame you are
                  refining stays in the version list either way.</p>`;
+            confirmGenArm(true);
         } catch (err) {
+            // Disarmed: a refine whose payload cannot be read is exactly the
+            // blind spend this dialog exists to prevent.
             body.innerHTML = `<p class="text-sm" style="color:var(--gl-danger,#ef4444);">
-                Could not read what would be sent: ${escapeHtml(err.message)}.
-                You can still refine, but you would be doing it blind.</p>`;
+                Could not read what would be sent: ${escapeHtml(err.message)}. Nothing will be
+                generated — close this and try again.</p>`;
         }
         return decision;
     }
@@ -26311,13 +26316,26 @@ ${fountainText.slice(0, 50000)}`;
     function renderBackgroundChoices(views) {
         const el = document.getElementById('backgroundPickerChoices');
         if (!el) return;
-        el.innerHTML = views.map((v, i) => `
-            <button class="btn btn-secondary" style="padding:0;overflow:hidden;text-align:left;display:block;"
+        /*
+         * Unavailable views are SHOWN and disabled, not hidden.
+         *
+         * Dropping them silently makes a view a director photographed simply
+         * vanish, which reads as the app losing their work. Shown with the
+         * reason, it reads as what it is: the picture is gone, photograph it
+         * again.
+         */
+        el.innerHTML = views.map((v, i) => v.available === false
+            ? `<div class="btn btn-secondary" style="padding:0;overflow:hidden;text-align:left;
+                        display:block;opacity:.5;cursor:not-allowed;" aria-disabled="true">
+                 <div style="padding:28px 10px;" class="text-muted text-sm">Picture unavailable</div>
+                 <div style="padding:7px 9px;" class="text-sm">${escapeHtml(v.label)}
+                   <div class="text-muted">${escapeHtml(v.unavailable_reason || 'Photograph this view again.')}</div>
+                 </div>
+               </div>`
+            : `<button class="btn btn-secondary" style="padding:0;overflow:hidden;text-align:left;display:block;"
                     onclick="backgroundPickerResolve(BACKGROUND_PICKER_VIEWS[${i}])">
-              ${v.image_url
-                  ? `<img src="${escapeHtml(API_BASE + v.image_url)}" alt="${escapeHtml(v.label)}"
-                         style="width:100%;display:block;">`
-                  : '<div style="padding:28px 10px;" class="text-muted text-sm">no picture</div>'}
+              <img src="${escapeHtml(API_BASE + v.image_url)}" alt="${escapeHtml(v.label)}"
+                   style="width:100%;display:block;">
               <div style="padding:7px 9px;" class="text-sm">${escapeHtml(v.label)}</div>
             </button>`).join('');
     }
@@ -26341,10 +26359,9 @@ ${fountainText.slice(0, 50000)}`;
             if (loc) views = (await api(`/locations/${loc.id}/plate/views`)).views || [];
         } catch (_) { views = []; }
 
-        // Only views with a picture: one that cannot be seen cannot be chosen
-        // by looking, which is the only way this choice is safe to make.
-        views = views.filter(v => v.image_url);
-        if (!views.length) {
+        // Kept, not filtered: an unavailable view is rendered disabled with its
+        // reason, so a view a director photographed never simply disappears.
+        if (!views.some(v => v.available !== false)) {
             setStatus(`${locName} has no photographed views yet. Open Direct and photograph the one you need.`);
             return null;
         }
@@ -26371,6 +26388,7 @@ ${fountainText.slice(0, 50000)}`;
         if (!body) return true;
         title.textContent = 'Change the background, keep the performance';
         body.innerHTML = '<span class="text-muted text-sm">Reading what would be sent&hellip;</span>';
+        confirmGenArm(false);
         showModal('confirmGenModal');
         const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
 
@@ -26381,21 +26399,35 @@ ${fountainText.slice(0, 50000)}`;
             const d = await api(`/shots/${shotId}/storyboard/recompose-preview?${q}`);
             const esc = escapeHtml;
             body.innerHTML = `
+              <!-- Both pictures, side by side. Which FRAME is being kept is the
+                   load-bearing decision here, and it was shown only as a name —
+                   seeing it beside the background is also what catches a
+                   version-pointer mistake before the money goes. -->
               <div class="form-group">
-                <label>Keeping</label>
-                <div class="text-sm"><strong>${esc(d.keeping.from)}</strong>
-                  <span class="text-muted">&mdash; ${esc(d.keeping.what)}</span></div>
-              </div>
-              <div class="form-group">
-                <label>Background</label>
-                <div style="display:flex;gap:10px;align-items:center;">
-                  ${background.image_url
-                      ? `<img src="${esc(API_BASE + background.image_url)}" alt=""
-                             style="width:132px;border-radius:6px;display:block;">` : ''}
-                  <div class="text-sm"><strong>${esc(d.background.location)}</strong><br>
-                    <span class="text-muted">${esc(d.background.view)}</span></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                  <div>
+                    <label>Keeping this performance</label>
+                    ${d.keeping.image_url
+                        ? `<img src="${esc(API_BASE + d.keeping.image_url)}" alt=""
+                               style="width:100%;border-radius:6px;display:block;">`
+                        : '<div class="text-muted text-sm">no picture</div>'}
+                    <div class="text-sm"><strong>${esc(d.keeping.from)}</strong></div>
+                    <div class="text-sm text-muted">${esc(d.keeping.what)}</div>
+                  </div>
+                  <div>
+                    <label>Putting it here</label>
+                    ${d.background.image_url
+                        ? `<img src="${esc(API_BASE + d.background.image_url)}" alt=""
+                               style="width:100%;border-radius:6px;display:block;">`
+                        : '<div class="text-muted text-sm">no picture</div>'}
+                    <div class="text-sm"><strong>${esc(d.background.location)}</strong></div>
+                    <div class="text-sm text-muted">${esc(d.background.view)}</div>
+                  </div>
                 </div>
               </div>
+              ${d.anchor_bypassed
+                  ? `<div class="text-sm" style="color:var(--warning,#b8860b);margin-bottom:8px;">
+                       ${esc(d.anchor_bypassed)}</div>` : ''}
               <div class="form-group">
                 <label>Holding</label>
                 <div class="text-sm">${d.holding.map(esc).join(' &middot; ')}</div>
@@ -26410,6 +26442,12 @@ ${fountainText.slice(0, 50000)}`;
                       + `${Number.isFinite(d.spend.usd) ? ` &middot; about $${d.spend.usd.toFixed(2)}` : ''}`
                       + `${d.spend.estimated ? ' <span class="text-muted">(estimated rate)</span>' : ''}`
                     : '<span class="text-muted">Cost could not be read.</span>'}</div>
+                ${d.spend && d.spend.first_attempt_only
+                    ? `<div class="text-sm text-muted" style="line-height:1.45;">First attempt only. If
+                         ${esc(d.spend.provider)} declines, the next provider is tried
+                         ${(d.spend.fallback_chain || []).length > 1
+                             ? `(${esc((d.spend.fallback_chain || []).slice(1).join(', '))})` : ''}
+                         and a declined attempt may still be billed.</div>` : ''}
                 <div class="text-sm text-muted" style="line-height:1.45;">The frame you are working from
                   stays in the version list either way.</div>
               </div>
@@ -26428,9 +26466,11 @@ ${fountainText.slice(0, 50000)}`;
                               border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.negative_prompt)}</pre>
                 </div>
               </details>`;
+            confirmGenArm(true);
         } catch (err) {
             body.innerHTML = `<p class="text-sm" style="color:var(--gl-danger,#ef4444);">
-                Could not read what would be sent: ${escapeHtml(err.message)}.</p>`;
+                Could not read what would be sent: ${escapeHtml(err.message)}. Nothing will be
+                generated — close this and try again.</p>`;
         }
         return decision;
     }
@@ -26669,6 +26709,21 @@ ${fountainText.slice(0, 50000)}`;
      */
     let CONFIRM_GEN = null;
 
+    /*
+     * The Generate button is armed only by a preview that succeeded.
+     *
+     * It was left enabled after a preview error, so a failed inspection still
+     * permitted the spend — which inverts a feature whose entire purpose is to
+     * inspect before spending. Re-armed at the start of every confirmation, so
+     * one failure cannot disarm the next.
+     */
+    function confirmGenArm(enabled) {
+        const btn = document.getElementById('confirmGenGo');
+        if (!btn) return;
+        btn.disabled = !enabled;
+        btn.title = enabled ? '' : 'Nothing can be generated until the preview can be read.';
+    }
+
     function confirmGenResolve(ok) {
         closeModal('confirmGenModal');
         const fn = CONFIRM_GEN;
@@ -26684,6 +26739,7 @@ ${fountainText.slice(0, 50000)}`;
 
         title.textContent = o.title || 'Before we spend a credit';
         body.innerHTML = '<span class="text-muted text-sm">Reading what would be sent&hellip;</span>';
+        confirmGenArm(false);
         showModal('confirmGenModal');
 
         const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
@@ -26732,7 +26788,8 @@ ${fountainText.slice(0, 50000)}`;
                 <label>Pictures travelling with this prompt (${refs.length})</label>
                 ${refs.length
                     ? `<ul style="margin:2px 0 0 16px;padding:0;">${refs.map(r =>
-                        `<li class="text-sm">${esc(r.subject || '?')}
+                        `<li class="text-sm">${esc(r.subject || '?')}${r.view
+                            ? ` <span class="text-muted">&mdash; ${esc(r.view)}</span>` : ''}
                           <span class="text-muted">&mdash; ${esc(r.kind || '?')}</span></li>`).join('')}</ul>`
                     : `<div class="text-sm" style="color:var(--warning,#b8860b);">
                          None. Every subject will be invented from words alone &mdash; if a plate exists
@@ -26775,12 +26832,19 @@ ${fountainText.slice(0, 50000)}`;
                 <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;max-height:260px;overflow:auto;
                             margin:0;padding:8px;border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.prompt || '')}</pre>
               </div>`;
+            confirmGenArm(true);
         } catch (err) {
-            // A preview that cannot be read must not block a generation the
-            // director has already decided on — it says so and lets them choose.
+            /*
+             * Disarmed rather than "you can still generate blind".
+             *
+             * The earlier wording let a director proceed past a failed
+             * inspection, which is the one thing this gate exists to stop. If
+             * the payload cannot be read, the honest state is that nothing is
+             * generated.
+             */
             body.innerHTML = `<p class="text-sm" style="color:var(--gl-danger,#ef4444);">
-                Could not read what would be sent: ${escapeHtml(err.message)}.
-                You can still generate, but you would be doing it blind.</p>`;
+                Could not read what would be sent: ${escapeHtml(err.message)}. Nothing will be
+                generated — close this and try again.</p>`;
         }
 
         return decision;

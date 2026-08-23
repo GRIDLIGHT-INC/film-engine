@@ -12,6 +12,8 @@
 const { db, generateId } = require('../db/database');
 const { stampSubject } = require('../lib/story-bible');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
+const fs = require('fs');
+const path = require('path');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const { resolve } = require('../lib/providers');
@@ -115,7 +117,7 @@ function listPlateViews(res, locationId) {
         return res.end(JSON.stringify({ error: 'Location not found' }));
     }
     const rows = db.prepare(
-        `SELECT id, file_name, metadata, created_at FROM film_assets
+        `SELECT id, file_name, file_path, metadata, created_at FROM film_assets
           WHERE project_id = ? AND location_id = ?
             AND asset_type IN ('reference_image', 'character_sheet')
        ORDER BY created_at ASC`).all(loc.project_id, locationId);
@@ -124,12 +126,33 @@ function listPlateViews(res, locationId) {
         let meta = {};
         try { meta = JSON.parse(r.metadata || '{}'); } catch (_) { meta = {}; }
         const view = String(meta.view || '').trim();
+        /*
+         * Whether the picture is really THERE.
+         *
+         * This selected no `file_path` and manufactured an `image_url`
+         * unconditionally, so a row whose file is gone was offered as a normal
+         * choice with a broken <img> — and a picker filtering on "has an
+         * image_url" filtered on something always truthy, which made its
+         * "only choosable if visible" guarantee fiction.
+         *
+         * The URL is derived from where the file actually is rather than an
+         * assumed 'refsheets', because these rows may be `character_sheet` and
+         * may live elsewhere.
+         */
+        let available = false;
+        try { available = !!(r.file_path && fs.existsSync(r.file_path)); } catch (_) { available = false; }
+        const subdir = (() => {
+            try { return path.basename(path.dirname(path.dirname(r.file_path))); } catch (_) { return null; }
+        })();
         return {
             asset_id: r.id,
             view,                       // '' is the default plate
             label: view || 'default view',
             file_name: r.file_name,
-            image_url: getFileUrl('refsheets', loc.project_id, r.file_name),
+            available,
+            unavailable_reason: available ? null
+                : 'Picture unavailable — photograph this view again.',
+            image_url: (available && subdir) ? getFileUrl(subdir, loc.project_id, r.file_name) : null,
             created_at: r.created_at,
         };
     });

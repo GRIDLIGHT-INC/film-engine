@@ -197,7 +197,14 @@ function selectReferences(candidates, options) {
         if (!uri) continue;                    // unreadable plate — skip, don't fail
         const tag = tags.get(c.name);
         if (!tag) continue;
-        out.push({ uri, tag, name: c.name, kind: c.kind });
+        /*
+         * `view` rides along when the candidate has one. A location now has
+         * several plates and the shot picks the one it is pointed at — so
+         * "SUBURBAN STREET" is no longer enough to say WHICH half of the street
+         * the model was shown, which is the whole point of having views. Only
+         * set when present, so nothing else changes shape.
+         */
+        out.push({ uri, tag, name: c.name, kind: c.kind, ...(c.view ? { view: c.view } : {}) });
     }
     return out;
 }

@@ -510,7 +510,14 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
 
     // Same kind the orchestrator records for its keyframe step, so a frame is
     // stale on the same terms however it was generated.
-    require('../lib/artefact-fingerprint').stampAsset(id, 'keyframe', { shotId });
+    /*
+     * A deliberate, documented exception — not a quiet omission. Recompose
+     * passes this because the keyframe fingerprint means "the card's current
+     * image payload", and a recomposed frame was never generated from that.
+     */
+    if (!opts.skip_fingerprint) {
+        require('../lib/artefact-fingerprint').stampAsset(id, 'keyframe', { shotId });
+    }
 
     return { id, version };
 }
@@ -1856,6 +1863,10 @@ function shotPromptPreview(req, res, shotId, query) {
             kind: r.kind || r.profile_type || null,
             tag: r.tag || null,
             role: r.role || null,
+            // WHICH view of a location travelled. Once a location has several
+            // plates, its name alone cannot say which half of the street the
+            // model was shown.
+            view: r.view || null,
         })),
         contributors,
         /*
@@ -2176,6 +2187,50 @@ function refinePreview(req, res, shotId, query) {
 }
 
 
+
+/**
+ * The URL that serves a stored file, derived from where it actually IS.
+ *
+ * `getFileUrl(subdir, …)` needs the subdir, and callers were hardcoding
+ * 'refsheets'. The plate resolver accepts `reference_image` AND
+ * `character_sheet` rows and whatever `file_path` they carry, so an assumed
+ * directory builds a URL that 404s for anything stored elsewhere — a broken
+ * picture in the one dialog whose job is to show the director what they are
+ * buying.
+ *
+ * Returns null rather than a guess when the path cannot be read, so a caller
+ * can say "no picture" instead of rendering a broken one.
+ */
+function servedUrlFor(projectId, filePath, fileName) {
+    try {
+        if (!filePath || !fileName) return null;
+
+        /*
+         * Storyboard frames are served from ONE route that already looks in
+         * both the project root and its `versions/` subdirectory, so their URL
+         * is the same shape wherever the file sits.
+         *
+         * Deriving the subdir positionally does not work for them. A plate at
+         * `…/refsheets/<project>/x.png` is two hops up from the file; an
+         * ARCHIVED frame at `…/storyboards/<project>/versions/x.png` is three,
+         * so the same arithmetic returned the PROJECT ID as the directory and
+         * built `/film/<project>/<project>/x.png`. Caught in review, and the
+         * behavioural test only checked the URL was non-null.
+         */
+        const dir = path.dirname(filePath);
+        const isStoryboard = path.basename(dir) === 'versions'
+            ? path.basename(path.dirname(path.dirname(dir))) === 'storyboards'
+            : path.basename(path.dirname(dir)) === 'storyboards';
+        if (isStoryboard) return storyboardImageUrl(projectId, path.basename(fileName, '.png'));
+
+        // Everything else is served from its own registered subdir, one level
+        // above the project directory.
+        const parent = path.basename(path.dirname(dir));
+        if (!parent) return null;
+        return require('../lib/file-storage').getFileUrl(parent, projectId, fileName);
+    } catch (_) { return null; }
+}
+
 /**
  * What a RECOMPOSE sends: keep the performance from one frame, take the place
  * from another.
@@ -2298,8 +2353,28 @@ function resolveRecomposeSource(shotId, projectId, shotCode, version) {
               WHERE shot_id = ? AND asset_type = 'storyboard' AND version = ?`).get(shotId, Number(version));
         if (!row) return { error: `This shot has no version ${version}`, status: 404 };
         const live = storyboardImagePath(projectId, shotCode);
-        if (row.file_path && path.resolve(row.file_path) === path.resolve(live)) {
+        const namesLive = row.file_path && path.resolve(row.file_path) === path.resolve(live);
+        /*
+         * A row naming the live file means two different things.
+         *
+         * If it is the CURRENT version, the frame simply has not been archived
+         * yet — a freshly generated one lives only at {code}.png until
+         * something copies it aside — and the live file IS its picture.
+         * Refusing it made naming the current version fail while OMITTING the
+         * version used the same picture and succeeded: one picture, two
+         * answers, depending on how it was named. Four shots on a real board
+         * were in that state.
+         *
+         * If it is NOT current, the file there is some later attempt and this
+         * version's own picture is genuinely lost. That still refuses, because
+         * accepting it would silently send the wrong performance.
+         */
+        if (namesLive && Number(version) !== currentFrameVersion(shotId)) {
             return { error: `Version ${version}'s own picture was never kept aside.`, status: 409 };
+        }
+        if (namesLive) {
+            if (!fs.existsSync(live)) return { error: 'This shot has no frame yet.', status: 409 };
+            return { path: live, version: Number(version) };
         }
         if (!row.file_path || !fs.existsSync(row.file_path)) {
             return { error: `The file for version ${version} is no longer on disk.`, status: 409 };
@@ -2336,6 +2411,14 @@ function recomposePreview(req, res, shotId, query) {
             from: src.version ? `${bg.shot.shot_code} v${src.version}` : `${bg.shot.shot_code} (current frame)`,
             version: src.version,
             what: 'performance, framing, camera position, lens and wardrobe',
+            /*
+             * The picture itself. For the case this feature exists for — "V6's
+             * reaction is the one" — WHICH FRAME is the load-bearing decision,
+             * and the confirmation showed only its name. Seeing it beside the
+             * background is also what catches a version-pointer mistake before
+             * the money goes.
+             */
+            image_url: servedUrlFor(bg.scene.project_id, src.path, path.basename(src.path)),
         },
         background: {
             location: bg.location.name,
@@ -2345,11 +2428,30 @@ function recomposePreview(req, res, shotId, query) {
             // uses. The first draft shipped a dead expression here that always
             // yielded undefined, so the confirmation had nothing to show and a
             // director would have been approving a NAME.
-            image_url: require('../lib/file-storage').getFileUrl(
-                'refsheets', bg.scene.project_id, bg.plate.file_name),
+            // Derived from the plate's VALIDATED path rather than an assumed
+            // 'refsheets' subdir: the resolver accepts `character_sheet` rows
+            // and whatever `file_path` they carry, so hardcoding the directory
+            // builds a URL that 404s for anything stored elsewhere.
+            image_url: servedUrlFor(bg.scene.project_id, bg.plate.file_path, bg.plate.file_name),
             file_name: bg.plate.file_name,
         },
         holding: ['framing and crop', 'eyeline', 'identity and wardrobe', 'camera position and lens'],
+        /*
+         * An anchor set on this project is NOT used here — the background was
+         * chosen explicitly, and an anchor would be a second, contradictory
+         * source for the same thing. Correct, and silent until now: every other
+         * generation path honours the anchor, so a director has a live
+         * expectation that it applies. Stated only when one actually exists,
+         * because a line about a thing that is not set is noise.
+         */
+        anchor_bypassed: (() => {
+            try {
+                const a = require('../lib/shot-anchor').activeAnchorFor(db, shotId);
+                if (!a || !a.shot || !a.shot.shot_code) return null;
+                return `Anchor ${a.shot.shot_code} is not used here; the background you picked `
+                    + 'replaces it.';
+            } catch (_) { return null; }
+        })(),
         adopting: ['architecture and set dressing', 'time of day', 'lighting and colour grade'],
         // ── the mechanics, for the collapsed panel ──
         references: [
@@ -2374,7 +2476,17 @@ function recomposePreview(req, res, shotId, query) {
                 const rate = lead ? rateFor(lead.id, 'image') : null;
                 if (!lead) return { provider: null, note: 'No image provider is configured.' };
                 return {
+                    /*
+                     * The FIRST provider that would be tried, not the one that
+                     * will necessarily run. `callImageGen` walks the chain past
+                     * a refusal, so the figure can be wrong in both directions:
+                     * a different provider may serve it, and a refused attempt
+                     * may already have been billed. Presenting it as "the cost"
+                     * would be a promise this path cannot keep.
+                     */
                     provider: lead.id,
+                    first_attempt_only: true,
+                    fallback_chain: chain.map(p => p.id),
                     images: 1,
                     native_quantity: rate ? rate.native_per_unit : null,
                     native_unit: rate ? rate.native_unit : null,
@@ -2447,6 +2559,26 @@ async function recomposeShot(req, res, shotId) {
             provider, provider_model: model,
             recomposed_from: `${bg.shot.shot_code} v${src.version}`,
             recomposed_background: bg.view || 'default view',
+            /*
+             * The TRUE provenance: identifiers, never data URIs. Two megabytes
+             * of base64 in a provenance column is not a record, it is a copy.
+             */
+            input_refs: [
+                { role: 'FIRST', kind: 'storyboard', shot_code: bg.shot.shot_code, version: src.version },
+                { role: 'SECOND', kind: 'location_plate', asset_id: bg.plate.id,
+                  location: bg.location.name, view: bg.view || null },
+            ],
+            /*
+             * Deliberately UNSTAMPED, and this is the whole reason the option
+             * exists. Every other frame is fingerprinted against the card's
+             * image payload; a recomposed one was generated from two pictures
+             * and a fixed contract, so hashing that payload would describe
+             * inputs it never had — reading fresh while unrelated to the card,
+             * or stale on an edit that changed nothing it used. This codebase
+             * already treats an unstamped asset as "outside the workflow"
+             * rather than stale, which is the honest answer here.
+             */
+            skip_fingerprint: true,
         });
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('complete', shotId);
 

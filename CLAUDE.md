@@ -204,6 +204,7 @@ film-engine/
 │       ├── anchor-plate-override.test.js # An anchor covers where a subject stands, not who they are in close-up
 │       ├── location-views.test.js  # A location has views; a shot picks the one it is pointed at
 │       ├── recompose.test.js       # Keep the performance from one frame, take the place from another
+│       ├── recompose-payload.test.js # What the provider actually receives, in order
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
@@ -575,6 +576,18 @@ No existing operation could express that. `regenerate` rebuilds the whole frame 
 **The background must belong to this shot's own location.** A plate from elsewhere is a different film, and a named-but-absent one is **refused rather than fallen back**, since falling back would silently use a different place than the one asked for.
 
 Reachable from **both** directing surfaces — the board's version list and previs — through **one** runner and **one** confirmation, because two separately written confirmations are how two surfaces come to disagree about what they are about to buy. The confirmation leads with **film facts** (what is kept, which background, what is held, what is adopted) and puts the prompt, the negative and the reference ordering under a collapsed *Technical details*: the mechanics stay available because they are the only free feedback loop, but they are not the directing interface.
+
+**Revised after review.** Nine issues came out of the critique pass and all nine are closed. The ones worth recording:
+
+A failed preview left **Generate armed** — a gate whose whole purpose is inspection before spending, permitting the spend when the inspection fails, is worse than no gate because it teaches people the check happened. All three confirmations now disarm before loading and arm only on success.
+
+`listPlateViews` selected no `file_path` and manufactured an `image_url` for every row, so a plate whose file was gone was offered as a normal choice — and the picker's filter on "has an image_url" was filtering on something **always truthy**. Views now report `available` from the disk, and an unusable one is shown **disabled with its reason** rather than dropped, because a view a director photographed should never silently vanish.
+
+`servedUrlFor` derived the serving subdir positionally, two directories up. That is right for a plate at `…/refsheets/<project>/x.png` and **wrong for an archived frame** at `…/storyboards/<project>/versions/x.png`, which is three — so it returned the project id as the directory. The behavioural payload test could not catch it (it proves the bytes, not the thumbnail) and asserting non-null would not have either, because the broken URL was a perfectly good string. There is now a test that **fetches** the URL and requires a 200.
+
+Naming the current version and omitting it described **the same picture and gave opposite answers** — four shots on a real board were in that state. And the cost was presented as definitive while `callImageGen` walks the chain past a refusal, so it is labelled first-attempt-only with the fallback chain disclosed.
+
+A recomposed frame is **deliberately unstamped**: the keyframe fingerprint means "the card's current image payload", and this frame was never generated from that. `skip_fingerprint` is an explicit documented exception rather than a quiet omission, and `input_refs` records the true provenance as identifiers — never data URIs, because two megabytes of base64 in a provenance column is a copy, not a record.
 
 ### A Location Has Views; a Shot Picks One
 A location had exactly **one** plate, selected with `ORDER BY version DESC LIMIT 1`, with no record of which way it faced. On Wingfall that plate looks from the entrance **into** the cul-de-sac — so 1A and 2A had a photograph, and 2B and 2AA, which shoot back the other way, were handed a picture of what was **behind** the camera and invented the rest. Every wrong road, missing kerb and misplaced car traces to it.
@@ -1472,6 +1485,7 @@ node --test backend/tests/playback-start.test.js
 node --test backend/tests/anchor-plate-override.test.js
 node --test backend/tests/location-views.test.js
 node --test backend/tests/recompose.test.js
+node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js
 node --test backend/tests/scene-append.test.js
 node --test backend/tests/scene-insert.test.js
