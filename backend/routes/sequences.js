@@ -33,6 +33,26 @@ function parseIds(row) {
     catch (_) { return []; }
 }
 
+function sequenceFileName(sequenceId, from, to) {
+    const safe = value => String(value || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'shot';
+    return `sequence_${safe(String(sequenceId || '').slice(0, 8))}_${safe(from)}_${safe(to)}.mp4`;
+}
+
+/** Validate the ordered shot list at the write boundary, before it can drift projects. */
+function validShotIds(projectId, input) {
+    const ids = Array.isArray(input) ? input.filter(x => typeof x === 'string') : [];
+    if (!ids.length) return { error: 'Pick at least one shot for the sequence' };
+    if (new Set(ids).size !== ids.length) return { error: 'A shot can appear only once in a sequence' };
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT sh.id
+        FROM film_shots sh JOIN film_scenes sc ON sc.id = sh.scene_id
+        WHERE sc.project_id = ? AND sh.id IN (${placeholders})`).all(projectId, ...ids);
+    if (rows.length !== ids.length) {
+        return { error: 'Every selected shot must exist in this project' };
+    }
+    return { ids };
+}
+
 /**
  * The shots this sequence travels through, IN THE ORDER THE DIRECTOR PUT THEM.
  *
@@ -116,8 +136,9 @@ function createSequence(req, res, projectId) {
     const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
     const body = req.body || {};
-    const ids = Array.isArray(body.shot_ids) ? body.shot_ids.filter(x => typeof x === 'string') : [];
-    if (!ids.length) return json(res, 400, { error: 'Pick at least one shot for the sequence' });
+    const checked = validShotIds(projectId, body.shot_ids);
+    if (checked.error) return json(res, 400, { error: checked.error });
+    const ids = checked.ids;
 
     const id = generateId();
     db.prepare(`INSERT INTO film_sequences (id, project_id, name, shot_ids, description)
@@ -133,9 +154,11 @@ function updateSequence(req, res, id) {
     const body = req.body || {};
     // Merged, not replaced: renaming a sequence must not silently drop the
     // description someone spent time on, the rule PUT /shots/:id already sets.
+    const checked = body.shot_ids !== undefined ? validShotIds(row.project_id, body.shot_ids) : null;
+    if (checked && checked.error) return json(res, 400, { error: checked.error });
     const next = {
         name: body.name !== undefined ? String(body.name).slice(0, 200) : row.name,
-        shot_ids: Array.isArray(body.shot_ids) ? JSON.stringify(body.shot_ids) : row.shot_ids,
+        shot_ids: checked ? JSON.stringify(checked.ids) : row.shot_ids,
         description: body.description !== undefined
             ? String(body.description).slice(0, 2000) : row.description,
     };
@@ -206,7 +229,7 @@ async function generateSequence(req, res, id) {
             break;
         }
 
-        const fileName = `sequence_${id.slice(0, 8)}_${segment.from}_${segment.to}.mp4`;
+        const fileName = sequenceFileName(id, segment.from, segment.to);
         // eslint-disable-next-line no-await-in-loop
         const saved = await persistProviderMedia(row.project_id, 'video', fileName, result.data,
             { serveDir: 'videos' });
@@ -299,4 +322,4 @@ async function handleSequences(req, res, urlParts) {
     return false;
 }
 
-module.exports = { handleSequences, shotsOf };
+module.exports = { handleSequences, shotsOf, sequenceFileName };

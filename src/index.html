@@ -25231,7 +25231,7 @@ ${fountainText.slice(0, 50000)}`;
         if (!seqs.length) { host.innerHTML = '<p class="text-sm text-muted">No sequences yet.</p>'; return; }
 
         host.innerHTML = seqs.map(q => {
-            const codes = (q.shots || []).map(s => s.shot_code).join(' &rarr; ');
+            const codes = (q.shots || []).map(s => esc(s.shot_code || '')).join(' &rarr; ');
             const unframed = (q.shots || []).filter(s => !s.has_keyframe).map(s => s.shot_code);
             return `<div class="card" style="margin-bottom:10px;">
                 <div class="flex-between">

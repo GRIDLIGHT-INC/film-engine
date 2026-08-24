@@ -386,11 +386,13 @@ function listVideoJobs(req, res, projectId, query) {
     // to "no video" and looks broken.
     const assets = db.prepare(`SELECT * FROM film_assets
         WHERE project_id = ? AND asset_type IN
-            ('video_raw','audio_dialogue','audio_sfx','video_synced','video_final')
+            ('storyboard','keyframe','video_raw','audio_dialogue','audio_sfx','video_synced','video_final')
         ORDER BY created_at DESC`).all(projectId).map(a => ({
         ...a,
         url: a.file_name ? getFileUrl(
-            a.asset_type.startsWith('audio_') ? (a.asset_type === 'audio_dialogue' ? 'audio' : 'music') : 'video',
+            ['storyboard', 'keyframe'].includes(a.asset_type) ? 'storyboards'
+                : a.asset_type.startsWith('audio_')
+                    ? (a.asset_type === 'audio_dialogue' ? 'audio' : 'music') : 'video',
             a.project_id, a.file_name) : null,
     }));
     json(res, 200, { project_id: projectId, total: jobs.length, jobs, assets });

@@ -256,3 +256,56 @@ test('a sequence is created, planned, refused for a missing frame, and takes an 
         'the sequence does not point at the clip that was uploaded for it');
     assert.strictEqual(after.status, 'complete');
 });
+
+test('the Video Shots surface receives the keyframes its sequence picker uses', async () => {
+    const { handleVideoGen } = require('../routes/video-gen');
+    const projectId = generateId(), sceneId = generateId(), shotId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Picker');
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)').run(sceneId, projectId, '1');
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+        .run(shotId, sceneId, 'P1', '{}');
+    db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, version)
+                VALUES (?, ?, ?, 'storyboard', ?, 'P1.png', 1)`)
+        .run(generateId(), projectId, shotId, path.join(process.env.FILM_DATA_DIR, 'P1.png'));
+
+    const response = await new Promise(resolve => {
+        const res = { writeHead(status) { this.statusCode = status; }, end(raw) {
+            resolve({ status: this.statusCode, body: JSON.parse(raw) });
+        } };
+        handleVideoGen({ method: 'GET' }, res, ['film', 'projects', projectId, 'video'], {});
+    });
+    assert.strictEqual(response.status, 200);
+    assert.ok((response.body.assets || []).some(a => a.shot_id === shotId && a.asset_type === 'storyboard'),
+        'the picker shares Video Shots assets, but that response omits the keyframe and disables every shot');
+});
+
+test('sequence writes refuse foreign-project and duplicate shot ids', async () => {
+    const { handleSequences } = require('../routes/sequences');
+    const call = (method, url, body) => new Promise(resolve => {
+        const res = { writeHead(status) { this.statusCode = status; }, end(raw) {
+            resolve({ status: this.statusCode, body: JSON.parse(raw) });
+        } };
+        Promise.resolve(handleSequences({ method, body: body || {} }, res, url.split('/').filter(Boolean)))
+            .catch(err => resolve({ status: 500, body: { error: err.message } }));
+    });
+    const p1 = generateId(), p2 = generateId(), s1 = generateId(), s2 = generateId(), shot = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(p1, 'One');
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(p2, 'Two');
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)').run(s1, p1, '1');
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)').run(s2, p2, '1');
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+        .run(shot, s2, 'FOREIGN', '{}');
+
+    const foreign = await call('POST', `/film/projects/${p1}/sequences`, { shot_ids: [shot] });
+    assert.strictEqual(foreign.status, 400, 'a sequence accepted a shot belonging to another project');
+    const duplicate = await call('POST', `/film/projects/${p2}/sequences`, { shot_ids: [shot, shot] });
+    assert.strictEqual(duplicate.status, 400, 'a sequence accepted the same shot twice');
+});
+
+test('sequence output filenames cannot escape project storage', () => {
+    const { sequenceFileName } = require('../routes/sequences');
+    assert.strictEqual(typeof sequenceFileName, 'function');
+    const name = sequenceFileName('12345678-aaaa-bbbb-cccc-123456789012', '../../outside', 'A/B');
+    assert.ok(!name.includes('/') && !name.includes('..'), `unsafe sequence filename: ${name}`);
+    assert.match(name, /^sequence_12345678_/);
+});
