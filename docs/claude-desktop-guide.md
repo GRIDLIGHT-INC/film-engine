@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**150 tools, 39 families.** Everything the app can do, you can ask for in a
+**151 tools, 39 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -162,7 +162,7 @@ states that it is unapplied; it generates nothing and spends nothing.
 `node_gen_ambient` · `node_gen_lipsync` · `node_gen_post` · `node_gen_image` ·
 `node_gen_llm` · `node_gen_model3d` · `media_upload` · `media_kinds` ·
 `sequence_create` · `sequence_list` · `sequence_plan` · `sequence_generate` ·
-`sequence_update` · `sequence_delete`
+`sequence_update` · `sequence_stitch` · `sequence_delete`
 
 Video, voice, music, SFX and ambient audio — each runs one generation in
 isolation. **All cost money.**
@@ -178,7 +178,8 @@ described in words. A **sequence** is several shots in play order with a
 description true of all of them: each neighbouring pair becomes one clip that
 starts on the first frame and ends on the second. `sequence_plan` is free and
 states exactly how many generations it costs; a shot with no keyframe refuses
-the whole sequence rather than being skipped.
+the whole sequence rather than being skipped. `sequence_stitch` then joins the
+clips into one file — free, since it re-encodes footage already paid for.
 
 ### 8. Assembly and export
 

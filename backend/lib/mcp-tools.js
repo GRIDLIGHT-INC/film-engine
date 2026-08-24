@@ -318,6 +318,18 @@ const PRODUCTION_TOOLS = [
         schema: { sequence_id: { type: 'string' } }, required: ['sequence_id'],
     },
     {
+        name: 'sequence_stitch',
+        handler: handleSequences, method: 'POST',
+        path: a => `/film/sequences/${a.sequence_id}/stitch`,
+        description:
+            'Join a sequence\u2019s clips into ONE file. FREE \u2014 no provider is called and nothing is '
+            + 'generated; it re-encodes footage already paid for. Refuses if any segment is missing '
+            + 'rather than joining what is there, because a short film plays perfectly and is wrong. '
+            + 'Refuses with NO_ENCODER, naming the remedy, when no ffmpeg can be found. Joining again '
+            + 'replaces the previous file rather than adding another master.',
+        schema: { sequence_id: { type: 'string' } }, required: ['sequence_id'],
+    },
+    {
         name: 'sequence_update',
         handler: handleSequences, method: 'PUT',
         path: a => `/film/sequences/${a.sequence_id}`,

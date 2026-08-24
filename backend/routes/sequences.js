@@ -219,7 +219,7 @@ async function generateSequence(req, res, id) {
             keyframes,
             duration_s: 5,
             width: 1280, height: 720,
-            ...(project && project.frame_rate ? { target_fps: project.frame_rate } : {}),
+            ...(project && project.target_fps ? { target_fps: project.target_fps } : {}),
         }, { timeout: 600000 });
 
         if (!result.ok) {
@@ -257,6 +257,123 @@ async function generateSequence(req, res, id) {
         note: plan.needs_stitching && !failed.length
             ? 'Each segment is a separate clip. Stitch them in the timeline or your NLE.'
             : undefined,
+    });
+}
+
+/**
+ * The clips this sequence has produced, in play order.
+ *
+ * Ordered by the SEQUENCE, never by created_at: a director who regenerated the
+ * middle segment would otherwise get it last, and a film assembled in the wrong
+ * order plays perfectly and is wrong.
+ */
+function clipsOf(row) {
+    const id = row.id;
+    const shots = shotsOf(row);
+    const out = [];
+    for (let i = 0; i < shots.length; i += 1) {
+        const from = shots[i];
+        const to = shots[i + 1] || shots[i];
+        const clip = db.prepare(
+            `SELECT id, file_path, file_name FROM film_assets
+              WHERE project_id = ? AND json_extract(metadata, '$.sequence_id') = ?
+                AND json_extract(metadata, '$.from') = ?
+              ORDER BY created_at DESC LIMIT 1`).get(row.project_id, id, from.shot_code);
+        if (clip) out.push({ ...clip, from: from.shot_code, to: to.shot_code });
+        if (shots.length === 1) break;
+        if (i === shots.length - 2) break;
+    }
+    return out;
+}
+
+/**
+ * Join the sequence's clips into ONE file.
+ *
+ * The sequence produced N-1 clips and asked the director to join them
+ * elsewhere, which makes the last step of the pipeline happen outside it.
+ *
+ * Free: no provider is called and nothing is generated. It re-encodes what has
+ * already been paid for.
+ */
+async function stitchSequence(req, res, id) {
+    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
+    if (!row) return json(res, 404, { error: 'Sequence not found' });
+
+    const clips = clipsOf(row);
+    if (!clips.length) {
+        return json(res, 409, {
+            error: 'NOTHING_TO_JOIN',
+            reason: 'This sequence has no clips yet. Generate it, or upload a clip, first.',
+        });
+    }
+
+    const shots = shotsOf(row);
+    const expected = Math.max(1, shots.length - 1);
+    if (clips.length < expected) {
+        /*
+         * Joining what is there would produce a shorter film that plays fine —
+         * the failure nobody notices until they watch all of it. Named per
+         * missing segment, because "3 of 4 clips" sends the director to the
+         * database to work out which.
+         */
+        const have = new Set(clips.map(c => `${c.from}`));
+        const missing = shots.slice(0, expected)
+            .filter(s => !have.has(s.shot_code))
+            .map((s, i) => `${s.shot_code}\u2192${(shots[shots.indexOf(s) + 1] || s).shot_code}`);
+        return json(res, 409, {
+            error: 'INCOMPLETE',
+            reason: `${clips.length} of ${expected} clips exist. Missing: ${missing.join(', ')}. `
+                + 'Generate the rest before joining, or the film is short and plays as though it is whole.',
+            have: clips.length, expected, missing,
+        });
+    }
+
+    const { stitchClips, resolveFfmpeg } = require('../lib/ffmpeg');
+    const encoder = resolveFfmpeg();
+    if (!encoder.available) {
+        return json(res, 503, { error: 'NO_ENCODER', reason: encoder.reason });
+    }
+
+    /*
+     * The project's delivery rate, from the column that exists. This read
+     * `frame_rate`, which film_projects does not have — so every join silently
+     * fell back to 24 and a 25fps production would have been conformed at the
+     * wrong rate, which surfaces as drift in a cut long after delivery.
+     */
+    const project = db.prepare('SELECT target_fps FROM film_projects WHERE id = ?').get(row.project_id);
+    const fileName = `sequence_${String(row.name || id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60) || id.slice(0, 8)}.mp4`;
+    const outputPath = require('path').join(
+        require('../lib/file-storage').DATA_DIR, 'video', row.project_id, fileName);
+
+    const result = await stitchClips(clips, outputPath, {
+        fps: Number(project && project.target_fps) || 24,
+    });
+    if (!result.ok) return json(res, result.state === 'no_executor' ? 503 : 502, { ...result });
+
+    // Replace the previous join rather than accumulating one per press: this is
+    // derived output, and a folder of near-identical masters is how the wrong
+    // one gets delivered.
+    const prior = db.prepare(
+        `SELECT id FROM film_assets WHERE project_id = ? AND file_name = ? AND asset_type = 'video_final'`)
+        .all(row.project_id, fileName);
+    for (const p of prior) db.prepare('DELETE FROM film_assets WHERE id = ?').run(p.id);
+
+    const assetId = generateId();
+    db.prepare(`INSERT INTO film_assets
+        (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, size_bytes, version, metadata)
+        VALUES (?, ?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', ?, 1, ?)`)
+        .run(assetId, row.project_id, shotsOf(row)[0].id, outputPath, fileName, result.bytes,
+            JSON.stringify({ kind: 'sequence_master', sequence_id: id, clips: result.clips }));
+    db.prepare("UPDATE film_sequences SET output_asset_id = ?, status = 'complete', updated_at = datetime('now') WHERE id = ?")
+        .run(assetId, id);
+
+    return json(res, 200, {
+        sequence_id: id, asset_id: assetId, clips: result.clips,
+        file_name: fileName, bytes: result.bytes,
+        url: getFileUrl('video', row.project_id, fileName),
+        encoder: result.encoder,
+        note: 'One file, joined from the clips this sequence generated. Nothing was generated and '
+            + 'nothing was spent.',
     });
 }
 
@@ -302,6 +419,8 @@ async function handleSequences(req, res, urlParts) {
         if (sub === 'plan' && req.method === 'GET') return planRoute(res, id);
         if (sub === 'generate' && req.method === 'POST') return generateSequence(req, res, id);
         if (sub === 'import' && req.method === 'POST') return importSequenceClip(req, res, id);
+        // Free: joins clips already paid for into one file.
+        if (sub === 'stitch' && req.method === 'POST') return stitchSequence(req, res, id);
         if (!sub) {
             if (req.method === 'GET') {
                 const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);

@@ -93,6 +93,7 @@ film-engine/
 │   │   ├── media-imports.js       # Every external asset: plates, board images, footage and sound
 │   │   ├── media-kinds.js         # Where a generated media file goes, said once
 │   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending
+│   │   ├── ffmpeg.js              # Finding an encoder, and joining clips into one file
 │   │   ├── dialogue-builder.js    # Dialogue extraction + voice payloads
 │   │   ├── video-prompt.js        # Video prompt builder + camera control
 │   │   ├── music-prompt.js        # Music/SFX/ambient prompt builder
@@ -677,6 +678,23 @@ The description leads every segment, because it is what is true of the *whole* s
 A clip made elsewhere can be dropped straight onto a sequence (`POST /film/sequences/:id/import`), which attaches it to the sequence's first shot — a clip has to belong to a shot for the timeline and the export to find it. Deleting a sequence **keeps its clips**: they are on their shots, they cost money, and deleting a plan must not delete the footage it produced.
 
 Served at `GET|POST /film/projects/:id/sequences`, `GET|PUT|DELETE /film/sequences/:id`, `GET …/plan`, `POST …/generate`, `POST …/import`, on the Video Shots page, and as six tools (**150 tools**).
+
+### One File
+*"Wire the stitcher so I get one file."*
+
+A sequence produced N−1 clips and told the director to join them in an NLE, which makes the last step of the pipeline happen outside the pipeline. **The blocker was never the code**: `lib/conform.js` has had a working concat since it was written, and there was no encoder on the machine — no ffmpeg on `PATH`, none in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` or `/usr/bin`, and no Homebrew to install one. So `availableExecutors()` correctly reported nothing and `runConform` correctly refused, which is why this was deferred rather than shipped as a button that always fails.
+
+**`ffmpeg-static` is a deliberate exception to [ADR-002](docs/adr/002-vanilla-http-no-framework.md).** That decision is "one dependency, no framework", and its reasoning is about not pulling a large *abstraction* over something the standard library already does. This is not that: Node genuinely cannot mux MP4. Joining clips from different generators means rebuilding `moov`/`stbl` sample tables, and a hand-rolled muxer that is subtly wrong writes files that play in QuickTime and fail in the NLE — the worst failure available for a delivery step, because it is discovered last. The alternative was making the pipeline's final output conditional on a system tool installed outside it.
+
+It is the **floor, not the default**: `FFMPEG_PATH` → the system `PATH` (including the package-manager directories a server process's `PATH` usually omits) → the bundled binary. An install that already has ffmpeg keeps the build its operator chose. Missing entirely stays a legitimate answer and carries the remedy, because *"no executor"* is not something a director can act on.
+
+**One concat, two callers.** `buildConcatArgs` in `lib/ffmpeg.js` is shared by the sequence stitch and the whole-film conform; two concat filters is how one of them acquires the `pix_fmt` fix and the other does not, and the one that misses it plays everywhere except the NLE that matters. What stays in `conform.js` is the clip *selection*, which is a statement about the film rather than about encoding. `availableExecutors()` now asks the shared resolver too — it ran its own `execFileSync('ffmpeg')` and so could only ever see one of the three places an encoder lives, meaning an install with `FFMPEG_PATH` set would be told nothing was available while the stitch beside it worked.
+
+Two refusals carry it, and both are the same rule. An **incomplete** sequence is refused with the missing segments **named**, because joining what is there produces a shorter film that plays perfectly — the failure nobody notices until they watch all of it. And joining twice **replaces** rather than accumulating: a folder of near-identical masters is how the wrong one gets delivered.
+
+The tests **produce a file and read it back** — build two clips of different lengths, join them, decode the result, and check the duration is the sum. Asserting the argument array is the same mistake as asserting a serving URL is non-null: arguments that look right and produce an unplayable file pass every string check there is. Writing that found a real defect the same day: the route read `film_projects.frame_rate`, a column that does not exist, so every join silently fell back to 24fps and a 25fps production would have been conformed at the wrong rate.
+
+Served at `POST /film/sequences/:id/stitch`, on the Sequences card, and as `sequence_stitch` (**151 tools**). It is **free** and says so, because every other button on that card spends money.
 
 ### Footage and Sound From Outside
 *"Are we able to upload videos if we generate outside... we need to be able to easily add assets from external sources if we want to."*

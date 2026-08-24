@@ -309,3 +309,209 @@ test('sequence output filenames cannot escape project storage', () => {
     assert.ok(!name.includes('/') && !name.includes('..'), `unsafe sequence filename: ${name}`);
     assert.match(name, /^sequence_12345678_/);
 });
+
+// ── 7. One file ─────────────────────────────────────────────────────────
+//
+// "Wire the stitcher so I get one file."
+//
+// The sequence produced N-1 clips and told the director to join them in an NLE
+// — which is a pipeline whose last step happens outside it. The blocker was
+// never the code: lib/conform.js has had the concat since it was written, and
+// there is no ffmpeg on this machine, so availableExecutors() correctly
+// reported nothing and runConform correctly refused.
+//
+// These tests PRODUCE A FILE and read it back. Asserting the argument array is
+// the same mistake as asserting a serving URL is non-null: args that look right
+// and produce an unplayable file pass every string check there is.
+
+test('ffmpeg is resolved in a stated order, and says why when it cannot be', () => {
+    const { resolveFfmpeg } = require('../lib/ffmpeg');
+    const found = resolveFfmpeg();
+
+    assert.ok(found && typeof found === 'object', 'nothing resolves an encoder at all');
+    assert.ok(['env', 'path', 'bundled', null].includes(found.source),
+        `unknown encoder source ${JSON.stringify(found.source)}`);
+
+    if (found.available) {
+        assert.ok(found.bin, 'an available encoder has no binary to run');
+        assert.ok(fs.existsSync(found.bin) || found.source === 'path',
+            `resolved encoder ${found.bin} does not exist`);
+    } else {
+        // Unavailable is a legitimate answer and must carry the remedy — a
+        // director cannot act on "no executor".
+        assert.ok(found.reason && /install|FFMPEG_PATH|npm/i.test(found.reason),
+            `encoder is unavailable with no actionable reason: ${found.reason}`);
+    }
+
+    // The order is the point: an install that already has ffmpeg keeps using
+    // it, and the bundled copy is the floor rather than the default.
+    const src = fs.readFileSync(path.join(ROOT, 'lib', 'ffmpeg.js'), 'utf8');
+    const order = ['FFMPEG_PATH', 'PATH', 'ffmpeg-static'].map(k => src.indexOf(k));
+    assert.ok(order.every(i => i >= 0), 'not every resolution step is present');
+    assert.deepStrictEqual(order, [...order].sort((a, b) => a - b),
+        'the encoder resolution order is not env → PATH → bundled');
+});
+
+test('clips are joined into one real, playable file', async () => {
+    const { resolveFfmpeg, stitchClips, probe } = require('../lib/ffmpeg');
+    const found = resolveFfmpeg();
+    assert.ok(found.available,
+        `no encoder available (${found.reason}) — the stitch cannot be verified, and a stitch that `
+        + 'cannot be verified is the deferral this test exists to close');
+
+    const dir = path.join(process.env.FILM_DATA_DIR, 'stitch-test');
+    fs.mkdirSync(dir, { recursive: true });
+
+    /*
+     * Two clips of DIFFERENT durations, generated here rather than fixtured.
+     * Equal-length inputs hide an off-by-one in the concat filter, and the real
+     * case is segments of different lengths coming from different generations.
+     */
+    const inputs = [];
+    for (const [i, seconds] of [1, 2].entries()) {
+        const file = path.join(dir, `part${i}.mp4`);
+        await probe(found.bin, [
+            '-f', 'lavfi', '-i', `testsrc=size=320x240:rate=24:duration=${seconds}`,
+            '-f', 'lavfi', '-i', `sine=frequency=${400 + i * 200}:duration=${seconds}`,
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', file,
+        ]);
+        assert.ok(fs.existsSync(file), `could not build test input ${i}`);
+        inputs.push({ file_path: file });
+    }
+
+    const out = path.join(dir, 'joined.mp4');
+    const result = await stitchClips(inputs, out, { fps: 24 });
+    assert.ok(result.ok, `stitch failed: ${result.error}`);
+    assert.ok(fs.existsSync(out), 'the stitch reported success and wrote no file');
+    assert.ok(fs.statSync(out).size > 1000, 'the output file is too small to be a video');
+
+    /*
+     * And it must be READABLE. A file that exists is not a file that plays;
+     * ffmpeg will happily write a container it cannot decode if the filter
+     * graph is wrong.
+     */
+    const read = await probe(found.bin, ['-v', 'error', '-i', out, '-f', 'null', '-']);
+    assert.strictEqual(read.code, 0, `the joined file does not decode: ${read.stderr.slice(0, 300)}`);
+
+    // Roughly the sum of the parts, so the concat joined rather than replaced.
+    const shown = await probe(found.bin, ['-i', out]);
+    const duration = /Duration:\s*(\d+):(\d+):(\d+\.\d+)/.exec(shown.stderr);
+    assert.ok(duration, `no duration in the output: ${shown.stderr.slice(0, 300)}`);
+    const seconds = Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3]);
+    assert.ok(seconds > 2.5 && seconds < 3.6,
+        `joined 1s + 2s and got ${seconds}s — the clips were not concatenated in full`);
+});
+
+test('the sequence stitch and the whole-film conform share one arg builder', () => {
+    /*
+     * Two concat implementations is how one of them acquires the pix_fmt fix
+     * and the other does not, and the one that misses it produces a file that
+     * plays everywhere except the NLE the director actually uses.
+     */
+    const conform = fs.readFileSync(path.join(ROOT, 'lib', 'conform.js'), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    assert.ok(/require\(['"]\.\/ffmpeg['"]\)/.test(conform),
+        'conform.js does not use the shared encoder module');
+    assert.ok(!/filter_complex/.test(conform),
+        'conform.js still builds its own concat filter');
+});
+
+test('a sequence joins its own clips into one file, and refuses a short one', async () => {
+    const { handleSequences } = require('../routes/sequences');
+    const { resolveFfmpeg, probe } = require('../lib/ffmpeg');
+    const found = resolveFfmpeg();
+    assert.ok(found.available, `no encoder: ${found.reason}`);
+
+    const call = (method, url, body) => new Promise(resolve => {
+        const out = [];
+        const res = {
+            writeHead(s) { this.statusCode = s; return this; },
+            end(p) { out.push(p || ''); resolve({ status: this.statusCode || 200, body: JSON.parse(out.join('') || '{}') }); },
+        };
+        Promise.resolve(handleSequences({ method, url, body: body || {} }, res,
+            url.split('?')[0].split('/').filter(Boolean)))
+            .then(r => { if (r === false) resolve({ status: 404, body: {} }); })
+            .catch(err => resolve({ status: 500, body: { error: err.message } }));
+    });
+
+    const projectId = generateId();
+    const sceneId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title, provider_config, target_fps) VALUES (?, ?, ?, ?)')
+        .run(projectId, 'Join', JSON.stringify({ video: 'runway' }), 24);
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)').run(sceneId, projectId, '1');
+
+    const sbDir = path.join(process.env.FILM_DATA_DIR, 'storyboards', projectId);
+    const vidDir = path.join(process.env.FILM_DATA_DIR, 'video', projectId);
+    fs.mkdirSync(sbDir, { recursive: true }); fs.mkdirSync(vidDir, { recursive: true });
+
+    const shotIds = [];
+    for (const code of ['1A', '1B', '1C']) {
+        const id = generateId();
+        shotIds.push(id);
+        db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+            .run(id, sceneId, code, JSON.stringify({ shot_code: code, description: 'x' }));
+        const png = path.join(sbDir, `${code}.png`);
+        fs.writeFileSync(png, Buffer.from('89504e470d0a1a0a', 'hex'));
+        db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, version)
+                    VALUES (?, ?, ?, 'storyboard', ?, ?, 'png', 1)`)
+            .run(generateId(), projectId, id, png, `${code}.png`);
+    }
+
+    const made = await call('POST', `/film/projects/${projectId}/sequences`,
+        { name: 'Join test', shot_ids: shotIds, description: 'one move' });
+    const seqId = made.body.sequence.id;
+
+    // Nothing generated yet: refuses rather than producing an empty file.
+    const empty = await call('POST', `/film/sequences/${seqId}/stitch`);
+    assert.strictEqual(empty.status, 409, 'joined a sequence with no clips');
+
+    // One clip of the two this sequence needs. Joining what is there would make
+    // a short film that plays fine, which is the failure nobody notices.
+    const clipA = path.join(vidDir, 'seg_a.mp4');
+    await probe(found.bin, ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=24:duration=1',
+        '-f', 'lavfi', '-i', 'sine=frequency=400:duration=1',
+        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', clipA]);
+    db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, version, metadata)
+                VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 1, ?)`)
+        .run(generateId(), projectId, shotIds[0], clipA, 'seg_a.mp4',
+            JSON.stringify({ sequence_id: seqId, from: '1A', to: '1B' }));
+
+    const short = await call('POST', `/film/sequences/${seqId}/stitch`);
+    assert.strictEqual(short.status, 409, 'joined an incomplete sequence into a short film');
+    assert.ok(/1B/.test(JSON.stringify(short.body.missing || [])),
+        `the refusal does not name the missing segment: ${JSON.stringify(short.body)}`);
+
+    // Now the second one, and it must produce a real file.
+    const clipB = path.join(vidDir, 'seg_b.mp4');
+    await probe(found.bin, ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=24:duration=2',
+        '-f', 'lavfi', '-i', 'sine=frequency=600:duration=2',
+        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', clipB]);
+    db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, version, metadata)
+                VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 1, ?)`)
+        .run(generateId(), projectId, shotIds[1], clipB, 'seg_b.mp4',
+            JSON.stringify({ sequence_id: seqId, from: '1B', to: '1C' }));
+
+    const joined = await call('POST', `/film/sequences/${seqId}/stitch`);
+    assert.strictEqual(joined.status, 200, JSON.stringify(joined.body));
+    assert.strictEqual(joined.body.clips, 2, 'the join did not use both clips');
+
+    const outPath = path.join(vidDir, joined.body.file_name);
+    assert.ok(fs.existsSync(outPath), 'the join reported success and wrote no file');
+    const decode = await probe(found.bin, ['-v', 'error', '-i', outPath, '-f', 'null', '-']);
+    assert.strictEqual(decode.code, 0, `the joined file does not decode: ${decode.stderr.slice(0, 300)}`);
+
+    // 1s + 2s, so it joined rather than replaced.
+    const shown = await probe(found.bin, ['-i', outPath]);
+    const d = /Duration:\s*(\d+):(\d+):(\d+\.\d+)/.exec(shown.stderr);
+    const seconds = Number(d[1]) * 3600 + Number(d[2]) * 60 + Number(d[3]);
+    assert.ok(seconds > 2.5 && seconds < 3.6, `joined to ${seconds}s instead of ~3s`);
+
+    // Joining twice replaces rather than accumulating: a folder of
+    // near-identical masters is how the wrong one gets delivered.
+    const again = await call('POST', `/film/sequences/${seqId}/stitch`);
+    assert.strictEqual(again.status, 200);
+    const masters = db.prepare(
+        "SELECT COUNT(*) c FROM film_assets WHERE project_id = ? AND asset_type = 'video_final'")
+        .get(projectId).c;
+    assert.strictEqual(masters, 1, `joining twice left ${masters} masters`);
+});

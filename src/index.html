@@ -25251,6 +25251,8 @@ ${fountainText.slice(0, 50000)}`;
                     ${mediaUploadControl('video', 'video', 'sequence', q.id,
                         { after: 'loadSequences', label: 'Upload a clip',
                           title: 'Already made this in Runway or elsewhere? Put it here instead of generating' })}
+                    <button class="btn btn-secondary btn-sm" onclick="stitchSequence('${q.id}', this)"
+                            title="Join this sequence's clips into one file — free, nothing is generated">Join into one file</button>
                     <button class="btn btn-secondary btn-sm" onclick="deleteSequence('${q.id}')">Delete</button>
                 </div>
             </div>`;
@@ -25309,12 +25311,52 @@ ${fountainText.slice(0, 50000)}`;
                 ? `${made.length} clip(s) made. ${failed[0].from}→${failed[0].to} failed: ${failed[0].error}.`
                   + ((res.not_attempted || []).length ? ` Not attempted: ${res.not_attempted.join(', ')}.` : '')
                 : `${made.length} clip(s) generated.${res.note ? ' ' + res.note : ''}`);
+            /*
+             * Offered, not automatic. Joining is free and fast, but it is a
+             * separate decision: a director often wants to look at the segments
+             * before committing to an order, and doing it for them would make
+             * the segments feel like a by-product rather than the work.
+             */
+            if (!failed.length && made.length > 1
+                && confirm(`${made.length} clips generated.\n\nJoin them into one file now? `
+                    + 'This is free — nothing is generated.')) {
+                await stitchSequence(id, null);
+            }
             loadSequences();
             if (typeof loadVideoShots === 'function') loadVideoShots();
         } catch (err) {
             setStatus('Sequence generation failed: ' + err.message);
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
+        }
+    }
+
+    /**
+     * Join the clips into one file.
+     *
+     * Free and says so, because every other button on this card spends money
+     * and a director should not have to guess which. It re-encodes footage
+     * already paid for; no provider is called.
+     */
+    async function stitchSequence(id, btn) {
+        const label = btn && btn.textContent;
+        if (btn) { btn.disabled = true; btn.textContent = 'Joining…'; }
+        setStatus('Joining the clips into one file…', true);
+        try {
+            const res = await api(`/sequences/${id}/stitch`, { method: 'POST', body: JSON.stringify({}) });
+            setStatus(`One file: ${res.file_name} (${(res.bytes / 1048576).toFixed(1)}MB, ${res.clips} clips joined).`);
+            loadSequences();
+            if (typeof loadVideoShots === 'function') loadVideoShots();
+        } catch (err) {
+            /*
+             * The refusals are the useful part and each has its own remedy, so
+             * they are surfaced verbatim rather than flattened: nothing
+             * generated yet, some segments missing (named), or no encoder.
+             */
+            setStatus('Could not join: ' + err.message);
+            alert('Could not join this sequence into one file.\n\n' + err.message);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = label || 'Join into one file'; }
         }
     }
 

@@ -111,27 +111,20 @@ function planConform(projectId) {
  * a quote in it would otherwise be a command injection, and file paths come
  * from the database.
  */
+/**
+ * The whole film's clips, joined.
+ *
+ * The concat itself lives in lib/ffmpeg.js and is shared with the sequence
+ * stitch: two concat filters is how one of them acquires the pix_fmt fix and
+ * the other does not, and the one that misses it plays everywhere except the
+ * NLE the director actually uses. What stays here is the CLIP SELECTION, which
+ * is a statement about this film rather than about encoding.
+ */
 function buildFfmpegArgs(plan, outputPath) {
-    const args = [];
-    for (const clip of plan.clips) { args.push('-i', clip.file_path); }
-    if (plan.audio) args.push('-i', plan.audio.file_path);
-
-    const n = plan.clips.length;
-    // concat filter over the decoded streams rather than the demuxer: the clips
-    // come from different generators and need not share codec parameters, and
-    // the demuxer silently produces garbage when they do not.
-    const streams = plan.clips.map((_, i) => plan.audio ? `[${i}:v:0]` : `[${i}:v:0][${i}:a:0]`).join('');
-    if (plan.audio) {
-        args.push('-filter_complex', `${streams}concat=n=${n}:v=1:a=0[outv]`);
-        args.push('-map', '[outv]', '-map', `${n}:a:0`, '-shortest');
-    } else {
-        args.push('-filter_complex', `${streams}concat=n=${n}:v=1:a=1[outv][outa]`);
-        args.push('-map', '[outv]', '-map', '[outa]');
-    }
-    args.push('-r', String(plan.fps), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac');
-    args.push('-y', outputPath);
-
-    return { bin: 'ffmpeg', args, output: outputPath };
+    const { buildConcatArgs, resolveFfmpeg } = require('./ffmpeg');
+    const cmd = buildConcatArgs(plan.clips, outputPath, { fps: plan.fps, audio: plan.audio });
+    const found = resolveFfmpeg();
+    return { bin: found.bin || 'ffmpeg', args: cmd.args, output: outputPath };
 }
 
 /**
@@ -144,14 +137,19 @@ function buildFfmpegArgs(plan, outputPath) {
 function availableExecutors() {
     const executors = [];
 
-    let localReason = null, localOk = false;
-    try {
-        execFileSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 5000 });
-        localOk = true;
-    } catch (err) {
-        localReason = 'ffmpeg is not on PATH. Install it, or use a provider that can stitch.';
-    }
-    executors.push({ id: 'local-ffmpeg', available: localOk, reason: localOk ? null : localReason });
+    /*
+     * Asked of the SAME resolver the stitch uses. This ran its own
+     * `execFileSync('ffmpeg')`, so it could only ever see one of the three
+     * places an encoder lives — an install with FFMPEG_PATH set, or with only
+     * the bundled binary, would be told nothing was available while the stitch
+     * beside it worked perfectly.
+     */
+    const found = require('./ffmpeg').resolveFfmpeg();
+    executors.push({
+        id: found.available ? `ffmpeg (${found.source})` : 'local-ffmpeg',
+        available: found.available,
+        reason: found.available ? null : found.reason,
+    });
 
     // The provider path: the same stitch payload multi-clip shots already use.
     let providerOk = false, providerReason = null;
@@ -191,7 +189,7 @@ async function runConform(projectId, options) {
         };
     }
 
-    if (executor.id !== 'local-ffmpeg') {
+    if (executor.id === 'provider-stitch') {
         // The provider path exists in the registry but no adapter implements a
         // whole-film stitch today. Saying so beats pretending to try.
         return {
