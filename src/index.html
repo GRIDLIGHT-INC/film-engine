@@ -4564,6 +4564,18 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         <label>Value</label><select id="moodSpecValue"></select>
                     </div>
                     <button class="btn btn-secondary" onclick="moodBoardAdd()" style="height:36px;">Add</button>
+                    <!--
+                      The pictures a director brings to a look meeting are almost
+                      never ones this tool made. The board could only pin images
+                      Film Engine had generated, which is backwards for look
+                      development.
+                    -->
+                    <label class="btn btn-secondary" style="height:36px;line-height:22px;cursor:pointer;margin:0;"
+                           title="Pin a film still, a photograph or a painting you already have">Upload image
+                        <input type="file" data-import-target="mood-board-image"
+                               accept="image/png,image/jpeg,.png,.jpg,.jpeg" style="display:none"
+                               onchange="uploadMoodBoardImage(event)">
+                    </label>
                 </div>
             </div>
             <div id="moodComposed" class="card mb-16" style="display:none;"></div>
@@ -12594,6 +12606,15 @@ THREE.GLTFLoader = GLTFLoader;
         const spec = MOOD_SPECS[kind];
         document.getElementById('moodSpecValue').innerHTML =
             (spec ? spec.allowed : []).map(v => `<option value="${esc(String(v))}">${esc(String(v))}</option>`).join('');
+    }
+
+    /** A look reference from outside, pinned to the board and conditioning shots. */
+    async function uploadMoodBoardImage(event) {
+        if (!state.currentProject) return;
+        const note = (document.getElementById('moodNote') || {}).value || '';
+        await uploadReferenceImage(event, 'mood-board-image',
+            `/projects/${state.currentProject.id}/mood-board/import`,
+            note ? { note } : {}, 'loadMoodBoardPage');
     }
 
     async function moodBoardAdd() {
@@ -21879,6 +21900,7 @@ ${fountainText.slice(0, 50000)}`;
                         </div>
                         <div class="card-actions">
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generateCharacterImage('${c.id}')" title="Generate reference image">${c.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
+                            ${uploadControl('character-plate', `/characters/${c.id}/refsheet/import`, { extra: { view: 'front' }, after: 'loadCharacters', title: 'Use a picture you already have — a photograph, a Midjourney export, art you were handed' })}
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editCharacter('${c.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteCharacter('${c.id}')">Delete</button>
                         </div>
@@ -21949,6 +21971,73 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
+    /**
+     * The upload control that sits beside every Generate.
+     *
+     * "Everywhere I can generate plates or boards, I should be able to upload
+     * one too, say I'm working outside of film engine."
+     *
+     * ONE builder rather than four literals, on the precedent markupToolbar()
+     * set — the grid and the viewer came to disagree about their own tools
+     * precisely because each wrote its own copy. Here the four places are
+     * characters, locations, props and the mood board, and they must accept the
+     * same formats and report the same way.
+     */
+    function uploadControl(target, url, opts) {
+        const o = opts || {};
+        return `<label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;"
+                       title="${esc(o.title || 'Use a picture you already have, made outside Film Engine')}"
+                       onclick="event.stopPropagation();">${esc(o.label || 'Upload')}
+                    <input type="file" data-import-target="${target}"
+                           accept="image/png,image/jpeg,.png,.jpg,.jpeg" style="display:none"
+                           onclick="event.stopPropagation();"
+                           onchange="uploadReferenceImage(event, '${target}', '${url}', ${JSON.stringify(o.extra || {}).replace(/"/g, '&quot;')}, '${o.after || ''}')">
+                </label>`;
+    }
+
+    /**
+     * Send a picture the director already has, and put it where a generated one
+     * would go.
+     *
+     * The refusal is rendered where the control is, not on the status bar — the
+     * lesson the GLB importer paid for: a refusal one line high at the bottom of
+     * the screen is indistinguishable from nothing having happened.
+     */
+    async function uploadReferenceImage(event, target, url, extra, after) {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        const label = event.target.closest('label');
+        const original = label && label.firstChild && label.firstChild.textContent;
+        if (label && label.firstChild) label.firstChild.textContent = 'Uploading… ';
+        try {
+            const data = await new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = () => resolve(r.result);
+                r.onerror = () => reject(new Error('That file could not be read.'));
+                r.readAsDataURL(file);
+            });
+            const res = await api(url, {
+                method: 'POST',
+                body: JSON.stringify({ data, name: file.name, ...(extra || {}) }),
+            });
+            setStatus(`${file.name} uploaded. ${res.note || 'Every shot referencing this subject uses it now.'}`);
+            if (after && typeof window[after] === 'function') window[after]();
+            else if (typeof loadLocations === 'function' && target === 'location-plate') loadLocations();
+        } catch (err) {
+            // Named on the control, because the file input is cleared straight
+            // after and there would otherwise be no trace it was ever tried.
+            setStatus(`${file.name} was not uploaded: ${err.message}`);
+            if (label) {
+                label.style.borderColor = 'var(--gl-danger,#ef4444)';
+                label.title = 'Not uploaded: ' + err.message;
+                setTimeout(() => { label.style.borderColor = ''; }, 6000);
+            }
+        } finally {
+            if (label && label.firstChild && original) label.firstChild.textContent = original;
+            event.target.value = '';
+        }
+    }
+
     async function generateCharacterImage(charId) {
         if (!confirm('Generate reference image for this character? This calls the image generation service.')) return;
         setStatus('Generating character reference image...', true);
@@ -21993,6 +22082,7 @@ ${fountainText.slice(0, 50000)}`;
                         </div>
                         <div class="card-actions">
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generateLocationImage('${l.id}')" title="Generate reference image">${l.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
+                            ${uploadControl('location-plate', `/locations/${l.id}/plate/import`, { extra: {}, after: 'loadLocations', title: 'Use a picture you already have — a photograph, a Midjourney export, art you were handed' })}
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editLocation('${l.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteLocation('${l.id}')">Delete</button>
                         </div>
@@ -22111,6 +22201,7 @@ ${fountainText.slice(0, 50000)}`;
                         <p>${esc(p.description || 'No description')}</p>
                         <div class="card-actions">
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generatePropImage('${p.id}')" title="Generate reference image">${p.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
+                            ${uploadControl('prop-plate', `/props/${p.id}/plate/import`, { extra: {}, after: 'loadProps', title: 'Use a picture you already have — a photograph, a Midjourney export, art you were handed' })}
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editProp('${p.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteProp('${p.id}')">Delete</button>
                         </div>

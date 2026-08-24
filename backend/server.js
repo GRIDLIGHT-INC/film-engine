@@ -283,9 +283,18 @@ const server = http.createServer(async (req, res) => {
     // Parse body for POST/PUT (larger limit for bundle import)
     if (req.method === 'POST' || req.method === 'PUT') {
         const isBundleImport = parts[1] === 'projects' && parts[2] === 'import';
-        const isMediaImport = (parts[1] === 'projects' && parts[3] === 'models' && parts[4] === 'import')
-            || (parts[1] === 'shots' && parts[3] === 'storyboard' && parts[4] === 'import')
-            || (parts[1] === 'shots' && parts[3] === 'previs' && parts[4] === 'image' && parts[5] === 'import');
+        /*
+         * Any /import endpoint carries a file, so any /import endpoint gets the
+         * large body.
+         *
+         * This was a hand-written list of three path shapes — exactly the kind
+         * that rots: the four plate and mood-board imports added afterwards
+         * would each have inherited a 10MB ceiling and refused a normal
+         * photograph, with the failure surfacing as a destroyed connection
+         * rather than a message. Derived from the URL shape instead, so a new
+         * import target inherits it with nothing to remember.
+         */
+        const isMediaImport = parts.length > 2 && parts[parts.length - 1] === 'import';
         const maxSize = isBundleImport ? 500 * 1024 * 1024
             : isMediaImport ? 150 * 1024 * 1024 // base64-encoded Meshy GLBs can be large
             : 10 * 1024 * 1024;

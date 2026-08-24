@@ -25,6 +25,23 @@ test('every selected staged model reaches both the blocking and textured views',
         'the textured model loader exists but is never called when selection or model changes');
 });
 
+test('the shot camera renders staged GLBs with their materials, not only polygon edges', () => {
+    const cameraPane = UI.match(/<div class="previs-pane"[^>]*>[\s\S]*?<canvas id="previsCamera"[\s\S]*?<div class="previs-readout" id="previsCameraReadout"/);
+    assert.ok(cameraPane, 'the camera pane could not be derived from the page');
+    assert.match(cameraPane[0], /id="previsCameraSolid"/,
+        'the camera pane has no WebGL surface, so a textured GLB can only appear as polygon edges');
+
+    const render = bodyOf('previsRenderCameraModels');
+    assert.match(render, /previsPose\s*\(/,
+        'the textured camera renderer does not use the authored shot-camera pose');
+    assert.match(render, /PREVIS\.objects/,
+        'the textured camera renderer is not derived from the staged object registry');
+    assert.match(render, /assetId/,
+        'the textured camera renderer never resolves the selected GLB asset');
+    assert.doesNotMatch(render, /triangles|edges/,
+        'the camera renderer still reduces a GLB to polygon lines');
+});
+
 test('generated subject scale follows its model into the stage', () => {
     const scaledKinds = [...THREED.matchAll(/metadata\.subject_kind === '([^']+)'/g)].map(m => m[1]);
     assert.deepEqual(new Set(scaledKinds), new Set(['character', 'prop']),

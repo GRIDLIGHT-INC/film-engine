@@ -218,6 +218,7 @@ film-engine/
 │       ├── image-prompt-ceiling.test.js  # The ceiling every image prompt is built against, pinned to evidence
 │       ├── prompt-quality.test.js       # Is the request we send a good one: fallback ceilings, one resolver, full accounting, priority, negatives
 │       ├── media-imports.test.js        # Registry-derived persistent Storyboard, Previs image, and GLB import contract
+│       ├── plate-upload.test.js         # Every kind of reference can be uploaded, not only generated
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -635,6 +636,25 @@ The anchor side is never regenerated — buying a duplicate of the picture we we
 It **reports** the scene cards that named the deleted view rather than rewriting them. Which side a shot looks at is a decision the director made, and silently repointing it at another direction is precisely the class of bug views exist to prevent; left alone the card falls back to the default plate, which is documented and visible in the shot's own prompt preview.
 
 Served at `POST /film/locations/:id/plate/compass`, `GET …/compass/plan`, `GET|DELETE …/plate/views[/:view]`, on the Locations page beside the views, and as `plate_compass` / `plate_view_list` / `plate_view_delete` (**141 tools**). The delete tool arrived with no reader, which `tests/mcp-tools.test.js` caught as *"these can delete by id and cannot find one"* — an agent that can remove a view and cannot list them is one that deletes by guessing.
+
+### A Reference Can Be Photographed, Not Only Generated
+*"Everywhere I can generate plates or boards, I should be able to upload one too, say I'm working outside of film engine."*
+
+Every reference in this pipeline could only be born inside it. That is a strange constraint for a tool whose job is keeping a film consistent with itself: the most authoritative picture of a place is usually a photograph of it, and the most authoritative picture of a character is often the one the art department already made.
+
+The set is **derived from `KIND_SOURCE`**, the registry of what can be a reference at all — three `entity` kinds (character, location, prop), one `frame` (the storyboard anchor) and one `project` (the look). The frame, the previs image and the GLB already had imports; none of the four reference kinds did. Deriving the denominator there is what makes a sixth kind fail the test rather than arrive silently generate-only.
+
+**An upload lands exactly where a generation lands** — same table column, same filename from `plateFileName`, same per-view replacement — so `gatherShotReferences` picks it up without knowing where it came from. Anything else is a picture that lists and never reaches a prompt.
+
+**It is deliberately not fingerprinted.** A fingerprint says *this was generated from that payload*; an uploaded plate was not generated from anything, so stamping it would mark it stale the moment somebody edits the subject's description and ask the director to regenerate over their own photograph. NULL means "outside the workflow", which is precisely what an upload is. `imported: true` records it, and `style_applied: false` is honest: the film's look was never applied to a picture that arrived finished.
+
+**The extension follows the bytes.** `plateFileName` always ends `.png` because everything this engine generates is a PNG, and the first working version wrote an uploaded JPEG under that name — the same lie the storyboard target refuses to tell, caught by uploading a real JPEG to a real prop rather than by any test. Replacement is therefore scoped to the **subject and view across extensions**, not to an exact filename: scoped to the filename, an uploaded JPEG lands *beside* the generated PNG of the same view and the gather picks whichever row comes back first — a subject with two current plates and no way to tell which one a shot used.
+
+**JPEG, not only PNG.** Everything this engine generates is PNG, so PNG was the only thing the validator knew — but "outside Film Engine" means renders and phone photographs. A JPEG is walked by its segment markers the way a PNG is walked by its chunks, because checking the two-byte SOI would accept any file starting `FF D8 FF`, and a plate that cannot be decoded later is a shot that generates with no reference and no error. The **storyboard frame stays PNG-only** and says why in the registry (`pngOnly`): the live frame is addressed as `{shot_code}.png` in thirteen places, so accepting a JPEG means changing all of them or storing a JPEG under a `.png` name — a lie a decoder eventually calls. Stated rather than omitted, so the gap cannot be quietly re-labelled a decision.
+
+`server.js` decided the 150MB media limit from a hand-written list of three path shapes — already the kind that rots, and the four new targets would each have inherited a 10MB ceiling and refused a normal photograph, surfacing as a destroyed connection rather than a message. It is derived from the URL now: any `/import` endpoint carries a file.
+
+One `uploadControl()` builds all four controls, on the precedent `markupToolbar()` set. The test **executes** it rather than grepping for `data-import-target`, because the attribute is produced at runtime and appears nowhere in the source — a grep reports a working page as broken. Served at `POST /film/{characters/:id/refsheet,locations/:id/plate,props/:id/plate,projects/:id/mood-board}/import`, and as `plate_upload` (**142 tools**).
 
 ### A Refused Import Has to Say Which File and Why
 Two GLB imports "never showed". The importer is sound — a 4.4MB Meshy GLB round-trips through the real browser path, lands in `film_assets` and lists — so what was met was a **refusal nobody saw**: one line on the status bar at the bottom of the screen, and then the file input was cleared. Indistinguishable from nothing having happened, which is precisely how it was reported.
@@ -1571,6 +1591,7 @@ node --test backend/tests/shot-insert.test.js
 node --test backend/tests/playback-start.test.js
 node --test backend/tests/anchor-plate-override.test.js
 node --test backend/tests/location-views.test.js
+node --test backend/tests/plate-upload.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js

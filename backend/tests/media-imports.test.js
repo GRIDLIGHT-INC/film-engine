@@ -72,19 +72,40 @@ function seed() {
     db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)').run(sceneId, projectId, '1');
     db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
         .run(shotId, sceneId, 'I1', JSON.stringify({ shot_code: 'I1', description: 'Import probe' }));
-    return { projectId, shotId };
+    // The subject rows a plate import links to. A target that is subject-scoped
+    // resolves its own project from the subject, so the harness has to supply
+    // one for every kind the registry declares.
+    const characterId = generateId(), locationId = generateId(), propId = generateId();
+    db.prepare('INSERT INTO film_characters (id, project_id, name) VALUES (?, ?, ?)').run(characterId, projectId, 'MAYA');
+    db.prepare('INSERT INTO film_locations (id, project_id, name) VALUES (?, ?, ?)').run(locationId, projectId, 'STREET');
+    db.prepare('INSERT INTO film_props (id, project_id, name) VALUES (?, ?, ?)').run(propId, projectId, 'SEDAN');
+    return { projectId, shotId, characterId, locationId, propId };
+}
+
+/** Which seeded row each target links to, derived from the registry's own subjectKind. */
+function subjectFor(spec, owner) {
+    if (!spec.subjectKind) return {};
+    return { subjectId: { character: owner.characterId, location: owner.locationId, prop: owner.propId }[spec.subjectKind] };
 }
 
 test('every registered director import persists, registers, serves and has a UI control', () => {
     const entries = Object.entries(MEDIA_IMPORTS);
-    assert.deepStrictEqual(entries.map(([id]) => id).sort(), ['previs-image', 'storyboard-image', 'three-d-model']);
+    /*
+     * Every target, not a snapshot of the three that existed first. The four
+     * reference-plate imports were added because a director works outside Film
+     * Engine as well as inside it; pinning this list is what makes the next one
+     * arrive with a UI control and a route rather than only a registry entry.
+     */
+    assert.deepStrictEqual(entries.map(([id]) => id).sort(),
+        ['character-plate', 'location-plate', 'mood-board-image', 'previs-image',
+            'prop-plate', 'storyboard-image', 'three-d-model']);
 
     for (const [id, spec] of entries) {
         const owner = seed();
         const bytes = spec.kind === 'model' ? GLB : PNG;
         const mime = spec.kind === 'model' ? 'model/gltf-binary' : 'image/png';
         const result = importMedia(id, {
-            ...owner,
+            ...owner, ...subjectFor(spec, owner),
             name: spec.kind === 'model' ? 'Meshy hero.glb' : 'director-board.png',
             data: `data:${mime};base64,${bytes.toString('base64')}`,
         });
@@ -99,7 +120,24 @@ test('every registered director import persists, registers, serves and has a UI 
         assert.ok(asset, `${id}: no film_assets row`);
         assert.strictEqual(asset.project_id, owner.projectId, `${id}: wrong project linkage`);
         if (spec.shotScoped) assert.strictEqual(asset.shot_id, owner.shotId, `${id}: wrong shot linkage`);
-        assert.match(UI, new RegExp(`data-import-target=["']${id}["']`), `${id}: no UI file control`);
+        if (spec.subjectKind) {
+            const column = { character: 'character_id', location: 'location_id', prop: 'prop_id' }[spec.subjectKind];
+            assert.strictEqual(asset[column], subjectFor(spec, owner).subjectId,
+                `${id}: not linked to its subject, so no shot will ever gather it`);
+        }
+        /*
+         * Reachable from the page, checked two ways because the controls are
+         * built two ways.
+         *
+         * Three of these are literal <input data-import-target="..."> in the
+         * markup. The four plate imports are produced by uploadControl(), so
+         * the literal attribute appears NOWHERE in the source — a grep alone
+         * reports a working page as broken, which is the trap the blocking
+         * panels already documented.
+         */
+        const literal = new RegExp(`data-import-target=["']${id}["']`).test(UI);
+        const built = new RegExp(`uploadControl\\(\\s*['"]${id}['"]`).test(UI);
+        assert.ok(literal || built, `${id}: no UI file control`);
     }
 });
 
@@ -108,8 +146,9 @@ test('every registered import rejects invalid media before writing an asset', ()
         const owner = seed();
         const before = db.prepare('SELECT COUNT(*) AS n FROM film_assets WHERE project_id = ?').get(owner.projectId).n;
         assert.throws(() => importMedia(id, {
-            ...owner, name: '../escape.bin', data: 'data:application/octet-stream;base64,bm90LXRoZS1mb3JtYXQ=',
-        }), /invalid|unsupported|signature/i, `${id}: invalid bytes accepted`);
+            ...owner, ...subjectFor(MEDIA_IMPORTS[id], owner),
+            name: '../escape.bin', data: 'data:application/octet-stream;base64,bm90LXRoZS1mb3JtYXQ=',
+        }), /invalid|unsupported|not a PNG|signature/i, `${id}: invalid bytes accepted`);
         const after = db.prepare('SELECT COUNT(*) AS n FROM film_assets WHERE project_id = ?').get(owner.projectId).n;
         assert.strictEqual(after, before, `${id}: invalid import left an asset row`);
     }
@@ -181,6 +220,24 @@ test('every registered import is reachable through its production route', async 
         'three-d-model': {
             handler: require('../routes/threed').handleThreeD,
             url: o => `/film/projects/${o.projectId}/models/import`, mime: 'model/gltf-binary', bytes: GLB, name: 'hero.glb',
+        },
+        // A picture made outside Film Engine, for each thing that can be a
+        // reference. These sit beside their generate routes deliberately.
+        'character-plate': {
+            handler: require('../routes/characters').handleCharacters,
+            url: o => `/film/characters/${o.characterId}/refsheet/import`, mime: 'image/png', bytes: PNG, name: 'maya.png',
+        },
+        'location-plate': {
+            handler: require('../routes/locations').handleLocations,
+            url: o => `/film/locations/${o.locationId}/plate/import`, mime: 'image/png', bytes: PNG, name: 'street.png',
+        },
+        'prop-plate': {
+            handler: require('../routes/locations').handleLocations,
+            url: o => `/film/props/${o.propId}/plate/import`, mime: 'image/png', bytes: PNG, name: 'sedan.png',
+        },
+        'mood-board-image': {
+            handler: require('../routes/mood-board').handleMoodBoard,
+            url: o => `/film/projects/${o.projectId}/mood-board/import`, mime: 'image/png', bytes: PNG, name: 'still.png',
         },
     };
     assert.deepStrictEqual(Object.keys(routes).sort(), Object.keys(MEDIA_IMPORTS).sort(), 'route matrix drifted from import registry');

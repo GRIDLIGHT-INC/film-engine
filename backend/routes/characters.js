@@ -49,6 +49,27 @@ function handleCharacters(req, res, urlParts, query) {
             if (req.method === 'POST') return createCostume(req, res, charId);
         }
         if (sub === 'refsheet') {
+            /*
+             * A character sheet supplied from outside — a photograph, a Midjourney
+             * export, art the department already made. It lands under the same
+             * per-view filename as a generated sheet, so it REPLACES that view rather
+             * than sitting beside it, and every shot referencing the character picks
+             * it up with nothing else to change.
+             */
+            if (urlParts[4] === 'import' && req.method === 'POST') {
+                const body = req.body || {};
+                if (!body.data) return badRequest(res, 'no image supplied');
+                try {
+                    const imported = require('../lib/media-imports').importMedia('character-plate', {
+                        subjectId: charId, data: body.data, view: body.view, name: body.name,
+                    });
+                    res.writeHead(201, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ kind: 'character', ...imported }));
+                } catch (err) {
+                    res.writeHead(/not found/i.test(err.message) ? 404 : 400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: err.message }));
+                }
+            }
             if (urlParts[4] === 'generate' && req.method === 'POST') return generateRefSheet(req, res, charId);
             if (req.method === 'GET') return getRefSheetStatus(req, res, charId);
         }

@@ -294,6 +294,35 @@ function listPlateViews(res, locationId) {
 }
 
 /**
+ * A plate supplied from outside, for a location or a prop.
+ *
+ * Sits beside the generate route deliberately: an upload and a generation
+ * produce the same thing, and separating them into different corners of the app
+ * is how a director ends up believing the only way to get a plate is to buy one.
+ *
+ * The most authoritative picture of a place is usually a photograph of it.
+ */
+function importSubjectPlateRoute(req, res, kind, subjectId) {
+    const body = req.body || {};
+    if (!body.data) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'no image supplied' }));
+    }
+    try {
+        const imported = require('../lib/media-imports').importMedia(`${kind}-plate`, {
+            subjectId, data: body.data, view: body.view, name: body.name,
+        });
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ kind, ...imported }));
+    } catch (err) {
+        // Named, not flattened: an upload refused with "invalid image" sends a
+        // director back to Photoshop with nothing to change.
+        res.writeHead(/not found/i.test(err.message) ? 404 : 400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: err.message }));
+    }
+}
+
+/**
  * Delete one view of a location.
  *
  * A location's view set could only GROW. Four views were generated on the real
@@ -410,6 +439,8 @@ function handleLocations(req, res, urlParts, query) {
         const locId = urlParts[2];
         if (!UUID_RE.test(locId)) return badReq(res, 'Invalid location ID');
         if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'location', locId);
+        // A picture made outside Film Engine, landing where a generated one would.
+        if (urlParts[4] === 'import' && req.method === 'POST') return importSubjectPlateRoute(req, res, 'location', locId);
         // /film/locations/:id/plate/views — what a shot can choose between.
         if (urlParts[4] === 'views' && !urlParts[5] && req.method === 'GET') return listPlateViews(res, locId);
         // Remove one view. The set could only grow, so a bad side was permanent.
@@ -426,6 +457,7 @@ function handleLocations(req, res, urlParts, query) {
     if (urlParts[1] === 'props' && urlParts[2] && urlParts[3] === 'plate') {
         const propId = urlParts[2];
         if (!UUID_RE.test(propId)) return badReq(res, 'Invalid prop ID');
+        if (urlParts[4] === 'import' && req.method === 'POST') return importSubjectPlateRoute(req, res, 'prop', propId);
         if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'prop', propId);
         if (req.method === 'GET') return getSubjectPlate(res, 'prop', propId);
     }

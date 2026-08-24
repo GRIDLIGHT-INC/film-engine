@@ -6,13 +6,67 @@ const { db, generateId } = require('../db/database');
 const { saveFile, getFileUrl } = require('./file-storage');
 const { parseGlb } = require('./glb-parser');
 
+/*
+ * What a person can actually hand us. PNG is what this engine generates; JPEG
+ * is what a camera, a phone and every hosted image tool produce.
+ */
+const IMAGE_MIMES = Object.freeze(['image/png', 'image/jpeg', 'image/jpg']);
+
 const MEDIA_IMPORTS = Object.freeze({
-    'storyboard-image': Object.freeze({ kind: 'image', shotScoped: true, subdir: 'storyboards', mimes: ['image/png'] }),
+    'storyboard-image': Object.freeze({
+        kind: 'image', shotScoped: true, subdir: 'storyboards', mimes: ['image/png'],
+        /*
+         * PNG only, and this is the reason rather than an oversight: the live
+         * frame lives at a FIXED path, `{project}/{shot_code}.png`, derived
+         * independently in thirteen places — the board, the viewer, previs, the
+         * version archive and the video pass's init_image among them. Accepting
+         * a JPEG means changing every one of those or storing a JPEG under a
+         * .png name, and the second is a lie a decoder will eventually call.
+         *
+         * Stated here so the gap cannot be quietly re-labelled as a decision:
+         * a plate accepts JPEG, a storyboard frame does not YET.
+         */
+        pngOnly: 'the live frame is addressed as {shot_code}.png in thirteen places',
+    }),
     // reference_image is already catalogued and served from refsheets by Previs.
-    'previs-image': Object.freeze({ kind: 'image', shotScoped: true, subdir: 'refsheets', mimes: ['image/png'] }),
+    'previs-image': Object.freeze({
+        kind: 'image', shotScoped: true, subdir: 'refsheets', mimes: ['image/png'],
+        pngOnly: 'stands in the previs stage beside storyboard frames, which are PNG',
+    }),
     // Previs's geometry parser and textured viewer both consume GLB. Advertising
     // formats they cannot stage would turn a successful upload into a broken picker.
     'three-d-model': Object.freeze({ kind: 'model', shotScoped: false, subdir: '3d', mimes: ['model/gltf-binary', 'application/octet-stream'] }),
+
+    /*
+     * REFERENCE PLATES, from outside.
+     *
+     * "Everywhere I can generate plates or boards, I should be able to upload
+     * one too, say I'm working outside of film engine."
+     *
+     * Every reference in this pipeline could only be born inside it, which is a
+     * strange constraint for a tool whose job is keeping a film consistent with
+     * itself: the most authoritative picture of a place is usually a photograph
+     * of it, and the most authoritative picture of a character is often the one
+     * the art department already made.
+     *
+     * `subjectKind` links the target back to PLATE_KINDS / the character sheet,
+     * so an uploaded plate lands in the same table column, under the same
+     * filename, with the same per-view replacement as a generated one — which
+     * is what makes gatherShotReferences pick it up without knowing where it
+     * came from. A plate that lists and never reaches a payload is a picture in
+     * a folder.
+     *
+     * JPEG as well as PNG. Everything this engine generates is PNG, so PNG was
+     * the only thing the validator knew — but "outside Film Engine" means
+     * Midjourney exports and phone photographs, and refusing those would make
+     * the feature look broken for its most common case.
+     */
+    'character-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'character', mimes: IMAGE_MIMES }),
+    'location-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'location', mimes: IMAGE_MIMES }),
+    'prop-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'prop', mimes: IMAGE_MIMES }),
+    // The look has no subject table by design (KIND_SOURCE calls it `project`),
+    // so a board image is stored and linked by the mood-board row instead.
+    'mood-board-image': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
 });
 
 function decodeDataUri(data) {
@@ -24,10 +78,43 @@ function decodeDataUri(data) {
 function validateBytes(spec, mime, bytes) {
     if (!spec.mimes.includes(mime)) throw new Error(`unsupported import type ${mime}`);
     if (!bytes.length) throw new Error('invalid import: empty file');
-    if (spec.kind === 'image' && !bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) {
-        throw new Error('invalid PNG signature');
+    const isPng = spec.kind === 'image'
+        && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'));
+    const isJpeg = spec.kind === 'image'
+        && bytes.length > 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF;
+    if (spec.kind === 'image' && !isPng && !isJpeg) {
+        throw new Error('This file is not a PNG or a JPEG. Export it as one and try again.');
     }
-    if (spec.kind === 'image') {
+    /*
+     * A JPEG is walked by its segment markers the way a PNG is walked by its
+     * chunks. Checking only the two-byte SOI would accept any file that happens
+     * to start 0xFFD8FF, and the point of validating at all is that a plate
+     * which cannot be decoded later is a shot that generates with no reference
+     * and no error.
+     */
+    if (isJpeg) {
+        let offset = 2, sawFrame = false, sawScan = false;
+        while (offset + 4 <= bytes.length) {
+            if (bytes[offset] !== 0xFF) throw new Error('invalid JPEG: expected a segment marker');
+            const marker = bytes[offset + 1];
+            if (marker === 0xD9) break;                       // end of image
+            if (marker === 0xD8 || (marker >= 0xD0 && marker <= 0xD7)) { offset += 2; continue; }
+            const length = bytes.readUInt16BE(offset + 2);
+            if (length < 2 || offset + 2 + length > bytes.length) throw new Error('invalid JPEG segment length');
+            // SOF0..SOF15, skipping the four markers in that range that are not
+            // start-of-frame.
+            if (marker >= 0xC0 && marker <= 0xCF && ![0xC4, 0xC8, 0xCC].includes(marker)) {
+                const height = bytes.readUInt16BE(offset + 5);
+                const width = bytes.readUInt16BE(offset + 7);
+                if (!width || !height || width * height > 100_000_000) throw new Error('invalid JPEG dimensions');
+                sawFrame = true;
+            }
+            if (marker === 0xDA) { sawScan = true; break; }   // entropy-coded data follows
+            offset += 2 + length;
+        }
+        if (!sawFrame || !sawScan) throw new Error('invalid or incomplete JPEG');
+    }
+    if (isPng) {
         let offset = 8, sawIhdr = false, sawIdat = false, sawIend = false;
         while (offset + 12 <= bytes.length) {
             const length = bytes.readUInt32BE(offset);
@@ -71,6 +158,25 @@ function validateBytes(spec, mime, bytes) {
     }
 }
 
+/** Where a subject-scoped import belongs: its project, and the row to link to. */
+function subjectOwnerFor(spec, input) {
+    const { PLATE_KINDS } = require('./reference-plates');
+    // Characters are not in PLATE_KINDS — they have their own three-view route —
+    // so the table and link column are named here for that one kind only, and
+    // read from the shared registry for the rest.
+    const TABLES = {
+        character: { table: 'film_characters', fkColumn: 'character_id', assetType: 'character_sheet' },
+        location: PLATE_KINDS.location,
+        prop: PLATE_KINDS.prop,
+    };
+    const t = TABLES[spec.subjectKind];
+    if (!t) throw new Error(`unsupported subject kind ${spec.subjectKind}`);
+    const row = require('../db/database').db
+        .prepare(`SELECT id, project_id, name FROM ${t.table} WHERE id = ?`).get(input.subjectId);
+    if (!row) throw new Error(`${spec.subjectKind} not found`);
+    return { projectId: row.project_id, subject: row, ...t };
+}
+
 function ownerFor(target, input) {
     if (MEDIA_IMPORTS[target].shotScoped) {
         const row = db.prepare(`SELECT sh.id AS shot_id, sh.shot_code, sc.project_id
@@ -101,9 +207,107 @@ function safeStem(name) {
         .replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'import';
 }
 
+/**
+ * A reference plate supplied from outside, stored exactly where a generated one
+ * would be.
+ *
+ * Same table column, same filename from plateFileName, same per-view
+ * replacement — so gatherShotReferences picks it up without knowing where it
+ * came from, and a shot naming a view gets the uploaded one for that view.
+ * Anything else would be a picture that lists and never reaches a prompt.
+ *
+ * Deliberately NOT fingerprinted. artefact-fingerprint stamps a plate with the
+ * payload it was generated from; this one was not generated from anything, so
+ * stamping it would mark it stale the moment somebody edits the subject's
+ * description and ask the director to regenerate over their own photograph.
+ * NULL means "outside the workflow", which is precisely what an upload is —
+ * the same explicit exception a recomposed frame documents.
+ */
+function importSubjectPlate(spec, target, input) {
+    const { plateFileName } = require('./reference-plates');
+    const owner = subjectOwnerFor(spec, input);
+    const { mime, bytes } = decodeDataUri(input.data);
+    validateBytes(spec, mime, bytes);
+
+    const view = String(input.view || '').trim();
+    const kindForName = spec.subjectKind === 'character' ? 'character' : spec.subjectKind;
+    /*
+     * A character sheet is named per VIEW (front/side/back) by its own route,
+     * and a plate is named per view by plateFileName. One naming rule for both,
+     * or an uploaded front view lands beside the generated one instead of
+     * replacing it and the gather picks whichever is newest.
+     */
+    const generatedName = spec.subjectKind === 'character'
+        ? `${String(owner.subject.name || 'character').replace(/[^a-zA-Z0-9_-]/g, '_')}_${view || 'front'}.png`
+        : plateFileName(kindForName, owner.subject.name, view);
+
+    /*
+     * The extension follows the BYTES.
+     *
+     * plateFileName always ends `.png` because everything this engine generates
+     * is a PNG. Writing an uploaded JPEG under that name is the same lie the
+     * storyboard target refuses to tell: the file decodes by sniffing and fails
+     * anywhere that trusts the name.
+     */
+    const stem = generatedName.replace(/\.png$/i, '');
+    const fileName = `${stem}.${mime === 'image/png' ? 'png' : 'jpg'}`;
+
+    /*
+     * Replace THIS view, never the whole set — the reason a location could only
+     * ever have one plate in the first place — and replace it across
+     * EXTENSIONS. Scoped to the exact filename, an uploaded JPEG would land
+     * beside the generated PNG of the same view rather than replacing it, and
+     * the gather would pick whichever row came back first.
+     */
+    const stale = db.prepare(
+        `SELECT id, file_path FROM film_assets
+          WHERE project_id = ? AND ${owner.fkColumn} = ? AND asset_type = ?
+            AND (file_name = ? OR file_name = ? OR file_name = ?)`)
+        .all(owner.projectId, owner.subject.id, owner.assetType,
+            `${stem}.png`, `${stem}.jpg`, `${stem}.jpeg`);
+
+    const filePath = saveFile(owner.projectId, spec.subdir, fileName, bytes);
+
+    for (const row of stale) {
+        // Never unlink the file we have just written — a re-upload of the same
+        // format resolves to the same path.
+        if (row.file_path && path.resolve(row.file_path) !== path.resolve(filePath)) {
+            try { fs.unlinkSync(row.file_path); } catch (_) { /* already gone is fine */ }
+        }
+        db.prepare('DELETE FROM film_assets WHERE id = ?').run(row.id);
+    }
+
+    const assetId = generateId();
+    db.prepare(`INSERT INTO film_assets
+        (id, project_id, ${owner.fkColumn}, asset_type, file_path, file_name, format, mime_type,
+         size_bytes, version, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`)
+        .run(assetId, owner.projectId, owner.subject.id, owner.assetType,
+            filePath, fileName, mime === 'image/png' ? 'png' : 'jpg', mime, bytes.length,
+            JSON.stringify({
+                kind: `${kindForName}_plate`,
+                imported: true,           // so it never looks generated
+                style_applied: false,     // the film's look was not applied to it
+                ...(view ? { view } : {}),
+            }));
+
+    return {
+        target, asset_id: assetId, project_id: owner.projectId,
+        subject_id: owner.subject.id, subject: owner.subject.name,
+        view: view || null, file_name: fileName, file_path: filePath, version: 1,
+        url: getFileUrl(spec.subdir, owner.projectId, fileName),
+        note: 'Uploaded, not generated: the film\u2019s style preset was not applied to it, and it is '
+            + 'not tracked against the description, so editing that description will not mark it stale.',
+    };
+}
+
 function importMedia(target, input) {
     const spec = MEDIA_IMPORTS[target];
     if (!spec) throw new Error(`unsupported import target ${target}`);
+    // A board image belongs to the PROJECT — the look has no subject table by
+    // design (KIND_SOURCE calls it `project`) — so it falls through to the
+    // ordinary project-scoped path below.
+    if (spec.subjectKind) return importSubjectPlate(spec, target, input || {});
     const owner = ownerFor(target, input || {});
     const { mime, bytes } = decodeDataUri(input && input.data);
     validateBytes(spec, mime, bytes);

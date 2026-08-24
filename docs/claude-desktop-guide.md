@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**141 tools, 37 families.** Everything the app can do, you can ask for in a
+**142 tools, 37 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -103,7 +103,14 @@ then names the side it is looking at in its scene card's location_view field.
 A sweep skips a side that already exists, so it is never paid for twice —
 `plate_view_delete` is how you have a bad one re-shot.
 
-`plate_generate` · `plate_compass` · `plate_view_list` · `plate_view_delete` · `plate_generate_all` · `consistency_create` ·
+A plate does not have to be generated. `plate_upload` takes a picture made
+outside Film Engine — a photograph of the real location, a render from Midjourney,
+art the department already made — and puts it exactly where a generated plate
+goes, for a character, a location, a prop or the mood board. It is free, and it
+is not tracked against the subject's description, so editing that description
+will never tell you to regenerate over a picture you supplied.
+
+`plate_generate` · `plate_upload` · `plate_compass` · `plate_view_list` · `plate_view_delete` · `plate_generate_all` · `consistency_create` ·
 `consistency_lock` · `consistency_list` · `consistency_unlock` ·
 `consistency_delete` · `mood_board_add` · `mood_board_compose` ·
 `mood_board_list` · `mood_board_remove`

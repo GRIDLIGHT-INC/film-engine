@@ -201,9 +201,49 @@ function compose(req, res, projectId) {
     });
 }
 
+/**
+ * A look reference from outside: a film still, a photograph, a painting.
+ *
+ * The board could compose words and pin images that Film Engine had generated,
+ * which is backwards for look development — the pictures a director brings to a
+ * look meeting are almost never ones this tool made.
+ *
+ * Stored as a normal asset and linked by `image_path`, so it reaches shots
+ * through the same styleReferencesFor path a generated board image does. An
+ * upload that lands anywhere else is a picture on a page that conditions
+ * nothing.
+ */
+function importBoardImage(req, res, projectId) {
+    const body = req.body || {};
+    if (!body.data) return json(res, 400, { error: 'no image supplied' });
+    try {
+        const { importMedia } = require('../lib/media-imports');
+        const imported = importMedia('mood-board-image', {
+            projectId, data: body.data, name: body.name,
+        });
+        const id = generateId();
+        const next = db.prepare(
+            'SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM film_mood_board WHERE project_id = ?')
+            .get(projectId).n;
+        db.prepare(
+            `INSERT INTO film_mood_board (id, project_id, kind, note, asset_id, image_path, sort_order)
+             VALUES (?, ?, 'image', ?, ?, ?, ?)`)
+            .run(id, projectId, String(body.note || '').trim(), imported.asset_id,
+                imported.file_path, next);
+        return json(res, 201, {
+            entry: db.prepare('SELECT * FROM film_mood_board WHERE id = ?').get(id),
+            ...imported,
+        });
+    } catch (err) {
+        return json(res, /not found/i.test(err.message) ? 404 : 400, { error: err.message });
+    }
+}
+
 function handleMoodBoard(req, res, urlParts) {
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'mood-board') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        // A look reference made outside Film Engine.
+        if (urlParts[4] === 'import' && req.method === 'POST') return importBoardImage(req, res, urlParts[2]);
         if (urlParts[4] === 'compose') {
             if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
             return compose(req, res, urlParts[2]);

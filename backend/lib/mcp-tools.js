@@ -1771,6 +1771,42 @@ const BATCH_TOOLS = [
         },
     },
     {
+        name: 'plate_upload',
+        description:
+            'Supply a reference picture from OUTSIDE Film Engine instead of generating one \u2014 a '
+            + 'photograph of the real location, a Midjourney export, art the department already made. '
+            + 'FREE: nothing is generated. kind is character, location, prop or style (style pins it to '
+            + 'the mood board). image is a base64 data URI, PNG or JPEG. For a character, view is front, '
+            + 'side or back; for a location, view names which side it is (see plate_view_list) and an '
+            + 'omitted view is the default plate. It lands exactly where a generated plate lands and '
+            + 'REPLACES that view, so every shot referencing the subject uses it immediately. It is '
+            + 'deliberately not tracked against the subject\u2019s description: editing that description '
+            + 'will not mark an uploaded plate stale, because it was never generated from it. The '
+            + "project's style preset is NOT applied to an uploaded picture.",
+        schema: {
+            kind: { type: 'string', description: 'character | location | prop | style' },
+            subject_id: { type: 'string', description: 'The character, location or prop id. For style, the project id.' },
+            image: { type: 'string', description: 'data:image/png;base64,... or data:image/jpeg;base64,...' },
+            view: { type: 'string', description: 'character: front|side|back. location: which side. Omit for the default plate.' },
+            note: { type: 'string', description: 'style only: what this reference is for.' },
+        },
+        required: ['kind', 'subject_id', 'image'],
+        async run(a) {
+            const kind = String(a.kind || '').trim();
+            const ROUTES = {
+                character: { handler: handleCharacters, path: id => `/film/characters/${id}/refsheet/import` },
+                location: { handler: handleLocations, path: id => `/film/locations/${id}/plate/import` },
+                prop: { handler: handleLocations, path: id => `/film/props/${id}/plate/import` },
+                style: { handler: handleMoodBoard, path: id => `/film/projects/${id}/mood-board/import` },
+            };
+            const spec = ROUTES[kind];
+            if (!spec) return { error: `kind must be one of: ${Object.keys(ROUTES).join(', ')} (got '${kind}')` };
+            return callRoute('POST', spec.path(a.subject_id), {
+                data: a.image, ...(a.view ? { view: a.view } : {}), ...(a.note ? { note: a.note } : {}),
+            }, spec.handler);
+        },
+    },
+    {
         name: 'plate_view_list',
         description:
             'The views a location has been photographed from, and whether each picture is really on disk. '
