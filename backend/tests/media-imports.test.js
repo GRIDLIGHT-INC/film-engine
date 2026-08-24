@@ -79,7 +79,32 @@ function seed() {
     db.prepare('INSERT INTO film_characters (id, project_id, name) VALUES (?, ?, ?)').run(characterId, projectId, 'MAYA');
     db.prepare('INSERT INTO film_locations (id, project_id, name) VALUES (?, ?, ?)').run(locationId, projectId, 'STREET');
     db.prepare('INSERT INTO film_props (id, project_id, name) VALUES (?, ?, ?)').run(propId, projectId, 'SEDAN');
-    return { projectId, shotId, characterId, locationId, propId };
+    return { projectId, shotId, sceneId, characterId, locationId, propId };
+}
+
+/** A minimal but genuinely valid file of each media kind. */
+const MEDIA_BYTES = {
+    video: Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypmp42'), Buffer.alloc(24)]),
+    audio: Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), Buffer.alloc(24)]),
+};
+const MEDIA_MIME = { video: 'video/mp4', audio: 'audio/wav' };
+
+/** What each target needs to know about who it belongs to. */
+function ownerArgsFor(spec, owner) {
+    if (spec.sceneScoped) return { sceneId: owner.sceneId };
+    if (spec.subjectKind) {
+        return { subjectId: { character: owner.characterId, location: owner.locationId, prop: owner.propId }[spec.subjectKind] };
+    }
+    return {};
+}
+
+/** The bytes and mime a target will accept. */
+function payloadFor(spec) {
+    if (spec.kind === 'model') return { bytes: GLB, mime: 'model/gltf-binary' };
+    if (spec.kind === 'video' || spec.kind === 'audio') {
+        return { bytes: MEDIA_BYTES[spec.kind], mime: MEDIA_MIME[spec.kind] };
+    }
+    return { bytes: PNG, mime: 'image/png' };
 }
 
 /** Which seeded row each target links to, derived from the registry's own subjectKind. */
@@ -96,17 +121,25 @@ test('every registered director import persists, registers, serves and has a UI 
      * Engine as well as inside it; pinning this list is what makes the next one
      * arrive with a UI control and a route rather than only a registry entry.
      */
-    assert.deepStrictEqual(entries.map(([id]) => id).sort(),
-        ['character-plate', 'location-plate', 'mood-board-image', 'previs-image',
-            'prop-plate', 'storyboard-image', 'three-d-model']);
+    /*
+     * Every target, derived rather than snapshotted where it can be: the seven
+     * `*-media` entries come from MEDIA_KINDS, so a ninth capability appears
+     * here automatically and fails the route matrix below until it is wired.
+     */
+    const { MEDIA_KINDS } = require('../lib/media-kinds');
+    const expected = [
+        'character-plate', 'location-plate', 'mood-board-image', 'previs-image',
+        'prop-plate', 'storyboard-image', 'three-d-model',
+        ...Object.values(MEDIA_KINDS).filter(k => k.media !== 'image').map(k => `${k.capability}-media`),
+    ].sort();
+    assert.deepStrictEqual(entries.map(([id]) => id).sort(), expected);
 
     for (const [id, spec] of entries) {
         const owner = seed();
-        const bytes = spec.kind === 'model' ? GLB : PNG;
-        const mime = spec.kind === 'model' ? 'model/gltf-binary' : 'image/png';
+        const { bytes, mime } = payloadFor(spec);
         const result = importMedia(id, {
-            ...owner, ...subjectFor(spec, owner),
-            name: spec.kind === 'model' ? 'Meshy hero.glb' : 'director-board.png',
+            ...owner, ...ownerArgsFor(spec, owner),
+            name: `external-${id}`,
             data: `data:${mime};base64,${bytes.toString('base64')}`,
         });
 
@@ -120,6 +153,15 @@ test('every registered director import persists, registers, serves and has a UI 
         assert.ok(asset, `${id}: no film_assets row`);
         assert.strictEqual(asset.project_id, owner.projectId, `${id}: wrong project linkage`);
         if (spec.shotScoped) assert.strictEqual(asset.shot_id, owner.shotId, `${id}: wrong shot linkage`);
+        if (spec.sceneScoped) {
+            // A scene-wide bed attached to one shot reads as working and is not.
+            assert.strictEqual(asset.scene_id, owner.sceneId, `${id}: wrong scene linkage`);
+            assert.strictEqual(asset.shot_id, null, `${id}: a scene-scoped bed was pinned to one shot`);
+        }
+        if (spec.assetType) {
+            assert.strictEqual(asset.asset_type, spec.assetType,
+                `${id}: stored as ${asset.asset_type}, so the timeline and the export will not find it`);
+        }
         if (spec.subjectKind) {
             const column = { character: 'character_id', location: 'location_id', prop: 'prop_id' }[spec.subjectKind];
             assert.strictEqual(asset[column], subjectFor(spec, owner).subjectId,
@@ -137,7 +179,14 @@ test('every registered director import persists, registers, serves and has a UI 
          */
         const literal = new RegExp(`data-import-target=["']${id}["']`).test(UI);
         const built = new RegExp(`uploadControl\\(\\s*['"]${id}['"]`).test(UI);
-        assert.ok(literal || built, `${id}: no UI file control`);
+        // The media controls are addressed by CAPABILITY rather than by target
+        // id — `mediaUploadControl('video', …)` emits data-import-target
+        // "video-media" — because the capability is what the endpoint is named
+        // after and carrying both names to the call site would invite them to
+        // disagree.
+        const byCapability = !!spec.capability
+            && new RegExp(`mediaUploadControl\\(\\s*['"]${spec.capability}['"]`).test(UI);
+        assert.ok(literal || built || byCapability, `${id}: no UI file control`);
     }
 });
 
@@ -146,9 +195,9 @@ test('every registered import rejects invalid media before writing an asset', ()
         const owner = seed();
         const before = db.prepare('SELECT COUNT(*) AS n FROM film_assets WHERE project_id = ?').get(owner.projectId).n;
         assert.throws(() => importMedia(id, {
-            ...owner, ...subjectFor(MEDIA_IMPORTS[id], owner),
+            ...owner, ...ownerArgsFor(MEDIA_IMPORTS[id], owner),
             name: '../escape.bin', data: 'data:application/octet-stream;base64,bm90LXRoZS1mb3JtYXQ=',
-        }), /invalid|unsupported|not a PNG|signature/i, `${id}: invalid bytes accepted`);
+        }), /invalid|unsupported|not a PNG|not a video|not an audio|signature/i, `${id}: invalid bytes accepted`);
         const after = db.prepare('SELECT COUNT(*) AS n FROM film_assets WHERE project_id = ?').get(owner.projectId).n;
         assert.strictEqual(after, before, `${id}: invalid import left an asset row`);
     }
@@ -239,6 +288,22 @@ test('every registered import is reachable through its production route', async 
             handler: require('../routes/mood-board').handleMoodBoard,
             url: o => `/film/projects/${o.projectId}/mood-board/import`, mime: 'image/png', bytes: PNG, name: 'still.png',
         },
+        /*
+         * The seven media capabilities share ONE route, so they are generated
+         * here rather than listed — a per-capability endpoint in each domain
+         * file is how four of them get the format sniffing and the fifth
+         * silently accepts anything.
+         */
+        ...Object.fromEntries(Object.values(require('../lib/media-kinds').MEDIA_KINDS)
+            .filter(k => k.media !== 'image')
+            .map(k => [`${k.capability}-media`, {
+                handler: require('../routes/media-import').handleMediaImport,
+                url: o => (k.scope === 'scene'
+                    ? `/film/scenes/${o.sceneId}/media/${k.capability}/import`
+                    : `/film/shots/${o.shotId}/media/${k.capability}/import`),
+                mime: MEDIA_MIME[k.media], bytes: MEDIA_BYTES[k.media],
+                name: `external.${k.media === 'video' ? 'mp4' : 'wav'}`,
+            }])),
     };
     assert.deepStrictEqual(Object.keys(routes).sort(), Object.keys(MEDIA_IMPORTS).sort(), 'route matrix drifted from import registry');
     for (const [id, route] of Object.entries(routes)) {
@@ -248,5 +313,23 @@ test('every registered import is reachable through its production route', async 
         });
         assert.strictEqual(response.status, 201, `${id}: ${JSON.stringify(response.body)}`);
         assert.strictEqual(response.body.target, id);
+
+        /*
+         * The serving URL must actually serve.
+         *
+         * A URL built from the wrong directory is a perfectly good string and a
+         * 404 — the upload succeeds and the clip will not play, which surfaces
+         * as "the import is broken" much later. This was live on the media
+         * imports for exactly one commit: `serveDir` is the gateway's own
+         * directory ('videos') while the HTTP route is /film/video/, singular.
+         * Asserting the URL is non-null would have passed.
+         */
+        if (response.body.url) {
+            const [, , subdir, projectId, fileName] = response.body.url.split('/');
+            const onDisk = path.join(process.env.FILM_DATA_DIR, subdir, projectId, fileName);
+            assert.ok(fs.existsSync(onDisk),
+                `${id}: url ${response.body.url} points at ${onDisk}, which does not exist — `
+                + 'the file was stored somewhere the serving route will not find it');
+        }
     }
 });

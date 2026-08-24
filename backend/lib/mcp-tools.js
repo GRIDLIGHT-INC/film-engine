@@ -40,6 +40,7 @@ const { handleLocations } = require('../routes/locations');
 const { handleStoryboard } = require('../routes/storyboard');
 const { handleComments } = require('../routes/scripts');
 const { handleMoodBoard } = require('../routes/mood-board');
+const { handleMediaImport } = require('../routes/media-import');
 const { handleAnnotations } = require('../routes/annotations');
 const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
@@ -1768,6 +1769,52 @@ const BATCH_TOOLS = [
         async run(a) {
             return callRoute('POST', `/film/locations/${a.location_id}/plate/compass`,
                 a.overwrite ? { overwrite: true } : {}, handleLocations);
+        },
+    },
+    {
+        name: 'media_upload',
+        description:
+            'Add FOOTAGE OR SOUND made outside Film Engine \u2014 a clip cut in Runway or Kling, dialogue '
+            + 'recorded properly, a licensed music bed. FREE: nothing is generated. capability is one of '
+            + 'video, voice, lipsync, sfx, post (these belong to a SHOT) or music, ambient (these belong '
+            + 'to a SCENE) \u2014 call media_kinds to see which, and what each accepts. The file is a '
+            + 'base64 data URI; video takes MP4/MOV/WebM/MKV and audio takes WAV/MP3/M4A/FLAC/OGG, '
+            + 'decided by the bytes rather than the name. It is stored exactly where a generated file '
+            + 'goes with the same asset_type, so the timeline, the conform and the NLE export pick it up '
+            + 'unchanged, and it is NOT tracked against the scene card \u2014 editing that card will never '
+            + 'say to regenerate over footage that was supplied. Its rights are recorded as unknown. '
+            + 'About 112MB maximum.',
+        schema: {
+            capability: { type: 'string', description: 'video | voice | lipsync | sfx | post | music | ambient' },
+            owner_id: { type: 'string', description: 'The shot id, or the scene id for music and ambient.' },
+            file: { type: 'string', description: 'data:video/mp4;base64,... or data:audio/wav;base64,...' },
+        },
+        required: ['capability', 'owner_id', 'file'],
+        async run(a) {
+            const { MEDIA_KINDS } = require('./media-kinds');
+            const spec = MEDIA_KINDS[String(a.capability || '')];
+            if (!spec || spec.media === 'image') {
+                return {
+                    error: `capability must be one of: ${Object.values(MEDIA_KINDS)
+                        .filter(k => k.media !== 'image').map(k => k.capability).join(', ')}`,
+                };
+            }
+            const owner = spec.scope === 'scene' ? 'scenes' : 'shots';
+            return callRoute('POST', `/film/${owner}/${a.owner_id}/media/${a.capability}/import`,
+                { data: a.file, name: a.name }, handleMediaImport);
+        },
+    },
+    {
+        name: 'media_kinds',
+        description:
+            'What footage and sound can be uploaded from outside, what formats each accepts, whether it '
+            + 'belongs to a shot or a scene, and the size limit. Free. Read this before media_upload: '
+            + 'posting a scene-wide music bed at a shot is refused, because attaching a whole scene\u2019s '
+            + 'score to one shot would look like it worked.',
+        schema: {},
+        required: [],
+        async run() {
+            return callRoute('GET', '/film/media-kinds', {}, handleMediaImport);
         },
     },
     {

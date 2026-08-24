@@ -293,3 +293,128 @@ test('the page offers an upload wherever it offers a generate', () => {
 const MEDIA_PNG_ONLY = new Set(
     Object.entries(require('../lib/media-imports').MEDIA_IMPORTS)
         .filter(([, spec]) => spec.pngOnly).map(([name]) => name));
+
+// ── 7. Every generated MEDIA kind can come from outside too ─────────────
+//
+// "Are we able to upload videos if we generate outside... we need to be able to
+// easily add assets from external sources if we want to."
+//
+// A director who generated a clip in Runway or Kling, cut dialogue elsewhere,
+// or was handed a music bed had no way in: every media file in this pipeline
+// could only be born inside it, exactly as every reference could.
+//
+// Derived from MEDIA_KINDS, which is the registry the orchestrator itself uses
+// to decide where a generated file goes and what asset_type it gets. Deriving
+// the denominator there means a ninth capability fails this test rather than
+// arriving generate-only — and it is the same registry, so an import cannot
+// disagree with a generation about where a file lives.
+
+test('every capability that produces a media file can also be uploaded', () => {
+    const { MEDIA_KINDS } = require('../lib/media-kinds');
+    const { MEDIA_IMPORTS } = require('../lib/media-imports');
+
+    const caps = Object.keys(MEDIA_KINDS);
+    assert.ok(caps.length >= 8, `the media kind registry collapsed (${caps.length})`);
+
+    const missing = [];
+    for (const cap of caps) {
+        const spec = MEDIA_KINDS[cap];
+        assert.ok(spec.assetType && spec.ext && spec.subdir && spec.scope,
+            `${cap}: incomplete media kind ${JSON.stringify(spec)}`);
+        // `image` arrives as the storyboard frame, which had an import already.
+        const target = cap === 'image' ? 'storyboard-image' : `${cap}-media`;
+        if (!MEDIA_IMPORTS[target]) missing.push(`${cap} (${target})`);
+    }
+    assert.deepStrictEqual(missing, [],
+        `these can be generated and not uploaded: ${missing.join(', ')}`);
+});
+
+test('the storage registry has exactly one copy', () => {
+    /*
+     * capability → extension, → asset_type and → directory existed THREE times:
+     * PERSIST_EXT and ASSET_TYPE in routes/pipeline.js and SUBDIR in
+     * lib/capability-payloads.js. The comment above ASSET_TYPE already recorded
+     * that getting it wrong turns a successful generation into a failed step —
+     * three copies of that fact is three chances to get it wrong, and adding a
+     * fourth for the importer is how the next kind gets missed.
+     */
+    const { MEDIA_KINDS } = require('../lib/media-kinds');
+    for (const file of ['routes/pipeline.js', 'lib/capability-payloads.js']) {
+        const src = fs.readFileSync(path.join(ROOT, file), 'utf8')
+            .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        assert.ok(/require\(['"][^'"]*media-kinds['"]\)/.test(src),
+            `${file} does not read the shared media registry`);
+        // The literal tables must be gone, not merely shadowed.
+        for (const dead of ['PERSIST_EXT = {', 'const ASSET_TYPE = {', 'const SUBDIR = {']) {
+            assert.ok(!src.includes(dead),
+                `${file} still declares its own ${dead.split(' ')[0].replace('const ', '')} table`);
+        }
+    }
+
+    // Scope is not retyped either: it is the orchestrator's own.
+    const { PIPELINE_STEPS } = require('../lib/pipeline-engine');
+    const stepScope = new Map(PIPELINE_STEPS.map(s => [s.id, s.scope]));
+    const CAP_STEP = { image: 'keyframe' };
+    for (const [cap, spec] of Object.entries(MEDIA_KINDS)) {
+        const stepId = CAP_STEP[cap] || cap;
+        if (!stepScope.has(stepId)) continue;
+        assert.strictEqual(spec.scope, stepScope.get(stepId),
+            `${cap}: scope disagrees with PIPELINE_STEPS — a scene bed would attach to one shot`);
+    }
+});
+
+test('a video, an audio file and a wrong file are each told apart', () => {
+    const { validateBytes, MEDIA_IMPORTS } = require('../lib/media-imports');
+
+    // Real container headers. An MP4/MOV declares its brand at byte 4; WebM and
+    // WAV and MP3 have their own magic. Sniffing the extension instead would
+    // accept a renamed .exe, and a clip that cannot be decoded is a shot that
+    // plays black in the cut with no error anywhere.
+    const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypmp42'), Buffer.alloc(16)]);
+    const MOV = Buffer.concat([Buffer.from([0, 0, 0, 0x14]), Buffer.from('ftypqt  '), Buffer.alloc(16)]);
+    const WEBM = Buffer.concat([Buffer.from([0x1A, 0x45, 0xDF, 0xA3]), Buffer.alloc(20)]);
+    const WAV = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), Buffer.alloc(16)]);
+    const MP3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(20)]);
+    const JUNK = Buffer.from('this is not media at all, it is a text file');
+
+    const VIDEO_OK = [['mp4', MP4, 'video/mp4'], ['mov', MOV, 'video/quicktime'], ['webm', WEBM, 'video/webm']];
+    const AUDIO_OK = [['wav', WAV, 'audio/wav'], ['mp3', MP3, 'audio/mpeg']];
+
+    for (const [target, spec] of Object.entries(MEDIA_IMPORTS)) {
+        if (spec.kind === 'video') {
+            for (const [name, buf, mime] of VIDEO_OK) {
+                assert.doesNotThrow(() => validateBytes(spec, mime, buf), `${target} refuses a ${name}`);
+            }
+            assert.throws(() => validateBytes(spec, 'video/mp4', JUNK), `${target} accepts a text file as video`);
+            assert.throws(() => validateBytes(spec, 'video/mp4', WAV), `${target} accepts audio as video`);
+        }
+        if (spec.kind === 'audio') {
+            for (const [name, buf, mime] of AUDIO_OK) {
+                assert.doesNotThrow(() => validateBytes(spec, mime, buf), `${target} refuses a ${name}`);
+            }
+            assert.throws(() => validateBytes(spec, 'audio/wav', JUNK), `${target} accepts a text file as audio`);
+            assert.throws(() => validateBytes(spec, 'audio/wav', MP4), `${target} accepts video as audio`);
+        }
+    }
+});
+
+test('an oversize upload is refused in words, not by hanging up', () => {
+    /*
+     * readBody called req.destroy() on an oversize body and THEN tried to write
+     * a 400. Destroying a request mid-upload surfaces in the browser as a
+     * network error, and api() maps anything mentioning fetch to "Backend
+     * offline" — so an upload that is merely too big is indistinguishable from
+     * a dead server. Video is the most likely thing to hit the ceiling, which
+     * is exactly when the wrong diagnosis costs the most time.
+     */
+    const src = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
+    const fn = src.slice(src.indexOf('function readBody('), src.indexOf('function parseQuery('));
+    assert.ok(fn.length, 'readBody is gone');
+    const tooLarge = fn.slice(fn.indexOf('maxSize'));
+    assert.ok(/413/.test(tooLarge),
+        'an oversize body is not answered with 413 — the client cannot tell it from a dead server');
+    assert.ok(/writeHead[\s\S]{0,200}413[\s\S]{0,400}destroy|413[\s\S]{0,400}end\(/.test(tooLarge),
+        'the response is not written before the connection is destroyed');
+    assert.ok(/MB|limit|too large/i.test(tooLarge),
+        'the refusal never states the size limit, so nobody knows what would fit');
+});

@@ -109,10 +109,11 @@ const STEP_CAPABILITY = {
 // Where each orchestrated capability's output lands, and under what filename.
 // A capability missing from here would generate media that goes nowhere, so
 // tests assert this covers STEP_CAPABILITY rather than trusting it.
-const PERSIST_EXT = {
-    image: 'png', video: 'mp4', voice: 'wav', lipsync: 'mp4',
-    music: 'wav', sfx: 'wav', ambient: 'wav', post: 'mp4',
-};
+// capability → extension and → asset_type, from the ONE registry. These were
+// two literal tables here and a third in capability-payloads.js; a wrong
+// asset_type fails the CHECK at insert and turns a paid-for generation into a
+// failed step, so the fact is stated once and read three times.
+const { PERSIST_EXT, ASSET_TYPE } = require('../lib/media-kinds');
 
 /**
  * Save what a step generated.
@@ -143,15 +144,6 @@ async function persistStepResult(stepId, capability, result, ctx) {
         const saved = await persistCapabilityResult(capability, result, ctx, filename);
 
         const assetId = generateId();
-        // These must be values film_assets.asset_type actually permits — the
-        // audio ones are prefixed there ('audio_music', not 'music'), and a
-        // wrong value fails the CHECK at insert, turning a successful
-        // generation into a failed step.
-        const ASSET_TYPE = {
-            image: 'keyframe', video: 'video_raw', voice: 'audio_dialogue', lipsync: 'video_synced',
-            music: 'audio_music', sfx: 'audio_sfx', ambient: 'audio_ambient', post: 'video_final',
-        };
-
         db.prepare(
             `INSERT INTO film_assets (id, project_id, shot_id, scene_id, asset_type, file_path, file_name, version, license_source, license_status, metadata)
              VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'generated', 'generated', ?)`

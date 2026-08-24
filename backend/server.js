@@ -79,6 +79,7 @@ const { handleStoryBible } = require('./routes/story-bible');
 const { handleBreakdown } = require('./routes/breakdown');
 const { handleProductionReports } = require('./routes/production-reports');
 const { handleMoodBoard } = require('./routes/mood-board');
+const { handleMediaImport } = require('./routes/media-import');
 const { handleAnnotations } = require('./routes/annotations');
 const { handleScreenplayAI } = require('./routes/screenplay-ai');
 const { handleCharacters } = require('./routes/characters');
@@ -192,15 +193,39 @@ function stripDangerousKeys(obj) {
 }
 
 // Parse JSON body from request
-function readBody(req, maxSize = 10 * 1024 * 1024) {
+function readBody(req, maxSize = 10 * 1024 * 1024, res = null) {
     return new Promise((resolve, reject) => {
         let body = '';
         let size = 0;
+        let oversize = false;
         req.on('data', chunk => {
             size += chunk.length;
             if (size > maxSize) {
+                /*
+                 * SAY SO, then hang up — not the other way round.
+                 *
+                 * This destroyed the request and then tried to write a 400. A
+                 * destroyed request surfaces in the browser as a network error,
+                 * and api() maps anything mentioning fetch to "Backend offline"
+                 * — so an upload that was merely too big was indistinguishable
+                 * from a dead server. Video is the most likely thing to reach
+                 * the ceiling, which is exactly when the wrong diagnosis costs
+                 * the most time.
+                 */
+                const limitMb = Math.floor(maxSize / (1024 * 1024));
+                if (!res.headersSent) {
+                    res.writeHead(413, { 'Content-Type': 'application/json', Connection: 'close' });
+                    res.end(JSON.stringify({
+                        error: `That file is too large. The limit is ${limitMb}MB of upload, which is `
+                            + `about ${Math.floor(limitMb * 0.75)}MB of actual file — uploads travel `
+                            + 'base64-encoded, which is a third larger than the file itself.',
+                        limit_mb: limitMb,
+                        max_file_mb: Math.floor(limitMb * 0.75),
+                    }));
+                }
+                oversize = true;
                 req.destroy();
-                reject(new Error('Request body too large'));
+                reject(new Error(`Request body too large (limit ${limitMb}MB)`));
                 return;
             }
             body += chunk;
@@ -299,10 +324,14 @@ const server = http.createServer(async (req, res) => {
             : isMediaImport ? 150 * 1024 * 1024 // base64-encoded Meshy GLBs can be large
             : 10 * 1024 * 1024;
         try {
-            req.body = await readBody(req, maxSize);
+            req.body = await readBody(req, maxSize, res);
         } catch (err) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: err.message }));
+            // A 413 has already been written and the socket closed; writing
+            // again throws and replaces a clear refusal with a stack trace.
+            if (!res.headersSent) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
             return;
         }
     }
@@ -335,6 +364,19 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/projects/:id/breakdown[/stream]
         if (parts[1] === 'assets' && parts[2] && parts[3] === 'accept') {
             return await handleProductionReports(req, res, parts, query);
+        }
+
+        /*
+         * Footage and sound made outside Film Engine. Registered EARLY, and
+         * before any /shots/:id/... or /scenes/:id/... dispatch, because the
+         * domain handlers match on their own third segment and would otherwise
+         * swallow /media/ — the same trap the 3D location route and the frames
+         * route each fell into, where a handler existed and nothing reached it.
+         */
+        if (parts[1] === 'media-kinds'
+            || (['shots', 'scenes'].includes(parts[1]) && parts[2] && parts[3] === 'media')) {
+            const handled = await handleMediaImport(req, res, parts, query);
+            if (handled !== false) return handled;
         }
 
         if ((parts[1] === 'shots' && parts[2] && parts[3] === 'annotations')

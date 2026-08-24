@@ -12,6 +12,46 @@ const { parseGlb } = require('./glb-parser');
  */
 const IMAGE_MIMES = Object.freeze(['image/png', 'image/jpeg', 'image/jpg']);
 
+/*
+ * What a person actually exports. Browsers label these inconsistently and some
+ * label nothing at all, so octet-stream is accepted and the BYTES decide — the
+ * same allowance the GLB import needed.
+ */
+const VIDEO_MIMES = Object.freeze([
+    'video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska', 'application/octet-stream']);
+const AUDIO_MIMES = Object.freeze([
+    'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/mpeg', 'audio/mp3',
+    'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/flac', 'application/octet-stream']);
+
+/**
+ * One import target per orchestrated media capability, built from the registry
+ * the generator itself reads.
+ *
+ * Scope comes from MEDIA_KINDS (which takes it from PIPELINE_STEPS), so a
+ * scene-wide music bed is scene-scoped and a clip is shot-scoped without this
+ * file having an opinion — an importer that disagreed would attach a scene bed
+ * to a single shot and nothing would report it.
+ */
+function mediaImportTargets() {
+    const { MEDIA_KINDS } = require('./media-kinds');
+    const out = {};
+    for (const [capability, spec] of Object.entries(MEDIA_KINDS)) {
+        if (spec.media === 'image') continue;      // the storyboard frame, already imported
+        out[`${capability}-media`] = Object.freeze({
+            kind: spec.media,                      // 'video' | 'audio'
+            capability,
+            shotScoped: spec.scope === 'shot',
+            sceneScoped: spec.scope === 'scene',
+            subdir: spec.subdir,
+            serveDir: spec.serveDir,
+            assetType: spec.assetType,
+            ext: spec.ext,
+            mimes: spec.media === 'video' ? VIDEO_MIMES : AUDIO_MIMES,
+        });
+    }
+    return out;
+}
+
 const MEDIA_IMPORTS = Object.freeze({
     'storyboard-image': Object.freeze({
         kind: 'image', shotScoped: true, subdir: 'storyboards', mimes: ['image/png'],
@@ -67,6 +107,24 @@ const MEDIA_IMPORTS = Object.freeze({
     // The look has no subject table by design (KIND_SOURCE calls it `project`),
     // so a board image is stored and linked by the mood-board row instead.
     'mood-board-image': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
+
+    /*
+     * FOOTAGE AND SOUND, from outside.
+     *
+     * "Are we able to upload videos if we generate outside... we need to be
+     * able to easily add assets from external sources if we want to."
+     *
+     * A clip cut in Runway or Kling, dialogue recorded properly, a music bed
+     * somebody licensed — every one of these could only be born inside the
+     * engine, exactly as every reference could. Derived from MEDIA_KINDS, the
+     * same registry the orchestrator uses to decide where a GENERATED file
+     * goes, so an uploaded clip lands in the identical directory with the
+     * identical asset_type and every reader picks it up unchanged.
+     *
+     * `image` is excluded because it arrives as the storyboard frame, which had
+     * an import already and is addressed at a fixed {shot_code}.png path.
+     */
+    ...mediaImportTargets(),
 });
 
 function decodeDataUri(data) {
@@ -132,6 +190,61 @@ function validateBytes(spec, mime, bytes) {
         }
         if (!sawIhdr || !sawIdat || !sawIend || offset !== bytes.length) throw new Error('invalid or incomplete PNG');
     }
+    /*
+     * A clip and a bed are told apart by their BYTES, never their extension.
+     *
+     * A renamed file passes any name check, and a clip that cannot be decoded
+     * is a shot that plays black in the cut — with no error anywhere, because
+     * nothing downstream opens it until an editor does. Browsers also label
+     * these inconsistently and sometimes not at all, which is why the mime list
+     * allows octet-stream and this is what actually decides.
+     */
+    if (spec.kind === 'video' || spec.kind === 'audio') {
+        const ascii = (from, len) => bytes.toString('ascii', from, from + len);
+        const isMp4 = bytes.length > 12 && ascii(4, 4) === 'ftyp';
+        const isMatroska = bytes.length > 4 && bytes[0] === 0x1A && bytes[1] === 0x45
+            && bytes[2] === 0xDF && bytes[3] === 0xA3;                       // WebM / MKV
+        const isRiff = bytes.length > 12 && ascii(0, 4) === 'RIFF';
+        const isWav = isRiff && ascii(8, 4) === 'WAVE';
+        const isMp3 = bytes.length > 3
+            && (ascii(0, 3) === 'ID3' || (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0));
+        const isFlac = bytes.length > 4 && ascii(0, 4) === 'fLaC';
+        const isOgg = bytes.length > 4 && ascii(0, 4) === 'OggS';
+
+        if (spec.kind === 'video') {
+            // An .mp4 container carries audio-only files too, but every one we
+            // could receive here is meant to be a picture; a bare WAV or MP3 is
+            // refused outright because attaching one as a clip is silent
+            // failure at the worst possible moment.
+            if (isWav || isMp3 || isFlac) {
+                throw new Error('This is an audio file, not a video. Upload it where the sound goes.');
+            }
+            if (!isMp4 && !isMatroska) {
+                throw new Error('This is not a video file. MP4, MOV, WebM and MKV are accepted — '
+                    + 're-export it as one of those.');
+            }
+        } else {
+            if (isMatroska) throw new Error('This is a video file, not audio. Upload it where the picture goes.');
+            /*
+             * An MP4 container holds audio-only files too, and telling them
+             * apart properly means walking the moov atom for track types. The
+             * brand is the cheap discriminator: .m4a and .m4b declare `M4A `
+             * and `M4B `, while `isom`, `mp42`, `mp41` and `avc1` are the video
+             * brands. Accepting those as audio — which an earlier version did,
+             * on `mp42` — attaches a silent video file as a music bed and the
+             * failure surfaces as a scene with no score.
+             *
+             * An audio-only `isom` file is rare and gets a clear message rather
+             * than being guessed at; re-exporting as WAV or M4A is one step,
+             * and a wrong guess here is a bed nobody hears.
+             */
+            const isM4a = isMp4 && /^(M4A|M4B)/.test(ascii(8, 4));
+            if (!isWav && !isMp3 && !isFlac && !isOgg && !isM4a) {
+                throw new Error('This is not an audio file. WAV, MP3, M4A, FLAC and OGG are accepted — '
+                    + 're-export it as one of those.');
+            }
+        }
+    }
     if (spec.kind === 'model') {
         if (bytes.length < 12 || bytes.toString('ascii', 0, 4) !== 'glTF' || bytes.readUInt32LE(4) !== 2
             || bytes.readUInt32LE(8) !== bytes.length) throw new Error('invalid GLB signature or length');
@@ -175,6 +288,14 @@ function subjectOwnerFor(spec, input) {
         .prepare(`SELECT id, project_id, name FROM ${t.table} WHERE id = ?`).get(input.subjectId);
     if (!row) throw new Error(`${spec.subjectKind} not found`);
     return { projectId: row.project_id, subject: row, ...t };
+}
+
+/** A scene-scoped import (a music bed, an ambient bed) belongs to a scene. */
+function sceneOwnerFor(input) {
+    const row = db.prepare(
+        'SELECT id, project_id, scene_number FROM film_scenes WHERE id = ?').get(input.sceneId);
+    if (!row) throw new Error('Scene not found');
+    return { projectId: row.project_id, sceneId: row.id, sceneNumber: row.scene_number };
 }
 
 function ownerFor(target, input) {
@@ -301,6 +422,122 @@ function importSubjectPlate(spec, target, input) {
     };
 }
 
+/**
+ * A clip or a bed made outside Film Engine, stored where a generated one goes.
+ *
+ * Same directory, same asset_type, same filename convention as the
+ * orchestrator's own output — read from MEDIA_KINDS rather than restated — so
+ * the timeline, the conform, the NLE export and the QA checks all pick it up
+ * without knowing it was uploaded.
+ *
+ * NOT fingerprinted, for the reason an uploaded plate is not: a fingerprint
+ * says "generated from that payload", and this was not. Stamping it would mark
+ * it stale the moment the scene card changes and tell the director to
+ * regenerate over footage they shot.
+ */
+function importCapabilityMedia(spec, target, input) {
+    const owner = spec.sceneScoped ? sceneOwnerFor(input) : ownerFor(target, input);
+    const { mime, bytes } = decodeDataUri(input.data);
+    validateBytes(spec, mime, bytes);
+
+    /*
+     * The extension follows the BYTES, not the registry's default.
+     *
+     * MEDIA_KINDS says a clip is written as .mp4 because that is what the
+     * generators return. A director uploading a .mov or a .webm must not have
+     * it stored under a name that lies about it — the mistake the plate upload
+     * made with JPEG, and the one the storyboard target refuses to make.
+     */
+    const ext = extensionFor(spec, mime, bytes) || spec.ext;
+    const label = spec.shotScoped
+        ? owner.shotCode
+        : `scene_${String(owner.sceneNumber || 'x').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const stem = `${label}_${spec.capability}`;
+    const fileName = `${stem}.${ext}`;
+
+    /*
+     * Replace the same slot across extensions, exactly as a plate does: an
+     * uploaded .mov landing beside a generated .mp4 leaves two current clips
+     * for one shot and the readers pick whichever row comes back first.
+     */
+    const scopeColumn = spec.shotScoped ? 'shot_id' : 'scene_id';
+    const scopeValue = spec.shotScoped ? owner.shotId : owner.sceneId;
+    const stale = db.prepare(
+        `SELECT id, file_path, file_name FROM film_assets
+          WHERE project_id = ? AND ${scopeColumn} = ? AND asset_type = ?`)
+        .all(owner.projectId, scopeValue, spec.assetType)
+        .filter(r => String(r.file_name || '').startsWith(`${stem}.`)
+            || String(r.file_path || '').includes(`${path.sep}${stem}.`));
+
+    const filePath = saveFile(owner.projectId, spec.subdir, fileName, bytes);
+    for (const row of stale) {
+        if (row.file_path && path.resolve(row.file_path) !== path.resolve(filePath)) {
+            try { fs.unlinkSync(row.file_path); } catch (_) { /* already gone is fine */ }
+        }
+        db.prepare('DELETE FROM film_assets WHERE id = ?').run(row.id);
+    }
+
+    const assetId = generateId();
+    db.prepare(`INSERT INTO film_assets
+        (id, project_id, shot_id, scene_id, asset_type, file_path, file_name, format, mime_type,
+         size_bytes, version, license_source, license_status, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'external', 'unknown', ?)`)
+        .run(assetId, owner.projectId,
+            spec.shotScoped ? owner.shotId : null,
+            spec.sceneScoped ? owner.sceneId : (owner.sceneId || null),
+            spec.assetType, filePath, fileName, ext, mime, bytes.length,
+            JSON.stringify({
+                capability: spec.capability,
+                imported: true,
+                source: 'external',
+                original_name: String(input.name || '').slice(0, 200) || null,
+            }));
+
+    return {
+        target, asset_id: assetId, project_id: owner.projectId,
+        shot_id: spec.shotScoped ? owner.shotId : null,
+        scene_id: spec.sceneScoped ? owner.sceneId : null,
+        asset_type: spec.assetType, capability: spec.capability,
+        file_name: fileName, file_path: filePath, version: 1,
+        /*
+         * The SERVING subdir, which is `subdir` and not `serveDir`.
+         *
+         * `serveDir` is what persistProviderMedia calls the gateway's own
+         * directory ('videos', 'audio', 'music'); the HTTP route is
+         * /film/{subdir}/... — /film/video/, singular. Built from serveDir this
+         * returned /film/videos/... which is a perfectly good string and a 404,
+         * so the upload succeeded and the clip would not play. Exactly the
+         * mistake servedUrlFor made once already, which is why the test now
+         * FETCHES this URL rather than asserting it is non-null.
+         */
+        url: getFileUrl(spec.subdir, owner.projectId, fileName),
+        note: `Stored as ${spec.assetType}, exactly where a generated one goes. It is marked as `
+            + 'coming from outside, so editing the scene card will not tell you to regenerate over it. '
+            + "Its rights are recorded as unknown \u2014 set them before you deliver.",
+    };
+}
+
+/** The extension the bytes actually justify. */
+function extensionFor(spec, mime, bytes) {
+    const ascii = (from, len) => bytes.toString('ascii', from, from + len);
+    if (spec.kind === 'video') {
+        if (bytes.length > 4 && bytes[0] === 0x1A && bytes[1] === 0x45) return 'webm';
+        if (bytes.length > 12 && ascii(4, 4) === 'ftyp') {
+            return /^qt/.test(ascii(8, 4)) ? 'mov' : 'mp4';
+        }
+        return null;
+    }
+    if (spec.kind === 'audio') {
+        if (bytes.length > 12 && ascii(0, 4) === 'RIFF') return 'wav';
+        if (bytes.length > 4 && ascii(0, 4) === 'fLaC') return 'flac';
+        if (bytes.length > 4 && ascii(0, 4) === 'OggS') return 'ogg';
+        if (bytes.length > 12 && ascii(4, 4) === 'ftyp') return 'm4a';
+        if (bytes.length > 3 && (ascii(0, 3) === 'ID3' || bytes[0] === 0xFF)) return 'mp3';
+        return null;
+    }
+    return null;
+}
+
 function importMedia(target, input) {
     const spec = MEDIA_IMPORTS[target];
     if (!spec) throw new Error(`unsupported import target ${target}`);
@@ -308,6 +545,8 @@ function importMedia(target, input) {
     // design (KIND_SOURCE calls it `project`) — so it falls through to the
     // ordinary project-scoped path below.
     if (spec.subjectKind) return importSubjectPlate(spec, target, input || {});
+    // Footage and sound, landing where the orchestrator would have written it.
+    if (spec.capability) return importCapabilityMedia(spec, target, input || {});
     const owner = ownerFor(target, input || {});
     const { mime, bytes } = decodeDataUri(input && input.data);
     validateBytes(spec, mime, bytes);

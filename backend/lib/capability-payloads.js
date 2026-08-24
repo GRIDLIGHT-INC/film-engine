@@ -804,20 +804,16 @@ function providerConfigOf(project) {
  */
 async function persistCapabilityResult(capability, result, ctx, filename) {
     const { persistProviderMedia } = require('./provider-media');
-    const SUBDIR = {
-        image: 'storyboards', video: 'video', voice: 'audio', lipsync: 'video',
-        music: 'music', sfx: 'music', ambient: 'music', post: 'video',
-    };
-    const SERVE = {
-        image: 'images', video: 'videos', voice: 'audio', lipsync: 'videos',
-        music: 'music', sfx: 'music', ambient: 'music', post: 'videos',
-    };
+    // Where this capability's output lives, and where it is served from — read
+    // from the one registry rather than restated here. This was a third copy of
+    // a fact routes/pipeline.js held twice.
+    const { SUBDIR, SERVE_DIR } = require('./media-kinds');
     const subdir = SUBDIR[capability];
     if (!subdir) throw new Error(`no storage mapping for capability '${capability}'`);
 
     const projectId = projectIdOf(ctx || {});
     const path = await persistProviderMedia(projectId, subdir, filename, result && result.data, {
-        serveDir: SERVE[capability],
+        serveDir: SERVE_DIR[capability],
     });
     return { path, subdir };
 }
