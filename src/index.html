@@ -25031,6 +25031,14 @@ ${fountainText.slice(0, 50000)}`;
             // Map shot_id → latest job status.
             const jobByShot = {};
             (videoData.jobs || []).forEach(j => { if (!jobByShot[j.shot_id]) jobByShot[j.shot_id] = j; });
+            // Imported footage deliberately has no fake generation job. The
+            // durable asset slot is the source of truth for whether media is
+            // present; jobs only explain generated work in progress/failure.
+            const assetsByShot = {};
+            (videoData.assets || []).forEach(a => {
+                if (!a.shot_id) return;
+                (assetsByShot[a.shot_id] ||= {})[a.asset_type] ||= a;
+            });
             const videoProvider = (provData.effective && provData.effective.video) || 'gridlight';
 
             const grid = document.getElementById('videoshotsGrid');
@@ -25048,10 +25056,14 @@ ${fountainText.slice(0, 50000)}`;
 
             grid.innerHTML = banner + shots.map(s => {
                 const job = jobByShot[s.id];
-                const done = job && job.status === 'complete';
+                const media = assetsByShot[s.id] || {};
+                const playable = media.video_final || media.video_synced || media.video_raw;
+                const done = !!media.video_raw || (job && job.status === 'complete');
                 const failed = job && job.status === 'failed';
                 const longShot = s.duration_ms && s.duration_ms > 5000;
-                const videoUrl = API_BASE + '/film/video/' + pid + '/' + encodeURIComponent(s.shot_code) + '.mp4';
+                const videoUrl = playable && playable.url
+                    ? API_BASE + playable.url
+                    : API_BASE + '/film/video/' + pid + '/' + encodeURIComponent(s.shot_code) + '.mp4';
                 const statusBadge = done ? '<span class="tag" style="background:var(--gl-success,#166534);">video ready</span>'
                     : failed ? '<span class="tag" style="background:var(--gl-danger,#7f1d1d);">failed</span>'
                     : (job && job.status === 'generating') ? '<span class="tag">generating</span>'
@@ -25062,6 +25074,10 @@ ${fountainText.slice(0, 50000)}`;
                         <button class="btn btn-secondary btn-sm" onclick="lipsyncShot('${s.id}', this)" title="Sync to dialogue audio (needs generated voice)">Lip-sync</button>
                         <button class="btn btn-secondary btn-sm" onclick="postShot('${s.id}', this)" title="Upscale / enhance">Upscale</button>
                         ${longShot ? '<button class="btn btn-secondary btn-sm" onclick="stitchShot(\'' + s.id + '\', this)" title="Split &gt;5s shot into sub-clips and stitch">Stitch</button>' : ''}` : '';
+                const supplied = [
+                    media.audio_dialogue && 'dialogue', media.audio_sfx && 'SFX',
+                    media.video_synced && 'synced video', media.video_final && 'final video'
+                ].filter(Boolean);
                 return `
                 <div class="entity-card">
                     <div style="position:relative;background:var(--gl-bg-surface);border-radius:6px;overflow:hidden;margin-bottom:8px;min-height:120px;">
@@ -25074,6 +25090,7 @@ ${fountainText.slice(0, 50000)}`;
                         ${statusBadge}
                     </div>
                     <div class="shot-meta text-sm text-muted">${esc(s.location || '')}${s.duration_ms ? ' &middot; ' + (s.duration_ms/1000).toFixed(1) + 's' : ''}</div>
+                    ${supplied.length ? '<div class="text-sm text-muted" style="margin-top:5px;">Available: ' + supplied.map(esc).join(', ') + '</div>' : ''}
                     <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
                         <button class="btn btn-primary btn-sm" onclick="generateVideoFor('${s.id}', this)">${done ? 'Regenerate' : 'Generate Video'}</button>
                         ${mediaUploadControl('video', 'video', 'shot', s.id, { after: 'loadVideoShots', label: 'Upload clip' })}
@@ -25085,7 +25102,7 @@ ${fountainText.slice(0, 50000)}`;
                     </div>
                 </div>`;
             }).join('');
-            const readyCount = shots.filter(s => jobByShot[s.id] && jobByShot[s.id].status === 'complete').length;
+            const readyCount = shots.filter(s => assetsByShot[s.id] && assetsByShot[s.id].video_raw).length;
             setStatus(shots.length + ' shot(s), ' + readyCount + ' with video');
         } catch (err) { setStatus('Error: ' + err.message); }
     }
@@ -25137,6 +25154,11 @@ ${fountainText.slice(0, 50000)}`;
             // Latest job per (scene, gen_type).
             const jobKey = {};
             (jobData.jobs || []).forEach(j => { const k = j.scene_id + ':' + j.gen_type; if (!jobKey[k]) jobKey[k] = j; });
+            const assetsByScene = {};
+            (jobData.assets || []).forEach(a => {
+                if (!a.scene_id) return;
+                (assetsByScene[a.scene_id] ||= {})[a.asset_type] ||= a;
+            });
             const musicProvider = (provData.effective && provData.effective.music) || 'gridlight';
             const ambientProvider = (provData.effective && provData.effective.ambient) || 'gridlight';
 
@@ -25159,9 +25181,13 @@ ${fountainText.slice(0, 50000)}`;
             // ambient can be uploaded.
             const audioRow = (label, sc, kind, provider, upload) => {
                 const job = jobKey[sc.id + ':' + kind];
-                const done = job && job.status === 'complete';
+                const assetType = kind === 'score' ? 'audio_music' : 'audio_ambient';
+                const asset = (assetsByScene[sc.id] || {})[assetType];
+                const done = !!asset || (job && job.status === 'complete');
                 const failed = job && job.status === 'failed';
-                const url = API_BASE + '/film/music/' + pid + '/' + encodeURIComponent(sc.scene_number) + '_' + kind + '.wav';
+                const url = asset && asset.url
+                    ? API_BASE + asset.url
+                    : API_BASE + '/film/music/' + pid + '/' + encodeURIComponent(sc.scene_number) + '_' + kind + '.wav';
                 const badge = done ? '<span class="tag" style="background:var(--gl-success,#166534);">ready</span>'
                     : failed ? '<span class="tag" style="background:var(--gl-danger,#7f1d1d);">failed</span>'
                     : (job && job.status === 'generating') ? '<span class="tag">generating</span>' : '';
@@ -25188,7 +25214,7 @@ ${fountainText.slice(0, 50000)}`;
                         mediaUploadControl('ambient', 'audio', 'scene', sc.id, { after: 'loadMusic', label: 'Upload' }))}
                 </div>`).join('');
 
-            const readyCount = scenes.filter(sc => jobKey[sc.id + ':score'] && jobKey[sc.id + ':score'].status === 'complete').length;
+            const readyCount = scenes.filter(sc => assetsByScene[sc.id] && assetsByScene[sc.id].audio_music).length;
             setStatus(scenes.length + ' scene(s), ' + readyCount + ' scored');
         } catch (err) { setStatus('Error: ' + err.message); }
     }

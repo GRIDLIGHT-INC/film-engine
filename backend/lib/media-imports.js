@@ -521,7 +521,12 @@ function importCapabilityMedia(spec, target, input) {
 function extensionFor(spec, mime, bytes) {
     const ascii = (from, len) => bytes.toString('ascii', from, from + len);
     if (spec.kind === 'video') {
-        if (bytes.length > 4 && bytes[0] === 0x1A && bytes[1] === 0x45) return 'webm';
+        // WebM and Matroska share the EBML header; the browser's declared MIME
+        // is the only distinction available without walking the whole header.
+        // Saving an MKV as .webm asks browsers/editors to use the wrong demuxer.
+        if (bytes.length > 4 && bytes[0] === 0x1A && bytes[1] === 0x45) {
+            return mime === 'video/x-matroska' ? 'mkv' : 'webm';
+        }
         if (bytes.length > 12 && ascii(4, 4) === 'ftyp') {
             return /^qt/.test(ascii(8, 4)) ? 'mov' : 'mp4';
         }

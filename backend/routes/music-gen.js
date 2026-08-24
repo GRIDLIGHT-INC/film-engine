@@ -551,7 +551,15 @@ function listMusicJobs(req, res, projectId, query) {
     sql += ' ORDER BY created_at DESC';
 
     const jobs = db.prepare(sql).all(...params);
-    json(res, 200, { project_id: projectId, total: jobs.length, jobs });
+    // Imported beds have no generation job by design. Return the durable asset
+    // slots beside jobs so Music & Sound can show and play either provenance.
+    const assets = db.prepare(`SELECT * FROM film_assets
+        WHERE project_id = ? AND asset_type IN ('audio_music','audio_ambient')
+        ORDER BY created_at DESC`).all(projectId).map(a => ({
+        ...a,
+        url: a.file_name ? getFileUrl('music', a.project_id, a.file_name) : null,
+    }));
+    json(res, 200, { project_id: projectId, total: jobs.length, jobs, assets });
 }
 
 // -- FILM-093: Per-Shot Audio Mix -----------------------------------------

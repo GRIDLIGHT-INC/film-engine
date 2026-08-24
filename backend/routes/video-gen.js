@@ -380,7 +380,20 @@ function listVideoJobs(req, res, projectId, query) {
     } else {
         jobs = db.prepare('SELECT * FROM film_video_jobs WHERE project_id = ? ORDER BY created_at DESC').all(projectId);
     }
-    json(res, 200, { project_id: projectId, total: jobs.length, jobs });
+    // Generation jobs are only one way a clip can enter Film Engine. Imported
+    // footage deliberately has no fake provider job, so the production page
+    // must read the asset slots as well or a successful upload refreshes back
+    // to "no video" and looks broken.
+    const assets = db.prepare(`SELECT * FROM film_assets
+        WHERE project_id = ? AND asset_type IN
+            ('video_raw','audio_dialogue','audio_sfx','video_synced','video_final')
+        ORDER BY created_at DESC`).all(projectId).map(a => ({
+        ...a,
+        url: a.file_name ? getFileUrl(
+            a.asset_type.startsWith('audio_') ? (a.asset_type === 'audio_dialogue' ? 'audio' : 'music') : 'video',
+            a.project_id, a.file_name) : null,
+    }));
+    json(res, 200, { project_id: projectId, total: jobs.length, jobs, assets });
 }
 
 // -- FILM-033: Multi-Clip Stitching for Long Shots -----------------------

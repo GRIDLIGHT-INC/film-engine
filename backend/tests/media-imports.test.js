@@ -333,3 +333,46 @@ test('every registered import is reachable through its production route', async 
         }
     }
 });
+
+test('every imported media slot is returned by the project surface that renders it', async () => {
+    const { MEDIA_KINDS } = require('../lib/media-kinds');
+    const owner = seed();
+    for (const spec of Object.values(MEDIA_KINDS).filter(k => k.media !== 'image')) {
+        const bytes = MEDIA_BYTES[spec.media];
+        const mime = MEDIA_MIME[spec.media];
+        importMedia(`${spec.capability}-media`, {
+            ...owner,
+            name: `outside-${spec.capability}.${spec.media === 'video' ? 'mp4' : 'wav'}`,
+            data: `data:${mime};base64,${bytes.toString('base64')}`,
+        });
+    }
+
+    const video = await callHandler(require('../routes/video-gen').handleVideoGen,
+        'GET', `/film/projects/${owner.projectId}/video`, {});
+    const music = await callHandler(require('../routes/music-gen').handleMusicGen,
+        'GET', `/film/projects/${owner.projectId}/music/jobs`, {});
+    assert.strictEqual(video.status, 200);
+    assert.strictEqual(music.status, 200);
+
+    const returned = new Set([...(video.body.assets || []), ...(music.body.assets || [])]
+        .map(a => a.asset_type));
+    const expected = Object.values(MEDIA_KINDS).filter(k => k.media !== 'image').map(k => k.assetType);
+    assert.deepStrictEqual([...returned].sort(), [...new Set(expected)].sort(),
+        'an upload can succeed but remain invisible because the page lists generation jobs instead of assets');
+
+    const videoUi = UI.slice(UI.indexOf('async function loadVideoShots()'), UI.indexOf('async function generateVideoFor'));
+    const musicUi = UI.slice(UI.indexOf('async function loadMusic()'), UI.indexOf('function generateScoreFor'));
+    assert.match(videoUi, /videoData\.assets/, 'Video Shots ignores imported asset rows');
+    assert.match(musicUi, /jobData\.assets/, 'Music & Sound ignores imported asset rows');
+});
+
+test('an uploaded MKV keeps an MKV filename instead of being mislabeled WebM', () => {
+    const owner = seed();
+    const ebml = Buffer.concat([Buffer.from([0x1A, 0x45, 0xDF, 0xA3]), Buffer.alloc(32)]);
+    const result = importMedia('video-media', {
+        ...owner, name: 'outside.mkv',
+        data: `data:video/x-matroska;base64,${ebml.toString('base64')}`,
+    });
+    assert.match(result.file_name, /\.mkv$/,
+        'MKV bytes were stored under .webm, so browsers and editors may choose the wrong demuxer');
+});
