@@ -73,6 +73,7 @@ film-engine/
 │   │   ├── story-structure.js  # Beat sheets, holes, and house rules on the writing
 │   │   ├── agent-presence.js   # Which path an AI request takes, and why
 │   │   ├── story-bible.js      # What things ARE, and which entity was written from which section
+│   │   ├── media-import.js     # Footage and sound made outside Film Engine: one route, all seven kinds
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
@@ -88,7 +89,8 @@ film-engine/
 │   │   ├── image-fallback.js      # Walk credentialed image providers on refusal
 │   │   ├── gridlight-client.js    # Shared HTTP client + request queue + 429 retry
 │   │   ├── file-storage.js        # Shared file storage utilities
-│   │   ├── media-imports.js       # Validated persistent Storyboard, Previs image, and GLB imports
+│   │   ├── media-imports.js       # Every external asset: plates, board images, footage and sound
+│   │   ├── media-kinds.js         # Where a generated media file goes, said once
 │   │   ├── dialogue-builder.js    # Dialogue extraction + voice payloads
 │   │   ├── video-prompt.js        # Video prompt builder + camera control
 │   │   ├── music-prompt.js        # Music/SFX/ambient prompt builder
@@ -655,6 +657,23 @@ The set is **derived from `KIND_SOURCE`**, the registry of what can be a referen
 `server.js` decided the 150MB media limit from a hand-written list of three path shapes — already the kind that rots, and the four new targets would each have inherited a 10MB ceiling and refused a normal photograph, surfacing as a destroyed connection rather than a message. It is derived from the URL now: any `/import` endpoint carries a file.
 
 One `uploadControl()` builds all four controls, on the precedent `markupToolbar()` set. The test **executes** it rather than grepping for `data-import-target`, because the attribute is produced at runtime and appears nowhere in the source — a grep reports a working page as broken. Served at `POST /film/{characters/:id/refsheet,locations/:id/plate,props/:id/plate,projects/:id/mood-board}/import`, and as `plate_upload` (**142 tools**).
+
+### Footage and Sound From Outside
+*"Are we able to upload videos if we generate outside... we need to be able to easily add assets from external sources if we want to."*
+
+Every media file in this pipeline could only be born inside it — a clip cut in Runway or Kling, dialogue recorded properly, a licensed music bed all had to be re-made here or not used. The set is **derived from `MEDIA_KINDS`**: the eight orchestrated capabilities that produce a file, minus `image`, which arrives as the storyboard frame. Seven targets.
+
+**The storage registry existed three times before it could be derived from once.** `PERSIST_EXT` and `ASSET_TYPE` in `routes/pipeline.js` and `SUBDIR`/`serveDir` in `lib/capability-payloads.js` each said where a generated file goes — and the comment above `ASSET_TYPE` already recorded the cost of a mismatch: a value the CHECK refuses turns a successful, paid-for generation into a failed step. `lib/media-kinds.js` states it once, and `scope` is not stated at all — it is read from `PIPELINE_STEPS`, so an importer cannot decide that a scene-wide music bed belongs to one shot. Posting one at a shot is **refused with where it should have gone**, because attaching a whole scene's score to a single shot reads as working.
+
+**One route, not five.** `POST /film/{shots,scenes}/:id/media/:capability/import` covers all seven. An import endpoint bolted onto each of video-gen, voice, lipsync, music-gen and post-production is how four of them get the format sniffing and the fifth silently accepts anything.
+
+**The bytes decide, never the name.** A renamed file passes any extension check, and a clip that cannot be decoded is a shot that plays black in the cut with no error anywhere, because nothing opens it until an editor does. Video is MP4/MOV/WebM/MKV by container magic; audio is WAV/MP3/M4A/FLAC/OGG. An MP4 brand of `mp42` or `isom` is **video** and is refused as audio — an earlier version accepted it, which would have attached a silent video file as a music bed. The stored extension follows the bytes too: a `.mov` whose contents are `isom` is stored as `.mp4`.
+
+**An oversize upload now says 413.** `readBody` destroyed the request and *then* tried to write a 400 — and a destroyed request surfaces in the browser as a network error, which `api()` maps to *"Backend offline"*. So an upload that was merely too big was indistinguishable from a dead server, on the one feature where large files are the norm. It answers first and hangs up second, states the limit, and says why 150MB of upload is about 112MB of file. That ceiling is the base64 inflation and is **named rather than discovered**: raw binary upload would remove it, and `readBody` accumulates into a string, so that is separate work.
+
+**The serving URL had to be fetched to be believed.** It was built from `serveDir` — which is what `persistProviderMedia` calls the *gateway's* directory (`videos`) — while the HTTP route is `/film/video/`, singular. A perfectly good string and a 404: the upload succeeds and the clip will not play. Asserting the URL was non-null would have passed, so the test resolves it to a path on disk. Same mistake `servedUrlFor` made once already.
+
+Uploaded media is **not fingerprinted** and is recorded `license_source: 'external'` with rights `unknown` — a generated file's rights are known and a supplied one's are not, and delivery is the wrong moment to find that out. Served at `GET /film/media-kinds`, and as `media_upload` / `media_kinds` (**144 tools**).
 
 ### A Refused Import Has to Say Which File and Why
 Two GLB imports "never showed". The importer is sound — a 4.4MB Meshy GLB round-trips through the real browser path, lands in `film_assets` and lists — so what was met was a **refusal nobody saw**: one line on the status bar at the bottom of the screen, and then the file input was cleared. Indistinguishable from nothing having happened, which is precisely how it was reported.

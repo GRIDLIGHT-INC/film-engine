@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**142 tools, 37 families.** Everything the app can do, you can ask for in a
+**144 tools, 38 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -160,10 +160,16 @@ states that it is unapplied; it generates nothing and spends nothing.
 
 `node_gen_video` · `node_gen_voice` · `node_gen_music` · `node_gen_sfx` ·
 `node_gen_ambient` · `node_gen_lipsync` · `node_gen_post` · `node_gen_image` ·
-`node_gen_llm` · `node_gen_model3d`
+`node_gen_llm` · `node_gen_model3d` · `media_upload` · `media_kinds`
 
 Video, voice, music, SFX and ambient audio — each runs one generation in
 isolation. **All cost money.**
+
+None of it has to be generated here. `media_upload` takes a clip cut in another
+tool, dialogue recorded properly, or a licensed music bed, and stores it exactly
+where a generated file goes — so the timeline, the conform and the delivery
+pick it up unchanged. `media_kinds` says what can be uploaded, what formats are
+accepted, and whether each belongs to a shot or a scene. Both are free.
 
 ### 8. Assembly and export
 

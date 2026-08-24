@@ -22038,6 +22038,73 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
+    /**
+     * Upload footage or sound made outside Film Engine.
+     *
+     * Same shape as uploadControl() and deliberately a separate builder,
+     * because these differ in the two things that matter: what the picker will
+     * let you select, and whether the file belongs to a SHOT or a SCENE. A
+     * music bed posted at a shot would attach a whole scene's score to one shot
+     * and read as working; the server refuses it, and the control never offers
+     * it in the first place.
+     */
+    function mediaUploadControl(capability, media, scope, ownerId, opts) {
+        const o = opts || {};
+        const accept = media === 'video'
+            ? 'video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv'
+            : 'audio/wav,audio/mpeg,audio/mp4,audio/flac,audio/ogg,.wav,.mp3,.m4a,.flac,.ogg';
+        const url = `/${scope === 'scene' ? 'scenes' : 'shots'}/${ownerId}/media/${capability}/import`;
+        return `<label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;"
+                       title="${esc(o.title || `Use ${media === 'video' ? 'a clip' : 'audio'} you made elsewhere — it is stored exactly where a generated one goes`)}"
+                       onclick="event.stopPropagation();">${esc(o.label || 'Upload')}
+                    <input type="file" data-import-target="${capability}-media"
+                           accept="${accept}" style="display:none"
+                           onclick="event.stopPropagation();"
+                           onchange="uploadCapabilityMedia(event, '${capability}', '${url}', '${o.after || ''}')">
+                </label>`;
+    }
+
+    /** Send it, and say plainly where it landed and what is still unresolved. */
+    async function uploadCapabilityMedia(event, capability, url, after) {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        const label = event.target.closest('label');
+        const original = label && label.firstChild && label.firstChild.textContent;
+        /*
+         * Media files are large and the read alone is slow, so the control has
+         * to say it is working. A silent 40-second upload is indistinguishable
+         * from a dead button, which is how the GLB import came to be reported
+         * as broken when it was not.
+         */
+        if (label && label.firstChild) label.firstChild.textContent = 'Uploading… ';
+        setStatus(`Uploading ${file.name} (${(file.size / 1048576).toFixed(1)}MB)…`, true);
+        try {
+            if (file.size > 112 * 1048576) {
+                throw new Error(`That file is ${(file.size / 1048576).toFixed(0)}MB. The limit is about `
+                    + '112MB — uploads travel base64-encoded, which is a third larger than the file.');
+            }
+            const data = await new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = () => resolve(r.result);
+                r.onerror = () => reject(new Error('That file could not be read.'));
+                r.readAsDataURL(file);
+            });
+            const res = await api(url, { method: 'POST', body: JSON.stringify({ data, name: file.name }) });
+            setStatus(`${file.name} uploaded as ${res.asset_type}. ${res.note || ''}`);
+            if (after && typeof window[after] === 'function') window[after]();
+        } catch (err) {
+            setStatus(`${file.name} was not uploaded: ${err.message}`);
+            if (label) {
+                label.style.borderColor = 'var(--gl-danger,#ef4444)';
+                label.title = 'Not uploaded: ' + err.message;
+                setTimeout(() => { label.style.borderColor = ''; }, 8000);
+            }
+        } finally {
+            if (label && label.firstChild && original) label.firstChild.textContent = original;
+            event.target.value = '';
+        }
+    }
+
     async function generateCharacterImage(charId) {
         if (!confirm('Generate reference image for this character? This calls the image generation service.')) return;
         setStatus('Generating character reference image...', true);
@@ -25009,6 +25076,11 @@ ${fountainText.slice(0, 50000)}`;
                     <div class="shot-meta text-sm text-muted">${esc(s.location || '')}${s.duration_ms ? ' &middot; ' + (s.duration_ms/1000).toFixed(1) + 's' : ''}</div>
                     <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
                         <button class="btn btn-primary btn-sm" onclick="generateVideoFor('${s.id}', this)">${done ? 'Regenerate' : 'Generate Video'}</button>
+                        ${mediaUploadControl('video', 'video', 'shot', s.id, { after: 'loadVideoShots', label: 'Upload clip' })}
+                        ${mediaUploadControl('voice', 'audio', 'shot', s.id, { after: 'loadVideoShots', label: 'Upload dialogue' })}
+                        ${mediaUploadControl('sfx', 'audio', 'shot', s.id, { after: 'loadVideoShots', label: 'Upload SFX' })}
+                        ${mediaUploadControl('lipsync', 'video', 'shot', s.id, { after: 'loadVideoShots', label: 'Upload synced' })}
+                        ${mediaUploadControl('post', 'video', 'shot', s.id, { after: 'loadVideoShots', label: 'Upload final' })}
                         ${proActions}
                     </div>
                 </div>`;
@@ -25080,7 +25152,12 @@ ${fountainText.slice(0, 50000)}`;
                 return;
             }
 
-            const audioRow = (label, sc, kind, provider) => {
+            // The upload control is BUILT AT THE CALL SITE and passed in, so
+            // each scene-scoped capability is named where it is used. Derived
+            // inside from `kind`, the two would be a ternary nothing outside
+            // this function could find — including a reader looking for where
+            // ambient can be uploaded.
+            const audioRow = (label, sc, kind, provider, upload) => {
                 const job = jobKey[sc.id + ':' + kind];
                 const done = job && job.status === 'complete';
                 const failed = job && job.status === 'failed';
@@ -25091,7 +25168,10 @@ ${fountainText.slice(0, 50000)}`;
                 const gen = kind === 'score' ? "generateScoreFor('" + sc.id + "', this)" : "generateAmbientFor('" + sc.id + "', this)";
                 return `<div style="margin-top:8px;">
                     <div class="flex-between"><span class="text-sm">${label} ${badge}</span>
-                        <button class="btn btn-secondary btn-sm" onclick="${gen}">${done ? 'Regen' : 'Generate'}</button></div>
+                        <span style="display:flex;gap:6px;">
+                            <button class="btn btn-secondary btn-sm" onclick="${gen}">${done ? 'Regen' : 'Generate'}</button>
+                            ${upload}
+                        </span></div>
                     ${done ? '<audio src="' + url + '" controls preload="none" style="width:100%;margin-top:6px;" onerror="this.style.display=\'none\'"></audio>' : ''}
                 </div>`;
             };
@@ -25102,8 +25182,10 @@ ${fountainText.slice(0, 50000)}`;
                         <strong style="font-size:13px;">Scene ${esc(String(sc.scene_number))}</strong>
                         <span class="text-sm text-muted">${esc(sc.location || '')}${sc.time_of_day ? ' &middot; ' + esc(sc.time_of_day) : ''}</span>
                     </div>
-                    ${audioRow('Score', sc, 'score', musicProvider)}
-                    ${audioRow('Ambient', sc, 'ambient', ambientProvider)}
+                    ${audioRow('Score', sc, 'score', musicProvider,
+                        mediaUploadControl('music', 'audio', 'scene', sc.id, { after: 'loadMusic', label: 'Upload' }))}
+                    ${audioRow('Ambient', sc, 'ambient', ambientProvider,
+                        mediaUploadControl('ambient', 'audio', 'scene', sc.id, { after: 'loadMusic', label: 'Upload' }))}
                 </div>`).join('');
 
             const readyCount = scenes.filter(sc => jobKey[sc.id + ':score'] && jobKey[sc.id + ':score'].status === 'complete').length;
