@@ -11,6 +11,7 @@
  */
 const { db, generateId } = require('../db/database');
 const { stampShot } = require('../lib/screenplay-drift');
+const { orderBySql } = require('../lib/running-order');
 const { validateSceneCards, VALID_SHOT_TYPES, VALID_CAMERA_MOVES, VALID_LIGHTING,
     VALID_GEN_MODES, VALID_SENSORS } = require('../lib/scene-card-schema');
 
@@ -467,7 +468,7 @@ function getShotlist(req, res, projectId, query) {
         FROM film_shots s
         JOIN film_scenes sc ON s.scene_id = sc.id
         WHERE sc.project_id = ?
-        ORDER BY s.sort_order, sc.scene_number, s.shot_code
+        ORDER BY ${orderBySql({ shots: 's', scenes: 'sc' })}
         LIMIT ? OFFSET ?
     `).all(projectId, limit, offset);
 

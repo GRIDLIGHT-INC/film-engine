@@ -449,3 +449,41 @@ test('all five assembly surfaces put the shots in the same order', () => {
             `${file} still declares its own shot ordering`);
     }
 });
+
+test('the shot list feeding the sequence picker uses the film running order', async () => {
+    const projectId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Picker order');
+    const sceneIds = [];
+    for (const n of [1, 2]) {
+        const sceneId = generateId();
+        sceneIds.push(sceneId);
+        db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)')
+            .run(sceneId, projectId, String(n));
+    }
+    for (const [scene, code, order] of [
+        [0, '1A', 0], [0, '1B', 1], [1, '2A', 0], [1, '2B', 1],
+    ]) {
+        db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, sort_order) VALUES (?, ?, ?, ?)')
+            .run(generateId(), sceneIds[scene], code, order);
+    }
+
+    const { handleShots } = require('../routes/shots');
+    const response = await new Promise((resolve, reject) => {
+        const chunks = [];
+        const res = {
+            writeHead(status) { this.statusCode = status; },
+            end(chunk) {
+                if (chunk) chunks.push(Buffer.from(chunk));
+                try { resolve({ status: this.statusCode || 200, body: JSON.parse(Buffer.concat(chunks)) }); }
+                catch (err) { reject(err); }
+            },
+        };
+        try {
+            handleShots({ method: 'GET' }, res, ['film', 'projects', projectId, 'shotlist'], {});
+        } catch (err) { reject(err); }
+    });
+
+    assert.strictEqual(response.status, 200);
+    assert.deepStrictEqual(response.body.shots.map(s => s.shot_code), ['1A', '1B', '2A', '2B'],
+        'the sequence picker interleaves scenes instead of showing the order the film plays');
+});
