@@ -50,7 +50,12 @@ function resolveShotMedia(assets = []) {
 
     return {
         kind,
-        video: video ? { type: video.asset_type, path: video.file_path } : null,
+        // duration_ms travels with the clip so the timeline can hold it for its
+        // own length rather than the length its card asked for.
+        video: video ? {
+            type: video.asset_type, path: video.file_path,
+            duration_ms: Number(video.duration_ms) || 0,
+        } : null,
         still: still ? { type: still.asset_type, path: still.file_path } : null,
         audio: audio ? { type: audio.asset_type, path: audio.file_path } : null,
         // A shot with nothing at all is a hole in the cut. Surfacing it is the
@@ -69,24 +74,31 @@ function resolveShotMedia(assets = []) {
  * timeline, scene order is the film's actual structure and must win, otherwise
  * a shot dragged on the board would silently reorder the cut.
  */
-function orderShots(shots = []) {
-    return [...shots].sort((a, b) => {
-        const sceneA = Number(a.scene_number) || 0;
-        const sceneB = Number(b.scene_number) || 0;
-        if (sceneA !== sceneB) return sceneA - sceneB;
-        const orderA = Number(a.sort_order) || 0;
-        const orderB = Number(b.sort_order) || 0;
-        if (orderA !== orderB) return orderA - orderB;
-        return String(a.shot_code || '').localeCompare(String(b.shot_code || ''));
-    });
-}
+// The order the film plays in, from the one place that decides it. This was a
+// private copy that disagreed with conform's and the exporters' — see
+// lib/running-order.js for what that cost.
+const { orderShots } = require('./running-order');
 
 /**
  * Duration for a shot in ms. Falls back to a nominal length so a shot with no
  * measured duration still occupies a sane slot rather than collapsing to zero
  * and making the timeline unusable.
  */
-function shotDuration(shot) {
+function shotDuration(shot, media) {
+    /*
+     * THE FILM'S OWN LENGTH BEATS THE CARD'S GUESS.
+     *
+     * This read only shot.duration_ms — what the card ASKS for — and fell back
+     * to 4000ms. So a ten-second upload was held for four seconds and playback
+     * cut to the next still mid-shot. The card's number is an intention written
+     * before anything existed; once there is a clip, its measured length is the
+     * fact, and a player that disagrees with the file is simply wrong.
+     *
+     * A still-only shot keeps the card's duration: there is no measured length
+     * to prefer, and a still has no opinion about how long it is held.
+     */
+    const measured = Number(media && media.video && media.video.duration_ms);
+    if (Number.isFinite(measured) && measured > 0) return Math.round(measured);
     const ms = Number(shot && shot.duration_ms);
     if (Number.isFinite(ms) && ms > 0) return Math.round(ms);
     return DEFAULT_SHOT_MS;
@@ -102,12 +114,19 @@ function shotDuration(shot) {
  */
 function buildTimeline(shots = [], assetsByShot = {}, opts = {}) {
     const fps = Number(opts.fps) > 0 ? Number(opts.fps) : DEFAULT_FPS;
-    const ordered = orderShots(shots);
+    /*
+     * Covered shots do not get a slot: the clip on the shot before them already
+     * contains those moments, and holding their storyboard frames afterwards
+     * replays what the viewer has just watched. The fold also moves the clip's
+     * measured duration onto the lead — see lib/clip-coverage.js.
+     */
+    const { foldShots } = require('./clip-coverage');
+    const ordered = foldShots(orderShots(shots), opts.coverage).shots;
 
     let cursor = 0;
     const entries = ordered.map((shot, index) => {
         const media = resolveShotMedia(assetsByShot[shot.id] || []);
-        const duration = shotDuration(shot);
+        const duration = shotDuration(shot, media);
         const entry = {
             index,
             shot_id: shot.id,
@@ -120,6 +139,9 @@ function buildTimeline(shots = [], assetsByShot = {}, opts = {}) {
             end_ms: cursor + duration,
             duration_ms: duration,
             start_timecode: msToTimecode(cursor, fps),
+            // Which shots this one entry contains, so a viewer can see why 1B
+            // and 1C are not in the playlist rather than assuming they are lost.
+            ...(shot.covers ? { covers: shot.covers } : {}),
             ...media,
         };
         cursor += duration;

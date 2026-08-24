@@ -27,7 +27,7 @@ function getProjectShots(projectId) {
         FROM film_shots s
         JOIN film_scenes sc ON s.scene_id = sc.id
         WHERE sc.project_id = ? AND sc.status != 'removed'
-        ORDER BY s.sort_order, sc.scene_number, s.shot_code
+        ORDER BY ${require('../lib/running-order').orderBySql({ shots: 's', scenes: 'sc' })}
     `).all(projectId);
 }
 
@@ -100,7 +100,19 @@ function handleNLEExport(req, res, urlParts, query) {
     }
 
     // Generate export
-    const shots = getProjectShots(projectId);
+    /*
+     * Folded ONCE for all three formats.
+     *
+     * A clip that contains several shots is laid down at the first of them and
+     * the rest are not cut to — otherwise the editor receives the same footage
+     * three times, or three gaps where the covered shots have no media of their
+     * own. Folded here rather than inside each generator because there are
+     * three of them and a fix applied to two is worse than none: two formats
+     * would agree with the film and the third would not, and only the editor
+     * who opened that one would ever find out.
+     */
+    const { coverageFor, foldShots } = require('../lib/clip-coverage');
+    const shots = foldShots(getProjectShots(projectId), coverageFor(db, projectId)).shots;
     const assets = getProjectAssets(projectId);
     const safeTitle = (project.title || 'timeline').replace(/[^a-zA-Z0-9_-]/g, '_');
 

@@ -22099,14 +22099,58 @@ ${fountainText.slice(0, 50000)}`;
                     <input type="file" data-import-target="${capability}-media"
                            accept="${accept}" style="display:none"
                            onclick="event.stopPropagation();"
-                           onchange="uploadCapabilityMedia(event, '${capability}', '${url}', '${o.after || ''}')">
+                           onchange="uploadCapabilityMedia(event, '${capability}', '${url}', '${o.after || ''}', '${scope === 'shot' ? ownerId : ''}')">
                 </label>`;
     }
 
     /** Send it, and say plainly where it landed and what is still unresolved. */
-    async function uploadCapabilityMedia(event, capability, url, after) {
+    /**
+     * Which other shots are inside this clip.
+     *
+     * Offers only the shots that FOLLOW this one, consecutively, because that
+     * is the only shape a clip can have: a run with a hole in it is a jump the
+     * timeline has no way to represent, and the server refuses it. Offering
+     * shots it would then reject is how a picker teaches people to distrust it.
+     *
+     * Returns an array of shot ids, [] for "just this shot", or false to cancel.
+     */
+    async function askClipCoverage(shotId, fileName) {
+        const shots = state.videoShots || [];
+        const at = shots.findIndex(s => s.id === shotId);
+        if (at < 0 || at === shots.length - 1) return [];
+
+        const following = shots.slice(at + 1);
+        const here = shots[at];
+        const answer = prompt(
+            `Does "${fileName}" contain more than just ${here.shot_code}?\n\n`
+            + `If this one video covers several shots, type how many shots follow ${here.shot_code} `
+            + `inside it (1\u2013${following.length}), in order:\n`
+            + following.map((s, i) => `  ${i + 1} = up to ${s.shot_code}`).join('\n')
+            + `\n\nLeave blank if it is only ${here.shot_code}.`);
+
+        if (answer === null) return false;              // cancelled the upload
+        const n = Number(String(answer).trim());
+        if (!answer || !Number.isFinite(n) || n <= 0) return [];
+        return following.slice(0, Math.min(n, following.length)).map(s => s.id);
+    }
+
+    async function uploadCapabilityMedia(event, capability, url, after, shotId) {
         const file = event.target.files && event.target.files[0];
         if (!file) return;
+
+        /*
+         * Does this one clip contain more than one shot?
+         *
+         * Asked only for VIDEO on a shot, because it is the only case where it
+         * means anything — a music bed is scene-wide already and a dialogue
+         * take belongs to one shot by definition. Asked BEFORE the upload, so
+         * the director answers while they still remember what they generated.
+         */
+        let covers = null;
+        if (capability === 'video' && shotId && Array.isArray(state.videoShots)) {
+            covers = await askClipCoverage(shotId, file.name);
+            if (covers === false) { event.target.value = ''; return; }
+        }
         const label = event.target.closest('label');
         const original = label && label.firstChild && label.firstChild.textContent;
         /*
@@ -22128,8 +22172,21 @@ ${fountainText.slice(0, 50000)}`;
                 r.onerror = () => reject(new Error('That file could not be read.'));
                 r.readAsDataURL(file);
             });
-            const res = await api(url, { method: 'POST', body: JSON.stringify({ data, name: file.name }) });
-            setStatus(`${file.name} uploaded as ${res.asset_type}. ${res.note || ''}`);
+            const res = await api(url, {
+                method: 'POST',
+                body: JSON.stringify({ data, name: file.name, ...(covers && covers.length ? { covers } : {}) }),
+            });
+            /*
+             * A refused coverage is reported ON ITS OWN. The upload succeeded
+             * and the file is on its shot; saying "uploaded" alone would let a
+             * director believe 1B and 1C are inside it when they still play
+             * their own frames.
+             */
+            setStatus(res.coverage_error
+                ? `${file.name} uploaded, but the coverage was refused: ${res.coverage_error} `
+                  + (res.coverage_note || '')
+                : `${file.name} uploaded as ${res.asset_type}.`
+                  + (res.covers ? ` It contains ${res.covers.join(', ')}.` : ` ${res.note || ''}`));
             if (after && typeof window[after] === 'function') window[after]();
         } catch (err) {
             setStatus(`${file.name} was not uploaded: ${err.message}`);

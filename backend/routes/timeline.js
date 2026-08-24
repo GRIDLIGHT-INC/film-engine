@@ -62,7 +62,7 @@ function loadTimeline(projectId) {
     // alternative — a query per shot — is an N+1 that gets slow exactly when a
     // project gets interesting.
     const assets = db.prepare(`
-        SELECT a.shot_id, a.asset_type, a.file_path
+        SELECT a.shot_id, a.asset_type, a.file_path, a.duration_ms
         FROM film_assets a
         WHERE a.project_id = ? AND a.shot_id IS NOT NULL
     `).all(projectId);
@@ -72,7 +72,16 @@ function loadTimeline(projectId) {
         (assetsByShot[asset.shot_id] = assetsByShot[asset.shot_id] || []).push(asset);
     }
 
-    return buildTimeline(shots, assetsByShot, { fps: project.target_fps });
+    /*
+     * Which shots are inside another shot's clip. Without this the timeline
+     * still gives them their own slot and shows their storyboard frames after
+     * the viewer has just watched them in the clip.
+     */
+    const { coverageFor } = require('../lib/clip-coverage');
+    return buildTimeline(shots, assetsByShot, {
+        fps: project.target_fps,
+        coverage: coverageFor(db, projectId),
+    });
 }
 
 function getTimeline(req, res, projectId) {

@@ -477,15 +477,32 @@ function importCapabilityMedia(spec, target, input) {
         db.prepare('DELETE FROM film_assets WHERE id = ?').run(row.id);
     }
 
+    /*
+     * How long it actually is, measured once, here.
+     *
+     * The timeline held every clip for the duration its CARD asked for, so a
+     * ten-second upload played for four seconds and cut to the next still.
+     * Measured at import rather than probed at assembly, because the timeline
+     * repaints on every scrub and a subprocess in that loop is not a fix.
+     *
+     * Failure is silent BY DESIGN: a clip that will not probe is still a clip
+     * the director paid for and wants on the board, and it falls back to the
+     * card's duration exactly as before. The same rule stampAsset documents.
+     */
+    let durationMs = 0;
+    if (spec.kind === 'video' || spec.kind === 'audio') {
+        try { durationMs = measureDurationMs(filePath); } catch (_) { durationMs = 0; }
+    }
+
     const assetId = generateId();
     db.prepare(`INSERT INTO film_assets
         (id, project_id, shot_id, scene_id, asset_type, file_path, file_name, format, mime_type,
-         size_bytes, version, license_source, license_status, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'external', 'unknown', ?)`)
+         size_bytes, duration_ms, version, license_source, license_status, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'external', 'unknown', ?)`)
         .run(assetId, owner.projectId,
             spec.shotScoped ? owner.shotId : null,
             spec.sceneScoped ? owner.sceneId : (owner.sceneId || null),
-            spec.assetType, filePath, fileName, ext, mime, bytes.length,
+            spec.assetType, filePath, fileName, ext, mime, bytes.length, durationMs,
             JSON.stringify({
                 capability: spec.capability,
                 imported: true,
@@ -498,6 +515,7 @@ function importCapabilityMedia(spec, target, input) {
         shot_id: spec.shotScoped ? owner.shotId : null,
         scene_id: spec.sceneScoped ? owner.sceneId : null,
         asset_type: spec.assetType, capability: spec.capability,
+        duration_ms: durationMs,
         file_name: fileName, file_path: filePath, version: 1,
         /*
          * The SERVING subdir, which is `subdir` and not `serveDir`.
@@ -515,6 +533,41 @@ function importCapabilityMedia(spec, target, input) {
             + 'coming from outside, so editing the scene card will not tell you to regenerate over it. '
             + "Its rights are recorded as unknown \u2014 set them before you deliver.",
     };
+}
+
+/**
+ * The real length of a media file, in milliseconds.
+ *
+ * Read from the encoder rather than from any header we parse ourselves: a
+ * duration decoded from an MP4 header we wrote a reader for would be wrong for
+ * exactly the containers we did not anticipate, and a wrong duration is worse
+ * than none — it silently truncates a clip in the cut.
+ */
+function measureDurationMs(filePath) {
+    const { resolveFfmpeg } = require('./ffmpeg');
+    const found = resolveFfmpeg();
+    if (!found.available) return 0;
+    /*
+     * spawnSync, and stderr read on BOTH paths.
+     *
+     * The first version ran `-f null -` inside a try/catch and read stderr only
+     * from the thrown error — but that command SUCCEEDS, exits 0, and never
+     * throws, so the duration was silently 0 every time and every clip fell
+     * back to the card's guess: the exact fault this function exists to fix.
+     * It passed the suite because no test measured a real file.
+     *
+     * `-i <file>` with no output is the idiom: ffmpeg prints the container's
+     * duration and exits non-zero for want of an output file. Reading stderr
+     * regardless of the exit code means neither outcome can hide it again.
+     */
+    const { spawnSync } = require('child_process');
+    const run = spawnSync(found.bin, ['-hide_banner', '-i', filePath], {
+        encoding: 'utf8', timeout: 60000, maxBuffer: 8 * 1024 * 1024,
+    });
+    const out = String((run && run.stderr) || '');
+    const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(out);
+    if (!m) return 0;
+    return Math.round((Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) * 1000);
 }
 
 /** The extension the bytes actually justify. */
@@ -590,4 +643,4 @@ function importMedia(target, input) {
     };
 }
 
-module.exports = { MEDIA_IMPORTS, importMedia, decodeDataUri, validateBytes };
+module.exports = { MEDIA_IMPORTS, importMedia, decodeDataUri, validateBytes, measureDurationMs };

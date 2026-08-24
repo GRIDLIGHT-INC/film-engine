@@ -79,7 +79,39 @@ function importForCapability(req, res, scopeKind, ownerId, capability) {
             ...(scopeKind === 'scene' ? { sceneId: ownerId } : { shotId: ownerId }),
             data: body.data, name: body.name,
         });
-        return json(res, 201, imported);
+
+        /*
+         * Which OTHER shots this one clip also contains.
+         *
+         * "I generated a video that includes 1A-B-C." Without this the shots
+         * inside the clip keep their own slot and show their storyboard frames
+         * after the viewer has just watched them, and the conform reports them
+         * as missing footage.
+         *
+         * Refused rather than repaired if the run is not consecutive or crosses
+         * projects — see lib/clip-coverage.js. The upload itself has already
+         * succeeded, so a bad coverage is reported ALONGSIDE it rather than
+         * failing the whole request and losing a file the director just waited
+         * to send.
+         */
+        let coverage = null, coverageError = null;
+        if (Array.isArray(body.covers) && body.covers.length) {
+            try {
+                const { setCoverage } = require('../lib/clip-coverage');
+                const ids = [...new Set([ownerId, ...body.covers.filter(x => typeof x === 'string')])];
+                coverage = setCoverage(require('../db/database').db, imported.asset_id, ids);
+            } catch (err) { coverageError = err.message; }
+        }
+
+        return json(res, 201, {
+            ...imported,
+            ...(coverage ? { covers: coverage.covers } : {}),
+            ...(coverageError ? { coverage_error: coverageError } : {}),
+            ...(coverageError ? {
+                coverage_note: 'The clip was uploaded and is on its shot. Only the coverage was '
+                    + 'refused, so the other shots still play their own frames.',
+            } : {}),
+        });
     } catch (err) {
         // The reason survives. "Invalid file" sends a director back to their NLE
         // with nothing to change; "this is an audio file, not a video" does not.

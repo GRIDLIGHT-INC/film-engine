@@ -1877,6 +1877,14 @@ const BATCH_TOOLS = [
             capability: { type: 'string', description: 'video | voice | lipsync | sfx | post | music | ambient' },
             owner_id: { type: 'string', description: 'The shot id, or the scene id for music and ambient.' },
             file: { type: 'string', description: 'data:video/mp4;base64,... or data:audio/wav;base64,...' },
+            covers: {
+                type: 'array',
+                description: 'video only: the OTHER shot ids this one clip also contains, when a single '
+                    + 'generation covers several shots (1A-1B-1C). They must be CONSECUTIVE in running '
+                    + 'order and in the same project. Those shots then play as part of this clip rather '
+                    + 'than holding their own storyboard frames, and stop being reported as missing '
+                    + 'footage by the conform and the NLE exports.',
+            },
         },
         required: ['capability', 'owner_id', 'file'],
         async run(a) {
@@ -1890,7 +1898,7 @@ const BATCH_TOOLS = [
             }
             const owner = spec.scope === 'scene' ? 'scenes' : 'shots';
             return callRoute('POST', `/film/${owner}/${a.owner_id}/media/${a.capability}/import`,
-                { data: a.file, name: a.name }, handleMediaImport);
+                { data: a.file, name: a.name, ...(a.covers ? { covers: a.covers } : {}) }, handleMediaImport);
         },
     },
     {

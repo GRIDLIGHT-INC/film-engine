@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (81 migrations)
+│   │   └── migrations/     # SQL migration files (82 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -94,6 +94,8 @@ film-engine/
 │   │   ├── media-kinds.js         # Where a generated media file goes, said once
 │   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending
 │   │   ├── ffmpeg.js              # Finding an encoder, and joining clips into one file
+│   │   ├── clip-coverage.js       # One clip containing several shots, read by all five assemblies
+│   │   ├── running-order.js       # The order the film plays in, said once for all five assemblies
 │   │   ├── dialogue-builder.js    # Dialogue extraction + voice payloads
 │   │   ├── video-prompt.js        # Video prompt builder + camera control
 │   │   ├── music-prompt.js        # Music/SFX/ambient prompt builder
@@ -225,6 +227,7 @@ film-engine/
 │       ├── media-imports.test.js        # Registry-derived persistent Storyboard, Previs image, and GLB import contract
 │       ├── plate-upload.test.js         # Every kind of reference can be uploaded, not only generated
 │       ├── video-sequence.test.js       # Keyframe ceilings per adapter; N shots plan N-1 segments in order
+│       ├── clip-coverage.test.js        # One clip, several shots, honoured by every assembly surface
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -678,6 +681,47 @@ The description leads every segment, because it is what is true of the *whole* s
 A clip made elsewhere can be dropped straight onto a sequence (`POST /film/sequences/:id/import`), which attaches it to the sequence's first shot — a clip has to belong to a shot for the timeline and the export to find it. Deleting a sequence **keeps its clips**: they are on their shots, they cost money, and deleting a plan must not delete the footage it produced.
 
 Served at `GET|POST /film/projects/:id/sequences`, `GET|PUT|DELETE /film/sequences/:id`, `GET …/plan`, `POST …/generate`, `POST …/import`, on the Video Shots page, and as six tools (**150 tools**).
+
+### The Order the Film Plays In
+Found by running the real project rather than by reading it. There were **three** running orders and they disagreed:
+
+| | |
+|---|---|
+| `lib/timeline.js` | scene_number, then sort_order, then shot_code |
+| `lib/conform.js` | **sort_order**, then scene_number, then shot_code |
+| `routes/nle-export.js` | **sort_order**, then scene_number, then shot_code |
+
+`sort_order` is **per scene** and resets to 0 for each one, so putting it first interleaves the scenes. On a real twelve-shot project:
+
+```
+playback : 1A 1B 1BA 1C 2A 2AA 2B 2C 3A 3B 3C 3D
+conform  : 1A 1B 2A 3A 3B 3C 3D 2AA 1BA 2B 1C 2C   ← and all three NLE exports
+```
+
+So the master file and every NLE export were assembling the film **in a scrambled order** while playback showed it correctly. Nothing failed — the exports opened and played, in the wrong sequence, which is a defect only an editor finds and only after they have started cutting.
+
+It also makes coverage unsound, which is how it surfaced: a run validated as consecutive in one order is not consecutive in the other, so `[1A, 1B, 2A]` was accepted on a project whose running order has 1BA and 1C between them.
+
+`lib/running-order.js` is the one place that decides, and a film plays scene by scene, so **scene leads**. `shot_code` last is what makes an inserted shot land where a director expects — 2AA sorts between 2A and 2B by ordinary string comparison, which is precisely why inserts are additive rather than a renumber.
+
+`orderBySql()` takes the **aliases** rather than assuming them. `conform.js` aliases shots `sh` and scenes `s`; `routes/nle-export.js` does the exact opposite. A fixed string plus a regex rewrite at the call site silently produced `s.scene_number` there — a column that does not exist, and a 500 on every export, caught by the integration suite one minute after it was written.
+
+### One Clip, Several Shots
+*"I generated a video that includes 1A-B-C… when playing a video in playback it should be playing the entire video, not a few seconds and then switch to the next image. And if I option select which other shots are part of the video, it shouldn't play any of the images that are part of the video."*
+
+Three faults, one cause each.
+
+**A clip plays for the length its card asked for.** `shotDuration()` read `shot.duration_ms` — the *card's* number, an intention written before anything existed — and fell back to `DEFAULT_SHOT_MS = 4000`, never asking the file. So a ten-second upload was held for four seconds and playback cut to the next still mid-shot. That was true of **every** uploaded clip, not only multi-shot ones. The measured length now wins; a still-only shot keeps the card's duration, because there is nothing measured to prefer and a still has no opinion about how long it is held. Length is measured **at import** and stored, since the timeline repaints on every scrub and a subprocess in that loop is not a fix. A clip that will not probe falls back silently: it is still a clip the director paid for.
+
+**An asset belonged to exactly one shot.** `film_clip_coverage` (migration 084) is a join table rather than a JSON column: *is this shot covered* becomes an indexed lookup instead of a scan over every asset, the cascades do the right thing without cleanup code anyone has to remember, and a unique index on `shot_id` makes two clips claiming one shot impossible — that would be a timeline with no answer to *what plays here*, and the failure would be silent, since whichever row came back first would win.
+
+**Coverage is validated in canonical running order, not submitted order.** A caller listing `1C, 1A, 1B` describes a perfectly good run; `1A, 1C` does not, however it is sorted. Gaps, duplicates, cross-project ids and a coverage excluding the clip's own shot are all **refused rather than repaired** — a caller whose list is wrong has a different model of the clip than we do, and quietly fixing it hides that until the film is cut.
+
+**Five surfaces, one fold.** `buildTimeline`, `planConform` and the three NLE exporters each walk the shots independently, so fixing the visible one leaves the others wrong in ways nobody sees until delivery: playback would be right while the conform *refuses to build a master* — reporting 1B and 1C as missing footage the director is told to generate and already has — and Premiere receives a three-second film with two gaps. `foldShots` is the one place that decides, and it does **two** things: drops the covered shots *and* moves the clip's measured duration onto the lead. Dropping without moving the duration is a worse bug than the original, because a nine-second clip laid into a three-second slot pulls every cut after it six seconds early, and that is invisible until someone watches the whole thing. The three NLE formats fold **once** in the route rather than three times inside the generators: a fix applied to two of three means two formats agree with the film and the third does not, and only the editor who opened that one ever finds out.
+
+A refused coverage is reported **alongside a successful upload**, never instead of it — the file is already on its shot and failing the whole request would lose an upload the director just waited to send. The picker offers only the shots that consecutively **follow**, because offering shots the server would then reject is how a picker teaches people to distrust it.
+
+Served on the upload control, at `POST …/media/video/import` with `covers`, and through `media_upload`.
 
 ### One File
 *"Wire the stitcher so I get one file."*
@@ -1492,7 +1536,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (81 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (82 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -1650,6 +1694,7 @@ node --test backend/tests/anchor-plate-override.test.js
 node --test backend/tests/location-views.test.js
 node --test backend/tests/plate-upload.test.js
 node --test backend/tests/video-sequence.test.js
+node --test backend/tests/clip-coverage.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js

@@ -48,14 +48,24 @@ function planConform(projectId) {
                 s.scene_number
            FROM film_shots sh JOIN film_scenes s ON s.id = sh.scene_id
           WHERE s.project_id = ?
-          ORDER BY sh.sort_order, CAST(s.scene_number AS INTEGER), sh.shot_code`).all(projectId);
+          ORDER BY ${require('./running-order').ORDER_BY_SQL}`).all(projectId);
 
     if (!shots.length) {
         return { ok: false, error: 'This project has no shots, so there is no film to conform.', clips: [], missing: [] };
     }
 
+    /*
+     * A clip that contains several shots is laid down ONCE, at the first of
+     * them, and the shots inside it are neither cut to again nor reported
+     * missing. Without this the master repeats the same footage three times, or
+     * refuses to build at all because 1B and 1C look like missing footage the
+     * director is told to generate — footage they already have.
+     */
+    const { coverageFor, foldShots } = require('./clip-coverage');
+    const folded = foldShots(shots, coverageFor(db, projectId));
+
     const clips = [], missing = [];
-    for (const shot of shots) {
+    for (const shot of folded.shots) {
         const asset = db.prepare(
             `SELECT id, asset_type, file_path, file_name FROM film_assets
               WHERE shot_id = ? AND asset_type IN (${VIDEO_PRECEDENCE.map(() => '?').join(',')})
@@ -71,7 +81,11 @@ function planConform(projectId) {
             asset_id: asset.id,
             asset_type: asset.asset_type,
             file_path: asset.file_path,
+            // The clip's own measured length where the fold supplied one, so a
+            // nine-second clip is not laid into a three-second slot and every
+            // cut after it pulled six seconds early.
             duration_ms: shot.duration_ms || 0,
+            ...(shot.covers ? { covers: shot.covers } : {}),
         });
     }
 
