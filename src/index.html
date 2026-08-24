@@ -5106,6 +5106,38 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <div id="videoshotsProgressBar" style="height:100%;width:0%;background:var(--gl-accent,#6366f1);transition:width .2s;"></div>
                 </div>
             </div>
+            <!--
+              SEQUENCES — several shots, one continuous move.
+              A shot generates from ONE picture, so where it is going could only
+              ever be described in words. A sequence travels between frames the
+              director has already approved.
+            -->
+            <div class="card mb-16" id="sequenceSection">
+                <h3 class="card-toggle">Sequences
+                    <span class="card-toggle-hint">several shots, one move</span></h3>
+                <p class="text-sm text-muted" style="margin:0 0 12px;line-height:1.5;">
+                    Select the shots a move travels through, in order, and describe the whole thing.
+                    Each pair of neighbouring shots becomes one clip that starts on the first frame
+                    and ends on the second &mdash; so the movement is between pictures you have
+                    already approved, not a guess from a single still. You can also drop in a clip
+                    you generated somewhere else.
+                </p>
+                <div id="sequenceShotPicker" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;"></div>
+                <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
+                    <input id="sequenceName" placeholder="Name (e.g. The crossing)"
+                           style="flex:0 0 200px;padding:8px;border-radius:6px;
+                                  background:var(--gl-bg-surface);color:inherit;
+                                  border:1px solid var(--gl-border-default,#333);">
+                    <textarea id="sequenceDescription" rows="2"
+                              placeholder="Details for the scene — the light, the weather, the lens, what is happening across the whole move. This reaches every clip in the sequence."
+                              style="flex:1 1 340px;min-width:260px;padding:8px;border-radius:6px;
+                                     background:var(--gl-bg-surface);color:inherit;
+                                     border:1px solid var(--gl-border-default,#333);resize:vertical;"></textarea>
+                    <button class="btn btn-primary" onclick="createSequence()" style="height:38px;">Create sequence</button>
+                </div>
+                <div id="sequenceList" style="margin-top:14px;"></div>
+            </div>
+
             <div class="entity-grid" id="videoshotsGrid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
         </div>
 
@@ -22053,7 +22085,14 @@ ${fountainText.slice(0, 50000)}`;
         const accept = media === 'video'
             ? 'video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv'
             : 'audio/wav,audio/mpeg,audio/mp4,audio/flac,audio/ogg,.wav,.mp3,.m4a,.flac,.ogg';
-        const url = `/${scope === 'scene' ? 'scenes' : 'shots'}/${ownerId}/media/${capability}/import`;
+        /*
+         * A sequence has its own import route rather than sharing the shot one:
+         * a clip dropped on a sequence must also mark that sequence complete
+         * and point at the file, or the page still shows it as never run.
+         */
+        const url = scope === 'sequence'
+            ? `/sequences/${ownerId}/import`
+            : `/${scope === 'scene' ? 'scenes' : 'shots'}/${ownerId}/media/${capability}/import`;
         return `<label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;"
                        title="${esc(o.title || `Use ${media === 'video' ? 'a clip' : 'audio'} you made elsewhere — it is stored exactly where a generated one goes`)}"
                        onclick="event.stopPropagation();">${esc(o.label || 'Upload')}
@@ -25041,6 +25080,17 @@ ${fountainText.slice(0, 50000)}`;
             });
             const videoProvider = (provData.effective && provData.effective.video) || 'gridlight';
 
+            /*
+             * The sequence picker reads the SAME shots and the SAME asset map
+             * this page just built, rather than fetching its own. Two lists of
+             * "which shots have a frame" is exactly how a picker comes to offer
+             * a shot the planner refuses.
+             */
+            state.videoShots = shots;
+            state.videoAssetsByShot = assetsByShot;
+            renderSequencePicker(shots, assetsByShot);
+            loadSequences();
+
             const grid = document.getElementById('videoshotsGrid');
             // Provider indicator banner (full-width row).
             const banner = `<div style="grid-column:1/-1;background:var(--gl-bg-surface);border:1px solid var(--gl-border-subtle);border-radius:8px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;">
@@ -25105,6 +25155,177 @@ ${fountainText.slice(0, 50000)}`;
             const readyCount = shots.filter(s => assetsByShot[s.id] && assetsByShot[s.id].video_raw).length;
             setStatus(shots.length + ' shot(s), ' + readyCount + ' with video');
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // SEQUENCES — several shots, one continuous move
+    // ══════════════════════════════════════════════════════════════
+    //
+    // A shot generates from ONE picture, so where it is going could only be
+    // described in words plus a movement word from a list of eighteen. A
+    // sequence names the frames it travels between, which the director has
+    // already looked at and approved.
+
+    const SEQ = { picked: [] };
+
+    /**
+     * The shots you can build a move from.
+     *
+     * Only shots that HAVE a frame are selectable, and the rest are shown
+     * disabled with the reason rather than hidden — a shot that silently
+     * vanishes from the picker reads as data loss, and "generate its keyframe
+     * first" is a one-click fix the director can act on.
+     */
+    function renderSequencePicker(shots, assetsByShot) {
+        const host = document.getElementById('sequenceShotPicker');
+        if (!host) return;
+        host.innerHTML = (shots || []).map(s => {
+            const framed = !!(s.keyframe_url || s.has_keyframe
+                || (assetsByShot && assetsByShot[s.id] && (assetsByShot[s.id].storyboard || assetsByShot[s.id].keyframe)));
+            const order = SEQ.picked.indexOf(s.id);
+            const on = order >= 0;
+            return `<button class="btn btn-sm ${on ? 'btn-primary' : 'btn-secondary'}"
+                            ${framed ? '' : 'disabled'}
+                            title="${framed ? 'Add to the sequence, in the order you press them'
+                                : 'This shot has no keyframe yet — generate one before it can be part of a move'}"
+                            onclick="toggleSequenceShot('${s.id}')">
+                        ${on ? `<strong>${order + 1}.</strong> ` : ''}${esc(s.shot_code || '')}
+                    </button>`;
+        }).join('') || '<span class="text-sm text-muted">No shots yet.</span>';
+    }
+
+    /** Press order IS play order — that is the whole statement a sequence makes. */
+    function toggleSequenceShot(shotId) {
+        const at = SEQ.picked.indexOf(shotId);
+        if (at >= 0) SEQ.picked.splice(at, 1); else SEQ.picked.push(shotId);
+        renderSequencePicker(state.videoShots || [], state.videoAssetsByShot || {});
+    }
+
+    async function createSequence() {
+        if (!state.currentProject) return;
+        if (!SEQ.picked.length) return setStatus('Pick the shots the move travels through first.');
+        const name = (document.getElementById('sequenceName') || {}).value || '';
+        const description = (document.getElementById('sequenceDescription') || {}).value || '';
+        try {
+            await api(`/projects/${state.currentProject.id}/sequences`, {
+                method: 'POST',
+                body: JSON.stringify({ name, description, shot_ids: SEQ.picked }),
+            });
+            SEQ.picked = [];
+            const n = document.getElementById('sequenceName'); if (n) n.value = '';
+            const d = document.getElementById('sequenceDescription'); if (d) d.value = '';
+            setStatus('Sequence created. Preview it before generating — the preview is free.');
+            loadSequences();
+            renderSequencePicker(state.videoShots || [], state.videoAssetsByShot || {});
+        } catch (err) { setStatus('Could not create the sequence: ' + err.message); }
+    }
+
+    async function loadSequences() {
+        const host = document.getElementById('sequenceList');
+        if (!host || !state.currentProject) return;
+        let data;
+        try { data = await api(`/projects/${state.currentProject.id}/sequences`); }
+        catch (err) { host.innerHTML = `<p class="text-sm text-muted">Could not read sequences: ${esc(err.message)}</p>`; return; }
+
+        const seqs = data.sequences || [];
+        if (!seqs.length) { host.innerHTML = '<p class="text-sm text-muted">No sequences yet.</p>'; return; }
+
+        host.innerHTML = seqs.map(q => {
+            const codes = (q.shots || []).map(s => s.shot_code).join(' &rarr; ');
+            const unframed = (q.shots || []).filter(s => !s.has_keyframe).map(s => s.shot_code);
+            return `<div class="card" style="margin-bottom:10px;">
+                <div class="flex-between">
+                    <div>
+                        <strong>${esc(q.name || 'Untitled sequence')}</strong>
+                        <div class="text-sm text-muted" style="margin-top:2px;">${codes || 'no shots'}</div>
+                    </div>
+                    <span class="tag">${esc(q.status || 'draft')}</span>
+                </div>
+                ${q.description ? `<p class="text-sm" style="margin:8px 0 0;line-height:1.5;">${esc(q.description)}</p>` : ''}
+                ${unframed.length ? `<p class="text-sm" style="margin:8px 0 0;color:var(--gl-warning,#f59e0b);">
+                    ${esc(unframed.join(', '))} ${unframed.length === 1 ? 'has' : 'have'} no keyframe — generate ${unframed.length === 1 ? 'it' : 'them'} before this can run.</p>` : ''}
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                    <button class="btn btn-secondary btn-sm" onclick="previewSequence('${q.id}')"
+                            title="See exactly what would be sent, and how many generations it costs — free">Preview &amp; cost</button>
+                    <button class="btn btn-primary btn-sm" onclick="generateSequence('${q.id}', this)">Generate</button>
+                    ${mediaUploadControl('video', 'video', 'sequence', q.id,
+                        { after: 'loadSequences', label: 'Upload a clip',
+                          title: 'Already made this in Runway or elsewhere? Put it here instead of generating' })}
+                    <button class="btn btn-secondary btn-sm" onclick="deleteSequence('${q.id}')">Delete</button>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    /**
+     * What it would send, and what it would cost. Free, and it leads.
+     *
+     * This is the one control on the page that can spend several generations in
+     * a press, and a confirmation that cannot name what it is about to buy is a
+     * confirmation people learn to click past.
+     */
+    async function previewSequence(id) {
+        try {
+            const plan = await api(`/sequences/${id}/plan`);
+            if (plan.refused) return alert('This sequence cannot run yet.\n\n' + plan.reason);
+            const lines = (plan.segments || []).map((s, i) =>
+                `${i + 1}. ${s.from} → ${s.to}  (${s.keyframes} frame${s.keyframes === 1 ? '' : 's'})\n   ${s.prompt}`);
+            alert(`${plan.generations} generation${plan.generations === 1 ? '' : 's'} — this costs credits.\n`
+                + (plan.degraded ? `\n${plan.degraded_reason}\n` : '')
+                + (plan.needs_stitching ? '\nThis produces separate clips; join them in the timeline or your NLE.\n' : '')
+                + '\n' + lines.join('\n\n'));
+        } catch (err) { alert('Could not read the plan: ' + err.message); }
+    }
+
+    async function generateSequence(id, btn) {
+        let plan;
+        if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+        try { plan = await api(`/sequences/${id}/plan`); }
+        catch (err) {
+            // A gate whose purpose is inspection before spending must not permit
+            // the spend when the inspection fails.
+            if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
+            return alert('Could not check the sequence before generating: ' + err.message);
+        }
+        if (plan.refused) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
+            return alert('This sequence cannot run yet.\n\n' + plan.reason);
+        }
+        if (!confirm(`Generate ${plan.generations} clip${plan.generations === 1 ? '' : 's'}?\n\n`
+            + 'This costs credits. Press "Preview & cost" first to read exactly what will be sent.'
+            + (plan.degraded ? `\n\n${plan.degraded_reason}` : ''))) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
+            return;
+        }
+        if (btn) btn.textContent = 'Generating…';
+        setStatus('Generating the sequence — this takes a few minutes…', true);
+        try {
+            const res = await api(`/sequences/${id}/generate`, { method: 'POST', body: JSON.stringify({}) });
+            const made = (res.segments || []).filter(x => x.ok);
+            const failed = (res.segments || []).filter(x => !x.ok);
+            // A partial run reported as success is how an edit gets cut against
+            // a clip that was never made.
+            setStatus(failed.length
+                ? `${made.length} clip(s) made. ${failed[0].from}→${failed[0].to} failed: ${failed[0].error}.`
+                  + ((res.not_attempted || []).length ? ` Not attempted: ${res.not_attempted.join(', ')}.` : '')
+                : `${made.length} clip(s) generated.${res.note ? ' ' + res.note : ''}`);
+            loadSequences();
+            if (typeof loadVideoShots === 'function') loadVideoShots();
+        } catch (err) {
+            setStatus('Sequence generation failed: ' + err.message);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
+        }
+    }
+
+    async function deleteSequence(id) {
+        if (!confirm('Delete this sequence?\n\nAny clips it already generated are kept on their shots — '
+            + 'only the plan is removed.')) return;
+        try {
+            await api(`/sequences/${id}`, { method: 'DELETE' });
+            setStatus('Sequence deleted. Its clips were kept.');
+            loadSequences();
+        } catch (err) { setStatus('Could not delete: ' + err.message); }
     }
 
     async function generateVideoFor(shotId, btn) {

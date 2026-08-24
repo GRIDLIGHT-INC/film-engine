@@ -41,6 +41,7 @@ const { handleStoryboard } = require('../routes/storyboard');
 const { handleComments } = require('../routes/scripts');
 const { handleMoodBoard } = require('../routes/mood-board');
 const { handleMediaImport } = require('../routes/media-import');
+const { handleSequences } = require('../routes/sequences');
 const { handleAnnotations } = require('../routes/annotations');
 const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
@@ -267,6 +268,82 @@ async function callNodeTool(nodeTypeId, args) {
  * against one of them fails immediately.
  */
 const PRODUCTION_TOOLS = [
+    {
+        name: 'sequence_create',
+        handler: handleSequences, method: 'POST',
+        path: a => `/film/projects/${a.project_id}/sequences`,
+        body: a => ({ shot_ids: a.shot_ids, name: a.name, description: a.description }),
+        description:
+            'Build a SEQUENCE: several shots, in play order, generated as one continuous move with a '
+            + 'description true of all of them. Free \u2014 nothing generates. A single shot generates '
+            + 'from ONE picture, so where it is going can only be described in words; a sequence travels '
+            + 'between frames already approved, using the provider\u2019s first/last keyframe support. '
+            + 'shot_ids order IS play order.',
+        schema: {
+            project_id: { type: 'string' },
+            shot_ids: { type: 'array', description: 'Shot ids in the order they play. Order is the statement.' },
+            name: { type: 'string' },
+            description: { type: 'string', description: 'True of the whole sequence — light, weather, lens, what happens across the move. Reaches every clip.' },
+        },
+        required: ['project_id', 'shot_ids'],
+    },
+    {
+        name: 'sequence_list',
+        handler: handleSequences, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/sequences`,
+        description: 'The sequences in a project, the shots each travels through, and whether every one of those shots has a keyframe. Free.',
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'sequence_plan',
+        handler: handleSequences, method: 'GET',
+        path: a => `/film/sequences/${a.sequence_id}/plan`,
+        description:
+            'What a sequence would SEND and how many generations it costs, without generating. FREE. '
+            + 'Read this before sequence_generate: N shots become N-1 clips, and a shot with no keyframe '
+            + 'refuses the whole sequence rather than being skipped \u2014 skipping would silently join '
+            + 'the shots either side through a moment nobody has seen. Reports `degraded` when the '
+            + 'project\u2019s video provider takes only one keyframe.',
+        schema: { sequence_id: { type: 'string' } }, required: ['sequence_id'],
+    },
+    {
+        name: 'sequence_generate',
+        handler: handleSequences, method: 'POST',
+        path: a => `/film/sequences/${a.sequence_id}/generate`,
+        description:
+            'Generate a sequence. SPENDS CREDITS \u2014 one generation per pair of neighbouring shots. '
+            + 'Call sequence_plan first; it is free and states the exact number. Stops at the first '
+            + 'provider refusal rather than buying the same failure repeatedly, and names what it did '
+            + 'not attempt.',
+        schema: { sequence_id: { type: 'string' } }, required: ['sequence_id'],
+    },
+    {
+        name: 'sequence_update',
+        handler: handleSequences, method: 'PUT',
+        path: a => `/film/sequences/${a.sequence_id}`,
+        // Only what was actually supplied: the route merges, and sending
+        // undefined keys would blank the fields this call did not mention.
+        body: a => {
+            const out = {};
+            if (a.shot_ids !== undefined) out.shot_ids = a.shot_ids;
+            if (a.name !== undefined) out.name = a.name;
+            if (a.description !== undefined) out.description = a.description;
+            return out;
+        },
+        description: 'Change a sequence\u2019s shots, order or description. Merged, not replaced, so renaming does not drop the description. Free.',
+        schema: {
+            sequence_id: { type: 'string' },
+            shot_ids: { type: 'array' }, name: { type: 'string' }, description: { type: 'string' },
+        },
+        required: ['sequence_id'],
+    },
+    {
+        name: 'sequence_delete',
+        handler: handleSequences, method: 'DELETE',
+        path: a => `/film/sequences/${a.sequence_id}`,
+        description: 'Delete a sequence. Free. Clips it already generated are KEPT on their shots — deleting a plan must not delete the footage it produced.',
+        schema: { sequence_id: { type: 'string' } }, required: ['sequence_id'],
+    },
     {
         name: 'project_list',
         handler: handleProjects, method: 'GET',

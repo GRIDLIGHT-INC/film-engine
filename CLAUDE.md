@@ -23,7 +23,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (80 migrations)
+│   │   └── migrations/     # SQL migration files (81 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -74,6 +74,7 @@ film-engine/
 │   │   ├── agent-presence.js   # Which path an AI request takes, and why
 │   │   ├── story-bible.js      # What things ARE, and which entity was written from which section
 │   │   ├── media-import.js     # Footage and sound made outside Film Engine: one route, all seven kinds
+│   │   ├── sequences.js        # Several shots, one continuous move: plan free, generate, or upload
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
@@ -91,6 +92,7 @@ film-engine/
 │   │   ├── file-storage.js        # Shared file storage utilities
 │   │   ├── media-imports.js       # Every external asset: plates, board images, footage and sound
 │   │   ├── media-kinds.js         # Where a generated media file goes, said once
+│   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending
 │   │   ├── dialogue-builder.js    # Dialogue extraction + voice payloads
 │   │   ├── video-prompt.js        # Video prompt builder + camera control
 │   │   ├── music-prompt.js        # Music/SFX/ambient prompt builder
@@ -221,6 +223,7 @@ film-engine/
 │       ├── prompt-quality.test.js       # Is the request we send a good one: fallback ceilings, one resolver, full accounting, priority, negatives
 │       ├── media-imports.test.js        # Registry-derived persistent Storyboard, Previs image, and GLB import contract
 │       ├── plate-upload.test.js         # Every kind of reference can be uploaded, not only generated
+│       ├── video-sequence.test.js       # Keyframe ceilings per adapter; N shots plan N-1 segments in order
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -657,6 +660,23 @@ The set is **derived from `KIND_SOURCE`**, the registry of what can be a referen
 `server.js` decided the 150MB media limit from a hand-written list of three path shapes — already the kind that rots, and the four new targets would each have inherited a 10MB ceiling and refused a normal photograph, surfacing as a destroyed connection rather than a message. It is derived from the URL now: any `/import` endpoint carries a file.
 
 One `uploadControl()` builds all four controls, on the precedent `markupToolbar()` set. The test **executes** it rather than grepping for `data-import-target`, because the attribute is produced at runtime and appears nowhere in the source — a grep reports a working page as broken. Served at `POST /film/{characters/:id/refsheet,locations/:id/plate,props/:id/plate,projects/:id/mood-board}/import`, and as `plate_upload` (**142 tools**).
+
+### Several Shots, One Move
+*"We must be able to send multiple pictures to generate a specific sequence and details… I should be able to select which shots, and then enter details for the scene so it's as accurate as possible."*
+
+Video generation took exactly **one** picture — the shot's own keyframe as `init_image` — so the only thing a director could say about motion was whatever fitted in one still plus a movement word from a list of eighteen. Where the shot is **going**, and what it looks like when it arrives, was unsayable. That is why a move across a street had to be described rather than shown.
+
+**The ceiling is the provider's.** `lib/providers/runway.js` collapsed everything to one image (`promptImage = p.promptImage || p.init_image || p.image_url || refs[0].uri`), while `image_to_video` documents `promptImage` as a string **or** an array of `{uri, position}` with `first` and `last`. So two per generation, not N — and each adapter declares `maxKeyframes` with its endpoint as the reason, falling back to **1** when it declares nothing. Gridlight is held at 1 because a swappable local agent's endpoint is unknowable from here, and over-claiming sends a destination the service ignores while the director is told nothing. Frames beyond the ceiling are **reported**, never dropped quietly — the failure `maxReferenceImages` and the prompt ceiling each hit once already.
+
+**N shots become N−1 segments**, each travelling between two frames the director has already approved, stitched afterwards. `lib/video-sequence.js` plans and generates nothing: the split that lets the cost, the ordering and the refusals all be shown before a credit is spent, exactly as `lib/run-plan.js` does. Press order **is** play order, and reordering the shots reorders the move.
+
+Three refusals carry it. A shot with **no keyframe refuses the whole sequence** rather than being skipped — skipping silently joins the shots either side, through a moment nobody has seen, and the result looks like a success. A provider that takes one keyframe produces a **degraded** plan (a still per shot, motion in words) which is *reported* rather than presented as what was asked for. And the ceiling lookup no longer swallows every error into "this provider takes one keyframe": a wiring mistake used to become a silent degrade whose only symptom was N segments where there should have been N−1, so an unresolvable provider is now named as unresolved.
+
+The description leads every segment, because it is what is true of the *whole* sequence; what follows is which shot this segment starts on and which it arrives at. Without that, every segment of a five-shot sequence asks for the same thing and the result is five copies of one move.
+
+A clip made elsewhere can be dropped straight onto a sequence (`POST /film/sequences/:id/import`), which attaches it to the sequence's first shot — a clip has to belong to a shot for the timeline and the export to find it. Deleting a sequence **keeps its clips**: they are on their shots, they cost money, and deleting a plan must not delete the footage it produced.
+
+Served at `GET|POST /film/projects/:id/sequences`, `GET|PUT|DELETE /film/sequences/:id`, `GET …/plan`, `POST …/generate`, `POST …/import`, on the Video Shots page, and as six tools (**150 tools**).
 
 ### Footage and Sound From Outside
 *"Are we able to upload videos if we generate outside... we need to be able to easily add assets from external sources if we want to."*
@@ -1454,7 +1474,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (80 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (81 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -1611,6 +1631,7 @@ node --test backend/tests/playback-start.test.js
 node --test backend/tests/anchor-plate-override.test.js
 node --test backend/tests/location-views.test.js
 node --test backend/tests/plate-upload.test.js
+node --test backend/tests/video-sequence.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js

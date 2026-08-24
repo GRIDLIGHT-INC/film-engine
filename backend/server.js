@@ -80,6 +80,7 @@ const { handleBreakdown } = require('./routes/breakdown');
 const { handleProductionReports } = require('./routes/production-reports');
 const { handleMoodBoard } = require('./routes/mood-board');
 const { handleMediaImport } = require('./routes/media-import');
+const { handleSequences } = require('./routes/sequences');
 const { handleAnnotations } = require('./routes/annotations');
 const { handleScreenplayAI } = require('./routes/screenplay-ai');
 const { handleCharacters } = require('./routes/characters');
@@ -373,6 +374,17 @@ const server = http.createServer(async (req, res) => {
          * swallow /media/ — the same trap the 3D location route and the frames
          * route each fell into, where a handler existed and nothing reached it.
          */
+        /*
+         * Sequences. Before the generic /projects/:id/... and /shots/:id/...
+         * dispatch for the same reason media-import is: the domain handlers
+         * match on their own third segment and would swallow these.
+         */
+        if ((parts[1] === 'projects' && parts[2] && parts[3] === 'sequences')
+            || (parts[1] === 'sequences' && parts[2])) {
+            const handled = await handleSequences(req, res, parts, query);
+            if (handled !== false) return handled;
+        }
+
         if (parts[1] === 'media-kinds'
             || (['shots', 'scenes'].includes(parts[1]) && parts[2] && parts[3] === 'media')) {
             const handled = await handleMediaImport(req, res, parts, query);

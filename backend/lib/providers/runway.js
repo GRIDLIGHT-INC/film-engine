@@ -28,6 +28,8 @@ const DEFAULT_BASE_URL = 'https://api.dev.runwayml.com/v1';
 // Runway pins behaviour to a dated version header; sending it is not optional.
 const RUNWAY_VERSION = '2024-11-06';
 
+// Documented for image_to_video: promptImage may carry a first and a last frame.
+const MAX_KEYFRAMES = 2;
 const DEFAULT_VIDEO_MODEL = process.env.RUNWAY_VIDEO_MODEL || 'gen4.5';
 const DEFAULT_IMAGE_MODEL = process.env.RUNWAY_IMAGE_MODEL || 'gen4_image';
 
@@ -225,8 +227,32 @@ function buildVideoRequest(payload) {
     // character looking like themselves; dropping it (as an earlier draft did)
     // would silently lose the identity lock on any shot without a keyframe.
     const refs = normalizeReferenceImages(p.reference_images || p.referenceImages);
-    const promptImage = p.promptImage || p.init_image || p.image_url || (refs ? refs[0].uri : '');
-    const mode = promptImage ? 'image_to_video' : 'text_to_video';
+
+    /*
+     * A START and a DESTINATION, not just a start.
+     *
+     * image_to_video takes promptImage as a string OR as an array of
+     * { uri, position } with position "first" or "last" — the documented
+     * keyframe feature. Collapsing everything to one image, which this did,
+     * meant the only thing a director could say about motion was whatever fitted
+     * in one still plus a movement word: where the shot is GOING, and what it
+     * looks like when it gets there, was unsayable.
+     *
+     * Two is the ceiling and it is the endpoint's, not a number chosen here.
+     * Anything beyond it is REPORTED rather than dropped quietly, because a
+     * director who selected four frames and silently got two would read it as
+     * the feature not working.
+     */
+    const keyframes = normalizeKeyframes(p.keyframes);
+    const dropped = keyframes.length > MAX_KEYFRAMES ? keyframes.slice(MAX_KEYFRAMES) : [];
+    const kept = keyframes.slice(0, MAX_KEYFRAMES);
+
+    const singleImage = p.promptImage || p.init_image || p.image_url || (refs ? refs[0].uri : '');
+    const promptImage = kept.length > 1 ? kept
+        : kept.length === 1 ? kept[0].uri
+            : singleImage;
+    const mode = (Array.isArray(promptImage) ? promptImage.length : promptImage)
+        ? 'image_to_video' : 'text_to_video';
 
     const body = {
         model: pickModel(p.model, KNOWN_VIDEO_MODELS, DEFAULT_VIDEO_MODEL),
@@ -239,7 +265,27 @@ function buildVideoRequest(payload) {
     const seed = normalizeSeed(p.seed);
     if (seed !== undefined) body.seed = seed;
 
-    return { url: `${baseUrl()}/${mode}`, headers: jsonHeaders(), body, mode };
+    return {
+        url: `${baseUrl()}/${mode}`, headers: jsonHeaders(), body, mode,
+        // Named so a caller can tell the director what could not be sent.
+        ...(dropped.length ? { dropped: dropped.map(k => k.uri) } : {}),
+    };
+}
+
+/**
+ * Keyframes as the endpoint wants them: ordered, positioned, first then last.
+ *
+ * A caller may hand us bare strings or half-filled records. Deriving the
+ * position from the ORDER rather than trusting a field means a sequence planner
+ * cannot accidentally send two "first" frames, which the endpoint accepts and
+ * which produces a shot that goes nowhere.
+ */
+function normalizeKeyframes(input) {
+    if (!Array.isArray(input) || !input.length) return [];
+    return input
+        .map(k => (typeof k === 'string' ? { uri: k } : k))
+        .filter(k => k && k.uri)
+        .map((k, i, all) => ({ uri: k.uri, position: i === 0 ? 'first' : (i === all.length - 1 ? 'last' : 'last') }));
 }
 
 function buildImageRequest(payload) {
@@ -435,6 +481,11 @@ const adapter = {
      * on one adapter and structurally incapable on the others.
      */
     referenceMode: 'condition',
+    // How many stills one generation can be pinned to. Runway's
+    // image_to_video documents promptImage as a first and a last frame;
+    // an adapter that declares nothing falls back to 1, because sending
+    // two to an endpoint that takes one loses the destination silently.
+    maxKeyframes: MAX_KEYFRAMES,
     maxReferenceImages: 3,
 
     connection: {
@@ -497,6 +548,7 @@ const adapter = {
 };
 
 module.exports = {
+    buildVideoRequest,
     KNOWN_VIDEO_MODELS,
     KNOWN_IMAGE_MODELS,
     pickModel,

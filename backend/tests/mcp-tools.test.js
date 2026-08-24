@@ -319,6 +319,9 @@ test('a missing required argument fails the tool instead of half-running it', as
  * they cannot remove.
  */
 const CREATE_DELETE_PAIRS = [
+    // A sequence is a plan a director builds and re-runs; it has to be
+    // removable, and removing it must not take the clips with it.
+    { create: 'sequence_create', remove: 'sequence_delete' },
     { create: 'project_create', remove: 'project_delete' },
     // A profile is a commitment, and one an agent can make it must be able to
     // withdraw — otherwise a wrong subject is locked in with no way back out.

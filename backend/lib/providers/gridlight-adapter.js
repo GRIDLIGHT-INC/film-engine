@@ -163,6 +163,11 @@ const gridlightAdapter = {
      * on one adapter and structurally incapable on the others.
      */
     referenceMode: 'edit',
+    // A swappable local agent: whether its /video endpoint accepts a last
+    // frame is unknowable from here. Held at one, because over-claiming
+    // sends a destination the service ignores and the director is told
+    // nothing — the failure that maxReferenceImages already documents.
+    maxKeyframes: 1,
     maxReferenceImages: 3,
     supportsReferenceImages: true,
     // reference_images / ip_adapter_image condition the result; no tag syntax.
