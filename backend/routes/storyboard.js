@@ -347,7 +347,16 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
 }
 
 /**
- * Load shots for a project, joined with scene data, ordered by scene_number + shot_code.
+ * Load shots for a project, joined with scene data, IN THE ORDER THE FILM PLAYS.
+ *
+ * This ordered by scene_number and shot_code, ignoring sort_order — so after a
+ * director reordered shots the board showed one order while playback and every
+ * export used another, and nothing reported the disagreement. The first sign
+ * would be a cut that does not match the board it was planned on.
+ *
+ * Exported so a test can read what the board is actually ordered by: a display
+ * whose order nothing can check is how this survived three rounds of fixing the
+ * assemblies beside it.
  */
 function loadProjectShots(projectId) {
     return db.prepare(`
@@ -357,7 +366,7 @@ function loadProjectShots(projectId) {
         FROM film_shots s
         JOIN film_scenes sc ON s.scene_id = sc.id
         WHERE sc.project_id = ? AND sc.status != 'removed'
-        ORDER BY sc.scene_number, s.shot_code
+        ORDER BY ${require('../lib/running-order').orderBySql({ shots: 's', scenes: 'sc' })}
     `).all(projectId);
 }
 
@@ -3216,4 +3225,6 @@ function selectReferenceImage(sceneCard, matchedChars, matchedLocation, projectI
 }
 
 module.exports = {
-    buildRecomposePayload, handleStoryboard, matchProps };
+    buildRecomposePayload, handleStoryboard, matchProps,
+    // The board's own shot query, so its order is checkable.
+    getStoryboardShots: loadProjectShots };

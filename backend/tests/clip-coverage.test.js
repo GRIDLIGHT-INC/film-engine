@@ -487,3 +487,102 @@ test('the shot list feeding the sequence picker uses the film running order', as
     assert.deepStrictEqual(response.body.shots.map(s => s.shot_code), ['1A', '1B', '2A', '2B'],
         'the sequence picker interleaves scenes instead of showing the order the film plays');
 });
+
+// ── 8. What a director LOOKS at agrees with what they get ───────────────
+//
+// The five assemblies were fixed and the board was not, because the set I was
+// given was "surfaces that turn shots into a running film" and a board is a
+// display. That distinction is real and it is also exactly how the third and
+// fourth wrong orderings survived: each surface was categorised in someone's
+// head and never written down, so every new query picked its own ORDER BY.
+//
+// So this test is over the CATEGORIES rather than over two fixes. A query that
+// presents shots in film order must use the shared order; a query that walks
+// shots to GENERATE is free to use any order, because the order you generate in
+// does not change the film. A new surface has to land in one of them.
+
+const RUNNING_ORDER_SURFACES = {
+    // Assemblies — they build the film itself.
+    'lib/timeline.js': 'assembly',
+    'lib/conform.js': 'assembly',
+    'routes/nle-export.js': 'assembly',
+    // Displays — a director reads these and expects them to match the film.
+    'routes/storyboard.js': 'display',
+    'lib/board-grouping.js': 'display',
+    'routes/shots.js': 'display',
+    // Coverage validates against the same order the assemblies walk.
+    'lib/clip-coverage.js': 'assembly',
+};
+
+test('every surface that shows shots in film order uses the one film order', () => {
+    const { orderBySql } = require('../lib/running-order');
+
+    for (const [file, category] of Object.entries(RUNNING_ORDER_SURFACES)) {
+        const src = fs.readFileSync(path.join(ROOT, file), 'utf8')
+            .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        assert.ok(/running-order/.test(src),
+            `${file} (${category}) does not use the shared running order`);
+
+        /*
+         * And no leftover hand-written ordering of shots. Matched on the pair
+         * that actually decides a running order — a scene column beside a shot
+         * column — so an ORDER BY over something else entirely (created_at on
+         * an asset lookup, sort_order within one scene) is not caught by
+         * accident and the check stays worth keeping.
+         */
+        const rogue = (src.match(/ORDER BY[^`'"\n]*/g) || [])
+            .filter(o => /scene_number/.test(o) && /shot_code/.test(o))
+            .filter(o => !/orderBySql|ORDER_BY_SQL/.test(o));
+        assert.deepStrictEqual(rogue, [],
+            `${file} still declares its own shot ordering: ${rogue.join(' | ')}`);
+    }
+
+    // The aliases have to be stated, not guessed: a regex rewrite of a fixed
+    // clause produced a column that does not exist and 500'd every export.
+    assert.strictEqual(orderBySql({ shots: 's', scenes: 'sc' }),
+        'CAST(sc.scene_number AS INTEGER), s.sort_order, s.shot_code');
+});
+
+test('a reordered scene reads the same on the board as it plays', () => {
+    /*
+     * The behavioural half. A director drags 1C to the front; the film plays
+     * 1C, 1A, 1B. A board still ordered by shot_code shows 1A, 1B, 1C — and
+     * nothing anywhere reports the disagreement, so the first sign is a cut
+     * that does not match the board it was planned on.
+     */
+    const { getStoryboardShots } = require('../routes/storyboard');
+    const { groupFrames } = require('../lib/board-grouping');
+    const { orderShots } = require('../lib/running-order');
+
+    const projectId = generateId();
+    const sceneId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Reordered');
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number, location) VALUES (?, ?, ?, ?)')
+        .run(sceneId, projectId, '1', 'STREET');
+    // sort_order deliberately disagrees with shot_code, which is what a drag does.
+    for (const [code, order] of [['1A', 1], ['1B', 2], ['1C', 0]]) {
+        db.prepare(`INSERT INTO film_shots (id, scene_id, shot_code, sort_order, scene_card_yaml)
+                    VALUES (?, ?, ?, ?, ?)`)
+            .run(generateId(), sceneId, code, order, JSON.stringify({ shot_code: code }));
+    }
+
+    const expected = ['1C', '1A', '1B'];
+
+    const rows = db.prepare(
+        `SELECT sh.shot_code, sh.sort_order, s.scene_number
+           FROM film_shots sh JOIN film_scenes s ON s.id = sh.scene_id
+          WHERE s.project_id = ?`).all(projectId);
+    assert.deepStrictEqual(orderShots(rows).map(r => r.shot_code), expected,
+        'the canonical order does not honour a reorder');
+
+    assert.ok(typeof getStoryboardShots === 'function',
+        'the storyboard board does not expose its shot query, so nothing can check its order');
+    assert.deepStrictEqual(getStoryboardShots(projectId).map(s => s.shot_code), expected,
+        'the storyboard board shows a different order from the one the film plays in');
+
+    const grouped = groupFrames(projectId, 'scene');
+    const first = (grouped.groups || grouped)[0];
+    const codes = (first.frames || first.shots || []).map(f => f.shot_code);
+    assert.deepStrictEqual(codes, expected,
+        'board grouping shows a different order from the one the film plays in');
+});

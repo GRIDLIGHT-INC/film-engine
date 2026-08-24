@@ -34,7 +34,7 @@ function framesOf(projectId) {
                 s.id AS scene_id, s.scene_number, s.location, s.time_of_day
            FROM film_shots sh JOIN film_scenes s ON s.id = sh.scene_id
           WHERE s.project_id = ?
-          ORDER BY CAST(s.scene_number AS INTEGER), s.scene_number, sh.shot_code`).all(projectId);
+          ORDER BY ${require('./running-order').ORDER_BY_SQL}`).all(projectId);
 }
 
 /**

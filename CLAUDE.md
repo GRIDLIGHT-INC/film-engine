@@ -704,6 +704,10 @@ It also makes coverage unsound, which is how it surfaced: a run validated as con
 
 `lib/running-order.js` is the one place that decides, and a film plays scene by scene, so **scene leads**. `shot_code` last is what makes an inserted shot land where a director expects — 2AA sorts between 2A and 2B by ordinary string comparison, which is precisely why inserts are additive rather than a renumber.
 
+**Assembly, display, or generation order** — every surface that touches the shot list is one of the three, and the distinction is now written down rather than held in someone's head, which is how the third and fourth wrong orderings survived. **Assemblies** build the film: the timeline, the conform, the three exporters. **Displays** are what a director reads and expects to match it: the storyboard board, board grouping, the shot list. Both use the shared order. **Generation order** — the eight batch queries in video-gen, voice, music, post, lipsync and pipeline, and run-plan's strip ordering — is deliberately left alone: the order you generate in does not change the film, and rewriting them to no behavioural effect is churn that makes the next real divergence harder to spot in a diff.
+
+The displays were fixed a round later than the assemblies, and the reason is worth keeping: the set handed over was *"surfaces that turn shots into a running film"*, and a board does not turn shots into anything. That is true and it is not the question a director is asking, which is *does the thing I am looking at match the thing I get*. `loadProjectShots` is exported so a test can read what the board is actually ordered by — a display whose order nothing can check is how this survived three rounds of fixing the assemblies beside it.
+
 `orderBySql()` takes the **aliases** rather than assuming them. `conform.js` aliases shots `sh` and scenes `s`; `routes/nle-export.js` does the exact opposite. A fixed string plus a regex rewrite at the call site silently produced `s.scene_number` there — a column that does not exist, and a 500 on every export, caught by the integration suite one minute after it was written.
 
 ### One Clip, Several Shots
