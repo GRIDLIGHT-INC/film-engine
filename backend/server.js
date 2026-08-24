@@ -386,6 +386,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (parts[1] === 'media-kinds'
+            || (parts[1] === 'assets' && parts[2] && parts[3] === 'coverage')
             || (['shots', 'scenes'].includes(parts[1]) && parts[2] && parts[3] === 'media')) {
             const handled = await handleMediaImport(req, res, parts, query);
             if (handled !== false) return handled;

@@ -22105,33 +22105,85 @@ ${fountainText.slice(0, 50000)}`;
 
     /** Send it, and say plainly where it landed and what is still unresolved. */
     /**
-     * Which other shots are inside this clip.
+     * Say which shots one clip contains, on the card, after it is uploaded.
      *
-     * Offers only the shots that FOLLOW this one, consecutively, because that
-     * is the only shape a clip can have: a run with a hole in it is a jump the
-     * timeline has no way to represent, and the server refuses it. Offering
-     * shots it would then reject is how a picker teaches people to distrust it.
+     * This replaced a native prompt() asked BEFORE the upload, where cancelling
+     * abandoned the clip with nothing said. Here nothing is at stake: the file
+     * is already stored, and answering or not answering only changes how it
+     * plays back.
      *
-     * Returns an array of shot ids, [] for "just this shot", or false to cancel.
+     * Only the shots that consecutively FOLLOW are offered, because that is the
+     * only shape a clip can have and the server refuses the rest — a picker
+     * offering what the server rejects is how a picker stops being believed.
      */
-    async function askClipCoverage(shotId, fileName) {
+    async function setClipCoverage(shotId, btn) {
         const shots = state.videoShots || [];
         const at = shots.findIndex(s => s.id === shotId);
-        if (at < 0 || at === shots.length - 1) return [];
-
-        const following = shots.slice(at + 1);
+        if (at < 0) return;
         const here = shots[at];
-        const answer = prompt(
-            `Does "${fileName}" contain more than just ${here.shot_code}?\n\n`
-            + `If this one video covers several shots, type how many shots follow ${here.shot_code} `
-            + `inside it (1\u2013${following.length}), in order:\n`
-            + following.map((s, i) => `  ${i + 1} = up to ${s.shot_code}`).join('\n')
-            + `\n\nLeave blank if it is only ${here.shot_code}.`);
+        const following = shots.slice(at + 1);
+        if (!following.length) {
+            return setStatus(`${here.shot_code} is the last shot — there is nothing after it for a clip to cover.`);
+        }
 
-        if (answer === null) return false;              // cancelled the upload
-        const n = Number(String(answer).trim());
-        if (!answer || !Number.isFinite(n) || n <= 0) return [];
-        return following.slice(0, Math.min(n, following.length)).map(s => s.id);
+        const media = (state.videoAssetsByShot || {})[shotId] || {};
+        const asset = media.video_raw || media.video_final || media.video_synced;
+        if (!asset || !asset.id) return setStatus('This shot has no clip to describe yet.');
+
+        const answer = await pickCoverageRun(here, following);
+        if (answer === null) return;                       // closed it: nothing happens
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+        try {
+            const ids = [shotId, ...following.slice(0, answer).map(s => s.id)];
+            const res = await api(`/assets/${asset.id}/coverage`, {
+                method: 'PUT', body: JSON.stringify({ shot_ids: answer ? ids : [] }),
+            });
+            setStatus(res.note || 'Coverage saved.');
+            loadVideoShots();
+        } catch (err) {
+            setStatus('Could not set the coverage: ' + err.message);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'Covers…'; }
+        }
+    }
+
+    /** A small in-page chooser. Returns how many following shots, 0 to clear, or null. */
+    function pickCoverageRun(here, following) {
+        return new Promise(resolve => {
+            const box = document.createElement('div');
+            box.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9998;'
+                + 'display:flex;align-items:center;justify-content:center;';
+            const done = v => { box.remove(); resolve(v); };
+            box.innerHTML = `<div class="card" style="max-width:460px;">
+                <h3 style="margin:0 0 8px;">What does this clip contain?</h3>
+                <p class="text-sm text-muted" style="margin:0 0 12px;line-height:1.5;">
+                    If one video covers several shots, the shots inside it stop playing their own
+                    storyboard frames and stop being reported as missing footage.
+                </p>
+                <div id="covChoices" style="display:flex;flex-direction:column;gap:6px;"></div>
+            </div>`;
+            const list = box.querySelector('#covChoices');
+            const add = (label, value) => {
+                const b = document.createElement('button');
+                b.className = 'btn btn-secondary btn-sm';
+                b.style.textAlign = 'left';
+                b.textContent = label;
+                b.onclick = () => done(value);
+                list.appendChild(b);
+            };
+            add(`Just ${here.shot_code}`, 0);
+            following.forEach((s, i) => add(`${here.shot_code} through ${s.shot_code}`, i + 1));
+            const cancel = document.createElement('button');
+            cancel.className = 'btn btn-secondary btn-sm';
+            cancel.textContent = 'Cancel';
+            cancel.style.marginTop = '6px';
+            cancel.onclick = () => done(null);
+            list.appendChild(cancel);
+            // Closing it changes nothing — the clip is already uploaded.
+            box.addEventListener('click', e => { if (e.target === box) done(null); });
+            document.body.appendChild(box);
+        });
     }
 
     async function uploadCapabilityMedia(event, capability, url, after, shotId) {
@@ -22139,18 +22191,20 @@ ${fountainText.slice(0, 50000)}`;
         if (!file) return;
 
         /*
-         * Does this one clip contain more than one shot?
+         * NOTHING STANDS BETWEEN THE FILE AND THE UPLOAD.
          *
-         * Asked only for VIDEO on a shot, because it is the only case where it
-         * means anything — a music bed is scene-wide already and a dialogue
-         * take belongs to one shot by definition. Asked BEFORE the upload, so
-         * the director answers while they still remember what they generated.
+         * This used to ask, with a native prompt(), whether the clip contained
+         * more than one shot — before sending anything. Cancelling that dialog
+         * abandoned the upload with nothing said, so pressing Escape on an
+         * unexpected question silently discarded the clip and the symptom was
+         * "playback doesn't include the video" for a file that had never
+         * reached the server. A native modal also cannot be seen in a
+         * screenshot, so the page merely appeared to have stopped.
+         *
+         * The question is asked afterwards, on the shot card, where the answer
+         * is better informed anyway: a director who has watched the clip back
+         * knows what is in it.
          */
-        let covers = null;
-        if (capability === 'video' && shotId && Array.isArray(state.videoShots)) {
-            covers = await askClipCoverage(shotId, file.name);
-            if (covers === false) { event.target.value = ''; return; }
-        }
         const label = event.target.closest('label');
         const original = label && label.firstChild && label.firstChild.textContent;
         /*
@@ -22174,7 +22228,7 @@ ${fountainText.slice(0, 50000)}`;
             });
             const res = await api(url, {
                 method: 'POST',
-                body: JSON.stringify({ data, name: file.name, ...(covers && covers.length ? { covers } : {}) }),
+                body: JSON.stringify({ data, name: file.name }),
             });
             /*
              * A refused coverage is reported ON ITS OWN. The upload succeeded
@@ -22182,11 +22236,12 @@ ${fountainText.slice(0, 50000)}`;
              * director believe 1B and 1C are inside it when they still play
              * their own frames.
              */
-            setStatus(res.coverage_error
-                ? `${file.name} uploaded, but the coverage was refused: ${res.coverage_error} `
-                  + (res.coverage_note || '')
-                : `${file.name} uploaded as ${res.asset_type}.`
-                  + (res.covers ? ` It contains ${res.covers.join(', ')}.` : ` ${res.note || ''}`));
+            setStatus(`${file.name} uploaded as ${res.asset_type}`
+                + (res.duration_ms ? ` (${(res.duration_ms / 1000).toFixed(1)}s)` : '')
+                + '. It plays in Playback now.'
+                + (capability === 'video' && shotId
+                    ? ' If this one clip covers several shots, say so with “Covers…” on the card.' : ''));
+            if (capability === 'video' && shotId) window.__lastUploadedClip = res.asset_id;
             if (after && typeof window[after] === 'function') window[after]();
         } catch (err) {
             setStatus(`${file.name} was not uploaded: ${err.message}`);
@@ -25201,6 +25256,11 @@ ${fountainText.slice(0, 50000)}`;
                     <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
                         <button class="btn btn-primary btn-sm" onclick="generateVideoFor('${s.id}', this)">${done ? 'Regenerate' : 'Generate Video'}</button>
                         ${mediaUploadControl('video', 'video', 'shot', s.id, { after: 'loadVideoShots', label: 'Upload clip' })}
+                        ${media.video_raw || media.video_final || media.video_synced
+                            ? `<button class="btn btn-secondary btn-sm"
+                                       onclick="setClipCoverage('${s.id}', this)"
+                                       title="If this one clip contains several shots, say which — those shots stop playing their own frames">Covers&hellip;</button>`
+                            : ''}
                         ${mediaUploadControl('voice', 'audio', 'shot', s.id, { after: 'loadVideoShots', label: 'Upload dialogue' })}
                         ${mediaUploadControl('sfx', 'audio', 'shot', s.id, { after: 'loadVideoShots', label: 'Upload SFX' })}
                         ${mediaUploadControl('lipsync', 'video', 'shot', s.id, { after: 'loadVideoShots', label: 'Upload synced' })}

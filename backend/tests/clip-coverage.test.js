@@ -586,3 +586,137 @@ test('a reordered scene reads the same on the board as it plays', () => {
     assert.deepStrictEqual(codes, expected,
         'board grouping shows a different order from the one the film plays in');
 });
+
+// ── 9. Nothing blocking stands between a file and an upload ─────────────
+//
+// The coverage question was asked with prompt(), BEFORE the file was sent, and
+// a cancelled prompt returned false and abandoned the upload with nothing said.
+// So pressing Escape on a native dialog — asking a numeric question about shot
+// coverage that nobody expected — silently discarded the clip. The reported
+// symptom was "when I play the playback it doesn't include the video", and the
+// clip had never reached the server at all.
+//
+// A native modal is also the one thing that cannot be seen in a screenshot, so
+// the page appears frozen; the browser check hung on it twice before the cause
+// was obvious.
+
+test('no upload path is gated behind a blocking dialog', () => {
+    /*
+     * COMMENTS STRIPPED FIRST. The comment explaining why this gate was removed
+     * says the word prompt(), and matching raw source reported the fixed code
+     * as still broken — the comment-vs-code trap, in the direction that wastes
+     * time rather than the one that hides a bug, but the same trap.
+     */
+    const html = fs.readFileSync(path.join(ROOT, '..', 'src', 'index.html'), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+    /*
+     * Derived over every upload runner rather than the one that had the bug:
+     * these are the functions that send a file, and any of them could acquire
+     * the same gate.
+     */
+    const runners = ['uploadCapabilityMedia', 'uploadReferenceImage', 'importThreeDModel'];
+    for (const name of runners) {
+        const at = html.indexOf(`function ${name}(`);
+        assert.ok(at > 0, `${name} is gone`);
+        const body = html.slice(at, html.indexOf('\n    }', at));
+        const send = body.search(/await api\(|fetch\(/);
+        assert.ok(send > 0, `${name} never sends anything`);
+
+        const before = body.slice(0, send);
+
+        /*
+         * FOLLOW THE CALL, do not just read the body.
+         *
+         * The first version of this check passed while the bug was live,
+         * because the prompt() was one function away: uploadCapabilityMedia
+         * called askClipCoverage(), which called prompt(). Reading only the
+         * runner's own body reports a blocking gate as absent — the same
+         * literal-matching trap the markup toolbar and the upload controls each
+         * hit, in the other direction.
+         *
+         * Breadth-first over an index built ONCE. Walking by repeated
+         * indexOf over a 1.6MB file is quadratic and hangs the suite, which is
+         * its own small lesson about checks that are too clever to run.
+         */
+        const bodies = new Map();
+        for (const m of html.matchAll(/function ([A-Za-z_$][\w$]*)\s*\(/g)) {
+            if (!bodies.has(m[1])) bodies.set(m[1], html.slice(m.index, html.indexOf('\n    }', m.index)));
+        }
+        const IGNORE = new Set(['if', 'for', 'while', 'switch', 'catch', 'return', 'function',
+            'typeof', 'api', 'fetch', 'Promise', 'String', 'Number', 'JSON']);
+
+        /*
+         * ONE LEVEL, deliberately.
+         *
+         * An unbounded walk follows the refresh callback a runner ends with —
+         * loadLocations, loadVideoShots — into every button those functions
+         * RENDER, because an onclick string looks exactly like a call. It then
+         * reports a confirm() in an unrelated delete button as a gate on the
+         * upload. A check that fires on innocent code gets relaxed until it
+         * protects nothing.
+         *
+         * One level is the honest bound and it is enough: the gate that caused
+         * this was uploadCapabilityMedia calling askClipCoverage directly. A
+         * gate buried two levels deeper is a different and much stranger bug.
+         */
+        const direct = new Set();
+        for (const m of before.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)) {
+            if (!IGNORE.has(m[1]) && bodies.has(m[1])) direct.add(m[1]);
+        }
+        const guilty = [];
+        for (const [where, src] of [['the runner itself', before],
+            ...[...direct].map(fn => [fn, bodies.get(fn)])]) {
+            for (const blocking of ['prompt(', 'confirm(']) {
+                if (src.includes(blocking)) guilty.push(`${blocking}) in ${where}`);
+            }
+        }
+        assert.deepStrictEqual(guilty, [],
+            `${name} reaches a blocking dialog before sending the file: ${guilty.join(', ')}. `
+            + 'A cancelled dialog abandons the upload with nothing said, and a native modal cannot '
+            + 'be seen in a screenshot — the page just appears to have stopped.');
+    }
+});
+
+test('coverage can be set on a clip that is already uploaded', async () => {
+    /*
+     * The consequence of not asking first: the question has to be answerable
+     * afterwards, on a file that is already safely stored. Which is a better
+     * shape anyway — a director watching the clip back is far better placed to
+     * say what is in it than one who has not yet seen it upload.
+     */
+    const { handleMediaImport } = require('../routes/media-import');
+    const f = fixture({ cover: false });
+
+    const call = (method, url, body) => new Promise(resolve => {
+        const out = [];
+        const res = {
+            writeHead(s) { this.statusCode = s; return this; },
+            end(p) { out.push(p || ''); resolve({ status: this.statusCode || 200, body: JSON.parse(out.join('') || '{}') }); },
+        };
+        Promise.resolve(handleMediaImport({ method, url, body: body || {} }, res,
+            url.split('?')[0].split('/').filter(Boolean)))
+            .then(r => { if (r === false) resolve({ status: 404, body: {} }); })
+            .catch(err => resolve({ status: 500, body: { error: err.message } }));
+    });
+
+    const ok = await call('PUT', `/film/assets/${f.clipId}/coverage`,
+        { shot_ids: [f.shots['1A'], f.shots['1B'], f.shots['1C']] });
+    assert.strictEqual(ok.status, 200, JSON.stringify(ok.body));
+    assert.deepStrictEqual(ok.body.covers, ['1A', '1B', '1C']);
+
+    const { coverageFor } = require('../lib/clip-coverage');
+    assert.strictEqual(coverageFor(db, f.projectId).get(f.shots['1B']).lead_shot_id, f.shots['1A']);
+
+    // The same validation, so the late path cannot accept what the early one refuses.
+    const bad = await call('PUT', `/film/assets/${f.clipId}/coverage`,
+        { shot_ids: [f.shots['1A'], f.shots['1D']] });
+    assert.strictEqual(bad.status, 400, 'a non-consecutive coverage was accepted after the fact');
+    assert.ok(/consecutive/i.test(bad.body.error || ''), bad.body.error);
+
+    // And it can be cleared — a director who marked it wrong must be able to
+    // say so without deleting the clip.
+    const cleared = await call('PUT', `/film/assets/${f.clipId}/coverage`, { shot_ids: [] });
+    assert.strictEqual(cleared.status, 200);
+    assert.strictEqual(coverageFor(db, f.projectId).size, 0, 'coverage could not be cleared');
+});

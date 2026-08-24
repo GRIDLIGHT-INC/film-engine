@@ -119,8 +119,51 @@ function importForCapability(req, res, scopeKind, ownerId, capability) {
     }
 }
 
+/**
+ * Say which shots a clip contains, AFTER it is safely uploaded.
+ *
+ * The question used to be asked with a native prompt() before the file was
+ * sent, and cancelling it abandoned the upload with nothing said — so pressing
+ * Escape on an unexpected dialog silently discarded the clip, and the reported
+ * symptom was "playback doesn't include the video" for a file that had never
+ * reached the server.
+ *
+ * Asking afterwards is a better shape regardless: a director watching the clip
+ * back is far better placed to say what is in it than one who has not yet seen
+ * it upload. An empty list clears the coverage, because a director who marked
+ * it wrong must be able to say so without deleting the footage.
+ */
+function setClipCoverage(req, res, assetId) {
+    const { setCoverage } = require('../lib/clip-coverage');
+    const { db } = require('../db/database');
+    const body = req.body || {};
+    if (!Array.isArray(body.shot_ids)) {
+        return json(res, 400, { error: 'shot_ids must be an array (empty clears the coverage)' });
+    }
+    try {
+        const result = setCoverage(db, assetId, body.shot_ids);
+        return json(res, 200, {
+            ...result,
+            note: result.covers.length
+                ? `This clip now plays for ${result.covers.join(', ')}. Those shots no longer hold `
+                  + 'their own frames in playback, and are no longer reported as missing footage.'
+                : 'Coverage cleared. Each shot plays on its own again.',
+        });
+    } catch (err) {
+        // The reason survives: "consecutive" and "already belongs to another
+        // clip" are different problems with different fixes.
+        return json(res, /not found/i.test(err.message) ? 404 : 400, { error: err.message });
+    }
+}
+
 function handleMediaImport(req, res, urlParts) {
     if (urlParts[1] === 'media-kinds' && req.method === 'GET') return listMediaKinds(res);
+
+    // Which shots a clip contains, set after the fact.
+    if (urlParts[1] === 'assets' && urlParts[2] && urlParts[3] === 'coverage' && req.method === 'PUT') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid asset ID' });
+        return setClipCoverage(req, res, urlParts[2]);
+    }
 
     const scope = urlParts[1] === 'shots' ? 'shot' : urlParts[1] === 'scenes' ? 'scene' : null;
     if (scope && urlParts[2] && urlParts[3] === 'media' && urlParts[4] && urlParts[5] === 'import') {
