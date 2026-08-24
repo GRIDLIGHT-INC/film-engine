@@ -402,6 +402,31 @@ test('clips are joined into one real, playable file', async () => {
         `joined 1s + 2s and got ${seconds}s — the clips were not concatenated in full`);
 });
 
+test('silent generated clips are joined into one playable file', async () => {
+    const { resolveFfmpeg, stitchClips, probe } = require('../lib/ffmpeg');
+    const found = resolveFfmpeg();
+    assert.ok(found.available, `no encoder: ${found.reason}`);
+
+    const dir = path.join(process.env.FILM_DATA_DIR, 'silent-stitch-test');
+    fs.mkdirSync(dir, { recursive: true });
+    const inputs = [];
+    for (const [i, seconds] of [1, 2].entries()) {
+        const file = path.join(dir, `silent${i}.mp4`);
+        const made = await probe(found.bin, [
+            '-f', 'lavfi', '-i', `testsrc=size=160x120:rate=24:duration=${seconds}`,
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', '-y', file,
+        ]);
+        assert.strictEqual(made.code, 0, `could not build silent input ${i}: ${made.stderr}`);
+        inputs.push({ file_path: file });
+    }
+
+    const out = path.join(dir, 'silent-joined.mp4');
+    const result = await stitchClips(inputs, out, { fps: 24 });
+    assert.ok(result.ok, `silent stitch failed: ${result.error}`);
+    const read = await probe(found.bin, ['-v', 'error', '-i', out, '-f', 'null', '-']);
+    assert.strictEqual(read.code, 0, `silent join does not decode: ${read.stderr.slice(0, 300)}`);
+});
+
 test('the sequence stitch and the whole-film conform share one arg builder', () => {
     /*
      * Two concat implementations is how one of them acquires the pix_fmt fix

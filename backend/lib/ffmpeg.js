@@ -115,12 +115,25 @@ function buildConcatArgs(clips, outputPath, opts) {
      * input that has none. Without this, one silent generated clip in a
      * sequence fails the whole join with "Invalid file index".
      */
-    const streams = clips.map((_, i) => (o.audio ? `[${i}:v:0]` : `[${i}:v:0][${i}:a:0]`)).join('');
+    let audioPrelude = '';
+    const streams = clips.map((_, i) => {
+        if (o.audio) return `[${i}:v:0]`;
+        const info = Array.isArray(o.clipInfo) ? o.clipInfo[i] : null;
+        if (!info) return `[${i}:v:0][${i}:a:0]`;
+        if (info.hasAudio) {
+            audioPrelude += `[${i}:a:0]aresample=44100,`
+                + `aformat=sample_fmts=fltp:channel_layouts=stereo[aud${i}];`;
+        } else {
+            const duration = Math.max(0.001, Number(info.duration) || 0.001);
+            audioPrelude += `anullsrc=r=44100:cl=stereo,atrim=duration=${duration.toFixed(6)}[aud${i}];`;
+        }
+        return `[${i}:v:0][aud${i}]`;
+    }).join('');
     if (o.audio) {
         args.push('-filter_complex', `${streams}concat=n=${n}:v=1:a=0[outv]`);
         args.push('-map', '[outv]', '-map', `${n}:a:0`, '-shortest');
     } else {
-        args.push('-filter_complex', `${streams}concat=n=${n}:v=1:a=1[outv][outa]`);
+        args.push('-filter_complex', `${audioPrelude}${streams}concat=n=${n}:v=1:a=1[outv][outa]`);
         args.push('-map', '[outv]', '-map', '[outa]');
     }
     args.push('-r', String(o.fps || 24), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac');
@@ -152,7 +165,21 @@ async function stitchClips(clips, outputPath, opts) {
     if (!found.available) return { ok: false, state: 'no_executor', error: found.reason, encoder: found };
 
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    const cmd = buildConcatArgs(list, outputPath, opts);
+    const clipInfo = [];
+    for (const clip of list) {
+        // ffmpeg exits non-zero when asked only to inspect an input, but its
+        // diagnostic is the portable stream probe bundled with ffmpeg-static.
+        const inspected = await probe(found.bin, ['-i', clip.file_path], { timeoutMs: 30000 });
+        const duration = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(inspected.stderr);
+        if (!duration) {
+            return { ok: false, state: 'invalid_clip', error: `Cannot read ${path.basename(clip.file_path)}.` };
+        }
+        clipInfo.push({
+            hasAudio: /Stream\s+#\d+:\d+(?:\([^)]*\))?:\s+Audio:/i.test(inspected.stderr),
+            duration: Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3]),
+        });
+    }
+    const cmd = buildConcatArgs(list, outputPath, { ...(opts || {}), clipInfo });
     const run = await probe(found.bin, cmd.args, opts);
     if (run.code !== 0 || !fs.existsSync(outputPath)) {
         return {
