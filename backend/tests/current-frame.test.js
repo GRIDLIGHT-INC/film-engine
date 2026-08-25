@@ -29,6 +29,17 @@ const ROOT = path.join(__dirname, '..');
 const SURFACES = [
     { file: 'routes/storyboard.js', what: 'the board' },
     { file: 'routes/previs.js', what: 'the previs stage' },
+    /*
+     * PLAYBACK was missing, and it is the surface where being wrong is most
+     * visible: it selected every asset for a shot with no version and no
+     * ordering, so pickAsset's .find() returned whichever row was inserted
+     * first — the FIRST attempt ever made. On a real shot with twenty-eight
+     * versions, playback showed v1 while the board showed the selected frame.
+     *
+     * "It played the first image we had for each instead of the selected one
+     * on the board."
+     */
+    { file: 'routes/timeline.js', what: 'playback' },
 ];
 
 /*
@@ -97,4 +108,70 @@ test('the version used for cache-busting is the version on disk', () => {
     const html = fs.readFileSync(path.join(ROOT, '..', 'src', 'index.html'), 'utf8');
     const fn = html.slice(html.indexOf('function frameSrc('), html.indexOf('function frameSrc(') + 400);
     assert.ok(/asset_version/.test(fn), 'frameSrc no longer keys the URL to a version');
+});
+
+
+// ── Playback plays the frame the board is showing ───────────────────────
+
+test('playback resolves the selected version, on real rows', () => {
+    /*
+     * Behavioural rather than textual, because the fault was not a wrong query
+     * — it was NO query: no version selected, no ordering, and a .find() that
+     * took whatever the table returned first.
+     */
+    const os = require('os');
+    const crypto = require('crypto');
+    process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
+        || path.join(os.tmpdir(), 'film-engine-cf-' + crypto.randomUUID().slice(0, 8));
+    const { db, generateId } = require('../db/database');
+    require('../db/schema').ensureSchema();
+    const { buildTimeline } = require('../lib/timeline');
+
+    const projectId = generateId(), sceneId = generateId(), shotId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Versions');
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)')
+        .run(sceneId, projectId, '1');
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+        .run(shotId, sceneId, '1A', JSON.stringify({ shot_code: '1A' }));
+
+    // Inserted oldest first, exactly as a shot regenerated five times is.
+    for (let v = 1; v <= 5; v += 1) {
+        db.prepare(`INSERT INTO film_assets
+            (id, project_id, shot_id, asset_type, file_path, file_name, format, version)
+            VALUES (?, ?, ?, 'storyboard', ?, ?, 'png', ?)`)
+            .run(generateId(), projectId, shotId, `/tmp/1A_v${v}.png`, `1A_v${v}.png`, v);
+    }
+
+    const rows = [{ id: shotId, shot_code: '1A', scene_number: 1, sort_order: 0, duration_ms: 4000 }];
+    const assets = db.prepare(
+        `SELECT shot_id, asset_type, file_path, duration_ms, version FROM film_assets
+          WHERE project_id = ?`).all(projectId);
+    const byShot = { [shotId]: assets };
+
+    // NULL pointer means "the newest", which is what a freshly generated shot
+    // shows and what every shot showed before selection existed.
+    let t = buildTimeline(rows, byShot, { fps: 24 });
+    assert.match(String(t.entries[0].still.path), /1A_v5\.png$/,
+        `an unselected shot plays ${t.entries[0].still.path} — it should show the newest`);
+
+    // Select v3: playback must follow the pointer, not the newest and not the
+    // first row the table happened to return.
+    db.prepare('UPDATE film_shots SET current_frame_version = 3 WHERE id = ?').run(shotId);
+    const withPointer = db.prepare(
+        `SELECT a.shot_id, a.asset_type, a.file_path, a.duration_ms, a.version,
+                sh.current_frame_version
+           FROM film_assets a JOIN film_shots sh ON sh.id = a.shot_id
+          WHERE a.project_id = ?`).all(projectId);
+    t = buildTimeline(rows, { [shotId]: withPointer }, { fps: 24 });
+    assert.match(String(t.entries[0].still.path), /1A_v3\.png$/,
+        `v3 was selected and playback plays ${t.entries[0].still.path}`);
+});
+
+test('the playback route asks for the version and the pointer', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'routes', 'timeline.js'), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    assert.ok(/a\.version/.test(src),
+        'the playback query still selects no version, so nothing can tell the attempts apart');
+    assert.ok(/current_frame_version/.test(src),
+        'the playback query never reads the pointer, so a selected frame cannot be honoured');
 });

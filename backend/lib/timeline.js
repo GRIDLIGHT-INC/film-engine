@@ -26,10 +26,35 @@ const DEFAULT_SHOT_MS = 4000;
  * Pick the highest-priority asset for a shot from a preference list.
  * Assets are expected to be plain rows with asset_type and file_path.
  */
+/**
+ * The asset a shot is SHOWING, not the first row the table happened to return.
+ *
+ * This took `.find()` over an unordered, unversioned query, so a shot with
+ * twenty-eight attempts played v1 — the very first picture ever generated for
+ * it — while the board showed the selected one. "It played the first image we
+ * had for each instead of the selected one on the board."
+ *
+ * The rule is the board's, unchanged: `current_frame_version` when a version
+ * has been chosen, otherwise the highest. NULL means "the newest", which is
+ * what a freshly generated shot shows and what every shot showed before
+ * selection existed — so there is nothing to backfill.
+ */
 function pickAsset(assets, preference) {
     for (const type of preference) {
-        const match = assets.find(a => a.asset_type === type && a.file_path);
-        if (match) return match;
+        const matches = (assets || []).filter(a => a.asset_type === type && a.file_path);
+        if (!matches.length) continue;
+        if (matches.length === 1) return matches[0];
+
+        const pointer = Number(matches.find(a => a.current_frame_version != null)
+            ? matches[0].current_frame_version : NaN);
+        if (Number.isFinite(pointer)) {
+            const chosen = matches.find(a => Number(a.version) === pointer);
+            if (chosen) return chosen;
+        }
+        // Highest version, and a row with no version at all sorts last rather
+        // than winning by accident.
+        return matches.reduce((best, a) =>
+            (Number(a.version) || 0) > (Number(best.version) || 0) ? a : best, matches[0]);
     }
     return null;
 }

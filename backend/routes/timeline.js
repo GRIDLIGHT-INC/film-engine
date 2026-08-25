@@ -62,8 +62,10 @@ function loadTimeline(projectId) {
     // alternative — a query per shot — is an N+1 that gets slow exactly when a
     // project gets interesting.
     const assets = db.prepare(`
-        SELECT a.shot_id, a.asset_type, a.file_path, a.duration_ms
+        SELECT a.shot_id, a.asset_type, a.file_path, a.duration_ms, a.version,
+               sh.current_frame_version
         FROM film_assets a
+        JOIN film_shots sh ON sh.id = a.shot_id
         WHERE a.project_id = ? AND a.shot_id IS NOT NULL
     `).all(projectId);
 

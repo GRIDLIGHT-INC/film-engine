@@ -29522,7 +29522,11 @@ ${fountainText.slice(0, 50000)}`;
             renderPlaylist();
             renderScrub();
             renderNoteList();
-            loadShotIntoStage(0);
+            // The shot you were working on, not the top of the film. The start
+            // index was computed on the line above and then discarded by a
+            // hardcoded 0 — so playback always opened at the beginning however
+            // carefully the mark had been kept.
+            loadShotIntoStage(pb.index);
         } catch (err) {
             summary.textContent = 'Error: ' + err.message;
         }

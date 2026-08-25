@@ -702,6 +702,17 @@ That matters more than convenience, because of what this pipeline is. **The conn
 
 The test derives from `MEDIA_IMPORTS` and requires a **named** covering tool per target, failing on an unknown rather than assuming coverage — that assumption is precisely how three of them stayed unreachable while the surface looked complete.
 
+### Playback Plays the Frame the Board Is Showing
+*"It played the videos, then for the other shots it played the first image we had for each instead of the selected one on the board."*
+
+`routes/timeline.js` selected every asset for a shot with **no version and no ordering**, and `pickAsset` took `.find()` — so it returned whichever row the table produced first, which is the oldest by insertion. On a real shot with **twenty-eight versions**, playback showed `2B_v1.png` while the board showed the selected frame. The board and previs had both been fixed to resolve the pointer; playback was never in that set, and it is the surface where being wrong is most visible, because you watch it.
+
+It now follows the same rule, unchanged: `current_frame_version` when a version has been chosen, otherwise the highest. NULL means *the newest*, which is what a freshly generated shot shows and what every shot showed before selection existed, so there is nothing to backfill. A row with no version sorts last rather than winning by accident.
+
+`tests/current-frame.test.js` gains playback to its `SURFACES` list — the whole point of that list being that a surface not in it is a surface nobody checked — and the new assertion is **behavioural**, because the fault was not a wrong query but *no* query: no version selected, no ordering, and a `.find()` that took whatever came back first.
+
+**And a second bug found while reading it.** `loadPlayback` computed the shot to open on and then called `loadShotIntoStage(0)`, discarding it on the next line — so playback always opened at the top of the film however carefully the mark had been kept. The mark was working; the thing that read it was not.
+
 ### An Edit You Cannot See Is an Edit That Did Not Happen
 The page was served by `python -m http.server`, which sends `Last-Modified` and **no `Cache-Control`**. A browser reads that as licence to reuse its stored copy without asking, so every change to `index.html` needed a forced reload.
 
