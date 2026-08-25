@@ -116,9 +116,24 @@ function buildVideoPrompt(sceneCard, characters, location, stylePreset, options)
     const environment = sceneCard && (sceneCard.environment_motion || sceneCard.atmosphere_motion);
     return {
         prompt, negative_prompt, camera_control,
+        /*
+         * WHOLE. Trimmed only if it does not fit, and by whoever knows the
+         * ceiling.
+         *
+         * These were cut to 500 and 300 unconditionally, and the adapter then
+         * assembled them and applied the REAL limit of 1000 — so a real shot
+         * sent 503 characters against a 1000-character ceiling, with 497
+         * characters of the director's own motion description discarded and
+         * half the budget unused.
+         *
+         * The image prompt had exactly this and it was fixed there once
+         * already: an allowance is a rule for deciding what to cut WHEN
+         * something must be cut, not a target to shrink every field to. The
+         * ceiling belongs to the provider, so the provider applies it.
+         */
         motion: {
-            ...(action ? { subject: String(action).slice(0, 500) } : {}),
-            ...(environment ? { environment: String(environment).slice(0, 300) } : {}),
+            ...(action ? { subject: String(action) } : {}),
+            ...(environment ? { environment: String(environment) } : {}),
         },
     };
 }

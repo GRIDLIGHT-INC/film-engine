@@ -702,6 +702,17 @@ That matters more than convenience, because of what this pipeline is. **The conn
 
 The test derives from `MEDIA_IMPORTS` and requires a **named** covering tool per target, failing on an unknown rather than assuming coverage — that assumption is precisely how three of them stayed unreachable while the surface looked complete.
 
+### Nothing Is Cut From a Motion Prompt While It Still Fits
+*"Film Engine sends each shot's action field to Runway as the primary motion instruction, capped at roughly 500 characters. Why are we capping the main motion instructions?"*
+
+Substantially correct, and the cap had no justification. `buildVideoPrompt` sliced `motion.subject` to **500** and `motion.environment` to **300** unconditionally; `buildRunwayMotionPrompt` then assembled them and applied the real ceiling of **1000**. A real shot sent **503 characters against a 1000 limit** — half the budget unused, with the director's motion description pre-cut on the way in.
+
+This is the same defect the image prompt had, fixed there once already: *an allowance is a rule for deciding what to cut when something must be cut, and it was being read as a target to shrink every field to.* The pieces now travel whole and the **provider** applies its own ceiling, because the ceiling is the provider's fact.
+
+When it genuinely does not fit, things go in order of what matters least: the atmosphere note, then the framing boilerplate, and the **subject last** — cutting what the shot is *about* to keep a note about rain is the wrong trade every time. The camera move survives with the subject: it is short, and without it the clip has no move. The subject is then cut at a clause boundary, so the last thing the model reads is a complete instruction.
+
+**What the 1000 actually rests on, stated because it was not.** Runway documents 1000 characters for `text_to_image`, which is where the adapter's `promptLimit` comes from. The **video** endpoints' own limit is not documented in anything this adapter was written against, and the previous code applied the same 1000 with no source stated at all. `VIDEO_PROMPT_LIMIT` now says so: it mirrors the image limit deliberately rather than being independently verified, and holding it there is the conservative direction — over-sending is a rejection that costs a generation, under-sending costs some description.
+
 ### Playback Plays the Frame the Board Is Showing
 *"It played the videos, then for the other shots it played the first image we had for each instead of the selected one on the board."*
 

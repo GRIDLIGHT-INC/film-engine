@@ -30,6 +30,22 @@ const RUNWAY_VERSION = '2024-11-06';
 
 // Documented for image_to_video: promptImage may carry a first and a last frame.
 const MAX_KEYFRAMES = 2;
+
+/*
+ * The ceiling for a video promptText.
+ *
+ * Runway documents 1000 characters for text_to_image, which is where the
+ * adapter's promptLimit comes from. The VIDEO endpoints' own limit is not
+ * documented in anything this adapter was written against, and the previous
+ * code applied the same 1000 with no source stated at all.
+ *
+ * So it mirrors the image limit deliberately and says so, rather than being an
+ * independently verified number. If Runway publishes a different figure it is a
+ * one-line change here — and holding it at the image limit is the conservative
+ * direction, since over-sending is a rejection at the provider that costs a
+ * generation while under-sending costs some description.
+ */
+const VIDEO_PROMPT_LIMIT = 1000;
 const DEFAULT_VIDEO_MODEL = process.env.RUNWAY_VIDEO_MODEL || 'gen4.5';
 const DEFAULT_IMAGE_MODEL = process.env.RUNWAY_IMAGE_MODEL || 'gen4_image';
 
@@ -214,6 +230,20 @@ function durationForModel(durationS, model) {
     return Math.min(policy.duration.max, Math.max(policy.duration.min, wanted));
 }
 
+/**
+ * The motion instruction, assembled whole and cut only if it must be.
+ *
+ * The pieces used to arrive pre-trimmed — subject at 500, environment at 300 —
+ * and this then applied the real 1000 ceiling on top, so a real shot sent 503
+ * characters against a 1000 limit with half the director's motion description
+ * thrown away for nothing.
+ *
+ * Assembled in full first. If it overruns, things are dropped in ORDER OF WHAT
+ * MATTERS LEAST: the atmosphere note, then the framing boilerplate, and the
+ * SUBJECT LAST — it is the primary instruction, and cutting what the shot is
+ * about to keep a note about rain is the wrong trade every time. The camera
+ * move survives with it: it is short, and without it the clip has no move.
+ */
 function buildRunwayMotionPrompt(payload) {
     const p = payload || {};
     const motion = p.motion || {};
@@ -228,7 +258,31 @@ function buildRunwayMotionPrompt(payload) {
     if (!camera && control.type && control.type !== 'static') camera = String(control.type).replace(/-/g, ' ');
     if (camera) parts.push(`Over ${durationForModel(p.duration_s || p.duration, p.model || DEFAULT_VIDEO_MODEL)} seconds, the camera performs ${camera}.`);
     if (p.motion_prompt && !motion.subject && !motion.environment) parts.push(String(p.motion_prompt));
-    return parts.join(' ').slice(0, 1000).trim();
+
+    const ceiling = Number(p.prompt_limit) || VIDEO_PROMPT_LIMIT;
+    const whole = parts.join(' ').trim();
+    if (whole.length <= ceiling) return whole;
+
+    /*
+     * Over the ceiling, so something goes. Rebuilt keeping the load-bearing
+     * pieces — the subject and the camera move — and dropping the rest before
+     * the subject is touched at all.
+     */
+    const cameraPart = parts.find(x => /camera performs/i.test(x));
+    const subjectPart = motion.subject
+        ? String(motion.subject).trim().replace(/[.\s]+$/, '') + '.' : '';
+    const keep = ['Continuous seamless shot.', subjectPart, cameraPart].filter(Boolean);
+    const kept = keep.join(' ').trim();
+    if (kept.length <= ceiling) return kept;
+
+    // Only now is the subject itself cut, and at a clause boundary rather than
+    // mid-word so the last thing the model reads is a complete instruction.
+    const room = ceiling - (kept.length - subjectPart.length) - 1;
+    const cut = subjectPart.slice(0, Math.max(0, room));
+    const at = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf(', '));
+    const trimmedSubject = (at > room * 0.5 ? cut.slice(0, at + 1) : cut).trim();
+    return ['Continuous seamless shot.', trimmedSubject, cameraPart]
+        .filter(Boolean).join(' ').trim().slice(0, ceiling);
 }
 
 /** Seeds outside Runway's uint32 range are dropped rather than rejected upstream. */
