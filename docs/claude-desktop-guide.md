@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**153 tools, 39 families.** Everything the app can do, you can ask for in a
+**156 tools, 40 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -112,7 +112,8 @@ goes, for a character, a location, a prop or the mood board. It is free, and it
 is not tracked against the subject's description, so editing that description
 will never tell you to regenerate over a picture you supplied.
 
-`plate_generate` · `plate_upload` · `plate_refine` · `plate_compass` · `plate_view_list` · `plate_view_delete` · `plate_generate_all` · `consistency_create` ·
+`plate_generate` · `plate_upload` · `plate_refine` · `plate_compass` ·
+`storyboard_upload` · `previs_image_upload` · `model_upload` · `plate_view_list` · `plate_view_delete` · `plate_generate_all` · `consistency_create` ·
 `consistency_lock` · `consistency_list` · `consistency_unlock` ·
 `consistency_delete` · `mood_board_add` · `mood_board_compose` ·
 `mood_board_list` · `mood_board_remove`
@@ -136,6 +137,12 @@ first so the card validates.
 `shot_prompt` shows exactly what a frame would send, and **spends nothing**.
 
 ### 5. Storyboard
+
+**You can board a film without spending a credit on images.** `storyboard_upload`
+puts a frame you generated yourself onto a shot: read the card and its
+references, make the picture, show it for approval, upload it. It becomes the
+shot's current frame and the one it replaces is kept as a recoverable version.
+Then `video_preview` shows exactly what a clip would cost before you buy one.
 
 `storyboard_generate` · `storyboard_regenerate` · `storyboard_refine` ·
 - `storyboard_recompose` — keep the PERFORMANCE from one frame and replace its BACKGROUND with a photographed view of the shot's location. Use it when the acting, framing and camera are right and the place behind them is wrong; `storyboard_refine` cannot, because its contract refuses composition changes and on a close-up the background is most of the composition. The background must be a view of that shot's own location — photograph the view you need first. Costs credits.

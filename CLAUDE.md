@@ -684,6 +684,17 @@ A clip made elsewhere can be dropped straight onto a sequence (`POST /film/seque
 
 Served at `GET|POST /film/projects/:id/sequences`, `GET|PUT|DELETE /film/sequences/:id`, `GET …/plan`, `POST …/generate`, `POST …/import`, on the Video Shots page, and as six tools (**150 tools**).
 
+### Everything a Person Can Import, an Agent Can Import
+*"There is no general storyboard_upload MCP tool, even though the underlying import route already exists."*
+
+Correct, and it was **three** tools rather than one. `MEDIA_IMPORTS` has thirteen targets: the four plates reach an agent through `plate_upload` and the seven media kinds through `media_upload`, while `storyboard-image`, `previs-image` and `three-d-model` reached it through nothing at all — the routes had existed the whole time.
+
+That matters more than convenience, because of what this pipeline is. **The connected model IS the LLM here** — that is the whole reason `tests/mcp-no-server-llm.test.js` exists — so a capability an agent cannot reach is one that must be done by hand or paid for at a provider. Generating a frame in the conversation and putting it on the board is the difference between spending image credits and not spending them.
+
+`storyboard_upload` goes through the same route a person's upload does, so it inherits everything that route already guarantees: the frame it replaces is **archived as a recoverable version**, and a **locked board refuses it** with the same `BOARD_LOCKED` and the same explicit override. An agent path that skipped the lock would be a hole in the lock rather than a convenience.
+
+The test derives from `MEDIA_IMPORTS` and requires a **named** covering tool per target, failing on an unknown rather than assuming coverage — that assumption is precisely how three of them stayed unreachable while the surface looked complete.
+
 ### Nothing Spends Without Showing What It Will Send
 *"I generated the first two videos directly on runway and not through the engine as credits are super precious and didn't want to waste them."*
 

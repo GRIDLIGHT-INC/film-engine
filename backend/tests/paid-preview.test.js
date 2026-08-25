@@ -309,3 +309,120 @@ test('the video preview reports the adapter’s answer, not the payload', () => 
     assert.ok(/unverified/i.test(body),
         'an adapter with no describer has its payload reported as fact');
 });
+
+// ── Everything a person can import, an agent can import ─────────────────
+//
+// "Can I generate and upload storyboard images myself? Yes — with one missing
+// connection... There is no general storyboard_upload MCP tool, even though the
+// underlying import route already exists."
+//
+// Exactly right, and it is three tools rather than one. MEDIA_IMPORTS has
+// thirteen targets; the four plates reach an agent through plate_upload and the
+// seven media kinds through media_upload, and storyboard-image, previs-image
+// and three-d-model reach it through nothing at all. The routes have existed
+// the whole time.
+//
+// That matters more than convenience: the connected model IS the LLM here, so a
+// capability it cannot reach is one that has to be done by hand or paid for at
+// a provider. Generating a frame in the conversation and putting it on the
+// board is the difference between spending image credits and not.
+//
+// Derived from MEDIA_IMPORTS so a fourteenth target cannot arrive unreachable.
+
+test('every import target is reachable from an agent', () => {
+    const { MEDIA_IMPORTS } = require('../lib/media-imports');
+    const tools = require('../lib/mcp-tools').listTools();
+    const names = new Set(tools.map(t => t.name));
+
+    /*
+     * Which tool covers which target, stated rather than guessed. A target with
+     * no entry fails as an unknown rather than being silently assumed covered —
+     * that assumption is how three of them stayed unreachable.
+     */
+    const COVERED_BY = {
+        'character-plate': 'plate_upload',
+        'location-plate': 'plate_upload',
+        'prop-plate': 'plate_upload',
+        'mood-board-image': 'plate_upload',
+        'storyboard-image': 'storyboard_upload',
+        'previs-image': 'previs_image_upload',
+        'three-d-model': 'model_upload',
+    };
+
+    const unreachable = [];
+    for (const target of Object.keys(MEDIA_IMPORTS)) {
+        const tool = /-media$/.test(target) ? 'media_upload' : COVERED_BY[target];
+        assert.ok(tool, `${target} is an import target this test does not know about — name the tool `
+            + 'that covers it, or it ships reachable only by hand');
+        if (!names.has(tool)) unreachable.push(`${target} (needs ${tool})`);
+    }
+    assert.deepStrictEqual(unreachable, [],
+        `a person can import these and an agent cannot: ${unreachable.join(', ')}`);
+});
+
+test('storyboard_upload puts a frame on the board and keeps the one it replaced', async () => {
+    const { callTool } = require('../lib/mcp-tools');
+
+    const projectId = generateId();
+    const sceneId = generateId();
+    const shotId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Agent frames');
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)')
+        .run(sceneId, projectId, '1');
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+        .run(shotId, sceneId, '1A', JSON.stringify({ shot_code: '1A', description: 'x' }));
+
+    const PNG = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64');
+    const uri = `data:image/png;base64,${PNG.toString('base64')}`;
+
+    const first = await callTool('storyboard_upload', { shot_id: shotId, image: uri });
+    assert.ok(first && !first.error, `first upload failed: ${JSON.stringify(first)}`);
+
+    const second = await callTool('storyboard_upload', { shot_id: shotId, image: uri });
+    assert.ok(second && !second.error, `second upload failed: ${JSON.stringify(second)}`);
+
+    /*
+     * The frame it replaced must survive. A director who has an agent generate
+     * three attempts needs the two they did not keep, and an upload that
+     * overwrites is the one destructive verb hiding in a helpful one.
+     */
+    const versions = db.prepare(
+        "SELECT version, file_name FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard' ORDER BY version")
+        .all(shotId);
+    assert.ok(versions.length >= 2,
+        `the second upload replaced the first instead of versioning it (${versions.length} kept)`);
+    assert.ok(versions.some(v => /_v1\.png$/.test(v.file_name)),
+        'the previous frame was not archived under its own version');
+});
+
+test('a locked board refuses an agent upload the same way it refuses a person', async () => {
+    /*
+     * A lock exists to stop a finished board being replaced, and an agent route
+     * that ignores it is a hole in the lock rather than a convenience. Same
+     * refusal, same override.
+     */
+    const { callTool } = require('../lib/mcp-tools');
+    const projectId = generateId();
+    const sceneId = generateId();
+    const shotId = generateId();
+    db.prepare("INSERT INTO film_projects (id, title, board_locked_at) VALUES (?, ?, datetime('now'))")
+        .run(projectId, 'Locked');
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)')
+        .run(sceneId, projectId, '1');
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml) VALUES (?, ?, ?, ?)')
+        .run(shotId, sceneId, '1A', JSON.stringify({ shot_code: '1A' }));
+
+    const PNG = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64');
+    const uri = `data:image/png;base64,${PNG.toString('base64')}`;
+
+    const refused = await callTool('storyboard_upload', { shot_id: shotId, image: uri });
+    const text = JSON.stringify(refused);
+    assert.ok(/lock/i.test(text), `a locked board accepted an agent upload: ${text}`);
+
+    const forced = await callTool('storyboard_upload', { shot_id: shotId, image: uri, force: true });
+    assert.ok(forced && !forced.error, `the documented override does not work: ${JSON.stringify(forced)}`);
+});

@@ -46,6 +46,7 @@ const { handleSequences } = require('../routes/sequences');
 const { handleAnnotations } = require('../routes/annotations');
 const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
+const { handleThreeD } = require('../routes/threed');
 const { handleProductionReports } = require('../routes/production-reports');
 const { handleBudget } = require('../routes/budget');
 const { handleConsistency } = require('../routes/consistency');
@@ -269,6 +270,56 @@ async function callNodeTool(nodeTypeId, args) {
  * against one of them fails immediately.
  */
 const PRODUCTION_TOOLS = [
+    {
+        name: 'storyboard_upload',
+        handler: handleStoryboard, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/storyboard/import`,
+        body: a => ({ data: a.image, ...(a.force ? { ignore_lock: true } : {}) }),
+        description:
+            'Put a storyboard frame you generated YOURSELF onto a shot. FREE \u2014 nothing is '
+            + 'generated here and no image provider is called, so this is how to board a film without '
+            + 'spending image credits: read the shot card and its references, make the frame, show it '
+            + 'for approval, then upload it. image is a PNG data URI. It becomes the shot\u2019s '
+            + 'current frame and the one it replaces is KEPT as a recoverable version. Refused with '
+            + 'BOARD_LOCKED on a finished board; pass force to override, which is a deliberate act.',
+        schema: {
+            shot_id: { type: 'string' },
+            image: { type: 'string', description: 'data:image/png;base64,...' },
+            force: { type: 'boolean', description: 'Replace a frame on a LOCKED board.' },
+        },
+        required: ['shot_id', 'image'],
+    },
+    {
+        name: 'previs_image_upload',
+        handler: handlePrevis, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/previs/image/import`,
+        body: a => ({ data: a.image }),
+        description:
+            'Stand a picture in the previs stage for a shot \u2014 a reference to block against, or a '
+            + 'frame you generated. FREE. image is a PNG data URI. It does not become the shot\u2019s '
+            + 'storyboard frame; use storyboard_upload for that.',
+        schema: {
+            shot_id: { type: 'string' },
+            image: { type: 'string', description: 'data:image/png;base64,...' },
+        },
+        required: ['shot_id', 'image'],
+    },
+    {
+        name: 'model_upload',
+        handler: handleThreeD, method: 'POST',
+        path: a => `/film/projects/${a.project_id}/models/import`,
+        body: a => ({ data: a.model, name: a.name }),
+        description:
+            'Add a 3D model built elsewhere \u2014 Blender, Meshy, a library \u2014 to a project, for '
+            + 'staging in previs. FREE. model is a GLB data URI (glTF 2.0 binary). Draco or meshopt '
+            + 'compression is refused by name: re-export with compression off. Roughly 112MB maximum.',
+        schema: {
+            project_id: { type: 'string' },
+            model: { type: 'string', description: 'data:model/gltf-binary;base64,...' },
+            name: { type: 'string' },
+        },
+        required: ['project_id', 'model'],
+    },
     {
         name: 'plate_refine',
         handler: handleLocations, method: 'POST',
