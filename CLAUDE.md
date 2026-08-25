@@ -230,6 +230,7 @@ film-engine/
 │       ├── clip-coverage.test.js        # One clip, several shots, honoured by every assembly surface
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
+│       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -705,6 +706,12 @@ That is the whole feature failing for a reason unrelated to generation quality. 
 Two corrections came out of review, both about honesty rather than mechanism. The confirmation showed **500 characters** of the prompt under the heading *"what it will be asked for"*, which is a confident lie about the rest — it shows the whole thing and states its length. And it printed the generator's own **fps** beside the resolution, which reads as *your film is 8fps*; that number is a fact about the model, the delivery rate is a project setting applied afterwards, so it is not shown at all.
 
 **The gate has to be inside the function, and text matching cannot see that.** Two of the six were one-line functions, and inserting the confirm after the opening line put it *outside the body*: a top-level `return` that breaks the whole SPA at load. Source-text matching reported both as gated because the text was adjacent. The check now bounds the body by **brace depth** from the declaration, and the SPA-parses test caught the breakage independently — which is the argument for having both.
+
+### Runway Receives Motion, Not Film Engine Coordinates
+
+Runway's image-to-video request has no `camera_control` field. The approved Previs path remains the canonical reproducibility record, but the provider receives a concise motion prompt: subject action, environmental motion, and camera choreography derived from the path. The free video preview is built from the adapter's actual request builder and shows the sanitized outbound body, final model/ratio/duration, whether first/last images travel, and the exact credit estimate. Image bytes and credentials are never displayed.
+
+`RUNWAY_VIDEO_MODELS` is the dated provider contract: every currently documented image-to-video id declares its operation, duration, ratios, credit rate, status and source. Unknown or removed ids fall back visibly to Gen-4.5 instead of becoming a provider 400. The ordinary safe path remains one approved board per independently edited shot. A continuous sequence uses adjacent first/last pairs with durations derived from the source shots and can buy one unfinished leg at a time. The separate `generate-native` route invokes Runway's `2026-06` multi-shot recipe for 3–5 real editorial cuts; it is clearly labelled less deterministic than per-shot rendering.
 
 ### An Encoder Probe Is a Subprocess
 `resolveFfmpeg()` probed on **every call**, and each probe is a spawn: `FFMPEG_PATH`, then five `PATH` candidates that mostly do not exist, then the bundled binary — up to six subprocesses to answer a question whose answer cannot change while the process runs. Under load one of those probes fails, the resolver reports **no encoder**, and the caller silently falls back.

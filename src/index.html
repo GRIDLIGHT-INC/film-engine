@@ -25422,6 +25422,11 @@ ${fountainText.slice(0, 50000)}`;
                     <button class="btn btn-secondary btn-sm" onclick="previewSequence('${q.id}')"
                             title="See exactly what would be sent, and how many generations it costs — free">Preview &amp; cost</button>
                     <button class="btn btn-primary btn-sm" onclick="generateSequence('${q.id}', this)">Generate</button>
+                    <button class="btn btn-secondary btn-sm" onclick="generateNextSequenceLeg('${q.id}', this)"
+                            title="Buy only the next segment, review it, then continue">Generate next leg</button>
+                    ${(q.shots || []).length >= 3 && (q.shots || []).length <= 5
+                        ? `<button class="btn btn-secondary btn-sm" onclick="generateNativeMultiShot('${q.id}', this)"
+                            title="Runway composes 3–5 editorial cuts into one clip; less faithful to individual boards">Runway multi-shot cuts</button>` : ''}
                     ${mediaUploadControl('video', 'video', 'sequence', q.id,
                         { after: 'loadSequences', label: 'Upload a clip',
                           title: 'Already made this in Runway or elsewhere? Put it here instead of generating' })}
@@ -25445,12 +25450,47 @@ ${fountainText.slice(0, 50000)}`;
             const plan = await api(`/sequences/${id}/plan`);
             if (plan.refused) return alert('This sequence cannot run yet.\n\n' + plan.reason);
             const lines = (plan.segments || []).map((s, i) =>
-                `${i + 1}. ${s.from} → ${s.to}  (${s.keyframes} frame${s.keyframes === 1 ? '' : 's'})\n   ${s.prompt}`);
-            alert(`${plan.generations} generation${plan.generations === 1 ? '' : 's'} — this costs credits.\n`
+                `${i + 1}. ${s.from} → ${s.to}  · ${s.duration_s}s · ${s.estimated_credits || '?'} credits · ${s.keyframes} frame${s.keyframes === 1 ? '' : 's'}\n   ${s.prompt}`);
+            const total = (plan.segments || []).reduce((n, s) => n + (Number(s.estimated_credits) || 0), 0);
+            const native = plan.native_multi_shot && plan.native_multi_shot.available
+                ? `\n\nRunway native multi-shot cuts: ${plan.native_multi_shot.duration_s}s · ${plan.native_multi_shot.estimated_credits} credits (~$${Number(plan.native_multi_shot.estimated_usd).toFixed(2)}). This invents cuts from the shot descriptions; it is not endpoint interpolation.` : '';
+            alert(`${plan.generations} generation${plan.generations === 1 ? '' : 's'} — ${total || '?'} credits total.\n`
                 + (plan.degraded ? `\n${plan.degraded_reason}\n` : '')
                 + (plan.needs_stitching ? '\nThis produces separate clips; join them in the timeline or your NLE.\n' : '')
-                + '\n' + lines.join('\n\n'));
+                + '\n' + lines.join('\n\n') + native);
         } catch (err) { alert('Could not read the plan: ' + err.message); }
+    }
+
+    async function generateNextSequenceLeg(id, btn) {
+        let plan;
+        try { plan = await api(`/sequences/${id}/plan`); }
+        catch (err) { return alert('Could not read the plan: ' + err.message); }
+        if (plan.refused) return alert(plan.reason);
+        const index = (plan.segments || []).findIndex(s => !s.complete);
+        if (index < 0) return alert('Every leg already has a clip. Review them or regenerate the full sequence deliberately.');
+        const leg = plan.segments[index];
+        if (!confirm(`Generate only ${leg.from} → ${leg.to}?\n\n${leg.duration_s}s · ${leg.estimated_credits || '?'} credits. Review it before buying the next leg.`)) return;
+        if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+        try {
+            const res = await api(`/sequences/${id}/generate`, { method: 'POST', body: JSON.stringify({ segment_index: index }) });
+            const made = (res.segments || []).filter(x => x.ok);
+            setStatus(made.length ? `${leg.from}→${leg.to} generated. Review it before continuing.` : 'The sequence leg failed.');
+            loadVideoShots(); loadSequences();
+        } catch (err) { alert('Sequence leg failed: ' + err.message); }
+        finally { if (btn) { btn.disabled = false; btn.textContent = 'Generate next leg'; } }
+    }
+
+    async function generateNativeMultiShot(id, btn) {
+        let plan;
+        try { plan = await api(`/sequences/${id}/plan`); }
+        catch (err) { return alert('Could not read the plan: ' + err.message); }
+        const native = plan.native_multi_shot;
+        if (!native || !native.available) return alert((native && native.reason) || 'Native multi-shot is unavailable.');
+        if (!confirm(`Generate one Runway multi-shot clip with editorial cuts?\n\n${native.duration_s}s · ${native.estimated_credits} credits (~$${Number(native.estimated_usd).toFixed(2)}).\n\nThis is less deterministic than generating each approved shot separately.`)) return;
+        if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+        try { await api(`/sequences/${id}/generate-native`, { method: 'POST', body: '{}' }); loadVideoShots(); loadSequences(); }
+        catch (err) { alert('Native multi-shot failed: ' + err.message); }
+        finally { if (btn) { btn.disabled = false; btn.textContent = 'Runway multi-shot cuts'; } }
     }
 
     async function generateSequence(id, btn) {
@@ -25584,7 +25624,9 @@ ${fountainText.slice(0, 50000)}`;
             + `Provider: ${p.provider}${p.model ? ' · ' + p.model : ''}\n`
             + `${p.duration_s}s · ${p.width}×${p.height}\n`
             + `Storyboard frame attached: ${p.init_image ? 'yes' : 'NO'}\n`
-            + `Camera move sent: ${p.camera_control ? p.camera_control.type || 'yes' : 'no'}\n\n`
+            + `Camera direction: ${p.camera_control_delivery === 'translated-to-prompt-text' ? 'approved path translated to prompt text' : (p.camera_control ? p.camera_control.type || 'movement words' : 'none')}\n`
+            + `Estimated cost: ${p.estimated_credits == null ? 'unavailable' : `${p.estimated_credits} credits (~$${Number(p.estimated_usd).toFixed(2)})`}\n`
+            + `\nExact outbound request (image bytes hidden):\n${JSON.stringify(p.outbound || {}, null, 2)}\n\n`
             + `What it will be asked for (${(p.prompt || '').length} characters, in full):\n`
             + `${p.prompt || '(nothing)'}\n`
             + (p.negative_prompt ? `\nRefusing: ${p.negative_prompt}\n` : '')
@@ -25831,7 +25873,7 @@ ${fountainText.slice(0, 50000)}`;
             } else {
                 // Kept so the viewer can step between shots without the grid.
                 FRAME_VIEWER.frames = frames;
-                grid.innerHTML = screenplayDriftBanner() + impactBanner() + anchorBanner() + frames.map(f => `
+                grid.innerHTML = screenplayDriftBanner() + impactBanner() + frames.map(f => `
                     <div class="card" style="padding:0;overflow:hidden;">
                         <div style="position:relative;background:var(--surface-alt,var(--gl-bg-surface));min-height:160px;">
                             <img id="img-${f.shot_id}" src="${frameSrc(f)}"
@@ -26588,43 +26630,6 @@ ${fountainText.slice(0, 50000)}`;
      * (put it down), another frame is (take it instead), or none is (pick this
      * one up). A single button would make the first two indistinguishable.
      */
-    /**
-     * The anchor, said plainly on the board.
-     *
-     * Anchoring existed and was invisible: the ⚓ sits on a frame card and
-     * nothing said what it was for until you had already used it once. The
-     * director's words: "I'm not 100% sure how do I anchor items, shots or
-     * people from other sequences."
-     *
-     * The distinction that matters and was never stated: an ANCHOR is a
-     * generated FRAME you shoot the next shots from — one per project, and it
-     * carries a place with things standing in it. A PLATE is a picture of one
-     * subject in the abstract, lives on that subject, and there is no limit.
-     * People and props come from plates; a scene comes from an anchor.
-     */
-    function anchorBanner() {
-        const held = anchorShotId();
-        const code = held && (state.storyboard || []).find(f => f.shot_id === held);
-        return `<div class="card mb-16" style="border-color:${held ? 'var(--gl-brand-pink,#ec4899)' : 'var(--gl-border-subtle)'};">
-            <strong>${held ? `Shooting from ${code ? esc(code.shot_code) : 'a frame'}` : 'No anchor set'}</strong>
-            <p class="text-sm text-muted" style="margin:6px 0 0;line-height:1.6;">
-                ${held
-                    ? 'Every frame you generate is built FROM that picture — its location, its dressing '
-                      + 'and where the subjects stand — re-shot on each shot\u2019s own lens and angle. '
-                      + 'Press &#9875; on another frame to move it, or <em>clear</em> to go back to plates.'
-                    : 'Press &#9875; on any generated frame to shoot the following shots from it. '
-                      + 'That is how a street stays the same street from 1A to 1B.'}
-                <br><span class="text-sm">
-                <strong>One anchor per project</strong>, and it is a whole FRAME &mdash; a place with
-                things standing in it. Individual people and objects come from their own
-                <strong>plates</strong> on the Characters, Locations and Props pages, and those are
-                unlimited. Anchoring a frame from another scene is allowed and is right when it is the
-                same location; across different locations it will bring the wrong place with it.
-                </span>
-            </p>
-        </div>`;
-    }
-
     function anchorButton(f) {
         if (f.anchor && f.anchor.is_anchor) {
             return `<button class="btn btn-sm" style="border-color:var(--gl-brand-pink,#ec4899);"
