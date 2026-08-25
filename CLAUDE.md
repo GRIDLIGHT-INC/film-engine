@@ -7,7 +7,9 @@ AI film production pipeline for Gridlight. Transforms screenplays into editor-re
 ```bash
 cd backend
 npm install
-node server.js
+node server.js            # the API, on :3100
+
+node backend/dev-server.js # the page, on :3200 — from the repo root
 ```
 
 Server runs on `http://localhost:3100`. Database auto-initializes on first run (SQLite at `data/film-engine.db`).
@@ -233,6 +235,7 @@ film-engine/
 │       ├── aspect-consistency.test.js   # The board and the footage are the same shape
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
 │       ├── staleness-accept.test.js     # A warning you cannot act on is one you learn to ignore
+│       ├── dev-server.test.js           # An edit you cannot see is an edit that did not happen
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
@@ -698,6 +701,15 @@ That matters more than convenience, because of what this pipeline is. **The conn
 `storyboard_upload` goes through the same route a person's upload does, so it inherits everything that route already guarantees: the frame it replaces is **archived as a recoverable version**, and a **locked board refuses it** with the same `BOARD_LOCKED` and the same explicit override. An agent path that skipped the lock would be a hole in the lock rather than a convenience.
 
 The test derives from `MEDIA_IMPORTS` and requires a **named** covering tool per target, failing on an unknown rather than assuming coverage — that assumption is precisely how three of them stayed unreachable while the surface looked complete.
+
+### An Edit You Cannot See Is an Edit That Did Not Happen
+The page was served by `python -m http.server`, which sends `Last-Modified` and **no `Cache-Control`**. A browser reads that as licence to reuse its stored copy without asking, so every change to `index.html` needed a forced reload.
+
+The failure mode is what made it worth replacing rather than remembering, because it is silent *and* misleading: a new control is in the file on disk and absent from the page that is loaded, so pressing it calls a function that does not exist and **nothing happens at all**. That reads as a broken feature. It cost a round trip — *"that button does nothing"* — and had been costing one after nearly every change; the phrase *hard-refresh* closes most of this week's reports.
+
+`backend/dev-server.js` sends `no-store` and **no validator at all**. `no-cache` would not have been enough: it still permits a stored copy revalidated by ETag, and a revalidation answering 304 is exactly the stale page this exists to prevent. The file is read on every request rather than held, since caching it here would reintroduce the same staleness one layer down.
+
+It is still a server, so containment is by **resolved path** — the database, the git directory and every provider credential sit one level above `src/` — and the URL is **decoded before resolving**, because `%2e%2e` is the same escape as `..` and a check on the raw string misses it. No dependency: Node's own `http` and `fs`, which is precisely what [ADR-002](docs/adr/002-vanilla-http-no-framework.md) is about.
 
 ### A Warning You Cannot Act On Is One You Learn to Ignore
 *"I got shots for all my views, but it still says generated work is behind what it was made from… what does that mean?"*
@@ -1830,6 +1842,7 @@ node --test backend/tests/paid-preview.test.js
 node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js
 node --test backend/tests/staleness-accept.test.js
+node --test backend/tests/dev-server.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js
