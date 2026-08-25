@@ -112,7 +112,15 @@ function buildVideoPrompt(sceneCard, characters, location, stylePreset, options)
         }
     }
 
-    return { prompt, negative_prompt, camera_control };
+    const action = sceneCard && (sceneCard.action || sceneCard.description || sceneCard.direction);
+    const environment = sceneCard && (sceneCard.environment_motion || sceneCard.atmosphere_motion);
+    return {
+        prompt, negative_prompt, camera_control,
+        motion: {
+            ...(action ? { subject: String(action).slice(0, 500) } : {}),
+            ...(environment ? { environment: String(environment).slice(0, 300) } : {}),
+        },
+    };
 }
 
 /**
@@ -163,7 +171,7 @@ function calculateVideoParams(sceneCard, project) {
  */
 function buildVideoPayload(sceneCard, characters, location, stylePreset, options) {
     const opts = options || {};
-    const { prompt, negative_prompt, camera_control } = buildVideoPrompt(
+    const { prompt, negative_prompt, camera_control, motion } = buildVideoPrompt(
         sceneCard, characters, location, stylePreset, opts
     );
     const params = calculateVideoParams(sceneCard, opts.project);
@@ -210,6 +218,11 @@ function buildVideoPayload(sceneCard, characters, location, stylePreset, options
     if (loraIds.length > 0) {
         payload.lora_ids = loraIds;
     }
+
+    // Provider-specific guidance without changing the provider-neutral wire
+    // contract or its golden fixture. Runway can read this in-process; JSON
+    // adapters continue to receive the exact payload they received before.
+    Object.defineProperty(payload, 'motion', { value: motion, enumerable: false });
 
     return payload;
 }

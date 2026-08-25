@@ -67,11 +67,11 @@ function planSequence(shots, opts) {
     const segments = [];
     if (list.length === 1 || degraded) {
         for (const shot of list) {
-            segments.push(buildSegment([shot], shot, shot, description, list));
+            segments.push(buildSegment([shot], shot, shot, description, list, o.modelPolicy));
         }
     } else {
         for (let i = 0; i < list.length - 1; i += 1) {
-            segments.push(buildSegment([list[i], list[i + 1]], list[i], list[i + 1], description, list));
+            segments.push(buildSegment([list[i], list[i + 1]], list[i], list[i + 1], description, list, o.modelPolicy));
         }
     }
 
@@ -100,7 +100,7 @@ function planSequence(shots, opts) {
  * every segment of a five-shot sequence asks for the same thing and the result
  * is five copies of one move.
  */
-function buildSegment(shots, from, to, description, all) {
+function buildSegment(shots, from, to, description, all, modelPolicy) {
     const index = all.indexOf(from);
     const single = shots.length === 1;
     const parts = [];
@@ -117,6 +117,12 @@ function buildSegment(shots, from, to, description, all) {
         if (to.description) parts.push(`It ends as ${to.shot_code}: ${to.description}`);
     }
 
+    const policy = modelPolicy || { duration: { min: 2, max: 10 }, creditsPerSecond: 0 };
+    const wanted = Math.max(1, Math.round((Number(from.duration_ms) || 5000) / 1000));
+    const allowed = policy.duration && policy.duration.allowed;
+    const duration = Array.isArray(allowed)
+        ? allowed.reduce((best, n) => Math.abs(n - wanted) < Math.abs(best - wanted) ? n : best)
+        : Math.min((policy.duration && policy.duration.max) || 10, Math.max((policy.duration && policy.duration.min) || 2, wanted));
     return {
         index,
         from: from.shot_code || from.id,
@@ -127,6 +133,8 @@ function buildSegment(shots, from, to, description, all) {
             ? [{ uri: from.keyframe, position: 'first' }]
             : [{ uri: from.keyframe, position: 'first' }, { uri: to.keyframe, position: 'last' }],
         prompt: parts.join(' '),
+        duration_s: duration,
+        estimated_credits: Math.max(policy.minimumCredits || 0, duration * (policy.creditsPerSecond || 0)),
     };
 }
 

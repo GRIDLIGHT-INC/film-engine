@@ -46,7 +46,19 @@ const DEFAULT_IMAGE_MODEL = process.env.RUNWAY_IMAGE_MODEL || 'gen4_image';
  * outside these sets falls back to the configured default instead, so a generic
  * payload works and an explicit Runway model is still honoured.
  */
-const KNOWN_VIDEO_MODELS = new Set(['gen4.5', 'gen4_turbo', 'gen4', 'gen3a_turbo', 'veo3', 'act_two']);
+const RUNWAY_VIDEO_SOURCE = 'https://docs.dev.runwayml.com/api/';
+const RUNWAY_VIDEO_MODELS = Object.freeze({
+    'gen4.5': { endpoint: 'image_to_video', duration: { min: 2, max: 10 }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '672:1584', '960:960'], creditsPerSecond: 12, status: 'active', source: RUNWAY_VIDEO_SOURCE },
+    gen4_turbo: { endpoint: 'image_to_video', duration: { min: 5, max: 10, allowed: [5, 10] }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '960:960'], creditsPerSecond: 5, status: 'active', source: RUNWAY_VIDEO_SOURCE },
+    'veo3.1': { endpoint: 'image_to_video', duration: { min: 5, max: 8, allowed: [5, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 40, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
+    'veo3.1_fast': { endpoint: 'image_to_video', duration: { min: 5, max: 8, allowed: [5, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 15, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
+    happyhorse_1_0: { endpoint: 'image_to_video', duration: { min: 5, max: 10 }, ratios: ['1280:720', '720:1280', '1920:1080', '1080:1920'], creditsPerSecond: 15, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    seedance2: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 36, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    seedance2_fast: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 29, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    seedance2_mini: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 16, minimumCredits: 64, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    gemini_omni_flash: { endpoint: 'image_to_video', duration: { min: 5, max: 10 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 10, firstFrameCredits: 1, status: 'active', source: RUNWAY_VIDEO_SOURCE },
+});
+const KNOWN_VIDEO_MODELS = new Set(Object.keys(RUNWAY_VIDEO_MODELS));
 const KNOWN_IMAGE_MODELS = new Set(['gen4_image', 'gen4_image_turbo', 'gemini_2.5_flash']);
 
 function pickModel(requested, known, fallback) {
@@ -167,8 +179,11 @@ function ratioAspect(ratio) {
  * Compared in log space so 16:9 and 9:16 are treated as equally distant from a
  * square target instead of the wider one always winning.
  */
-function pickRatio(width, height, mode) {
-    const allowed = VIDEO_RATIOS[mode] || VIDEO_RATIOS.text_to_video;
+function pickRatio(width, height, mode, model) {
+    const policy = RUNWAY_VIDEO_MODELS[model];
+    const allowed = mode === 'text_to_video'
+        ? VIDEO_RATIOS.text_to_video
+        : ((policy && policy.ratios) || VIDEO_RATIOS.image_to_video);
     const w = Number(width);
     const h = Number(height);
     if (!w || !h || w <= 0 || h <= 0) return allowed[0];
@@ -187,6 +202,33 @@ function clampDuration(durationS) {
     const raw = Number(durationS);
     if (!Number.isFinite(raw) || raw <= 0) return DURATION_DEFAULT;
     return Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(raw)));
+}
+
+function durationForModel(durationS, model) {
+    const policy = RUNWAY_VIDEO_MODELS[model] || RUNWAY_VIDEO_MODELS['gen4.5'];
+    const raw = Number(durationS);
+    const wanted = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : DURATION_DEFAULT;
+    if (Array.isArray(policy.duration.allowed)) {
+        return policy.duration.allowed.reduce((best, n) => Math.abs(n - wanted) < Math.abs(best - wanted) ? n : best);
+    }
+    return Math.min(policy.duration.max, Math.max(policy.duration.min, wanted));
+}
+
+function buildRunwayMotionPrompt(payload) {
+    const p = payload || {};
+    const motion = p.motion || {};
+    const parts = ['Continuous seamless shot.'];
+    if (motion.subject) parts.push(String(motion.subject).trim().replace(/[.\s]+$/, '') + '.');
+    if (motion.environment) parts.push(String(motion.environment).trim().replace(/[.\s]+$/, '') + '.');
+    const control = p.camera_control || {};
+    let camera = '';
+    if (Array.isArray(control.path) && control.path.length > 1) {
+        try { camera = require('../previs-blocking').analyzePath(control.path).description; } catch (_) { camera = ''; }
+    }
+    if (!camera && control.type && control.type !== 'static') camera = String(control.type).replace(/-/g, ' ');
+    if (camera) parts.push(`Over ${durationForModel(p.duration_s || p.duration, p.model || DEFAULT_VIDEO_MODEL)} seconds, the camera performs ${camera}.`);
+    if (p.motion_prompt && !motion.subject && !motion.environment) parts.push(String(p.motion_prompt));
+    return parts.join(' ').slice(0, 1000).trim();
 }
 
 /** Seeds outside Runway's uint32 range are dropped rather than rejected upstream. */
@@ -254,11 +296,13 @@ function buildVideoRequest(payload) {
     const mode = (Array.isArray(promptImage) ? promptImage.length : promptImage)
         ? 'image_to_video' : 'text_to_video';
 
+    const model = pickModel(p.model, KNOWN_VIDEO_MODELS, DEFAULT_VIDEO_MODEL);
     const body = {
-        model: pickModel(p.model, KNOWN_VIDEO_MODELS, DEFAULT_VIDEO_MODEL),
-        promptText: p.promptText || p.prompt || '',
-        ratio: pickRatio(p.width, p.height, mode),
-        duration: clampDuration(p.duration_s !== undefined ? p.duration_s : p.duration),
+        model,
+        promptText: p.motion_prompt
+            || ((p.motion || p.camera_control) ? buildRunwayMotionPrompt(p) : (p.promptText || p.prompt || '')),
+        ratio: pickRatio(p.width, p.height, mode, model),
+        duration: durationForModel(p.duration_s !== undefined ? p.duration_s : p.duration, model),
     };
     if (promptImage) body.promptImage = promptImage;
 
@@ -270,6 +314,18 @@ function buildVideoRequest(payload) {
         // Named so a caller can tell the director what could not be sent.
         ...(dropped.length ? { dropped: dropped.map(k => k.uri) } : {}),
     };
+}
+
+function sanitizedPromptImage(value) {
+    if (!value) return undefined;
+    const list = Array.isArray(value) ? value : [{ uri: value, position: 'first' }];
+    return { kind: 'image', count: list.length, positions: list.map((x, i) => x.position || (i ? 'last' : 'first')) };
+}
+
+function estimateVideoCredits(body) {
+    const policy = RUNWAY_VIDEO_MODELS[body.model] || RUNWAY_VIDEO_MODELS['gen4.5'];
+    const raw = body.duration * policy.creditsPerSecond + (body.promptImage ? (policy.firstFrameCredits || 0) : 0);
+    return Math.max(policy.minimumCredits || 0, raw);
 }
 
 /**
@@ -326,6 +382,10 @@ function describeVideoRequest(payload) {
         notes.push(`${built.dropped.length} keyframe(s) beyond the first and last will not be sent.`);
     }
 
+    const estimatedCredits = estimateVideoCredits(built.body);
+    if (p.camera_control && Array.isArray(p.camera_control.path) && p.camera_control.path.length > 1) {
+        notes.push('The approved 3D camera path is translated into prompt text; Runway does not receive Film Engine coordinates.');
+    }
     return {
         provider: 'runway',
         mode: built.mode,
@@ -335,8 +395,29 @@ function describeVideoRequest(payload) {
         prompt: built.body.promptText,
         has_image: !!built.body.promptImage,
         seed: built.body.seed === undefined ? null : built.body.seed,
+        outbound: { ...built.body, ...(built.body.promptImage ? { promptImage: sanitizedPromptImage(built.body.promptImage) } : {}) },
+        estimated_credits: estimatedCredits,
+        estimated_usd: estimatedCredits / 100,
         notes,
     };
+}
+
+function buildMultiShotRequest(payload) {
+    const p = payload || {};
+    const mode = p.mode === 'auto' ? 'auto' : 'custom';
+    const shots = Array.isArray(p.shots) ? p.shots.slice(0, 5).map(s => ({
+        prompt: String(s.prompt || '').slice(0, 1000), duration: Math.max(1, Math.round(Number(s.duration) || 1)),
+    })) : [];
+    if (mode === 'custom' && (shots.length < 3 || shots.length > 5)) throw new Error('Runway multi-shot custom mode requires 3–5 shots');
+    const duration = mode === 'custom' ? shots.reduce((n, s) => n + s.duration, 0)
+        : Math.min(15, Math.max(5, Math.round(Number(p.duration) || 10)));
+    if (duration < 5 || duration > 15) throw new Error('Runway multi-shot duration must be 5–15 seconds');
+    const body = { version: '2026-06', mode, duration, ratio: p.ratio === '1920:1080' ? '1920:1080' : '1280:720' };
+    if (mode === 'custom') body.shots = shots;
+    else body.prompt = String(p.prompt || '').slice(0, 2500);
+    if (p.promptImage) body.promptImage = p.promptImage;
+    return { url: `${baseUrl()}/recipes/multi_shot_video`, headers: jsonHeaders(), body,
+        estimatedCredits: duration * (body.ratio === '1920:1080' ? 17 : 13), mode: 'multi_shot_video' };
 }
 
 function buildImageRequest(payload) {
@@ -481,6 +562,11 @@ async function pollTask(taskId, key, deadline) {
 function meterRunway(capability, payload, result) {
     const p = payload || {};
     if (capability === 'video') {
+        if (p.runway_recipe === 'multi_shot_video') {
+            const built = buildMultiShotRequest(p);
+            return { unit: 'second', quantity: built.body.duration,
+                model: built.body.ratio === '1920:1080' ? 'multi_shot_video_1080p' : 'multi_shot_video_720p' };
+        }
         const model = (result && result.provider_model) || pickModel(p.model, KNOWN_VIDEO_MODELS, DEFAULT_VIDEO_MODEL);
         const seconds = clampDuration(p.duration_s !== undefined ? p.duration_s : p.duration);
         if (!(seconds > 0)) return null;
@@ -558,7 +644,9 @@ const adapter = {
         const key = apiKey();
         if (!key) return missingKey();
 
-        const request = capability === 'video' ? buildVideoRequest(payload) : buildImageRequest(payload);
+        const request = capability === 'video'
+            ? ((payload && payload.runway_recipe === 'multi_shot_video') ? buildMultiShotRequest(payload) : buildVideoRequest(payload))
+            : buildImageRequest(payload);
         if (!request.body.promptText && !request.body.promptImage) {
             return { ok: false, status: 400, error: 'runway: a prompt or a keyframe image is required' };
         }
@@ -580,7 +668,7 @@ const adapter = {
                 status: 200,
                 data: mediaResult(capability, done.url),
                 provider: 'runway',
-                provider_model: request.body.model,
+                provider_model: request.body.model || request.mode,
                 provider_job_id: submitted.id,
             };
         } catch (err) {
@@ -628,4 +716,9 @@ module.exports = {
     VIDEO_RATIOS,
     TASK_STATUSES,
     RUNWAY_VERSION,
+    RUNWAY_VIDEO_MODELS,
+    buildRunwayMotionPrompt,
+    buildMultiShotRequest,
+    durationForModel,
+    estimateVideoCredits,
 };

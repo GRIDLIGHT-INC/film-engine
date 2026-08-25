@@ -396,12 +396,26 @@ const PRODUCTION_TOOLS = [
         name: 'sequence_generate',
         handler: handleSequences, method: 'POST',
         path: a => `/film/sequences/${a.sequence_id}/generate`,
+        body: a => a.segment_index === undefined ? {} : { segment_index: a.segment_index },
         description:
             'Generate a sequence. SPENDS CREDITS \u2014 one generation per pair of neighbouring shots. '
             + 'Call sequence_plan first; it is free and states the exact number. Stops at the first '
             + 'provider refusal rather than buying the same failure repeatedly, and names what it did '
             + 'not attempt.',
-        schema: { sequence_id: { type: 'string' } }, required: ['sequence_id'],
+        schema: {
+            sequence_id: { type: 'string' },
+            segment_index: { type: 'number', description: 'Optional zero-based leg. Omit only when deliberately buying the whole sequence.' },
+        }, required: ['sequence_id'],
+    },
+    {
+        name: 'sequence_generate_native',
+        handler: handleSequences, method: 'POST',
+        path: a => `/film/sequences/${a.sequence_id}/generate-native`,
+        body: a => ({ ratio: a.ratio || '1280:720' }),
+        description:
+            'Runway native multi-shot recipe. SPENDS CREDITS and creates one clip containing 3–5 editorial cuts. '
+            + 'Less deterministic than generating approved shots independently; call sequence_plan first for the exact body and cost.',
+        schema: { sequence_id: { type: 'string' }, ratio: { type: 'string' } }, required: ['sequence_id'],
     },
     {
         name: 'sequence_stitch',

@@ -114,8 +114,8 @@ async function previewVideo(res, shotId) {
             + 'the storyboard frame. Generate the frame first if you want the clip to look like the board.');
     }
     if (!ctx.previs) {
-        warnings.push('This shot has no blocking, so no camera path is sent — the movement is described '
-            + 'in words only. Block it in Previs to send an actual camera move.');
+        warnings.push('This shot has no applied blocking, so the motion prompt has no approved camera choreography. '
+            + 'Apply it in Previs before generating.');
     }
     try {
         const lint = require('../lib/prompt-lint').lintPrompt(payload.prompt || '');
@@ -150,8 +150,13 @@ async function previewVideo(res, shotId) {
         // does not — reported as a fact, never as bytes.
         init_image: sent ? sent.has_image : !!payload.init_image,
         camera_control: payload.camera_control || null,
+        camera_control_delivery: payload.camera_control && payload.camera_control.path
+            ? 'translated-to-prompt-text' : 'movement-text-only',
         duration_s: sent && sent.duration_s ? sent.duration_s : payload.duration_s,
         ratio: sent ? sent.ratio : null,
+        outbound: sent && sent.outbound ? sent.outbound : null,
+        estimated_credits: sent && sent.estimated_credits !== undefined ? sent.estimated_credits : null,
+        estimated_usd: sent && sent.estimated_usd !== undefined ? sent.estimated_usd : null,
         width: payload.width, height: payload.height, fps: payload.fps,
         seed: payload.seed === undefined ? null : payload.seed,
         warnings,

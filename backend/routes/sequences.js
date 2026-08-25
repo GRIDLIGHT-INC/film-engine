@@ -66,7 +66,7 @@ function shotsOf(row) {
     if (!ids.length) return [];
     const placeholders = ids.map(() => '?').join(',');
     const found = db.prepare(
-        `SELECT sh.id, sh.shot_code, sh.scene_card_yaml, sh.current_frame_version,
+        `SELECT sh.id, sh.shot_code, sh.scene_card_yaml, sh.current_frame_version, sh.duration_ms,
                 sc.project_id
            FROM film_shots sh JOIN film_scenes sc ON sc.id = sh.scene_id
           WHERE sh.id IN (${placeholders})`).all(...ids);
@@ -88,6 +88,7 @@ function shotsOf(row) {
             id: shot.id,
             shot_code: shot.shot_code,
             description: String(card.description || card.action || '').slice(0, 300),
+            duration_ms: Number(shot.duration_ms) || Number(card.duration_ms) || 5000,
             keyframe: chosen ? chosen.file_path : null,
         };
     });
@@ -173,9 +174,24 @@ function planRoute(res, id) {
     const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
     if (!row) return json(res, 404, { error: 'Sequence not found' });
     const ceiling = keyframeCeiling(row.project_id);
+    const runway = ceiling.provider === 'runway' ? require('../lib/providers/runway') : null;
+    const model = runway ? (process.env.RUNWAY_VIDEO_MODEL || 'gen4.5') : null;
     const plan = planSequence(shotsOf(row), {
         maxKeyframes: ceiling.max, description: row.description,
+        modelPolicy: runway && runway.RUNWAY_VIDEO_MODELS[model],
     });
+    const shotList = shotsOf(row);
+    let native = null;
+    if (!plan.refused && runway && shotList.length >= 3 && shotList.length <= 5) {
+        try {
+            const built = runway.buildMultiShotRequest({ mode: 'custom', ratio: '1280:720',
+                shots: shotList.map(s => ({ prompt: `${s.shot_code}: ${s.description || row.description || 'Continue the story.'}`,
+                    duration: Math.max(1, Math.round((s.duration_ms || 3000) / 1000)) })) });
+            native = { available: true, mode: 'custom-cuts', duration_s: built.body.duration,
+                estimated_credits: built.estimatedCredits, estimated_usd: built.estimatedCredits / 100,
+                outbound: built.body };
+        } catch (err) { native = { available: false, reason: err.message }; }
+    }
     return json(res, plan.refused ? 409 : 200, {
         sequence_id: id, provider: ceiling.provider,
         ...(ceiling.unresolved ? { provider_unresolved: ceiling.unresolved } : {}),
@@ -185,9 +201,44 @@ function planRoute(res, id) {
         // showing something the page already has thumbnails of.
         segments: (plan.segments || []).map(s => ({
             from: s.from, to: s.to, prompt: s.prompt, keyframes: s.keyframes.length,
+            duration_s: s.duration_s, estimated_credits: s.estimated_credits,
+            complete: !!db.prepare(`SELECT 1 FROM film_assets WHERE project_id = ?
+                AND json_extract(metadata, '$.sequence_id') = ?
+                AND json_extract(metadata, '$.from') = ? AND json_extract(metadata, '$.to') = ? LIMIT 1`)
+                .get(row.project_id, id, s.from, s.to),
         })),
         generations: (plan.segments || []).length,
+        native_multi_shot: native,
     });
+}
+
+async function generateNativeSequence(req, res, id) {
+    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
+    if (!row) return json(res, 404, { error: 'Sequence not found' });
+    const shots = shotsOf(row);
+    if (shots.length < 3 || shots.length > 5) return json(res, 409, { error: 'Native multi-shot requires 3–5 shots' });
+    if (shots.some(s => !s.keyframe)) return json(res, 409, { error: 'Every native multi-shot sequence needs an approved frame' });
+    const provider = resolve('video', providerConfigFor(row.project_id));
+    if (!provider || provider.id !== 'runway') return json(res, 409, { error: 'Native multi-shot requires the Runway provider' });
+    const { toDataUri } = require('../lib/reference-images');
+    const payload = {
+        runway_recipe: 'multi_shot_video', mode: 'custom', ratio: (req.body && req.body.ratio) || '1280:720',
+        promptImage: toDataUri(shots[0].keyframe),
+        shots: shots.map(s => ({ prompt: `${s.shot_code}: ${s.description || row.description || 'Continue the story.'}`,
+            duration: Math.max(1, Math.round((s.duration_ms || 3000) / 1000)) })),
+    };
+    const result = await provider.generate('video', payload, { timeout: 600000 });
+    if (!result.ok) return json(res, 502, { error: result.error });
+    const fileName = sequenceFileName(id, shots[0].shot_code, 'multi-shot');
+    const saved = await persistProviderMedia(row.project_id, 'video', fileName, result.data, { serveDir: 'videos' });
+    const assetId = generateId();
+    db.prepare(`INSERT INTO film_assets
+        (id, project_id, shot_id, asset_type, file_path, file_name, format, version, metadata, provider, provider_model, provider_job_id)
+        VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 1, ?, 'runway', ?, ?)`)
+        .run(assetId, row.project_id, shots[0].id, typeof saved === 'string' ? saved : saved.path, fileName,
+            JSON.stringify({ sequence_id: id, kind: 'native_multi_shot' }), result.provider_model || 'multi_shot_video', result.provider_job_id || null);
+    db.prepare("UPDATE film_sequences SET output_asset_id = ?, status = 'complete', updated_at = datetime('now') WHERE id = ?").run(assetId, id);
+    return json(res, 200, { sequence_id: id, asset_id: assetId, url: getFileUrl('video', row.project_id, fileName), mode: 'native_multi_shot' });
 }
 
 async function generateSequence(req, res, id) {
@@ -195,7 +246,10 @@ async function generateSequence(req, res, id) {
     if (!row) return json(res, 404, { error: 'Sequence not found' });
 
     const ceiling = keyframeCeiling(row.project_id);
-    const plan = planSequence(shotsOf(row), { maxKeyframes: ceiling.max, description: row.description });
+    const runway = ceiling.provider === 'runway' ? require('../lib/providers/runway') : null;
+    const model = runway ? (process.env.RUNWAY_VIDEO_MODEL || 'gen4.5') : null;
+    const plan = planSequence(shotsOf(row), { maxKeyframes: ceiling.max, description: row.description,
+        modelPolicy: runway && runway.RUNWAY_VIDEO_MODELS[model] });
     if (plan.refused) return json(res, 409, { sequence_id: id, ...plan });
 
     const provider = resolve('video', providerConfigFor(row.project_id));
@@ -209,7 +263,11 @@ async function generateSequence(req, res, id) {
 
     db.prepare("UPDATE film_sequences SET status = 'generating', updated_at = datetime('now') WHERE id = ?").run(id);
 
-    for (const segment of plan.segments) {
+    const requestedIndex = req.body && req.body.segment_index;
+    const selected = requestedIndex === undefined ? plan.segments
+        : plan.segments.filter((_, i) => i === Number(requestedIndex));
+    if (!selected.length) return json(res, 400, { error: 'segment_index is outside this sequence plan' });
+    for (const segment of selected) {
         const keyframes = segment.keyframes
             .map(k => ({ uri: toDataUri(k.uri), position: k.position }))
             .filter(k => k.uri);
@@ -217,7 +275,7 @@ async function generateSequence(req, res, id) {
         const result = await provider.generate('video', {
             prompt: segment.prompt,
             keyframes,
-            duration_s: 5,
+            duration_s: segment.duration_s,
             width: 1280, height: 720,
             ...(project && project.target_fps ? { target_fps: project.target_fps } : {}),
         }, { timeout: 600000 });
@@ -252,7 +310,7 @@ async function generateSequence(req, res, id) {
 
     return json(res, failed.length && !results.some(r => r.ok) ? 502 : 200, {
         sequence_id: id, segments: results,
-        not_attempted: plan.segments.slice(results.length).map(s => `${s.from}→${s.to}`),
+        not_attempted: selected.slice(results.length).map(s => `${s.from}→${s.to}`),
         needs_stitching: plan.needs_stitching,
         note: plan.needs_stitching && !failed.length
             ? 'Each segment is a separate clip. Stitch them in the timeline or your NLE.'
@@ -418,6 +476,7 @@ async function handleSequences(req, res, urlParts) {
         const sub = urlParts[3];
         if (sub === 'plan' && req.method === 'GET') return planRoute(res, id);
         if (sub === 'generate' && req.method === 'POST') return generateSequence(req, res, id);
+        if (sub === 'generate-native' && req.method === 'POST') return generateNativeSequence(req, res, id);
         if (sub === 'import' && req.method === 'POST') return importSequenceClip(req, res, id);
         // Free: joins clips already paid for into one file.
         if (sub === 'stitch' && req.method === 'POST') return stitchSequence(req, res, id);
