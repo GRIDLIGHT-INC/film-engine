@@ -426,3 +426,38 @@ test('a locked board refuses an agent upload the same way it refuses a person', 
     const forced = await callTool('storyboard_upload', { shot_id: shotId, image: uri, force: true });
     assert.ok(forced && !forced.error, `the documented override does not work: ${JSON.stringify(forced)}`);
 });
+
+// ── The Direct modal, from an agent ─────────────────────────────────────
+//
+// "Does MCP give access to the Direct modal, so I can ask an LLM to build the
+// description?"
+//
+// Nearly. shot_update covered nine of the twelve fields routes/shots.js
+// accepts, and the three missing ones include `direction` — the field a
+// DIRECTOR adds on top of the screenplay, which is precisely the thing you
+// would want written in conversation. Also missing: location_view, which side
+// of a location the shot looks at, and sfx_cues.
+//
+// The body builder forwards everything it is given, so those fields were
+// reachable by an agent that guessed the name and invisible to one reading the
+// schema. Derived from EDITABLE so the next field added to the route cannot
+// arrive unreachable.
+
+test('every field the shot route accepts is offered to an agent', () => {
+    const routeSrc = fs.readFileSync(path.join(ROOT, 'routes', 'shots.js'), 'utf8');
+    const m = /const EDITABLE\s*=\s*\[([\s\S]*?)\]/.exec(routeSrc);
+    assert.ok(m, 'routes/shots.js no longer declares what a card edit may change');
+    const editable = [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]);
+    assert.ok(editable.length >= 10, `the editable set collapsed (${editable.length})`);
+
+    const toolSrc = fs.readFileSync(path.join(ROOT, 'lib', 'mcp-tools.js'), 'utf8');
+    const at = toolSrc.indexOf("name: 'shot_update'");
+    assert.ok(at > 0, 'shot_update is gone');
+    const schemaAt = toolSrc.indexOf('schema: {', at);
+    const block = toolSrc.slice(schemaAt, toolSrc.indexOf('\n        },', schemaAt));
+
+    const missing = editable.filter(f => !new RegExp(`\\b${f}:`).test(block));
+    assert.deepStrictEqual(missing, [],
+        `a person can set these on the Direct panel and an agent reading the schema cannot see them: `
+        + `${missing.join(', ')}`);
+});
