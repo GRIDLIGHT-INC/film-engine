@@ -230,6 +230,7 @@ film-engine/
 │       ├── clip-coverage.test.js        # One clip, several shots, honoured by every assembly surface
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
+│       ├── aspect-consistency.test.js   # The board and the footage are the same shape
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
@@ -695,6 +696,25 @@ That matters more than convenience, because of what this pipeline is. **The conn
 `storyboard_upload` goes through the same route a person's upload does, so it inherits everything that route already guarantees: the frame it replaces is **archived as a recoverable version**, and a **locked board refuses it** with the same `BOARD_LOCKED` and the same explicit override. An agent path that skipped the lock would be a hole in the lock rather than a convenience.
 
 The test derives from `MEDIA_IMPORTS` and requires a **named** covering tool per target, failing on an unknown rather than assuming coverage — that assumption is precisely how three of them stayed unreachable while the surface looked complete.
+
+### The Board and the Footage Are the Same Shape
+*"Does the aspect ratio and resolution for the board shots and then for the footage stay consistent, and is it derived from the mood board? It needs consistency and already had some issues there."*
+
+It did. The **image** payload derived its shape from `film_projects.aspect_ratio`; the **video** payload derived its shape from `film_projects.target_resolution`. Two independent columns with nothing reconciling them, agreeing only because 16:9 and 1920×1080 happen to be the same shape. Measured across the eleven ratios the settings offer, **ten produced a storyboard in one format and footage in another**:
+
+```
+2.39:1   board 1584x664 (2.39)   clip 1920x1080 (1.78)
+1.85:1   board 1392x752 (1.85)   clip 1920x1080 (1.78)
+9:16     board 768x1368 (0.56)   clip 1920x1080 (1.78)
+```
+
+None had been used yet, so the defect was armed and waiting for a director to use a feature already shipped — pressing **Apply look** with the mood board's 2.39:1 would have produced a scope board and widescreen footage silently.
+
+The aspect ratio is the **creative decision** and the resolution is the **delivery size**, so the frame is the aspect **fitted inside** the delivery raster: 2.39:1 in a 1920×1080 delivery is 1920×804, and 9:16 is 608×1080. *Fitted* rather than area-preserved, because preserving the pixel budget gives 2226×932 for scope — wider than the frame the operator chose, which is not a size anyone asked for. Dimensions are forced even, since h.264 rejects odd ones and a rejection there is a paid generation that fails at the provider.
+
+An absent or unparseable aspect **reshapes nothing**. Absent means *use what is delivered*, which is what every project had before a mood board could set one, and a guess would silently reframe existing work. A 16:9 project at 1920×1080 is byte-identical, which is what makes this safe to ship.
+
+Two things the measurement found that are **not** defects and are worth stating rather than hiding. A board spec reaches the project only when **Apply look** is pressed — `applyProjectSpecs` runs inside the apply branch of compose, not on every board edit, which is the same preview-versus-commit split the style preset has. And Runway **snaps to its own documented ratio list**, so a 1920×1080 request generates at 1280×720 and is scaled afterwards; that is the provider's ceiling rather than ours, and the preview reports the ratio it will really use.
 
 ### Nothing Spends Without Showing What It Will Send
 *"I generated the first two videos directly on runway and not through the engine as credits are super precious and didn't want to waste them."*
@@ -1769,6 +1789,7 @@ node --test backend/tests/video-sequence.test.js
 node --test backend/tests/clip-coverage.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/paid-preview.test.js
+node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js

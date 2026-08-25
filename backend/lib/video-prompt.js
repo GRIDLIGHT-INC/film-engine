@@ -147,6 +147,42 @@ function calculateVideoParams(sceneCard, project) {
     const m = res.match(/^(\d+)\s*x\s*(\d+)$/i);
     if (m) { width = Number(m[1]); height = Number(m[2]); }
 
+    /*
+     * THE BOARD AND THE FOOTAGE ARE THE SAME SHAPE.
+     *
+     * The image payload derived its shape from film_projects.aspect_ratio and
+     * this derived its shape from target_resolution — two independent columns
+     * with nothing reconciling them. They agreed only because 16:9 and
+     * 1920x1080 happen to be the same shape; every other aspect the settings
+     * offer produced a storyboard in one format and footage in another, with
+     * nothing said. Ten of the eleven ratios were wrong and none of them had
+     * been used yet.
+     *
+     * The aspect ratio is the CREATIVE decision and the resolution is the
+     * DELIVERY SIZE, so the frame is the aspect FITTED INSIDE the delivery
+     * raster: 2.39:1 in a 1920x1080 delivery is 1920x804, and 9:16 is
+     * 608x1080. Fitted rather than area-preserved, because area-preserving
+     * gives 2226x932 for scope — wider than the delivery frame the operator
+     * chose, which is not a size anyone asked for.
+     *
+     * An absent or unparseable aspect reshapes nothing: absent means "use what
+     * is delivered", which is what every project had before a mood board could
+     * set one, and a guess here would silently reframe existing work.
+     */
+    const ar = String(proj.aspect_ratio || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/);
+    if (ar) {
+        const ratio = Number(ar[1]) / Number(ar[2]);
+        if (Number.isFinite(ratio) && ratio > 0) {
+            // Even dimensions: h.264 rejects odd ones, and a rejection here is
+            // a paid generation that fails at the provider.
+            const even = n => Math.max(2, Math.round(n / 2) * 2);
+            const byWidth = { w: width, h: even(width / ratio) };
+            const byHeight = { w: even(height * ratio), h: height };
+            const fitted = byWidth.h <= height ? byWidth : byHeight;
+            width = fitted.w; height = fitted.h;
+        }
+    }
+
     return {
         num_frames: DEFAULT_NUM_FRAMES,
         fps: DEFAULT_GEN_FPS,
