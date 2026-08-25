@@ -27335,7 +27335,53 @@ ${fountainText.slice(0, 50000)}`;
                 only behind because something above them is, and regenerating one now would build on the same
                 old inputs and cost money to produce something that is still wrong.
             </p>
+            <p class="text-sm text-muted" style="margin:8px 0 0;line-height:1.55;">
+                &ldquo;Behind&rdquo; means the inputs a frame was made from have changed since &mdash; a card,
+                a description, the style, or how the engine builds prompts. It does <strong>not</strong> mean
+                the picture is wrong. If this work is still the film you want, say so once and the warning
+                clears; nothing is regenerated and nothing is spent.
+            </p>
+            <button class="btn btn-secondary btn-sm" style="margin-top:10px;"
+                    onclick="acceptAllStale(this)"
+                    title="Record everything as still current for the inputs it has now — free">
+                This is all still current
+            </button>
         </div>`;
+    }
+
+    /**
+     * "All of this is still the film I want."
+     *
+     * The per-asset accept has existed since fingerprinting shipped and is
+     * unusable at the scale a real project reaches: improvements to how prompts
+     * are built move every fingerprint, so seventy artefacts report behind and
+     * each needs its own click. That is how a report gets dismissed
+     * permanently — and then the real warning is dismissed with it.
+     *
+     * The claim is the director's, not the engine's, so it is one deliberate
+     * act with the consequence stated.
+     */
+    async function acceptAllStale(btn) {
+        if (!state.currentProject) return;
+        if (!confirm('Record all generated work as still current?\n\n'
+            + 'Nothing is regenerated and nothing is spent. This says the pictures you have are still '
+            + 'the film you want, for the inputs they have now.\n\n'
+            + 'If a subject or a shot card genuinely did change, regenerate that one instead.')) return;
+
+        const label = btn && btn.textContent;
+        if (btn) { btn.disabled = true; btn.textContent = 'Accepting…'; }
+        try {
+            const r = await api(`/projects/${state.currentProject.id}/staleness/accept`,
+                { method: 'POST', body: JSON.stringify({}) });
+            const kinds = Object.entries(r.by_kind || {}).map(([k, n]) => `${n} ${k.replace(/_/g, ' ')}`);
+            setStatus(`${r.accepted} accepted as current${kinds.length ? ' — ' + kinds.join(', ') : ''}.`
+                + (r.warning ? ' ' + r.warning : ''));
+            loadStoryboard();
+        } catch (err) {
+            setStatus('Could not accept: ' + err.message);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = label || 'This is all still current'; }
+        }
     }
 
     /**

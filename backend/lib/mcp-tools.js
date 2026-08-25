@@ -999,6 +999,25 @@ const PRODUCTION_TOOLS = [
         required: [],
     },
     {
+        name: 'staleness_accept',
+        handler: handleProductionReports, method: 'POST',
+        path: a => `/film/projects/${a.project_id}/staleness/accept`,
+        body: a => (a.kinds ? { kinds: a.kinds } : {}),
+        description:
+            'Record every stamped artefact in a project as STILL CURRENT for the inputs it has now. '
+            + 'FREE \u2014 nothing is regenerated and nothing is spent. Use when the staleness report '
+            + 'is full of work that is genuinely still the film you want: improvements to how prompts '
+            + 'are built move every fingerprint, so a real project can report seventy artefacts behind '
+            + 'while every one of them is fine. This is a CLAIM that the work still stands \u2014 if a '
+            + 'subject or a card really did change, regenerate that one instead of accepting it. '
+            + 'Unstamped assets are untouched. Optionally limit to certain kinds.',
+        schema: {
+            project_id: { type: 'string' },
+            kinds: { type: 'array', description: 'Limit to these artefact kinds, e.g. ["keyframe"]. Omit for all.' },
+        },
+        required: ['project_id'],
+    },
+    {
         name: 'staleness_report',
         handler: handleProductionReports, method: 'GET',
         description: 'Which generated artefacts no longer match the inputs they were made from. Run this BEFORE generating: a frame built from an old character description or an old plate looks valid forever and nothing else will tell you. Reports stale (inputs changed), fresh (verified current) and unknown (generated before fingerprinting existed \u2014 not a claim either way).',

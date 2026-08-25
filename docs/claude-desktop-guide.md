@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**157 tools, 40 families.** Everything the app can do, you can ask for in a
+**158 tools, 40 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -215,7 +215,7 @@ Validate before running, estimate before any fan-out. **`flow_run` costs money.*
 ### Keeping track
 
 `project_list` · `project_get` · `project_create` · `project_update` ·
-`project_delete` · `staleness_report` · `impact_report` · `artefact_accept`
+`project_delete` · `staleness_report` · `staleness_accept` · `impact_report` · `artefact_accept`
 
 `impact_report` answers *what did that change break* — one edit, all the way
 down, splitting **redo now** from **waiting on something above it**.

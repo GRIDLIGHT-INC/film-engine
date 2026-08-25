@@ -133,6 +133,66 @@ function handleProductionReports(req, res, urlParts, query) {
         return json(res, 200, buildDOOD(urlParts[2]));
     }
 
+    /*
+     * POST /film/projects/:id/staleness/accept — all of it is still the film.
+     *
+     * The per-asset accept has existed since fingerprinting shipped and is
+     * unusable at scale: a week of genuine improvements to how prompts are
+     * built moves every stamp, so a real project reports seventy-odd artefacts
+     * behind, each individually acceptable. Seventy-four clicks is not a
+     * workflow, it is how a report gets dismissed permanently — and then the
+     * real warning is dismissed with it.
+     *
+     * The fingerprint is NOT weakened to make the number smaller. It is honest:
+     * regenerating today WOULD produce something different. Whether the work is
+     * still the film you want is a claim only a director can make, which is why
+     * this is an explicit act rather than something the engine decides — the
+     * same reasoning behind screenplay-drift's baseline.
+     *
+     * Unstamped assets are left alone. NULL means "outside the workflow", and
+     * stamping them would pull every hand-made or uploaded picture into a
+     * tracking system nobody opted them into.
+     */
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'staleness'
+        && urlParts[4] === 'accept') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+
+        const only = Array.isArray(req.body && req.body.kinds) ? new Set(req.body.kinds) : null;
+        const rows = db.prepare(
+            `SELECT id, artefact_kind, shot_id, character_id, location_id, prop_id, file_name
+               FROM film_assets
+              WHERE project_id = ? AND artefact_kind IS NOT NULL AND input_fingerprint IS NOT NULL`)
+            .all(urlParts[2]);
+
+        const accepted = [], failed = [];
+        for (const row of rows) {
+            if (only && !only.has(row.artefact_kind)) continue;
+            if (!ARTEFACT_KINDS[row.artefact_kind]) continue;
+            // Never throws a whole batch away for one unreadable artefact: a
+            // deleted subject is exactly the case that cannot be accepted, and
+            // it must not stop the other seventy-three.
+            let stamped = null;
+            try { stamped = acceptAsCurrent(row.id, row.artefact_kind, idsForAsset(row)); }
+            catch (_) { stamped = null; }
+            (stamped ? accepted : failed).push({ id: row.id, kind: row.artefact_kind, file: row.file_name });
+        }
+
+        return json(res, 200, {
+            project_id: urlParts[2],
+            accepted: accepted.length,
+            by_kind: accepted.reduce((m, a) => { m[a.kind] = (m[a.kind] || 0) + 1; return m; }, {}),
+            could_not_accept: failed,
+            note: 'Recorded as still current for the inputs they have now. Nothing was regenerated '
+                + 'and nothing was spent. This is a claim that the work is still the film you want — '
+                + 'if a subject or a card really did change, regenerate that one instead.',
+            ...(failed.length ? {
+                warning: `${failed.length} could not be accepted because their inputs can no longer be `
+                    + 'read — usually a subject that was deleted.',
+            } : {}),
+        });
+    }
+
     // POST /film/assets/:id/accept — this output is still right for its
     // current inputs. The alternative was regenerating, which spends money to
     // replace something the director chose and, since generation is not

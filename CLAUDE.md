@@ -232,6 +232,7 @@ film-engine/
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
 │       ├── aspect-consistency.test.js   # The board and the footage are the same shape
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
+│       ├── staleness-accept.test.js     # A warning you cannot act on is one you learn to ignore
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
@@ -697,6 +698,21 @@ That matters more than convenience, because of what this pipeline is. **The conn
 `storyboard_upload` goes through the same route a person's upload does, so it inherits everything that route already guarantees: the frame it replaces is **archived as a recoverable version**, and a **locked board refuses it** with the same `BOARD_LOCKED` and the same explicit override. An agent path that skipped the lock would be a hole in the lock rather than a convenience.
 
 The test derives from `MEDIA_IMPORTS` and requires a **named** covering tool per target, failing on an unknown rather than assuming coverage — that assumption is precisely how three of them stayed unreachable while the surface looked complete.
+
+### A Warning You Cannot Act On Is One You Learn to Ignore
+*"I got shots for all my views, but it still says generated work is behind what it was made from… what does that mean?"*
+
+It means what it says, and it is true. **The payload is the fingerprint**, so a week of genuine improvements to how prompts are built — references, plates, the anchor, the prompt ceiling, the frame size — moves every stamp. A frame generated five days ago would come back different if generated today. On the real project that read **74 stale, 0 fresh**.
+
+Correct, and useless. `POST /assets/:id/accept` has existed since fingerprinting shipped and is unusable at that scale: seventy-four items, each individually acceptable. Seventy-four clicks is not a workflow, it is how a report gets dismissed permanently — and then the real warning is dismissed with it, which is the failure the drift work already paid for once.
+
+**The fingerprint is not weakened to make the number smaller.** It would have been easy to drop the frame size from it and halve the count, and it would have been a lie: regenerating today genuinely does produce something different. Whether the work is still the film you want is a claim only a director can make, so accepting is one deliberate act with the consequence stated — the same reasoning that makes `screenplay-drift/baseline` explicit rather than something the engine decides.
+
+Unstamped assets are left alone: NULL means *outside the workflow*, and stamping them would pull every hand-made or uploaded picture into a tracking system nobody opted them into. An artefact whose inputs can no longer be read — a deleted subject — is **named** rather than failing the batch, because that is the one case that genuinely cannot be accepted.
+
+The banner also now says what "behind" means, which it never did: the inputs changed, **not** that the picture is wrong.
+
+Served at `POST /projects/:id/staleness/accept`, on the storyboard banner, and as `staleness_accept` (**158 tools**).
 
 ### One Resolution, Set Once, Reaching Every Creative
 *"We need to send the proper resolutions to Runway… what if I want to do 4K? We need to set it at the project level and then it trickles down to all creatives (boards, plates, shots)."*
@@ -1813,6 +1829,7 @@ node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/paid-preview.test.js
 node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js
+node --test backend/tests/staleness-accept.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js
