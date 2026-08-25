@@ -146,6 +146,40 @@ function coverageFor(db, projectId) {
 }
 
 /**
+ * How long each shot's clip ACTUALLY is, by shot id.
+ *
+ * The card's duration_ms is what a shot ASKS for and is 0 on every real shot
+ * here — nothing writes it. So an assembly reading it lays a ten-second clip
+ * into a zero-length slot: present in the XML, invisible on the timeline, and
+ * every later cut wrong.
+ *
+ * This was fixed in buildTimeline alone, and the three exporters plus the
+ * conform kept reading the card — so playback was right while Premiere received
+ * zero-length items, which is exactly the split the running-order work cost a
+ * round. One query, one map, read by all of them.
+ */
+function measuredDurations(db, projectId) {
+    const rows = db.prepare(
+        `SELECT a.shot_id, a.asset_type, a.duration_ms
+           FROM film_assets a
+          WHERE a.project_id = ? AND a.shot_id IS NOT NULL
+            AND a.asset_type IN ('video_final', 'video_synced', 'video_raw')
+            AND a.duration_ms > 0`).all(projectId);
+
+    // The cut that would SHIP, on the same precedence the conform uses: a
+    // graded shot is never measured from its raw clip.
+    const RANK = { video_final: 0, video_synced: 1, video_raw: 2 };
+    const best = new Map();
+    for (const r of rows) {
+        const held = best.get(r.shot_id);
+        if (!held || RANK[r.asset_type] < RANK[held.asset_type]) best.set(r.shot_id, r);
+    }
+    const out = new Map();
+    for (const [shotId, r] of best) out.set(shotId, Number(r.duration_ms) || 0);
+    return out;
+}
+
+/**
  * The shot list an assembly should actually walk.
  *
  * Covered shots after the lead are dropped, and the lead carries the clip's
@@ -154,18 +188,32 @@ function coverageFor(db, projectId) {
  * slot, and every cut after it would be six seconds early — a worse bug than
  * the one being fixed, because it is invisible until the film is watched.
  */
-function foldShots(shots, coverage) {
+function foldShots(shots, coverage, measured) {
     const cov = coverage || new Map();
-    if (!cov.size) return { shots: shots.slice(), folded: [] };
+    const lengths = measured || new Map();
+
+    /*
+     * The measured length applies to EVERY retained shot, not only a covered
+     * lead. Applying it only to the fold is how a plain uploaded clip exported
+     * at zero length while a covered one exported correctly — the same feature
+     * appearing to work and not work on two shots of the same project.
+     */
+    const withLength = shot => {
+        const ms = lengths.get(shot.id);
+        return (ms > 0 && ms !== shot.duration_ms) ? { ...shot, duration_ms: ms } : shot;
+    };
+
+    if (!cov.size) return { shots: shots.map(withLength), folded: [] };
 
     const out = [], folded = [];
     for (const shot of shots) {
         const entry = cov.get(shot.id);
-        if (!entry) { out.push(shot); continue; }
+        if (!entry) { out.push(withLength(shot)); continue; }
         if (!entry.is_lead) { folded.push(shot.shot_code); continue; }
         out.push({
             ...shot,
-            duration_ms: entry.duration_ms || shot.duration_ms,
+            // The covering clip's own length, which is the whole run.
+            duration_ms: entry.duration_ms || lengths.get(shot.id) || shot.duration_ms,
             covers: entry.covers,
             covers_asset_id: entry.asset_id,
         });
@@ -173,4 +221,4 @@ function foldShots(shots, coverage) {
     return { shots: out, folded };
 }
 
-module.exports = { setCoverage, coverageFor, foldShots };
+module.exports = { setCoverage, coverageFor, foldShots, measuredDurations };

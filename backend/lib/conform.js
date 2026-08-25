@@ -61,8 +61,10 @@ function planConform(projectId) {
      * refuses to build at all because 1B and 1C look like missing footage the
      * director is told to generate — footage they already have.
      */
-    const { coverageFor, foldShots } = require('./clip-coverage');
-    const folded = foldShots(shots, coverageFor(db, projectId));
+    const { coverageFor, foldShots, measuredDurations } = require('./clip-coverage');
+    // How long the clips actually are: every card's duration_ms is 0 on a real
+    // project, so a conform built from the card produces a zero-length film.
+    const folded = foldShots(shots, coverageFor(db, projectId), measuredDurations(db, projectId));
 
     const clips = [], missing = [];
     for (const shot of folded.shots) {

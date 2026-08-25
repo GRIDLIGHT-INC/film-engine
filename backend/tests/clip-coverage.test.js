@@ -720,3 +720,66 @@ test('coverage can be set on a clip that is already uploaded', async () => {
     assert.strictEqual(cleared.status, 200);
     assert.strictEqual(coverageFor(db, f.projectId).size, 0, 'coverage could not be cleared');
 });
+
+// ── 10. A clip's real length reaches every assembly, coverage or not ────
+//
+// Found by exporting the director's own project to Premiere and reading the
+// file: 1A came out 530 frames and 2A came out ZERO, with a ten-second clip on
+// it. 1A was right only because it had coverage — foldShots moves the measured
+// duration onto a covered lead, and nothing moved it onto anything else. So an
+// ordinary uploaded clip exported as a zero-length item: present in the XML,
+// invisible on the timeline, and every later cut wrong.
+//
+// buildTimeline was fixed to prefer the measured length; the exporters and the
+// conform still read shot.duration_ms, which on every real shot here is 0.
+
+test('a clip with no coverage still exports at its real length', () => {
+    const { measuredDurations, foldShots, coverageFor } = require('../lib/clip-coverage');
+    assert.ok(typeof measuredDurations === 'function',
+        'nothing supplies measured clip lengths to the assemblies');
+
+    const f = fixture({ cover: false });
+    // Every card says nothing about duration, exactly as a real project does.
+    db.prepare('UPDATE film_shots SET duration_ms = 0 WHERE scene_id = (SELECT id FROM film_scenes WHERE project_id = ?)')
+        .run(f.projectId);
+
+    const rows = db.prepare(
+        `SELECT sh.*, s.scene_number FROM film_shots sh JOIN film_scenes s ON s.id = sh.scene_id
+          WHERE s.project_id = ? ORDER BY sh.sort_order`).all(f.projectId);
+
+    const measured = measuredDurations(db, f.projectId);
+    const folded = foldShots(rows, coverageFor(db, f.projectId), measured).shots;
+
+    const lead = folded.find(s => s.shot_code === '1A');
+    assert.strictEqual(lead.duration_ms, CLIP_MS,
+        `1A has a ${CLIP_MS}ms clip and no coverage, and exports at ${lead.duration_ms}ms — a `
+        + 'zero-length item is present in the XML and invisible on the timeline');
+
+    const tail = folded.find(s => s.shot_code === '1D');
+    assert.strictEqual(tail.duration_ms, 2000, '1D lost its own clip length');
+
+    // A shot with no clip keeps the card's number; there is nothing measured to
+    // prefer and a still has no opinion about how long it is held.
+    const still = folded.find(s => s.shot_code === '1B');
+    assert.strictEqual(still.duration_ms, 0, 'a shot with no clip invented a duration');
+});
+
+test('every assembly reads the measured length, not just the folded lead', () => {
+    /*
+     * Set-based over the assemblies, because this was fixed in ONE of them —
+     * buildTimeline — and the three exporters plus the conform kept reading the
+     * card. Playback was right while Premiere received zero-length clips, which
+     * is precisely the split the running-order work already cost a round.
+     */
+    const sources = {
+        'lib/conform.js': 'planConform',
+        'routes/nle-export.js': 'the three NLE formats',
+    };
+    for (const [file, what] of Object.entries(sources)) {
+        const src = fs.readFileSync(path.join(ROOT, file), 'utf8')
+            .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        assert.ok(/measuredDurations/.test(src),
+            `${file} (${what}) never asks how long the clips actually are, so a shot whose card says `
+            + 'nothing exports at zero length');
+    }
+});

@@ -111,8 +111,9 @@ function handleNLEExport(req, res, urlParts, query) {
      * would agree with the film and the third would not, and only the editor
      * who opened that one would ever find out.
      */
-    const { coverageFor, foldShots } = require('../lib/clip-coverage');
-    const shots = foldShots(getProjectShots(projectId), coverageFor(db, projectId)).shots;
+    const { coverageFor, foldShots, measuredDurations } = require('../lib/clip-coverage');
+    const shots = foldShots(getProjectShots(projectId), coverageFor(db, projectId),
+        measuredDurations(db, projectId)).shots;
     const assets = getProjectAssets(projectId);
     const safeTitle = (project.title || 'timeline').replace(/[^a-zA-Z0-9_-]/g, '_');
 
