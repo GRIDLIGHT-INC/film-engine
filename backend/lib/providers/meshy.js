@@ -565,6 +565,14 @@ const adapter = {
      * If a long prompt is ever refused, that refusal is visible and catchable.
      * The failure this replaces was silent.
      */
+    // The largest image this provider will actually produce. Asking for more
+    // is a rejection that costs a generation, so the request is clamped here
+    // and the clamp is reported rather than silently applied.
+    // Meshy publishes no image size limit and proxies models that top out around
+    // two megapixels. Held there rather than assumed unlimited: over-asking
+    // produces a rejection at the provider, which is worse than a smaller
+    // picture generated here where the clamp can be reported.
+    maxImagePixels: 2048 * 2048,
     promptLimit: 16000,
     // Declared, not assumed. The negative is FOLDED into the positive because
     // Meshy documents no negative field; the seed is not carried at all, so a

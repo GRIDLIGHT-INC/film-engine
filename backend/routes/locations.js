@@ -45,7 +45,7 @@ async function generateSubjectPlate(req, res, kind, subjectId) {
         return res.end(JSON.stringify({ error: `${kind} not found` }));
     }
 
-    const project = db.prepare('SELECT id, style_preset, aspect_ratio FROM film_projects WHERE id = ?')
+    const project = db.prepare('SELECT id, style_preset, aspect_ratio, target_resolution FROM film_projects WHERE id = ?')
         .get(subject.project_id);
     if (!project) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -81,6 +81,9 @@ async function generateSubjectPlate(req, res, kind, subjectId) {
         subject,
         stylePreset: project.style_preset,
         aspectRatio: project.aspect_ratio,
+        // The whole project, so the plate is generated at the delivery size the
+        // frames referencing it will use.
+        project,
         provider,
         view,
         anchorPath,
@@ -153,7 +156,7 @@ async function sweepCompassViews(req, res, locationId) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'location not found' }));
     }
-    const project = db.prepare('SELECT id, style_preset, aspect_ratio FROM film_projects WHERE id = ?')
+    const project = db.prepare('SELECT id, style_preset, aspect_ratio, target_resolution FROM film_projects WHERE id = ?')
         .get(location.project_id);
     if (!project) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -358,7 +361,7 @@ async function refineSubjectPlate(req, res, kind, subjectId) {
             : 'There is no plate to refine yet. Generate one first.', 409);
     }
 
-    const project = db.prepare('SELECT id, style_preset, aspect_ratio FROM film_projects WHERE id = ?')
+    const project = db.prepare('SELECT id, style_preset, aspect_ratio, target_resolution FROM film_projects WHERE id = ?')
         .get(subject.project_id);
     const provider = resolve('image', parseProjectConfig(subject.project_id));
     if (!provider || typeof provider.generate !== 'function') {

@@ -389,6 +389,12 @@ const adapter = {
     requiresKey: true,
 
         // The Images API documents a 4000-character prompt for gpt-image-1.
+    // The largest image this provider will actually produce. Asking for more
+    // is a rejection that costs a generation, so the request is clamped here
+    // and the clamp is reported rather than silently applied.
+    // The Images API documents 1024x1024, 1536x1024 and 1024x1536. Anything
+    // larger is a 400, which costs a request and returns nothing.
+    maxImagePixels: 1536 * 1024,
     promptLimit: 4000,
     // The Images API has no negative field; this adapter has always folded it
     // into the positive. Seeds are not accepted.

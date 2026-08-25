@@ -134,6 +134,12 @@ const gridlightAdapter = {
     // depends on whatever model is loaded. Held at the strict default rather
     // than guessed upward: over-guessing produces a rejected request at the
     // provider, which is worse than trimming here where it can be reported.
+    // The largest image this provider will actually produce. Asking for more
+    // is a rejection that costs a generation, so the request is clamped here
+    // and the clamp is reported rather than silently applied.
+    // A swappable local agent whose real ceiling is unknowable from here. Held
+    // conservative, on the same reasoning as its prompt and reference limits.
+    maxImagePixels: 1536 * 1536,
     promptLimit: 1000,
     // The gateway receives the payload verbatim, so a negative and a seed both
     // reach it natively — whether the local service acts on them is its own

@@ -341,6 +341,28 @@ function styleReferencesFor(db, projectId) {
 
 
 /**
+ * How large a plate should be generated.
+ *
+ * A plate never saw a resolution at all — it was generated at whatever the
+ * provider defaulted to, while the frames referencing it followed the project.
+ * A plate conditions every frame its subject appears in, so at a different size
+ * from those frames it is either detail nobody asked for or a soft reference on
+ * a sharp board.
+ *
+ * Same budget the board frame uses, so the two cannot disagree. A project with
+ * no resolution set gets NOTHING rather than a guess — the provider's own
+ * default is the right answer when nobody has stated one, and inventing a size
+ * would silently reframe every plate in every existing project.
+ */
+function plateImageSize(project, maxPixels) {
+    const p = project || {};
+    if (!String(p.target_resolution || '').match(/^\s*\d+\s*x\s*\d+\s*$/i)) return null;
+    const { imageBudget } = require('./capability-payloads');
+    const d = imageBudget(p.aspect_ratio, p.target_resolution, maxPixels);
+    return { width: d.width, height: d.height, clamped: !!d.clamped };
+}
+
+/**
  * KEEP THE PLATE, CHANGE ONE THING.
  *
  * A plate could only be regenerated wholesale from words, so "the same street
@@ -412,7 +434,8 @@ function plateFileName(kind, subjectName, view) {
  * plate generated without the style is still worth having — but a director who
  * is told nothing will believe their look is anchored when it is not.
  */
-async function generatePlate({ projectId, kind, subject, stylePreset, provider, aspectRatio, timeout, db,
+async function generatePlate({ projectId, kind, subject, stylePreset, provider, aspectRatio,
+    project, timeout, db,
     view, anchorPath }) {
     const spec = PLATE_KINDS[kind];
     if (!spec) return { ok: false, error: `unknown plate kind '${kind}'` };
@@ -499,6 +522,12 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         // framing" spends the negative on a risk that is not present.
         negative_prompt: anchored ? `${NEGATIVE}, ${VIEW_NEGATIVE}` : NEGATIVE,
         aspect_ratio: aspectRatio || undefined,
+        // The project's delivery size, so a plate matches the frames that
+        // reference it. Absent when the project states none.
+        ...(() => {
+            const size = plateImageSize(project, provider && provider.maxImagePixels);
+            return size ? { width: size.width, height: size.height } : {};
+        })(),
         ...(refs.length ? { reference_images: refs } : {}),
     };
 
@@ -602,6 +631,6 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
 }
 
 module.exports = {
-    COMPASS_VIEWS, compassView, planCompassSweep,
+    COMPASS_VIEWS, compassView, planCompassSweep, plateImageSize,
     buildPlateRefinePrompt, REFINE_NEGATIVE,
     plateFileName, PLATE_KINDS, buildPlatePrompt, generatePlate, styleReferencesFor, NEGATIVE };

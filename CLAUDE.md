@@ -231,6 +231,7 @@ film-engine/
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
 │       ├── aspect-consistency.test.js   # The board and the footage are the same shape
+│       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
@@ -696,6 +697,27 @@ That matters more than convenience, because of what this pipeline is. **The conn
 `storyboard_upload` goes through the same route a person's upload does, so it inherits everything that route already guarantees: the frame it replaces is **archived as a recoverable version**, and a **locked board refuses it** with the same `BOARD_LOCKED` and the same explicit override. An agent path that skipped the lock would be a hole in the lock rather than a convenience.
 
 The test derives from `MEDIA_IMPORTS` and requires a **named** covering tool per target, failing on an unknown rather than assuming coverage — that assumption is precisely how three of them stayed unreachable while the surface looked complete.
+
+### One Resolution, Set Once, Reaching Every Creative
+*"We need to send the proper resolutions to Runway… what if I want to do 4K? We need to set it at the project level and then it trickles down to all creatives (boards, plates, shots)."*
+
+Measured first: the delivery size reached **one** of the three things it was chosen for.
+
+| | |
+|---|---|
+| footage | sized from `target_resolution` ✓ |
+| board frame | sized from a fixed **1024×1024** budget ✗ |
+| plate | never saw a resolution at all ✗ |
+
+So a 4K project boarded at one megapixel and plated at whatever the provider defaulted to, while its clips were 1920×1080.
+
+Both now take the project's size, reshaped to its aspect — one budget, so a plate cannot disagree with the frames that reference it. A plate at a different size from those frames is either detail nobody asked for or a soft reference on a sharp board.
+
+**And there is a ceiling that must not be papered over: nothing here generates 4K.** Each image adapter declares `maxImagePixels` with its reason — runway 1920×1080 (its largest documented `gen4_image` ratio), openai 1536×1024 (the Images API's documented sizes; anything larger is a 400 that costs a request and returns nothing), meshy 2048×2048 (no published limit, held at what the models it proxies actually reach), gridlight 1536×1536 (a swappable local agent, held conservative). An adapter that declares nothing gets the **strictest** default, on the same asymmetry that decides `promptLimit`: over-asking is a rejection that costs a generation, under-asking is a smaller picture generated here where the clamp can be reported.
+
+The clamp **preserves the shape** — changing the aspect to fit would put the board and the footage straight back out of step — and it is **reported** in the payload meta. *"I set the project to 4K"* and *"my boards are 4K"* are different claims, and a director who is not told will believe the second because they did the first. A 4K project asks for 3840×2160 and gets 1920×1080 on Runway, 2728×1536 on Meshy, and is told so.
+
+Video has the same ceiling and it is the provider's: Runway's `image_to_video` documents `1280:720` and `1584:672`, so a clip generates at 720p-class whatever the project says. The route to a 4K deliverable is the **upscale in post**, not a larger ask here.
 
 ### The Board and the Footage Are the Same Shape
 *"Does the aspect ratio and resolution for the board shots and then for the footage stay consistent, and is it derived from the mood board? It needs consistency and already had some issues there."*
@@ -1790,6 +1812,7 @@ node --test backend/tests/clip-coverage.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/paid-preview.test.js
 node --test backend/tests/aspect-consistency.test.js
+node --test backend/tests/resolution-trickle.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js

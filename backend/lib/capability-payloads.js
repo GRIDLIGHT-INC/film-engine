@@ -41,6 +41,10 @@ const storage = () => require('./file-storage');
 
 // Defaults lifted verbatim from routes/storyboard.js:callImageGen so the
 // extraction is behaviour-preserving rather than an opportunity to retune.
+// The strictest ceiling any image adapter here declares (OpenAI's 1536x1024).
+// Used only when the provider is unknown at build time.
+const DEFAULT_MAX_IMAGE_PIXELS = 1536 * 1024;
+
 const IMAGE_DEFAULTS = { model: 'sdxl', width: 1024, height: 1024, steps: 30, guidance_scale: 7.5 };
 
 const LIPSYNC_DEFAULTS = { model: 'wav2lip', quality: 'high' };
@@ -170,12 +174,59 @@ function dimensionsForAspect(aspect, fallbackW, fallbackH) {
     };
 }
 
+/**
+ * THE PROJECT'S DELIVERY SIZE, CLAMPED TO WHAT A PROVIDER CAN MAKE.
+ *
+ * The board frame was sized from a fixed 1024x1024 budget, so a project set to
+ * 4K and a project set to 720p boarded at exactly the same size — the delivery
+ * size a director chose reached the footage and nothing else.
+ *
+ * The other half is a ceiling that must not be papered over: no generator here
+ * produces 4K. Asking for more than a provider allows is a rejection that costs
+ * a generation and returns nothing, so the request is clamped — preserving the
+ * SHAPE, since a clamp that changes the aspect would put the board and the
+ * footage back out of step — and the clamp is reported. "I set the project to
+ * 4K" and "my boards are 4K" are different claims, and a director who is not
+ * told will believe the second because they did the first.
+ *
+ * The route to an actual 4K deliverable is the upscale in post, not a bigger
+ * ask here.
+ */
+function imageBudget(aspect, resolution, maxPixels) {
+    const res = String(resolution || '').match(/^\s*(\d+)\s*x\s*(\d+)\s*$/i);
+    const base = res
+        ? { width: Number(res[1]), height: Number(res[2]) }
+        : { width: IMAGE_DEFAULTS.width, height: IMAGE_DEFAULTS.height };
+
+    const shaped = dimensionsForAspect(aspect, base.width, base.height);
+    /*
+     * An unknown provider gets the STRICT default, not none.
+     *
+     * Over-asking is a rejection at the provider that costs a generation and
+     * returns nothing; under-asking is a smaller picture, generated here, where
+     * the clamp can be reported. The same asymmetry that decides promptLimit
+     * and maxReferenceImages when an adapter declares nothing.
+     */
+    const cap = Number(maxPixels) > 0 ? Number(maxPixels) : DEFAULT_MAX_IMAGE_PIXELS;
+    const asked = shaped.width * shaped.height;
+    if (!cap || asked <= cap) return { ...shaped, clamped: false };
+
+    // Scale down on the diagonal so the shape survives exactly.
+    const k = Math.sqrt(cap / asked);
+    const round8 = n => Math.max(256, Math.round((n * k) / 8) * 8);
+    return {
+        width: round8(shaped.width), height: round8(shaped.height),
+        clamped: true, asked_width: shaped.width, asked_height: shaped.height,
+    };
+}
+
 function imageRequestPayload(fields) {
     const f = fields || {};
     // An explicit width/height still wins; otherwise follow the project's frame.
     const dims = (f.width && f.height)
         ? { width: f.width, height: f.height }
-        : dimensionsForAspect(f.aspect_ratio, IMAGE_DEFAULTS.width, IMAGE_DEFAULTS.height);
+        : imageBudget(f.aspect_ratio, f.target_resolution, f.max_image_pixels);
+    if (dims.clamped && f.__onClamp) f.__onClamp(dims);
 
     const payload = {
         prompt: f.prompt,
@@ -310,6 +361,19 @@ const CAPABILITY_BUILDERS = {
             ip_adapter_image: overrides.ip_adapter_image,
             ip_adapter_weight: overrides.ip_adapter_weight,
             aspect_ratio: ctx.project.aspect_ratio,
+            // The delivery size the director set, and the ceiling of whoever is
+            // generating. A board sized from a constant made a 4K project and a
+            // 720p project board identically.
+            target_resolution: ctx.project.target_resolution,
+            max_image_pixels: ctx.maxImagePixels || null,
+            __onClamp: d => {
+                ctx.__clamp = {
+                    asked: `${d.asked_width}x${d.asked_height}`,
+                    generating: `${d.width}x${d.height}`,
+                    why: 'the image provider cannot produce a picture that large; the shape is '
+                        + 'unchanged. Upscale in post for a larger deliverable.',
+                };
+            },
             // The pictures themselves. Without this the prompt above could emit
             // @maya with nothing for it to point at, which is strictly worse
             // than having used prose.
@@ -496,7 +560,11 @@ const CAPABILITY_BUILDERS = {
  */
 function buildImagePayloadForAdapter(ctx, adapter) {
     const declared = Number(adapter && adapter.promptLimit) || imagePromptLimit(ctx && ctx.project);
-    const firstCtx = { ...(ctx || {}), imagePromptLimit: declared };
+    // The same route the prompt ceiling takes: the adapter's own limit, applied
+    // where the payload is built for it, so the frame is as large as this
+    // provider can actually make and no larger.
+    const pixels = Number(adapter && adapter.maxImagePixels) || null;
+    const firstCtx = { ...(ctx || {}), imagePromptLimit: declared, maxImagePixels: pixels };
     const first = CAPABILITY_BUILDERS.image(firstCtx);
     const firstPayload = Array.isArray(first) ? first[0] : first;
     const negative = String((firstPayload && firstPayload.negative_prompt) || '').trim();
@@ -506,7 +574,7 @@ function buildImagePayloadForAdapter(ctx, adapter) {
     const available = declared ? Math.max(1, declared - reserve) : declared;
     if (!declared || available === declared) return firstPayload;
 
-    const rebuiltCtx = { ...(ctx || {}), imagePromptLimit: available };
+    const rebuiltCtx = { ...(ctx || {}), imagePromptLimit: available, maxImagePixels: pixels };
     const rebuilt = CAPABILITY_BUILDERS.image(rebuiltCtx);
     return Array.isArray(rebuilt) ? rebuilt[0] : rebuilt;
 }
@@ -574,6 +642,13 @@ function buildCapabilityPayload(capability, ctx) {
             project_id: projectIdOf(context),
             scene_id: context.scene ? context.scene.id : null,
             shot_id: context.shot ? context.shot.id : null,
+            /*
+             * If the delivery size was larger than the provider can produce,
+             * say so. Silently generating a smaller picture would let a
+             * director believe their 4K project is being boarded at 4K, which
+             * they would only discover in the cut.
+             */
+            ...(context.__clamp ? { resolution_clamped: context.__clamp } : {}),
         },
     };
 }
@@ -819,6 +894,7 @@ async function persistCapabilityResult(capability, result, ctx, filename) {
 }
 
 module.exports = {
+    imageBudget,
     imagePromptLimit,
     buildImagePayloadForAdapter,
     dimensionsForAspect,

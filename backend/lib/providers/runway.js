@@ -592,6 +592,12 @@ const adapter = {
 
         // Runway's text_to_image caps the prompt at 1000 characters. This is the
     // number the engine used to impose on everyone.
+    // The largest image this provider will actually produce. Asking for more
+    // is a rejection that costs a generation, so the request is clamped here
+    // and the clamp is reported rather than silently applied.
+    // gen4_image's largest documented ratio is 1920:1080; 2112:912 is wider but
+    // no taller, so this is the pixel ceiling either way.
+    maxImagePixels: 1920 * 1080,
     promptLimit: 1000,
     // Declared honestly: the negative is folded into the positive because
     // text_to_image has no negative field, and the seed is not carried.
