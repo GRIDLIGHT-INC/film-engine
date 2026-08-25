@@ -139,7 +139,9 @@ function handleNLEExport(req, res, urlParts, query) {
     }
 
     if (format === 'edl') {
-        const content = generateEDL(project, shots, settings);
+        // Assets travel in settings: generateEDL has no slot for them and needs
+        // them to know which shots have footage.
+        const content = generateEDL(project, shots, { ...settings, assets });
         const fileName = `${safeTitle}.edl`;
         registerExportAsset(projectId, 'edl', fileName, content);
         res.writeHead(200, {

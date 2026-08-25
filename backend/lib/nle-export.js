@@ -274,9 +274,76 @@ function toFileUrl(filePath) {
  * @param {object} [settings] - Project settings (target_fps, timecode_start, etc.)
  * @returns {string} EDL text
  */
+/**
+ * The shots that can actually go on a timeline.
+ *
+ * A shot with no footage is not a clip. Emitted anyway it became a zero-length
+ * item with no <file> element, and Premiere rejected the WHOLE FILE rather than
+ * skipping it — so a project with two perfectly good clips produced an export
+ * that would not import at all. The report was "file import failure", on a file
+ * that was well-formed XML with correct paths and correct durations.
+ *
+ * Shared by all three formats, because they walk the same shots and each had
+ * its own idea of what an empty shot was: the EDL made a zero-length event,
+ * FCPXML made a clip pointing at nothing, Premiere made an item with no file.
+ */
+function shootableShots(shots, assetsByShot, requireMedia) {
+    const VIDEO = ['video_final', 'video_synced', 'video_raw'];
+    /*
+     * We can only judge a shot on what we were told.
+     *
+     * ZERO DURATION is always disqualifying: an item of no length is invalid in
+     * every one of the three formats, and it is what every unshot shot becomes.
+     *
+     * NO MEDIA disqualifies only where the format cannot express a hole, and
+     * only when the caller actually supplied assets.
+     *
+     * FCPXML has <gap>, which is the correct way to say "nothing here for four
+     * seconds" and preserves the timing of everything after it — so it keeps
+     * those shots. Premiere's xmeml has no gap element: a shot with no media
+     * becomes a <clipitem> with no <file>, which is invalid, and the next
+     * clip's own <start> already supplies the offset. So Premiere omits and
+     * FCPXML does not.
+     *
+     * And "you told me nothing about assets" is not "there is nothing": an EDL
+     * authored from shot durations alone, with no media registered, is a real
+     * conform list handed to an assistant editor who has the footage elsewhere.
+     */
+    const knowsAboutMedia = requireMedia
+        && !!assetsByShot && Object.keys(assetsByShot).length > 0;
+    const kept = [], omitted = [];
+    for (const shot of shots || []) {
+        const assets = (assetsByShot && assetsByShot[shot.id]) || [];
+        const hasMedia = assets.some(a => VIDEO.includes(a.asset_type));
+        const hasLength = Number(shot.duration_ms) > 0;
+        if (!hasLength) {
+            omitted.push({ shot_code: shot.shot_code, reason: 'no footage yet' });
+            continue;
+        }
+        if (knowsAboutMedia && !hasMedia) {
+            omitted.push({ shot_code: shot.shot_code, reason: 'no video for this shot' });
+            continue;
+        }
+        kept.push(shot);
+    }
+    return { shots: kept, omitted };
+}
+
+/** Group assets by shot, the way all three generators need them. */
+function byShot(assets) {
+    const map = {};
+    for (const a of assets || []) { if (a.shot_id) (map[a.shot_id] = map[a.shot_id] || []).push(a); }
+    return map;
+}
+
 function generateEDL(project, shots, settings = {}) {
     const s = { ...DEFAULT_SETTINGS, ...settings };
     const fps = s.target_fps;
+    // Only shots with footage: a zero-length event tells a conform to cut to a
+    // shot for no frames, and a dropped event is a missing shot nobody is told
+    // about. Assets arrive via settings because this signature has no slot for
+    // them and all three formats must apply one rule.
+    shots = shootableShots(shots, byShot(s.assets)).shots;
     const lines = [];
 
     lines.push(`TITLE: ${project.title || 'Untitled'}`);
@@ -336,6 +403,7 @@ function generateEDL(project, shots, settings = {}) {
 function generateFCPXML(project, shots, assets = [], settings = {}) {
     const s = { ...DEFAULT_SETTINGS, ...settings };
     const fps = s.target_fps;
+    shots = shootableShots(shots, byShot(assets)).shots;
     const { num: frameDurNum, den: frameDurDen } = fpsToRational(fps);
     const { width, height } = parseResolution(s.target_resolution);
     const formatName = fcpxmlFormatName(width, height, fps);
@@ -477,6 +545,8 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
 function generatePremiereXML(project, shots, assets = [], settings = {}) {
     const se = { ...DEFAULT_SETTINGS, ...settings };
     const fps = se.target_fps;
+    // xmeml has no gap element, so a shot with no media cannot be represented.
+    shots = shootableShots(shots, byShot(assets), true).shots;
     const timebase = Math.round(fps);
     const ntsc = isNtscFps(fps) ? 'TRUE' : 'FALSE';
     const { width, height } = parseResolution(se.target_resolution);
@@ -506,6 +576,27 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
 
     // Video track
     xml += `      <video>\n`;
+    /*
+     * THE SEQUENCE'S OWN SETTINGS.
+     *
+     * Premiere builds the timeline — its resolution, its rate, its pixel
+     * aspect — from this block, and without it there is nothing to build: the
+     * import fails outright even when every clip in the file is valid. It was
+     * missing entirely, which is half of why an otherwise correct export was
+     * rejected.
+     */
+    xml += `        <format>\n`;
+    xml += `          <samplecharacteristics>\n`;
+    xml += `            <rate>\n`;
+    xml += `              <timebase>${Math.round(fps)}</timebase>\n`;
+    xml += `              <ntsc>${isNtscFps(fps) ? 'TRUE' : 'FALSE'}</ntsc>\n`;
+    xml += `            </rate>\n`;
+    xml += `            <width>${width}</width>\n`;
+    xml += `            <height>${height}</height>\n`;
+    xml += `            <pixelaspectratio>square</pixelaspectratio>\n`;
+    xml += `            <fielddominance>none</fielddominance>\n`;
+    xml += `          </samplecharacteristics>\n`;
+    xml += `        </format>\n`;
     xml += `        <track>\n`;
 
     let fileIndex = 1;
@@ -596,6 +687,19 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
     xml += `      <audio>\n`;
 
     for (const audioTrack of audioTypes) {
+        /*
+         * EVERY lane gets a track, empty or not.
+         *
+         * Skipping empty ones was tried and reverted: AUDIO_LANES exists
+         * because Premiere XML once laid out three lanes where FCPXML laid out
+         * four, so every Premiere export silently dropped the ambient bed —
+         * nothing failed, the file opened, and the missing layer looked like a
+         * creative choice. A lane that is empty today is where the sound pass
+         * will land tomorrow, and an empty <track> is legal xmeml.
+         *
+         * It was also a guess: the evidence for the import failure is the
+         * fileless clipitems and the missing sequence <format>, not this.
+         */
         xml += `        <track>\n`;
 
         let audioOffset = 0;
@@ -640,6 +744,7 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
 
 module.exports = {
     AUDIO_LANES,
+    shootableShots,
     generateEDL,
     generateFCPXML,
     generatePremiereXML,

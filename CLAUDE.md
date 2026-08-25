@@ -228,6 +228,7 @@ film-engine/
 │       ├── plate-upload.test.js         # Every kind of reference can be uploaded, not only generated
 │       ├── video-sequence.test.js       # Keyframe ceilings per adapter; N shots plan N-1 segments in order
 │       ├── clip-coverage.test.js        # One clip, several shots, honoured by every assembly surface
+│       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -681,6 +682,21 @@ The description leads every segment, because it is what is true of the *whole* s
 A clip made elsewhere can be dropped straight onto a sequence (`POST /film/sequences/:id/import`), which attaches it to the sequence's first shot — a clip has to belong to a shot for the timeline and the export to find it. Deleting a sequence **keeps its clips**: they are on their shots, they cost money, and deleting a plan must not delete the footage it produced.
 
 Served at `GET|POST /film/projects/:id/sequences`, `GET|PUT|DELETE /film/sequences/:id`, `GET …/plan`, `POST …/generate`, `POST …/import`, on the Video Shots page, and as six tools (**150 tools**).
+
+### An Export That Will Not Import Is Not an Export
+*"I got a file import failure in the import."* — Premiere, on a file this engine had just produced, for a project with two perfectly good clips.
+
+The file was well-formed XML, had the right root element, listed both clips with correct durations and real paths that resolved on disk. Every existing check passed, because every existing check asserted on **content**. Two structural faults:
+
+**Seven of the nine `<clipitem>`s had no `<file>` element at all.** They were shots with no footage yet, emitted as zero-length items. A clipitem without a file is not a clip, and Premiere rejects the **whole file** rather than skipping the item — so one unshot shot loses the entire export.
+
+**The sequence never declared its own format.** Premiere builds the timeline's resolution, rate and pixel aspect from `<media><video><format><samplecharacteristics>`, and the block was absent, so there was nothing to build even had every clip been valid.
+
+`shootableShots()` is the shared rule, and it is deliberately **per format** rather than uniform, because the formats differ in what they can express. **Zero duration** disqualifies everywhere: an item of no length is invalid in all three, and it is what every unshot shot becomes. **No media** disqualifies only in Premiere — xmeml has no gap element, while FCPXML has `<gap>`, which is the correct way to say *nothing here for four seconds* and preserves the timing of everything after it. Omitting is safe in xmeml precisely because each clip carries its own `<start>`.
+
+And *"you told me nothing about assets"* is not *"there is nothing"*: an EDL authored from shot durations alone, with no media registered, is a real conform list handed to an assistant editor who has the footage elsewhere. So the media test applies only when assets were actually supplied.
+
+**One fix was tried and reverted, and the revert is the point.** Skipping empty audio tracks looked tidy, and it broke the guarantee `AUDIO_LANES` exists for: Premiere XML once laid out three lanes where FCPXML laid out four, so every Premiere export silently dropped the ambient bed — nothing failed, the file opened, and the missing layer looked like a creative choice. A lane that is empty today is where the sound pass lands tomorrow. It was also a **guess**: the evidence pointed at the fileless clipitems and the missing format block, and nothing pointed at empty tracks. An established guarantee is not worth trading for a hunch.
 
 ### The Order the Film Plays In
 Found by running the real project rather than by reading it. There were **three** running orders and they disagreed:
@@ -1707,6 +1723,7 @@ node --test backend/tests/location-views.test.js
 node --test backend/tests/plate-upload.test.js
 node --test backend/tests/video-sequence.test.js
 node --test backend/tests/clip-coverage.test.js
+node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js
