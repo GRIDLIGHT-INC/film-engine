@@ -202,3 +202,110 @@ test('a location plate can be refined, not only regenerated', () => {
     const src = fs.readFileSync(path.join(ROOT, 'routes', 'locations.js'), 'utf8');
     assert.ok(/'refine'/.test(src), 'no route dispatches a plate refine');
 });
+
+// ── A preview must report what the ADAPTER sends, not what it was asked ──
+//
+// Found live on Wingfall 2A after the preview shipped: it reported
+// provider=runway, model=animatediff-sdxl. Runway has never heard of that model
+// — lib/video-prompt.js hardcodes it, it is a Gridlight name — and
+// pickModel() silently maps anything unknown to the default. So the dialog
+// whose entire purpose is "see exactly what will be sent" named a model that
+// would never be sent.
+//
+// A preview that is confidently wrong is worse than no preview: it is the one
+// thing a director is being asked to trust before spending. Set-based over the
+// video adapters, because each transforms the payload differently — model
+// mapping, duration clamping, ratio snapping — and an adapter added later that
+// transforms silently would restore exactly this fault.
+
+test('every video adapter can say what it would actually send', () => {
+    const providers = require('../lib/providers');
+    const video = providers.list().filter(e => (e.capabilities || []).includes('video'));
+    assert.ok(video.length >= 2, `the video adapter set collapsed (${video.length})`);
+
+    for (const entry of video) {
+        /*
+         * Resolved THROUGH THE REGISTRY, never required from the module.
+         *
+         * The first version of this check required the module and passed while
+         * the feature was dead: resolve() hands back the ADAPTER OBJECT, and a
+         * describer exported only from module.exports is invisible to every
+         * caller. The preview marked both providers unverified and fell back to
+         * reporting the payload as fact — exactly the bug being fixed — with
+         * this test green.
+         */
+        const adapter = providers.get
+            ? providers.get(entry.id)
+            : providers.resolve('video', { video: entry.id });
+        assert.ok(adapter, `${entry.id}: not resolvable through the registry`);
+        assert.strictEqual(typeof adapter.describeVideoRequest, 'function',
+            `${entry.id} cannot say what it would send, so a preview can only repeat the payload back `
+            + 'and call it fact');
+
+        // Pure: describing must never reach the network or need a credential.
+        const described = adapter.describeVideoRequest({
+            prompt: 'the dragon moves toward MAYA',
+            model: 'animatediff-sdxl',          // the hardcoded default nothing hosted knows
+            duration_s: 47,                      // beyond every documented limit
+            width: 1920, height: 1080,
+            init_image: 'data:image/png;base64,AAA',
+        });
+        assert.ok(described && typeof described === 'object', `${entry.id}: described nothing`);
+        for (const field of ['model', 'duration_s', 'has_image']) {
+            assert.ok(Object.prototype.hasOwnProperty.call(described, field),
+                `${entry.id}: does not report ${field}`);
+        }
+        assert.strictEqual(described.has_image, true, `${entry.id}: lost the keyframe`);
+    }
+});
+
+test('runway reports the model it will really use, not the one it was handed', () => {
+    /*
+     * The DESCRIBER comes from the registry, because that is the object every
+     * caller gets. The BUILDER is internal and comes from the module — the
+     * whole point of this test is that those two agree, so they are deliberately
+     * fetched by different routes.
+     */
+    const providers = require('../lib/providers');
+    const runway = providers.get('runway');
+    const internals = require('../lib/providers/runway');
+    const asked = { prompt: 'x', model: 'animatediff-sdxl', duration_s: 5, width: 1280, height: 720 };
+
+    const described = runway.describeVideoRequest(asked);
+    const actual = internals.buildVideoRequest(asked);
+
+    assert.strictEqual(described.model, actual.body.model,
+        'the description and the request disagree about the model — the preview is a separate '
+        + 'implementation and will drift from what is sent');
+    assert.notStrictEqual(described.model, 'animatediff-sdxl',
+        'the preview still reports a model runway has never heard of');
+
+    // And it must SAY that it substituted, or a director reads the swap as
+    // their own choice having been honoured.
+    assert.ok(described.notes && described.notes.some(n => /animatediff-sdxl/.test(n)),
+        `nothing tells the director their model was replaced: ${JSON.stringify(described.notes)}`);
+
+    // Duration is clamped too, and silently clamping is the same class of lie.
+    const long = runway.describeVideoRequest({ ...asked, duration_s: 47 });
+    assert.strictEqual(long.duration_s, internals.buildVideoRequest({ ...asked, duration_s: 47 }).body.duration);
+    assert.ok(long.notes.some(n => /47/.test(n)), 'the clamped duration is not reported');
+});
+
+test('the video preview reports the adapter’s answer, not the payload', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'routes', 'video-gen.js'), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const fn = src.slice(src.indexOf('async function previewVideo('));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+
+    assert.ok(/describeVideoRequest/.test(body),
+        'the preview still reports payload fields directly, so every adapter transformation — model '
+        + 'mapping, duration clamping, ratio snapping — is invisible to the director');
+
+    /*
+     * And an adapter that cannot describe itself must be marked UNVERIFIED
+     * rather than have its payload reported as fact. Falling back silently is
+     * how this bug would return the moment a new adapter arrives.
+     */
+    assert.ok(/unverified/i.test(body),
+        'an adapter with no describer has its payload reported as fact');
+});

@@ -167,6 +167,11 @@ const gridlightAdapter = {
     // frame is unknowable from here. Held at one, because over-claiming
     // sends a destination the service ignores and the director is told
     // nothing — the failure that maxReferenceImages already documents.
+    // On the ADAPTER OBJECT, not merely exported from the module:
+    // resolve() hands back this object, so a describer that lives only in
+    // module.exports is invisible to every caller and the preview falls
+    // back to reporting the payload as fact.
+    describeVideoRequest,
     maxKeyframes: 1,
     maxReferenceImages: 3,
     supportsReferenceImages: true,
@@ -198,4 +203,39 @@ const gridlightAdapter = {
     },
 };
 
-module.exports = { adapter: gridlightAdapter, gridlightAdapter, endpointFor, ENDPOINTS };
+/**
+ * What this adapter would send.
+ *
+ * Gridlight forwards the payload to a local service essentially verbatim — it
+ * does not map models or clamp durations the way a hosted API must — so the
+ * description is the payload, and saying so is the point: "this provider does
+ * not transform your request" is a fact a director can act on, and it is
+ * different from "we did not check".
+ *
+ * The model is reported as what will be ASKED FOR rather than what will run,
+ * because a swappable local agent decides that for itself and this process
+ * cannot know. Named as an unknown rather than guessed.
+ */
+function describeVideoRequest(payload) {
+    const p = payload || {};
+    const notes = ['This is the local Gridlight service, which forwards the request as supplied. '
+        + 'Which model actually runs is decided by that service, not here.'];
+    if (!p.init_image && !p.image_url) {
+        notes.push('No image is attached, so this generates from words alone.');
+    }
+    return {
+        provider: 'gridlight',
+        mode: (p.init_image || p.image_url) ? 'image_to_video' : 'text_to_video',
+        model: p.model || null,
+        model_is_requested_not_resolved: true,
+        duration_s: Number(p.duration_s !== undefined ? p.duration_s : p.duration) || null,
+        ratio: (p.width && p.height) ? `${p.width}:${p.height}` : null,
+        prompt: p.prompt || '',
+        has_image: !!(p.init_image || p.image_url),
+        seed: p.seed === undefined ? null : p.seed,
+        notes,
+    };
+}
+
+module.exports = {
+    describeVideoRequest, adapter: gridlightAdapter, gridlightAdapter, endpointFor, ENDPOINTS };

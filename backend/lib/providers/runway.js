@@ -288,6 +288,57 @@ function normalizeKeyframes(input) {
         .map((k, i, all) => ({ uri: k.uri, position: i === 0 ? 'first' : (i === all.length - 1 ? 'last' : 'last') }));
 }
 
+/**
+ * What this adapter would ACTUALLY send, without sending it.
+ *
+ * The preview reported the payload's own fields and called them fact, so a
+ * shot whose payload carried `animatediff-sdxl` — a Gridlight name hardcoded
+ * in lib/video-prompt.js that Runway has never heard of — was previewed as
+ * generating on animatediff-sdxl while pickModel silently substituted the
+ * default. The one dialog a director is asked to trust before spending named a
+ * model that would never be sent.
+ *
+ * Derived from buildVideoRequest rather than reimplemented: a description that
+ * is a second implementation of the request is a description that will drift
+ * from it, which is the same fault one level up.
+ *
+ * Pure — no network, no credential. A preview that needs either is not free.
+ */
+function describeVideoRequest(payload) {
+    const p = payload || {};
+    const built = buildVideoRequest(p);
+    const notes = [];
+
+    const asked = String(p.model || '').trim();
+    if (asked && asked !== built.body.model) {
+        notes.push(`Model: you asked for "${asked}", which this provider does not offer — `
+            + `it will generate on ${built.body.model}.`);
+    }
+    const askedDuration = Number(p.duration_s !== undefined ? p.duration_s : p.duration);
+    if (Number.isFinite(askedDuration) && askedDuration !== built.body.duration) {
+        notes.push(`Length: ${askedDuration}s is outside what this provider accepts — `
+            + `it will generate ${built.body.duration}s.`);
+    }
+    if (built.mode === 'text_to_video') {
+        notes.push('No image is attached, so this generates from words alone.');
+    }
+    if (built.dropped && built.dropped.length) {
+        notes.push(`${built.dropped.length} keyframe(s) beyond the first and last will not be sent.`);
+    }
+
+    return {
+        provider: 'runway',
+        mode: built.mode,
+        model: built.body.model,
+        duration_s: built.body.duration,
+        ratio: built.body.ratio,
+        prompt: built.body.promptText,
+        has_image: !!built.body.promptImage,
+        seed: built.body.seed === undefined ? null : built.body.seed,
+        notes,
+    };
+}
+
 function buildImageRequest(payload) {
     const p = payload || {};
     const body = {
@@ -485,6 +536,11 @@ const adapter = {
     // image_to_video documents promptImage as a first and a last frame;
     // an adapter that declares nothing falls back to 1, because sending
     // two to an endpoint that takes one loses the destination silently.
+    // On the ADAPTER OBJECT, not merely exported from the module:
+    // resolve() hands back this object, so a describer that lives only in
+    // module.exports is invisible to every caller and the preview falls
+    // back to reporting the payload as fact.
+    describeVideoRequest,
     maxKeyframes: MAX_KEYFRAMES,
     maxReferenceImages: 3,
 
@@ -549,6 +605,7 @@ const adapter = {
 
 module.exports = {
     buildVideoRequest,
+    describeVideoRequest,
     KNOWN_VIDEO_MODELS,
     KNOWN_IMAGE_MODELS,
     pickModel,

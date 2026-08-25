@@ -82,6 +82,28 @@ async function previewVideo(res, shotId) {
     const provider = resolve('video', parseProjectConfig(ctx.scene && ctx.scene.project_id));
 
     /*
+     * WHAT THE ADAPTER WILL SEND, not what the payload asked for.
+     *
+     * The first version reported the payload's own fields as fact, so a shot
+     * whose payload carries `animatediff-sdxl` — hardcoded in
+     * lib/video-prompt.js, a name Runway has never heard of — was previewed as
+     * generating on animatediff-sdxl while the adapter silently substituted its
+     * default. The one dialog a director is asked to trust before spending
+     * named a model that would never be sent.
+     *
+     * An adapter that cannot describe itself is marked UNVERIFIED rather than
+     * having its payload reported as fact: falling back silently is how this
+     * returns the moment a new adapter arrives.
+     */
+    let sent = null, unverified = false;
+    if (provider && typeof provider.describeVideoRequest === 'function') {
+        try { sent = provider.describeVideoRequest(payload); }
+        catch (_) { sent = null; unverified = true; }
+    } else {
+        unverified = true;
+    }
+
+    /*
      * The warnings are the point. A prompt reads perfectly while the keyframe
      * that would have made the clip match the board is absent — the words look
      * right and the footage comes back as a different place.
@@ -102,19 +124,34 @@ async function previewVideo(res, shotId) {
         }
     } catch (_) { /* the lint is advice, never a gate */ }
 
+    /*
+     * The adapter's own notes are WARNINGS, not footnotes: "you asked for a
+     * model this provider does not offer" is exactly the sort of thing a
+     * director needs before spending, and burying it under a heading nobody
+     * reads is how the original lie went unnoticed.
+     */
+    for (const note of (sent && sent.notes) || []) warnings.push(note);
+    if (unverified) {
+        warnings.push('This provider cannot report what it will actually send, so the model and '
+            + 'length below are what is being ASKED for rather than what will run — unverified.');
+    }
+
     return json(res, 200, {
         shot_id: shotId, shot_code: ctx.shot.shot_code,
         can_generate: true,
         provider: (provider && provider.id) || 'unresolved',
-        model: payload.model || null,
-        prompt: payload.prompt,
+        // The adapter's answer wins wherever it has one.
+        model: sent ? sent.model : (payload.model || null),
+        model_unverified: unverified || undefined,
+        prompt: sent && sent.prompt ? sent.prompt : payload.prompt,
         negative_prompt: payload.negative_prompt || null,
         // Whether the board's frame is going, which is the single biggest
         // difference between a clip that matches the storyboard and one that
         // does not — reported as a fact, never as bytes.
-        init_image: !!payload.init_image,
+        init_image: sent ? sent.has_image : !!payload.init_image,
         camera_control: payload.camera_control || null,
-        duration_s: payload.duration_s,
+        duration_s: sent && sent.duration_s ? sent.duration_s : payload.duration_s,
+        ratio: sent ? sent.ratio : null,
         width: payload.width, height: payload.height, fps: payload.fps,
         seed: payload.seed === undefined ? null : payload.seed,
         warnings,
