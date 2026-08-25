@@ -21730,6 +21730,10 @@ ${fountainText.slice(0, 50000)}`;
                         style="position:absolute;top:6px;right:6px;padding:2px 7px;line-height:1;"
                         title="Delete this view"
                         onclick="deleteLocationView('${locationId}', ${JSON.stringify(v.view || '__default__').replace(/"/g, '&quot;')})">&times;</button>
+                ${v.available ? `<button class="btn btn-secondary btn-sm"
+                        style="position:absolute;top:6px;left:6px;padding:2px 7px;line-height:1;"
+                        title="Keep this picture and change one thing — wet the road, add fog, move the light"
+                        onclick="refineLocationView('${locationId}', ${JSON.stringify(v.view || '').replace(/"/g, '&quot;')})">Refine</button>` : ''}
                 <div class="text-sm" style="margin-top:6px;line-height:1.4;">${esc(v.label)}</div>
             </div>`;
 
@@ -21864,6 +21868,44 @@ ${fountainText.slice(0, 50000)}`;
                 : 'View deleted.');
         } catch (err) {
             setStatus('Could not delete the view: ' + err.message);
+        }
+        renderLocationViews(locationId);
+    }
+
+    /**
+     * Keep this plate and change one thing.
+     *
+     * A plate could only be regenerated wholesale, so "the same street but
+     * wetter" was a fresh roll of the dice on a picture that conditions every
+     * frame the location appears in.
+     *
+     * This is also the operation this provider is best at: a new VIEW has to be
+     * painted from words because an edit cannot move the camera, while a refine
+     * keeps the camera and changes one thing — precisely what an image-to-image
+     * endpoint does.
+     */
+    async function refineLocationView(locationId, view) {
+        const what = prompt('What should change?\n\n'
+            + 'One instruction, and everything else in the picture is kept:\n'
+            + '  make the road wet\n'
+            + '  add low fog along the kerb\n'
+            + '  take the parked car out\n'
+            + '  make it later in the evening');
+        if (!what || !what.trim()) return;
+        if (!confirm(`Refine ${view || 'the default plate'}?\n\n"${what.trim()}"\n\n`
+            + 'This costs credits and REPLACES this plate — the current picture is gone. '
+            + 'Everything else in it is kept: the same place, the same camera, the same framing.')) return;
+
+        setStatus('Refining the plate…', true);
+        try {
+            const r = await api(`/locations/${locationId}/plate/refine`, {
+                method: 'POST',
+                body: JSON.stringify({ instruction: what.trim(), ...(view ? { view } : {}) }),
+            });
+            setStatus(`${view || 'Default plate'} refined: "${r.instruction}". ${r.note || ''}`);
+        } catch (err) {
+            setStatus('Could not refine: ' + err.message);
+            alert('Could not refine this plate.\n\n' + err.message);
         }
         renderLocationViews(locationId);
     }
@@ -25033,6 +25075,13 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     async function generateModelFor(kind, id, btn) {
+        /*
+         * A paid action states its cost before it spends. Six of these were
+         * silent, which is why a director generated elsewhere rather than
+         * risk credits on something they could not see.
+         */
+        if (!confirm('Generate a 3D model for this subject?\n\nThis costs credits. A mesh takes a few minutes '
+            + 'and is generated from the subject\u2019s description and plate.')) return;
         const path = '/' + (kind === 'prop' ? 'props' : 'characters') + '/' + id + '/model/generate';
         if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
         setStatus('Generating 3D model...', true);
@@ -25133,6 +25182,14 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     function generateAllModels() {
+        /*
+         * A paid action states its cost before it spends. Six of these were
+         * silent, which is why a director generated elsewhere rather than
+         * risk credits on something they could not see.
+         */
+        if (!confirm(`Generate a 3D model for EVERY character and prop?\n\n`
+            + 'One paid generation per subject. Generate a single one first to see whether the '
+            + 'meshes are usable for your previs before buying them all.')) return;
         if (!state.currentProject) return;
         const prog = document.getElementById('threedProgress');
         const bar = document.getElementById('threedProgressBar');
@@ -25487,7 +25544,53 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Could not delete: ' + err.message); }
     }
 
+    /**
+     * Generate one shot's clip — after showing exactly what will be sent.
+     *
+     * This spent credits silently. The director's response was to generate on
+     * Runway directly instead: "credits are super precious and didn't want to
+     * waste them." Someone who cannot see what the engine would send does not
+     * trust it with money, and the feature fails for a reason that has nothing
+     * to do with how good the generation is.
+     *
+     * The preview is FREE and leads, the same shape every image path has had
+     * since shot_prompt.
+     */
     async function generateVideoFor(shotId, btn) {
+        let p;
+        try { p = await api(`/shots/${shotId}/video/preview`); }
+        catch (err) {
+            // A gate whose purpose is inspection before spending must not
+            // permit the spend when the inspection fails.
+            return alert('Could not check what would be sent: ' + err.message);
+        }
+        if (!p.can_generate) {
+            return alert('This shot cannot generate a clip yet.\n\n' + (p.warnings || []).join('\n'));
+        }
+        /*
+         * The WHOLE prompt, never a slice.
+         *
+         * A first version showed 500 characters under the heading "what it will
+         * be asked for", which is a confident lie about the rest — and the
+         * whole reason this dialog exists is a director who would not spend
+         * without seeing what was sent.
+         *
+         * fps is deliberately NOT shown as a film rate: the generator's own fps
+         * is a fact about the model (8 for several), and printing it beside the
+         * resolution reads as "your film is 8fps". The delivery rate is a
+         * project setting and is applied afterwards.
+         */
+        if (!confirm(`Generate the clip for this shot?\n\n`
+            + `Provider: ${p.provider}${p.model ? ' · ' + p.model : ''}\n`
+            + `${p.duration_s}s · ${p.width}×${p.height}\n`
+            + `Storyboard frame attached: ${p.init_image ? 'yes' : 'NO'}\n`
+            + `Camera move sent: ${p.camera_control ? p.camera_control.type || 'yes' : 'no'}\n\n`
+            + `What it will be asked for (${(p.prompt || '').length} characters, in full):\n`
+            + `${p.prompt || '(nothing)'}\n`
+            + (p.negative_prompt ? `\nRefusing: ${p.negative_prompt}\n` : '')
+            + ((p.warnings || []).length ? `\n${p.warnings.join('\n')}\n` : '')
+            + `\nThis costs credits.`)) return;
+
         if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
         setStatus('Generating video...', true);
         try {
@@ -25599,8 +25702,23 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
-    function generateScoreFor(sceneId, btn) { _shotAction(sceneId, btn, 'Generate', '/scenes/' + sceneId + '/music/generate', 'Scoring', loadMusic); }
-    function generateAmbientFor(sceneId, btn) { _shotAction(sceneId, btn, 'Generate', '/scenes/' + sceneId + '/ambient/generate', 'Generating ambient', loadMusic); }
+    /*
+     * A paid action states its cost before it spends. This was a one-line
+     * function and the first attempt at gating it put the confirm OUTSIDE the
+     * body — a top-level `return` that broke the whole SPA at load, and which a
+     * source-text check reported as gated. Written out properly so the guard is
+     * unambiguously inside.
+     */
+    function generateScoreFor(sceneId, btn) {
+        if (!confirm('Generate a music cue for this scene?\n\nThis costs credits. It is generated '
+            + 'from the scene\u2019s mood, location and time of day.')) return;
+        _shotAction(sceneId, btn, 'Generate', '/scenes/' + sceneId + '/music/generate', 'Scoring', loadMusic);
+    }
+    function generateAmbientFor(sceneId, btn) {
+        if (!confirm('Generate an ambient bed for this scene?\n\nThis costs credits. It is a short '
+            + 'loop that is tiled across the scene rather than a full-length render.')) return;
+        _shotAction(sceneId, btn, 'Generate', '/scenes/' + sceneId + '/ambient/generate', 'Generating ambient', loadMusic);
+    }
 
     function generateAllMusic() {
         if (!state.currentProject) return;
@@ -25630,6 +25748,14 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     function generateAllVideos() {
+        /*
+         * A paid action states its cost before it spends. Six of these were
+         * silent, which is why a director generated elsewhere rather than
+         * risk credits on something they could not see.
+         */
+        if (!confirm(`Generate video for EVERY shot that has a keyframe?\n\n`
+            + 'This is one paid generation per shot and is the largest single spend in the app. '
+            + 'Generate one shot first to check the look before buying the whole board.')) return;
         if (!state.currentProject) return;
         const prog = document.getElementById('videoshotsProgress');
         const bar = document.getElementById('videoshotsProgressBar');
@@ -25705,7 +25831,7 @@ ${fountainText.slice(0, 50000)}`;
             } else {
                 // Kept so the viewer can step between shots without the grid.
                 FRAME_VIEWER.frames = frames;
-                grid.innerHTML = screenplayDriftBanner() + impactBanner() + frames.map(f => `
+                grid.innerHTML = screenplayDriftBanner() + impactBanner() + anchorBanner() + frames.map(f => `
                     <div class="card" style="padding:0;overflow:hidden;">
                         <div style="position:relative;background:var(--surface-alt,var(--gl-bg-surface));min-height:160px;">
                             <img id="img-${f.shot_id}" src="${frameSrc(f)}"
@@ -26462,6 +26588,43 @@ ${fountainText.slice(0, 50000)}`;
      * (put it down), another frame is (take it instead), or none is (pick this
      * one up). A single button would make the first two indistinguishable.
      */
+    /**
+     * The anchor, said plainly on the board.
+     *
+     * Anchoring existed and was invisible: the ⚓ sits on a frame card and
+     * nothing said what it was for until you had already used it once. The
+     * director's words: "I'm not 100% sure how do I anchor items, shots or
+     * people from other sequences."
+     *
+     * The distinction that matters and was never stated: an ANCHOR is a
+     * generated FRAME you shoot the next shots from — one per project, and it
+     * carries a place with things standing in it. A PLATE is a picture of one
+     * subject in the abstract, lives on that subject, and there is no limit.
+     * People and props come from plates; a scene comes from an anchor.
+     */
+    function anchorBanner() {
+        const held = anchorShotId();
+        const code = held && (state.storyboard || []).find(f => f.shot_id === held);
+        return `<div class="card mb-16" style="border-color:${held ? 'var(--gl-brand-pink,#ec4899)' : 'var(--gl-border-subtle)'};">
+            <strong>${held ? `Shooting from ${code ? esc(code.shot_code) : 'a frame'}` : 'No anchor set'}</strong>
+            <p class="text-sm text-muted" style="margin:6px 0 0;line-height:1.6;">
+                ${held
+                    ? 'Every frame you generate is built FROM that picture — its location, its dressing '
+                      + 'and where the subjects stand — re-shot on each shot\u2019s own lens and angle. '
+                      + 'Press &#9875; on another frame to move it, or <em>clear</em> to go back to plates.'
+                    : 'Press &#9875; on any generated frame to shoot the following shots from it. '
+                      + 'That is how a street stays the same street from 1A to 1B.'}
+                <br><span class="text-sm">
+                <strong>One anchor per project</strong>, and it is a whole FRAME &mdash; a place with
+                things standing in it. Individual people and objects come from their own
+                <strong>plates</strong> on the Characters, Locations and Props pages, and those are
+                unlimited. Anchoring a frame from another scene is allowed and is right when it is the
+                same location; across different locations it will bring the wrong place with it.
+                </span>
+            </p>
+        </div>`;
+    }
+
     function anchorButton(f) {
         if (f.anchor && f.anchor.is_anchor) {
             return `<button class="btn btn-sm" style="border-color:var(--gl-brand-pink,#ec4899);"

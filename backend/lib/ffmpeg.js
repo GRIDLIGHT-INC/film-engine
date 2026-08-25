@@ -30,8 +30,32 @@ const fs = require('fs');
 const path = require('path');
 const { execFile, execFileSync } = require('child_process');
 
+/*
+ * Resolved ONCE per process.
+ *
+ * This probed on every call, and a probe is a subprocess: FFMPEG_PATH, then
+ * five PATH candidates that mostly do not exist, then the bundled binary — up
+ * to six spawns to answer a question whose answer cannot change while the
+ * process runs. Under load one of those probes fails, resolveFfmpeg reports no
+ * encoder, and the caller silently falls back — which is how duration
+ * measurement returned 0 in roughly one full-suite run in two while being
+ * perfect in isolation.
+ *
+ * Cached on the resolved answer only. An UNAVAILABLE result is not cached: an
+ * operator who installs ffmpeg, or sets FFMPEG_PATH and restarts nothing,
+ * should not be told for the life of the process that there is no encoder.
+ */
+let resolved = null;
+
 /** Where ffmpeg is, and how we found it. Never throws. */
 function resolveFfmpeg() {
+    if (resolved) return resolved;
+    const found = resolveFfmpegUncached();
+    if (found.available) resolved = found;
+    return found;
+}
+
+function resolveFfmpegUncached() {
     // 1. FFMPEG_PATH — an operator pointing at a specific build wins over
     //    everything, including a newer one on PATH.
     const declared = String(process.env.FFMPEG_PATH || '').trim();

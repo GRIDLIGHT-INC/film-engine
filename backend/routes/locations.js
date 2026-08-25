@@ -323,6 +323,99 @@ function importSubjectPlateRoute(req, res, kind, subjectId) {
 }
 
 /**
+ * Refine an existing plate: keep the picture, change one thing.
+ *
+ * The plate a director already accepted travels as the reference, so this is an
+ * EDIT rather than a fresh generation — the operation an image-to-image
+ * provider performs well, and the one the compass sweep could not use because a
+ * new camera position is precisely what an edit cannot produce.
+ *
+ * Replaces the plate it refined, in place, for the same view: two plates of one
+ * view is a subject with two current references and no way to tell which a shot
+ * used. The previous file is gone, which is why the confirmation says so.
+ */
+async function refineSubjectPlate(req, res, kind, subjectId) {
+    const { PLATE_KINDS, buildPlateRefinePrompt, REFINE_NEGATIVE, plateFileName } = require('../lib/reference-plates');
+    const spec = PLATE_KINDS[kind];
+    const subject = db.prepare(`SELECT * FROM ${spec.table} WHERE id = ?`).get(subjectId);
+    if (!subject) return badReq(res, `${kind} not found`, 404);
+
+    const body = req.body || {};
+    const instruction = String(body.instruction || '').trim();
+    if (!instruction) return badReq(res, 'Say what should change: a refine is one instruction.');
+
+    const view = String(body.view || '').trim();
+    const fileName = plateFileName(kind, subject.name, view);
+    const existing = db.prepare(
+        `SELECT id, file_path, file_name FROM film_assets
+          WHERE project_id = (SELECT project_id FROM ${spec.table} WHERE id = ?)
+            AND ${spec.fkColumn} = ? AND asset_type = ? AND file_name = ?`)
+        .get(subjectId, subjectId, spec.assetType, fileName);
+    if (!existing || !existing.file_path || !fs.existsSync(existing.file_path)) {
+        // Nothing to refine is a different problem from a failed refine.
+        return badReq(res, view
+            ? `There is no "${view}" plate to refine yet. Generate that view first.`
+            : 'There is no plate to refine yet. Generate one first.', 409);
+    }
+
+    const project = db.prepare('SELECT id, style_preset, aspect_ratio FROM film_projects WHERE id = ?')
+        .get(subject.project_id);
+    const provider = resolve('image', parseProjectConfig(subject.project_id));
+    if (!provider || typeof provider.generate !== 'function') {
+        return badReq(res, 'no image provider resolved', 502);
+    }
+
+    const { toDataUri } = require('../lib/reference-images');
+    const uri = toDataUri(existing.file_path);
+    if (!uri) return badReq(res, 'The existing plate could not be read from disk.', 500);
+
+    const prompt = buildPlateRefinePrompt(kind, subject, instruction,
+        body.apply_style ? project && project.style_preset : null);
+
+    const result = await provider.generate('image', {
+        prompt,
+        negative_prompt: REFINE_NEGATIVE,
+        aspect_ratio: (project && project.aspect_ratio) || undefined,
+        // ONE reference: the plate being changed. A second picture is another
+        // opinion about what this is, and a refine has only one subject.
+        reference_images: [{ name: subject.name, kind: 'refine', tag: 'plate', uri }],
+    }, { timeout: 300000 });
+
+    if (!result.ok) {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Refine failed', details: result.error }));
+    }
+
+    const { persistProviderMedia } = require('../lib/provider-media');
+    const saved = await persistProviderMedia(project.id, spec.subdir, fileName, result.data,
+        { serveDir: 'images' });
+    const filePath = typeof saved === 'string' ? saved : (saved && saved.path) || '';
+
+    db.prepare('DELETE FROM film_assets WHERE id = ?').run(existing.id);
+    const assetId = generateId();
+    db.prepare(
+        `INSERT INTO film_assets (id, project_id, ${spec.fkColumn}, asset_type, file_path, file_name,
+            format, mime_type, version, metadata, provider, provider_model)
+         VALUES (?, ?, ?, ?, ?, ?, 'png', 'image/png', 1, ?, ?, ?)`)
+        .run(assetId, project.id, subject.id, spec.assetType, filePath, fileName,
+            JSON.stringify({ kind: `${kind}_plate`, refined: true, instruction,
+                ...(view ? { view } : {}) }),
+            result.provider || provider.id || null, result.provider_model || null);
+
+    require('../lib/artefact-fingerprint').stampAsset(assetId, `${kind}_plate`,
+        kind === 'location' ? { locId: subject.id } : { propId: subject.id });
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        kind, [`${kind}_id`]: subjectId, name: subject.name,
+        asset_id: assetId, file_name: fileName, view: view || null,
+        image_url: getFileUrl(spec.subdir, project.id, fileName),
+        instruction,
+        note: 'The previous plate was replaced. Every shot referencing this subject uses the new one.',
+    }));
+}
+
+/**
  * Delete one view of a location.
  *
  * A location's view set could only GROW. Four views were generated on the real
@@ -439,6 +532,8 @@ function handleLocations(req, res, urlParts, query) {
         const locId = urlParts[2];
         if (!UUID_RE.test(locId)) return badReq(res, 'Invalid location ID');
         if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'location', locId);
+        // Keep the picture, change one thing.
+        if (urlParts[4] === 'refine' && req.method === 'POST') return refineSubjectPlate(req, res, 'location', locId);
         // A picture made outside Film Engine, landing where a generated one would.
         if (urlParts[4] === 'import' && req.method === 'POST') return importSubjectPlateRoute(req, res, 'location', locId);
         // /film/locations/:id/plate/views — what a shot can choose between.
@@ -459,6 +554,8 @@ function handleLocations(req, res, urlParts, query) {
         if (!UUID_RE.test(propId)) return badReq(res, 'Invalid prop ID');
         if (urlParts[4] === 'import' && req.method === 'POST') return importSubjectPlateRoute(req, res, 'prop', propId);
         if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'prop', propId);
+        // Keep the picture, change one thing.
+        if (urlParts[4] === 'refine' && req.method === 'POST') return refineSubjectPlate(req, res, 'prop', propId);
         if (req.method === 'GET') return getSubjectPlate(res, 'prop', propId);
     }
 
@@ -500,8 +597,11 @@ function handleLocations(req, res, urlParts, query) {
     res.end(JSON.stringify({ error: 'Method not allowed' }));
 }
 
-function badReq(res, msg) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
+// A status may be supplied: 409 for "nothing to refine yet" is a different
+// answer from 400 "you asked for it wrong", and collapsing them tells a
+// director to fix their request when the request was fine.
+function badReq(res, msg, status = 400) {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: msg }));
 }
 

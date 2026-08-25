@@ -561,9 +561,31 @@ function measureDurationMs(filePath) {
      * regardless of the exit code means neither outcome can hide it again.
      */
     const { spawnSync } = require('child_process');
-    const run = spawnSync(found.bin, ['-hide_banner', '-i', filePath], {
+
+    /*
+     * A FAILED SPAWN IS NOT A DURATION OF ZERO.
+     *
+     * Under load — several imports at once, or a machine already running
+     * encodes — spawnSync can come back with an error and no output at all
+     * (EAGAIN when the process table is under pressure). Reading stderr from
+     * that gives '', the regex finds nothing, and the clip silently falls back
+     * to the card's guess: exactly the fault this function exists to fix,
+     * reappearing only when the machine is busy.
+     *
+     * Found because the test passed alone and failed roughly one run in two in
+     * the full suite. Retried rather than trusted, and the two outcomes are
+     * kept distinct: a file with genuinely no duration measures 0 on the first
+     * try, while a spawn that did not happen is tried again.
+     */
+    const probeOnce = () => spawnSync(found.bin, ['-hide_banner', '-i', filePath], {
         encoding: 'utf8', timeout: 60000, maxBuffer: 8 * 1024 * 1024,
     });
+    let run = probeOnce();
+    for (let attempt = 0; attempt < 2 && run && run.error && !run.stderr; attempt += 1) {
+        // A short synchronous pause: this runs during an import, not in a loop.
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
+        run = probeOnce();
+    }
     const out = String((run && run.stderr) || '');
     const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(out);
     if (!m) return 0;

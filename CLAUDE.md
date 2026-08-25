@@ -229,6 +229,7 @@ film-engine/
 │       ├── video-sequence.test.js       # Keyframe ceilings per adapter; N shots plan N-1 segments in order
 │       ├── clip-coverage.test.js        # One clip, several shots, honoured by every assembly surface
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
+│       ├── paid-preview.test.js         # Nothing spends without showing what it will send
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -682,6 +683,31 @@ The description leads every segment, because it is what is true of the *whole* s
 A clip made elsewhere can be dropped straight onto a sequence (`POST /film/sequences/:id/import`), which attaches it to the sequence's first shot — a clip has to belong to a shot for the timeline and the export to find it. Deleting a sequence **keeps its clips**: they are on their shots, they cost money, and deleting a plan must not delete the footage it produced.
 
 Served at `GET|POST /film/projects/:id/sequences`, `GET|PUT|DELETE /film/sequences/:id`, `GET …/plan`, `POST …/generate`, `POST …/import`, on the Video Shots page, and as six tools (**150 tools**).
+
+### Nothing Spends Without Showing What It Will Send
+*"I generated the first two videos directly on runway and not through the engine as credits are super precious and didn't want to waste them."*
+
+That is the whole feature failing for a reason unrelated to generation quality. CLAUDE.md already claimed *every paid path goes through one confirmation* — which was true of the image paths and **was never true of video, audio or 3D**. Enumerating the controls that reach a paid generator found **six silent and six warned**: `generateVideoFor`, `generateAllVideos`, `generateModelFor`, `generateAllModels`, `generateScoreFor` and `generateAmbientFor` all spent money with nothing said.
+
+`GET /shots/:id/video/preview` is the free preview video never had. `/previs/to-video` existed and is previs-scoped — it refuses on a stale approval and assumes the shot has been blocked, which most never are — so the ordinary question *what would this clip cost and contain* had no answer at all. The preview reports the provider, the model, the length, the size, **whether the storyboard frame is attached**, whether a camera path is going, and what is missing. The keyframe line is the one that matters: a prompt reads perfectly while the frame that would have made the clip match the board is absent, so the words look right and the footage comes back a different place.
+
+Two corrections came out of review, both about honesty rather than mechanism. The confirmation showed **500 characters** of the prompt under the heading *"what it will be asked for"*, which is a confident lie about the rest — it shows the whole thing and states its length. And it printed the generator's own **fps** beside the resolution, which reads as *your film is 8fps*; that number is a fact about the model, the delivery rate is a project setting applied afterwards, so it is not shown at all.
+
+**The gate has to be inside the function, and text matching cannot see that.** Two of the six were one-line functions, and inserting the confirm after the opening line put it *outside the body*: a top-level `return` that breaks the whole SPA at load. Source-text matching reported both as gated because the text was adjacent. The check now bounds the body by **brace depth** from the declaration, and the SPA-parses test caught the breakage independently — which is the argument for having both.
+
+### An Encoder Probe Is a Subprocess
+`resolveFfmpeg()` probed on **every call**, and each probe is a spawn: `FFMPEG_PATH`, then five `PATH` candidates that mostly do not exist, then the bundled binary — up to six subprocesses to answer a question whose answer cannot change while the process runs. Under load one of those probes fails, the resolver reports **no encoder**, and the caller silently falls back.
+
+That is how duration measurement returned 0 in roughly one full-suite run in two while being perfect in isolation. Two wrong diagnoses came first and both are worth recording: the fixture was blamed (it builds real files, so it *looked* like contention), then `spawnSync` returning EAGAIN was blamed and a retry added. Neither was it. The failing spawn was the **probe**, several layers below the thing being measured.
+
+Cached on the **available** answer only. An unavailable result is not cached: an operator who installs ffmpeg mid-session should not be told for the life of the process that there is no encoder.
+
+### A Plate Can Be Refined, Not Only Rolled Again
+A plate could only be regenerated wholesale from words, so *"the same street but wetter"* was a fresh roll of the dice on a picture that conditions every frame its subject appears in. `routes/locations.js` dispatched generate, import, views and compass, and nothing else.
+
+**And this is the operation an edit-mode provider is actually for.** A new *view* had to drop every reference and be painted from words, because `/image-to-image` hands back a modified copy of what it is given and an edit cannot move the camera. A *refine* keeps the camera and changes one thing — precisely what that endpoint does well. The provider semantics that defeated the compass sweep are the ones that make refine the right tool, and it was the one never built.
+
+The instruction **leads** and the subject is **not re-described**: the picture is attached and already carries the place, and saying it again in words pulls the result back toward a fresh generation, which is the entire difference between a refine and a regeneration. It **replaces** the plate for that view — two plates of one view is a subject with two current references and no way to tell which a shot used — and the confirmation says so, because the previous picture is gone.
 
 ### An Export That Will Not Import Is Not an Export
 *"I got a file import failure in the import."* — Premiere, on a file this engine had just produced, for a project with two perfectly good clips.
@@ -1724,6 +1750,7 @@ node --test backend/tests/plate-upload.test.js
 node --test backend/tests/video-sequence.test.js
 node --test backend/tests/clip-coverage.test.js
 node --test backend/tests/nle-import-validity.test.js
+node --test backend/tests/paid-preview.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js

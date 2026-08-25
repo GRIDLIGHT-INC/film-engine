@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**151 tools, 39 families.** Everything the app can do, you can ask for in a
+**153 tools, 39 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -101,7 +101,9 @@ how a reverse angle acquires a road that is not there. `plate_compass` turns
 the plate you have into all four sides, each a quarter turn from it, and a shot
 then names the side it is looking at in its scene card's location_view field.
 A sweep skips a side that already exists, so it is never paid for twice —
-`plate_view_delete` is how you have a bad one re-shot.
+`plate_view_delete` is how you have a bad one re-shot. To keep a plate and
+change one thing — wet the road, add fog, remove a parked car — use
+`plate_refine`: it edits the picture you have rather than rolling a new one.
 
 A plate does not have to be generated. `plate_upload` takes a picture made
 outside Film Engine — a photograph of the real location, a render from Midjourney,
@@ -110,7 +112,7 @@ goes, for a character, a location, a prop or the mood board. It is free, and it
 is not tracked against the subject's description, so editing that description
 will never tell you to regenerate over a picture you supplied.
 
-`plate_generate` · `plate_upload` · `plate_compass` · `plate_view_list` · `plate_view_delete` · `plate_generate_all` · `consistency_create` ·
+`plate_generate` · `plate_upload` · `plate_refine` · `plate_compass` · `plate_view_list` · `plate_view_delete` · `plate_generate_all` · `consistency_create` ·
 `consistency_lock` · `consistency_list` · `consistency_unlock` ·
 `consistency_delete` · `mood_board_add` · `mood_board_compose` ·
 `mood_board_list` · `mood_board_remove`
@@ -162,7 +164,7 @@ states that it is unapplied; it generates nothing and spends nothing.
 `node_gen_ambient` · `node_gen_lipsync` · `node_gen_post` · `node_gen_image` ·
 `node_gen_llm` · `node_gen_model3d` · `media_upload` · `media_kinds` ·
 `sequence_create` · `sequence_list` · `sequence_plan` · `sequence_generate` ·
-`sequence_update` · `sequence_stitch` · `sequence_delete`
+`sequence_update` · `sequence_stitch` · `sequence_delete` · `video_preview`
 
 Video, voice, music, SFX and ambient audio — each runs one generation in
 isolation. **All cost money.**

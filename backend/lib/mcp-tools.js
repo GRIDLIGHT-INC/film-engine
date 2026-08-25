@@ -41,6 +41,7 @@ const { handleStoryboard } = require('../routes/storyboard');
 const { handleComments } = require('../routes/scripts');
 const { handleMoodBoard } = require('../routes/mood-board');
 const { handleMediaImport } = require('../routes/media-import');
+const { handleVideoGen } = require('../routes/video-gen');
 const { handleSequences } = require('../routes/sequences');
 const { handleAnnotations } = require('../routes/annotations');
 const { handleBreakdown } = require('../routes/breakdown');
@@ -268,6 +269,40 @@ async function callNodeTool(nodeTypeId, args) {
  * against one of them fails immediately.
  */
 const PRODUCTION_TOOLS = [
+    {
+        name: 'plate_refine',
+        handler: handleLocations, method: 'POST',
+        path: a => `/film/${a.kind === 'prop' ? 'props' : 'locations'}/${a.subject_id}/plate/refine`,
+        body: a => ({ instruction: a.instruction, ...(a.view ? { view: a.view } : {}) }),
+        description:
+            'Keep an existing plate and change ONE thing: "make the road wet", "add low fog", "take '
+            + 'the parked car out". SPENDS CREDITS. The plate travels as the reference so the place, '
+            + 'the camera and the framing are kept \u2014 this is an EDIT, which is what an '
+            + 'image-to-image provider does well, unlike a new VIEW which needs a camera move and has '
+            + 'to be painted from words. It REPLACES the plate for that view: the previous picture is '
+            + 'gone. Use view to refine one side of a location; omit it for the default plate.',
+        schema: {
+            subject_id: { type: 'string' },
+            kind: { type: 'string', description: 'location | prop' },
+            instruction: { type: 'string', description: 'The one thing that should change.' },
+            view: { type: 'string', description: 'Which side, for a location with several. Omit for the default plate.' },
+        },
+        required: ['subject_id', 'kind', 'instruction'],
+    },
+    {
+        name: 'video_preview',
+        handler: handleVideoGen, method: 'GET',
+        path: a => `/film/shots/${a.shot_id}/video/preview`,
+        description:
+            'What generating this shot\u2019s clip would SEND, and what is missing, without sending it. '
+            + 'FREE. Reports the provider, the model, the length and size, the full prompt, whether the '
+            + 'STORYBOARD FRAME is attached, and whether a camera path from previs is going. The '
+            + 'keyframe line is the one that matters: a prompt reads perfectly while the frame that '
+            + 'would have made the clip match the board is absent, so the words look right and the '
+            + 'footage comes back a different place. Read this before video_generate.',
+        schema: { shot_id: { type: 'string' } },
+        required: ['shot_id'],
+    },
     {
         name: 'sequence_create',
         handler: handleSequences, method: 'POST',

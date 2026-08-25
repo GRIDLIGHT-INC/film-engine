@@ -341,6 +341,48 @@ function styleReferencesFor(db, projectId) {
 
 
 /**
+ * KEEP THE PLATE, CHANGE ONE THING.
+ *
+ * A plate could only be regenerated wholesale from words, so "the same street
+ * but wetter" was a fresh roll of the dice on a picture that conditions every
+ * frame the subject appears in. The director: "Not 100% sure how we're able to
+ * generate plates or refine them for locations... this is a huge issue that
+ * prevents me from finishing the storyboard."
+ *
+ * And this is the operation an EDIT-mode provider is actually for. A new VIEW
+ * had to drop its references entirely, because /image-to-image hands back a
+ * modified copy of what it is given and an edit cannot move the camera. A
+ * refine keeps the camera and changes one thing — which is exactly what that
+ * endpoint does well. The provider semantics that defeated the compass sweep
+ * are the ones that make this the right tool.
+ *
+ * The instruction LEADS, and the subject is NOT re-described. The picture is
+ * attached and already carries the place; saying it again in words pulls the
+ * result back toward a fresh generation, which is the entire difference between
+ * a refine and a regeneration. Both rules were paid for on the storyboard
+ * refine and on the compass lead.
+ */
+function buildPlateRefinePrompt(kind, subject, instruction, stylePreset) {
+    const what = String(instruction || '').trim();
+    if (!what) throw new Error('a refine needs an instruction: what should change?');
+
+    const parts = [
+        `${what}.`,
+        `Keep everything else in the reference image exactly as it is: the same ${kind === 'location'
+            ? 'place, the same buildings and materials, the same camera position and framing'
+            : 'object, the same shape and materials, the same camera position and framing'}.`,
+    ];
+    // The look only travels when the caller asks, because a style preset is a
+    // sentence about the whole film and a refine is a sentence about one change.
+    if (stylePreset && String(stylePreset).trim()) parts.push(String(stylePreset).trim());
+    return parts.join(' ');
+}
+
+/** What a refine refuses: drifting into a different picture. */
+const REFINE_NEGATIVE = 'different location, different object, different camera position, '
+    + 'different framing, rebuilt scene, new composition, text, watermark, labels, captions';
+
+/**
  * The file a plate lives in, including which VIEW of the subject it is.
  *
  * Plates were named `location_<name>.png` — one file per subject — so
@@ -561,4 +603,5 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
 
 module.exports = {
     COMPASS_VIEWS, compassView, planCompassSweep,
+    buildPlateRefinePrompt, REFINE_NEGATIVE,
     plateFileName, PLATE_KINDS, buildPlatePrompt, generatePlate, styleReferencesFor, NEGATIVE };

@@ -44,6 +44,85 @@ function resultJobId(result) {
 
 // -- Route Handler -------------------------------------------------------
 
+/**
+ * What a video generation would SEND, without sending it. Free.
+ *
+ * The image paths have had this since shot_prompt, and video never did: the
+ * only preview was /previs/to-video, which is previs-scoped and refuses on a
+ * stale approval, so a shot nobody has blocked — which is most of them — had no
+ * answer at all to "what would this cost and contain".
+ *
+ * The director's own words for the consequence: "I generated the first two
+ * videos directly on runway and not through the engine as credits are super
+ * precious and didn't want to waste them." Someone who cannot see what will be
+ * sent does not spend, and the feature fails for a reason that has nothing to
+ * do with how good the generation is.
+ */
+async function previewVideo(res, shotId) {
+    const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
+
+    let ctx;
+    try { ctx = await loadShotContext(shotId); }
+    catch (err) { return json(res, 404, { error: err.message }); }
+    if (!ctx || !ctx.shot) return json(res, 404, { error: 'Shot not found' });
+
+    let payload, meta;
+    try { ({ payload, meta } = buildCapabilityPayload('video', ctx)); }
+    catch (err) {
+        // A precondition is an ANSWER here, not a failure: "this needs a
+        // keyframe first" is exactly what a director is asking.
+        return json(res, 200, {
+            shot_id: shotId, shot_code: ctx.shot.shot_code,
+            can_generate: false,
+            warnings: [err.message],
+            note: 'Nothing can be generated for this shot yet.',
+        });
+    }
+
+    const provider = resolve('video', parseProjectConfig(ctx.scene && ctx.scene.project_id));
+
+    /*
+     * The warnings are the point. A prompt reads perfectly while the keyframe
+     * that would have made the clip match the board is absent — the words look
+     * right and the footage comes back as a different place.
+     */
+    const warnings = [];
+    if (!payload.init_image) {
+        warnings.push('No keyframe is attached, so this generates from words alone and will not match '
+            + 'the storyboard frame. Generate the frame first if you want the clip to look like the board.');
+    }
+    if (!ctx.previs) {
+        warnings.push('This shot has no blocking, so no camera path is sent — the movement is described '
+            + 'in words only. Block it in Previs to send an actual camera move.');
+    }
+    try {
+        const lint = require('../lib/prompt-lint').lintPrompt(payload.prompt || '');
+        for (const w of (lint.findings || lint || [])) {
+            if (w && w.phrase) warnings.push(`"${w.phrase}" — ${w.why || 'an image model draws what you name'}`);
+        }
+    } catch (_) { /* the lint is advice, never a gate */ }
+
+    return json(res, 200, {
+        shot_id: shotId, shot_code: ctx.shot.shot_code,
+        can_generate: true,
+        provider: (provider && provider.id) || 'unresolved',
+        model: payload.model || null,
+        prompt: payload.prompt,
+        negative_prompt: payload.negative_prompt || null,
+        // Whether the board's frame is going, which is the single biggest
+        // difference between a clip that matches the storyboard and one that
+        // does not — reported as a fact, never as bytes.
+        init_image: !!payload.init_image,
+        camera_control: payload.camera_control || null,
+        duration_s: payload.duration_s,
+        width: payload.width, height: payload.height, fps: payload.fps,
+        seed: payload.seed === undefined ? null : payload.seed,
+        warnings,
+        meta: meta || null,
+        note: 'Nothing was generated and nothing was spent.',
+    });
+}
+
 function handleVideoGen(req, res, urlParts, query) {
     // /film/video/:projectId/:filename
     if (urlParts[1] === 'video' && urlParts[2] && urlParts[3] && !['shots', 'projects'].includes(urlParts[1])) {
@@ -56,6 +135,10 @@ function handleVideoGen(req, res, urlParts, query) {
         if (!UUID_RE.test(shotId)) return json(res, 400, { error: 'Invalid shot ID' });
 
         const sub = urlParts[4];
+        // What this clip would cost and contain. Free. Under /video/ because
+        // the dispatch above scopes on urlParts[3] === 'video'; a sibling
+        // segment never reaches this handler at all.
+        if (sub === 'preview' && req.method === 'GET') return previewVideo(res, shotId);
         if (sub === 'generate' && req.method === 'POST') {
             if (urlParts[5] === 'stream') return generateVideoStream(req, res, shotId);
             return generateVideo(req, res, shotId);

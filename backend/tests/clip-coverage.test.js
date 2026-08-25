@@ -356,11 +356,35 @@ test('a real media file reports its real length', () => {
     // single-value check.
     for (const seconds of [1, 5, 9]) {
         const file = path.join(dir, `len${seconds}.mp4`);
-        require('child_process').spawnSync(found.bin, [
-            '-f', 'lavfi', '-i', `testsrc=size=160x120:rate=24:duration=${seconds}`,
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', file,
-        ], { timeout: 60000 });
-        assert.ok(fs.existsSync(file), `could not build a ${seconds}s file`);
+        /*
+         * Check the ENCODER SUCCEEDED, not that a file appeared.
+         *
+         * ffmpeg creates the output before it writes the header, so under the
+         * parallel load of the full suite a killed or timed-out build leaves a
+         * truncated file that existsSync happily confirms — and measuring it
+         * correctly returns 0, which then reads as a defect in the measurement
+         * rather than a failed fixture. Passed alone and failed in the suite,
+         * which is exactly the shape of a fixture problem.
+         */
+        /*
+         * CHEAP fixtures. This built three x264 encodes of a testsrc pattern
+         * and was fine alone and flaky in the full suite — the stitch tests
+         * encode too, and under that contention one build was killed, leaving a
+         * truncated file whose duration correctly measured 0. Reported as a
+         * defect in the measurement; was a defect in the fixture.
+         *
+         * A flat colour at 16x16 through mpeg4 carries a real container with a
+         * real duration and costs almost nothing, so the thing under test is
+         * the measurement rather than the machine's spare capacity.
+         */
+        const built = require('child_process').spawnSync(found.bin, [
+            '-f', 'lavfi', '-i', `color=c=black:size=16x16:rate=5:duration=${seconds}`,
+            '-c:v', 'mpeg4', '-y', file,
+        ], { timeout: 120000, encoding: 'utf8' });
+        assert.strictEqual(built.status, 0,
+            `could not build a ${seconds}s file: ${String(built.stderr || built.error).slice(-300)}`);
+        assert.ok(fs.existsSync(file) && fs.statSync(file).size > 0,
+            `the ${seconds}s file is empty`);
 
         const ms = measureDurationMs(file);
         assert.ok(Math.abs(ms - seconds * 1000) < 200,
