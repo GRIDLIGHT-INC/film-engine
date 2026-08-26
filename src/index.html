@@ -3828,7 +3828,14 @@
         .fnode.status-skipped rect.fbody { stroke-dasharray: 4 3; }
         .flow-inspector label { display: block; font-size: 11px; opacity: .7; margin: 8px 0 3px; }
         .flow-inspector input, .flow-inspector select, .flow-inspector textarea { width: 100%; box-sizing: border-box; font-size: 12px; }
-    </style>
+    
+/* The tier cards stack: label, then what it is for, then what it resolves to.
+   .btn is an inline-flex ROW, so without this the three lines lay out as three
+   narrow columns and the resolution text is clipped — which is what shipped. */
+.fe-tier { display:block !important; height:auto !important; align-items:initial !important;
+           white-space:normal !important; text-align:left !important; }
+.fe-tier > div { display:block; width:100%; }
+</style>
 
 <!-- ══════════════════════════════════════════════════════════════
      REDESIGN — appended so it overrides without touching the rules
@@ -23056,11 +23063,12 @@ ${fountainText.slice(0, 50000)}`;
             const tierHtml = !tiers.length ? '' : `
                 <div class="form-group" style="margin-bottom:18px;">
                     <label style="margin:0 0 8px;display:block;">Image quality</label>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;flex-direction:column;">
                         ${tiers.map(t => `
-                            <button type="button" class="btn ${t.id === currentTier ? '' : 'btn-secondary'}"
+                            <button type="button" class="btn ${t.id === currentTier ? '' : 'btn-secondary'} fe-tier"
                                 onclick="pickImageTier('${esc(t.id)}')" id="tierbtn-${esc(t.id)}"
-                                style="flex:1;min-width:150px;text-align:left;padding:10px 12px;${t.available ? '' : 'opacity:.55;'}">
+                                style="flex:1 1 100%;text-align:left;padding:11px 13px;
+                                       display:block;line-height:1.35;white-space:normal;${t.available ? '' : 'opacity:.55;'}">
                                 <div style="font-weight:600;">${esc(t.label)}</div>
                                 <div class="text-sm" style="opacity:.8;margin-top:3px;font-weight:400;">${esc(t.why)}</div>
                                 <div class="text-sm" style="opacity:.6;margin-top:4px;font-weight:400;">
