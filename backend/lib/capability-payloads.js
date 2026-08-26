@@ -597,10 +597,14 @@ function withTierModel(payload, ctx, adapter) {
     if (payload.model) return payload;                       // already stated
     const cfg = (ctx && ctx.project && providerConfigOf(ctx.project)) || {};
     if (cfg.image_model) { payload.model = cfg.image_model; return payload; }
-    if (!cfg.image_quality || !adapter || !adapter.id) return payload;
+    if (!adapter || !adapter.id) return payload;
     try {
         const { resolveTier } = require('./quality-tiers');
-        const chosen = resolveTier(cfg.image_quality, cfg, ctx && ctx.tierRequest);
+        // Defaults when the project has said nothing, so a frame is never
+        // generated on whatever model a provider happens to prefer — Meshy's
+        // own default is nano-banana-pro at three times the credits of
+        // nano-banana-2, which is a real bill nobody chose.
+        const chosen = resolveTier(cfg.image_quality || undefined, cfg, ctx && ctx.tierRequest);
         // Only when the tier actually landed on the adapter being built for:
         // naming Google's model on a request going to OpenAI is a rejected call.
         if (chosen && chosen.provider === adapter.id && chosen.model) {

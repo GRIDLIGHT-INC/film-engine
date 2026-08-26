@@ -23069,12 +23069,17 @@ ${fountainText.slice(0, 50000)}`;
             const advanced = caps.map(cap => {
                 const opts = supportsCap(cap);
                 if (opts.length === 0) return '';
-                const current = (proj.config && proj.config[cap]) || proj.effective[cap] || '';
+                // What was PINNED, which is not the same as what resolved. Showing
+                // the resolved provider as if it were selected made every
+                // capability look pinned, so nothing could be handed back to
+                // automatic — and the tier advice pointed at an impossible action.
+                const pinned = (proj.config && proj.config[cap]) || '';
                 return `<div class="form-group" style="display:flex;align-items:center;gap:10px;">
                     <label style="flex:0 0 110px;margin:0;">${esc(capabilityLabels[cap] || cap)}</label>
                     <div style="flex:1;">
                     <select id="provcap-${esc(cap)}" style="width:100%;">
-                        ${opts.map(o => '<option value="' + esc(o.id) + '"' + (o.id === current ? ' selected' : '') + '>' + esc(o.label) + '</option>').join('')}
+                        <option value=""${pinned ? '' : ' selected'}>Automatic${cap === 'image' ? ' — the quality tier decides' : ''}</option>
+                        ${opts.map(o => '<option value="' + esc(o.id) + '"' + (o.id === pinned ? ' selected' : '') + '>' + esc(o.label) + (o.id === proj.effective[cap] && !pinned ? ' (in use)' : '') + '</option>').join('')}
                     </select>
                     ${capabilityHelp[cap] ? '<div class="text-sm text-muted" style="margin-top:4px;">' + esc(capabilityHelp[cap]) + '</div>' : ''}
                     </div>
@@ -23205,7 +23210,9 @@ ${fountainText.slice(0, 50000)}`;
         const config = {};
         caps.forEach(cap => {
             const sel = document.getElementById('provcap-' + cap);
-            if (sel && sel.value) config[cap] = sel.value;
+            // Sent even when blank: blank means "clear the pin", and skipping it
+            // would let the merge keep a choice the user just cleared.
+            if (sel) config[cap] = sel.value;
         });
         // Carried explicitly: the route keeps only keys it recognises, so a
         // tier left out here would save as nothing and the setting would look

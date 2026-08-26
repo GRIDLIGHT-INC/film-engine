@@ -99,7 +99,17 @@ const PREFERRED_WHEN_CONFIGURED = {
     // character plate, a location plate and a scene anchor actually is. This is
     // only the default when a project has expressed no opinion and Google holds
     // a key; an explicit choice and the quality tier both outrank it.
-    image: ['google', 'bfl', 'openai'],
+    /*
+     * MIRRORS THE STANDARD TIER, and a test holds the two in lockstep.
+     *
+     * Two orderings for one capability is how the board and the footage came
+     * to use different providers. This list cannot simply be derived from
+     * lib/quality-tiers.js — that module requires this one to check a tier
+     * points at a registered provider, and a top-level require would be a
+     * cycle — so it is written out and pinned by assertion instead, the same
+     * arrangement flow-seed has with PIPELINE_STEPS.
+     */
+    image: ['meshy', 'google', 'bfl', 'openai'],
     // Seedance 2.5 for footage. Runway's gen4.5 takes TWO keyframes, first and
     // last, which has been the ceiling on "generate this sequence from these
     // pictures"; Seedance's omni-reference workflow takes thirty. Runway stays
@@ -159,7 +169,15 @@ function resolveId(capability, projectConfig) {
      * a tier points at a registered provider, and a top-level require would be
      * a cycle resolving to a half-built registry.
      */
-    if (capability === 'image' && cfg.image_quality) {
+    /*
+     * The tier governs images ALWAYS, defaulting when the project has said
+     * nothing. Consulting it only when set left an un-opinionated project
+     * resolving through the static preference instead — a second ordering,
+     * which is the thing this table exists to collapse. It showed up
+     * immediately: the picker said every tier used Meshy while the project
+     * resolved to OpenAI, and both were telling the truth about different code.
+     */
+    if (capability === 'image') {
         try {
             const { resolveTier } = require('../quality-tiers');
             const chosen = resolveTier(cfg.image_quality, cfg);

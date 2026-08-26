@@ -19,6 +19,23 @@
  *   standard   Nano Banana 2       most storyboard frames
  *   precision  Nano Banana Pro     difficult continuity and blocking
  *
+ * ── Meshy leads, and that is not a compromise ────────────────────────────
+ *
+ * Meshy PROXIES the same models: `nano-banana`, `nano-banana-2` and
+ * `nano-banana-pro` are Google's, reached through an account that is already
+ * credited here. Same three tiers, same three models, on credits already
+ * bought — and priced per model rather than flat, so Draft genuinely costs a
+ * third of Precision (3 credits against 9) instead of the difference being
+ * notional.
+ *
+ * One real limitation, stated because it is invisible otherwise: Meshy's
+ * adapter is `referenceMode: 'edit'` — it routes any reference to
+ * `/image-to-image`. That is fine for a keyframe conditioned on plates, which
+ * is what the board does all day, and it is why a NEW location view has to be
+ * painted from words on this provider rather than turned from an existing
+ * plate. A direct Google key is `condition` and does not have that limit; pin
+ * it under Advanced if that trade matters more than the credits.
+ *
  * with GPT Image as the alternate on every tier — the second opinion for when
  * one house's models keep refusing or keep getting the same thing wrong. That is
  * not redundancy for its own sake: the compass-view work established that a
@@ -48,22 +65,28 @@ const IMAGE_TIERS = Object.freeze({
         label: 'Draft',
         why: 'Cheap variations and thumbnails — for exploring a composition before committing to it. '
             + 'Exploration has to be cheap, or nobody explores and every idea costs a finished frame.',
-        order: ['bfl', 'google', 'openai', 'gridlight'],
-        models: Object.freeze({ bfl: 'flux-2-klein', google: 'gemini-3.1-flash-lite-image' }),
+        order: ['meshy', 'bfl', 'google', 'openai', 'gridlight'],
+        models: Object.freeze({
+            meshy: 'nano-banana', bfl: 'flux-2-klein', google: 'gemini-3.1-flash-lite-image',
+        }),
     }),
     standard: Object.freeze({
         label: 'Standard',
         why: 'Most storyboard frames. Built for reconciling several reference images at once, '
             + 'which is what a keyframe carrying a character plate, a location plate and an anchor actually is.',
-        order: ['google', 'bfl', 'openai', 'runway', 'gridlight'],
-        models: Object.freeze({ google: 'gemini-3.1-flash-image', bfl: 'flux-2-pro' }),
+        order: ['meshy', 'google', 'bfl', 'openai', 'runway', 'gridlight'],
+        models: Object.freeze({
+            meshy: 'nano-banana-2', google: 'gemini-3.1-flash-image', bfl: 'flux-2-pro',
+        }),
     }),
     precision: Object.freeze({
         label: 'Precision',
         why: 'Difficult continuity and blocking — a frame that must hold an established location, '
             + 'a specific subject and a camera change together. Costs more per image and saves the retries.',
-        order: ['google', 'bfl', 'openai', 'gridlight'],
-        models: Object.freeze({ google: 'gemini-3-pro-image', bfl: 'flux-2-max' }),
+        order: ['meshy', 'google', 'bfl', 'openai', 'gridlight'],
+        models: Object.freeze({
+            meshy: 'nano-banana-pro', google: 'gemini-3-pro-image', bfl: 'flux-2-max',
+        }),
     }),
 });
 

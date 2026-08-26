@@ -193,7 +193,17 @@ function setProjectProviders(req, res, projectId) {
     ) || {}; } catch (_) { clean = {}; }
     for (const cap of CAPABILITIES) {
         const pid = incoming[cap];
-        if (typeof pid === 'string' && pid && providers.get(pid)) clean[cap] = pid;
+        if (typeof pid !== 'string') continue;
+        /*
+         * An explicitly-empty value CLEARS the pin.
+         *
+         * Without this a capability could be pinned and never unpinned: the
+         * merge keeps whatever was there, so "let the quality tier decide"
+         * was unsayable and the tier picker's own advice — clear the pin under
+         * Advanced — pointed at something that could not be done.
+         */
+        if (!pid.trim()) { delete clean[cap]; continue; }
+        if (providers.get(pid)) clean[cap] = pid;
     }
 
     /*

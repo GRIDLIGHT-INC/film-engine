@@ -261,3 +261,38 @@ test("a tier's model never travels to the provider it was not chosen for", async
     assert.deepStrictEqual(seen, ['google:gemini-3-pro-image', 'gridlight:(none)'],
         'a model chosen for one provider reached another');
 });
+
+test('the static image preference and the standard tier stay in lockstep', () => {
+    /*
+     * Two orderings for one capability is how the board and the footage came to
+     * use different providers. quality-tiers.js cannot be required from
+     * providers/index.js — that would be a cycle — so the list is written out
+     * there and held to the tier table here, exactly as flow-seed is held to
+     * PIPELINE_STEPS.
+     */
+    const { PREFERRED_WHEN_CONFIGURED } = require('../lib/providers');
+    const { IMAGE_TIERS } = require('../lib/quality-tiers');
+    const expected = IMAGE_TIERS.standard.order.filter(id => id !== 'gridlight' && id !== 'runway');
+    assert.deepStrictEqual(PREFERRED_WHEN_CONFIGURED.image, expected,
+        'the image preference and the Standard tier disagree about provider order, so a project '
+        + 'with no stated tier resolves somewhere the tier picker does not admit to');
+});
+
+test('a project that states no tier still gets a named model', () => {
+    /*
+     * Meshy's own default is nano-banana-pro — three times the credits of
+     * nano-banana-2. A payload that names no model inherits that, so "I never
+     * chose a quality" quietly meant "I chose the most expensive one".
+     */
+    const { withTierModel } = require('../lib/capability-payloads');
+    // A tier resolves by CREDENTIAL, so the provider has to be reachable for
+    // this to be testing the tier rather than the fallthrough.
+    require('../db/database').db.prepare(
+        `INSERT INTO film_provider_credentials (provider, api_key, meta) VALUES ('meshy', 'test-key', '{}')
+         ON CONFLICT(provider) DO UPDATE SET api_key = excluded.api_key`).run();
+
+    const payload = withTierModel({ prompt: 'x' },
+        { project: { provider_config: JSON.stringify({}) } }, providers.get('meshy'));
+    assert.strictEqual(payload.model, 'nano-banana-2',
+        'an unstated tier did not resolve to the standard model');
+});
