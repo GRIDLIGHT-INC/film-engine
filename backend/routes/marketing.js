@@ -29,7 +29,7 @@ function handleMarketing(req, res, urlParts, query) {
             return importMarketingImage(req, res, assetId);
         }
         if (urlParts[3] === 'preview' && req.method === 'GET') {
-            return previewMarketingAsset(req, res, assetId);
+            return previewMarketingAsset(req, res, assetId, query);
         }
         if (urlParts[3] === 'generate' && req.method === 'POST') {
             return generateMarketingAsset(req, res, assetId);
@@ -268,27 +268,84 @@ function marketingSize(asset) {
  * Every paid path in this engine shows its request first; a poster costs the
  * same as a storyboard frame and there is no reason for it to be the exception.
  */
-function previewMarketingAsset(req, res, assetId) {
+function previewMarketingAsset(req, res, assetId, query) {
     const asset = db.prepare('SELECT * FROM film_marketing_assets WHERE id = ?').get(assetId);
     if (!asset) return notFound(res);
     const project = db.prepare('SELECT id, title, style_preset, provider_config FROM film_projects WHERE id = ?')
         .get(asset.project_id);
     const providers = require('../lib/providers');
     const { spendContext } = require('../lib/provider-config');
-    const cfg = spendContext(project, null);
+    const { withTierModel } = require('../lib/capability-payloads');
+
+    /*
+     * THE PREVIEW HAS TO TAKE THE SAME OVERRIDE THE PURCHASE DOES.
+     *
+     * It read only the project's standing choice, so previewing a generation
+     * you were about to make on a different provider showed the wrong one —
+     * the same defect the refine preview shipped once, where a dialog whose
+     * entire purpose is "see what will be sent" was confidently wrong.
+     */
+    const q = query || {};
+    const override = {};
+    if (q.quality) override.image_quality = String(q.quality);
+    if (q.provider) override.image = String(q.provider);
+    const cfg = spendContext(project, null, null, Object.keys(override).length ? override : null);
     const adapter = providers.get(providers.resolveId('image', cfg));
+
     const size = marketingSize(asset);
     const prompt = buildMarketingPrompt(asset, project);
+    const payload = withTierModel({ prompt, aspect_ratio: asset.aspect_ratio },
+        { project, tierOverride: Object.keys(override).length ? override : null }, adapter);
+
+    /*
+     * The ratio the provider will REALLY use.
+     *
+     * Meshy's nano-banana family offers no 2:3, so a one-sheet poster comes
+     * back 3:4 — a different shape from the one that was chosen, and nothing
+     * would have said so until the picture arrived.
+     */
+    let effectiveRatio = asset.aspect_ratio;
+    try {
+        const meshy = require('../lib/providers/meshy');
+        const snap = meshy.snapMeshyRatio || (meshy._internal && meshy._internal.snapMeshyRatio);
+        if (adapter && adapter.id === 'meshy' && snap) {
+            effectiveRatio = snap(asset.aspect_ratio, payload.model);
+        }
+    } catch (_) { /* an unknown provider keeps the asset's own ratio */ }
+
+    const notes = [];
+    if (effectiveRatio !== asset.aspect_ratio) {
+        notes.push(`${adapter.id} does not offer ${asset.aspect_ratio} on ${payload.model || 'this model'} — `
+            + `it will generate ${effectiveRatio}.`);
+    }
+    if (!(project && project.style_preset)) {
+        notes.push('This project has no style preset, so the artwork will not match the film.');
+    }
+
+    let cost = null;
+    try {
+        const { rateFor } = require('../lib/provider-pricing');
+        const rate = rateFor(adapter.id, 'image', payload.model);
+        if (rate) {
+            cost = { usd: rate.usd_per_unit !== undefined ? rate.usd_per_unit : rate.usd_per_native,
+                native: rate.native_per_unit, native_unit: rate.native_unit };
+        }
+    } catch (_) { /* an unpriced pair must not break a free preview */ }
+
     return reply(res, 200, {
         asset_id: assetId,
         provider: adapter && adapter.id,
+        model: payload.model || null,
         prompt,
         prompt_length: prompt.length,
         negative_prompt: MARKETING_NEGATIVE,
         aspect_ratio: asset.aspect_ratio,
+        effective_aspect_ratio: effectiveRatio,
         width: size.width,
         height: size.height,
         style_applied: !!(project && project.style_preset),
+        estimated_cost: cost,
+        notes,
         note: 'Nothing was generated and nothing was spent.',
     });
 }
