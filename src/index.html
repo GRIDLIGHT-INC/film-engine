@@ -27803,6 +27803,7 @@ ${fountainText.slice(0, 50000)}`;
             const d = await api(`/shots/${SHOT_CARD.shotId}/prompt?direction_mode=${encodeURIComponent(mode)}`);
             const esc = escapeHtml;
             const cut = (d.budget || []).filter(b => b.cut > 0);
+            CONFIRM_GEN_PROMPT = d.prompt || '';
             const staging = (d.prompt || '').match(/Staging:[^,]*(?:, [^,]*){0,6}/);
             const over = d.headroom !== null && d.headroom < 0;
 
@@ -28647,6 +28648,9 @@ ${fountainText.slice(0, 50000)}`;
      * the frame comes back wrong, which is the most expensive kind of wrong.
      */
     let CONFIRM_GEN = null;
+    /** The edited prompt, captured before the modal closes and the field is gone. */
+    let CONFIRM_GEN_FINAL_PROMPT = null;
+    function confirmGenEditedPrompt() { return CONFIRM_GEN_FINAL_PROMPT; }
     let CONFIRM_GEN_IGNORE_STAGED = false;
 
     /*
@@ -28665,6 +28669,17 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     function confirmGenResolve(ok) {
+        /*
+         * Read the edited prompt BEFORE the modal closes.
+         *
+         * closeModal tears the field out of the DOM, so reading it afterwards
+         * returns nothing and the edit is silently discarded — the user watches
+         * their text vanish into a generation that ignored it.
+         */
+        const box = document.getElementById('confirmGenPrompt');
+        CONFIRM_GEN_FINAL_PROMPT = (ok && box && CONFIRM_GEN_EDITED && box.value.trim())
+            ? box.value.trim() : null;
+
         closeModal('confirmGenModal');
         const fn = CONFIRM_GEN;
         CONFIRM_GEN = null;
@@ -28681,6 +28696,8 @@ ${fountainText.slice(0, 50000)}`;
         body.innerHTML = '<span class="text-muted text-sm">Reading what would be sent&hellip;</span>';
         confirmGenArm(false);
         CONFIRM_GEN_IGNORE_STAGED = false;
+        CONFIRM_GEN_PROMPT = null;
+        CONFIRM_GEN_EDITED = false;
         showModal('confirmGenModal');
 
         const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
@@ -28803,13 +28820,22 @@ ${fountainText.slice(0, 50000)}`;
 
               <div class="form-group">
                 <label>The prompt
-                  <span class="text-sm ${over ? '' : 'text-muted'}"
+                  <span class="text-sm ${over ? '' : 'text-muted'}" id="confirmGenChars"
                         style="${over ? 'color:var(--gl-danger,#ef4444);' : ''}">
                     ${d.prompt_chars} of ${d.ceiling}${d.headroom !== null ? ` &middot; ${d.headroom} spare` : ''}
                   </span>
                 </label>
-                <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;max-height:260px;overflow:auto;
-                            margin:0;padding:8px;border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.prompt || '')}</pre>
+                ${o.editable === false
+                    ? `<pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;max-height:260px;overflow:auto;
+                            margin:0;padding:8px;border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.prompt || '')}</pre>`
+                    : `<textarea id="confirmGenPrompt" rows="9" spellcheck="false"
+                          oninput="confirmGenPromptEdited(${Number(d.ceiling) || 0})"
+                          style="width:100%;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5;
+                                 padding:8px;border-radius:6px;">${esc(d.prompt || '')}</textarea>
+                       <div class="text-sm text-muted" style="margin-top:4px;" id="confirmGenPromptNote">
+                         Edit it and the edited text is what gets sent, exactly as written &mdash; the
+                         engine will not add references or the style preset on top of it.
+                       </div>`}
               </div>`;
             // A preview may inspect an experiment, but a paid Board action may
             // not silently consume it. Apply staged blocking, or re-seed when
@@ -28844,6 +28870,38 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     let CONFIRM_GEN_QUALITY = null;
+    let CONFIRM_GEN_PROMPT = null;      // the text as it was offered
+    let CONFIRM_GEN_EDITED = false;
+
+    /**
+     * The prompt is editable, and an edit is FINAL.
+     *
+     * `GET /shots/:id/prompt` shows exactly what would be sent and the route
+     * takes that text back as `prompt_override` — the two have existed for
+     * weeks with nothing between them, so composing a prompt by hand meant
+     * curl. This is the missing half: read what is going, change it, send it.
+     *
+     * An override is the WHOLE prompt, not a prefix: the route sets
+     * promptIsFinal, so nothing is appended afterwards. That has to be said
+     * where the editing happens, or a director edits one clause expecting the
+     * references and the style to still be added and gets neither.
+     */
+    function confirmGenPromptEdited(ceiling) {
+        const box = document.getElementById('confirmGenPrompt');
+        if (!box) return;
+        CONFIRM_GEN_EDITED = box.value !== CONFIRM_GEN_PROMPT;
+        const chars = document.getElementById('confirmGenChars');
+        if (chars && ceiling) {
+            const n = box.value.length;
+            chars.textContent = `${n} of ${ceiling}${n <= ceiling ? ` · ${ceiling - n} spare` : ' · OVER'}`;
+            chars.style.color = n > ceiling ? 'var(--gl-danger,#ef4444)' : '';
+        }
+        const note = document.getElementById('confirmGenPromptNote');
+        if (note && CONFIRM_GEN_EDITED) {
+            note.textContent = 'Edited — this exact text is what will be sent. References and the '
+                + 'style preset are NOT added on top of an edited prompt.';
+        }
+    }
 
     function pickGenQuality(tier) {
         CONFIRM_GEN_QUALITY = tier;
@@ -28877,6 +28935,11 @@ ${fountainText.slice(0, 50000)}`;
                     ...(keepPlates && keepPlates.length ? { keep_plates: keepPlates } : {}),
                     ...(CONFIRM_GEN_IGNORE_STAGED ? { ignore_staged: true } : {}),
                     ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
+                    // Only when it was actually changed: sending the unedited
+                    // text as an override would set promptIsFinal and silently
+                    // stop the references and the style preset being applied.
+                    ...(CONFIRM_GEN_EDITED && confirmGenEditedPrompt()
+                        ? { prompt_override: confirmGenEditedPrompt() } : {}),
                 }),
             });
             done();

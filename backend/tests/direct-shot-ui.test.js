@@ -576,3 +576,62 @@ test('the confirmation says whether the shot is anchored', () => {
     assert.ok(/Cancel/.test(dlg) && /⚓|&#9875;/.test(dlg),
         'the warning does not say how to fix it, so it is an observation rather than a prompt to act');
 });
+
+test('the pre-spend confirmation lets the prompt be edited, and an edit is what is sent', () => {
+    /*
+     * `GET /shots/:id/prompt` has shown exactly what would be sent for weeks,
+     * and `regenerate` has taken that text back as `prompt_override` for just
+     * as long — with nothing between them. Composing a prompt by hand meant
+     * curl, on the one surface a director spends money from.
+     *
+     * Two halves, and the second is the one that bites:
+     *
+     *   - the prompt is a textarea, not a <pre>;
+     *   - an UNEDITED prompt must NOT travel as an override. The route sets
+     *     promptIsFinal on an override, so sending the text back unchanged
+     *     would silently stop the references and the style preset being
+     *     applied — a frame generated without its plates, from a dialog the
+     *     director only opened to look.
+     */
+    const html = require('fs').readFileSync(
+        require('path').join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+
+    const at = html.indexOf('async function confirmGeneration(');
+    assert.ok(at > 0, 'the pre-spend confirmation is gone');
+    const dialog = html.slice(at, at + 9000);
+
+    assert.ok(/id="confirmGenPrompt"[\s\S]{0,400}textarea|<textarea[^>]*id="confirmGenPrompt"/.test(dialog),
+        'the prompt is not editable — it is displayed and cannot be changed');
+
+    // The edit is read BEFORE the modal closes: closeModal removes the field,
+    // so reading it afterwards silently discards what was typed.
+    const resolver = html.slice(html.indexOf('function confirmGenResolve('));
+    /*
+     * Comments stripped first. The comment explaining this ordering NAMES
+     * closeModal, so matching on the raw text found the explanation before the
+     * code and reported correct code as broken — the same trap the clip-upload
+     * check fell into, where a test matched a word inside the comment that
+     * described the thing it was checking for.
+     */
+    const body = resolver.slice(0, resolver.indexOf('\n    }'))
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    const readAt = body.indexOf('confirmGenPrompt');
+    const closeAt = body.indexOf('closeModal');
+    assert.ok(readAt > 0 && readAt < closeAt,
+        'the edited prompt is read after the modal closes, so the edit is discarded');
+
+    // And it only travels when it really changed.
+    /*
+     * The whole function, bounded by the NEXT declaration. Slicing to the first
+     * `});` cut before the request body — a check that stops short of the code
+     * it is about reports correct code as broken, which is how a guard gets
+     * deleted rather than fixed.
+     */
+    const from = html.indexOf('async function regenerateStoryboard(');
+    const rest = html.slice(from + 40);
+    const end = rest.search(/\n    (?:async )?function /);
+    const call = end > 0 ? rest.slice(0, end) : rest.slice(0, 4000);
+    assert.ok(/CONFIRM_GEN_EDITED\s*&&/.test(call),
+        'the prompt is sent as an override unconditionally, which would drop the '
+        + 'references and the style preset on an untouched generation');
+});
