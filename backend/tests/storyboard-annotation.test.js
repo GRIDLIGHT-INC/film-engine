@@ -260,9 +260,25 @@ test('a frame URL is keyed to the version of the frame', () => {
     // Both surfaces must use it, or the viewer shows a stale frame over a
     // fresh grid — which is worse than both being stale, because it looks
     // like the regeneration only half worked.
-    for (const surface of ['img id="img-${f.shot_id}" src="${frameSrc(f)}"', "frameViewerImg').src = frameSrc(f)"]) {
-        assert.ok(html.includes(surface), `a surface still builds its own frame URL: ${surface}`);
+    /*
+     * Matched on the RULE rather than on an exact character sequence. The
+     * literal broke the moment the grid started asking for a thumbnail width —
+     * a correct change to a correct page — and a check that fails on a correct
+     * change is one that gets edited until it stops meaning anything.
+     *
+     * The grid may pass a width; the VIEWER must not. The moment you are
+     * actually judging a frame is the moment resolution matters.
+     */
+    const surfaces = [
+        { what: 'the grid card', re: /id="img-\$\{f\.shot_id\}"[^>]*src="\$\{frameSrc\(f(,\s*\d+)?\)\}"/ },
+        { what: 'the full-screen viewer', re: /frameViewerImg'\)\.src = frameSrc\(f\)/ },
+    ];
+    for (const s of surfaces) {
+        assert.ok(s.re.test(html), `${s.what} builds its own frame URL instead of using frameSrc()`);
     }
+    assert.ok(!/frameViewerImg'\)\.src = frameSrc\(f,/.test(html),
+        'the full-screen viewer is loading a thumbnail — that is the one surface where '
+        + 'resolution is the whole point');
 });
 
 test('a generating frame says so on the frame', () => {

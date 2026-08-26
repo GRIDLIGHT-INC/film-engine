@@ -18,6 +18,7 @@ const { db, generateId } = require('../db/database');
 const { DATA_DIR } = require('./file-storage');
 const fs = require('fs');
 const path = require('path');
+const { CACHE_DIRNAME: THUMB_CACHE_DIR } = require('./thumbnails');
 const { spawnSync } = require('child_process');
 const crypto = require('crypto');
 
@@ -80,6 +81,35 @@ const FK_REMAP = {
 };
 
 /**
+ * Copy a project's asset directory, subdirectories and all.
+ *
+ * `readdirSync` + `copyFileSync` throws EISDIR the moment a subdirectory
+ * appears, and one has been there since frames started being archived:
+ * `storyboards/<project>/versions/` holds every superseded attempt. On a real
+ * project that is 61 files, and exporting it threw rather than producing a
+ * bundle — a backup that fails on exactly the projects worth backing up.
+ *
+ * `.thumbs` is skipped deliberately. It is a derived cache rebuilt on demand
+ * from the pictures beside it, so bundling it would inflate every archive with
+ * bytes the importing machine can regenerate for free.
+ */
+function copyAssetTree(srcDir, destDir, onFile) {
+    for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+        if (entry.name === THUMB_CACHE_DIR) continue;
+        const from = path.join(srcDir, entry.name);
+        const to = path.join(destDir, entry.name);
+        if (entry.isDirectory()) {
+            fs.mkdirSync(to, { recursive: true });
+            copyAssetTree(from, to, onFile);
+        } else if (entry.isFile()) {
+            fs.copyFileSync(from, to);
+            if (onFile) onFile();
+        }
+    }
+}
+
+
+/**
  * Export a project to a .tar.gz bundle.
  * @param {string} projectId
  * @returns {{ archivePath: string, manifest: object }} Path to the .tar.gz and the manifest
@@ -123,10 +153,7 @@ function exportProject(projectId) {
         if (fs.existsSync(srcDir)) {
             const destDir = path.join(stagingDir, subdir);
             fs.mkdirSync(destDir, { recursive: true });
-            const files = fs.readdirSync(srcDir);
-            for (const file of files) {
-                fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
-            }
+            copyAssetTree(srcDir, destDir);
         }
     }
 
@@ -252,11 +279,7 @@ function importProject(archiveBuffer) {
         if (fs.existsSync(srcDir)) {
             const destDir = path.join(DATA_DIR, subdir, newProjectId);
             fs.mkdirSync(destDir, { recursive: true });
-            const files = fs.readdirSync(srcDir);
-            for (const file of files) {
-                fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
-                stats.assets_copied++;
-            }
+            copyAssetTree(srcDir, destDir, () => { stats.assets_copied++; });
         }
     }
 
@@ -269,4 +292,7 @@ function importProject(archiveBuffer) {
     return { project, stats, id_map: { old: oldProjectId, new: newProjectId } };
 }
 
-module.exports = { exportProject, importProject, EXPORT_TABLES, ASSET_SUBDIRS };
+module.exports = {
+    // Exposed so the tree copy can be exercised directly: the fault it fixes
+    // only appears on a project that has archived frames.
+    __copyAssetTree: copyAssetTree, exportProject, importProject, EXPORT_TABLES, ASSET_SUBDIRS };

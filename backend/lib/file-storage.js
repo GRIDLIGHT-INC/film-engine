@@ -117,7 +117,7 @@ function isPathContained(filePath, baseDir) {
  * @param {string} subdir
  * @param {string} filename
  */
-function serveFile(res, projectId, subdir, filename) {
+function serveFile(res, projectId, subdir, filename, opts) {
     // Sanitize filename: only allow alphanumeric, hyphens, underscores, dots
     if (!/^[\w.-]+$/.test(filename)) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -166,6 +166,42 @@ function serveFile(res, projectId, subdir, filename) {
         '.edl': 'text/plain',
         '.zip': 'application/zip',
     };
+
+    /*
+     * A thumbnail when one was asked for.
+     *
+     * Handled HERE rather than in each media route because every surface that
+     * paints a picture comes through this function — the board, the viewer,
+     * previs, plates, the continuity board. A per-route thumbnail is how four
+     * of five surfaces get one.
+     *
+     * Falls through to the original on any failure, including no encoder: a
+     * thumbnail is an optimisation and must never be able to take down the
+     * picture it is optimising.
+     */
+    const wanted = opts && opts.width;
+    if (wanted) {
+        const { thumbnailFor } = require('./thumbnails');
+        thumbnailFor(filePath, wanted).then(thumb => {
+            const serving = thumb || filePath;
+            res.writeHead(200, {
+                'Content-Type': thumb ? 'image/jpeg' : (mimeTypes[ext] || 'application/octet-stream'),
+                // Immutable: the URL carries the frame version and the cache key
+                // carries the source's identity, so this exact bytes-for-URL
+                // pairing can never change.
+                'Cache-Control': 'public, max-age=86400',
+                'X-Thumbnail': thumb ? 'hit' : 'source',
+            });
+            fs.createReadStream(serving).pipe(res);
+        }).catch(() => {
+            res.writeHead(200, {
+                'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+                'Cache-Control': 'public, max-age=3600',
+            });
+            fs.createReadStream(filePath).pipe(res);
+        });
+        return;
+    }
 
     res.writeHead(200, {
         'Content-Type': mimeTypes[ext] || 'application/octet-stream',

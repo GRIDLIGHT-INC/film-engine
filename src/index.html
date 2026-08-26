@@ -25966,7 +25966,7 @@ ${fountainText.slice(0, 50000)}`;
                 grid.innerHTML = screenplayDriftBanner() + impactBanner() + frames.map(f => `
                     <div class="card" style="padding:0;overflow:hidden;">
                         <div style="position:relative;background:var(--surface-alt,var(--gl-bg-surface));min-height:160px;">
-                            <img id="img-${f.shot_id}" src="${frameSrc(f)}"
+                            <img id="img-${f.shot_id}" loading="lazy" src="${frameSrc(f, 640)}"
                                  style="width:100%;display:block;cursor:zoom-in;" title="Open full screen"
                                  onclick="openFrameViewer('${f.shot_id}')"
                                  onerror="this.style.display='none'"
@@ -27488,9 +27488,27 @@ ${fountainText.slice(0, 50000)}`;
      * image on the board each time the page refreshed, which on a feature-length
      * board is a lot of bytes to spend hiding one bug.
      */
-    function frameSrc(f) {
+    /**
+     * Where a frame's picture comes from.
+     *
+     * `width` asks the server for a thumbnail. A board card is ~260px and a
+     * frame is generated at the delivery size, so without it the grid fetches
+     * 1.5MB per card — 20MB to paint thirteen postage stamps, every time the
+     * page is opened. That is the whole reason moving between sections drags.
+     *
+     * The full picture is still what the VIEWER loads: the moment you are
+     * actually judging a frame is the moment resolution matters.
+     *
+     * `v` stays keyed to asset_version rather than to a timestamp — busting on
+     * every render would re-download an unchanged board on each refresh, which
+     * is a lot of bytes spent hiding one bug.
+     */
+    function frameSrc(f, width) {
         const base = `${API_BASE}/film/storyboards/${state.currentProject.id}/${encodeURIComponent(f.shot_code)}.png`;
-        return f.asset_version ? `${base}?v=${f.asset_version}` : base;
+        const q = [];
+        if (f.asset_version) q.push('v=' + f.asset_version);
+        if (width) q.push('w=' + width);
+        return q.length ? `${base}?${q.join('&')}` : base;
     }
 
     let SHOT_CARD = { shotId: null, card: null, vocab: null };
@@ -30555,7 +30573,7 @@ ${fountainText.slice(0, 50000)}`;
     top.innerHTML =
       '<div class="fe-brand" id="feBrand"><div class="fe-mark">FE</div>' +
       '<div><div class="fe-proj" id="feProjName">Film Engine</div>' +
-      '<div class="fe-projsub">AI production pipeline</div></div></div>' +
+      '<div class="fe-projsub" id="feProjSub">AI production pipeline</div></div></div>' +
       '<div class="fe-track" id="feTrack"></div>';
     document.body.appendChild(top);
 
@@ -30606,8 +30624,29 @@ ${fountainText.slice(0, 50000)}`;
       els.track.appendChild(b);
     });
 
+    /*
+     * The film's name is how you leave the film.
+     *
+     * There was no way to switch projects in this layout at all: the project
+     * list is a real page, and both routes to it — the sidebar's "All Projects"
+     * button and the sidebar project list — are display:none here. Exactly the
+     * glossary bug, which is why that one is on the rail.
+     *
+     * The brand is the right place rather than a seventh rail button: it
+     * already names the current project, and clicking the thing you want to
+     * change is the shortest sentence available. It only duplicated the Home
+     * rail button before, so nothing is lost.
+     */
     var brand = top.querySelector('#feBrand');
-    brand.onclick = function () { var t = navBtn('dashboard'); if (t) t.click(); };
+    brand.title = 'Switch project';
+    brand.onclick = function () {
+      if (window.state && window.state.currentProject && window.backToProjectList) {
+        window.backToProjectList();
+        return;
+      }
+      var t = navBtn('projects') || navBtn('dashboard');
+      if (t) t.click(); else if (window.navigateTo) window.navigateTo('projects');
+    };
 
     PHASES.forEach(function (p) {
       p.pages.forEach(function (pg) {
@@ -30663,7 +30702,12 @@ ${fountainText.slice(0, 50000)}`;
       if (jobs) { var s2 = document.createElement('span'); s2.className = 'b'; s2.textContent = jobs; jb.appendChild(s2); }
     }
     var nm = document.querySelector('#feProjName');
-    if (nm && window.state && window.state.currentProject) nm.textContent = window.state.currentProject.title || 'Film Engine';
+    var sub = document.querySelector('#feProjSub');
+    var open_ = window.state && window.state.currentProject;
+    if (nm && open_) nm.textContent = open_.title || 'Film Engine';
+    // Says what clicking does. An affordance nobody can see is not one — the
+    // only other route to the project list is in a sidebar this layout hides.
+    if (sub) sub.textContent = open_ ? 'Switch project' : 'AI production pipeline';
     document.body.classList.toggle('fe-status', !!document.querySelector('.status-bar'));
   }
 

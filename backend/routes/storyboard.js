@@ -558,7 +558,7 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
 function handleStoryboard(req, res, urlParts, query) {
     // /film/storyboards/:projectId/:filename — serve static image
     if (urlParts[1] === 'storyboards' && urlParts[2] && urlParts[3]) {
-        return serveStoryboardImage(res, urlParts[2], urlParts[3]);
+        return serveStoryboardImage(res, urlParts[2], urlParts[3], query && query.w);
     }
 
     // /film/projects/:id/storyboard[/generate[/stream]]
@@ -667,7 +667,7 @@ function handleStoryboard(req, res, urlParts, query) {
 
 // ── Serve Static Storyboard Image ──────────────────────────────────
 
-function serveStoryboardImage(res, projectId, filename) {
+function serveStoryboardImage(res, projectId, filename, width) {
     // Sanitize filename: only allow alphanumeric, hyphens, underscores, dots
     if (!/^[\w.-]+$/.test(filename)) {
         return json(res, 400, { error: 'Invalid filename' });
@@ -717,6 +717,38 @@ function serveStoryboardImage(res, projectId, filename) {
         '.jpeg': 'image/jpeg',
         '.webp': 'image/webp',
     };
+
+    /*
+     * A 260px card should not cost 1.5MB.
+     *
+     * Frames are generated at the project's delivery size and the board draws
+     * them a quarter that wide: thirteen shots is 19.8MB fetched to paint
+     * thirteen thumbnails, which is why moving between sections feels slow.
+     * Nothing was broken — the browser was faithfully downloading full-
+     * resolution pictures to throw away nine tenths of every one.
+     *
+     * Falls back to the original whenever a thumbnail cannot be made, encoder
+     * included: an optimisation must never be able to take down the picture.
+     */
+    if (width) {
+        const { thumbnailFor } = require('../lib/thumbnails');
+        return thumbnailFor(filePath, width).then(thumb => {
+            const serving = thumb || filePath;
+            res.writeHead(200, {
+                'Content-Type': thumb ? 'image/jpeg' : (mimeTypes[ext] || 'application/octet-stream'),
+                // The URL already carries the frame version and the cache key
+                // carries the source's mtime and size, so these bytes for this
+                // URL can never change.
+                'Cache-Control': 'public, max-age=86400',
+                'X-Thumbnail': thumb ? 'hit' : 'source',
+            });
+            fs.createReadStream(serving).pipe(res);
+        }).catch(() => {
+            res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+                'Cache-Control': 'public, max-age=3600' });
+            fs.createReadStream(filePath).pipe(res);
+        });
+    }
 
     res.writeHead(200, {
         'Content-Type': mimeTypes[ext] || 'application/octet-stream',

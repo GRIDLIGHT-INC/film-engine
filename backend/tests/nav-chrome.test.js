@@ -58,3 +58,25 @@ test('every rail button reaches something', () => {
         assert.ok(handled || isPage, `${id} is neither a page nor handled explicitly`);
     }
 });
+
+test('the project list is reachable from the current layout', () => {
+    /*
+     * There was no way to switch projects at all. The list is a real page and
+     * both routes to it — the sidebar's "All Projects" button and the sidebar
+     * project list — are display:none in this layout. Identical to the
+     * glossary, which is the reason that one is on the rail: a removal is only
+     * finished when everything that was reachable still is.
+     *
+     * Asserted on the BRAND's handler rather than on the existence of the page,
+     * because the page existed the whole time.
+     */
+    const html = require('fs').readFileSync(
+        require('path').join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+
+    const brand = html.slice(html.indexOf("querySelector('#feBrand')"));
+    const handler = brand.slice(0, brand.indexOf('PHASES.forEach'));
+    assert.ok(/backToProjectList|navBtn\('projects'\)|navigateTo\('projects'\)/.test(handler),
+        'the project name does not lead to the project list, and nothing else in this layout does');
+    assert.ok(/brand\.title\s*=/.test(handler),
+        'the only way to switch projects carries no label, so nobody would find it');
+});
