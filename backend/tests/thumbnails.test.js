@@ -179,3 +179,41 @@ test('a project bundle survives the subdirectories a real project has', () => {
         'the rebuildable thumbnail cache was bundled');
     assert.strictEqual(copied, 2);
 });
+
+test('every image-serving route honours a requested width', () => {
+    /*
+     * The thumbnail path was wired into serveFile() — the one function every
+     * media route goes through — on the reasoning that a per-route thumbnail is
+     * how four of five surfaces get one. That was right about the mechanism and
+     * wrong about the plumbing: serveFile takes the width as an OPTION, and the
+     * routes were not passing it. So the storyboard got thumbnails (its own
+     * serving function was patched directly) and every plate did not, which is
+     * the same "three paths out of four" shape one layer down.
+     *
+     * Found by fetching a real URL and noticing the bytes had not changed —
+     * the sizes were identical, which is the only symptom there is.
+     *
+     * Derived from the call sites rather than listed: a media route added later
+     * inherits the requirement.
+     */
+    const fs = require('fs');
+    const files = ['server.js', 'routes/previs.js', 'routes/threed.js',
+        'routes/video-gen.js', 'routes/music-gen.js', 'routes/voice.js'];
+
+    // Only the subdirectories that hold PICTURES: audio and video have nothing
+    // to thumbnail, and demanding a width there would be noise.
+    const IMAGE_SUBDIRS = ['refsheets', 'loc-refs', 'prop-refs', 'previs'];
+
+    const missing = [];
+    for (const rel of files) {
+        const src = fs.readFileSync(require('path').join(__dirname, '..', rel), 'utf8');
+        for (const line of src.split('\n')) {
+            if (!/serveFile\(/.test(line)) continue;
+            const subdir = IMAGE_SUBDIRS.find(d => line.includes(`'${d}'`));
+            if (!subdir) continue;
+            if (!/width/.test(line)) missing.push(`${rel}: ${subdir} serves without a width option`);
+        }
+    }
+    assert.deepStrictEqual(missing, [],
+        `these serve full-resolution pictures however small the caller asked for:\n  ${missing.join('\n  ')}`);
+});

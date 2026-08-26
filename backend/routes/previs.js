@@ -628,7 +628,12 @@ function exportPrevis(req, res, shotId) {
 function servePrevisMedia(req, res, projectId, fileName) {
     let decoded = fileName;
     try { decoded = decodeURIComponent(fileName); } catch (err) { /* serveFile will reject it */ }
-    return serveFile(res, projectId, 'previs', decoded);
+    // The width comes off the request itself: this helper is not handed the
+    // parsed query, and referencing one that does not exist would throw on
+    // every previs image rather than merely skipping the thumbnail.
+    let width = null;
+    try { width = new URL(req.url, 'http://x').searchParams.get('w'); } catch (_) { width = null; }
+    return serveFile(res, projectId, 'previs', decoded, { width });
 }
 
 // ── Router ──────────────────────────────────────────────────────────────────
