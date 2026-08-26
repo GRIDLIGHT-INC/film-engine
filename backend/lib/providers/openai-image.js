@@ -383,6 +383,12 @@ function meterOpenAI(capability, payload, result) {
 
 const adapter = {
     meter: meterOpenAI,
+    /*
+     * Declared so a pinned model can be checked. The builder accepts any name
+     * beginning `gpt-image` and otherwise falls back to the default, so an
+     * unknown one is currently replaced without a word.
+     */
+    models: Object.freeze({ 'gpt-image-1': {} }),
     id: 'openai',
     kind: 'generator',
     label: 'OpenAI',

@@ -551,3 +551,44 @@ test('the usage meter forwards a receipt rather than dropping it', () => {
         assert.ok(body.includes(field), `the meter drops ${field} before pricing`);
     }
 });
+
+test('a pinned model is checked against the provider that would run it', () => {
+    /*
+     * The Advanced model field was free text, and every image adapter here
+     * falls back to its own default rather than refusing an unknown model. So a
+     * typo — a trailing space, "nanobanana-pro", a model belonging to a
+     * different provider — was stored, sent, and silently ignored, and Meshy's
+     * default is its MOST expensive model. Invisible, and three times the price
+     * the director thought they had chosen.
+     *
+     * Set-based over the image adapters: one that declares no model list cannot
+     * be checked, and that is a gap worth naming rather than an exemption.
+     */
+    const image = providers.list().filter(a => (a.capabilities || []).includes('image'));
+    const undeclared = image.filter(a => a.requiresKey && !a.models).map(a => a.id);
+    assert.deepStrictEqual(undeclared, [],
+        `these adapters declare no model list, so a pinned model cannot be validated `
+        + `against them and a typo would be billed at their default: ${undeclared.join(', ')}`);
+
+    // And the route must actually refuse one.
+    const { handleProviders } = require('../routes/providers');
+    const { db } = require('../db/database');
+    const id = require('crypto').randomUUID();
+    db.prepare('INSERT INTO film_projects (id, title, provider_config) VALUES (?, ?, ?)')
+        .run(id, 'model pin', '{}');
+
+    const res = { statusCode: 0, body: null, setHeader() {},
+        end(b) { this.body = JSON.parse(b || '{}'); }, writeHead(c) { this.statusCode = c; } };
+    handleProviders({ method: 'PUT', body: { config: { image: 'meshy', image_model: 'nanobanana-pro' } } },
+        res, ['film', 'projects', id, 'providers'], {});
+    assert.strictEqual(res.statusCode, 400, 'a model the provider does not offer was accepted');
+    assert.ok(Array.isArray(res.body.available_models) && res.body.available_models.length,
+        'the refusal does not say what IS available, so it cannot be acted on');
+
+    // The real one still saves.
+    const ok = { statusCode: 0, body: null, setHeader() {},
+        end(b) { this.body = JSON.parse(b || '{}'); }, writeHead(c) { this.statusCode = c; } };
+    handleProviders({ method: 'PUT', body: { config: { image: 'meshy', image_model: 'nano-banana' } } },
+        ok, ['film', 'projects', id, 'providers'], {});
+    assert.strictEqual(ok.body.config.image_model, 'nano-banana');
+});

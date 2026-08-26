@@ -611,6 +611,13 @@ function meterMeshy(capability, payload, result) {
 
 const adapter = {
     meter: meterMeshy,
+    /*
+     * The image models this provider actually offers, declared so a pinned
+     * model can be CHECKED. Without it a typo is stored, sent, and silently
+     * falls back to Meshy's own default — nano-banana-pro at 9 credits — while
+     * the director believes they pinned the 3-credit one.
+     */
+    models: Object.freeze(Object.fromEntries(IMAGE_MODELS.map(id => [id, {}]))),
     id: 'meshy',
     kind: 'generator',
     label: 'Meshy (3D + image)',

@@ -686,6 +686,12 @@ const adapter = {
     // resolve() hands back this object, so a describer that lives only in
     // module.exports is invisible to every caller and the preview falls
     // back to reporting the payload as fact.
+    /*
+     * The image models this adapter accepts, declared so a pinned model can be
+     * CHECKED rather than silently replaced by pickModel's fallback. Derived
+     * from KNOWN_IMAGE_MODELS so the two cannot disagree.
+     */
+    models: Object.freeze(Object.fromEntries([...KNOWN_IMAGE_MODELS].map(id => [id, {}]))),
     describeVideoRequest,
     maxKeyframes: MAX_KEYFRAMES,
     maxReferenceImages: 3,

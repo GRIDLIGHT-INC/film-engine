@@ -225,8 +225,34 @@ function setProjectProviders(req, res, projectId) {
         // Present but blank means "stop pinning a model" — ignoring it would
         // make the Advanced field impossible to undo once used.
         const m = incoming.image_model.trim();
-        if (m) clean.image_model = m.slice(0, 80);
-        else delete clean.image_model;
+        if (!m) delete clean.image_model;
+        else {
+            /*
+             * A PINNED MODEL IS CHECKED AGAINST THE PROVIDER THAT WOULD RUN IT.
+             *
+             * This was free text. A typo — a trailing space, `nanobanana-pro`,
+             * a model belonging to a different provider — was stored, sent, and
+             * silently ignored: every image adapter here falls back to its own
+             * default rather than refusing, and Meshy's default is its most
+             * expensive model. So the failure is invisible AND costs three
+             * times what the director thought they had chosen.
+             *
+             * Checked against whichever provider this project would actually
+             * use, since a model only means anything relative to one.
+             */
+            const target = clean.image || providers.resolveId('image', clean);
+            const adapter = providers.get(target);
+            const known = adapter && adapter.models ? Object.keys(adapter.models) : null;
+            if (known && !known.includes(m)) {
+                return json(res, 400, {
+                    error: `${target} does not offer a model called "${m}"`,
+                    provider: target,
+                    available_models: known,
+                    hint: 'Leave the model blank to let the quality tier choose.',
+                });
+            }
+            clean.image_model = m.slice(0, 80);
+        }
     }
 
     db.prepare('UPDATE film_projects SET provider_config = ?, updated_at = datetime(\'now\') WHERE id = ?')
