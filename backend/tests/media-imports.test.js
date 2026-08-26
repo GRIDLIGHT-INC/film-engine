@@ -79,7 +79,17 @@ function seed() {
     db.prepare('INSERT INTO film_characters (id, project_id, name) VALUES (?, ?, ?)').run(characterId, projectId, 'MAYA');
     db.prepare('INSERT INTO film_locations (id, project_id, name) VALUES (?, ?, ?)').run(locationId, projectId, 'STREET');
     db.prepare('INSERT INTO film_props (id, project_id, name) VALUES (?, ?, ?)').run(propId, projectId, 'SEDAN');
-    return { projectId, shotId, sceneId, characterId, locationId, propId };
+    /*
+     * The two surfaces whose whole content is a picture and which could only be
+     * pointed at by server path: a continuity reference (a photograph of what
+     * was actually shot) and a marketing asset (a poster made in a design tool).
+     */
+    const continuityId = generateId(), marketingId = generateId();
+    db.prepare('INSERT INTO film_continuity_refs (id, project_id, ref_type, title) VALUES (?, ?, ?, ?)')
+        .run(continuityId, projectId, 'visual', 'Wet street, night');
+    db.prepare('INSERT INTO film_marketing_assets (id, project_id, type, title) VALUES (?, ?, ?, ?)')
+        .run(marketingId, projectId, 'poster', 'Teaser one-sheet');
+    return { projectId, shotId, sceneId, characterId, locationId, propId, continuityId, marketingId };
 }
 
 /** A minimal but genuinely valid file of each media kind. */
@@ -130,6 +140,9 @@ test('every registered director import persists, registers, serves and has a UI 
     const expected = [
         'character-plate', 'location-plate', 'mood-board-image', 'previs-image',
         'prop-plate', 'storyboard-image', 'three-d-model',
+        // A continuity reference is a photograph of what was actually shot, and
+        // could previously only be pointed at by a path on the server's disk.
+        'continuity-ref',
         ...Object.values(MEDIA_KINDS).filter(k => k.media !== 'image').map(k => `${k.capability}-media`),
     ].sort();
     assert.deepStrictEqual(entries.map(([id]) => id).sort(), expected);
@@ -287,6 +300,10 @@ test('every registered import is reachable through its production route', async 
         'mood-board-image': {
             handler: require('../routes/mood-board').handleMoodBoard,
             url: o => `/film/projects/${o.projectId}/mood-board/import`, mime: 'image/png', bytes: PNG, name: 'still.png',
+        },
+        'continuity-ref': {
+            handler: require('../routes/continuity').handleContinuity,
+            url: o => `/film/continuity/${o.continuityId}/import`, mime: 'image/png', bytes: PNG, name: 'wet-street.png',
         },
         /*
          * The seven media capabilities share ONE route, so they are generated

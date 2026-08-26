@@ -347,6 +347,7 @@ test('every import target is reachable from an agent', () => {
         'storyboard-image': 'storyboard_upload',
         'previs-image': 'previs_image_upload',
         'three-d-model': 'model_upload',
+        'continuity-ref': 'continuity_upload',
     };
 
     const unreachable = [];

@@ -11,7 +11,47 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const VALID_REF_TYPES = ['visual', 'wardrobe', 'prop', 'lighting', 'color', 'framing'];
 
+/**
+ * A continuity reference made outside Film Engine.
+ *
+ * `image_path` could only be set by POSTing a STRING — a path on the server's
+ * own disk — which from a browser is unusable, so in practice this board could
+ * not hold a picture at all. And a continuity reference is a photograph of what
+ * was actually shot: the upload is the normal case here, not the escape hatch.
+ */
+function importContinuityImage(req, res, refId) {
+    // This module answers by writing the head itself rather than through a
+    // json() helper; matching that is what keeps the handler's failure path
+    // real instead of a ReferenceError swallowed into a 400.
+    const reply = (code, payload) => {
+        res.writeHead(code, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(payload));
+    };
+
+    const ref = db.prepare('SELECT * FROM film_continuity_refs WHERE id = ?').get(refId);
+    if (!ref) return reply(404, { error: 'Continuity reference not found' });
+    const body = req.body || {};
+    if (!body.data) return reply(400, { error: 'no image supplied' });
+    try {
+        const { importMedia } = require('../lib/media-imports');
+        const imported = importMedia('continuity-ref', {
+            projectId: ref.project_id, data: body.data, name: body.name || ref.title,
+        });
+        db.prepare('UPDATE film_continuity_refs SET image_path = ?, asset_id = ? WHERE id = ?')
+            .run(imported.file_path, imported.asset_id, refId);
+        return reply(201, {
+            ref: db.prepare('SELECT * FROM film_continuity_refs WHERE id = ?').get(refId),
+            ...imported,
+        });
+    } catch (err) {
+        return reply(/not found/i.test(err.message) ? 404 : 400, { error: err.message });
+    }
+}
+
 function handleContinuity(req, res, urlParts, query) {
+    if (urlParts[1] === 'continuity' && urlParts[2] && urlParts[3] === 'import' && req.method === 'POST') {
+        return importContinuityImage(req, res, urlParts[2]);
+    }
     // /film/projects/:id/continuity[/board]
     if (urlParts[1] === 'projects' && urlParts[3] === 'continuity') {
         const projectId = urlParts[2];

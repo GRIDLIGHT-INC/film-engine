@@ -32,6 +32,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
 const { handleProviders } = require('../routes/providers');
+const { handleContinuity } = require('../routes/continuity');
 const { handleStoryStructure } = require('../routes/story-structure');
 const { handleScripts } = require('../routes/scripts');
 const { handleScenes } = require('../routes/scenes');
@@ -289,6 +290,26 @@ const PRODUCTION_TOOLS = [
             force: { type: 'boolean', description: 'Replace a frame on a LOCKED board.' },
         },
         required: ['shot_id', 'image'],
+    },
+    {
+        name: 'continuity_upload',
+        handler: handleContinuity, method: 'POST',
+        path: a => `/film/continuity/${a.ref_id}/import`,
+        body: a => ({ data: a.image, name: a.name }),
+        description:
+            'Attach a picture to a continuity reference. FREE \u2014 nothing is generated. A '
+            + 'continuity reference records what a thing ACTUALLY looked like when it was shot, so '
+            + 'the picture is normally a photograph or a frame you already have rather than '
+            + 'something made for the purpose. image is a PNG or JPEG data URI. It replaces '
+            + 'whatever that reference was showing. Note this is a record for people to compare '
+            + 'against \u2014 it is NOT a generation reference, and no prompt reads it; use '
+            + 'plate_upload if you want a picture that conditions future frames.',
+        schema: {
+            ref_id: { type: 'string', description: 'The continuity reference id (see continuity board).' },
+            image: { type: 'string', description: 'data:image/png;base64,... or data:image/jpeg;base64,...' },
+            name: { type: 'string', description: 'Optional filename; the reference title is used otherwise.' },
+        },
+        required: ['ref_id', 'image'],
     },
     {
         name: 'previs_image_upload',

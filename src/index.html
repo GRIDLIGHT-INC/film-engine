@@ -23339,6 +23339,14 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // FILM-163: CONTINUITY BOARD
     // ══════════════════════════════════════════════════════════════
+    /** The served URL for a continuity photograph, keyed to the asset that holds it. */
+    function continuityImgSrc(r) {
+        // Plates and board images are served from the refsheets directory, which
+        // is where an imported continuity picture lands too.
+        const name = String(r.image_path || '').split('/').pop();
+        return `${API_BASE}/film/refsheets/${state.currentProject.id}/${encodeURIComponent(name)}?w=480`;
+    }
+
     async function loadContinuity() {
         if (!state.currentProject) return;
         setStatus('Loading continuity board...');
@@ -23383,7 +23391,13 @@ ${fountainText.slice(0, 50000)}`;
                         </div>
                         <p class="text-sm">${esc(r.description || '')}</p>
                         ${r.tags ? '<div class="tag-row" style="margin-top:8px;">' + r.tags.split(',').map(t => '<span class="tag">' + esc(t.trim()) + '</span>').join('') + '</div>' : ''}
-                        <div style="margin-top:8px;">
+                        ${r.image_path ? `<img src="${continuityImgSrc(r)}" alt=""
+                              style="width:100%;border-radius:6px;margin-top:8px;display:block;">` : ''}
+                        <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+                            ${uploadControl('continuity-ref', `/continuity/${r.id}/import`,
+                                { extra: {}, after: 'loadContinuity',
+                                  label: r.image_path ? 'Replace' : 'Upload',
+                                  title: 'A continuity reference is usually a photograph of what was actually shot' })}
                             <button class="btn btn-danger btn-sm" onclick="deleteContinuityRef('${r.id}')">Delete</button>
                         </div>
                     </div>

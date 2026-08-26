@@ -109,6 +109,40 @@ const MEDIA_IMPORTS = Object.freeze({
     'mood-board-image': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
 
     /*
+     * THE TWO IMAGE SURFACES THAT COULD ONLY BE POINTED AT, NOT UPLOADED.
+     *
+     * Both `film_continuity_refs` and `film_marketing_assets` carry an
+     * `image_path` column that could only be set by POSTing a STRING — a path
+     * on the server's own disk. From a browser that is unusable, so in practice
+     * neither surface could hold a picture at all, and both are surfaces whose
+     * whole content is a picture.
+     *
+     * They are also the two where an upload is the NORMAL case rather than the
+     * escape hatch. A continuity reference is a photograph of what was actually
+     * shot. A poster is made in Photoshop — and `POST /marketing/:id/generate`
+     * generates nothing at all: it sets the status to 'generating' and returns
+     * a hint telling you to call an image API yourself, which it has done since
+     * the day it shipped.
+     */
+    'continuity-ref': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
+
+    /*
+     * MARKETING IS NOT HERE, and the reason is worth recording rather than
+     * leaving as an omission somebody closes later by accident.
+     *
+     * `film_marketing_assets` has the same `image_path`-by-string problem, and
+     * `POST /marketing/:id/generate` has never generated anything — it sets the
+     * status to 'generating' and returns a hint telling the caller to invoke an
+     * image API themselves. But the SPA has no marketing page at all: no route
+     * into it, no nav entry, nothing that renders the table. Registering an
+     * import for a surface nobody can reach would put a target in this registry
+     * with no control behind it, which is precisely the state the coverage test
+     * exists to prevent — and it would report the feature as complete.
+     *
+     * The gap to close first is the page, not the upload.
+     */
+
+    /*
      * FOOTAGE AND SOUND, from outside.
      *
      * "Are we able to upload videos if we generate outside... we need to be

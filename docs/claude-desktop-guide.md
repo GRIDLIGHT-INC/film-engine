@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**160 tools, 41 families.** Everything the app can do, you can ask for in a
+**161 tools, 42 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -148,6 +148,11 @@ Then `video_preview` shows exactly what a clip would cost before you buy one.
 - `storyboard_recompose` — keep the PERFORMANCE from one frame and replace its BACKGROUND with a photographed view of the shot's location. Use it when the acting, framing and camera are right and the place behind them is wrong; `storyboard_refine` cannot, because its contract refuses composition changes and on a close-up the background is most of the composition. The background must be a view of that shot's own location — photograph the view you need first. Costs credits.
 `anchor_get` · `anchor_set` · `anchor_clear` · `annotation_list` ·
 `annotation_delete`
+
+`continuity_upload` attaches a picture to a continuity reference — normally a
+photograph of what was actually shot. It is a record for people to compare
+against, **not** a generation reference: no prompt reads it. Use `plate_upload`
+for a picture that should condition future frames.
 
 **How good the frame needs to be is a choice, and it has a tool.** `quality_get`
 reads the project's image quality tier and tells you what each tier would
