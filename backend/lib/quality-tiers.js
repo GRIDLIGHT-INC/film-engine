@@ -77,11 +77,21 @@ const IMAGE_TIERS = Object.freeze({
         label: 'Standard',
         why: 'Most storyboard frames. Built for reconciling several reference images at once, '
             + 'which is what a keyframe carrying a character plate, a location plate and an anchor actually is.',
-        // Meshy stays in front here: $0.060 against Google's $0.067 for the
-        // same model, and it is what this board has been generating on.
-        order: ['meshy', 'google', 'bfl', 'openai', 'runway', 'gridlight'],
+        /*
+         * Google leads, on a corrected number.
+         *
+         * Meshy was in front here because nano-banana-2 was priced at 3
+         * credits. Meshy's own pricing page says SIX — $0.12 against Google's
+         * $0.067 for the identical model, so the reseller was costing 79% for
+         * nothing on the tier that generates most of a board. Thirteen shots is
+         * $1.56 through Meshy and $0.87 direct.
+         *
+         * Meshy stays next in line: it is what this board has been generating
+         * on, and it is the fallback when no Google key is present.
+         */
+        order: ['google', 'meshy', 'bfl', 'openai', 'runway', 'gridlight'],
         models: Object.freeze({
-            meshy: 'nano-banana-2', google: 'gemini-3.1-flash-image', bfl: 'flux-2-pro',
+            google: 'gemini-3.1-flash-image', meshy: 'nano-banana-2', bfl: 'flux-2-pro',
         }),
     }),
     precision: Object.freeze({

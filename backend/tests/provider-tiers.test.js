@@ -442,3 +442,63 @@ test('a per-generation quality moves the provider as well as the model', () => {
             `${tier} resolved to ${provider} with no model, so the provider picks its own default`);
     }
 });
+
+test('the Meshy image rates match what Meshy publishes', () => {
+    /*
+     * These were wrong, and the wrongness was invisible: nano-banana-2 was
+     * priced at 3 credits when Meshy's own page says SIX. That halved the
+     * apparent cost of the tier most of a board is generated on, and it put a
+     * reseller in front of buying the identical model from Google direct — a
+     * routing decision taken on a number nobody had checked.
+     *
+     * Pinned to the published credit counts rather than to dollars, because the
+     * dollar value of a credit is NOT published and is a per-plan assumption.
+     */
+    const { rateFor } = require('../lib/provider-pricing');
+    const PUBLISHED_CREDITS = {
+        'nano-banana': 3,
+        'nano-banana-2': 6,
+        'nano-banana-pro': 9,
+        'gpt-image-2': 9,
+        // Image-to-image is dearer for gpt-image-2 only, and board generation
+        // always attaches references — so this is the path a real frame takes.
+        'gpt-image-2-i2i': 12,
+    };
+    const wrong = [];
+    for (const [model, credits] of Object.entries(PUBLISHED_CREDITS)) {
+        const rate = rateFor('meshy', 'image', model);
+        if (!rate) { wrong.push(`${model}: unpriced`); continue; }
+        if (rate.native_per_unit !== credits) {
+            wrong.push(`${model}: priced at ${rate.native_per_unit} credits, Meshy publishes ${credits}`);
+        }
+    }
+    assert.deepStrictEqual(wrong, [], wrong.join('; '));
+
+    // And the meter must reach the dearer entry when references travel, or the
+    // rate exists and nothing ever selects it.
+    const providersReg = require('../lib/providers');
+    const meshy = providersReg.get('meshy');
+    assert.strictEqual(meshy.meter('image', { model: 'gpt-image-2' }, null).model, 'gpt-image-2');
+    assert.strictEqual(
+        meshy.meter('image', { model: 'gpt-image-2', reference_images: ['a'] }, null).model,
+        'gpt-image-2-i2i',
+        'a referenced generation is metered at the text-to-image price');
+});
+
+test('every Meshy image model can deliver a widescreen frame', () => {
+    /*
+     * gpt-image-2 was listed as 1:1/3:2/2:3, so a 16:9 project snapped to
+     * SQUARE on that model — a widescreen film boarded in a format it does not
+     * ship in, with nothing said. Meshy documents 16:9 and 9:16 for it.
+     */
+    const meshy = require('../lib/providers/meshy');
+    const snap = meshy.snapMeshyRatio || meshy._internal.snapMeshyRatio;
+    const models = meshy.IMAGE_MODELS || meshy._internal.IMAGE_MODELS;
+    const wrong = [];
+    for (const model of models) {
+        if (snap('16:9', model) !== '16:9') wrong.push(`${model}: 16:9 snaps to ${snap('16:9', model)}`);
+        if (snap('9:16', model) !== '9:16') wrong.push(`${model}: 9:16 snaps to ${snap('9:16', model)}`);
+    }
+    assert.deepStrictEqual(wrong, [],
+        `a widescreen project would be boarded square: ${wrong.join('; ')}`);
+});

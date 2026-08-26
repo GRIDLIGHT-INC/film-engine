@@ -237,13 +237,26 @@ const RATE_BOOK = {
         unit: 'call', native_unit: 'credit', native_per_unit: 9, usd_per_native: 0.02,
         models: {
             'nano-banana':     { native_per_unit: 3 },
-            'nano-banana-2':   { native_per_unit: 3 },
+            // SIX, not three. This was priced at 3 and it is 6, which made the
+            // Standard tier look half its real cost and put Meshy in front of
+            // buying the same model from Google direct — a routing decision
+            // taken on a wrong number.
+            'nano-banana-2':   { native_per_unit: 6 },
             'nano-banana-pro': { native_per_unit: 9 },
             'gpt-image-2':     { native_per_unit: 9 },
+            /*
+             * IMAGE-TO-IMAGE IS NOT THE SAME PRICE.
+             *
+             * Meshy prices gpt-image-2 at 9 credits for text-to-image and 12
+             * for image-to-image, and this engine's board generation ALWAYS
+             * attaches references — so the path a real frame takes is the
+             * dearer one. The nano-banana family costs the same either way.
+             */
+            'gpt-image-2-i2i': { native_per_unit: 12 },
         },
         source: 'https://docs.meshy.ai/en/api/pricing',
-        checked: '2026-08-22',
-        note: 'Credit costs are published; the USD value of a credit is not. $0.02 is the Pro plan rate ($20 / 1,000 credits). Override in Budget → Rates if you are on another plan.',
+        checked: '2026-08-26',
+        note: 'Credit costs are published; the USD value of a credit is not. $0.02 is the Pro plan rate ($20 / 1,000 credits). Override in Budget → Rates if you are on another plan. nano-banana 3, nano-banana-2 6, nano-banana-pro 9, gpt-image-2 9 text-to-image and 12 image-to-image.',
     },
     'meshy:model3d': {
         unit: 'call', native_unit: 'credit', native_per_unit: 20, usd_per_native: 0.02,

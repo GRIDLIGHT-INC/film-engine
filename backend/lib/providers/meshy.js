@@ -26,16 +26,20 @@ const { getCredential } = require('./credentials');
 
 const DEFAULT_BASE_URL = 'https://api.meshy.ai';
 
-// Meshy's own naming. gpt-image-2 supports only 1:1, 3:2 and 2:3; the
-// nano-banana family adds 16:9, 9:16, 4:3 and 3:4 — neither offers a scope
-// ratio, so a 2.39:1 production gets the widest available and is cropped in
-// the NLE rather than being silently delivered square.
+// Meshy's own naming. Every model here takes 1:1, 16:9 and 9:16; the
+// nano-banana family adds 4:3 and 3:4, gpt-image-2 adds 3:2 and 2:3. None
+// offers a scope ratio, so a 2.39:1 production gets the widest available and is
+// cropped in the NLE rather than being silently delivered square.
+//
+// gpt-image-2 was listed as 1:1/3:2/2:3 only, which snapped every 16:9 project
+// to SQUARE on that model — a widescreen film boarded in a format it does not
+// ship in, with nothing said.
 const IMAGE_MODELS = ['nano-banana-pro', 'nano-banana-2', 'nano-banana', 'gpt-image-2'];
 const DEFAULT_IMAGE_MODEL = process.env.MESHY_IMAGE_MODEL || 'nano-banana-pro';
 // image-to-image accepts 1-5; a sixth is a validation failure, not a trim.
 const MAX_REFERENCE_IMAGES = 5;
 const IMAGE_RATIOS = {
-    'gpt-image-2': ['1:1', '3:2', '2:3'],
+    'gpt-image-2': ['1:1', '16:9', '9:16', '3:2', '2:3'],
     _default: ['1:1', '16:9', '9:16', '4:3', '3:4'],
 };
 
@@ -514,8 +518,16 @@ async function health() {
 function meterMeshy(capability, payload, result) {
     const p = payload || {};
     if (capability === 'image') {
-        const model = (result && result.provider_model)
+        const base = (result && result.provider_model)
             || (IMAGE_MODELS.includes(p.model) ? p.model : DEFAULT_IMAGE_MODEL);
+        /*
+         * Which ENDPOINT ran, because for gpt-image-2 they are different
+         * prices: 9 credits text-to-image, 12 image-to-image. Board generation
+         * always attaches references, so the real path is the dearer one and
+         * pricing it at 9 under-reports every frame by a quarter.
+         */
+        const refs = (p.reference_images || []).length || (p.init_image ? 1 : 0);
+        const model = (base === 'gpt-image-2' && refs) ? 'gpt-image-2-i2i' : base;
         return { unit: 'call', quantity: 1, model };
     }
     if (capability === 'model3d') {
