@@ -592,3 +592,45 @@ test('a pinned model is checked against the provider that would run it', () => {
         ok, ['film', 'projects', id, 'providers'], {});
     assert.strictEqual(ok.body.config.image_model, 'nano-banana');
 });
+
+test('every Meshy image model is selectable, and an unknown one never reaches the provider', () => {
+    /*
+     * "Can I go into another project and use nano-banana-2 or nano-banana-pro?"
+     *
+     * Derived from the adapter's own list rather than typed here, so a model
+     * Meshy adds later is covered or this fails.
+     */
+    const { withTierModel } = require('../lib/capability-payloads');
+    const meshy = providers.get('meshy');
+    const models = Object.keys(meshy.models);
+    assert.ok(models.length >= 4, `expected Meshy's four image models, found ${models.length}`);
+
+    for (const model of models) {
+        const payload = withTierModel({ prompt: 'x' },
+            { project: { id: 'p', provider_config: JSON.stringify({ image: 'meshy', image_model: model }) } },
+            meshy);
+        assert.strictEqual(payload.model, model,
+            `pinning ${model} sent ${payload.model} instead`);
+    }
+
+    /*
+     * And an unknown name must NOT travel. Every image adapter falls back to
+     * its own default rather than refusing, and Meshy's default is its dearest
+     * model — so a typo is silent and costs three times what was chosen.
+     *
+     * This was checked in two places and one undid the other: withTierModel
+     * rejected the name and fell through to resolveTier, whose pinned branch
+     * re-applied it unconditionally. Two checks with one cancelling the other
+     * is worse than neither, because it reads as validated.
+     */
+    const typo = withTierModel({ prompt: 'x' },
+        { project: { id: 'p', provider_config: JSON.stringify({ image: 'meshy', image_quality: 'standard', image_model: 'nanobanana-2' }) } },
+        meshy);
+    assert.ok(models.includes(typo.model),
+        `an unknown pinned model reached the provider as "${typo.model}"`);
+
+    const { resolveTier } = require('../lib/quality-tiers');
+    const r = resolveTier('standard', { image: 'meshy', image_model: 'nanobanana-2' });
+    assert.match(r.reason, /not one it offers/i,
+        'the substitution is silent — a director would believe their pin applied');
+});

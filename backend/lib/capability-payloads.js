@@ -612,7 +612,31 @@ function withTierModel(payload, ctx, adapter) {
     // A per-generation choice outranks the project's standing tier: the
     // director is looking at this frame, not at the settings page.
     const cfg = (ctx && ctx.tierOverride) ? { ...base, ...ctx.tierOverride } : base;
-    if (cfg.image_model) { payload.model = cfg.image_model; return payload; }
+    if (cfg.image_model) {
+        /*
+         * Checked HERE too, not only where it is saved.
+         *
+         * The settings route refuses a model the provider does not offer, but
+         * a per-generation override reaches this function without passing
+         * through it — so an unknown name went straight to the provider, which
+         * falls back to its own default rather than refusing. On Meshy that
+         * default is the most expensive model it sells, so the mistake is
+         * silent and costs three times what was asked for.
+         *
+         * An adapter that declares no model list cannot be checked; its pin is
+         * passed through as before.
+         */
+        const known = adapter.models ? Object.keys(adapter.models) : null;
+        if (!known || known.includes(cfg.image_model)) {
+            payload.model = cfg.image_model;
+            Object.defineProperty(payload, '__model_for', {
+                value: adapter.id, enumerable: false, configurable: true, writable: true,
+            });
+            return payload;
+        }
+        // Unknown: fall through to the tier, which names a model this provider
+        // really has, rather than letting the provider pick its dearest.
+    }
     if (!adapter || !adapter.id) return payload;
     try {
         const { resolveTier } = require('./quality-tiers');

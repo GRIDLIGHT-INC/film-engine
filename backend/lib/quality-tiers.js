@@ -201,14 +201,30 @@ function resolveTier(tier, config, request) {
          */
         const tierName = String(tier || cfg.image_quality || '').toLowerCase();
         const spec = IMAGE_TIERS[tierName === 'auto' ? autoTier(request) : tierName];
-        const model = cfg.image_model || (spec && spec.models[cfg.image]) || null;
+        /*
+         * A pinned model only counts if the provider actually offers it.
+         *
+         * Without this the fall-through from withTierModel's own check lands
+         * here and re-applies the bad name — two checks, one of them undoing
+         * the other, which is worse than having neither because it reads as
+         * validated.
+         */
+        const adapter = providers.get(cfg.image);
+        const known = adapter && adapter.models ? Object.keys(adapter.models) : null;
+        const pinnedModel = (cfg.image_model && (!known || known.includes(cfg.image_model)))
+            ? cfg.image_model : null;
+        const model = pinnedModel || (spec && spec.models[cfg.image]) || null;
         return {
             provider: cfg.image,
             model,
             tier: spec ? (tierName === 'auto' ? autoTier(request) : tierName) : null,
             pinned: true,
             reason: `This project explicitly chose ${cfg.image}`
-                + (model ? `, and ${spec && spec.models[cfg.image] === model && !cfg.image_model ? 'the ' + spec.label.toLowerCase() + ' tier asks it for ' : 'it is pinned to '}${model}.` : ', so the quality tier was not consulted.'),
+                + (cfg.image_model && !pinnedModel
+                    ? `, and the pinned model "${cfg.image_model}" is not one it offers — using ${model}.`
+                    : model
+                        ? `, and ${spec && spec.models[cfg.image] === model && !pinnedModel ? 'the ' + spec.label.toLowerCase() + ' tier asks it for ' : 'it is pinned to '}${model}.`
+                        : ', so the quality tier was not consulted.'),
         };
     }
 
