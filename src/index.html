@@ -21983,28 +21983,24 @@ ${fountainText.slice(0, 50000)}`;
      */
     async function refineLocationView(locationId, view) {
         const what = prompt('What should change?\n\n'
-            + 'One instruction, and everything else in the picture is kept:\n'
-            + '  make the road wet\n'
-            + '  add low fog along the kerb\n'
-            + '  take the parked car out\n'
-            + '  make it later in the evening');
+            + 'One instruction — "wetter road", "overcast instead of blue hour". The picture is '
+            + 'attached, so do not re-describe the place.');
         if (!what || !what.trim()) return;
-        if (!confirm(`Refine ${view || 'the default plate'}?\n\n"${what.trim()}"\n\n`
-            + 'This costs credits and REPLACES this plate — the current picture is gone. '
-            + 'Everything else in it is kept: the same place, the same camera, the same framing.')) return;
-
-        setStatus('Refining the plate…', true);
-        try {
-            const r = await api(`/locations/${locationId}/plate/refine`, {
-                method: 'POST',
-                body: JSON.stringify({ instruction: what.trim(), ...(view ? { view } : {}) }),
-            });
-            setStatus(`${view || 'Default plate'} refined: "${r.instruction}". ${r.note || ''}`);
-        } catch (err) {
-            setStatus('Could not refine: ' + err.message);
-            alert('Could not refine this plate.\n\n' + err.message);
-        }
-        renderLocationViews(locationId);
+        const q = new URLSearchParams({ instruction: what.trim(), ...(view ? { view } : {}) });
+        return confirmPaidImage({
+            title: 'Refine this plate',
+            note: 'This REPLACES the plate for this view. The previous picture is gone.',
+            previewUrl: `/locations/${locationId}/refine-preview?${q}`,
+            send: async choices => {
+                setStatus('Refining plate...', true);
+                try {
+                    await api(`/locations/${locationId}/plate/refine`, { method: 'POST',
+                        body: JSON.stringify({ instruction: what.trim(), ...(view ? { view } : {}), ...choices }) });
+                    setStatus('Plate refined.');
+                    loadLocations();
+                } catch (err) { setStatus('Could not refine: ' + err.message); }
+            },
+        });
     }
 
     /** Ask for a camera position and photograph it, anchored on what exists. */
@@ -22035,12 +22031,30 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     /** The other remedy, named so the cost is visible before it is chosen. */
-    async function regeneratePlate(kind, id) {
-        if (!confirm('Generate a new plate? This replaces the current image, costs credits, and may not reproduce it.')) return;
-        closeModal('entityInspectModal');
-        if (kind === 'character') return generateCharacterImage(id);
-        if (kind === 'location') return generateLocationImage(id);
-        return generatePropImage(id);
+    async function regeneratePlate(kind, subjectId, view) {
+        const base = kind === 'character' ? `/characters/${subjectId}/refsheet`
+            : kind === 'prop' ? `/props/${subjectId}/plate`
+            : `/locations/${subjectId}/plate`;
+        const previewUrl = kind === 'character'
+            ? `${base}/preview`
+            : `${base}-preview${view ? `?view=${encodeURIComponent(view)}` : ''}`;
+        return confirmPaidImage({
+            title: 'Generate this plate',
+            note: 'A plate conditions every frame its subject appears in. This replaces the '
+                + 'current one for this view and costs credits.',
+            previewUrl,
+            send: async choices => {
+                setStatus('Generating plate...', true);
+                try {
+                    await api(`${base}/generate`, { method: 'POST',
+                        body: JSON.stringify({ ...choices, ...(view ? { view } : {}) }) });
+                    setStatus('Plate generated.');
+                    if (kind === 'character') loadCharacters();
+                    else if (kind === 'prop') loadProps();
+                    else loadLocations();
+                } catch (err) { setStatus('Could not generate: ' + err.message); }
+            },
+        });
     }
 
     async function loadCharacters() {
@@ -23503,25 +23517,20 @@ ${fountainText.slice(0, 50000)}`;
      * paid path in the app follows.
      */
     async function generateMarketingArt(id) {
-        let d = null;
-        try { d = await api(`/marketing/${id}/preview`); }
-        catch (err) { setStatus('Could not read what would be sent: ' + err.message); return; }
-
-        const ok = confirm(
-            `Generate this artwork?\n\n`
-            + `Provider: ${d.provider || 'unknown'}\n`
-            + `Size: ${d.width}x${d.height} (${d.aspect_ratio || 'no ratio set'})\n`
-            + `Film's look applied: ${d.style_applied ? 'yes' : 'NO — this project has no style preset, so the art will not match the film'}\n\n`
-            + `What it will be asked for (${d.prompt_length} characters):\n${d.prompt}\n\n`
-            + `This costs credits and replaces any existing artwork on this asset.`);
-        if (!ok) return;
-
-        setStatus('Generating artwork...', true);
-        try {
-            const res = await api(`/marketing/${id}/generate`, { method: 'POST', body: '{}' });
-            setStatus(res.provider ? `Artwork generated via ${res.provider}.` : 'Artwork generated.');
-            loadMarketing();
-        } catch (err) { setStatus('Could not generate: ' + err.message); }
+        return confirmPaidImage({
+            title: 'Generate this artwork',
+            note: 'This replaces any existing artwork on this asset and costs credits.',
+            previewUrl: `/marketing/${id}/preview`,
+            send: async choices => {
+                setStatus('Generating artwork...', true);
+                try {
+                    const res = await api(`/marketing/${id}/generate`,
+                        { method: 'POST', body: JSON.stringify(choices) });
+                    setStatus(res.provider ? `Artwork generated via ${res.provider}.` : 'Artwork generated.');
+                    loadMarketing();
+                } catch (err) { setStatus('Could not generate: ' + err.message); }
+            },
+        });
     }
 
     async function deleteMarketingAsset(id) {
@@ -28037,8 +28046,43 @@ ${fountainText.slice(0, 50000)}`;
             + rows + '</div>';
     }
 
+    /** The model choice for a batch, captured from the shared confirmation. */
+    let BATCH_CHOICES = null;
+
     async function generateAllStoryboards() {
         if (!state.currentProject) return;
+
+        /*
+         * The batch had NO confirmation at all — the most expensive control in
+         * the app, generating every unshot frame in the film, went straight to
+         * the provider. Every single-frame path was gated and this one was not,
+         * which is the wrong way round.
+         *
+         * The prompt is READ-ONLY here and says why: a batch composes one
+         * prompt PER SHOT, so there is no single text to edit, and offering one
+         * would silently apply it to every frame in the film. The model choice
+         * still applies — that is a decision about the whole run.
+         */
+        BATCH_CHOICES = null;
+        const shots = (state.shots || []);
+        const todo = shots.filter(x => !x.has_keyframe && !x.keyframe);
+        const first = (todo[0] || shots[0] || {});
+        const shotId = first.shot_id || first.id;
+        if (shotId) {
+            const go = await new Promise(resolve => confirmPaidImage({
+                title: `Generate ${todo.length || shots.length} frame(s)`,
+                note: `This generates every shot that has no frame yet — ${todo.length || shots.length} `
+                    + 'of them — and each one costs credits. The prompt below is the FIRST shot, '
+                    + 'shown so you can see the shape of what is sent.',
+                previewUrl: `/shots/${shotId}/prompt`,
+                editable: false,
+                notEditableWhy: 'A batch composes a different prompt for every shot, so there is no '
+                    + 'single text to edit. Regenerate one frame to edit its prompt.',
+                send: choices => { BATCH_CHOICES = choices; resolve(true); },
+            }).then(() => resolve(BATCH_CHOICES !== null)));
+            if (!go) return;
+        }
+
         const prog = document.getElementById('storyboardProgress');
         const bar = document.getElementById('storyboardProgressBar');
         const lbl = document.getElementById('storyboardProgressLabel');
@@ -28056,8 +28100,17 @@ ${fountainText.slice(0, 50000)}`;
         let totalShots = 1;
 
         const useRefs = document.getElementById('useReferencesToggle').checked;
+        /*
+         * The batch is a GET stream, so the model choice rides in the query
+         * rather than a body — captured from the confirmation above. Without
+         * this the picker would be shown, chosen, and ignored.
+         */
+        const batchQ = new URLSearchParams({
+            ...(useRefs ? { use_references: 'true' } : {}),
+            ...((BATCH_CHOICES && BATCH_CHOICES.quality) ? { quality: BATCH_CHOICES.quality } : {}),
+        }).toString();
         const storyboardUrl = '/projects/' + state.currentProject.id + '/storyboard/generate/stream'
-            + (useRefs ? '?use_references=true' : '');
+            + (batchQ ? `?${batchQ}` : '');
 
         streamSSE(
             storyboardUrl,
@@ -28170,6 +28223,60 @@ ${fountainText.slice(0, 50000)}`;
      * does not send — a dialog whose entire purpose is "see what will be sent"
      * being confidently wrong, which is worse than not having one.
      */
+
+    /**
+     * The two controls every paid image confirmation now carries, as markup the
+     * rich path-specific dialogs can drop into their own layout.
+     *
+     * Refine and recompose lead with FILM FACTS — what is kept, which
+     * background, what is adopted — and that is the reason they are not
+     * replaced by the generic dialog. They gain the model picker and the
+     * editable prompt; they do not lose the facts.
+     */
+    async function confirmExtras(prompt, ceiling) {
+        let tiers = [];
+        try { tiers = (await api(`/projects/${state.currentProject.id}/providers`)).image_tiers || []; }
+        catch (_) { tiers = []; }
+        CONFIRM_GEN_PROMPT = prompt || '';
+        CONFIRM_GEN_EDITED = false;
+        CONFIRM_GEN_QUALITY = null;
+        const n = Number(ceiling) || 0;
+        return `
+          ${tiers.length ? `<div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
+              <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Generator for this one</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                ${tiers.map(t => `<button type="button" class="btn btn-secondary btn-sm" data-tier="${esc(t.id)}"
+                    onclick="pickGenQuality('${esc(t.id)}')" ${t.available ? '' : 'disabled'}
+                    style="flex:1;min-width:118px;">${esc(t.label)}${
+                    t.usd_per_image != null ? ` &middot; $${t.usd_per_image.toFixed(3)}` : ''}</button>`).join('')}
+              </div>
+              <div class="text-sm" style="opacity:.6;margin-top:6px;" id="confirmGenQualityNote">
+                Using this project's setting. Pick one to change it for this generation only.
+              </div>
+            </div>` : ''}
+          <div class="form-group">
+            <label>The prompt
+              <span class="text-sm text-muted" id="confirmGenChars">${(prompt || '').length}${n ? ` of ${n}` : ''}</span>
+            </label>
+            <textarea id="confirmGenPrompt" rows="7" spellcheck="false"
+                oninput="confirmGenPromptEdited(${n})"
+                style="width:100%;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5;
+                       padding:8px;border-radius:6px;">${esc(prompt || '')}</textarea>
+            <div class="text-sm text-muted" style="margin-top:4px;" id="confirmGenPromptNote">
+              Edit it and the edited text is what gets sent, exactly as written.
+            </div>
+          </div>`;
+    }
+
+    /** What the director chose in the confirmation just closed. */
+    function confirmChoices() {
+        return {
+            ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
+            ...(CONFIRM_GEN_EDITED && confirmGenEditedPrompt()
+                ? { prompt_override: confirmGenEditedPrompt() } : {}),
+        };
+    }
+
     async function confirmRefine(shotId, instruction, version, useAnchor) {
         const body = document.getElementById('confirmGenBody');
         const title = document.getElementById('confirmGenTitle');
@@ -28199,8 +28306,11 @@ ${fountainText.slice(0, 50000)}`;
                 <label>The whole instruction
                   <span class="text-muted text-sm">${d.prompt_chars} characters</span></label>
                 <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;margin:0;padding:8px;
-                            border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.prompt)}</pre>
+                            border-radius:6px;background:rgba(148,163,184,.10);display:none;">${esc(d.prompt)}</pre>
               </div>
+              ${await confirmExtras(d.prompt, d.ceiling)}
+              ${d.matched_against ? `<p class="text-sm text-muted">Matched against
+                 <strong>${esc(d.matched_against)}</strong>.</p>` : ''}
               <p class="text-sm text-muted" style="line-height:1.45;">Costs credits. The frame you are
                  refining stays in the version list either way.</p>`;
             confirmGenArm(true);
@@ -28391,6 +28501,7 @@ ${fountainText.slice(0, 50000)}`;
                 <div class="text-sm text-muted" style="line-height:1.45;">The frame you are working from
                   stays in the version list either way.</div>
               </div>
+              ${await confirmExtras(d.prompt, d.ceiling)}
               <details>
                 <summary style="cursor:pointer;font-size:12px;">Technical details</summary>
                 <div style="padding:8px 0 0;">
@@ -28426,25 +28537,24 @@ ${fountainText.slice(0, 50000)}`;
 
         const ok = await confirmRecompose(shotId, fromVersion, background, instruction.trim());
         if (!ok) return;
+        const choices = confirmChoices();
 
         const done = frameBusy(shotId, 'Recomposing');
-        setStatus('Recomposing\u2026', true);
+        setStatus('Recomposing...', true);
         try {
             const r = await api(`/shots/${shotId}/storyboard/recompose`, {
                 method: 'POST',
                 body: JSON.stringify({
-                    from_version: fromVersion || undefined,
-                    background_asset_id: background.asset_id,
-                    instruction: instruction.trim() || undefined,
+                    instruction: instruction.trim(),
+                    ...(fromVersion ? { version: fromVersion } : {}),
+                    ...(background ? { background } : {}),
+                    ...choices,
                 }),
             });
             done();
-            setStatus(`v${r.version}: kept ${r.kept_from}, background from ${r.background}.`);
+            setStatus(r && r.provider ? `Recomposed via ${r.provider}.` : 'Recomposed.');
             await loadStoryboard();
-        } catch (err) {
-            done();
-            setStatus('Could not recompose: ' + err.message);
-        }
+        } catch (err) { done(); setStatus('Could not recompose: ' + err.message); }
     }
 
     /** From the board — you are looking at the version you want to keep. */
@@ -28473,32 +28583,25 @@ ${fountainText.slice(0, 50000)}`;
     async function refineFrame(shotId, version) {
         const instruction = prompt(
             (version ? `Refining v${version}.\n\n` : '')
-            + 'What should change about this frame?\n\n'
-            + 'Everything else is kept — composition, camera, lighting, grade. '
-            + 'One change, said plainly:\n\n'
-            + '  remove the sprinkler\n'
-            + '  move the car to the kerb on the right\n'
-            + '  make the light warmer on the house fronts');
+            + 'What should change?\n\n'
+            + 'ONE instruction. The picture is attached and already carries the scene, so do not '
+            + 're-describe it — "move the car to the kerb", "make the light colder".');
         if (!instruction || !instruction.trim()) return;
 
-        /*
-         * Offer the anchor as a continuity reference, but only when there IS
-         * one — a prompt asking whether to match a frame that does not exist is
-         * a question with no right answer. Off unless chosen: refine means
-         * "keep this picture", and a second image arriving uninvited is what
-         * pulls a refine back toward a fresh generation.
-         */
-        let useAnchor = false;
-        if (BOARD_ANCHOR && BOARD_ANCHOR.shot_code && BOARD_ANCHOR.shot_id !== shotId) {
-            useAnchor = confirm(
-                `Match ${BOARD_ANCHOR.shot_code} for continuity?\n\n`
-                + `OK    — send ${BOARD_ANCHOR.shot_code} as a second reference, so this frame keeps its own\n`
-                + '        composition but matches that scene\'s location, dressing, time of day and grade.\n\n'
-                + 'Cancel — refine from this frame alone.');
-        }
+        // Off by default: refine's contract is "keep this picture, change one
+        // thing", and a second image arriving uninvited is what pulls it back
+        // toward a fresh generation.
+        const useAnchor = confirm(
+            'Match the scene anchor as well?\n\n'
+            + 'OK = attach the anchor frame so the location, dressing and grade match it.\n'
+            + 'Cancel = refine this picture alone (the usual choice).');
 
+        // The refine-specific confirmation: it leads with what a REFINE sends —
+        // the picture plus one instruction — and now carries the model picker
+        // and the editable prompt as well.
         const ok = await confirmRefine(shotId, instruction.trim(), version, useAnchor);
         if (!ok) return;
+        const choices = confirmChoices();
 
         const done = frameBusy(shotId, 'Refining');
         setStatus('Refining frame...', true);
@@ -28507,21 +28610,17 @@ ${fountainText.slice(0, 50000)}`;
                 method: 'POST',
                 body: JSON.stringify({
                     instruction: instruction.trim(),
-                    use_anchor: useAnchor,
                     ...(version ? { version } : {}),
+                    use_anchor: useAnchor,
+                    ...choices,
                 }),
             });
             done();
-            setStatus(`Refined from ${res.refined_from} \u2192 v${res.version}`
-                + (res.matched_against ? `, matched against ${res.matched_against}` : '')
-                + (res.provider ? ` via ${res.provider}` : '') + '.');
+            setStatus(res && res.matched_against
+                ? `Frame refined, matched against ${res.matched_against}.`
+                : 'Frame refined.');
             await loadStoryboard();
-            const modal = document.getElementById('frameViewerModal');
-            if (modal && modal.classList.contains('open')) frameViewerPaint();
-        } catch (err) {
-            done();
-            setStatus('Could not refine: ' + err.message);
-        }
+        } catch (err) { done(); setStatus('Could not refine: ' + err.message); }
     }
 
 
@@ -28684,6 +28783,110 @@ ${fountainText.slice(0, 50000)}`;
         const fn = CONFIRM_GEN;
         CONFIRM_GEN = null;
         if (fn) fn(!!ok);
+    }
+
+
+    /**
+     * ONE pre-spend confirmation for every button that buys an image.
+     *
+     * Each path had its own: some a native confirm(), one a rich modal, and
+     * only the storyboard regenerate offered a model picker or an editable
+     * prompt. Seven separately-written confirmations is how six of them come to
+     * lack the thing the seventh has — which is exactly what happened.
+     *
+     * `previewUrl` is the FREE route this path reads from; `send` receives the
+     * director's choices and makes the purchase. A path whose route cannot take
+     * an edited prompt passes `editable: false` and the box is read-only rather
+     * than offering an edit that would be silently dropped.
+     */
+    async function confirmPaidImage(o) {
+        const body = document.getElementById('confirmGenBody');
+        const title = document.getElementById('confirmGenTitle');
+        if (!body) return o.send({});
+
+        title.textContent = o.title || 'Before we spend a credit';
+        body.innerHTML = '<span class="text-muted text-sm">Reading what would be sent&hellip;</span>';
+        confirmGenArm(false);
+        CONFIRM_GEN_PROMPT = null;
+        CONFIRM_GEN_EDITED = false;
+        CONFIRM_GEN_QUALITY = null;
+        showModal('confirmGenModal');
+        const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
+
+        let d = null;
+        try {
+            d = await api(o.previewUrl);
+        } catch (err) {
+            // A gate that permits the spend when its own inspection failed is
+            // worse than no gate: it teaches people the check happened.
+            body.innerHTML = `<p class="text-sm" style="color:var(--gl-danger,#ef4444);">
+                Could not read what would be sent: ${esc(err.message)}</p>`;
+            confirmGenArm(false);
+            await decision;
+            return;
+        }
+
+        let tiers = [];
+        try { tiers = (await api(`/projects/${state.currentProject.id}/providers`)).image_tiers || []; }
+        catch (_) { tiers = []; }
+
+        const prompt = d.prompt || '';
+        const ceiling = Number(d.ceiling) || 0;
+        CONFIRM_GEN_PROMPT = prompt;
+
+        body.innerHTML = `
+          ${o.note ? `<p class="text-sm text-muted" style="line-height:1.5;">${esc(o.note)}</p>` : ''}
+          ${(d.notes || []).map(n => `<p class="text-sm" style="color:var(--warning,#b8860b);line-height:1.5;">${esc(n)}</p>`).join('')}
+
+          <div class="text-sm text-muted" style="margin:8px 0;">
+            ${esc(d.provider || 'provider unknown')}${d.model ? ' &middot; ' + esc(d.model) : ''}
+            ${d.estimated_cost ? ` &middot; <strong>${d.estimated_cost.native != null
+                ? d.estimated_cost.native + ' ' + esc(d.estimated_cost.native_unit || '') + ' ≈ ' : ''}$${
+                Number(d.estimated_cost.usd).toFixed(3)}</strong>` : ''}
+          </div>
+
+          ${tiers.length ? `<div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
+              <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Generator for this one</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                ${tiers.map(t => `<button type="button" class="btn btn-secondary btn-sm" data-tier="${esc(t.id)}"
+                    onclick="pickGenQuality('${esc(t.id)}')" ${t.available ? '' : 'disabled'}
+                    style="flex:1;min-width:118px;">${esc(t.label)}${
+                    t.usd_per_image != null ? ` &middot; $${t.usd_per_image.toFixed(3)}` : ''}</button>`).join('')}
+              </div>
+              <div class="text-sm" style="opacity:.6;margin-top:6px;" id="confirmGenQualityNote">
+                Using this project's setting. Pick one to change it for this generation only.
+              </div>
+            </div>` : ''}
+
+          <div class="form-group">
+            <label>The prompt
+              <span class="text-sm text-muted" id="confirmGenChars">
+                ${prompt.length}${ceiling ? ` of ${ceiling}` : ' characters'}
+              </span>
+            </label>
+            ${o.editable === false
+                ? `<pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;max-height:260px;overflow:auto;
+                        margin:0;padding:8px;border-radius:6px;background:rgba(148,163,184,.10);">${esc(prompt)}</pre>
+                   <div class="text-sm text-muted" style="margin-top:4px;">${esc(o.notEditableWhy || '')}</div>`
+                : `<textarea id="confirmGenPrompt" rows="9" spellcheck="false"
+                      oninput="confirmGenPromptEdited(${ceiling})"
+                      style="width:100%;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5;
+                             padding:8px;border-radius:6px;">${esc(prompt)}</textarea>
+                   <div class="text-sm text-muted" style="margin-top:4px;" id="confirmGenPromptNote">
+                     Edit it and the edited text is what gets sent, exactly as written &mdash; the
+                     engine will not add references or the style preset on top of it.
+                   </div>`}
+          </div>`;
+
+        confirmGenArm(true);
+        const ok = await decision;
+        if (!ok) return;
+
+        return o.send({
+            ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
+            ...(CONFIRM_GEN_EDITED && confirmGenEditedPrompt()
+                ? { prompt_override: confirmGenEditedPrompt() } : {}),
+        });
     }
 
     async function confirmGeneration(shotId, opts) {

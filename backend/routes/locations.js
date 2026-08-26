@@ -17,6 +17,7 @@ const path = require('path');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const { resolve } = require('../lib/providers');
+const { spendContext } = require('../lib/provider-config');
 const { providerConfigFor } = require('../lib/provider-config');
 const { generatePlate, PLATE_KINDS } = require('../lib/reference-plates');
 
@@ -74,8 +75,13 @@ async function generateSubjectPlate(req, res, kind, subjectId) {
         anchorPath = (existing && existing.file_path) || null;
     }
 
-    const provider = resolve('image', parseProjectConfig(subject.project_id));
+    const { imageOverride, promptOverride } = require('../lib/generation-override');
+    const tierOverride = imageOverride(req.body || {});
+    const provider = resolve('image',
+        spendContext(project, null, null, tierOverride) || parseProjectConfig(subject.project_id));
     const result = await generatePlate({
+        promptOverride: promptOverride(req.body || {}),
+        tierOverride,
         projectId: project.id,
         kind,
         subject,
@@ -337,6 +343,65 @@ function importSubjectPlateRoute(req, res, kind, subjectId) {
  * view is a subject with two current references and no way to tell which a shot
  * used. The previous file is gone, which is why the confirmation says so.
  */
+
+/**
+ * FREE. What generating (or refining) this plate would send.
+ *
+ * A prompt you cannot read before editing is a prompt you are guessing at, and
+ * every other paid image path in the engine shows its request first. Plates
+ * were the exception, which is odd given a plate conditions every frame its
+ * subject appears in.
+ */
+function previewSubjectPlate(req, res, kind, subjectId, mode, query) {
+    const { PLATE_KINDS, buildPlatePrompt, buildPlateRefinePrompt, REFINE_NEGATIVE, NEGATIVE }
+        = require('../lib/reference-plates');
+    const spec = PLATE_KINDS[kind];
+    if (!spec) return badReq(res, `unknown plate kind '${kind}'`);
+    const subject = db.prepare(`SELECT * FROM ${spec.table} WHERE id = ?`).get(subjectId);
+    if (!subject) return notFoundJson(res, `${kind} not found`);
+    const project = db.prepare('SELECT id, style_preset, aspect_ratio, target_resolution FROM film_projects WHERE id = ?')
+        .get(subject.project_id);
+
+    const q = query || {};
+    const { imageOverride } = require('../lib/generation-override');
+    const tierOverride = imageOverride({ quality: q.quality, provider: q.provider, model: q.model });
+    const providers = require('../lib/providers');
+    const cfg = spendContext(project || { id: subject.project_id }, null, null, tierOverride);
+    const adapter = providers.get(providers.resolveId('image', cfg));
+
+    const view = q.view ? String(q.view) : null;
+    const instruction = String(q.instruction || '').trim();
+    const prompt = mode === 'refine'
+        ? buildPlateRefinePrompt(kind, subject, instruction || '(no instruction yet)', view)
+        : buildPlatePrompt(kind, subject, project && project.style_preset, view, false);
+
+    const payload = require('../lib/capability-payloads').withTierModel(
+        { prompt }, { project: project || { id: subject.project_id }, tierOverride }, adapter);
+
+    let cost = null;
+    try {
+        const rate = require('../lib/provider-pricing').rateFor(adapter.id, 'image', payload.model);
+        if (rate) cost = { usd: rate.usd_per_unit !== undefined ? rate.usd_per_unit : rate.usd_per_native,
+            native: rate.native_per_unit, native_unit: rate.native_unit };
+    } catch (_) { /* an unpriced pair must not break a free preview */ }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        subject_id: subjectId, kind, mode: mode || 'generate', view,
+        provider: adapter && adapter.id, model: payload.model || null,
+        prompt, prompt_length: prompt.length,
+        negative_prompt: mode === 'refine' ? REFINE_NEGATIVE : NEGATIVE,
+        ceiling: Number(adapter && adapter.promptLimit) || null,
+        estimated_cost: cost,
+        note: 'Nothing was generated and nothing was spent.',
+    }));
+}
+
+function notFoundJson(res, msg) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: msg }));
+}
+
 async function refineSubjectPlate(req, res, kind, subjectId) {
     const { PLATE_KINDS, buildPlateRefinePrompt, REFINE_NEGATIVE, plateFileName } = require('../lib/reference-plates');
     const spec = PLATE_KINDS[kind];
@@ -363,7 +428,11 @@ async function refineSubjectPlate(req, res, kind, subjectId) {
 
     const project = db.prepare('SELECT id, style_preset, aspect_ratio, target_resolution FROM film_projects WHERE id = ?')
         .get(subject.project_id);
-    const provider = resolve('image', parseProjectConfig(subject.project_id));
+    const { imageOverride, promptOverride } = require('../lib/generation-override');
+    const tierOverride = imageOverride(body);
+    const provider = resolve('image',
+        spendContext({ id: subject.project_id }, null, null, tierOverride)
+            || parseProjectConfig(subject.project_id));
     if (!provider || typeof provider.generate !== 'function') {
         return badReq(res, 'no image provider resolved', 502);
     }
@@ -372,17 +441,24 @@ async function refineSubjectPlate(req, res, kind, subjectId) {
     const uri = toDataUri(existing.file_path);
     if (!uri) return badReq(res, 'The existing plate could not be read from disk.', 500);
 
-    const prompt = buildPlateRefinePrompt(kind, subject, instruction,
+    // An edited prompt replaces the composed one whole. The negative stays:
+    // it is what keeps a refine from drifting into a fresh generation.
+    const prompt = promptOverride(body) || buildPlateRefinePrompt(kind, subject, instruction,
         body.apply_style ? project && project.style_preset : null);
 
-    const result = await provider.generate('image', {
+    const refinePayload_ = {
         prompt,
         negative_prompt: REFINE_NEGATIVE,
         aspect_ratio: (project && project.aspect_ratio) || undefined,
         // ONE reference: the plate being changed. A second picture is another
         // opinion about what this is, and a refine has only one subject.
         reference_images: [{ name: subject.name, kind: 'refine', tag: 'plate', uri }],
-    }, { timeout: 300000 });
+    };
+    // The tier names the model for whichever provider was resolved above, so a
+    // refine honours a per-call quality exactly as a generation does.
+    require('../lib/capability-payloads').withTierModel(
+        refinePayload_, { project: project || { id: subject.project_id }, tierOverride }, provider);
+    const result = await provider.generate('image', refinePayload_, { timeout: 300000 });
 
     if (!result.ok) {
         res.writeHead(502, { 'Content-Type': 'application/json' });
@@ -537,6 +613,8 @@ function handleLocations(req, res, urlParts, query) {
         if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'location', locId);
         // Keep the picture, change one thing.
         if (urlParts[4] === 'refine' && req.method === 'POST') return refineSubjectPlate(req, res, 'location', locId);
+        if (urlParts[4] === 'plate-preview' && req.method === 'GET') return previewSubjectPlate(req, res, 'location', locId, 'generate', query);
+        if (urlParts[4] === 'refine-preview' && req.method === 'GET') return previewSubjectPlate(req, res, 'location', locId, 'refine', query);
         // A picture made outside Film Engine, landing where a generated one would.
         if (urlParts[4] === 'import' && req.method === 'POST') return importSubjectPlateRoute(req, res, 'location', locId);
         // /film/locations/:id/plate/views — what a shot can choose between.
@@ -554,6 +632,8 @@ function handleLocations(req, res, urlParts, query) {
     // /film/props/:id/plate/generate
     if (urlParts[1] === 'props' && urlParts[2] && urlParts[3] === 'plate') {
         const propId = urlParts[2];
+        if (urlParts[4] === 'plate-preview' && req.method === 'GET') return previewSubjectPlate(req, res, 'prop', propId, 'generate', query);
+        if (urlParts[4] === 'refine-preview' && req.method === 'GET') return previewSubjectPlate(req, res, 'prop', propId, 'refine', query);
         if (!UUID_RE.test(propId)) return badReq(res, 'Invalid prop ID');
         if (urlParts[4] === 'import' && req.method === 'POST') return importSubjectPlateRoute(req, res, 'prop', propId);
         if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'prop', propId);

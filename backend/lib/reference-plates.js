@@ -436,7 +436,7 @@ function plateFileName(kind, subjectName, view) {
  */
 async function generatePlate({ projectId, kind, subject, stylePreset, provider, aspectRatio,
     project, timeout, db,
-    view, anchorPath }) {
+    view, anchorPath, promptOverride: promptEdit, tierOverride }) {
     const spec = PLATE_KINDS[kind];
     if (!spec) return { ok: false, error: `unknown plate kind '${kind}'` };
     if (!subject || !subject.id) return { ok: false, error: `${kind} not found` };
@@ -540,13 +540,14 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
      * paths out of four" gap this codebase has now shipped twice. Applied to
      * the base payload so the moderation retry below inherits it.
      */
-    require('./capability-payloads').withTierModel(basePayload, { project }, provider);
+    require('./capability-payloads').withTierModel(
+        basePayload, { project, tierOverride: tierOverride || null }, provider);
 
     let result = await provider.generate('image', {
         ...basePayload,
-        prompt: buildPlatePrompt(kind, subject, stylePreset, view, anchored)
+        prompt: promptEdit || (buildPlatePrompt(kind, subject, stylePreset, view, anchored)
             + ((sentStyleRefs.length && sentStyleRefs[0].tag)
-                ? `, in the light, palette and colour grade of @${sentStyleRefs[0].tag}` : ''),
+                ? `, in the light, palette and colour grade of @${sentStyleRefs[0].tag}` : '')),
     }, { timeout: timeout || 300000 });
 
     // Same refusal path as character sheets: retry once without the style
@@ -559,7 +560,9 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         delete basePayload.reference_images;
         result = await provider.generate('image', {
             ...basePayload,
-            prompt: buildPlatePrompt(kind, subject, null, view, anchored),
+            // The retry keeps the EDITED prompt: reverting to the composed text
+            // here would discard what was written and report success.
+            prompt: promptEdit || buildPlatePrompt(kind, subject, null, view, anchored),
         }, { timeout: timeout || 300000 });
         if (result.ok) styleApplied = false;
     }

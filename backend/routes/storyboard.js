@@ -19,6 +19,7 @@ const { GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../lib/gridlight-client');
 const { buildShotReferencePayload, applyConsistencyToImagePayload, recordConsistencyCheck, auditProjectReadiness } = require('../lib/consistency-context');
 const { resolveGenerator } = require('../lib/providers');
 const { spendContext } = require('../lib/provider-config');
+const { imageOverride, promptOverride } = require('../lib/generation-override');
 const { selectReferences } = require('../lib/reference-images');
 const { generateImageWithFallback, imageProviderChain } = require('../lib/image-fallback');
 // Moved to a lib so the orchestrated payload path can gather the same plates.
@@ -927,7 +928,13 @@ async function generateStoryboard(req, res, projectId, query) {
 
     ensureStoryboardDir(projectId);
 
-    const body = req.body || {};
+    /*
+     * A GET stream has no body, so the per-run model choice arrives in the
+     * query. Folded into the same shape the POST path reads, or the picker
+     * would be offered on the most expensive control in the app and ignored.
+     */
+    const body = { ...(req.body || {}),
+        ...((query && query.quality) ? { quality: query.quality } : {}) };
     const results = [];
     let shotsCompleted = 0;
     let shotsFailed = 0;
@@ -1051,7 +1058,7 @@ async function generateStoryboard(req, res, projectId, query) {
             }, adapter);
             const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
                 await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
-                    imagePayload, spendContext(project, shot), payloadFactory);
+                    imagePayload, spendContext(project, shot, null, imageOverride(body)), payloadFactory);
 
             // Save image to disk
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
@@ -1141,6 +1148,11 @@ async function generateStoryboard(req, res, projectId, query) {
 // ── FILM-017: Generate Storyboard (SSE Stream) ─────────────────────
 
 async function generateStoryboardStream(req, res, projectId, query) {
+    /*
+     * A GET stream has no body, so the per-run model choice arrives in the
+     * query. Read into the same shape the POST path uses, or the picker would
+     * be offered on the most expensive control in the app and ignored.
+     */
     const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id, board_locked_at FROM film_projects WHERE id = ?').get(projectId);
     const _lock = boardLocked(project, req.body || {});
     if (_lock) return json(res, 423, _lock);
@@ -1184,7 +1196,13 @@ async function generateStoryboardStream(req, res, projectId, query) {
 
     sendEvent({ type: 'status', phase: 'starting', total_shots: shots.length, project_id: projectId });
 
-    const body = req.body || {};
+    /*
+     * A GET stream has no body, so the per-run model choice arrives in the
+     * query. Without this the picker is offered on the most expensive control
+     * in the app — generate every frame in the film — and silently ignored.
+     */
+    const body = { ...(req.body || {}),
+        ...((query && query.quality) ? { quality: query.quality } : {}) };
     let shotsCompleted = 0;
     let shotsFailed = 0;
 
@@ -1327,7 +1345,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
                         ...progressData,
                     });
                 },
-                spendContext(project, shot),
+                spendContext(project, shot, null, imageOverride(body)),
                 payloadFactory
             );
 
@@ -2656,7 +2674,10 @@ async function recomposeShot(req, res, shotId) {
     try {
         ensureStoryboardDir(project.id);
         const payload = {
-            prompt: built.prompt,
+            // An edited prompt replaces the composed one whole; the negative
+            // stays, because it is what refuses "original background" in one
+            // direction and "different person" in the other.
+            prompt: promptOverride(body) || built.prompt,
             negative_prompt: built.negative_prompt,
             // ORDER IS THE CONTRACT: subject first, place second.
             reference_images: [
@@ -2666,7 +2687,8 @@ async function recomposeShot(req, res, shotId) {
             aspect_ratio: project.aspect_ratio,
         };
         const { buffer, provider, model } = await callImageGen(
-            payload.prompt, payload.negative_prompt, undefined, payload, spendContext(project, bg.shot));
+            payload.prompt, payload.negative_prompt, undefined, payload,
+            spendContext(project, bg.shot, null, imageOverride(body)));
 
         const imgPath = storyboardImagePath(project.id, bg.shot.shot_code);
         archiveExistingFrame(project.id, shotId, bg.shot.shot_code);
@@ -2857,7 +2879,18 @@ async function refineShot(req, res, shotId) {
         }
     }
 
-    const { prompt, negative_prompt } = buildRefinePayload(instruction, !!anchorRef);
+    const built_ = buildRefinePayload(instruction, !!anchorRef);
+    /*
+     * An edited prompt replaces the composed one WHOLE.
+     *
+     * The negative is kept: it is what stops a refine drifting into a fresh
+     * generation — "different composition, different framing" — and dropping it
+     * because the positive was edited would quietly turn every hand-written
+     * refine into a regeneration.
+     */
+    const promptEdit_ = promptOverride(body);
+    const prompt = promptEdit_ || built_.prompt;
+    const negative_prompt = built_.negative_prompt;
 
     db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shotId);
     try {
@@ -2869,7 +2902,8 @@ async function refineShot(req, res, shotId) {
             aspect_ratio: project.aspect_ratio,
         };
         const { buffer, provider, model } = await callImageGen(
-            payload.prompt, payload.negative_prompt, undefined, payload, spendContext(project, shot));
+            payload.prompt, payload.negative_prompt, undefined, payload,
+            spendContext(project, shot, null, imageOverride(body)));
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         archiveExistingFrame(project.id, shotId, shot.shot_code);

@@ -382,8 +382,13 @@ async function generateMarketingAsset(req, res, assetId) {
     db.prepare("UPDATE film_marketing_assets SET status = 'generating' WHERE id = ?").run(assetId);
 
     try {
+        // An edited prompt replaces the composed one whole — including the
+        // style preset, which is normally appended. That is the point of an
+        // override, and the confirmation says so where it is typed.
+        const { promptOverride } = require('../lib/generation-override');
+        const promptEdit = promptOverride(body);
         const factory = adapter => withTierModel({
-            prompt: buildMarketingPrompt(asset, project),
+            prompt: promptEdit || buildMarketingPrompt(asset, project),
             negative_prompt: MARKETING_NEGATIVE,
             aspect_ratio: asset.aspect_ratio || undefined,
             width: size.width,

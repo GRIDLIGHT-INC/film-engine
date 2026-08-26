@@ -70,7 +70,13 @@ function handleCharacters(req, res, urlParts, query) {
                     return res.end(JSON.stringify({ error: err.message }));
                 }
             }
-            if (urlParts[4] === 'generate' && req.method === 'POST') return generateRefSheet(req, res, charId);
+            // FREE: what a generation would send, before any of it is bought.
+            if (urlParts[4] === 'preview' && req.method === 'GET') {
+                return previewRefSheet(req, res, charId, query);
+            }
+            if (urlParts[4] === 'generate' && req.method === 'POST') {
+                return generateRefSheet(req, res, charId);
+            }
             if (req.method === 'GET') return getRefSheetStatus(req, res, charId);
         }
 
@@ -560,6 +566,53 @@ function buildRefSheetPrompt(character, view, stylePreset) {
     return parts.join(', ');
 }
 
+
+/**
+ * FREE. What generating this character's reference sheet would send.
+ *
+ * A ref sheet is three views from one call, so the preview shows the view that
+ * would be generated FIRST — editing here replaces that view's prompt, and a
+ * caller wanting one specific view sends `views`.
+ */
+function previewRefSheet(req, res, charId, query) {
+    const ch = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(charId);
+    if (!ch) { res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Character not found' })); }
+    const project = db.prepare('SELECT id, style_preset FROM film_projects WHERE id = ?').get(ch.project_id);
+
+    const q = query || {};
+    const { imageOverride } = require('../lib/generation-override');
+    const tierOverride = imageOverride({ quality: q.quality, provider: q.provider, model: q.model });
+    const providers = require('../lib/providers');
+    const { spendContext } = require('../lib/provider-config');
+    const adapter = providers.get(providers.resolveId('image',
+        spendContext(project || { id: ch.project_id }, null, null, tierOverride)));
+
+    const view = q.view || REFSHEET_VIEWS[0];
+    const prompt = buildRefSheetPrompt(ch, view, project && project.style_preset);
+    const payload = require('../lib/capability-payloads').withTierModel(
+        { prompt }, { project: project || { id: ch.project_id }, tierOverride }, adapter);
+
+    let cost = null;
+    try {
+        const rate = require('../lib/provider-pricing').rateFor(adapter.id, 'image', payload.model);
+        if (rate) cost = { usd: rate.usd_per_unit !== undefined ? rate.usd_per_unit : rate.usd_per_native,
+            native: rate.native_per_unit, native_unit: rate.native_unit,
+            // Three views by default, so the sheet costs three times a frame.
+            views: REFSHEET_VIEWS.length };
+    } catch (_) { /* an unpriced pair must not break a free preview */ }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        character_id: charId, view, views: REFSHEET_VIEWS,
+        provider: adapter && adapter.id, model: payload.model || null,
+        prompt, prompt_length: prompt.length,
+        ceiling: Number(adapter && adapter.promptLimit) || null,
+        estimated_cost: cost,
+        note: 'Nothing was generated and nothing was spent.',
+    }));
+}
+
 async function generateRefSheet(req, res, charId) {
     const ch = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(charId);
     if (!ch) {
@@ -592,7 +645,12 @@ async function generateRefSheet(req, res, charId) {
     ensureDir(ch.project_id, 'refsheets');
 
     // Resolve the image provider for this project (gridlight default → OpenAI/etc when configured).
-    const imageProvider = resolve('image', parseProjectConfig(ch.project_id));
+    const { imageOverride, promptOverride } = require('../lib/generation-override');
+    const tierOverride = imageOverride(req.body || {});
+    const promptEdit = promptOverride(req.body || {});
+    const imageProvider = resolve('image',
+        require('../lib/provider-config').spendContext({ id: ch.project_id }, null, null, tierOverride)
+            || parseProjectConfig(ch.project_id));
 
     for (const view of views) {
         const project = db.prepare('SELECT style_preset FROM film_projects WHERE id = ?').get(ch.project_id);
@@ -604,9 +662,18 @@ async function generateRefSheet(req, res, charId) {
         // it. One reference only: a turnaround has one subject, and a second
         // look plate starts voting on who that is.
         const styleRefs = require('../lib/reference-plates').styleReferencesFor(db, ch.project_id);
-        const prompt = styleRefs.length && styleRefs[0].tag
+        let prompt = styleRefs.length && styleRefs[0].tag
             ? `${buildRefSheetPrompt(ch, view, projectStyle)}, in the light, palette and colour grade of @${styleRefs[0].tag}`
             : buildRefSheetPrompt(ch, view, projectStyle);
+        /*
+         * An edited prompt replaces the composed one for THIS view.
+         *
+         * A ref sheet generates front, side and back from one call, and they
+         * are different prompts — so an override applies to whichever view is
+         * being generated rather than flattening all three into one picture
+         * repeated. A caller wanting one specific view sends `views`.
+         */
+        if (promptEdit) prompt = promptEdit;
         const negativePrompt = REFSHEET_NEGATIVE;
 
         const payload = {
@@ -633,7 +700,7 @@ async function generateRefSheet(req, res, charId) {
              * resolution and aspect.
              */
             require('../lib/capability-payloads').withTierModel(
-                payload, { project: { id: ch.project_id } }, imageProvider);
+                payload, { project: { id: ch.project_id }, tierOverride }, imageProvider);
 
             let result = await imageProvider.generate('image', payload, { timeout: 300000 });
 
