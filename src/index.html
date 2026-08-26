@@ -23072,7 +23072,7 @@ ${fountainText.slice(0, 50000)}`;
                                 <div style="font-weight:600;">${esc(t.label)}</div>
                                 <div class="text-sm" style="opacity:.8;margin-top:3px;font-weight:400;">${esc(t.why)}</div>
                                 <div class="text-sm" style="opacity:.6;margin-top:4px;font-weight:400;">
-                                    ${esc(t.reason)}
+                                    ${t.usd_per_image != null ? '<strong>$' + t.usd_per_image.toFixed(3) + '</strong> per image &middot; ' : ''}${esc(t.reason)}
                                 </div>
                             </button>`).join('')}
                     </div>

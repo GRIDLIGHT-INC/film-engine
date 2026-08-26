@@ -296,3 +296,58 @@ test('a project that states no tier still gets a named model', () => {
     assert.strictEqual(payload.model, 'nano-banana-2',
         'an unstated tier did not resolve to the standard model');
 });
+
+test('no tier pays a proxy fee for a model it could buy direct', () => {
+    /*
+     * Meshy RESELLS Google's models: nano-banana-pro IS gemini-3-pro-image. So
+     * Precision through Meshy cost $0.180 for output Google sells at $0.134 —
+     * 34% for nothing, on the tier a director reaches for when the frame
+     * matters.
+     *
+     * Narrow on purpose. The first version of this compared every provider in
+     * a tier's fallback list and demanded the cheapest lead, which would drive
+     * every tier to the cheapest MODEL regardless of what the tier promises —
+     * destroying the thing tiers exist for. The rule is only about the same
+     * model sold twice, which is why SAME_MODEL is written down.
+     */
+    const { IMAGE_TIERS, SAME_MODEL } = require('../lib/quality-tiers');
+    const { rateFor } = require('../lib/provider-pricing');
+    const priceOf = ref => {
+        const [provider, model] = ref.split(':');
+        const r = rateFor(provider, 'image', model);
+        return r ? (r.usd_per_unit !== undefined ? r.usd_per_unit : r.usd_per_native) : null;
+    };
+
+    const wrong = [];
+    for (const [tier, spec] of Object.entries(IMAGE_TIERS)) {
+        const chosen = spec.order.find(id => spec.models[id]);
+        if (!chosen) continue;
+        const chosenRef = `${chosen}:${spec.models[chosen]}`;
+
+        for (const pair of SAME_MODEL) {
+            if (!pair.includes(chosenRef)) continue;
+            const other = pair.find(x => x !== chosenRef);
+            // Only counts if the tier could actually have picked the other one.
+            if (!spec.order.includes(other.split(':')[0])) continue;
+            const mine = priceOf(chosenRef), theirs = priceOf(other);
+            if (mine != null && theirs != null && theirs < mine) {
+                wrong.push(`${tier}: leads with ${chosenRef} at $${mine}, but ${other} is the `
+                    + `same model at $${theirs}`);
+            }
+        }
+    }
+    assert.deepStrictEqual(wrong, [],
+        `a tier is paying a reseller for a model it could buy direct:\n  ${wrong.join('\n  ')}`);
+});
+
+test('the tier menu shows what an image costs', () => {
+    // "Are we using the most cost-effective option" has to be answerable by
+    // looking. The answer moves whenever a key is added, because a tier
+    // resolves by credential — so it cannot live in documentation.
+    const { tierMenu } = require('../lib/quality-tiers');
+    for (const t of tierMenu({})) {
+        if (!t.available) continue;
+        assert.ok(typeof t.usd_per_image === 'number' && t.usd_per_image >= 0,
+            `${t.label} resolves to ${t.resolves_to} but quotes no price`);
+    }
+});
