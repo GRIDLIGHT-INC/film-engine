@@ -108,6 +108,7 @@ film-engine/
 │   │   ├── qa-checker.js         # QA checks, continuity, acceptance rubric
 │   │   ├── scheduling-engine.js  # Smart scheduling & GPU model residency
 │   │   ├── project-bundle.js    # Project export/import (.tar.gz bundles)
+│   │   ├── quality-tiers.js      # Draft/Standard/Precision → a provider and a model
 │   │   ├── flow-cost.js          # Projected cost + the budget gate (Phase 3)
 │   │   ├── flow-templates.js     # Six ready-made flows, validated at load (Phase 5)
 │   │   ├── flow-executor.js      # runFlow / executeNode / resolveNodeInputs (Phase 2)
@@ -175,6 +176,7 @@ film-engine/
 │       ├── reference-plates.test.js    # Every referenceable kind can produce a plate
 │       ├── image-fallback.test.js      # Image generation survives a provider refusal
 │       ├── reference-capability.test.js # Tags only reach providers that can read them
+│       ├── provider-tiers.test.js      # Every adapter declares its contract; every tier resolves
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop
 │       ├── decision-parity.test.js     # Every director decision, held to five links across both surfaces
@@ -1815,6 +1817,7 @@ node --test backend/tests/reference-images.test.js
 node --test backend/tests/reference-plates.test.js
 node --test backend/tests/image-fallback.test.js
 node --test backend/tests/reference-capability.test.js
+node --test backend/tests/provider-tiers.test.js
 node --test backend/tests/previs-storyboard.test.js
 node --test backend/tests/previs-loop.test.js
 node --test backend/tests/decision-parity.test.js

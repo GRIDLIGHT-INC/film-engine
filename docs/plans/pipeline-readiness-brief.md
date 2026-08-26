@@ -76,12 +76,14 @@ Current resolution with the credentials on this machine:
 | Capability | Resolves to | Note |
 |---|---|---|
 | `llm` | `anthropic` | keyed — Claude Opus 5 via the Messages API |
-| `image` | `openai` | keyed |
-| `video` | `runway` | **no credential — the blocker** |
+| `image` | `google` → `bfl` → `openai` | preference is an ordered walk; `google` (Nano Banana 2 / Pro) and `bfl` (FLUX.2) lead when keyed, `openai` when they are not |
+| `video` | `seedance` → `runway` | `seedance` (Seedance 2.5, via MuAPI) leads when keyed — its omni-reference workflow takes 30 reference images where Runway's gen4.5 takes two |
 | `voice`, `music`, `sfx`, `ambient` | `elevenlabs` | keyed |
 | `model3d` | `meshy` | keyed |
 | `lipsync`, `post` | `gridlight` | no hosted adapter; handed to the NLE |
 | `stock` | — | no adapter at all; nothing writes `licensed_catalog` |
+
+**Quality tiers.** Image generation is chosen as **Draft / Standard / Precision** rather than by provider name, resolved by `lib/quality-tiers.js` inside `resolveId()` so every path inherits it. Draft routes to FLUX.2 Klein, Standard to Nano Banana 2 (`google`), Precision to Nano Banana Pro; each tier names an ordered fallback so a tier whose preferred provider holds no key still generates rather than failing at spend time. An explicit per-project provider, and an explicit `image_model`, both outrank the table.
 
 **MCP.** Discovery is `tools/list` → `tools/call`; no integration code on the agent side. Film Engine's server is hand-rolled JSON-RPC over stdio, exposing 38 tools generated from the node-type registry and the flows router, so a new node type becomes a tool without anyone remembering. Nothing declares `kind: 'mcp'` as a *provider* transport, and per this research nothing should — that shape stays wired for a vendor that offers only MCP.
 

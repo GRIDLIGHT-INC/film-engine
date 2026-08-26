@@ -37,7 +37,11 @@
 const { CAPABILITIES } = require('./providers/base');
 
 /** Units an adapter may meter in. A unit outside this list cannot be priced. */
-const BILLING_UNITS = ['token', 'character', 'second', 'image', 'call'];
+// 'megapixel' is here because FLUX.2 genuinely bills that way: a 4MP frame
+// costs four times a 1MP one, and pricing it per image would under-report every
+// large board by exactly that factor. A unit is added when a provider bills in
+// it, never to make a number fit.
+const BILLING_UNITS = ['token', 'character', 'second', 'image', 'megapixel', 'call'];
 
 const M = 1 / 1_000_000;   // per-million-token rates, expressed per token
 
@@ -107,6 +111,77 @@ const RATE_BOOK = {
         note: 'Not on the preferred path for this install — llm resolves to Anthropic.',
     },
     // Charged per image, by quality and size, not per token.
+    /*
+     * Google — Nano Banana 2 and Nano Banana Pro.
+     *
+     * Priced PER IMAGE and per output size, because that is how the model
+     * bills: a 4K frame from Pro is not the same purchase as a 1K draft, and
+     * averaging them would make the precision tier look free on a board that
+     * used it once and cheap on one that used it everywhere.
+     */
+    'google:image': {
+        unit: 'image', native_unit: 'image', native_per_unit: 1,
+        usd_per_native: 0.067,
+        models: {
+            'gemini-3.1-flash-image':      { usd_per_native: 0.067 },  // Nano Banana 2, 1K
+            'gemini-3.1-flash-image-2k':   { usd_per_native: 0.067 },
+            // Google does not publish a separate 4K figure for the flash model.
+            // Held at the Pro 1K rate as a FLOOR and flagged, rather than
+            // quietly inheriting the 1K price — which would under-report every
+            // 4K board by however much the real multiplier turns out to be.
+            'gemini-3.1-flash-image-4k':   { usd_per_native: 0.134, inferred: true },
+            'gemini-3.1-flash-lite-image': { usd_per_native: 0.034 },
+            'gemini-3-pro-image':          { usd_per_native: 0.134 },  // Nano Banana Pro, 1K-2K
+            'gemini-3-pro-image-4k':       { usd_per_native: 0.24 },
+        },
+        source: 'https://ai.google.dev/gemini-api/docs/pricing',
+        checked: '2026-08-25',
+        note: 'Nano Banana 2 ~$0.067 per 1K image; Nano Banana Pro ~$0.134 at 1K-2K. The 4K Pro figure is the published tier for the larger output.',
+    },
+
+    /*
+     * Black Forest Labs — FLUX.2.
+     *
+     * Billed PER MEGAPIXEL rather than per image, which is why the rate carries
+     * a megapixel unit: a 4MP frame genuinely costs four times a 1MP one, and
+     * pricing per image would under-report every large board by that factor.
+     * Klein is the exception and is quoted flat per image.
+     */
+    'bfl:image': {
+        unit: 'megapixel', native_unit: 'megapixel', native_per_unit: 1,
+        usd_per_native: 0.03,
+        models: {
+            'flux-2-klein': { unit: 'image', native_unit: 'image', usd_per_native: 0.015 },
+            'flux-2-flex':  { usd_per_native: 0.02 },
+            'flux-2-pro':   { usd_per_native: 0.03 },   // editing with references: $0.045/MP
+            'flux-2-max':   { usd_per_native: 0.045 },
+        },
+        source: 'https://bfl.ai/pricing',
+        checked: '2026-08-25',
+        note: 'FLUX.2 Pro $0.03/MP generating, $0.045/MP when editing with reference images. Klein 4B from $0.014 and 9B $0.015 per image. API usage includes commercial rights.',
+    },
+
+    /*
+     * Seedance 2.5, via MuAPI.
+     *
+     * Per SECOND, and the resolution multiplies it fivefold from 720p to 4K —
+     * which is the single most expensive dial in this engine and the reason the
+     * adapter never rounds a resolution upward.
+     */
+    'seedance:video': {
+        unit: 'second', native_unit: 'second', native_per_unit: 1,
+        usd_per_native: 0.34,
+        models: {
+            'seedance-2.5-480p':  { usd_per_native: 0.17 },
+            'seedance-2.5':       { usd_per_native: 0.34 },   // 720p, the unsuffixed default
+            'seedance-2.5-1080p': { usd_per_native: 0.85 },
+            'seedance-2.5-4k':    { usd_per_native: 1.70 },
+        },
+        source: 'https://muapi.ai/',
+        checked: '2026-08-25',
+        note: 'Per second of output: 480p $0.17, 720p $0.34, 1080p $0.85, 4K $1.70. A 10s 1080p clip is $8.50. Reached through MuAPI rather than ByteDance Ark directly.',
+    },
+
     'openai:image': {
         unit: 'image', native_unit: 'image', native_per_unit: 1,
         usd_per_native: 0.042,

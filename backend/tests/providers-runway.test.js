@@ -79,7 +79,11 @@ describe('artlist removal (set-based)', () => {
 
     it('every PREFERRED_WHEN_CONFIGURED target is a registered provider', () => {
         const ids = new Set(providers.list().map(a => a.id));
+        // A preference is an ordered list now — one name that holds no key
+        // would fall past every credentialed adapter beside it. The rule is
+        // unchanged: every provider named has to be registered.
         const dangling = Object.entries(providers.PREFERRED_WHEN_CONFIGURED || {})
+            .flatMap(([cap, v]) => (Array.isArray(v) ? v : [v]).map(id => [cap, id]))
             .filter(([, id]) => !ids.has(id))
             .map(([cap, id]) => `${cap} -> ${id}`);
         assert.deepEqual(dangling, [], `preference points at unregistered provider: ${dangling.join(', ')}`);

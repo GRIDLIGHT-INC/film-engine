@@ -157,6 +157,24 @@ async function runImageFallbackChain(chain, payloadOrFactory, opts) {
             continue;
         }
 
+        /*
+         * A MODEL BELONGS TO ONE PROVIDER.
+         *
+         * The chain deliberately walks past a provider that declines, which
+         * means the adapter changes mid-flight while the payload does not.
+         * Carrying "gemini-3-pro-image" onward to OpenAI is a rejected request
+         * — and it would be rejected for a reason that looks nothing like the
+         * refusal that started the walk, so the fallback would appear broken
+         * rather than the model name being wrong. Strip a model that is not
+         * this adapter's; the tier names the right one below.
+         */
+        if (payload && payload.model
+            && ((payload.__model_for && payload.__model_for !== adapter.id)
+                || (adapter.models && !adapter.models[payload.model]))) {
+            delete payload.model;
+            delete payload.__model_for;
+        }
+
         const result = await adapter.generate('image', payload, opts || {});
         attempts.push({ provider: adapter.id, ok: !!result.ok, error: result.ok ? null : result.error });
 

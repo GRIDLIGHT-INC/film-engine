@@ -150,7 +150,20 @@ function getProjectProviders(res, projectId) {
     const effective = {};
     for (const cap of CAPABILITIES) effective[cap] = providers.resolveId(cap, config);
 
-    return json(res, 200, { project_id: projectId, capabilities: CAPABILITIES, config, effective });
+    /*
+     * The quality tiers, and what each would ACTUALLY use on this install right
+     * now. The menu is the point: a director chooses Draft, Standard or
+     * Precision, and the provider behind it is an implementation detail that
+     * can change when a better model ships. `resolves_to` is included because a
+     * tier whose preferred provider has no key here silently falls through, and
+     * a menu that hid that would be promising a model it cannot run.
+     */
+    const { tierMenu, DEFAULT_TIER } = require('../lib/quality-tiers');
+    return json(res, 200, {
+        project_id: projectId, capabilities: CAPABILITIES, config, effective,
+        image_quality: config.image_quality || DEFAULT_TIER,
+        image_tiers: tierMenu(config),
+    });
 }
 
 function setProjectProviders(req, res, projectId) {
@@ -159,10 +172,51 @@ function setProjectProviders(req, res, projectId) {
 
     const body = req.body || {};
     const incoming = body.config && typeof body.config === 'object' ? body.config : body;
-    const clean = {};
+
+    /*
+     * MERGE, never replace.
+     *
+     * This built a fresh object and wrote it over the column, which was
+     * harmless while the only caller was a page that re-sends every field —
+     * and destructive the moment anything sent one. An agent setting the
+     * quality tier would have silently cleared every per-capability provider
+     * choice on the project, and nothing would have failed: the next
+     * generation would simply resolve somewhere else.
+     *
+     * Same rule the scene card follows, for the same reason: a partial write
+     * is the normal case, and a swap loses whatever the caller did not
+     * happen to know about.
+     */
+    let clean = {};
+    try { clean = JSON.parse(
+        (db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId) || {}).provider_config || '{}'
+    ) || {}; } catch (_) { clean = {}; }
     for (const cap of CAPABILITIES) {
         const pid = incoming[cap];
         if (typeof pid === 'string' && pid && providers.get(pid)) clean[cap] = pid;
+    }
+
+    /*
+     * The quality tier rides in the same config object.
+     *
+     * It has to be carried through EXPLICITLY: the loop above keeps only keys
+     * named in CAPABILITIES, so a tier arriving here would be dropped on save
+     * and the setting would appear to work while reaching nothing — the
+     * mood-board defect, one subsystem over. Validated against the table rather
+     * than stored as free text, because a misspelled tier falls back to
+     * standard silently and looks exactly like the choice not being applied.
+     */
+    const { IMAGE_TIERS } = require('../lib/quality-tiers');
+    const tier = String(incoming.image_quality || '').toLowerCase();
+    if (IMAGE_TIERS[tier]) clean.image_quality = tier;
+    else if (tier === 'auto') clean.image_quality = 'auto';
+    // The Advanced escape hatch: a specific model on the chosen provider.
+    if (typeof incoming.image_model === 'string') {
+        // Present but blank means "stop pinning a model" — ignoring it would
+        // make the Advanced field impossible to undo once used.
+        const m = incoming.image_model.trim();
+        if (m) clean.image_model = m.slice(0, 80);
+        else delete clean.image_model;
     }
 
     db.prepare('UPDATE film_projects SET provider_config = ?, updated_at = datetime(\'now\') WHERE id = ?')

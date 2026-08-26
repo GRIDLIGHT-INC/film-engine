@@ -49,6 +49,27 @@ const MEASURED_ACCEPTED = 11671;
  */
 const EXPECTED = {
     meshy: { min: MEASURED_ACCEPTED, exact: 16000, documented: false },
+    /*
+     * Google states Gemini's input limit in TOKENS, not characters, and the
+     * context window for these models is far larger than any prompt this engine
+     * assembles. 16000 characters is roughly 4k tokens — comfortably inside it —
+     * and matches the largest figure already used here rather than inventing a
+     * new one. NOT documented as a character count, so it is marked as such.
+     */
+    google: { exact: 16000, documented: false },
+    /*
+     * BFL publishes no character limit for FLUX.2. Held at 4000, matching
+     * OpenAI's documented figure, on the same reasoning Meshy's was set:
+     * matched to a comparable model rather than assumed unbounded.
+     *
+     * UNVERIFIED AND WORTH RE-CHECKING: FLUX.1 truncated at the T5 encoder's
+     * 512 tokens SILENTLY rather than rejecting. If FLUX.2 inherits that, a
+     * long prompt loses its tail — where the location and the style sit — with
+     * nothing reported. A silent truncation is worse than a rejection, so this
+     * number should be confirmed against a real long-prompt generation before
+     * the draft tier is used at volume.
+     */
+    bfl: { exact: 4000, documented: false },
     runway: { exact: 1000, documented: true },
     openai: { exact: 4000, documented: true },
     gridlight: { exact: 1000, documented: true },

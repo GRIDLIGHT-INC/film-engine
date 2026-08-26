@@ -31,6 +31,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 // flows engine alone left an agent able to run generation and unable to give it
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
+const { handleProviders } = require('../routes/providers');
 const { handleStoryStructure } = require('../routes/story-structure');
 const { handleScripts } = require('../routes/scripts');
 const { handleScenes } = require('../routes/scenes');
@@ -498,6 +499,42 @@ const PRODUCTION_TOOLS = [
         description: 'Delete one scene and, by cascade, every shot in it and everything generated from those shots. The safe way to revise a scene is scene_update, which keeps the shots; this is for a scene that should not exist.',
         path: a => `/film/scenes/${a.scene_id}`,
         schema: { scene_id: { type: 'string' } }, required: ['scene_id'],
+    },
+    /*
+     * Quality is a directing decision, so an agent has to be able to make it.
+     *
+     * Named by TIER rather than by model, exactly as the page is: an agent that
+     * asked for "gemini-3-pro-image" would be writing today's model name into
+     * tomorrow's production, and the whole point of the table is that the name
+     * changes without anything else doing so.
+     */
+    {
+        name: 'quality_get',
+        handler: handleProviders, method: 'GET',
+        description: 'Read the image quality tier for a project, and what each tier would actually '
+            + 'use on this install. A tier whose preferred provider holds no API key here falls '
+            + 'through to the next one, and the reason says so.',
+        path: a => `/film/projects/${a.project_id}/providers`,
+        schema: { project_id: { type: 'string' } },
+        required: ['project_id'],
+    },
+    {
+        name: 'quality_set',
+        handler: handleProviders, method: 'PUT',
+        description: 'Set the image quality tier. "draft" for cheap exploration, "standard" for most '
+            + 'storyboard frames, "precision" for difficult continuity — a frame that must hold an '
+            + 'established location, a specific subject and a camera change together — or "auto" to '
+            + 'lift to precision automatically when a request carries several references or edits an '
+            + 'existing frame. This changes which model generates every subsequent frame and what it '
+            + 'costs; it does NOT regenerate anything already on the board.',
+        path: a => `/film/projects/${a.project_id}/providers`,
+        body: a => ({ config: { image_quality: a.quality, ...(a.model ? { image_model: a.model } : {}) } }),
+        schema: {
+            project_id: { type: 'string' },
+            quality: { type: 'string', enum: ['draft', 'standard', 'precision', 'auto'] },
+            model: { type: 'string', description: 'Advanced: pin a specific model, overriding the tier. Normally omitted.' },
+        },
+        required: ['project_id', 'quality'],
     },
     {
         name: 'project_update',

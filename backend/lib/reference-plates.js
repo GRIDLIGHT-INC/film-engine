@@ -531,6 +531,17 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         ...(refs.length ? { reference_images: refs } : {}),
     };
 
+    /*
+     * The quality tier reaches plates too.
+     *
+     * A plate conditions every frame its subject appears in, so generating one
+     * outside the tier the production chose drags all of them with it — and a
+     * setting that reached the board but not the plates would be the "three
+     * paths out of four" gap this codebase has now shipped twice. Applied to
+     * the base payload so the moderation retry below inherits it.
+     */
+    require('./capability-payloads').withTierModel(basePayload, { project }, provider);
+
     let result = await provider.generate('image', {
         ...basePayload,
         prompt: buildPlatePrompt(kind, subject, stylePreset, view, anchored)

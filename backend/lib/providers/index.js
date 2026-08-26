@@ -94,8 +94,17 @@ const PREFERRED_WHEN_CONFIGURED = {
     // routing sends every question through Qdrant or Neo4j before it reaches a
     // model, so with no vector store up it 500s regardless of payload.
     llm: 'anthropic',
-    image: 'openai',
-    video: 'runway',
+    // Images prefer Google — the Nano Banana models are built for reconciling
+    // several reference pictures at once, which is what a keyframe carrying a
+    // character plate, a location plate and a scene anchor actually is. This is
+    // only the default when a project has expressed no opinion and Google holds
+    // a key; an explicit choice and the quality tier both outrank it.
+    image: ['google', 'bfl', 'openai'],
+    // Seedance 2.5 for footage. Runway's gen4.5 takes TWO keyframes, first and
+    // last, which has been the ceiling on "generate this sequence from these
+    // pictures"; Seedance's omni-reference workflow takes thirty. Runway stays
+    // registered and any project that pinned it is unaffected.
+    video: ['seedance', 'runway'],
     music: 'elevenlabs',
     voice: 'elevenlabs',
     sfx: 'elevenlabs',
@@ -130,8 +139,51 @@ function resolveId(capability, projectConfig) {
     if (process.env[envKey]) return process.env[envKey];
     if (process.env.PROVIDER_DEFAULT) return process.env.PROVIDER_DEFAULT;
 
+    /*
+     * THE QUALITY TIER, consulted here and nowhere else.
+     *
+     * A project says "precision" rather than "gemini-3-pro-image", so that when
+     * a better model arrives the routing table changes and nothing else does.
+     * It sits below an explicit pin and below the env override — both of those
+     * are somebody stating a provider outright — and above the static
+     * preference, which is only a guess about what a project with no opinion
+     * would want.
+     *
+     * A tier that reached no resolution would be the mood-board defect over
+     * again: a setting collected, validated, and consumed by nothing. This is
+     * the single place every generation path obtains an adapter, so wiring it
+     * here means the board, the plates, the orchestrator and the flow canvas
+     * cannot disagree about which model a tier means.
+     *
+     * Required lazily: lib/quality-tiers.js requires THIS module to check that
+     * a tier points at a registered provider, and a top-level require would be
+     * a cycle resolving to a half-built registry.
+     */
+    if (capability === 'image' && cfg.image_quality) {
+        try {
+            const { resolveTier } = require('../quality-tiers');
+            const chosen = resolveTier(cfg.image_quality, cfg);
+            if (chosen && chosen.provider) return chosen.provider;
+        } catch (_) { /* a broken tier must never block a generation */ }
+    }
+
+    /*
+     * An ORDERED preference, not a single name.
+     *
+     * A single name reintroduces the defect this table was populated to fix:
+     * naming a provider that holds no key falls straight past every
+     * credentialed adapter sitting in the registry beside it and lands on the
+     * local gateway, which may not even be running. The only symptom is a
+     * connection refused at generation time, per capability. So the preference
+     * walks until it finds a provider that can actually run.
+     *
+     * A bare string is still accepted, because most capabilities have exactly
+     * one hosted adapter and a list of one is noise.
+     */
     const preferred = PREFERRED_WHEN_CONFIGURED[capability];
-    if (preferred && isProviderConfigured(preferred)) return preferred;
+    for (const id of (Array.isArray(preferred) ? preferred : [preferred])) {
+        if (id && isProviderConfigured(id)) return id;
+    }
 
     return DEFAULT_PROVIDER;
 }

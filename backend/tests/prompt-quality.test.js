@@ -649,7 +649,21 @@ test('E3: the request a provider receives fits that provider ceiling', () => {
         const req = builder({ prompt: 'x'.repeat(limit), negative_prompt: 'y'.repeat(200),
             width: 1024, height: 576 });
         const body = (req && req.body) || req || {};
-        const sent = String(body.prompt || body.promptText || '');
+        /*
+         * Not every provider puts the prompt in a field called `prompt`.
+         * Gemini carries it as a text part inside an `input` array, so reading
+         * only body.prompt found an empty string and passed VACUOUSLY — a
+         * guard that reports green on an adapter it cannot see is worse than
+         * no guard, because the next one inherits the blind spot.
+         */
+        const fromInput = Array.isArray(body.input)
+            ? body.input.filter(x => x && x.type === 'text').map(x => x.text || '').join('\n')
+            : '';
+        const sent = String(body.prompt || body.promptText || fromInput || '');
+        if (!sent) {
+            over.push(`${id}: its request carries no readable prompt, so this check cannot see what it sends`);
+            continue;
+        }
         if (sent.length > limit) {
             over.push(`${id}: sends ${sent.length} against its ${limit} ceiling once the negative is folded`);
         }

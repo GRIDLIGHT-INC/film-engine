@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**158 tools, 40 families.** Everything the app can do, you can ask for in a
+**160 tools, 41 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -148,6 +148,23 @@ Then `video_preview` shows exactly what a clip would cost before you buy one.
 - `storyboard_recompose` — keep the PERFORMANCE from one frame and replace its BACKGROUND with a photographed view of the shot's location. Use it when the acting, framing and camera are right and the place behind them is wrong; `storyboard_refine` cannot, because its contract refuses composition changes and on a close-up the background is most of the composition. The background must be a view of that shot's own location — photograph the view you need first. Costs credits.
 `anchor_get` · `anchor_set` · `anchor_clear` · `annotation_list` ·
 `annotation_delete`
+
+**How good the frame needs to be is a choice, and it has a tool.** `quality_get`
+reads the project's image quality tier and tells you what each tier would
+actually use on this machine; `quality_set` changes it. Say what the work needs,
+not which company makes the model:
+
+- **draft** — cheap variations while you are still deciding a composition.
+- **standard** — most storyboard frames.
+- **precision** — a frame that has to hold an established location, a specific
+  subject and a camera change all at once. Costs more per image and saves the
+  retries.
+- **auto** — lifts to precision by itself when a request carries several
+  references or edits an existing frame.
+
+Setting a tier changes what every *subsequent* frame generates on. It does not
+regenerate anything already on the board, and it does not touch which provider
+serves video, voice or 3D.
 
 `storyboard_refine` keeps a picture and changes one thing about it;
 `storyboard_regenerate` builds a new one from the card. `anchor_set` points at a

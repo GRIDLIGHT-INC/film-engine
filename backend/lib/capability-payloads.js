@@ -572,11 +572,54 @@ function buildImagePayloadForAdapter(ctx, adapter) {
         ? negative.length + '\n\nAvoid: '.length
         : 0;
     const available = declared ? Math.max(1, declared - reserve) : declared;
-    if (!declared || available === declared) return firstPayload;
+    if (!declared || available === declared) return withTierModel(firstPayload, ctx, adapter);
 
     const rebuiltCtx = { ...(ctx || {}), imagePromptLimit: available, maxImagePixels: pixels };
     const rebuilt = CAPABILITY_BUILDERS.image(rebuiltCtx);
-    return Array.isArray(rebuilt) ? rebuilt[0] : rebuilt;
+    return withTierModel(Array.isArray(rebuilt) ? rebuilt[0] : rebuilt, ctx, adapter);
+}
+
+/**
+ * Name the MODEL the chosen quality tier wants from this provider.
+ *
+ * Resolving a tier to a provider is only half of it. Standard and Precision
+ * both land on Google — the difference between them IS the model, so a tier
+ * that reached the provider and not the model would make the two settings
+ * generate identically while the UI showed a choice. That is the failure this
+ * whole feature is meant to avoid, one level further down than the config.
+ *
+ * An explicit `image_model` still wins: the Advanced selector exists so a
+ * director who has learned that one model handles their subject is not
+ * overruled by a table.
+ */
+function withTierModel(payload, ctx, adapter) {
+    if (!payload || typeof payload !== 'object') return payload;
+    if (payload.model) return payload;                       // already stated
+    const cfg = (ctx && ctx.project && providerConfigOf(ctx.project)) || {};
+    if (cfg.image_model) { payload.model = cfg.image_model; return payload; }
+    if (!cfg.image_quality || !adapter || !adapter.id) return payload;
+    try {
+        const { resolveTier } = require('./quality-tiers');
+        const chosen = resolveTier(cfg.image_quality, cfg, ctx && ctx.tierRequest);
+        // Only when the tier actually landed on the adapter being built for:
+        // naming Google's model on a request going to OpenAI is a rejected call.
+        if (chosen && chosen.provider === adapter.id && chosen.model) {
+            payload.model = chosen.model;
+            /*
+             * Which adapter this model was chosen FOR, stamped non-enumerably
+             * so it never serialises into a request body. The fallback chain
+             * walks past a provider that declines, so the adapter changes while
+             * the payload does not — and most adapters guard against a foreign
+             * model name, but the local gateway passes `p.model` straight
+             * through by design. Marking the owner lets the chain strip it
+             * without every adapter having to defend itself.
+             */
+            Object.defineProperty(payload, '__model_for', {
+                value: adapter.id, enumerable: false, configurable: true, writable: true,
+            });
+        }
+    } catch (_) { /* a broken tier must never block a generation */ }
+    return payload;
 }
 
 /**
@@ -897,6 +940,7 @@ module.exports = {
     imageBudget,
     imagePromptLimit,
     buildImagePayloadForAdapter,
+    withTierModel,
     dimensionsForAspect,
     IMAGE_DEFAULTS,
     CAPABILITY_BUILDERS,

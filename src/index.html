@@ -23022,7 +23022,45 @@ ${fountainText.slice(0, 50000)}`;
             const capabilityHelp = {
                 llm: 'Screenplay AI, breakdowns, and prose-to-screenplay conversion.'
             };
-            mapEl.innerHTML = caps.map(cap => {
+            /*
+             * QUALITY FIRST, PROVIDER SECOND.
+             *
+             * A director chooses how good the frame needs to be, not which
+             * company makes it — so the three tiers lead and the per-capability
+             * provider selectors move into Advanced. When a better model ships
+             * the routing table changes and this page does not.
+             *
+             * Each tier still says what it would ACTUALLY use here, quietly:
+             * a tier whose preferred provider holds no key on this install
+             * falls through, and hiding that would promise a model we cannot run.
+             */
+            const tiers = proj.image_tiers || [];
+            const currentTier = proj.image_quality || 'standard';
+            const tierHtml = !tiers.length ? '' : `
+                <div class="form-group" style="margin-bottom:18px;">
+                    <label style="margin:0 0 8px;display:block;">Image quality</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        ${tiers.map(t => `
+                            <button type="button" class="btn ${t.id === currentTier ? '' : 'btn-secondary'}"
+                                onclick="pickImageTier('${esc(t.id)}')" id="tierbtn-${esc(t.id)}"
+                                style="flex:1;min-width:150px;text-align:left;padding:10px 12px;${t.available ? '' : 'opacity:.55;'}">
+                                <div style="font-weight:600;">${esc(t.label)}</div>
+                                <div class="text-sm" style="opacity:.8;margin-top:3px;font-weight:400;">${esc(t.why)}</div>
+                                <div class="text-sm" style="opacity:.6;margin-top:4px;font-weight:400;">
+                                    ${t.available ? 'uses ' + esc(t.model || t.resolves_to) : 'no provider keyed — ' + esc(t.reason)}
+                                </div>
+                            </button>`).join('')}
+                    </div>
+                    <input type="hidden" id="provImageQuality" value="${esc(currentTier)}">
+                    <div class="text-sm text-muted" style="margin-top:8px;">
+                        Auto is available too — it reads the request and lifts to Precision when a frame
+                        has to reconcile several references or edit an existing shot.
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="pickImageTier('auto')"
+                            style="margin-left:6px;">${currentTier === 'auto' ? '✓ Auto is on' : 'Use Auto'}</button>
+                    </div>
+                </div>`;
+
+            const advanced = caps.map(cap => {
                 const opts = supportsCap(cap);
                 if (opts.length === 0) return '';
                 const current = (proj.config && proj.config[cap]) || proj.effective[cap] || '';
@@ -23036,7 +23074,39 @@ ${fountainText.slice(0, 50000)}`;
                     </div>
                 </div>`;
             }).join('');
+
+            // The escape hatch, deliberately closed by default. A director who
+            // has learned that one model handles their subject must be able to
+            // say so — a table that cannot be overridden is a reason to stop
+            // using tiers at all.
+            mapEl.innerHTML = tierHtml + `
+                <details style="margin-top:6px;">
+                    <summary style="cursor:pointer;font-weight:600;">Advanced — choose providers and models directly</summary>
+                    <div style="margin-top:12px;">
+                        ${advanced}
+                        <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+                            <label style="flex:0 0 110px;margin:0;">Image model</label>
+                            <div style="flex:1;">
+                                <input id="provImageModel" type="text" style="width:100%;"
+                                    placeholder="leave blank to let the quality tier choose"
+                                    value="${esc((proj.config && proj.config.image_model) || '')}">
+                                <div class="text-sm text-muted" style="margin-top:4px;">
+                                    Overrides the tier's model. Blank is the normal case.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </details>`;
         } catch (err) { credEl.innerHTML = '<p class="text-sm text-muted">Providers unavailable: ' + esc(err.message) + '</p>'; }
+    }
+
+    function pickImageTier(tier) {
+        const hidden = document.getElementById('provImageQuality');
+        if (hidden) hidden.value = tier;
+        // Saved immediately rather than on a separate button: choosing a
+        // quality IS the action, and a picker that needs a second click to
+        // take effect is one people believe they have already used.
+        saveProviderConfig();
     }
 
     async function saveProviderKey(providerId) {
@@ -23131,6 +23201,13 @@ ${fountainText.slice(0, 50000)}`;
             const sel = document.getElementById('provcap-' + cap);
             if (sel && sel.value) config[cap] = sel.value;
         });
+        // Carried explicitly: the route keeps only keys it recognises, so a
+        // tier left out here would save as nothing and the setting would look
+        // like it worked while reaching no generation.
+        const q = document.getElementById('provImageQuality');
+        if (q && q.value) config.image_quality = q.value;
+        const m = document.getElementById('provImageModel');
+        if (m) config.image_model = m.value.trim();
         try {
             await api('/projects/' + state.currentProject.id + '/providers', { method: 'PUT', body: JSON.stringify({ config }) });
             setStatus('Provider settings saved');

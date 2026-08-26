@@ -70,7 +70,16 @@ test('every capability with a hosted alternative names a preferred provider', ()
 
 test('every preferred provider exists and serves the capability it is named for', () => {
     const wrong = [];
-    for (const [capability, id] of Object.entries(PREFERRED_WHEN_CONFIGURED)) {
+    /*
+     * A preference is an ORDERED LIST now, not one name: naming a single
+     * provider that holds no key falls past every credentialed adapter beside
+     * it and lands on the local gateway. The rule being checked is unchanged —
+     * every provider named must exist and must serve the capability it is
+     * named for — so the test walks the list rather than assuming one entry.
+     */
+    const preferredPairs = Object.entries(PREFERRED_WHEN_CONFIGURED)
+        .flatMap(([capability, v]) => (Array.isArray(v) ? v : [v]).map(id => [capability, id]));
+    for (const [capability, id] of preferredPairs) {
         if (!CAPABILITIES.includes(capability)) { wrong.push(`${capability} is not a capability`); continue; }
         const adapter = providers.get(id);
         if (!adapter) { wrong.push(`${capability} -> '${id}' is not registered`); continue; }
