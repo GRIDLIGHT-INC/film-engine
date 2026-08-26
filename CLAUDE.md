@@ -241,6 +241,7 @@ film-engine/
 │       ├── staleness-accept.test.js     # A warning you cannot act on is one you learn to ignore
 │       ├── dev-server.test.js           # An edit you cannot see is an edit that did not happen
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
+│       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── music-prompt.test.js        # Music prompt unit tests
