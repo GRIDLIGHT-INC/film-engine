@@ -146,3 +146,36 @@ test('the SPA renders the sidebar from this map rather than a second copy', () =
     assert.ok(html.includes('/nav-flow'), 'the SPA never fetches the flow');
     assert.ok(html.includes('applyNavFlow'), 'no function applies the flow to the sidebar');
 });
+
+test('the panel and the server agree about which pages exist', () => {
+    /*
+     * There are TWO phase mappings: lib/nav-flow.js groups pages by the nine
+     * PROJECT_PHASES the status machine declares, and the chrome in index.html
+     * carries its own six-phase Write/Plan/Look/Make/Edit/Deliver grouping for
+     * the panel. Both are legitimate — they answer different questions — but
+     * nothing checked that a page appears in both.
+     *
+     * So a page could be correctly placed server-side, pass every test here,
+     * and still be absent from the panel a director actually reads. That is
+     * what happened to the marketing page: reachable by its nav button, listed
+     * nowhere. Silent, and indistinguishable from the page not existing.
+     */
+    const fs = require('fs'), path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+
+    const block = html.slice(html.indexOf('var PHASES = ['));
+    const panelPages = new Set([...block.slice(0, block.indexOf('var RAIL'))
+        .matchAll(/pages:\[([^\]]*)\]/g)]
+        .flatMap(m => m[1].split(',').map(x => x.trim().replace(/^['"]|['"]$/g, '')))
+        .filter(Boolean));
+    assert.ok(panelPages.size >= 30, `parsed only ${panelPages.size} panel pages — the parse is wrong`);
+
+    const missing = [];
+    for (const [phase, spec] of Object.entries(NAV_FLOW)) {
+        for (const page of spec.pages) {
+            if (!panelPages.has(page)) missing.push(`${page} (server phase: ${phase})`);
+        }
+    }
+    assert.deepStrictEqual(missing, [],
+        `placed on the server but absent from the panel, so they are unreachable there: ${missing.join(', ')}`);
+});

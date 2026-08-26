@@ -33,6 +33,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 const { handleProjects } = require('../routes/projects');
 const { handleProviders } = require('../routes/providers');
 const { handleContinuity } = require('../routes/continuity');
+const { handleMarketing } = require('../routes/marketing');
 const { handleStoryStructure } = require('../routes/story-structure');
 const { handleScripts } = require('../routes/scripts');
 const { handleScenes } = require('../routes/scenes');
@@ -290,6 +291,84 @@ const PRODUCTION_TOOLS = [
             force: { type: 'boolean', description: 'Replace a frame on a LOCKED board.' },
         },
         required: ['shot_id', 'image'],
+    },
+    {
+        name: 'marketing_list',
+        handler: handleMarketing, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/marketing`
+            + (a.type ? `?type=${encodeURIComponent(a.type)}` : ''),
+        description: 'Posters, key art, banners and social cards for a project. FREE.',
+        schema: { project_id: { type: 'string' }, type: { type: 'string', description: 'Filter: poster | key_art | banner | social_card | still | thumbnail | logo' } },
+        required: ['project_id'],
+    },
+    {
+        name: 'marketing_create',
+        handler: handleMarketing, method: 'POST',
+        path: a => `/film/projects/${a.project_id}/marketing`,
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        description: 'Plan a marketing asset. FREE \u2014 this creates the record, it does not make '
+            + 'the artwork. `prompt` LEADS the image request and should describe the SUBJECT; the '
+            + "film's style preset is appended after it, so do not restate the look.",
+        schema: {
+            project_id: { type: 'string' },
+            type: { type: 'string', description: 'poster | key_art | banner | social_card | still | thumbnail | logo' },
+            title: { type: 'string' },
+            prompt: { type: 'string', description: 'What the artwork shows. Subject, not look.' },
+            aspect_ratio: { type: 'string', description: 'e.g. "2:3" for a one-sheet, "16:9" for a banner.' },
+            resolution: { type: 'string', description: 'e.g. "1080x1620".' },
+        },
+        required: ['project_id', 'type', 'title'],
+    },
+    {
+        name: 'marketing_generate',
+        handler: handleMarketing, method: 'POST',
+        path: a => `/film/marketing/${a.marketing_id}/generate`,
+        body: a => ({ ...(a.quality ? { quality: a.quality } : {}) }),
+        description: 'COSTS CREDITS. Generate the artwork for a marketing asset. Call '
+            + 'marketing_preview first \u2014 it is free and shows exactly what would be sent, '
+            + "including whether the film's style preset is applied. Replaces any existing artwork "
+            + 'on this asset. quality picks the image tier for this one generation: draft, standard '
+            + 'or precision.',
+        schema: {
+            marketing_id: { type: 'string' },
+            quality: { type: 'string', description: 'draft | standard | precision' },
+        },
+        required: ['marketing_id'],
+    },
+    {
+        name: 'marketing_delete',
+        handler: handleMarketing, method: 'DELETE',
+        path: a => `/film/marketing/${a.marketing_id}`,
+        description: 'Remove a marketing asset. The artwork file stays on disk \u2014 it cost money '
+            + 'to make, so deleting the plan must not delete the picture.',
+        schema: { marketing_id: { type: 'string' } },
+        required: ['marketing_id'],
+    },
+    {
+        name: 'marketing_upload',
+        handler: handleMarketing, method: 'POST',
+        path: a => `/film/marketing/${a.marketing_id}/import`,
+        body: a => ({ data: a.image, name: a.name }),
+        description: 'Put artwork you made yourself onto a marketing asset. FREE \u2014 nothing is '
+            + 'generated and no image provider is called, so this is how to deliver a poster without '
+            + 'spending image credits. image is a PNG or JPEG data URI. It replaces whatever that '
+            + 'asset was showing.',
+        schema: {
+            marketing_id: { type: 'string' },
+            image: { type: 'string', description: 'data:image/png;base64,... or data:image/jpeg;base64,...' },
+            name: { type: 'string' },
+        },
+        required: ['marketing_id', 'image'],
+    },
+    {
+        name: 'marketing_preview',
+        handler: handleMarketing, method: 'GET',
+        path: a => `/film/marketing/${a.marketing_id}/preview`,
+        description: 'What generating this artwork would send, and on which provider. FREE \u2014 '
+            + 'nothing is generated and nothing is spent. Says whether the film\u2019s style preset '
+            + 'is applied: without one the art will not match the film.',
+        schema: { marketing_id: { type: 'string' } },
+        required: ['marketing_id'],
     },
     {
         name: 'continuity_upload',

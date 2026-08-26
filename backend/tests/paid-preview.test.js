@@ -348,6 +348,7 @@ test('every import target is reachable from an agent', () => {
         'previs-image': 'previs_image_upload',
         'three-d-model': 'model_upload',
         'continuity-ref': 'continuity_upload',
+        'marketing-asset': 'marketing_upload',
     };
 
     const unreachable = [];

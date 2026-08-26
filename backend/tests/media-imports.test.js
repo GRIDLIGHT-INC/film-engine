@@ -140,9 +140,9 @@ test('every registered director import persists, registers, serves and has a UI 
     const expected = [
         'character-plate', 'location-plate', 'mood-board-image', 'previs-image',
         'prop-plate', 'storyboard-image', 'three-d-model',
-        // A continuity reference is a photograph of what was actually shot, and
-        // could previously only be pointed at by a path on the server's disk.
-        'continuity-ref',
+        // The two surfaces whose entire content is a picture and which could
+        // previously only be pointed at by a path on the server's own disk.
+        'continuity-ref', 'marketing-asset',
         ...Object.values(MEDIA_KINDS).filter(k => k.media !== 'image').map(k => `${k.capability}-media`),
     ].sort();
     assert.deepStrictEqual(entries.map(([id]) => id).sort(), expected);
@@ -304,6 +304,10 @@ test('every registered import is reachable through its production route', async 
         'continuity-ref': {
             handler: require('../routes/continuity').handleContinuity,
             url: o => `/film/continuity/${o.continuityId}/import`, mime: 'image/png', bytes: PNG, name: 'wet-street.png',
+        },
+        'marketing-asset': {
+            handler: require('../routes/marketing').handleMarketing,
+            url: o => `/film/marketing/${o.marketingId}/import`, mime: 'image/png', bytes: PNG, name: 'one-sheet.png',
         },
         /*
          * The seven media capabilities share ONE route, so they are generated

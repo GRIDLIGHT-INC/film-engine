@@ -56,7 +56,7 @@ film-engine/
 │   │   ├── audio-deliverables.js # Audio deliverables + manifest (Phase 17)
 │   │   ├── continuity.js       # Continuity reference board (Phase 18)
 │   │   ├── credits.js          # Credits + title cards (Phase 18)
-│   │   ├── marketing.js        # Marketing assets (Phase 18)
+│   │   ├── marketing.js        # Posters and key art: upload one, or generate in the film's look
 │   │   ├── budget.js           # Budget & cost tracking (Phase 18)
 │   │   ├── backups.js          # Auto-backup system (Phase 18)
 │   │   ├── flows.js            # Flow CRUD + graph validation (Phase 1)
@@ -406,7 +406,7 @@ All routes prefixed with `/film`:
 | Credits | `GET/PUT/DELETE /credits/:id` |
 | Title Cards | `GET/POST /projects/:id/title-cards`, `GET/PUT/DELETE /title-cards/:id` |
 | Marketing | `GET/POST /projects/:id/marketing`, `GET/PUT/DELETE /marketing/:id` |
-| Marketing | `POST /marketing/:id/generate` |
+| Marketing | `POST /marketing/:id/{generate,import}`, `GET /marketing/:id/preview` |
 | Budget | `GET /projects/:id/budget`, `POST /projects/:id/budget` |
 | Budget | `GET /projects/:id/budget/ledger`, `GET /projects/:id/budget/forecast` |
 | Budget | `PUT /projects/:id/budget/limit`, `DELETE /budget/:id` |

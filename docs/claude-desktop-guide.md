@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**161 tools, 42 families.** Everything the app can do, you can ask for in a
+**167 tools, 43 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -243,6 +243,25 @@ Validate before running, estimate before any fan-out. **`flow_run` costs money.*
 down, splitting **redo now** from **waiting on something above it**.
 
 ---
+
+### Marketing
+
+A poster, key art, a banner or a social card — the artwork that ships beside the
+film. `marketing_create` plans one, `marketing_list` reads them.
+
+Two ways to get the picture. **`marketing_upload` puts artwork you made
+yourself onto it and costs nothing**, which is the usual path since this kind of
+art is normally made in a design tool. Or generate it: `marketing_preview` shows
+what would be sent and on which provider for free, then `marketing_generate`
+buys it.
+
+Generation appends the project's **style preset** after your prompt, so the art
+looks like the film rather than like a different one. The preview says whether a
+preset is set — without one, it will not match. Write the prompt as the
+*subject*; the look is added for you.
+
+`marketing_delete` removes the record and deliberately leaves the artwork file
+on disk, because it cost money to make.
 
 ## What costs money
 

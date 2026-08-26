@@ -4113,6 +4113,9 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <span class="nav-icon">&#11088;</span> Selects
                 </button>
                 <!-- ==== CLAUDE:END ==== -->
+                <button class="nav-item" data-page="marketing" onclick="navigateTo('marketing')" data-tooltip="Posters, key art and social cards — upload your own or generate them" data-tooltip-pos="right">
+                    <span class="nav-icon">&#127917;</span> Marketing
+                </button>
                 <button class="nav-item" data-page="continuity" onclick="navigateTo('continuity')" data-tooltip="Reference board for visual, wardrobe, prop, and lighting consistency" data-tooltip-pos="right">
                     <span class="nav-icon">&#128247;</span> Continuity
                 </button>
@@ -4965,6 +4968,32 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 </div>
             </div>
             <div class="entity-grid" id="continuityGrid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));"></div>
+        </div>
+
+        <!-- ── MARKETING ──────────────────────────────────────── -->
+        <div class="page" id="page-marketing">
+            <div class="flex-between mb-16">
+                <h2>Marketing</h2>
+                <div>
+                    <select id="marketingFilter" onchange="loadMarketing()" style="width:auto;display:inline-block;min-width:150px;margin-right:8px;">
+                        <option value="">All types</option>
+                        <option value="poster">Poster</option>
+                        <option value="key_art">Key art</option>
+                        <option value="banner">Banner</option>
+                        <option value="social_card">Social card</option>
+                        <option value="still">Still</option>
+                        <option value="thumbnail">Thumbnail</option>
+                        <option value="logo">Logo</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="showModal('marketingModal')">+ Asset</button>
+                </div>
+            </div>
+            <p class="text-sm text-muted mb-8">
+                Artwork that ships beside the film. Upload something you made in a design tool, or
+                generate it &mdash; generation uses the film&rsquo;s own style preset, so the art looks
+                like the film rather than like a different one.
+            </p>
+            <div class="entity-grid" id="marketingGrid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));"></div>
         </div>
 
         <!-- ── CONSISTENCY STUDIO ─────────────────────────────── -->
@@ -6426,6 +6455,49 @@ table, .render-table { border-radius:12px; overflow:hidden; }
     </div>
 
     <!-- Act Modal (FILM-146) -->
+        <div class="modal-overlay" id="marketingModal">
+        <div class="modal">
+            <div class="modal-header"><h3>New Marketing Asset</h3><button class="modal-close" onclick="closeModal('marketingModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Type</label>
+                    <select id="mkType">
+                        <option value="poster">Poster</option>
+                        <option value="key_art">Key art</option>
+                        <option value="banner">Banner</option>
+                        <option value="social_card">Social card</option>
+                        <option value="still">Still</option>
+                        <option value="thumbnail">Thumbnail</option>
+                        <option value="logo">Logo</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Title</label>
+                    <input id="mkTitle" type="text" placeholder="Teaser one-sheet"></div>
+                <div class="form-group"><label>What it should show</label>
+                    <textarea id="mkPrompt" rows="3" placeholder="The dragon's shadow crossing an empty suburban street at blue hour, seen from below"></textarea>
+                    <div class="text-sm text-muted" style="margin-top:4px;">
+                        Leads the prompt. The film's style preset is added after it, so this describes
+                        the <em>subject</em> rather than the look.
+                    </div>
+                </div>
+                <div class="form-group"><label>Aspect ratio</label>
+                    <select id="mkAspect">
+                        <option value="2:3">2:3 &mdash; one-sheet poster</option>
+                        <option value="16:9">16:9 &mdash; banner, thumbnail</option>
+                        <option value="1:1">1:1 &mdash; social card</option>
+                        <option value="9:16">9:16 &mdash; story, vertical</option>
+                        <option value="4:5">4:5 &mdash; feed</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Resolution</label>
+                    <input id="mkResolution" type="text" value="1080x1620" placeholder="1080x1620"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('marketingModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="createMarketingAsset()">Create</button>
+            </div>
+        </div>
+        </div>
+
         <div class="modal-overlay" id="continuityModal">
         <div class="modal">
             <div class="modal-header"><h3>New Continuity Reference</h3><button class="modal-close" onclick="closeModal('continuityModal')">&times;</button></div>
@@ -15662,6 +15734,7 @@ THREE.GLTFLoader = GLTFLoader;
             previs: loadPrevisPage,
             settings: loadSettings,
             continuity: loadContinuity,
+            marketing: loadMarketing,
             consistency: loadConsistency,
             budget: () => { loadSpend(); loadBudget(); },
             threed: loadThreeD,
@@ -23347,6 +23420,119 @@ ${fountainText.slice(0, 50000)}`;
         return `${API_BASE}/film/refsheets/${state.currentProject.id}/${encodeURIComponent(name)}?w=480`;
     }
 
+    const MARKETING_TYPE_ICON = { poster: '&#127917;', key_art: '&#127912;', banner: '&#128444;',
+        social_card: '&#128241;', still: '&#128247;', thumbnail: '&#128443;', logo: '&#10024;' };
+
+    /** Where a marketing picture is served from — the same place plates live. */
+    function marketingImgSrc(a) {
+        const name = String(a.image_path || '').split('/').pop();
+        return `${API_BASE}/film/refsheets/${state.currentProject.id}/${encodeURIComponent(name)}?w=480`;
+    }
+
+    async function loadMarketing() {
+        if (!state.currentProject) return;
+        setStatus('Loading marketing...');
+        try {
+            const filter = document.getElementById('marketingFilter')?.value || '';
+            let url = '/projects/' + state.currentProject.id + '/marketing';
+            if (filter) url += '?type=' + encodeURIComponent(filter);
+            const data = await api(url);
+            // The route returns `marketing_assets`. Guessing the key is how a
+            // page renders an empty state over data that is actually there.
+            const assets = data.marketing_assets || [];
+            const el = document.getElementById('marketingGrid');
+
+            if (!assets.length) {
+                el.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#127917;</div>'
+                    + '<h3>No marketing assets</h3><p>Add a poster, key art or a social card. '
+                    + 'You can upload one you already made, or generate it from the film&rsquo;s own look.</p></div>';
+                setStatus('No marketing assets');
+                return;
+            }
+
+            el.innerHTML = assets.map(a => `
+                <div class="entity-card">
+                    <div class="entity-card-header">
+                        <div class="entity-avatar" style="background:var(--gl-bg-elevated);">${MARKETING_TYPE_ICON[a.type] || '&#127917;'}</div>
+                        <div>
+                            <h3 style="font-size:13px;">${esc(a.title || 'Untitled')}</h3>
+                            <p class="text-sm text-muted">${esc(String(a.type || '').replace(/_/g, ' '))} &middot; ${esc(a.aspect_ratio || '')}</p>
+                        </div>
+                    </div>
+                    ${a.image_path
+                        ? `<img src="${marketingImgSrc(a)}" alt="" style="width:100%;border-radius:6px;margin-top:8px;display:block;">`
+                        : `<p class="text-sm text-muted" style="margin-top:8px;">${esc(a.prompt || 'No artwork yet.')}</p>`}
+                    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                        ${uploadControl('marketing-asset', `/marketing/${a.id}/import`,
+                            { extra: {}, after: 'loadMarketing',
+                              label: a.image_path ? 'Replace' : 'Upload',
+                              title: 'Use artwork you made in a design tool' })}
+                        <button class="btn btn-secondary btn-sm" onclick="generateMarketingArt('${a.id}')">
+                            ${a.image_path ? 'Regenerate' : 'Generate'}</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteMarketingAsset('${a.id}')">Delete</button>
+                    </div>
+                </div>`).join('');
+            setStatus(assets.length + ' marketing asset(s)');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function createMarketingAsset() {
+        if (!state.currentProject) return;
+        const body = {
+            type: document.getElementById('mkType').value,
+            title: document.getElementById('mkTitle').value.trim(),
+            prompt: document.getElementById('mkPrompt').value.trim(),
+            aspect_ratio: document.getElementById('mkAspect').value,
+            resolution: document.getElementById('mkResolution').value.trim(),
+        };
+        if (!body.title) { setStatus('Give it a title first'); return; }
+        try {
+            await api('/projects/' + state.currentProject.id + '/marketing',
+                { method: 'POST', body: JSON.stringify(body) });
+            closeModal('marketingModal');
+            document.getElementById('mkTitle').value = '';
+            document.getElementById('mkPrompt').value = '';
+            setStatus('Marketing asset created');
+            loadMarketing();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /**
+     * Generating a poster costs the same as generating a frame, so it goes
+     * through a confirmation showing what would be sent — the rule every other
+     * paid path in the app follows.
+     */
+    async function generateMarketingArt(id) {
+        let d = null;
+        try { d = await api(`/marketing/${id}/preview`); }
+        catch (err) { setStatus('Could not read what would be sent: ' + err.message); return; }
+
+        const ok = confirm(
+            `Generate this artwork?\n\n`
+            + `Provider: ${d.provider || 'unknown'}\n`
+            + `Size: ${d.width}x${d.height} (${d.aspect_ratio || 'no ratio set'})\n`
+            + `Film's look applied: ${d.style_applied ? 'yes' : 'NO — this project has no style preset, so the art will not match the film'}\n\n`
+            + `What it will be asked for (${d.prompt_length} characters):\n${d.prompt}\n\n`
+            + `This costs credits and replaces any existing artwork on this asset.`);
+        if (!ok) return;
+
+        setStatus('Generating artwork...', true);
+        try {
+            const res = await api(`/marketing/${id}/generate`, { method: 'POST', body: '{}' });
+            setStatus(res.provider ? `Artwork generated via ${res.provider}.` : 'Artwork generated.');
+            loadMarketing();
+        } catch (err) { setStatus('Could not generate: ' + err.message); }
+    }
+
+    async function deleteMarketingAsset(id) {
+        if (!confirm('Delete this marketing asset? The artwork file stays on disk.')) return;
+        try {
+            await api('/marketing/' + id, { method: 'DELETE' });
+            setStatus('Deleted');
+            loadMarketing();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
     async function loadContinuity() {
         if (!state.currentProject) return;
         setStatus('Loading continuity board...');
@@ -30600,7 +30786,7 @@ ${fountainText.slice(0, 50000)}`;
     { id:'edit',    label:'Edit',    blurb:'Watch it, circle the takes, keep the files straight.',
       pages:['playback','selects','assets','musiccues'] },
     { id:'deliver', label:'Deliver', blurb:'Exports, rights, QC — the paperwork of finishing.',
-      pages:['exportpage','colorpipeline','dubbing','broadcastqc','provenance','rights'] }
+      pages:['exportpage','colorpipeline','dubbing','broadcastqc','provenance','rights','marketing'] }
   ];
   var RAIL = [
     { id:'dashboard', label:'Home',  icon:'M3 7.5L9 3l6 4.5V15H3V7.5Z' },

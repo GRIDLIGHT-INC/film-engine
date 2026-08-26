@@ -25,6 +25,12 @@ function handleMarketing(req, res, urlParts, query) {
         const assetId = urlParts[2];
         if (!UUID_RE.test(assetId)) return badReq(res, 'Invalid marketing asset ID');
 
+        if (urlParts[3] === 'import' && req.method === 'POST') {
+            return importMarketingImage(req, res, assetId);
+        }
+        if (urlParts[3] === 'preview' && req.method === 'GET') {
+            return previewMarketingAsset(req, res, assetId);
+        }
         if (urlParts[3] === 'generate' && req.method === 'POST') {
             return generateMarketingAsset(req, res, assetId);
         }
@@ -189,18 +195,181 @@ function deleteMarketingAsset(req, res, assetId) {
 
 // --- Generate ---
 
-function generateMarketingAsset(req, res, assetId) {
+const reply = (res, code, payload) => {
+    res.writeHead(code, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(payload));
+};
+
+/**
+ * A poster, key art or social card made somewhere else.
+ *
+ * `image_path` could only be set by POSTing a STRING — a path on the server's
+ * own disk — so from a browser this surface could not hold a picture at all.
+ * Marketing art is usually made in a design tool, which makes the upload the
+ * ordinary path here rather than the escape hatch.
+ */
+function importMarketingImage(req, res, assetId) {
     const asset = db.prepare('SELECT * FROM film_marketing_assets WHERE id = ?').get(assetId);
     if (!asset) return notFound(res);
-
-    db.prepare('UPDATE film_marketing_assets SET status = ? WHERE id = ?').run('generating', assetId);
-
-    const updated = db.prepare('SELECT * FROM film_marketing_assets WHERE id = ?').get(assetId);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-        ...updated,
-        _hint: 'Send the prompt field to ImageGen API (POST /image) to generate the asset image'
-    }));
+    const body = req.body || {};
+    if (!body.data) return reply(res, 400, { error: 'no image supplied' });
+    try {
+        const { importMedia } = require('../lib/media-imports');
+        const imported = importMedia('marketing-asset', {
+            projectId: asset.project_id, data: body.data, name: body.name || asset.title,
+        });
+        db.prepare("UPDATE film_marketing_assets SET image_path = ?, status = 'generated' WHERE id = ?")
+            .run(imported.file_name, assetId);
+        return reply(res, 201, {
+            asset: db.prepare('SELECT * FROM film_marketing_assets WHERE id = ?').get(assetId),
+            ...imported,
+        });
+    } catch (err) {
+        return reply(res, /not found/i.test(err.message) ? 404 : 400, { error: err.message });
+    }
 }
 
-module.exports = { handleMarketing };
+/**
+ * What a poster is made from.
+ *
+ * The asset's own prompt leads, because it is the only statement of what this
+ * piece of art IS. The film's style preset follows: a poster that does not look
+ * like the film is a poster for a different film, and the preset is the one
+ * place that look is written down. It is a KEY ART brief rather than a frame,
+ * so it explicitly asks for no scene furniture — a poster generated as though
+ * it were a storyboard panel comes back as a screenshot.
+ */
+function buildMarketingPrompt(asset, project) {
+    const parts = [];
+    const own = String(asset.prompt || '').trim();
+    if (own) parts.push(own);
+    else parts.push(`${String(asset.type || 'poster').replace(/_/g, ' ')} for the film`
+        + (project && project.title ? ` "${project.title}"` : ''));
+    if (asset.description) parts.push(String(asset.description).trim());
+    const style = project && String(project.style_preset || '').trim();
+    if (style) parts.push(style);
+    parts.push('key art composition, poster framing, clean negative space for titles');
+    return parts.filter(Boolean).join(', ');
+}
+
+const MARKETING_NEGATIVE = 'storyboard panel, screenshot, film still, letterboxing, '
+    + 'watermark, existing title text, lorem ipsum, gibberish lettering, credit block';
+
+/** Dimensions the asset asks for, or the ratio's own default. */
+function marketingSize(asset) {
+    const m = /^(\d+)\s*[x:]\s*(\d+)$/i.exec(String(asset.resolution || ''));
+    if (m) return { width: Number(m[1]), height: Number(m[2]) };
+    return { width: 1080, height: 1620 };
+}
+
+/**
+ * FREE. What would be sent, before anything is bought.
+ *
+ * Every paid path in this engine shows its request first; a poster costs the
+ * same as a storyboard frame and there is no reason for it to be the exception.
+ */
+function previewMarketingAsset(req, res, assetId) {
+    const asset = db.prepare('SELECT * FROM film_marketing_assets WHERE id = ?').get(assetId);
+    if (!asset) return notFound(res);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config FROM film_projects WHERE id = ?')
+        .get(asset.project_id);
+    const providers = require('../lib/providers');
+    const { spendContext } = require('../lib/provider-config');
+    const cfg = spendContext(project, null);
+    const adapter = providers.get(providers.resolveId('image', cfg));
+    const size = marketingSize(asset);
+    const prompt = buildMarketingPrompt(asset, project);
+    return reply(res, 200, {
+        asset_id: assetId,
+        provider: adapter && adapter.id,
+        prompt,
+        prompt_length: prompt.length,
+        negative_prompt: MARKETING_NEGATIVE,
+        aspect_ratio: asset.aspect_ratio,
+        width: size.width,
+        height: size.height,
+        style_applied: !!(project && project.style_preset),
+        note: 'Nothing was generated and nothing was spent.',
+    });
+}
+
+/**
+ * Generate the artwork.
+ *
+ * This returned a `_hint` telling the caller to send the prompt to an image API
+ * themselves, and had done since the day it shipped — the status moved to
+ * 'generating' and nothing ever moved it back, so a marketing asset could sit
+ * in that state permanently. It goes through the same fallback chain, the same
+ * quality tier and the same metering as every other image in the engine.
+ */
+async function generateMarketingAsset(req, res, assetId) {
+    const asset = db.prepare('SELECT * FROM film_marketing_assets WHERE id = ?').get(assetId);
+    if (!asset) return notFound(res);
+    const project = db.prepare('SELECT id, title, style_preset, provider_config FROM film_projects WHERE id = ?')
+        .get(asset.project_id);
+
+    const body = req.body || {};
+    const { generateImageWithFallback } = require('../lib/image-fallback');
+    const { spendContext } = require('../lib/provider-config');
+    const { persistProviderMedia } = require('../lib/provider-media');
+    const { withTierModel } = require('../lib/capability-payloads');
+    const providers = require('../lib/providers');
+
+    // A per-generation quality, exactly as the board has.
+    const override = {};
+    if (typeof body.quality === 'string' && body.quality.trim()) override.image_quality = body.quality.trim();
+    if (typeof body.provider === 'string' && body.provider.trim()) override.image = body.provider.trim();
+    const cfg = spendContext(project, null, null, Object.keys(override).length ? override : null);
+
+    const size = marketingSize(asset);
+    db.prepare("UPDATE film_marketing_assets SET status = 'generating' WHERE id = ?").run(assetId);
+
+    try {
+        const factory = adapter => withTierModel({
+            prompt: buildMarketingPrompt(asset, project),
+            negative_prompt: MARKETING_NEGATIVE,
+            aspect_ratio: asset.aspect_ratio || undefined,
+            width: size.width,
+            height: size.height,
+        }, { project, tierOverride: Object.keys(override).length ? override : null }, adapter);
+
+        const result = await generateImageWithFallback(factory, cfg, { timeout: 300000 });
+        if (!result || !result.ok) {
+            // Back to planned, not left in 'generating'. A status that only ever
+            // moves forward is how an asset ends up permanently mid-flight.
+            db.prepare("UPDATE film_marketing_assets SET status = 'planned' WHERE id = ?").run(assetId);
+            return reply(res, 502, { error: 'Image generation failed', details: result && result.error,
+                attempts: result && result._chain });
+        }
+
+        // Lands beside every other reference picture, so the same serving route
+        // and the same thumbnailing apply with nothing new to remember.
+        const fileName = `marketing_${String(asset.type || 'poster')}_${assetId.slice(0, 8)}.png`;
+        const filePath = await persistProviderMedia(
+            project.id, 'refsheets', fileName, result.data || result);
+
+        const assetRowId = generateId();
+        const bytes = (() => { try { return require('fs').statSync(filePath).size; } catch (_) { return 0; } })();
+        db.prepare(`INSERT INTO film_assets
+            (id, project_id, asset_type, file_path, file_name, format, mime_type, size_bytes, version, metadata)
+            VALUES (?, ?, 'other', ?, ?, 'png', 'image/png', ?, 1, ?)`)
+            .run(assetRowId, project.id, filePath, fileName, bytes,
+                JSON.stringify({ kind: 'marketing', marketing_id: assetId, type: asset.type }));
+
+        db.prepare("UPDATE film_marketing_assets SET image_path = ?, status = 'generated' WHERE id = ?")
+            .run(fileName, assetId);
+
+        return reply(res, 200, {
+            asset: db.prepare('SELECT * FROM film_marketing_assets WHERE id = ?').get(assetId),
+            provider: result.provider,
+            model: result.provider_model || null,
+            file_name: fileName,
+            attempts: result._chain,
+        });
+    } catch (err) {
+        db.prepare("UPDATE film_marketing_assets SET status = 'planned' WHERE id = ?").run(assetId);
+        return reply(res, 500, { error: err.message });
+    }
+}
+
+module.exports = { handleMarketing, buildMarketingPrompt, MARKETING_NEGATIVE };

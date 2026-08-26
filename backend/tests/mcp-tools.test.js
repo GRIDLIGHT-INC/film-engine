@@ -333,6 +333,9 @@ const CREATE_DELETE_PAIRS = [
     { create: 'mood_board_add',    remove: 'mood_board_remove' },
     { create: 'shot_annotate',     remove: 'annotation_delete' },
     { create: 'flow_create',       remove: 'flow_delete' },
+    // A poster an agent can plan, it must be able to unplan. Deleting the
+    // record deliberately leaves the artwork file: it cost money to generate.
+    { create: 'marketing_create',  remove: 'marketing_delete' },
 ];
 
 test('the pair list covers every create tool on the surface', () => {

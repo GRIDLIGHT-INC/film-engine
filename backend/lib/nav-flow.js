@@ -70,7 +70,10 @@ const NAV_FLOW = {
 
     review: { label: 'Review', pages: ['playback', 'selects', 'notes', 'broadcastqc', 'renderhistory'] },
 
-    export: { label: 'Deliver', pages: ['exportpage', 'assets', 'rights', 'provenance'] },
+    // Marketing is a DELIVERABLE — a poster and key art ship with the film —
+    // so it sits with the export surfaces rather than with look development,
+    // which is about how the film itself is shot.
+    export: { label: 'Deliver', pages: ['exportpage', 'assets', 'rights', 'provenance', 'marketing'] },
 
     complete: { label: 'Complete', pages: [] },
 };

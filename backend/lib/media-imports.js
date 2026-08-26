@@ -127,20 +127,15 @@ const MEDIA_IMPORTS = Object.freeze({
     'continuity-ref': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
 
     /*
-     * MARKETING IS NOT HERE, and the reason is worth recording rather than
-     * leaving as an omission somebody closes later by accident.
+     * A poster, key art or social card.
      *
-     * `film_marketing_assets` has the same `image_path`-by-string problem, and
-     * `POST /marketing/:id/generate` has never generated anything — it sets the
-     * status to 'generating' and returns a hint telling the caller to invoke an
-     * image API themselves. But the SPA has no marketing page at all: no route
-     * into it, no nav entry, nothing that renders the table. Registering an
-     * import for a surface nobody can reach would put a target in this registry
-     * with no control behind it, which is precisely the state the coverage test
-     * exists to prevent — and it would report the feature as complete.
-     *
-     * The gap to close first is the page, not the upload.
+     * `film_marketing_assets.image_path` had the same defect the continuity
+     * board did — settable only by POSTing a path on the server's own disk —
+     * and it stayed unregistered while the SPA had no marketing page at all,
+     * because an import target with no control behind it reports a feature as
+     * complete when nothing can reach it. The page exists now.
      */
+    'marketing-asset': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
 
     /*
      * FOOTAGE AND SOUND, from outside.
