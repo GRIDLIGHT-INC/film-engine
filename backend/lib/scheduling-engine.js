@@ -15,10 +15,19 @@
  *  - suggestResidency(schedule) → which models to keep loaded
  */
 
-// Model profiles: estimated VRAM usage and load time
+/*
+ * Estimated VRAM and load time per model, for a LOCAL box.
+ *
+ * The image and video entries used to name two specific local checkpoints. They
+ * are keyed by capability now, because which model actually runs is the
+ * provider's decision — it varies per project and per quality tier, and on a
+ * hosted provider there is no VRAM to plan at all. What this scheduler is
+ * really doing is grouping work so the same thing stays loaded, and the
+ * capability is what determines that.
+ */
 const MODEL_PROFILES = {
-    'sdxl': { vram_gb: 6.5, load_time_s: 15, type: 'image' },
-    'animatediff-sdxl': { vram_gb: 8.0, load_time_s: 20, type: 'video' },
+    'image': { vram_gb: 6.5, load_time_s: 15, type: 'image' },
+    'video': { vram_gb: 8.0, load_time_s: 20, type: 'video' },
     'musicgen-large': { vram_gb: 3.5, load_time_s: 10, type: 'audio' },
     'musicgen-small': { vram_gb: 1.5, load_time_s: 5, type: 'audio' },
     'qwen3-tts': { vram_gb: 2.0, load_time_s: 8, type: 'voice' },
@@ -34,8 +43,8 @@ const DEFAULT_VRAM_BUDGET_GB = 24;
 
 // Pipeline step → model mapping
 const STEP_MODELS = {
-    keyframe: 'sdxl',
-    video: 'animatediff-sdxl',
+    keyframe: 'image',
+    video: 'video',
     voice: 'qwen3-tts',
     lipsync: 'wav2lip',
     music: 'musicgen-large',
@@ -97,7 +106,7 @@ function buildSchedule(shots, options) {
     const grouped = groupByModel(allSteps);
 
     // Order phases by pipeline dependency
-    const phaseOrder = ['sdxl', 'animatediff-sdxl', 'qwen3-tts', 'wav2lip', 'musicgen-large', 'realesrgan-video'];
+    const phaseOrder = ['image', 'video', 'qwen3-tts', 'wav2lip', 'musicgen-large', 'realesrgan-video'];
     const phases = [];
 
     for (const model of phaseOrder) {

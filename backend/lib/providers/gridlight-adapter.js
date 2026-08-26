@@ -20,6 +20,13 @@ const { callGridlight, relayGridlightSSE, checkEndpointHealth, GRIDLIGHT_URL, GR
  * runs — which is what `model_is_requested_not_resolved` says — so this is the
  * request, not a promise.
  */
+/*
+ * The one place a checkpoint name is still correct: this is the model the LOCAL
+ * gateway actually runs, so naming it here is a fact rather than a default
+ * leaking into everyone else's request. It reaches no hosted provider — the
+ * shared builders name no model at all now — and an operator running something
+ * else sets GRIDLIGHT_VIDEO_MODEL.
+ */
 const DEFAULT_VIDEO_MODEL = process.env.GRIDLIGHT_VIDEO_MODEL || 'animatediff-sdxl';
 
 const ENDPOINTS = {

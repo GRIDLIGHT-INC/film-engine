@@ -196,7 +196,7 @@ async function callImageGen(prompt, negativePrompt, seed, options, projectConfig
 
     // Return provenance alongside the bytes. The render ledger exists to make a
     // frame reproducible, and it was recording the REQUESTED payload defaults
-    // (`sdxl`, steps 30, guidance 7.5) rather than what ran -- parameters the
+    // (a local checkpoint name, steps 30, guidance 7.5) rather than what ran --
     // provider never received, naming a model it had rejected. A ledger that
     // cannot recreate its own output is worse than none, because it is trusted.
     return {
@@ -386,8 +386,8 @@ function logToRenderLedger(shotId, params) {
         VALUES (?, ?, ?, 'keyframe', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
         id, shotId, version,
-        // What RAN, not what was asked for. Defaulting to 'sdxl' here is how
-        // the ledger came to name a model the provider had rejected.
+        // What RAN, not what was asked for. Defaulting to a checkpoint name
+        // here is how the ledger came to name a model the provider rejected.
         params.model || 'unrecorded',
         params.seed || -1,
         params.steps || 30,
@@ -2923,6 +2923,28 @@ async function regenerateShot(req, res, shotId) {
     }
 
     const body = req.body || {};
+
+    /*
+     * Which generator this ONE frame is made on.
+     *
+     * The tier is a project setting, which is the right default and the wrong
+     * granularity for the moment that matters: a director looking at a frame
+     * that came back wrong wants to spend more on this one, and a director
+     * trying three compositions wants to spend less — without changing the
+     * setting and having to remember to put it back. Left out, the project's
+     * standing choice applies exactly as before.
+     */
+    const qualityOverride = (() => {
+        const { IMAGE_TIERS } = require('../lib/quality-tiers');
+        const q = String(body.quality || '').toLowerCase();
+        const out = {};
+        if (IMAGE_TIERS[q] || q === 'auto') out.image_quality = q;
+        // A named provider or model is the advanced escape hatch, per call.
+        if (typeof body.provider === 'string' && body.provider.trim()) out.image = body.provider.trim();
+        if (typeof body.model === 'string' && body.model.trim()) out.image_model = body.model.trim().slice(0, 80);
+        return Object.keys(out).length ? out : null;
+    })();
+
     const consistencyContext = buildShotReferencePayload(shot, scene, project);
 
     // PAR-026: what the director drew, if this project or this call says so.
@@ -3091,6 +3113,7 @@ async function regenerateShot(req, res, shotId) {
         const payloadFactory = generationCtx && !body.prompt_override
             ? adapter => buildImagePayloadForAdapter({
                 ...generationCtx,
+                tierOverride: qualityOverride,
                 consistency: consistencyContext,
                 overrides: {
                     seed,
@@ -3101,7 +3124,7 @@ async function regenerateShot(req, res, shotId) {
             : null;
         const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
             await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
-                imagePayload, spendContext(project, shot), payloadFactory);
+                imagePayload, spendContext(project, shot, null, qualityOverride), payloadFactory);
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         // Keep what is about to be replaced. Every attempt cost money.

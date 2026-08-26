@@ -53,7 +53,7 @@ const DEFAULT_IMAGE_MODEL = process.env.RUNWAY_IMAGE_MODEL || 'gen4_image';
  * Model names this adapter will forward.
  *
  * capability-payloads builds ONE payload per capability for every provider, and
- * its image default is `sdxl` -- a Gridlight-era name that means nothing here.
+ * its image default was a Gridlight-era checkpoint name that means nothing here.
  * Forwarding it unchecked made Runway reject every storyboard with
  * "model: Invalid", because `p.model || DEFAULT` lets a foreign name win over
  * the adapter's own default.
@@ -402,11 +402,11 @@ function normalizeKeyframes(input) {
  * What this adapter would ACTUALLY send, without sending it.
  *
  * The preview reported the payload's own fields and called them fact, so a
- * shot whose payload carried `animatediff-sdxl` — a Gridlight name hardcoded
- * in lib/video-prompt.js that Runway has never heard of — was previewed as
- * generating on animatediff-sdxl while pickModel silently substituted the
- * default. The one dialog a director is asked to trust before spending named a
- * model that would never be sent.
+ * shot whose payload carried a local Gridlight checkpoint name — hardcoded in
+ * lib/video-prompt.js, and something Runway has never heard of — was previewed
+ * as generating on it while pickModel silently substituted the default. The one
+ * dialog a director is asked to trust before spending named a model that would
+ * never be sent.
  *
  * Derived from buildVideoRequest rather than reimplemented: a description that
  * is a second implementation of the request is a description that will drift

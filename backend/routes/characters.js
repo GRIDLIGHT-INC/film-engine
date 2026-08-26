@@ -569,7 +569,18 @@ async function generateRefSheet(req, res, charId) {
 
     const views = (req.body && req.body.views) || REFSHEET_VIEWS;
     const seed = (req.body && req.body.seed) || null;
-    const model = (req.body && req.body.model) || 'sdxl';
+    /*
+     * No default model.
+     *
+     * This named a model none of the image providers wired here offers, so
+     * Meshy fell through to its own default of nano-banana-pro at 9 credits —
+     * every reference sheet silently buying the most expensive model in the
+     * catalogue while ignoring the project's quality tier entirely.
+     *
+     * The job row keeps a readable value; the PAYLOAD gets nothing unless a
+     * caller asked, which lets the tier decide.
+     */
+    const model = (req.body && req.body.model) || null;
 
     const jobId = generateId();
     db.prepare(
@@ -602,7 +613,9 @@ async function generateRefSheet(req, res, charId) {
             prompt,
             negative_prompt: negativePrompt,
             ...(styleRefs.length ? { reference_images: styleRefs } : {}),
-            model,
+            // Absent rather than null: a null falls through to the provider's own
+            // default, which is the most expensive model it sells.
+            ...(model ? { model } : {}),
             width: 1024,
             height: 1024,
             steps: 30,
@@ -611,6 +624,17 @@ async function generateRefSheet(req, res, charId) {
         };
 
         try {
+            /*
+             * A reference sheet is generated on the film's chosen quality too.
+             *
+             * A plate conditions every frame its subject appears in, so making
+             * one outside the tier the production chose drags all of them with
+             * it — the same reason the board and the plates had to agree about
+             * resolution and aspect.
+             */
+            require('../lib/capability-payloads').withTierModel(
+                payload, { project: { id: ch.project_id } }, imageProvider);
+
             let result = await imageProvider.generate('image', payload, { timeout: 300000 });
 
             // A style written for the FILM can be refused on a reference sheet:

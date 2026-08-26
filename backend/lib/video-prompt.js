@@ -233,10 +233,10 @@ function buildVideoPayload(sceneCard, characters, location, stylePreset, options
         /*
          * NO DEFAULT MODEL.
          *
-         * This said `animatediff-sdxl` — a Gridlight model name, hardcoded in a
-         * builder shared by every provider. Runway has never heard of it, so
-         * every single video preview carried "you asked for animatediff-sdxl,
-         * which this provider does not offer", and the substitution notice that
+         * This named a local Gridlight checkpoint, hardcoded in a builder
+         * shared by every provider. Runway has never heard of it, so every
+         * single video preview carried "you asked for a model this provider
+         * does not offer", and the substitution notice that
          * exists to catch a REAL mismatch was firing on a request nobody made.
          * A warning that goes off every time is one people learn to scroll past,
          * and then the real one goes past with it.

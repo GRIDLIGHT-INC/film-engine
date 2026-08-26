@@ -28494,8 +28494,42 @@ ${fountainText.slice(0, 50000)}`;
             const staging = (d.prompt || '').match(/Staging:[^,]*(?:, [^,]*){0,6}/);
             const over = d.headroom !== null && d.headroom < 0;
 
+            /*
+             * WHICH GENERATOR, chosen for this one frame.
+             *
+             * The tier is a project setting, and that is the right default and
+             * the wrong granularity for the moment that actually matters: a
+             * director looking at a frame that came back wrong wants to spend
+             * more on THIS one, and a director trying three compositions wants
+             * to spend less — neither wants to change a setting and remember to
+             * put it back, which is how a whole board ends up shot on the
+             * expensive tier because of one difficult shot.
+             *
+             * It belongs on the confirmation rather than in the Direct panel
+             * because this is the gate every paid image path already passes
+             * through, and it is where the price is already in front of you.
+             */
+            let tiers = [];
+            try { tiers = (await api(`/projects/${state.currentProject.id}/providers`)).image_tiers || []; }
+            catch (_) { tiers = []; }
+            CONFIRM_GEN_QUALITY = null;
+
             body.innerHTML = `
               ${o.note ? `<p class="text-sm text-muted" style="line-height:1.5;">${esc(o.note)}</p>` : ''}
+
+              ${tiers.length ? `<div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
+                  <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Generator for this frame</div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    ${tiers.map(t => `<button type="button" class="btn btn-secondary btn-sm" data-tier="${esc(t.id)}"
+                        onclick="pickGenQuality('${esc(t.id)}')" ${t.available ? '' : 'disabled'}
+                        style="flex:1;min-width:118px;">
+                        ${esc(t.label)}${t.usd_per_image != null ? ` &middot; $${t.usd_per_image.toFixed(3)}` : ''}
+                      </button>`).join('')}
+                  </div>
+                  <div class="text-sm" style="opacity:.6;margin-top:6px;" id="confirmGenQualityNote">
+                    Using this project's setting. Pick one to change it for this frame only.
+                  </div>
+                </div>` : ''}
 
               ${d.staged_notice ? `<p class="text-sm" style="color:var(--warning,#b8860b);line-height:1.5;">
                   <strong>${d.card_ahead || d.conflict ? 'Resolve the board/Previs conflict.' : 'Apply this Previs first.'}</strong>
@@ -28609,6 +28643,21 @@ ${fountainText.slice(0, 50000)}`;
         return decision;
     }
 
+    let CONFIRM_GEN_QUALITY = null;
+
+    function pickGenQuality(tier) {
+        CONFIRM_GEN_QUALITY = tier;
+        document.querySelectorAll('#confirmGenModal [data-tier]').forEach(b => {
+            const on = b.dataset.tier === tier;
+            b.classList.toggle('btn-secondary', !on);
+        });
+        const note = document.getElementById('confirmGenQualityNote');
+        // Says it applies to this frame only, where the choice is made — a
+        // per-call override that looks like a setting is one people expect to
+        // have changed the project.
+        if (note) note.textContent = `This frame only. The project's own setting is unchanged.`;
+    }
+
     async function regenerateStoryboard(shotId, directionMode, keepPlates) {
         markCurrentShot(shotId);
         const ok = await confirmGeneration(shotId, {
@@ -28627,6 +28676,7 @@ ${fountainText.slice(0, 50000)}`;
                     ...(directionMode ? { direction_mode: directionMode } : {}),
                     ...(keepPlates && keepPlates.length ? { keep_plates: keepPlates } : {}),
                     ...(CONFIRM_GEN_IGNORE_STAGED ? { ignore_staged: true } : {}),
+                    ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
                 }),
             });
             done();

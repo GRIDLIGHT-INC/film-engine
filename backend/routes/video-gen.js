@@ -85,9 +85,9 @@ async function previewVideo(res, shotId) {
      * WHAT THE ADAPTER WILL SEND, not what the payload asked for.
      *
      * The first version reported the payload's own fields as fact, so a shot
-     * whose payload carries `animatediff-sdxl` — hardcoded in
+     * whose payload carries a local Gridlight checkpoint name — hardcoded in
      * lib/video-prompt.js, a name Runway has never heard of — was previewed as
-     * generating on animatediff-sdxl while the adapter silently substituted its
+     * generating on it while the adapter silently substituted its
      * default. The one dialog a director is asked to trust before spending
      * named a model that would never be sent.
      *

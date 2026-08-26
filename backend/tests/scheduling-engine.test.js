@@ -8,7 +8,7 @@ const {
 describe('scheduling-engine', () => {
     describe('MODEL_PROFILES', () => {
         it('has profiles for common models', () => {
-            const models = ['sdxl', 'animatediff-sdxl', 'musicgen-large', 'qwen3-tts', 'wav2lip', 'realesrgan-video'];
+            const models = ['image', 'video', 'musicgen-large', 'qwen3-tts', 'wav2lip', 'realesrgan-video'];
             for (const m of models) {
                 assert.ok(MODEL_PROFILES[m], `Missing profile for ${m}`);
                 assert.ok(typeof MODEL_PROFILES[m].vram_gb === 'number');
@@ -77,25 +77,25 @@ describe('scheduling-engine', () => {
     describe('groupByModel', () => {
         it('groups steps by model', () => {
             const steps = [
-                { step: 'keyframe', model: 'sdxl' },
-                { step: 'video', model: 'animatediff-sdxl' },
-                { step: 'keyframe', model: 'sdxl' },
+                { step: 'keyframe', model: 'image' },
+                { step: 'video', model: 'video' },
+                { step: 'keyframe', model: 'image' },
             ];
             const groups = groupByModel(steps);
-            assert.equal(groups['sdxl'].length, 2);
-            assert.equal(groups['animatediff-sdxl'].length, 1);
+            assert.equal(groups['image'].length, 2);
+            assert.equal(groups['video'].length, 1);
         });
     });
 
     describe('estimateGPUMemory', () => {
         it('sums VRAM for unique models', () => {
-            const mem = estimateGPUMemory(['sdxl', 'qwen3-tts']);
-            assert.equal(mem, MODEL_PROFILES['sdxl'].vram_gb + MODEL_PROFILES['qwen3-tts'].vram_gb);
+            const mem = estimateGPUMemory(['image', 'qwen3-tts']);
+            assert.equal(mem, MODEL_PROFILES['image'].vram_gb + MODEL_PROFILES['qwen3-tts'].vram_gb);
         });
 
         it('deduplicates models', () => {
-            const mem = estimateGPUMemory(['sdxl', 'sdxl']);
-            assert.equal(mem, MODEL_PROFILES['sdxl'].vram_gb);
+            const mem = estimateGPUMemory(['image', 'image']);
+            assert.equal(mem, MODEL_PROFILES['image'].vram_gb);
         });
 
         it('returns 0 for empty', () => {

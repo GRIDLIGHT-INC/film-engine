@@ -351,3 +351,94 @@ test('the tier menu shows what an image costs', () => {
             `${t.label} resolves to ${t.resolves_to} but quotes no price`);
     }
 });
+
+test('a per-generation quality reaches the payload and the project keeps its own', () => {
+    /*
+     * The tier is a project setting, which is the right default and the wrong
+     * granularity for the moment that matters: a director looking at one frame
+     * that came back wrong wants to spend more on THAT frame, and one trying
+     * three compositions wants to spend less — neither wants to change a
+     * setting and remember to put it back.
+     *
+     * So the override must reach the request AND leave the project alone.
+     * Half of that is worse than neither: an override that silently rewrote
+     * the project would shoot the rest of the board on whatever the last
+     * difficult shot needed.
+     */
+    const { withTierModel } = require('../lib/capability-payloads');
+    const adapter = providers.get('meshy');
+    const project = { id: 'p1', provider_config: JSON.stringify({ image: 'meshy', image_quality: 'draft' }) };
+    const before = project.provider_config;
+
+    const standing = withTierModel({ prompt: 'x' }, { project }, adapter);
+    const overridden = withTierModel({ prompt: 'x' },
+        { project, tierOverride: { image_quality: 'precision' } }, adapter);
+
+    assert.strictEqual(standing.model, 'nano-banana', 'the project tier did not apply');
+    assert.strictEqual(overridden.model, 'nano-banana-pro', 'the per-call override did not reach the payload');
+    assert.strictEqual(project.provider_config, before,
+        'the override rewrote the project, so the next frame would inherit it');
+});
+
+test('no shared image payload names a model', () => {
+    /*
+     * IMAGE_DEFAULTS pre-set a local checkpoint name none of these providers
+     * offers. Two consequences, and the second is the one that hid the first:
+     * every provider fell through to its own default (nano-banana-pro on Meshy,
+     * the most expensive model it sells), and withTierModel returns early when
+     * a payload already names a model — so the quality tier was INERT on the
+     * main board path while the picker showed three choices.
+     */
+    const { IMAGE_DEFAULTS } = require('../lib/capability-payloads');
+    assert.ok(!('model' in IMAGE_DEFAULTS),
+        `the shared image defaults name "${IMAGE_DEFAULTS.model}", which makes every quality tier a no-op`);
+});
+
+test('a per-generation quality moves the provider as well as the model', () => {
+    /*
+     * Both halves, together. The model alone is not enough: Draft's model lives
+     * on BFL and Precision's on Google, so an override that changed the model
+     * without changing which adapter is called would name a BFL model on a
+     * Google request — which is a rejected call, and one that fails for a
+     * reason resembling nothing the director did.
+     *
+     * Written after getting exactly this wrong while checking by hand: the
+     * adapter was resolved from the project's config while the payload was
+     * built with the override, which is a combination the route never produces.
+     */
+    const { withTierModel } = require('../lib/capability-payloads');
+    const { spendContext } = require('../lib/provider-config');
+    const { db } = require('../db/database');
+    const crypto2 = require('crypto');
+
+    const id = crypto2.randomUUID();
+    db.prepare('INSERT INTO film_projects (id, title, provider_config) VALUES (?, ?, ?)')
+        .run(id, 'tier override', JSON.stringify({ image_quality: 'precision' }));
+    for (const p of ['bfl', 'google', 'meshy']) {
+        db.prepare(`INSERT INTO film_provider_credentials (provider, api_key, meta) VALUES (?, 'k', '{}')
+                    ON CONFLICT(provider) DO UPDATE SET api_key = excluded.api_key`).run(p);
+    }
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(id);
+
+    const resolveBoth = override => {
+        const cfg = spendContext(project, null, null, override);
+        const adapter = providers.get(providers.resolveId('image', cfg));
+        const payload = withTierModel({ prompt: 'x' }, { project, tierOverride: override }, adapter);
+        return `${adapter.id}/${payload.model}`;
+    };
+
+    const seen = {
+        standing: resolveBoth(null),
+        draft: resolveBoth({ image_quality: 'draft' }),
+        standard: resolveBoth({ image_quality: 'standard' }),
+    };
+    assert.notStrictEqual(seen.draft, seen.standing,
+        'overriding the quality changed nothing about the request');
+    assert.strictEqual(new Set(Object.values(seen)).size, 3,
+        `three different qualities produced fewer than three different requests: ${JSON.stringify(seen)}`);
+    for (const [tier, pair] of Object.entries(seen)) {
+        const [provider, model] = pair.split('/');
+        assert.ok(model && model !== 'undefined',
+            `${tier} resolved to ${provider} with no model, so the provider picks its own default`);
+    }
+});

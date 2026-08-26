@@ -1083,7 +1083,18 @@ async function generateLocationImage(req, res, locId) {
     }
 
     const seed = (req.body && req.body.seed) || null;
-    const model = (req.body && req.body.model) || 'sdxl';
+    /*
+     * No default model.
+     *
+     * This named a model none of the image providers wired here offers, so
+     * Meshy fell through to its own default of nano-banana-pro at 9 credits —
+     * silently buying the most expensive model in the catalogue while ignoring
+     * the project's quality tier entirely.
+     *
+     * The job row keeps a readable value; the PAYLOAD gets nothing unless a
+     * caller asked, which lets the tier decide.
+     */
+    const model = (req.body && req.body.model) || null;
 
     const jobId = generateId();
     db.prepare(
@@ -1097,7 +1108,9 @@ async function generateLocationImage(req, res, locId) {
     const payload = {
         prompt,
         negative_prompt: negativePrompt,
-        model,
+        // Absent rather than null: a null falls through to the provider's own
+        // default, which is the most expensive model it sells.
+        ...(model ? { model } : {}),
         width: 1024,
         height: 1024,
         steps: 30,
@@ -1194,7 +1207,18 @@ async function generatePropImage(req, res, propId) {
     }
 
     const seed = (req.body && req.body.seed) || null;
-    const model = (req.body && req.body.model) || 'sdxl';
+    /*
+     * No default model.
+     *
+     * This named a model none of the image providers wired here offers, so
+     * Meshy fell through to its own default of nano-banana-pro at 9 credits —
+     * silently buying the most expensive model in the catalogue while ignoring
+     * the project's quality tier entirely.
+     *
+     * The job row keeps a readable value; the PAYLOAD gets nothing unless a
+     * caller asked, which lets the tier decide.
+     */
+    const model = (req.body && req.body.model) || null;
 
     const jobId = generateId();
     db.prepare(
@@ -1208,7 +1232,9 @@ async function generatePropImage(req, res, propId) {
     const payload = {
         prompt,
         negative_prompt: negativePrompt,
-        model,
+        // Absent rather than null: a null falls through to the provider's own
+        // default, which is the most expensive model it sells.
+        ...(model ? { model } : {}),
         width: 1024,
         height: 1024,
         steps: 30,

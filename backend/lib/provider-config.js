@@ -55,9 +55,27 @@ function tag(config, projectId, shotId, sceneId) {
  * @param {object} [shot]  - a film_shots row; its scene_id is used when present
  * @param {object} [scene] - a film_scenes row, when there is no shot
  */
-function spendContext(project, shot, scene) {
+function spendContext(project, shot, scene, overrides) {
     const projectId = project && (project.id || project.project_id);
-    const config = projectId ? providerConfigFor(projectId) : {};
+    let config = projectId ? providerConfigFor(projectId) : {};
+    /*
+     * A choice made for THIS generation only.
+     *
+     * The quality tier is a project setting, which is right for the default and
+     * wrong for the moment a director is looking at one frame that came back
+     * badly and wants to spend more on it — or is trying three compositions and
+     * wants to spend less. Overriding the config for one call keeps that a
+     * decision about this frame rather than a setting they have to remember to
+     * put back, which is how a project ends up shooting a whole board on the
+     * expensive tier because of one difficult shot.
+     */
+    if (overrides && (overrides.image_quality || overrides.image_model || overrides.image)) {
+        config = tag({ ...config,
+            ...(overrides.image ? { image: overrides.image } : {}),
+            ...(overrides.image_quality ? { image_quality: overrides.image_quality } : {}),
+            ...(overrides.image_model ? { image_model: overrides.image_model } : {}),
+        }, projectId);
+    }
     // Shot rows reach this two ways. A `SELECT * FROM film_shots` row has
     // `id`; the storyboard's shotlist query aliases it to `shot_id` and joins
     // the scene alongside. Reading only `id` silently attributes every frame

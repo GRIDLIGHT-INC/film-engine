@@ -45,7 +45,20 @@ const storage = () => require('./file-storage');
 // Used only when the provider is unknown at build time.
 const DEFAULT_MAX_IMAGE_PIXELS = 1536 * 1024;
 
-const IMAGE_DEFAULTS = { model: 'sdxl', width: 1024, height: 1024, steps: 30, guidance_scale: 7.5 };
+/*
+ * NO DEFAULT MODEL, and this one mattered more than it looks.
+ *
+ * It named a model none of the image providers wired here offers, so every
+ * provider fell through to its own default — on Meshy that is nano-banana-pro
+ * at 9 credits, the most expensive model it sells. Worse, it made the quality
+ * tier INERT on the main board path: withTierModel returns early when the
+ * payload already names a model, so Draft, Standard and Precision all generated
+ * on the same expensive model while the picker showed three choices.
+ *
+ * The provider names its own model; the tier names one when a project has
+ * chosen a quality. Nothing is guessed here.
+ */
+const IMAGE_DEFAULTS = { width: 1024, height: 1024, steps: 30, guidance_scale: 7.5 };
 
 const LIPSYNC_DEFAULTS = { model: 'wav2lip', quality: 'high' };
 
@@ -595,7 +608,10 @@ function buildImagePayloadForAdapter(ctx, adapter) {
 function withTierModel(payload, ctx, adapter) {
     if (!payload || typeof payload !== 'object') return payload;
     if (payload.model) return payload;                       // already stated
-    const cfg = (ctx && ctx.project && providerConfigOf(ctx.project)) || {};
+    const base = (ctx && ctx.project && providerConfigOf(ctx.project)) || {};
+    // A per-generation choice outranks the project's standing tier: the
+    // director is looking at this frame, not at the settings page.
+    const cfg = (ctx && ctx.tierOverride) ? { ...base, ...ctx.tierOverride } : base;
     if (cfg.image_model) { payload.model = cfg.image_model; return payload; }
     if (!adapter || !adapter.id) return payload;
     try {
