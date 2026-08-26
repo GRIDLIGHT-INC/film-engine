@@ -11032,6 +11032,23 @@ THREE.GLTFLoader = GLTFLoader;
         propFilter: '',
     };
 
+    /*
+     * The chrome lives in a different <script>, and `const` is not a window
+     * property.
+     *
+     * So `window.state` was undefined and three things had been quietly dead:
+     * the top bar never showed the current project's name, the phase fractions
+     * in the nav panel read an empty object and rendered nothing, and the
+     * project-name click could not tell whether a project was open. Each failure
+     * is silent — a name that says "Film Engine" and a fraction that shows
+     * nothing both look like design decisions.
+     *
+     * Exported deliberately rather than by switching to `var`: the cross-script
+     * read is real and should be visible here, at the declaration, rather than
+     * inferred from a keyword.
+     */
+    window.state = state;
+
     const GUIDE_PAGE_ORDER = [
         'dashboard', 'screenplay', 'scenes', 'shotboard', 'storyboard',
         'characters', 'locations', 'props', 'assets', 'threed', 'videoshots',
@@ -30704,7 +30721,9 @@ ${fountainText.slice(0, 50000)}`;
     var nm = document.querySelector('#feProjName');
     var sub = document.querySelector('#feProjSub');
     var open_ = window.state && window.state.currentProject;
-    if (nm && open_) nm.textContent = open_.title || 'Film Engine';
+    // Reset when no project is open, or the bar keeps naming a film you have
+    // just left — which reads as the switch not having worked.
+    if (nm) nm.textContent = open_ ? (open_.title || 'Film Engine') : 'Film Engine';
     // Says what clicking does. An affordance nobody can see is not one — the
     // only other route to the project list is in a sidebar this layout hides.
     if (sub) sub.textContent = open_ ? 'Switch project' : 'AI production pipeline';

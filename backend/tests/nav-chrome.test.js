@@ -80,3 +80,36 @@ test('the project list is reachable from the current layout', () => {
     assert.ok(/brand\.title\s*=/.test(handler),
         'the only way to switch projects carries no label, so nobody would find it');
 });
+
+test('the chrome can actually read the app state it renders from', () => {
+    /*
+     * The chrome lives in a different <script> from the app, and `const` is not
+     * a window property — so `window.state` was undefined and three things had
+     * been quietly dead for as long as this layout has existed:
+     *
+     *   - the top bar never showed the current project's name (it read
+     *     "Film Engine" on every project),
+     *   - progress() read an empty object, so every phase fraction in the nav
+     *     panel rendered nothing,
+     *   - and the project-name click could not tell whether a project was open.
+     *
+     * Every one of those failures is silent. A bar that says "Film Engine" and
+     * a fraction that shows nothing both look like design decisions, which is
+     * why this went unnoticed rather than being reported.
+     */
+    const html = require('fs').readFileSync(
+        require('path').join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+
+    assert.ok(/window\.state\s*=\s*state\s*;/.test(html),
+        'the app state is not exported to window, so every cross-script reader of '
+        + 'window.state silently sees undefined');
+
+    // And the readers really are in another script block — which is the whole
+    // reason the export is needed rather than a stylistic choice.
+    const scripts = [...html.matchAll(/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+    const declaring = scripts.findIndex(s => /window\.state\s*=\s*state\s*;/.test(s));
+    const reading = scripts.findIndex((s, i) => i !== declaring && /window\.state/.test(s));
+    assert.ok(declaring >= 0 && reading >= 0 && reading !== declaring,
+        'window.state is read and written in one script — the export may be unnecessary, '
+        + 'or a reader has moved and this check no longer proves anything');
+});
