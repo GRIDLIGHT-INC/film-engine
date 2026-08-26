@@ -366,7 +366,7 @@ function lookupOverride(provider, capability, model, overrides) {
  * because a row that keeps only dollars cannot answer "how many credits did
  * that burn", which is the number a prepaid account actually runs out of.
  */
-function priceUsage({ provider, capability, model, unit, quantity, parts }, overrides) {
+function priceUsage({ provider, capability, model, unit, quantity, parts, native_charged, provider_confirmed: providerConfirmed }, overrides) {
     const rate = rateFor(provider, capability, model, overrides);
     if (!rate) {
         return { amount_usd: 0, native_unit: null, native_quantity: 0, unit_rate: 0,
@@ -383,6 +383,17 @@ function priceUsage({ provider, capability, model, unit, quantity, parts }, over
                + (Number(parts.output) || 0) * rate.components.output
                + (Number(parts.cache_read) || 0) * rate.components.input * 0.1
                + (Number(parts.cache_write) || 0) * rate.components.input * 1.25;
+    } else if (Number.isFinite(Number(native_charged)) && Number(native_charged) > 0) {
+        /*
+         * A RECEIPT beats the rate book.
+         *
+         * Everything else here is our reading of a published price list, and
+         * that reading was wrong about one Meshy model by a factor of two for
+         * days without anything noticing. Where a provider tells us what a call
+         * actually cost in its own units, that is the number — the book is only
+         * needed to turn those units into money.
+         */
+        amount = Number(native_charged) * rate.usd_per_native;
     } else {
         amount = qty * rate.usd_per_unit;
     }
@@ -396,7 +407,16 @@ function priceUsage({ provider, capability, model, unit, quantity, parts }, over
     return {
         amount_usd: round6(amount),
         native_unit: rate.native_unit,
-        native_quantity: round6(qty * (rate.native_per_unit || 1)),
+        native_quantity: Number.isFinite(Number(native_charged)) && Number(native_charged) > 0
+            ? round6(Number(native_charged))
+            : round6(qty * (rate.native_per_unit || 1)),
+        // Whether that figure came from the provider or from our rate book.
+        // "we measured $41" and "we think it was about $41" are different
+        // claims and only one should be defended in a meeting.
+        // NOT called `measured`: the spend report already uses measured_usd to mean
+        // "not reconstructed by the backfill", and two meanings of one word in
+        // one report is how a number gets read as the opposite of what it says.
+        provider_confirmed: !!providerConfirmed,
         unit_rate: rate.usd_per_unit,
         unit,
         priced: true,

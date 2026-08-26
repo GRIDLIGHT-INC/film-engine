@@ -430,6 +430,30 @@ async function run(payload, onProgress) {
  * owns the polling so routes still see a finished asset. Kept beside them
  * rather than in a second module for that reason.
  */
+/**
+ * Meshy's own credit balance.
+ *
+ * The whole spend report is computed from a rate book — our reading of a
+ * published price list. That is an assumption, and an un-checkable number
+ * decays into a confident lie. Meshy publishes the balance, so a generation can
+ * report what it ACTUALLY cost rather than what we believe it costs.
+ *
+ * Never throws and never blocks a generation: this is a receipt, and failing to
+ * read a receipt must not undo the purchase.
+ */
+async function readBalance(apiKey) {
+    try {
+        const res = await fetch(`${baseUrl()}/openapi/v1/balance`, {
+            headers: { Authorization: `Bearer ${apiKey}` },
+            signal: AbortSignal.timeout(8000),
+        });
+        if (!res.ok) return null;
+        const body = await res.json();
+        const n = Number(body && body.balance);
+        return Number.isFinite(n) ? n : null;
+    } catch (_) { return null; }
+}
+
 async function runImage(payload) {
     const { apiKey } = getCredential('meshy');
     if (!apiKey) return missingKey();
@@ -440,6 +464,11 @@ async function runImage(payload) {
     const path = body.reference_image_urls
         ? OPERATIONS.image_to_image.path
         : OPERATIONS.text_to_image.path;
+
+    // Read before, so the charge can be measured rather than assumed. A null
+    // here simply means the receipt is unavailable; the generation proceeds.
+    const openingBalance = await readBalance(apiKey);
+
     const created = await call('POST', path, apiKey, body);
     if (!created.ok) return created;
 
@@ -458,6 +487,28 @@ async function runImage(payload) {
         || null;
     if (!url) return { ok: false, status: 502, error: 'meshy: task succeeded but returned no image URL' };
 
+    /*
+     * What it really cost, read from Meshy rather than inferred.
+     *
+     * `provider_model` below is what we ASKED for — the response does not echo
+     * the model — so on its own it proves the request, not the charge. The
+     * balance delta is the one thing that distinguishes "we sent nano-banana"
+     * from "we were billed three credits", and those are different claims.
+     *
+     * Only trusted when it is plausible: a concurrent generation on the same
+     * account would land inside this window and inflate the delta, so an
+     * implausible figure is discarded rather than recorded as fact.
+     */
+    let charged = null;
+    let closing = null;
+    if (openingBalance !== null) {
+        closing = await readBalance(apiKey);
+        if (closing !== null) {
+            const delta = openingBalance - closing;
+            if (delta > 0 && delta <= 64) charged = delta;
+        }
+    }
+
     return {
         ok: true,
         status: 200,
@@ -465,8 +516,11 @@ async function runImage(payload) {
         provider: 'meshy',
         provider_model: body.ai_model,
         provider_job_id: taskId,
+        native_charged: charged,
+        balance_after: closing,
     };
 }
+
 
 async function generate(capability, payload) {
     if (!supports(capability)) {
@@ -528,6 +582,19 @@ function meterMeshy(capability, payload, result) {
          */
         const refs = (p.reference_images || []).length || (p.init_image ? 1 : 0);
         const model = (base === 'gpt-image-2' && refs) ? 'gpt-image-2-i2i' : base;
+        /*
+         * A MEASURED charge beats the rate book.
+         *
+         * The book is our reading of a published price list, and it was wrong
+         * about nano-banana-2 by a factor of two for days. When Meshy's own
+         * balance says what a call cost, that is the number — and a
+         * disagreement is worth surfacing rather than smoothing over, because
+         * it means the book has drifted.
+         */
+        const measured = result && Number(result.native_charged);
+        if (Number.isFinite(measured) && measured > 0) {
+            return { unit: 'call', quantity: 1, model, native_charged: measured, provider_confirmed: true };
+        }
         return { unit: 'call', quantity: 1, model };
     }
     if (capability === 'model3d') {

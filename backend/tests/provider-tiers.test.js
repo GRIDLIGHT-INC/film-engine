@@ -502,3 +502,52 @@ test('every Meshy image model can deliver a widescreen frame', () => {
     assert.deepStrictEqual(wrong, [],
         `a widescreen project would be boarded square: ${wrong.join('; ')}`);
 });
+
+test('a provider receipt beats our rate book, and says which it was', () => {
+    /*
+     * Every figure in the spend report is our reading of a published price
+     * list. That reading was wrong about nano-banana-2 by a factor of two for
+     * days, and nothing could have noticed — a rate book cannot check itself.
+     *
+     * Meshy publishes a credit balance, so a generation can report what it
+     * ACTUALLY cost. Where it does, that number wins, and the fact that it was
+     * confirmed travels with it: "we measured $41" and "we think it was about
+     * $41" are different claims and only one is defensible.
+     */
+    const { priceUsage } = require('../lib/provider-pricing');
+
+    const book = priceUsage({ provider: 'meshy', capability: 'image',
+        model: 'nano-banana', unit: 'call', quantity: 1 });
+    assert.strictEqual(book.native_quantity, 3, 'the book no longer prices nano-banana at 3 credits');
+    assert.strictEqual(book.provider_confirmed, false, 'a book figure claims to be confirmed');
+
+    // A receipt that DISAGREES must be recorded as the receipt says, not
+    // reconciled to the book — a disagreement means the book has drifted, and
+    // smoothing it over is how the drift survives.
+    const receipt = priceUsage({ provider: 'meshy', capability: 'image',
+        model: 'nano-banana', unit: 'call', quantity: 1, native_charged: 9, provider_confirmed: true });
+    assert.strictEqual(receipt.native_quantity, 9, 'the receipt was overruled by the rate book');
+    assert.ok(receipt.amount_usd > book.amount_usd, 'the dearer receipt priced no higher than the book');
+    assert.strictEqual(receipt.provider_confirmed, true);
+
+    // The meter has to actually produce that shape, or the pricing path is
+    // reachable only from a test.
+    const meshy = providers.get('meshy');
+    const withReceipt = meshy.meter('image', { model: 'nano-banana' }, { native_charged: 3 });
+    assert.strictEqual(withReceipt.native_charged, 3);
+    assert.strictEqual(withReceipt.provider_confirmed, true);
+    const without = meshy.meter('image', { model: 'nano-banana' }, null);
+    assert.ok(!without.provider_confirmed, 'an unconfirmed call claims confirmation');
+});
+
+test('the usage meter forwards a receipt rather than dropping it', () => {
+    // The adapter can read a real charge and the ledger still record our
+    // estimate — the measurement taken and thrown away one function later.
+    const src = require('fs').readFileSync(
+        require('path').join(__dirname, '..', 'lib', 'usage-meter.js'), 'utf8');
+    const call = src.slice(src.indexOf('pricing.priceUsage({'));
+    const body = call.slice(0, call.indexOf('});'));
+    for (const field of ['native_charged', 'provider_confirmed']) {
+        assert.ok(body.includes(field), `the meter drops ${field} before pricing`);
+    }
+});

@@ -174,6 +174,11 @@ function recordUsage(entry) {
         unit: entry.unit,
         quantity: entry.quantity,
         parts: entry.parts,
+        // The provider's own receipt, where it gave one. Dropping these here
+        // would leave the adapter reading a real charge and the ledger still
+        // recording our estimate — the measurement taken and thrown away.
+        native_charged: entry.native_charged,
+        provider_confirmed: entry.provider_confirmed,
     }, rateOverrides());
 
     const usageId = generateId();
