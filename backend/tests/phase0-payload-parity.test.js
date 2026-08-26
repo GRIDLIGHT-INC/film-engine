@@ -71,7 +71,16 @@ const STUB_KEYS = ['project_id', 'scene_id', 'shot_id', 'step'];
 // that consume them (film_video_jobs / film_music_jobs INSERTs pin most).
 const REQUIRED_KEYS = {
     image:   ['prompt', 'negative_prompt'],
-    video:   ['prompt', 'negative_prompt', 'model', 'width', 'height', 'num_frames', 'fps', 'camera_control'],
+    /*
+     * Video carries NO model, deliberately, unlike the audio capabilities below.
+     *
+     * Those name a real model on the provider that serves them. This builder is
+     * shared by every video provider, so any name it emits is wrong for all but
+     * one: it said `animatediff-sdxl`, which is Gridlight's, and every Runway
+     * preview reported a substitution for a request nobody had made. A warning
+     * that fires every time is one people learn to scroll past.
+     */
+    video:   ['prompt', 'negative_prompt', 'width', 'height', 'num_frames', 'fps', 'camera_control'],
     voice:   ['text', 'model', 'language', 'emotion', 'output_format', 'sample_rate'],
     lipsync: ['video_url', 'audio_url', 'model', 'quality', 'output_format'],
     music:   ['prompt', 'model', 'duration_s'],

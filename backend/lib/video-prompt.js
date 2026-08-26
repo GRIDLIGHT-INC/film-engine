@@ -230,7 +230,22 @@ function buildVideoPayload(sceneCard, characters, location, stylePreset, options
     const payload = {
         prompt,
         negative_prompt,
-        model: opts.model || 'animatediff-sdxl',
+        /*
+         * NO DEFAULT MODEL.
+         *
+         * This said `animatediff-sdxl` — a Gridlight model name, hardcoded in a
+         * builder shared by every provider. Runway has never heard of it, so
+         * every single video preview carried "you asked for animatediff-sdxl,
+         * which this provider does not offer", and the substitution notice that
+         * exists to catch a REAL mismatch was firing on a request nobody made.
+         * A warning that goes off every time is one people learn to scroll past,
+         * and then the real one goes past with it.
+         *
+         * A model name is a fact about a provider, so the provider names it: the
+         * Runway adapter picks gen4.5, Seedance's is in its route, Gridlight
+         * defaults to its own. An explicitly requested model still travels.
+         */
+        ...(opts.model ? { model: opts.model } : {}),
         width: params.width,
         height: params.height,
         num_frames: params.num_frames,

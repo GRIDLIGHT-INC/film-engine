@@ -10,6 +10,18 @@
 const { callGridlight, relayGridlightSSE, checkEndpointHealth, GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../gridlight-client');
 
 // capability -> Gridlight endpoint path (mirrors the per-domain *_ENDPOINT constants).
+/*
+ * The local gateway's video model, named HERE because a model name is a fact
+ * about a provider. It used to be hardcoded in lib/video-prompt.js, a builder
+ * shared by every provider, so Runway was asked for a model it has never heard
+ * of on every single generation.
+ *
+ * Gridlight is a swappable local agent and the service decides what actually
+ * runs — which is what `model_is_requested_not_resolved` says — so this is the
+ * request, not a promise.
+ */
+const DEFAULT_VIDEO_MODEL = process.env.GRIDLIGHT_VIDEO_MODEL || 'animatediff-sdxl';
+
 const ENDPOINTS = {
     llm: '/chat/intelligent',
     image: '/image',
@@ -232,7 +244,7 @@ function describeVideoRequest(payload) {
     return {
         provider: 'gridlight',
         mode: (p.init_image || p.image_url) ? 'image_to_video' : 'text_to_video',
-        model: p.model || null,
+        model: p.model || DEFAULT_VIDEO_MODEL,
         model_is_requested_not_resolved: true,
         duration_s: Number(p.duration_s !== undefined ? p.duration_s : p.duration) || null,
         ratio: (p.width && p.height) ? `${p.width}:${p.height}` : null,

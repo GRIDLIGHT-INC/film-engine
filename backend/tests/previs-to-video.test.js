@@ -77,13 +77,49 @@ test('an unblocked shot produces byte-identical output to before phase 3', () =>
     for (const [key, expected] of Object.entries(GOLDEN)) {
         const [movement, shotType] = key.split('|');
         const actual = buildVideoPayload(...goldenCall(movement, shotType));
-        const strip = o => { const { prompt, ...rest } = o; return rest; };
+        /*
+         * `model` is compared out, deliberately, and the fixture is NOT
+         * regenerated — regenerating it would delete the guarantee it exists
+         * for. The 54 payloads were captured when this builder hardcoded
+         * `animatediff-sdxl`, a Gridlight name emitted for every provider, so
+         * every Runway preview carried "you asked for a model this provider
+         * does not offer" — the substitution notice firing on a request nobody
+         * made. A model name is a fact about a provider and is now named by
+         * the provider, so this field is the one thing in these payloads that
+         * is SUPPOSED to have moved. Everything else stays pinned byte for byte.
+         */
+        const strip = o => { const { prompt, model, ...rest } = o; return rest; };
         if (JSON.stringify(strip(actual)) !== JSON.stringify(strip(expected))) {
             drift.push({ key, expected: expected.camera_control, actual: actual.camera_control });
         }
     }
     assert.deepStrictEqual(drift, [],
         `phase 3 changed output for shots with no blocking:\n${JSON.stringify(drift.slice(0, 3), null, 1)}`);
+});
+
+test('the shared payload names no provider-specific model', () => {
+    /*
+     * Stronger than pinning the old value: the builder is shared by every
+     * provider, so ANY model name it emits is wrong for all but one of them.
+     * Runway ignores a foreign name and warns, Seedance carries its model in
+     * the route, and Gridlight passes it straight through — so a stray default
+     * here is a false alarm on two adapters and a wrong request on the third.
+     */
+    const offenders = [];
+    for (const [key] of Object.entries(GOLDEN)) {
+        const [movement, shotType] = key.split('|');
+        const built = buildVideoPayload(...goldenCall(movement, shotType));
+        if ('model' in built) offenders.push(`${key} -> ${built.model}`);
+    }
+    assert.deepStrictEqual(offenders.slice(0, 3), [],
+        `the shared video payload names a model nobody asked for: ${offenders.slice(0, 3).join(', ')}`);
+
+    // An explicit request must still travel, or a caller cannot choose at all.
+    const [mv, st] = Object.keys(GOLDEN)[0].split('|');
+    const args = goldenCall(mv, st);
+    const opts = { ...(args[args.length - 1] || {}), model: 'gen4.5' };
+    const asked = buildVideoPayload(...args.slice(0, -1), opts);
+    assert.strictEqual(asked.model, 'gen4.5', 'an explicitly chosen model was dropped');
 });
 
 test('the prompt still says the same things, in a deliberate order', () => {

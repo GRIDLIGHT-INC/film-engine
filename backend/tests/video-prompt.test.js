@@ -86,7 +86,13 @@ describe('video-prompt', () => {
             const payload = buildVideoPayload(minCard, [], null, null);
             assert.ok(payload.prompt);
             assert.ok(payload.negative_prompt);
-            assert.equal(payload.model, 'animatediff-sdxl');
+            // No model. This builder is shared by every provider, so any name
+            // it emits is wrong for all but one of them — `animatediff-sdxl` is
+            // Gridlight's, and it made every Runway preview report a
+            // substitution for a request nobody made. The provider names its
+            // own model now; an explicitly requested one still travels.
+            assert.ok(!('model' in payload),
+                `the shared payload named ${payload.model}, which only one provider can honour`);
             assert.equal(payload.width, DEFAULT_WIDTH);
             assert.equal(payload.height, DEFAULT_HEIGHT);
             assert.equal(payload.output_format, 'mp4');
