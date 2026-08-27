@@ -139,7 +139,7 @@ function listCharacters(req, res, projectId) {
         // without a hard refresh.
         ch.reference_image_url = refsheet
             ? getFileUrl('refsheets', refsheet.project_id, refsheet.file_name,
-                refsheet.version || refsheet.created_at)
+                refsheet.created_at || refsheet.version)
             : null;
     }
 
@@ -913,7 +913,7 @@ function getRefSheetStatus(req, res, charId) {
     res.end(JSON.stringify({
         character_id: charId, jobs, sheets: assets.map(a => ({
             asset_id: a.id, file_name: a.file_name,
-            image_url: a.file_name ? getFileUrl('refsheets', a.project_id, a.file_name, a.version || a.created_at) : null,
+            image_url: a.file_name ? getFileUrl('refsheets', a.project_id, a.file_name, a.created_at || a.version) : null,
             metadata: a.metadata ? JSON.parse(a.metadata) : null,
         })),
     }));

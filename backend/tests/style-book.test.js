@@ -299,6 +299,73 @@ test('a plate URL carries a cache buster, so a regeneration is visible', () => {
     assert.ok(!/\s/.test(stamped), `the buster leaked whitespace into a URL: ${stamped}`);
 });
 
+test('a plate URL buster is keyed to something that actually changes', () => {
+    /*
+     * `?v=1` on every plate forever.
+     *
+     * The first version read `version || created_at`, and every plate row is
+     * written with version 1 — a constant. So the URL gained a query string,
+     * looked busted, and was byte-identical from one generation to the next.
+     * The browser served the cached picture exactly as before.
+     *
+     * Checked against the ROW SHAPE rather than by reading the expression: the
+     * claim is "this key moves when a plate is regenerated", and version does
+     * not.
+     */
+    /*
+     * UNGATED. The first version asked the database whether `version` was
+     * constant — and the test database is empty, so the query returned nothing,
+     * the guard was skipped and the whole assertion passed against the bug it
+     * was written for. A check that only runs when there happens to be data is
+     * a check that does not run.
+     *
+     * Every plate INSERT in this repo writes `version` 1 as a literal, which is
+     * the real claim and is checkable in the source.
+     */
+    for (const file of ['routes/locations.js', 'routes/characters.js', 'lib/reference-plates.js']) {
+        const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+        const wrongWayRound = /\.version \|\| \w+\.created_at/.exec(src);
+        assert.strictEqual(wrongWayRound, null,
+            `${file}: keys the cache buster on version, which every plate insert writes `
+            + 'as a literal 1 — so the URL would be ?v=1 forever and never change');
+    }
+});
+
+test('a plate query selects the columns its URL builder reads', () => {
+    /*
+     * THE GAP THE PREVIOUS TEST MISSED.
+     *
+     * It checked the CALL had four arguments. It did — and the fourth resolved
+     * to `undefined`, because the query feeding it selected only file_name and
+     * project_id. A four-argument call that silently degrades to three, and a
+     * location plate regenerated through MCP went on serving the cached
+     * picture.
+     *
+     * So: any query whose row is handed to getFileUrl must select the columns
+     * the buster reads.
+     */
+    /*
+     * The column list is read up to FROM, and the rest of the statement up to
+     * the end of the line. The first version bounded the match with
+     * [^"'`] — which cannot cross the quotes in `asset_type = 'reference_image'`,
+     * so it matched nothing at all and passed while the query was wrong.
+     */
+    const gaps = [];
+    for (const file of ['routes/locations.js', 'routes/characters.js']) {
+        const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+        for (const m of src.matchAll(/SELECT ([\w\s,.*]+?) FROM film_assets(.*)/g)) {
+            const [columns, rest] = [m[1], m[2]];
+            if (!/file_name/.test(columns)) continue;             // not a URL-building query
+            if (!/reference_image|character_sheet/.test(rest)) continue;   // not a plate query
+            if (!/created_at/.test(columns)) {
+                gaps.push(`${file}: SELECT ${columns.trim().slice(0, 60)} — no created_at, `
+                    + 'so getFileUrl receives undefined and the buster is silently dropped');
+            }
+        }
+    }
+    assert.deepStrictEqual(gaps, [], `\n  ${gaps.join('\n  ')}`);
+});
+
 test('every plate URL a browser renders is busted', () => {
     /*
      * Set-based over the call sites, because the failure is partial: the board

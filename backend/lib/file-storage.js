@@ -90,7 +90,12 @@ function getFileUrl(subdir, projectId, filename, version) {
      * one subsystem over. Reported as "I had to hard refresh to see the
      * picture", which is exactly what it looks like from the outside.
      *
-     * Keyed to the asset's own version or timestamp, NOT to the clock: busting
+     * Keyed to the asset's own TIMESTAMP first, then its version. Every plate
+     * row is written with `version` 1 — it is a constant here, so a buster
+     * reading it produced `?v=1` on every plate forever and changed nothing.
+     * `created_at` is what actually moves when a plate is regenerated.
+     *
+     * Not the clock: busting
      * on every render would re-download every unchanged plate on the board on
      * each refresh, which on a feature-length production is a lot of bytes
      * spent hiding one bug.

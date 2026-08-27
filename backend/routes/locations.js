@@ -713,7 +713,11 @@ function listLocations(req, res, projectId) {
 
     // Attach scene count and reference image per location
     const refImageQuery = db.prepare(
-        "SELECT file_name, project_id FROM film_assets WHERE asset_type = 'reference_image' AND location_id = ? ORDER BY created_at DESC LIMIT 1"
+        // version and created_at are SELECTED because the URL builder busts the
+        // browser cache with them. Omitted, they are silently undefined, the
+        // buster is dropped and a regenerated plate serves the cached picture —
+        // a four-argument call that resolves to three.
+        "SELECT file_name, project_id, version, created_at FROM film_assets WHERE asset_type = 'reference_image' AND location_id = ? ORDER BY created_at DESC LIMIT 1"
     );
     for (const loc of rows) {
         const count = db.prepare("SELECT COUNT(*) AS count FROM film_scenes WHERE project_id = ? AND location = ?").get(projectId, loc.name);
@@ -726,7 +730,7 @@ function listLocations(req, res, projectId) {
         // that existed, was correctly linked, and rendered as nothing.
         loc.reference_image_url = refAsset
             ? getFileUrl(PLATE_KINDS.location.subdir, refAsset.project_id, refAsset.file_name,
-                refAsset.version || refAsset.created_at) : null;
+                refAsset.created_at || refAsset.version) : null;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -998,13 +1002,13 @@ function listProps(req, res, projectId) {
     // where nothing puts a prop_id. So a generated prop plate existed, was
     // correctly linked, and was invisible.
     const refImageQuery = db.prepare(
-        "SELECT file_name, project_id FROM film_assets WHERE asset_type = 'reference_image' AND prop_id = ? ORDER BY created_at DESC LIMIT 1"
+        "SELECT file_name, project_id, version, created_at FROM film_assets WHERE asset_type = 'reference_image' AND prop_id = ? ORDER BY created_at DESC LIMIT 1"
     );
     for (const prop of rows) {
         const refAsset = refImageQuery.get(prop.id);
         prop.reference_image_url = refAsset
             ? getFileUrl(PLATE_KINDS.prop.subdir, refAsset.project_id, refAsset.file_name,
-                refAsset.version || refAsset.created_at) : null;
+                refAsset.created_at || refAsset.version) : null;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1268,7 +1272,7 @@ function getLocationImageStatus(req, res, locId) {
         location_id: locId, jobs,
         images: assets.map(a => ({
             asset_id: a.id, file_name: a.file_name,
-            image_url: a.file_name ? getFileUrl('loc-refs', a.project_id, a.file_name, a.version || a.created_at) : null,
+            image_url: a.file_name ? getFileUrl('loc-refs', a.project_id, a.file_name, a.created_at || a.version) : null,
         })),
     }));
 }
@@ -1392,7 +1396,7 @@ function getPropImageStatus(req, res, propId) {
         prop_id: propId, jobs,
         images: assets.map(a => ({
             asset_id: a.id, file_name: a.file_name,
-            image_url: a.file_name ? getFileUrl('prop-refs', a.project_id, a.file_name, a.version || a.created_at) : null,
+            image_url: a.file_name ? getFileUrl('prop-refs', a.project_id, a.file_name, a.created_at || a.version) : null,
         })),
     }));
 }
