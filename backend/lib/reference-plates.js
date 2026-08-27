@@ -387,12 +387,100 @@ function styleReferencesFor(db, projectId) {
  * default is the right answer when nobody has stated one, and inventing a size
  * would silently reframe every plate in every existing project.
  */
-function plateImageSize(project, maxPixels) {
+/**
+ * A LOCATION PLATE IS GENERATED AT 2K OR BETTER.
+ *
+ * It is the one reference that is RE-SHOT FROM. A character or prop plate is a
+ * close-up filling its own frame, so the subject occupies most of the pixels;
+ * a location plate's subject is the whole environment, and any given shot uses
+ * a fraction of it — a corner of the street, one house front, the far kerb.
+ * Detail that is adequate on a portrait is mush on a crop, and the plate is
+ * what every shot in that scene is built against.
+ *
+ * 2048 on the long edge. Not applied to characters or props: their subject
+ * already fills the frame, so a bigger canvas buys detail nobody crops into
+ * and costs more on every provider that prices by the megapixel.
+ */
+const LOCATION_MIN_EDGE = 2048;
+
+function plateImageSize(project, maxPixels, kind) {
     const p = project || {};
-    if (!String(p.target_resolution || '').match(/^\s*\d+\s*x\s*\d+\s*$/i)) return null;
     const { imageBudget } = require('./capability-payloads');
-    const d = imageBudget(p.aspect_ratio, p.target_resolution, maxPixels);
-    return { width: d.width, height: d.height, clamped: !!d.clamped };
+    const stated = String(p.target_resolution || '').match(/^\s*\d+\s*x\s*\d+\s*$/i);
+
+    if (kind !== 'location') {
+        // Unchanged: a project that stated no resolution gets NOTHING rather
+        // than a guess, because the provider's own default is the right answer
+        // when nobody has said, and inventing a size would silently reframe
+        // every plate in every existing project.
+        if (!stated) return null;
+        const d = imageBudget(p.aspect_ratio, p.target_resolution, maxPixels);
+        return { width: d.width, height: d.height, clamped: !!d.clamped, below_floor: false };
+    }
+
+    /*
+     * The floor holds whether or not the project settings are filled in.
+     * "Always at least 2K" is somebody stating a size for this kind of plate,
+     * which is a different thing from a project having stated none.
+     */
+    /*
+     * The base SHAPE, unclamped.
+     *
+     * `imageBudget(…, null)` does not mean "no ceiling" — it falls back to a
+     * default one, which returned 1672x944 for a 16:9 1920x1080 project and
+     * made the floor calculation start from an already-shrunk frame. The cap
+     * is applied deliberately below, once, against the real provider.
+     */
+    const UNCAPPED = Number.MAX_SAFE_INTEGER;
+    const base = stated
+        ? imageBudget(p.aspect_ratio, p.target_resolution, UNCAPPED)
+        : imageBudget(p.aspect_ratio, `${LOCATION_MIN_EDGE}x${LOCATION_MIN_EDGE}`, UNCAPPED);
+
+    /*
+     * The long edge is set EXACTLY to the floor and the short edge derived
+     * from the ratio. Scaling both by a factor and rounding each to a multiple
+     * of eight overshoots — 2048x1160 instead of 2048x1152 — which is 16k
+     * pixels over a provider whose ceiling is exactly 2048x1152, so the clamp
+     * fired and delivered 2040x1152: under the floor, for eight pixels.
+     */
+    const ratio = base.width / base.height;
+    const landscape = ratio >= 1;
+    const even = n => Math.max(256, Math.round(n / 2) * 2);
+    const wanted = landscape
+        ? { width: LOCATION_MIN_EDGE, height: even(LOCATION_MIN_EDGE / ratio) }
+        : { width: even(LOCATION_MIN_EDGE * ratio), height: LOCATION_MIN_EDGE };
+
+    // Already bigger than the floor? Keep what the project asked for.
+    if (Math.max(base.width, base.height) >= LOCATION_MIN_EDGE) {
+        wanted.width = base.width; wanted.height = base.height;
+    }
+
+    const cap = Number(maxPixels) > 0 ? Number(maxPixels) : null;
+    const asked = wanted.width * wanted.height;
+    if (!cap || asked <= cap) {
+        return { ...wanted, clamped: false, below_floor: false, floor_reason: null };
+    }
+
+    /*
+     * The provider cannot serve it. Clamped and SAID — a floor that quietly
+     * delivers less is worse than no floor, because the director stops
+     * checking. Runway tops out at 1920x1080 and OpenAI at 1536x1024; neither
+     * reaches a 2048 long edge, and that is a fact about them rather than
+     * something to work around here.
+     */
+    const k = Math.sqrt(cap / asked);
+    const clampEven = n => Math.max(256, Math.round((n * k) / 8) * 8);
+    const got = { width: clampEven(wanted.width), height: clampEven(wanted.height) };
+    return {
+        ...got,
+        clamped: true,
+        asked_width: wanted.width,
+        asked_height: wanted.height,
+        below_floor: Math.max(got.width, got.height) < LOCATION_MIN_EDGE,
+        floor_reason: `This provider caps an image at ${cap.toLocaleString()} pixels, so a location `
+            + `plate comes back ${got.width}x${got.height} rather than the ${LOCATION_MIN_EDGE}px `
+            + 'long edge a location wants. Meshy and BFL can serve it; Runway and OpenAI cannot.',
+    };
 }
 
 /**
@@ -557,13 +645,33 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
             anchored ? `${NEGATIVE}, ${VIEW_NEGATIVE}` : NEGATIVE),
         aspect_ratio: aspectRatio || undefined,
         // The project's delivery size, so a plate matches the frames that
-        // reference it. Absent when the project states none.
+        // reference it. Absent when the project states none — except for a
+        // LOCATION, which has a 2K floor whether the project stated a size or
+        // not, because it is the plate every shot in a scene is cropped from.
         ...(() => {
-            const size = plateImageSize(project, provider && provider.maxImagePixels);
-            return size ? { width: size.width, height: size.height } : {};
+            const size = plateImageSize(project, provider && provider.maxImagePixels, kind);
+            if (!size) return {};
+            return {
+                width: size.width,
+                height: size.height,
+                // Carried so the caller can report it. A floor that quietly
+                // delivers less is worse than no floor, because the director
+                // stops checking.
+                ...(size.below_floor ? { __below_floor: size.floor_reason } : {}),
+            };
         })(),
         ...(refs.length ? { reference_images: refs } : {}),
     };
+
+    /*
+     * Taken OFF the payload before anything is sent.
+     *
+     * The floor note is for the caller, not the provider: basePayload is
+     * spread straight into provider.generate(), so an unrecognised field would
+     * travel to Runway or Meshy with the request.
+     */
+    const belowFloor = basePayload.__below_floor || null;
+    delete basePayload.__below_floor;
 
     /*
      * The quality tier reaches plates too.
@@ -676,11 +784,17 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         // page shows the picture that was just replaced.
         image_url: getFileUrl(spec.subdir, projectId, fileName, Date.now()),
         style_applied: styleApplied,
+        // The size it was actually generated at, and — for a location that
+        // could not reach the 2K floor — why. Reported rather than left to be
+        // measured off the file.
+        ...(basePayload.width ? { width: basePayload.width, height: basePayload.height } : {}),
+        ...(belowFloor ? { below_resolution_floor: belowFloor } : {}),
         ...provenance,
     };
 }
 
 module.exports = {
+    LOCATION_MIN_EDGE,
     COMPASS_VIEWS, compassView, planCompassSweep, plateImageSize,
     buildPlateRefinePrompt, REFINE_NEGATIVE,
     plateFileName, PLATE_KINDS, buildPlatePrompt, generatePlate, styleReferencesFor, NEGATIVE };

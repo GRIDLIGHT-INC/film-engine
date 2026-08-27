@@ -262,6 +262,7 @@ film-engine/
 │       ├── style-book-plan.test.js     # The implementation plan wires into every registry it must
 │       ├── style-book.test.js          # A director's shots, reusable across films
 │       ├── plate-viewer.test.js        # A plate you cannot see full size is one you cannot judge
+│       ├── location-plate-resolution.test.js # A location plate is 2K or better, or says why not
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -781,6 +782,19 @@ A named shot with the camera details you know and reference visuals, kept across
 **The visuals are for a person, and the UI says so.** `KIND_RANK` is `anchor 0, character 1, location 2, prop 3, style 4` against three references on Runway and five on Meshy — a style still already ranks last and is dropped before the request is built on any shot with a cast and a location, and a clip reaches no generator at all. Saying it outright is the difference between a reference library and a director attaching five pictures believing the frame is conditioned on them.
 
 Cross-project, so the page is in `ALWAYS_AVAILABLE` rather than one of the nine `PROJECT_PHASES`: a library that outlives every project does not belong inside the workflow of one. Served at `GET|POST /film/style-book`, `GET|PUT|DELETE /film/style-book/:id`, `POST /film/shots/:id/style-book/:entryId`, on a rail button between Setup and Terms, and as six tools (**175 tools**).
+
+### A Location Plate Is Generated at 2K or Better
+A location plate is the one reference that is **re-shot from**. A character or prop plate is a close-up filling its own frame, so the subject occupies most of the pixels; a location plate's subject is the whole environment, and any given shot uses a *fraction* of it — a corner of the street, one house front, the far kerb. Detail that is adequate on a portrait is mush on a crop, and the plate is what every shot in that scene is built against.
+
+`LOCATION_MIN_EDGE = 2048`, applied **only to locations**: a character or prop already fills its frame, so a bigger canvas buys detail nobody crops into and costs more on every provider that prices by the megapixel.
+
+**Four of six providers reach it; two cannot, and say so.** Meshy, BFL, Google and Gridlight serve exactly 2048×1152 for a 16:9 project. Runway tops out at 1920×1080 and OpenAI at 1536×1024 — neither reaches a 2048 long edge, which is a fact about them rather than something to work around here. The result carries `below_resolution_floor` with the reason and names which providers can serve it, because a floor that quietly delivers less is worse than no floor: the director stops checking.
+
+**The floor holds whether or not the project states a resolution.** Elsewhere a project with no resolution deliberately gets *nothing* — the provider's own default is the right answer when nobody has said, and inventing a size would silently reframe every existing plate. A floor is a different kind of statement: somebody *has* said, for this kind of plate. Characters and props keep the old behaviour exactly.
+
+Two things were wrong in the first attempt and both are pinned. `imageBudget(…, null)` does **not** mean "no ceiling" — it falls back to a default one, so the base for a 16:9 1920×1080 project came back **1672×944**, already shrunk, and the floor was computed from it. And scaling both edges by a factor and rounding each to a multiple of eight **overshoots**: 2048×1160 instead of 2048×1152 is 16k pixels over a provider whose ceiling is exactly 2048×1152, so the clamp fired and delivered 2040×1152 — under the floor, for eight pixels. The long edge is now set exactly and the short edge derived from the ratio.
+
+The floor note is stripped from the payload before the request is sent: `basePayload` is spread straight into `provider.generate()`, so an unrecognised field would travel to Runway or Meshy with it.
 
 ### A Plate You Cannot See Full Size Is One You Cannot Judge
 Every plate was rendered at the width of whatever box it sat in — a 48px avatar on a character card, a 120px banner on a location, a ~340px column in the detail panel. A reference plate is the picture that conditions **every frame its subject appears in**, and it could not be seen at the size it was generated at. The storyboard has had a full-screen frame viewer since it shipped; the plates had nothing.
@@ -2079,6 +2093,7 @@ node --test backend/tests/style-book-research.test.js
 node --test backend/tests/style-book-plan.test.js
 node --test backend/tests/style-book.test.js
 node --test backend/tests/plate-viewer.test.js
+node --test backend/tests/location-plate-resolution.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
