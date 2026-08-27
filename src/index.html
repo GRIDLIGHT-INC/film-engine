@@ -1017,6 +1017,9 @@
             border-radius: var(--gl-radius-lg);
             padding: 16px;
             transition: var(--gl-transition-slow);
+            /* A grid item defaults to min-content width, so an unbreakable
+               button row would push the card wider than its own track. */
+            min-width: 0;
         }
         .entity-card:hover { border-color: rgba(233,30,99,0.2); transform: translateY(-2px); }
         .entity-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -1034,7 +1037,26 @@
             font-size: 9px; padding: 2px 6px; border-radius: 4px;
             background: rgba(255,255,255,0.05); color: var(--gl-text-muted);
         }
-        .entity-card .card-actions { display: flex; gap: 6px; margin-top: 12px; }
+        /*
+         * The button row WRAPS.
+         *
+         * At nowrap a four-button row (Regen Image | Upload | Edit | Delete)
+         * overflows a 256px card by 11px, and because the card is
+         * overflow:visible the last button is simply drawn outside it — the
+         * Delete escaping its card. It was invisible on Characters, whose cards
+         * carry three buttons and fit with 6px to spare, which is why it looked
+         * like one page's problem rather than the row's.
+         *
+         * Wrapping rather than clipping or shrinking: a clipped Delete is
+         * unreachable, and a shrunk one loses its label. A second line is the
+         * only option that keeps every action usable at any card width.
+         */
+        .entity-card .card-actions {
+            display: flex; gap: 6px; margin-top: 12px;
+            flex-wrap: wrap; row-gap: 6px;
+            min-width: 0;      /* a flex item defaults to min-content; without this the row refuses to shrink */
+        }
+
 
         /* ══════════════════════════════════════════════════════════
            ASSET TABLE
@@ -3206,6 +3228,11 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
         .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        /* Inside a card this row is a name and a status badge. A long name is
+           not a bug the user can fix, so the row wraps and the name may shrink
+           rather than pushing the badge past the card edge. */
+        .entity-card .flex-between { flex-wrap: wrap; row-gap: 4px; }
+        .entity-card .flex-between > :first-child { min-width: 0; overflow-wrap: anywhere; }
         .mt-16 { margin-top: 16px; }
         .mb-16 { margin-bottom: 16px; }
         .mb-8 { margin-bottom: 8px; }
@@ -23714,7 +23741,7 @@ ${fountainText.slice(0, 50000)}`;
                         ${r.tags ? '<div class="tag-row" style="margin-top:8px;">' + r.tags.split(',').map(t => '<span class="tag">' + esc(t.trim()) + '</span>').join('') + '</div>' : ''}
                         ${r.image_path ? `<img src="${continuityImgSrc(r)}" alt=""
                               style="width:100%;border-radius:6px;margin-top:8px;display:block;">` : ''}
-                        <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+                        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
                             ${uploadControl('continuity-ref', `/continuity/${r.id}/import`,
                                 { extra: {}, after: 'loadContinuity',
                                   label: r.image_path ? 'Replace' : 'Upload',
@@ -30004,7 +30031,7 @@ ${fountainText.slice(0, 50000)}`;
             : hasVoice
                 ? '<button class="btn btn-secondary btn-sm" onclick="lockVoice(\'' + char.id + '\')">Lock voice</button>'
                 : '<button class="btn btn-secondary btn-sm" disabled title="Set a voice profile on the character first">Lock voice</button>';
-        return '<div style="margin-top:6px;border-top:1px solid var(--gl-border-subtle);padding-top:6px;display:flex;justify-content:space-between;align-items:center;"><span class="text-sm">Voice ' + badge + '</span>' + btn + '</div>';
+        return '<div style="margin-top:6px;border-top:1px solid var(--gl-border-subtle);padding-top:6px;display:flex;gap:6px;flex-wrap:wrap;justify-content:space-between;align-items:center;"><span class="text-sm">Voice ' + badge + '</span>' + btn + '</div>';
     }
 
     // Multi-reference role management. A profile can hold several role-tagged

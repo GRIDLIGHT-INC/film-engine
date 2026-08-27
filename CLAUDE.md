@@ -247,6 +247,7 @@ film-engine/
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
 │       ├── staleness-accept.test.js     # A warning you cannot act on is one you learn to ignore
 │       ├── dev-server.test.js           # An edit you cannot see is an edit that did not happen
+│       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
@@ -736,6 +737,19 @@ It now follows the same rule, unchanged: `current_frame_version` when a version 
 `tests/current-frame.test.js` gains playback to its `SURFACES` list — the whole point of that list being that a surface not in it is a surface nobody checked — and the new assertion is **behavioural**, because the fault was not a wrong query but *no* query: no version selected, no ordering, and a `.find()` that took whatever came back first.
 
 **And a second bug found while reading it.** `loadPlayback` computed the shot to open on and then called `loadShotIntoStage(0)`, discarding it on the next line — so playback always opened at the top of the film however carefully the mark had been kept. The mark was working; the thing that read it was not.
+
+### A Button Drawn Outside Its Own Card
+*"the delete button leaks out of the card"* — on Characters, which is where it was noticed.
+
+One line caused it: `.entity-card .card-actions` is `display:flex` with **no `flex-wrap`**, and the card is `overflow: visible`. Four buttons (`Regen Image | Upload | Edit | Delete`) measure **233px inside a 222px row**, so the fourth is simply painted 11px past the card's own border rather than being clipped or wrapped.
+
+Measured in the real page before the fix: characters 1 overflowing row, locations 1, props 4 — **every one of them the same row, every one over by exactly 11px**. Characters looked like the case because its three-button row fits with 6px to spare and the report came from that page; it was never a Characters problem.
+
+**Wrapping, not clipping or shrinking.** A clipped Delete is unreachable and a shrunk one loses its label; a second line is the only option that keeps every action usable at any card width. `min-width: 0` goes on **both** the row and the card, because a flex item and a grid item each default to `min-content` — without it on the card, an unbreakable row pushes the card wider than its own grid track and wrapping alone does not save it.
+
+**The audit found two more the eye did not.** Continuity's `Replace | Delete` row and consistency's voice row were written as inline `display:flex` literals with no wrap — the same defect, one screen away from the one being fixed, invisible in the browser sweep because they fit at *that* window width. That is the argument for the row being **one class rather than a per-page literal**: a page that writes its own row opts out of the wrap silently.
+
+**Why the test is a source test.** There is no layout engine here — jsdom computes no box geometry, so `scrollWidth` is 0 for everything, and the SPA has no bundler to add one. The 11px was measured in a real browser and is recorded above; what a test can hold permanently is the two invariants that measurement rests on — every flex row inside a card wraps (**derived** by walking each `entity-card` template, so a card added later is in the denominator), and the row rule exists exactly once. Five mutations were run against it: removing the wrap, removing either `min-width`, un-wrapping an inline row, and a page substituting its own literal all fail.
 
 ### An Edit You Cannot See Is an Edit That Did Not Happen
 The page was served by `python -m http.server`, which sends `Last-Modified` and **no `Cache-Control`**. A browser reads that as licence to reuse its stored copy without asking, so every change to `index.html` needed a forced reload.
@@ -1883,6 +1897,7 @@ node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js
 node --test backend/tests/staleness-accept.test.js
 node --test backend/tests/dev-server.test.js
+node --test backend/tests/card-overflow.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js
