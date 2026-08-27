@@ -282,8 +282,20 @@ function resolveTier(tier, config, request) {
 
 /** What the UI shows: the tiers, and what each would actually use right now. */
 function tierMenu(config) {
+    const cfg = config || {};
+    /*
+     * A pinned provider is honoured HERE too.
+     *
+     * This stripped the pin and showed what each tier would use without it —
+     * so a project pinned to Meshy saw three Google cards it would never get,
+     * and the only thing distinguishing them from reality was a warning
+     * elsewhere on the page. What a director wants to know is what Draft,
+     * Standard and Precision mean ON THE PROVIDER THEY CHOSE: on Meshy that is
+     * nano-banana, nano-banana-2 and nano-banana-pro, which is exactly the
+     * choice the picker should be offering.
+     */
     return Object.entries(IMAGE_TIERS).map(([id, spec]) => {
-        const r = resolveTier(id, { ...(config || {}), image: undefined });
+        const r = resolveTier(id, cfg);
         /*
          * The price travels with the tier.
          *

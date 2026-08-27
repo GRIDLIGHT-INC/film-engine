@@ -94,6 +94,30 @@ function sanitize(value, depth = 0) {
 }
 
 /**
+ * Where a request goes, for adapters whose builder returns only a body.
+ *
+ * Read from the adapter's own endpoint table rather than written out again: a
+ * second copy of a URL is one that goes stale the day an endpoint moves.
+ */
+function endpointFor(providerId, capability, payload) {
+    try {
+        if (providerId === 'meshy') {
+            const mod = require('./providers/meshy');
+            // _internal hangs off the ADAPTER, not the module. Reading it from
+            // the module returned undefined and every Meshy row reported no
+            // endpoint — a payload with no destination is half an answer.
+            const ops = (mod.adapter && mod.adapter._internal && mod.adapter._internal.OPERATIONS) || null;
+            if (!ops) return null;
+            // References mean image-to-image; their absence means text-to-image.
+            const key = (payload && (payload.reference_images || []).length) ? 'image_to_image' : 'text_to_image';
+            const base = (process.env.MESHY_BASE_URL || 'https://api.meshy.ai').replace(/\/+$/, '');
+            return ops[key] ? base + ops[key].path : null;
+        }
+    } catch (_) { /* an unknown shape simply reports no URL */ }
+    return null;
+}
+
+/**
  * What this request was BUILT FROM.
  *
  * The payload alone says what goes; it does not say why. A director reading
@@ -277,7 +301,15 @@ function describeCapability(capability, ctx, providerConfig) {
     if (build) {
         try {
             const req = build(payload);
-            out.outbound = sanitize(req && req.body ? { url: req.url, body: req.body } : req);
+            /*
+             * Some builders return { url, body }; Meshy's returns a bare body,
+             * because its endpoint is chosen by the caller from whether
+             * references are attached. Deriving it here keeps every row saying
+             * WHERE the request goes — a payload with no destination is half an
+             * answer to the question this report exists for.
+             */
+            const url = (req && req.url) || endpointFor(id, capability, payload);
+            out.outbound = sanitize(req && req.body ? { url, body: req.body } : { url, body: req });
             if (req && req.body && req.body.model) out.model = req.body.model;
         } catch (err) {
             out.notes.push(`This provider's request builder refused: ${err.message}`);

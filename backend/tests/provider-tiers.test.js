@@ -641,3 +641,46 @@ test('every Meshy image model is selectable, and an unknown one never reaches th
     assert.match(r.reason, /not one it offers/i,
         'the substitution is silent — a director would believe their pin applied');
 });
+
+test('the tier picker describes the provider a project actually pinned', () => {
+    /*
+     * "Images should be Meshy, and force nano-banana-2 or pro — is that an
+     *  option?"
+     *
+     * It is, and the picker was describing the wrong thing. tierMenu() stripped
+     * the pin and reported what each tier would use WITHOUT it, so a project
+     * pinned to Meshy saw three Google cards it would never get. The only thing
+     * separating that from reality was a warning elsewhere on the page.
+     *
+     * What a director needs is what Draft, Standard and Precision mean ON THE
+     * PROVIDER THEY CHOSE — which for Meshy is exactly the nano-banana,
+     * nano-banana-2, nano-banana-pro choice they were asking for.
+     */
+    const { tierMenu } = require('../lib/quality-tiers');
+    const { db } = require('../db/database');
+    for (const id of ['meshy', 'google', 'bfl', 'openai']) {
+        db.prepare(`INSERT INTO film_provider_credentials (provider, api_key, meta) VALUES (?, 'k', '{}')
+                    ON CONFLICT(provider) DO UPDATE SET api_key = excluded.api_key`).run(id);
+    }
+
+    const pinned = tierMenu({ image: 'meshy' });
+    const wrong = pinned.filter(t => t.resolves_to !== 'meshy')
+        .map(t => `${t.label} -> ${t.resolves_to}`);
+    assert.deepStrictEqual(wrong, [],
+        `the project pinned meshy and the picker offers: ${wrong.join(', ')}`);
+
+    // And the three tiers must be three DIFFERENT models, or the choice is
+    // decorative on a pinned provider.
+    const models = pinned.map(t => t.model);
+    assert.strictEqual(new Set(models).size, 3,
+        `three tiers offered ${new Set(models).size} distinct model(s): ${models.join(', ')}`);
+    for (const m of models) {
+        assert.ok(Object.keys(providers.get('meshy').models).includes(m),
+            `the picker offers "${m}", which Meshy does not sell`);
+    }
+
+    // Unpinned, it still describes the open field rather than one provider.
+    const open = tierMenu({});
+    assert.ok(open.some(t => t.resolves_to !== 'meshy'),
+        'with no pin the picker still reports a single provider');
+});

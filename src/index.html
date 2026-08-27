@@ -23223,10 +23223,14 @@ ${fountainText.slice(0, 50000)}`;
                     </div>
                     <input type="hidden" id="provImageQuality" value="${esc(currentTier)}">
                     ${(proj.config && proj.config.image) ? `
-                        <div class="text-sm" style="margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(255,180,60,.12);">
-                            <strong>These tiers are not in effect.</strong> This project pins its image
-                            provider to <code>${esc(proj.config.image)}</code> under Advanced, and an
-                            explicit choice always beats the tier. Clear it there to let quality decide.
+                        <div class="text-sm" style="margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(255,255,255,.05);">
+                            This project pins its image provider to <code>${esc(proj.config.image)}</code>
+                            under Advanced, so the tiers above choose which of
+                            <strong>its</strong> models to use rather than which company.
+                            ${proj.config.image_model
+                                ? `A specific model is also pinned (<code>${esc(proj.config.image_model)}</code>),
+                                   which overrides the tier entirely — clear it to let quality decide again.`
+                                : 'Clear the provider to compare across providers.'}
                         </div>` : ''}
                     <div class="text-sm text-muted" style="margin-top:8px;">
                         Auto is available too — it reads the request and lifts to Precision when a frame
