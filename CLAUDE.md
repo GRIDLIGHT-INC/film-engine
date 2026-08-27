@@ -86,6 +86,7 @@ film-engine/
 │   │   ├── fdx-generator.js      # Final Draft XML generator (export)
 │   │   ├── nle-export.js         # NLE format generators (pure functions)
 │   │   ├── screenplay-parser.js   # INT./EXT. scene heading parser
+│   │   ├── screenplay-pagination.js # Where a page may break, and what it may not split
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
 │   │   ├── reference-images.js    # Tagged reference plates: data URIs, tags, ≤3 selection
@@ -299,6 +300,7 @@ film-engine/
 │       ├── screenplay-structure.test.js # Every element is reachable, and an outline survives export
 │       ├── story-structure.test.js  # Beats find their holes; a scene's history is derived, not stored
 │       ├── screenplay-polish.test.js # Export fidelity, and an edit batch that is all-or-nothing
+│       ├── screenplay-pagination.test.js # No page ends between a cue and its dialogue
 │       ├── mcp-first-writing.test.js # MCP is the default path; HTTP says it cost you something
 │       ├── act-structure.test.js   # Acts are sections; the table and its readers are gone
 │       ├── frame-versions.test.js  # Which attempt is which, and which can be chosen
@@ -1889,6 +1891,7 @@ node --test backend/tests/scene-insert.test.js
 node --test backend/tests/screenplay-structure.test.js
 node --test backend/tests/story-structure.test.js
 node --test backend/tests/screenplay-polish.test.js
+node --test backend/tests/screenplay-pagination.test.js
 node --test backend/tests/mcp-first-writing.test.js
 node --test backend/tests/act-structure.test.js
 node --test backend/tests/frame-versions.test.js

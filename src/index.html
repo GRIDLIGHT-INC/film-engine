@@ -17957,7 +17957,20 @@ THREE.GLTFLoader = GLTFLoader;
         }
 
         // Check if we're right after a scene heading
-        const prevBlock = block.previousElementSibling;
+        /*
+         * Skip the page-break indicator: it is a divider, not a block.
+         *
+         * Every other sibling walk in this editor tests for a TYPE and so steps
+         * over it harmlessly. This one reads the immediate sibling's type
+         * directly, so a break landing between a scene heading and this block
+         * made Tab behave as though there were no heading above it — the same
+         * family of bug as the page breaking between a cue and its dialogue,
+         * and invisible in the same way.
+         */
+        let prevBlock = block.previousElementSibling;
+        while (prevBlock && prevBlock.classList.contains('page-break-indicator')) {
+            prevBlock = prevBlock.previousElementSibling;
+        }
         if (prevBlock && prevBlock.dataset.elementType === 'scene-heading') {
             return AUTO_FORMAT_RULES.tabCycles['after-scene'];
         }
@@ -18331,6 +18344,28 @@ THREE.GLTFLoader = GLTFLoader;
         updatePageBreakIndicators(editor);
     }
 
+    /**
+     * May a page end immediately after this element?
+     *
+     * `false` means it belongs with whatever follows and the break must move up.
+     * Declared per type rather than as a list of exceptions, so a new element
+     * type has to answer instead of defaulting to breakable and being found in
+     * a screenshot. Mirrors lib/screenplay-pagination.js, which is where the
+     * reasoning for each answer is written down.
+     */
+    const MAY_END_PAGE = {
+        action: true,
+        dialogue: true,
+        transition: true,
+        centered: true,
+        lyrics: true,
+        note: true,
+        'scene-heading': false,
+        'character': false,
+        'parenthetical': false,
+        'dual-dialogue': false,
+    };
+
     // FILM-108: Render soft page break indicators
     function updatePageBreakIndicators(editor) {
         if (!editor) return;
@@ -18342,6 +18377,7 @@ THREE.GLTFLoader = GLTFLoader;
         const blocks = Array.from(editor.querySelectorAll('[data-element-type]'));
         let currentLine = 0;
         let pageNum = 1;
+        let lastBreakAt = null;
 
         for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
@@ -18380,12 +18416,40 @@ THREE.GLTFLoader = GLTFLoader;
             // Check if we crossed a page boundary
             if (currentLine >= 55 * pageNum && i < blocks.length - 1) {
                 pageNum++;
-                // Insert page break indicator after this block
+
+                /*
+                 * A PAGE MAY NOT END BETWEEN THINGS THAT BELONG TOGETHER.
+                 *
+                 * This broke wherever the line count happened to cross, so on a
+                 * real five-page screenplay three of five breaks landed in
+                 * places the format forbids — twice between a character cue and
+                 * its dialogue, once between a parenthetical and its dialogue.
+                 * A cue stranded at the foot of a page leaves its dialogue alone
+                 * at the top of the next, where it reads as ACTION because
+                 * nothing above it says who is speaking. That is what the
+                 * "double lines" were: correct margins, wrong meaning.
+                 *
+                 * The break walks UP past anything that belongs with what
+                 * follows. Up rather than down, because pushing it down would
+                 * leave the cue behind and orphan the dialogue — the bug itself.
+                 * Walking up sends the whole unit to the next page, which is
+                 * what a screenplay does.
+                 *
+                 * Held in lockstep with lib/screenplay-pagination.js by
+                 * screenplay-pagination.test.js: the SPA cannot require a node
+                 * module (build.target is single-html), and two paginators that
+                 * disagree is how a fix survives in tests and not on screen.
+                 */
+                let at = i;
+                while (at >= 0 && MAY_END_PAGE[blocks[at].dataset.elementType] === false) at--;
+                if (at < 0 || (lastBreakAt !== null && at <= lastBreakAt)) at = i;
+                lastBreakAt = at;
+
                 const indicator = document.createElement('div');
                 indicator.className = 'page-break-indicator';
                 indicator.dataset.pageLabel = `Page ${pageNum}`;
                 indicator.contentEditable = 'false';
-                block.after(indicator);
+                blocks[at].after(indicator);
             }
         }
     }
