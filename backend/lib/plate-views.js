@@ -62,4 +62,49 @@ function viewRank(view) {
     return Object.prototype.hasOwnProperty.call(VIEW_RANK, key) ? VIEW_RANK[key] : UNRANKED;
 }
 
-module.exports = { VIEW_RANK, UNRANKED, orderByViewSql, viewRank };
+
+/**
+ * WHICH PLATE IS THIS SUBJECT'S — one rule, for every caller.
+ *
+ * A compass sweep writes the master, then east, then south, then west. The
+ * list route picked the NEWEST row, so after a sweep a location's headline
+ * plate became whichever side finished last — south, or west had it completed.
+ * The master on disk was untouched; only the pointer moved. Meanwhile
+ * `gatherShotReferences` fell back to the view-less default, so the two paths
+ * answered "which plate is this location's" differently and only one of them
+ * was right.
+ *
+ * A compass side is an ADDITIONAL VIEW, not a replacement. The default plate —
+ * the one with no view, which the sides are turns from — stays the headline
+ * until somebody asks for a side by name.
+ *
+ * Order of preference:
+ *   1. the view asked for, if it exists
+ *   2. the default, view-less plate
+ *   3. anything at all — a location whose master was deleted should not lose
+ *      its plate entirely, and a silent gap replaces a wrong reference with NO
+ *      reference, which is worse
+ *
+ * @param {Array<{metadata?: string}>} rows  asset rows, any order
+ * @param {{view?: string}} [opts]
+ * @returns {object|null}
+ */
+function headlinePlate(rows, opts) {
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) return null;
+
+    const viewOf = row => {
+        try { return String((JSON.parse(row.metadata || '{}').view) || '').trim(); }
+        catch (_) { return ''; }
+    };
+
+    const wanted = String((opts && opts.view) || '').trim();
+    if (wanted) {
+        const exact = list.find(r => viewOf(r).toLowerCase() === wanted.toLowerCase());
+        if (exact) return exact;
+    }
+    return list.find(r => !viewOf(r)) || list[0] || null;
+}
+
+module.exports = {
+    headlinePlate, VIEW_RANK, UNRANKED, orderByViewSql, viewRank };

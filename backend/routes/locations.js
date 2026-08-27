@@ -9,6 +9,7 @@
  * POST /film/props/:id/image/generate      — Generate prop reference image
  * GET  /film/props/:id/image               — Get prop image status
  */
+const { headlinePlate } = require('../lib/plate-views');
 const { db, generateId } = require('../db/database');
 const { stampSubject } = require('../lib/story-bible');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
@@ -581,11 +582,19 @@ function deletePlateView(res, locationId, rawView) {
 function getSubjectPlate(res, kind, subjectId) {
     const { PLATE_KINDS } = require('../lib/reference-plates');
     const spec = PLATE_KINDS[kind];
-    const asset = db.prepare(
+    /*
+     * "The current plate" is the DEFAULT one, not the newest.
+     *
+     * The same bug as the list route, one function down: after a compass sweep
+     * this reported whichever side was written last as the subject's plate.
+     * The shared rule is the point — three sites answered this question and
+     * two of them were wrong in the same way.
+     */
+    const asset = headlinePlate(db.prepare(
         `SELECT id, file_name, provider, provider_model, metadata, created_at
          FROM film_assets WHERE ${spec.fkColumn} = ? AND asset_type = ?
-         ORDER BY created_at DESC LIMIT 1`
-    ).get(subjectId, spec.assetType);
+         ORDER BY created_at DESC`
+    ).all(subjectId, spec.assetType));
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ kind, [`${kind}_id`]: subjectId, plate: asset || null }));
@@ -713,16 +722,28 @@ function listLocations(req, res, projectId) {
 
     // Attach scene count and reference image per location
     const refImageQuery = db.prepare(
-        // version and created_at are SELECTED because the URL builder busts the
-        // browser cache with them. Omitted, they are silently undefined, the
-        // buster is dropped and a regenerated plate serves the cached picture —
-        // a four-argument call that resolves to three.
-        "SELECT file_name, project_id, version, created_at FROM film_assets WHERE asset_type = 'reference_image' AND location_id = ? ORDER BY created_at DESC LIMIT 1"
+        /*
+         * EVERY plate, not the newest one.
+         *
+         * This took `ORDER BY created_at DESC LIMIT 1`, so after a compass
+         * sweep wrote east and south, the location's headline plate became
+         * SOUTH — the last side written, and west had it completed. The master
+         * on disk was untouched; only the pointer moved. A compass side is an
+         * additional view, not a replacement.
+         *
+         * version and created_at are selected because the URL builder busts
+         * the browser cache with them; omitted, they are silently undefined
+         * and a regenerated plate serves the cached picture.
+         */
+        "SELECT file_name, project_id, version, created_at, metadata FROM film_assets "
+        + "WHERE asset_type = 'reference_image' AND location_id = ? ORDER BY created_at DESC"
     );
     for (const loc of rows) {
         const count = db.prepare("SELECT COUNT(*) AS count FROM film_scenes WHERE project_id = ? AND location = ?").get(projectId, loc.name);
         loc.scene_count = count.count;
-        const refAsset = refImageQuery.get(loc.id);
+        // One rule, shared with gatherShotReferences — two paths deciding this
+        // separately is what let the display disagree with the generator.
+        const refAsset = headlinePlate(refImageQuery.all(loc.id));
         // The subdir comes from the plate builder's own registry, never a
         // literal. These two lists each hardcoded their own directory while the
         // builder wrote somewhere else, so the row was found, a URL was
@@ -1002,10 +1023,11 @@ function listProps(req, res, projectId) {
     // where nothing puts a prop_id. So a generated prop plate existed, was
     // correctly linked, and was invisible.
     const refImageQuery = db.prepare(
-        "SELECT file_name, project_id, version, created_at FROM film_assets WHERE asset_type = 'reference_image' AND prop_id = ? ORDER BY created_at DESC LIMIT 1"
+        "SELECT file_name, project_id, version, created_at, metadata FROM film_assets "
+        + "WHERE asset_type = 'reference_image' AND prop_id = ? ORDER BY created_at DESC"
     );
     for (const prop of rows) {
-        const refAsset = refImageQuery.get(prop.id);
+        const refAsset = headlinePlate(refImageQuery.all(prop.id));
         prop.reference_image_url = refAsset
             ? getFileUrl(PLATE_KINDS.prop.subdir, refAsset.project_id, refAsset.file_name,
                 refAsset.created_at || refAsset.version) : null;

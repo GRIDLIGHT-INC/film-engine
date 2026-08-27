@@ -24,7 +24,7 @@
  * whole parity suite testable without I/O.
  */
 
-const { orderByViewSql } = require('./plate-views');
+const { orderByViewSql, headlinePlate } = require('./plate-views');
 const { selectReferences } = require('./reference-images');
 
 /**
@@ -125,13 +125,18 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
                AND asset_type IN ('reference_image', 'character_sheet')
              ORDER BY version DESC, created_at DESC`
         ).all(projectId, matchedLocation.id);
+        /*
+         * Shared with the locations route rather than repeated here. This
+         * logic was right and the LIST route's was not — it took the newest
+         * row, so after a compass sweep the card showed the last side written
+         * while generation still used the master. Two answers to one question
+         * is how a display comes to disagree with the generator.
+         */
         const viewOf = row => {
             try { return String((JSON.parse(row.metadata || '{}').view) || '').trim(); }
             catch (_) { return ''; }
         };
-        const plate = (locationView && all.find(r => viewOf(r).toLowerCase() === locationView.toLowerCase()))
-            || all.find(r => !viewOf(r))     // the default, view-less plate
-            || all[0] || null;               // anything rather than nothing
+        const plate = headlinePlate(all, { view: locationView });
         if (plate) {
             candidates.push({
                 name: matchedLocation.name, kind: 'location', file_path: plate.file_path,

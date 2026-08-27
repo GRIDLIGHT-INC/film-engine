@@ -265,6 +265,7 @@ film-engine/
 │       ├── location-plate-resolution.test.js # A location plate is 2K or better, or says why not
 │       ├── requested-size.test.js       # A resolution that reaches nothing is worse than none
 │       ├── style-book-media.test.js    # A visual arrives as a file or a link, and both must work
+│       ├── headline-plate.test.js      # A compass side is an extra view, never the headline plate
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -651,6 +652,19 @@ A failed preview left **Generate armed** — a gate whose whole purpose is inspe
 Naming the current version and omitting it described **the same picture and gave opposite answers** — four shots on a real board were in that state. And the cost was presented as definitive while `callImageGen` walks the chain past a refusal, so it is labelled first-attempt-only with the fallback chain disclosed.
 
 A recomposed frame is **deliberately unstamped**: the keyframe fingerprint means "the card's current image payload", and this frame was never generated from that. `skip_fingerprint` is an explicit documented exception rather than a quiet omission, and `input_refs` records the true provenance as identifiers — never data URIs, because two megabytes of base64 in a provenance column is a copy, not a record.
+
+### A Compass Side Is an Extra View, Never the Headline Plate
+Reported with the evidence: after a compass sweep wrote east then south, the location's `reference_image_url` pointed at **south** — the last side written, and it would have been west had west completed. The master plate on disk was untouched; only the pointer moved.
+
+**Three sites answered "which plate is this subject's" and two were wrong the same way.** The locations list, the props list and `getSubjectPlate` all took `ORDER BY created_at DESC LIMIT 1` — the newest row. `gatherShotReferences` did it correctly, falling back to the view-less default.
+
+**So no frame was ever mis-anchored**, which is the reassuring half and worth stating first: generation already used the master. The DISPLAY was wrong, and a director reading a card cannot tell those apart — which is exactly why it was reported as mis-anchoring the scene. Two paths answering one question differently is the same shape as the storyboard-frame pointer and the character turnaround before it.
+
+`headlinePlate(rows, { view })` is the one rule: the view asked for, else the **default, view-less** plate, else anything rather than nothing — a location whose master was deleted should not lose its plate entirely.
+
+**`film_locations.reference_images` is vestigial.** It is written by the update route and read by nothing — not the gather, not the payload builders, not the page. Populating it with the view set would create a second source of truth that nothing reads and that could disagree with `film_assets`; `GET …/plate/views` already answers that question from the rows themselves.
+
+Two vacuous tests were caught by mutation before this shipped, both worth recording. The fixture built rows **oldest-first** while the query returns newest-first, so `list[0]` happened to be the master and a mutation replacing the entire rule with `list[0]` passed — a fixture disagreeing with reality in exactly the direction that hides the bug. And the shared-rule check grepped for `headlinePlate`, which the **import line alone** satisfies; it now requires a call, and at least three of them in the locations route. The comment quoting the query it replaced also had to be stripped before counting, or the file that fixes the bug reports the bug.
 
 ### A Location Has Views; a Shot Picks One
 A location had exactly **one** plate, selected with `ORDER BY version DESC LIMIT 1`, with no record of which way it faced. On Wingfall that plate looks from the entrance **into** the cul-de-sac — so 1A and 2A had a photograph, and 2B and 2AA, which shoot back the other way, were handed a picture of what was **behind** the camera and invented the rest. Every wrong road, missing kerb and misplaced car traces to it.
@@ -2135,6 +2149,7 @@ node --test backend/tests/plate-viewer.test.js
 node --test backend/tests/location-plate-resolution.test.js
 node --test backend/tests/requested-size.test.js
 node --test backend/tests/style-book-media.test.js
+node --test backend/tests/headline-plate.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
