@@ -258,6 +258,7 @@ film-engine/
 │       ├── credentials-global.test.js   # A key is entered once, for the machine, not once per film
 │       ├── plate-views.test.js         # A turnaround is three pictures, and the app used the wrong one
 │       ├── style-book-research.test.js # The style book design covers every surface it touches
+│       ├── style-book-plan.test.js     # The implementation plan wires into every registry it must
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -2037,6 +2038,7 @@ node --test backend/tests/provider-config-merge.test.js
 node --test backend/tests/credentials-global.test.js
 node --test backend/tests/plate-views.test.js
 node --test backend/tests/style-book-research.test.js
+node --test backend/tests/style-book-plan.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
