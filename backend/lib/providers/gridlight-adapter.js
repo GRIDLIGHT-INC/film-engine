@@ -162,7 +162,7 @@ const gridlightAdapter = {
     // same rule promptLimit and maxReferenceImages follow, and for the same reason:
     // a size that reaches nothing produced a confident 2048x1152 arriving as 1376x768.
     sizeControl: 'ratio-only',
-    sizeControlReason: 'A swappable local agent whose endpoint is unknowable from here. It is sent a ratio and no dimensions, so it decides the pixels. Held at the strict reading rather than guessed upward: over-claiming reports a size the file does not have.',
+    sizeControlReason: 'A swappable local agent whose endpoint is unknowable from here. It is sent a ratio and no dimensions, so it chooses the pixels. Held at the strict reading rather than guessed upward: over-claiming reports a size the file does not have.',
     maxImagePixels: 1536 * 1536,
     promptLimit: 1000,
     // The gateway receives the payload verbatim, so a negative and a seed both

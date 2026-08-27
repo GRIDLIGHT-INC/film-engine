@@ -666,7 +666,25 @@ const adapter = {
         + 'generate_multi_view, pose_mode and remove_background \u2014 and no width, height, size or '
         + 'quality. A requested size can only become a ratio, and Meshy chooses the pixels: a 16:9 ask '
         + 'comes back about 1376x768. https://docs.meshy.ai/en/api/text-to-image',
-    maxImagePixels: 2048 * 2048,
+    /*
+     * MEASURED, not assumed — and the previous value was a guess that was wrong.
+     *
+     * This said 2048*2048 with the note "no published limit, held at what the
+     * models it proxies actually reach". The models do reach 2K; Meshy does
+     * not expose it. Every image it has actually returned here is 1376x768 at
+     * 16:9 or 1024x1024 at 1:1 — about one megapixel — for nano-banana-2 AND
+     * nano-banana-pro alike.
+     *
+     * There is no way to ask for more: the API documents no width, height,
+     * size or quality field, and the changelog through Aug 2026 shows every
+     * resolution change was an ASPECT RATIO addition, never a size control.
+     * So this is a ceiling of the service rather than of the models behind it.
+     *
+     * Over-claiming here made the comparison table promise 2K from a provider
+     * that returns 1MP, which is the same over-promise that let a "2048x1152"
+     * plate arrive as 1376x768.
+     */
+    maxImagePixels: 1376 * 768,
     promptLimit: 16000,
     // Declared, not assumed. The negative is FOLDED into the positive because
     // Meshy documents no negative field; the seed is not carried at all, so a

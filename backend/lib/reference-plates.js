@@ -524,9 +524,18 @@ function plateImageSize(project, maxPixels, kind, adapter) {
         asked_height: wanted.height,
         honoured,
         below_floor: !honoured || Math.max(got.width, got.height) < LOCATION_MIN_EDGE,
-        floor_reason: `This provider caps an image at ${cap.toLocaleString()} pixels, so a location `
-            + `plate comes back ${got.width}x${got.height} rather than the ${LOCATION_MIN_EDGE}px `
-            + 'long edge a location wants. Meshy and BFL can serve it; Runway and OpenAI cannot.',
+        /*
+         * WHICH reason. A provider that cannot be told a size at all is not
+         * merely capped — the number reaches nothing, and reporting only the
+         * ceiling would suggest a smaller ask might work. It would not.
+         */
+        floor_reason: !honoured
+            ? `This provider cannot be told a size \u2014 a width and height can only become an aspect `
+              + `ratio, so it chooses the pixels and returns about ${got.width}x${got.height}. `
+              + `${(adapter && adapter.sizeControlReason) || ''}`.trim()
+            : `This provider caps an image at ${cap.toLocaleString()} pixels, so a location `
+              + `plate comes back ${got.width}x${got.height} rather than the ${LOCATION_MIN_EDGE}px `
+              + 'long edge a location wants. BFL and Google can serve it; Runway and OpenAI cannot.',
     };
 }
 

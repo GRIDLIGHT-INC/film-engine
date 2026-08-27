@@ -801,7 +801,11 @@ Declared per adapter with its source, the same rule `promptLimit`, `maxReference
 
 **This is not a plate problem, it is a provider problem, and it applies to storyboard frames identically.** Both go through the same adapter, so on a ratio-only provider *every frame in a production* comes back at whatever that provider chooses — and since the plates are what the video model draws from, resolution lost here is lost everywhere downstream.
 
-What a location plate really gets at 2048×1080: **bfl and google reach 2K**; runway caps at 1920×1080 and openai at 1536×1024; **meshy and gridlight ignore the size entirely**. The remedy is a provider choice, not a setting — so the Compare Generators table carries an **"ignores your resolution"** badge with the reason, beside the price. It changes which generator you should pick and is invisible from cost alone: the only way to find out used to be opening the file and reading its pixels.
+**Can Meshy do 2K? No.** Three independent checks agree. Its API documents no width, height, size or quality field. Its changelog through Aug 2026 shows every resolution change was an **aspect-ratio** addition, never a size control. And every image it has actually returned here is **1376×768** at 16:9 or **1024×1024** at 1:1 — about one megapixel — for `nano-banana-2` and `nano-banana-pro` alike. The models behind it reach 2K; Meshy does not expose it.
+
+That corrected a wrong declaration of our own: `meshy.maxImagePixels` said `2048*2048` with the note *"held at what the models it proxies actually reach"*. The models are not the service. It is now `1376*768`, measured, so the comparison table stops promising 4.2MP from a provider that returns 1.06.
+
+What a location plate really gets at 2048×1080: **bfl and google reach 2K**; runway caps at 1920×1080 and openai at 1536×1024; **meshy returns 1376×768 and gridlight ignores the size entirely**. The remedy is a provider choice, not a setting — so the Compare Generators table carries an **"ignores your resolution"** badge with the reason, beside the price. It changes which generator you should pick and is invisible from cost alone: the only way to find out used to be opening the file and reading its pixels.
 
 The test that caught my own mis-declaration is worth keeping: it reads each adapter's SOURCE and refuses a claim of `exact` from an adapter that sends no pixel dimensions. Google was declared `exact` and sends `image_size: '2K'` — a tier, not a pixel pair.
 

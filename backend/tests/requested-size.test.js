@@ -174,3 +174,32 @@ test('the comparison table says which generators ignore your resolution', () => 
     assert.match(SPA, /ignores your resolution/,
         'the comparison table renders the flag nowhere, so the decision stays invisible');
 });
+
+test('a declared ceiling is what the provider returns, not what its models could', () => {
+    /*
+     * Meshy's ceiling was declared 2048x2048 with the note "no published
+     * limit, held at what the models it proxies actually reach". The models do
+     * reach 2K — Meshy does not expose it. Every image it has actually
+     * returned is 1376x768 at 16:9 or 1024x1024 at 1:1, about one megapixel,
+     * for nano-banana-2 and nano-banana-pro alike.
+     *
+     * The distinction matters because the comparison table reports the ceiling
+     * as what you would GET. Claiming 4.2MP from a provider that returns 1.06
+     * is the same over-promise that let a "2048x1152" plate arrive as
+     * 1376x768.
+     */
+    const meshy = imageAdapters().find(a => a.id === 'meshy');
+    if (!meshy) return;
+
+    assert.ok(meshy.maxImagePixels <= 1376 * 768 * 1.02,
+        `meshy declares ${meshy.maxImagePixels} pixels; every image it has returned is `
+        + 'about 1.06MP, and its API has no way to ask for more');
+
+    // A ratio-only provider's ceiling can only ever be an observation, so it
+    // must be justified rather than assumed.
+    for (const a of imageAdapters().filter(x => x.sizeControl === 'ratio-only' && x.maxImagePixels)) {
+        assert.ok(a.sizeControlReason && /aspect ratio|no width|cannot be told|chooses the pixels/i
+            .test(a.sizeControlReason),
+        `${a.id}: declares a pixel ceiling without explaining that the size cannot be requested`);
+    }
+});
