@@ -127,7 +127,7 @@ function listCharacters(req, res, projectId) {
     const refsheetCheck = db.prepare(
         // Front first, for the same reason the prompt gather takes the front:
         // a card showing the back of someone's head identifies nobody.
-        `SELECT file_name, project_id FROM film_assets WHERE asset_type = 'character_sheet'
+        `SELECT file_name, project_id, version, created_at FROM film_assets WHERE asset_type = 'character_sheet'
            AND metadata LIKE ? ORDER BY ${orderByViewSql()}, created_at DESC LIMIT 1`
     );
 
@@ -135,7 +135,12 @@ function listCharacters(req, res, projectId) {
         ch.costume_count = costumeCount.get(ch.id).count;
         ch.has_voice_profile = !!voiceCheck.get(ch.id);
         const refsheet = refsheetCheck.get(`%"character_id":"${ch.id}"%"view":"front"%`);
-        ch.reference_image_url = refsheet ? getFileUrl('refsheets', refsheet.project_id, refsheet.file_name) : null;
+        // Keyed to the plate's own row so a regeneration through MCP is visible
+        // without a hard refresh.
+        ch.reference_image_url = refsheet
+            ? getFileUrl('refsheets', refsheet.project_id, refsheet.file_name,
+                refsheet.version || refsheet.created_at)
+            : null;
     }
 
     /*
@@ -865,7 +870,8 @@ async function generateRefSheet(req, res, charId) {
             // had been made from.
             require('../lib/artefact-fingerprint').stampAsset(assetId, 'character_plate', { charId });
 
-            results.push({ view, status: 'complete', style_applied: styleApplied, image_url: getFileUrl('refsheets', ch.project_id, filename) });
+            results.push({ view, status: 'complete', style_applied: styleApplied,
+                image_url: getFileUrl('refsheets', ch.project_id, filename, Date.now()) });
         } catch (err) {
             if (err.message.includes('ECONNREFUSED')) {
                 db.prepare('UPDATE film_refsheet_jobs SET status = ?, error_message = ? WHERE id = ?')
@@ -907,7 +913,7 @@ function getRefSheetStatus(req, res, charId) {
     res.end(JSON.stringify({
         character_id: charId, jobs, sheets: assets.map(a => ({
             asset_id: a.id, file_name: a.file_name,
-            image_url: a.file_name ? getFileUrl('refsheets', a.project_id, a.file_name) : null,
+            image_url: a.file_name ? getFileUrl('refsheets', a.project_id, a.file_name, a.version || a.created_at) : null,
             metadata: a.metadata ? JSON.parse(a.metadata) : null,
         })),
     }));
@@ -958,7 +964,8 @@ function listRefsheetViews(res, charId) {
             file_name: r.file_name,
             available,
             unavailable_reason: available ? null : 'Picture unavailable — generate this view again.',
-            image_url: (available && subdir) ? getFileUrl(subdir, ch.project_id, r.file_name) : null,
+            image_url: (available && subdir)
+                ? getFileUrl(subdir, ch.project_id, r.file_name, r.created_at) : null,
             created_at: r.created_at,
         };
     }).sort((a, b) => viewRank(a.view) - viewRank(b.view)
@@ -1015,9 +1022,31 @@ function deleteRefsheetView(res, charId, rawView) {
         return res.end(JSON.stringify({ error: `${ch.name} has no ${view} view` }));
     }
 
-    // Row and file together: half a delete lists a view whose picture is gone,
-    // or leaves a file nobody can find.
-    try { if (match.file_path) fs.unlinkSync(match.file_path); } catch (_) { /* already gone */ }
+    /*
+     * THE ROW GOES; THE PICTURE IS SET ASIDE, NOT DESTROYED.
+     *
+     * A plate cost money to generate, and a turnaround puts three of them
+     * behind three Delete buttons. Unlinking makes one mis-click
+     * unrecoverable — and "generation is a coin flip you already paid for" is
+     * exactly why archiveExistingFrame keeps every storyboard attempt instead
+     * of overwriting it.
+     *
+     * The ROW still goes, so the view stops being listed and stops reaching a
+     * prompt: a row pointing at nothing is the half-delete the original
+     * comment guarded against, and it still is. What changes is that the bytes
+     * survive under `deleted/` for anyone who has to put one back by hand.
+     */
+    if (match.file_path) {
+        try {
+            const graveyard = path.join(path.dirname(match.file_path), 'deleted');
+            fs.mkdirSync(graveyard, { recursive: true });
+            fs.renameSync(match.file_path,
+                path.join(graveyard, `${Date.now()}_${path.basename(match.file_path)}`));
+        } catch (_) {
+            // Already gone, or the disk will not take it. Either way the row
+            // must still go, or the app lists a view with no picture.
+        }
+    }
     db.prepare('DELETE FROM film_assets WHERE id = ?').run(match.id);
 
     res.writeHead(200, { 'Content-Type': 'application/json' });

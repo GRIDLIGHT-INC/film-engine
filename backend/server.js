@@ -79,6 +79,7 @@ const { handleStoryBible } = require('./routes/story-bible');
 const { handleBreakdown } = require('./routes/breakdown');
 const { handleProductionReports } = require('./routes/production-reports');
 const { handleMoodBoard } = require('./routes/mood-board');
+const { handleStyleBook } = require('./routes/style-book');
 const { handleMediaImport } = require('./routes/media-import');
 const { handleSequences } = require('./routes/sequences');
 const { handleAnnotations } = require('./routes/annotations');
@@ -400,6 +401,15 @@ const server = http.createServer(async (req, res) => {
         if ((parts[1] === 'projects' && parts[2] && parts[3] === 'mood-board')
             || (parts[1] === 'mood-board' && parts[2])) {
             return await handleMoodBoard(req, res, parts, query);
+        }
+
+        // Route: the style book — the director's library, and applying an
+        // entry to a shot. Matched before /film/shots/:id so the apply path is
+        // not swallowed by the shot router.
+        if ((parts[1] === 'projects' && parts[2] && parts[3] === 'style-book')
+            || (parts[1] === 'shots' && parts[2] && parts[3] === 'style-book')
+            || parts[1] === 'style-book') {
+            return handleStyleBook(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/bible[/:section] and /bible-drift

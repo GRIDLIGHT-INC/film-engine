@@ -75,8 +75,29 @@ function getFilePath(projectId, subdir, filename) {
  * @param {string} filename
  * @returns {string} e.g. '/film/video/abc-123/1A.mp4'
  */
-function getFileUrl(subdir, projectId, filename) {
-    return `/film/${subdir}/${projectId}/${filename}`;
+function getFileUrl(subdir, projectId, filename, version) {
+    /*
+     * A REGENERATED PLATE HAS TO LOOK REGENERATED.
+     *
+     * A plate is written to the same per-view filename and overwrites, so the
+     * URL never changes and the browser serves the copy it already has. A
+     * successful, paid-for regeneration therefore left the page byte-identical
+     * — which reads as "nothing happened" and invites pressing the button
+     * again, paying twice.
+     *
+     * The storyboard frame learned this and busts on `asset_version`; every
+     * plate URL was built here with no buster at all, so the same bug lived on
+     * one subsystem over. Reported as "I had to hard refresh to see the
+     * picture", which is exactly what it looks like from the outside.
+     *
+     * Keyed to the asset's own version or timestamp, NOT to the clock: busting
+     * on every render would re-download every unchanged plate on the board on
+     * each refresh, which on a feature-length production is a lot of bytes
+     * spent hiding one bug.
+     */
+    const base = `/film/${subdir}/${projectId}/${filename}`;
+    if (version === undefined || version === null || version === '') return base;
+    return `${base}?v=${encodeURIComponent(String(version).replace(/[^\w.:-]/g, ''))}`;
 }
 
 /**

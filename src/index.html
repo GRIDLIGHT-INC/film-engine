@@ -4172,6 +4172,14 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <button class="nav-item" data-page="jobsqueue" onclick="navigateTo('jobsqueue'); loadJobsQueuePage()" data-tooltip="Unified monitor for all active generation jobs" data-tooltip-pos="right">
                     <span class="nav-icon">&#9201;</span> Job Queue
                 </button>
+                <!-- The style book sits with the other always-available pages:
+                     it is the director's, not a film's, so it has no place in a
+                     sidebar organised by production phase. The rail button is
+                     the way in; this nav item is what makes it a PAGE to the
+                     navigation map, which reads the source for data-page. -->
+                <button class="nav-item" data-page="stylebook" onclick="navigateTo('stylebook')" data-tooltip="Your own shots — angles, lenses and references, kept across every film" data-tooltip-pos="right">
+                    <span class="nav-icon">&#9635;</span> Style Book
+                </button>
                 <button class="nav-item" data-page="provenance" onclick="navigateTo('provenance'); loadProvenancePage()" data-tooltip="AI disclosure sidecar and generation provenance manifest" data-tooltip-pos="right">
                     <span class="nav-icon">&#128220;</span> Provenance
                 </button>
@@ -5517,6 +5525,31 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
 
         <!-- ── 17. SETTINGS ─────────────────────────────────────── -->
+        <!--
+          THE STYLE BOOK — the director's own shots, reusable across films.
+
+          Cross-project: entries default to the library and are visible from
+          every project. A project-scoped entry is a variant specific to one
+          film, listed first because it exists precisely because it differs.
+        -->
+        <div class="page" id="page-stylebook">
+            <div class="flex-between mb-16" style="flex-wrap:wrap;gap:8px;">
+                <h2>Style Book</h2>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <input id="styleBookFilter" type="text" placeholder="Filter by name, tag or lens"
+                           style="width:220px;" oninput="renderStyleBook()">
+                    <button class="btn btn-primary" onclick="newStyleBookEntry()">+ Shot</button>
+                </div>
+            </div>
+            <p class="text-sm text-muted mb-16" style="max-width:70ch;line-height:1.5;">
+                Shots you like, kept across every film. Give one a name, the camera details you know,
+                and reference visuals. Applying an entry to a shot fills in its scene card &mdash; which is
+                what the image and video prompts are built from, so a favourite angle reaches the next
+                generation with nothing else to change.
+            </p>
+            <div id="styleBookGrid"></div>
+        </div>
+
         <div class="page" id="page-settings">
             <div class="page-header"><h2>Settings</h2></div>
             <div class="card" style="max-width:500px;">
@@ -6117,6 +6150,52 @@ table, .render-table { border-radius:12px; overflow:hidden; }
     </div>
 
     <!-- Create Prop -->
+    <!-- The style-book editor. Every camera facet the card carries has a
+         control, and each says what it is FOR — height in particular, which is
+         the facet that makes a low-angle sayable and the one nobody fills in. -->
+    <div class="modal-overlay" id="styleBookModal">
+        <div class="modal">
+            <div class="modal-header"><h3 id="styleBookModalTitle">New shot</h3><button class="modal-close" onclick="closeModal('styleBookModal')">&times;</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="styleBookEditId">
+                <div class="form-group"><label>Name</label><input type="text" data-field="name" placeholder="Ozu tatami low-angle"></div>
+                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="What this shot is for, and when you reach for it..."></textarea></div>
+                <div class="form-group"><label>Tags</label><input type="text" data-field="tags" placeholder="interior, conversation, static, formal">
+                    <p class="text-sm text-muted" style="margin-top:6px;">Free text &mdash; whatever you would actually search for.</p>
+                </div>
+                <div class="form-group"><label>Kept in</label>
+                    <select data-field="scope">
+                        <option value="library">My library &mdash; every film</option>
+                        <option value="project">This film only</option>
+                    </select>
+                </div>
+                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">Camera &mdash; all optional</h4>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>Framing</label><input type="text" data-field="shot_type" placeholder="close-up, wide, two-shot"></div>
+                    <div class="form-group"><label>Movement</label><input type="text" data-field="movement" placeholder="static, push-in, orbit"></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>Lens</label><input type="text" data-field="lens" placeholder="40mm anamorphic"></div>
+                    <div class="form-group"><label>Sensor</label><input type="text" data-field="sensor" placeholder="super35, fullframe"></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>Aperture</label><input type="number" step="0.1" min="0" data-field="aperture" placeholder="2.8"></div>
+                    <div class="form-group"><label>Height &mdash; m</label><input type="number" step="0.05" min="0" data-field="height_m" placeholder="0.4"></div>
+                    <div class="form-group"><label>Focus &mdash; m</label><input type="number" step="0.1" min="0" data-field="focus_distance_m" placeholder="1.2"></div>
+                </div>
+                <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
+                    Height is what makes a shot read as low or high angle &mdash; <strong>0.4m</strong> is
+                    tatami level, <strong>1.6m</strong> is eye level. Leave anything blank you do not know.
+                </p>
+                <div class="form-group"><label>Note to yourself</label><textarea data-field="note" rows="2" placeholder="Why this works, what it needs..."></textarea></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveStyleBookEntry()">Save</button>
+                    <button class="btn btn-secondary" onclick="closeModal('styleBookModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="propModal">
         <div class="modal">
             <div class="modal-header"><h3 id="propModalTitle">New Prop</h3><button class="modal-close" onclick="closeModal('propModal')">&times;</button></div>
@@ -11273,6 +11352,7 @@ THREE.GLTFLoader = GLTFLoader;
         'characters', 'locations', 'props', 'assets', 'threed', 'videoshots',
         'music', 'musiccues', 'colorgrading', 'milestones', 'notes', 'renderhistory',
         'continuity', 'consistency', 'budget', 'exportpage', 'pipeline', 'settings',
+        'stylebook',
     ];
 
     const SECTION_GUIDE = {
@@ -15871,6 +15951,7 @@ THREE.GLTFLoader = GLTFLoader;
             flows: loadFlowsPage,
             production: loadProductionPage,
             moodboard: loadMoodBoardPage,
+            stylebook: loadStyleBook,
             previs: loadPrevisPage,
             settings: loadSettings,
             continuity: loadContinuity,
@@ -22419,7 +22500,13 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     async function deleteCharacterView(charId, view) {
-        if (!confirm(`Delete the ${view} view?\n\nThe picture and its record go together, and it cost money to generate.`)) return;
+        // Names what is lost and what is not. A plate cost money; the bytes
+        // are set aside rather than destroyed, and saying so is the difference
+        // between a confirmation people read and one they click through.
+        if (!confirm(`Delete the ${view} view of this character?\n\n`
+            + `It stops being used in every frame this character appears in, and stops being listed.\n`
+            + `The picture file is moved to a "deleted" folder rather than destroyed, so it can be `
+            + `put back by hand — but nothing in the app will do that for you.`)) return;
         try {
             await api(`/characters/${charId}/refsheet/views/${encodeURIComponent(view)}`, { method: 'DELETE' });
             setStatus(`${view} view deleted`);
@@ -23838,6 +23925,184 @@ ${fountainText.slice(0, 50000)}`;
                   + '</p>'
                 : '';
             setStatus('Project updated');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // THE STYLE BOOK — the director's shots, reusable across films
+    // ══════════════════════════════════════════════════════════════
+    let _styleBook = { entries: [], note: '' };
+
+    async function loadStyleBook() {
+        const grid = document.getElementById('styleBookGrid');
+        if (!grid) return;
+        grid.innerHTML = '<p class="text-sm text-muted">Loading…</p>';
+        try {
+            // With a project open you see its own entries plus the library;
+            // without one, the library alone. The style book is usable before
+            // any film exists, which is half the point of it being global.
+            _styleBook = await api(state.currentProject
+                ? '/projects/' + state.currentProject.id + '/style-book'
+                : '/style-book');
+            renderStyleBook();
+        } catch (err) {
+            grid.innerHTML = '<p class="text-sm">Could not load the style book: ' + esc(err.message) + '</p>';
+        }
+    }
+
+    /** The facets an entry carries, as the tags a director searches by. */
+    function styleBookTags(entry) {
+        const c = entry.camera || {};
+        const bits = [];
+        if (c.shot_type) bits.push(esc(c.shot_type));
+        if (c.lens) bits.push(esc(c.lens));
+        if (c.movement && c.movement !== 'static') bits.push(esc(c.movement));
+        if (c.sensor) bits.push(esc(c.sensor));
+        if (c.aperture) bits.push('T' + esc(String(c.aperture)));
+        if (c.height_m !== undefined) bits.push(esc(String(c.height_m)) + 'm');
+        return bits.map(b => '<span class="tag">' + b + '</span>').join('');
+    }
+
+    function renderStyleBook() {
+        const grid = document.getElementById('styleBookGrid');
+        if (!grid) return;
+        const q = (document.getElementById('styleBookFilter')?.value || '').trim().toLowerCase();
+        const entries = (_styleBook.entries || []).filter(e => !q
+            || (e.name + ' ' + e.description + ' ' + e.tags + ' ' + JSON.stringify(e.camera || {}))
+                .toLowerCase().includes(q));
+
+        if (!entries.length) {
+            grid.innerHTML = (_styleBook.entries || []).length
+                ? '<p class="text-sm text-muted">Nothing matches that.</p>'
+                : '<p class="text-sm text-muted">No shots yet. Add one when you see an angle you want '
+                  + 'again &mdash; a name and a lens is enough to start.</p>';
+            return;
+        }
+
+        grid.innerHTML = '<div class="entity-grid">' + entries.map(e => `
+            <div class="entity-card">
+                ${(e.media || []).length
+                    ? `<img src="${API_BASE}/film/style-book/media/${esc(e.media[0].id)}/file"
+                           alt="" style="width:100%;border-radius:6px;margin-bottom:8px;display:block;"
+                           onerror="this.style.display='none'">`
+                    : ''}
+                <div class="flex-between">
+                    <strong style="font-size:13px;">${esc(e.name)}</strong>
+                    <span class="tag">${e.scope === 'library' ? 'library' : 'this film'}</span>
+                </div>
+                ${e.description ? `<p class="text-sm">${esc(e.description)}</p>` : ''}
+                <div class="tag-row">${styleBookTags(e)}</div>
+                ${e.tags ? `<p class="text-sm text-muted" style="margin-top:6px;">${esc(e.tags)}</p>` : ''}
+                <div class="card-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="editStyleBookEntry('${esc(e.id)}')">Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteStyleBookEntry('${esc(e.id)}')">Delete</button>
+                </div>
+            </div>`).join('') + '</div>'
+            + `<p class="text-sm text-muted" style="margin-top:12px;max-width:70ch;line-height:1.5;">${esc(_styleBook.note || '')}</p>`;
+    }
+
+    function newStyleBookEntry() { openStyleBookModal(null); }
+
+    function editStyleBookEntry(id) {
+        openStyleBookModal((_styleBook.entries || []).find(e => e.id === id) || null);
+    }
+
+    /**
+     * The editor.
+     *
+     * Every camera facet is a control, and each says what it means rather than
+     * assuming the reader knows — height in particular, because it is the one
+     * that makes a low-angle sayable and the one nobody thinks to fill in.
+     */
+    function openStyleBookModal(entry) {
+        const c = (entry && entry.camera) || {};
+        document.getElementById('styleBookModalTitle').textContent = entry ? 'Edit shot' : 'New shot';
+        document.getElementById('styleBookEditId').value = entry ? entry.id : '';
+        const m = document.getElementById('styleBookModal');
+        const set = (field, value) => {
+            const el = m.querySelector(`[data-field="${field}"]`);
+            if (el) el.value = value === undefined || value === null ? '' : value;
+        };
+        set('name', entry && entry.name);
+        set('description', entry && entry.description);
+        set('tags', entry && entry.tags);
+        set('scope', entry ? entry.scope : 'library');
+        for (const f of ['shot_type', 'movement', 'lens', 'sensor', 'aperture', 'height_m', 'focus_distance_m', 'note']) {
+            set(f, c[f]);
+        }
+        showModal('styleBookModal');
+    }
+
+    async function saveStyleBookEntry() {
+        const m = document.getElementById('styleBookModal');
+        const get = f => (m.querySelector(`[data-field="${f}"]`)?.value || '').trim();
+        const num = f => { const raw = get(f); return raw === '' ? undefined : Number(raw); };
+
+        const camera = {};
+        for (const f of ['shot_type', 'movement', 'lens', 'sensor', 'note']) {
+            const val = get(f); if (val) camera[f] = val;
+        }
+        for (const f of ['aperture', 'height_m', 'focus_distance_m']) {
+            const n = num(f); if (Number.isFinite(n)) camera[f] = n;
+        }
+
+        const body = {
+            name: get('name'), description: get('description'),
+            tags: get('tags'), scope: get('scope') || 'library', camera,
+        };
+        if (!body.name) { setStatus('Give the shot a name'); return; }
+
+        const id = document.getElementById('styleBookEditId').value;
+        try {
+            if (id) await api('/style-book/' + id, { method: 'PUT', body: JSON.stringify(body) });
+            else await api((state.currentProject ? '/projects/' + state.currentProject.id : '') + '/style-book',
+                { method: 'POST', body: JSON.stringify(body) });
+            closeModal('styleBookModal');
+            setStatus('Style book saved');
+            loadStyleBook();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteStyleBookEntry(id) {
+        const e = (_styleBook.entries || []).find(x => x.id === id);
+        if (!confirm(`Delete "${e ? e.name : 'this shot'}"?\n\nIt goes from every project.`)) return;
+        try {
+            await api('/style-book/' + id, { method: 'DELETE' });
+            setStatus('Deleted');
+            loadStyleBook();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /**
+     * Apply an entry to a shot, from wherever a shot is being directed.
+     *
+     * One runner for both surfaces — the Direct panel and previs — because two
+     * separately written appliers is how the board and the viewer came to
+     * disagree about their own markup tools.
+     */
+    async function applyStyleBookEntry(shotId) {
+        if (!_styleBook.entries || !_styleBook.entries.length) {
+            try {
+                _styleBook = await api(state.currentProject
+                    ? '/projects/' + state.currentProject.id + '/style-book' : '/style-book');
+            } catch (err) { setStatus('Could not read the style book: ' + err.message); return; }
+        }
+        const entries = _styleBook.entries || [];
+        if (!entries.length) { setStatus('The style book is empty — add a shot first'); return; }
+
+        const pick = prompt('Apply which shot?\n\n'
+            + entries.map((e, i) => `${i + 1}. ${e.name}${e.camera && e.camera.lens ? ' — ' + e.camera.lens : ''}`).join('\n'));
+        const idx = parseInt(pick, 10) - 1;
+        if (!(idx >= 0 && idx < entries.length)) return;
+
+        try {
+            const r = await api(`/shots/${shotId}/style-book/${entries[idx].id}`, { method: 'POST' });
+            // Says what changed: "I applied my low-angle" and "it carried
+            // nothing this shot could use" look identical otherwise.
+            setStatus(r.applied && r.applied.length
+                ? `Applied ${r.applied.join(', ')} — regenerate the frame to see it`
+                : 'That entry carried nothing this shot could use');
+            if (typeof loadStoryboard === 'function') loadStoryboard();
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -31699,6 +31964,10 @@ ${fountainText.slice(0, 50000)}`;
     { id:'notes',     label:'Notes', icon:'M3.2 3h11.6v12H3.2V3Zm2.8 4h6M6 10h4' },
     { id:'guide',     label:'Guide', icon:'M9 2.6A6.4 6.4 0 109 15.4 6.4 6.4 0 009 2.6Zm-1.8 4.4a1.9 1.9 0 013.6.8c0 1.3-1.8 1.6-1.8 2.7m0 2.5v.01' },
     { id:'settings',  label:'Setup', icon:'M9 6.6A2.4 2.4 0 109 11.4 2.4 2.4 0 009 6.6ZM9 1.8v2M9 14.2v2M1.8 9h2M14.2 9h2M4 4l1.4 1.4M12.6 12.6L14 14M14 4l-1.4 1.4M5.4 12.6L4 14' },
+    // The style book. Cross-project by design — it is the director's, not a
+    // film's — so it sits with the other always-available entries rather than
+    // in the project sidebar, which is organised by production phase.
+    { id:'stylebook', label:'Style', icon:'M3 3.6h5.2a2 2 0 012 2V15a1.8 1.8 0 00-1.8-1.4H3V3.6Zm12 0H9.8a2 2 0 00-2 2V15a1.8 1.8 0 011.8-1.4H15V3.6Z' },
     // The glossary had exactly one way in: the "Search anything" pill, which
     // was not a search — it opened this. Removing the pill without replacing
     // the entrance would have left the glossary in the build and unreachable,

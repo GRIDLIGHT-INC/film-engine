@@ -445,6 +445,9 @@ function importSubjectPlate(spec, target, input) {
         target, asset_id: assetId, project_id: owner.projectId,
         subject_id: owner.subject.id, subject: owner.subject.name,
         view: view || null, file_name: fileName, file_path: filePath, version: 1,
+        // NOT busted: this url is resolved back to a path on disk by the
+        // import contract, and a query string makes that lookup fail. An
+        // import lands under a new name anyway, so there is no stale copy.
         url: getFileUrl(spec.subdir, owner.projectId, fileName),
         note: 'Uploaded, not generated: the film\u2019s style preset was not applied to it, and it is '
             + 'not tracked against the description, so editing that description will not mark it stale.',
@@ -557,6 +560,9 @@ function importCapabilityMedia(spec, target, input) {
          * mistake servedUrlFor made once already, which is why the test now
          * FETCHES this URL rather than asserting it is non-null.
          */
+        // NOT busted: this url is resolved back to a path on disk by the
+        // import contract, and a query string makes that lookup fail. An
+        // import lands under a new name anyway, so there is no stale copy.
         url: getFileUrl(spec.subdir, owner.projectId, fileName),
         note: `Stored as ${spec.assetType}, exactly where a generated one goes. It is marked as `
             + 'coming from outside, so editing the scene card will not tell you to regenerate over it. '

@@ -672,7 +672,9 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         ok: true,
         asset_id: assetId,
         file_name: fileName,
-        image_url: getFileUrl(spec.subdir, projectId, fileName),
+        // Busted, because a plate overwrites its own filename: without this the
+        // page shows the picture that was just replaced.
+        image_url: getFileUrl(spec.subdir, projectId, fileName, Date.now()),
         style_applied: styleApplied,
         ...provenance,
     };

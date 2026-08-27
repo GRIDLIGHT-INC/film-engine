@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (82 migrations)
+│   │   └── migrations/     # SQL migration files (83 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -166,6 +166,7 @@ film-engine/
 │   │   ├── prop-categories.js   # What a prop may be, said once for the picker, the tool and the CHECK
 │   │   ├── plate-views.js       # Which view of a subject carries identity
 │   │   ├── plate-isolation.js   # A subject plate is the subject and nothing else
+│   │   ├── style-book.js        # The director's own shots, applied to a film's
 │   │   ├── usage-meter.js       # Every provider call, metered and attributed
 │   │   ├── mcp-usage.js         # The agent host is the model; its traffic is the LLM meter
 │   │   ├── spend-backfill.js    # What a project spent before anything was tracking it
@@ -259,6 +260,7 @@ film-engine/
 │       ├── plate-views.test.js         # A turnaround is three pictures, and the app used the wrong one
 │       ├── style-book-research.test.js # The style book design covers every surface it touches
 │       ├── style-book-plan.test.js     # The implementation plan wires into every registry it must
+│       ├── style-book.test.js          # A director's shots, reusable across films
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -763,6 +765,32 @@ Two projects lost their image and video providers. The tell was that `image_qual
 **And `provider_config` was not writable over MCP** — `project_update` refused it, so an agent could create a project and neither configure nor repair it, which is the wrong constraint for a pipeline whose reasoning happens in an agent host. Merged there too, with `null` clearing, so one payload cannot mean two things.
 
 **A placeholder is not a credential.** Six providers were stored holding the single character `k`. Everything downstream reported them configured — `isProviderConfigured` asks only whether the string is non-empty, the panel showed `set ••••k`, readiness passed — and the first sign was a **401 at generation time**, on a job already committed to, with a message blaming the vendor. Refused at the write, where it is cheap and unambiguous: no real key is under eight characters, so this cannot reject something legitimate. Rows written earlier are **flagged rather than treated as unset** — the key IS stored, and saying "not set" to someone looking straight at it is its own confusion.
+
+### The Style Book — a Director's Shots, Reusable Across Films
+A named shot with the camera details you know and reference visuals, kept across every project. `film_style_book` follows the **`film_flows` precedent**: `project_id` is nullable and NULL means the director's **library**, listed alongside a project's own (`WHERE project_id = ? OR project_id IS NULL`, `scope: project | library`). Every other reference collection here — mood board, continuity, bible, marketing — is `project_id NOT NULL`, because each answers a question about *one film*. A style book is the opposite: it accumulates.
+
+`ON DELETE SET NULL`, **never CASCADE**. A library entry authored while a project happened to be open must outlive that project; cascading would delete the director's own library as a side effect of tidying up a film — the `film_refsheet_jobs` trap from migration 067.
+
+**The value is the apply, not the notes.** `applyEntryToShot` merges an entry's camera facets onto a shot's scene card, and the card is *already* what `buildStoryboardPrompt` and `buildVideoPrompt` read — so a favourite angle reaches the next generation with no new plumbing. Merged **per facet**, not as a camera block: an entry that says nothing about the lens must leave the lens alone, which is the bug `previsFacets` shipped once where blocking a shot made its keyframe *vaguer*. It reports `applied` and `skipped`, because *"I applied my low-angle"* and *"it carried nothing this shot could use"* are indistinguishable otherwise.
+
+**Precedence is unchanged.** An entry writes **onto** the card rather than becoming a fourth level in `effectiveCamera()`. A thing consulted at generation time is a display that eventually disagrees with the generator.
+
+**A stage pose is not carried.** `position` and `rotation` are six degrees of freedom in one previs stage's coordinate space; the same numbers put the camera somewhere else entirely in another scene. They are in `POSE_FACETS`, reported in `skipped` — an omission that is stated is a decision, one that is silent is a bug. The carried set is **derived from the scene-card schema source**, so a facet added to the card later is carried with nothing to remember.
+
+**The visuals are for a person, and the UI says so.** `KIND_RANK` is `anchor 0, character 1, location 2, prop 3, style 4` against three references on Runway and five on Meshy — a style still already ranks last and is dropped before the request is built on any shot with a cast and a location, and a clip reaches no generator at all. Saying it outright is the difference between a reference library and a director attaching five pictures believing the frame is conditioned on them.
+
+Cross-project, so the page is in `ALWAYS_AVAILABLE` rather than one of the nine `PROJECT_PHASES`: a library that outlives every project does not belong inside the workflow of one. Served at `GET|POST /film/style-book`, `GET|PUT|DELETE /film/style-book/:id`, `POST /film/shots/:id/style-book/:entryId`, on a rail button between Setup and Terms, and as six tools (**175 tools**).
+
+### A Regenerated Plate Has to Look Regenerated
+*"I had to hard refresh to see the picture of a character plate, generated through MCP."*
+
+Not a DOM problem. A plate is written to the same per-view filename and **overwrites**, so the URL never changes and the browser serves the copy it already has — a successful, paid-for regeneration leaves the page byte-identical, which reads as nothing having happened and invites pressing the button again.
+
+The storyboard frame learned this once and busts on `asset_version`. **Every plate URL was built with no buster at all**, so the same bug lived one subsystem over, silently, for characters, locations and props alike. `getFileUrl` now takes a version, and the set-based test found **seven more sites in `locations.js`** after the three obvious ones in `characters.js` — which is the whole argument for the test being over the call sites rather than over the case that was reported.
+
+Keyed to the row's own version or timestamp, **never to the clock**: busting on every render would re-download every unchanged plate on the board on each refresh. Media imports are deliberately **not** busted and say why — that URL is resolved back to a path on disk by the import contract, and a query string breaks the lookup.
+
+**And deleting a view no longer destroys the picture.** A plate cost money and a turnaround puts three of them behind three Delete buttons; the bytes now move to a `deleted/` folder rather than being unlinked. The row still goes, so the view stops being listed and stops reaching a prompt — a row pointing at nothing was the half-delete the original guarded against, and it still is.
 
 ### A Turnaround Is Three Pictures, and the App Used the Wrong One
 *"We just generated plates for a character with front, side, back — but have no place to put them."*
@@ -1861,7 +1889,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (82 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (83 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -2039,6 +2067,7 @@ node --test backend/tests/credentials-global.test.js
 node --test backend/tests/plate-views.test.js
 node --test backend/tests/style-book-research.test.js
 node --test backend/tests/style-book-plan.test.js
+node --test backend/tests/style-book.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js

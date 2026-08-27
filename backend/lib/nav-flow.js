@@ -27,7 +27,13 @@ const { PROJECT_PHASES } = require('../routes/production-status');
  * into one would put them in the wrong place eight times out of nine. They are
  * pinned above the phase groups instead.
  */
-const ALWAYS_AVAILABLE = ['dashboard', 'settings', 'jobsqueue'];
+const ALWAYS_AVAILABLE = ['dashboard', 'settings', 'jobsqueue',
+    // The style book is the DIRECTOR's, not a project's — it accumulates
+    // across films. A library that outlives every project does not belong
+    // inside the workflow of one, so it is always available rather than filed
+    // under a production phase.
+    'stylebook',
+];
 
 /**
  * Phase -> the pages that serve it.

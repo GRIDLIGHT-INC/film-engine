@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**169 tools, 44 families.** Everything the app can do, you can ask for in a
+**175 tools, 44 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -291,6 +291,35 @@ These resolve a provider and bill you:
 **Free and worth reading first:** `shot_prompt` (what a frame would send),
 `flow_estimate` (projected cost), `run_plan` (cost of a whole batch),
 `beats_get`, `script_stats`, `scene_history`, `outline_get`, `shot_frames`.
+
+### Your own shots, kept across every film
+
+`stylebook_list` · `stylebook_get` · `stylebook_create` · `stylebook_update` ·
+`stylebook_delete` · `stylebook_apply`
+
+The style book is the director's, not a project's: an entry with scope
+"library" is visible from every film and accumulates into a directing style,
+while scope "project" is a variant specific to one. `stylebook_create` takes
+the SAME camera facets a scene card carries — shot_type, movement, lens,
+sensor, aperture, focus_distance_m, height_m, note — and every one is
+optional, so "85mm, that is all I know" is a legitimate entry. **height_m** is
+worth setting whenever the angle is the point: it is what makes a shot read as
+low or high, and nothing else expresses it.
+
+`stylebook_apply` is the one that matters. It MERGES an entry's facets onto a
+shot's scene card, which is already what the image and video prompt builders
+read — so a favourite angle reaches the next generation with nothing else to
+change. The card's description, dialogue and cast survive untouched, a facet
+the entry says nothing about is left alone, and the response names what it
+applied and what it skipped. Regenerate the frame afterwards to see it.
+
+A stage pose (position, rotation) is deliberately NOT carried: six degrees
+of freedom in one previs stage's coordinates put the camera somewhere else
+entirely in another scene.
+
+Visuals attached to an entry are reference for a person. A style still is the
+lowest-ranked reference kind and is dropped before the request is built on any
+shot with a cast and a location; a clip reaches no generator at all.
 
 ### What it actually cost
 

@@ -285,7 +285,10 @@ function listPlateViews(res, locationId) {
             available,
             unavailable_reason: available ? null
                 : 'Picture unavailable — photograph this view again.',
-            image_url: (available && subdir) ? getFileUrl(subdir, loc.project_id, r.file_name) : null,
+            // Busted on the row's own timestamp: a regenerated view overwrites the
+            // same filename, so without this the browser serves the old picture.
+            image_url: (available && subdir)
+                ? getFileUrl(subdir, loc.project_id, r.file_name, r.created_at) : null,
             created_at: r.created_at,
         };
     });
@@ -488,7 +491,7 @@ async function refineSubjectPlate(req, res, kind, subjectId) {
     res.end(JSON.stringify({
         kind, [`${kind}_id`]: subjectId, name: subject.name,
         asset_id: assetId, file_name: fileName, view: view || null,
-        image_url: getFileUrl(spec.subdir, project.id, fileName),
+        image_url: getFileUrl(spec.subdir, project.id, fileName, Date.now()),
         instruction,
         note: 'The previous plate was replaced. Every shot referencing this subject uses the new one.',
     }));
@@ -722,7 +725,8 @@ function listLocations(req, res, projectId) {
         // returned, and it pointed at a directory the file was not in — a plate
         // that existed, was correctly linked, and rendered as nothing.
         loc.reference_image_url = refAsset
-            ? getFileUrl(PLATE_KINDS.location.subdir, refAsset.project_id, refAsset.file_name) : null;
+            ? getFileUrl(PLATE_KINDS.location.subdir, refAsset.project_id, refAsset.file_name,
+                refAsset.version || refAsset.created_at) : null;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -999,7 +1003,8 @@ function listProps(req, res, projectId) {
     for (const prop of rows) {
         const refAsset = refImageQuery.get(prop.id);
         prop.reference_image_url = refAsset
-            ? getFileUrl(PLATE_KINDS.prop.subdir, refAsset.project_id, refAsset.file_name) : null;
+            ? getFileUrl(PLATE_KINDS.prop.subdir, refAsset.project_id, refAsset.file_name,
+                refAsset.version || refAsset.created_at) : null;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1232,7 +1237,7 @@ async function generateLocationImage(req, res, locId) {
         db.prepare('UPDATE film_location_image_jobs SET status = ?, output_path = ? WHERE id = ?')
             .run('complete', filePath, jobId);
 
-        const imageUrl = getFileUrl('loc-refs', loc.project_id, filename);
+        const imageUrl = getFileUrl('loc-refs', loc.project_id, filename, Date.now());
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             location_id: locId, location_name: loc.name, job_id: jobId,
@@ -1263,7 +1268,7 @@ function getLocationImageStatus(req, res, locId) {
         location_id: locId, jobs,
         images: assets.map(a => ({
             asset_id: a.id, file_name: a.file_name,
-            image_url: a.file_name ? getFileUrl('loc-refs', a.project_id, a.file_name) : null,
+            image_url: a.file_name ? getFileUrl('loc-refs', a.project_id, a.file_name, a.version || a.created_at) : null,
         })),
     }));
 }
@@ -1356,7 +1361,7 @@ async function generatePropImage(req, res, propId) {
         db.prepare('UPDATE film_prop_image_jobs SET status = ?, output_path = ? WHERE id = ?')
             .run('complete', filePath, jobId);
 
-        const imageUrl = getFileUrl('prop-refs', prop.project_id, filename);
+        const imageUrl = getFileUrl('prop-refs', prop.project_id, filename, Date.now());
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             prop_id: propId, prop_name: prop.name, job_id: jobId,
@@ -1387,7 +1392,7 @@ function getPropImageStatus(req, res, propId) {
         prop_id: propId, jobs,
         images: assets.map(a => ({
             asset_id: a.id, file_name: a.file_name,
-            image_url: a.file_name ? getFileUrl('prop-refs', a.project_id, a.file_name) : null,
+            image_url: a.file_name ? getFileUrl('prop-refs', a.project_id, a.file_name, a.version || a.created_at) : null,
         })),
     }));
 }

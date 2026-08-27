@@ -323,6 +323,10 @@ const CREATE_DELETE_PAIRS = [
     // removable, and removing it must not take the clips with it.
     { create: 'sequence_create', remove: 'sequence_delete' },
     { create: 'project_create', remove: 'project_delete' },
+    // A style-book entry is written down in a hurry when an angle works. An
+    // agent that can add one and not remove it turns a scratch note into a
+    // permanent fixture of every project.
+    { create: 'stylebook_create', remove: 'stylebook_delete' },
     // A profile is a commitment, and one an agent can make it must be able to
     // withdraw — otherwise a wrong subject is locked in with no way back out.
     { create: 'consistency_create', remove: 'consistency_delete' },

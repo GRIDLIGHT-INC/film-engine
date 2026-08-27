@@ -81,12 +81,22 @@ test('every test that will police this subsystem is named, with its contract', (
     assert.deepStrictEqual(missing, [], `\n  ${missing.join('\n  ')}`);
 });
 
-test('the migration number is the real next one', () => {
-    // A plan naming 080 when the tree is at 084 is a plan someone will follow.
+test('the plan names the migration that was actually written', () => {
+    /*
+     * This asserted the NEXT free number, which was right while the plan was a
+     * plan and wrong the moment the migration landed — the number stops being
+     * "next" precisely because the work was done. It now checks the plan names
+     * a migration that EXISTS, which is the durable version of the same claim:
+     * a plan citing a file nobody wrote is a plan someone will follow into a
+     * gap.
+     */
     const p = plan();
-    const next = nextMigration();
-    assert.ok(p.includes(`${next}_`),
-        `the plan does not name migration ${next}_… as the next number`);
+    const cited = [...p.matchAll(/(\d{3})_[a-z_]+\.sql/g)].map(m => m[0]);
+    assert.ok(cited.length, 'the plan names no migration file at all');
+    const onDisk = new Set(fs.readdirSync(path.join(__dirname, '..', 'db', 'migrations')));
+    const ghosts = cited.filter(f => !onDisk.has(f));
+    assert.deepStrictEqual(ghosts, [],
+        `the plan cites migrations that do not exist: ${ghosts.join(', ')}`);
 });
 
 test('every camera facet is given a disposition', () => {

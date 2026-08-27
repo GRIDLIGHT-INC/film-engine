@@ -45,6 +45,7 @@ const { handleLocations } = require('../routes/locations');
 const { handleStoryboard } = require('../routes/storyboard');
 const { handleComments } = require('../routes/scripts');
 const { handleMoodBoard } = require('../routes/mood-board');
+const { handleStyleBook } = require('../routes/style-book');
 const { handleMediaImport } = require('../routes/media-import');
 const { handleVideoGen } = require('../routes/video-gen');
 const { handleSequences } = require('../routes/sequences');
@@ -1276,6 +1277,89 @@ const PRODUCTION_TOOLS = [
             text: { type: 'string', description: 'Required for a text note.' },
         },
         required: ['shot_id', 'kind', 'points'],
+    },
+    {
+        name: 'stylebook_list',
+        handler: handleStyleBook, method: 'GET',
+        description: 'The director\u2019s style book: named shots they like, with camera details and '
+            + 'reference visuals. CROSS-PROJECT \u2014 entries with scope "library" are visible from every '
+            + 'film and accumulate into a directing style; scope "project" is a variant specific to one. '
+            + 'Pass project_id to see that project\u2019s entries plus the library. FREE. The VISUALS are '
+            + 'reference for a person: a style still is the lowest-ranked reference kind and is dropped '
+            + 'before the request is built on any shot with a cast and a location, and a clip reaches no '
+            + 'generator at all. What reaches a picture is the camera facets, applied to a shot card.',
+        path: a => (a.project_id ? `/film/projects/${a.project_id}/style-book` : '/film/style-book'),
+        schema: {
+            project_id: { type: 'string', description: 'Optional. Without it you see only the library.' },
+        },
+        required: [],
+    },
+    {
+        name: 'stylebook_get',
+        handler: handleStyleBook, method: 'GET',
+        description: 'One style-book entry with its camera facets and its visuals.',
+        path: a => `/film/style-book/${a.entry_id}`,
+        schema: { entry_id: { type: 'string' } },
+        required: ['entry_id'],
+    },
+    {
+        name: 'stylebook_create',
+        handler: handleStyleBook, method: 'POST',
+        description: 'Record a shot in the style book. `camera` takes the SAME facets a scene card '
+            + 'carries (shot_type, movement, lens, sensor, aperture, focus_distance_m, height_m, note) '
+            + 'and every one is optional \u2014 "85mm, that is all I know" is a legitimate entry. '
+            + 'height_m is the facet that makes a low-angle sayable, and is worth setting whenever the '
+            + 'angle is the point. Defaults to scope "library", because a directing style accumulates '
+            + 'across films. Validated against the scene card, so what this accepts a card accepts.',
+        path: a => (a.project_id ? `/film/projects/${a.project_id}/style-book` : '/film/style-book'),
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        schema: {
+            project_id: { type: 'string', description: 'Required only for scope "project".' },
+            name: { type: 'string', description: 'What you call this shot, e.g. "Ozu tatami low-angle".' },
+            description: { type: 'string' },
+            tags: { type: 'string', description: 'Free text. Search terms you would actually use.' },
+            scope: { type: 'string', enum: ['library', 'project'] },
+            camera: { type: 'object', description: 'Scene-card camera facets. position/rotation are NOT '
+                + 'carried: a stage pose means nothing in another scene.' },
+        },
+        required: ['name'],
+    },
+    {
+        name: 'stylebook_update',
+        handler: handleStyleBook, method: 'PUT',
+        description: 'Change an entry. MERGED, never replaced: renaming one cannot clear its camera, '
+            + 'and a camera facet set to null is removed.',
+        path: a => `/film/style-book/${a.entry_id}`,
+        body: a => { const { entry_id, ...rest } = a || {}; return rest; },
+        schema: {
+            entry_id: { type: 'string' },
+            name: { type: 'string' }, description: { type: 'string' }, tags: { type: 'string' },
+            scope: { type: 'string', enum: ['library', 'project'] },
+            camera: { type: 'object' },
+        },
+        required: ['entry_id'],
+    },
+    {
+        name: 'stylebook_delete',
+        handler: handleStyleBook, method: 'DELETE',
+        description: 'Remove an entry and its visuals.',
+        path: a => `/film/style-book/${a.entry_id}`,
+        schema: { entry_id: { type: 'string' } },
+        required: ['entry_id'],
+    },
+    {
+        name: 'stylebook_apply',
+        handler: handleStyleBook, method: 'POST',
+        description: 'Apply a style-book entry to a shot \u2014 the step that makes the book worth '
+            + 'having. It MERGES the entry\u2019s camera facets onto that shot\u2019s scene card, which is '
+            + 'already what the image and video prompt builders read, so a favourite angle reaches the '
+            + 'next generation with nothing else to change. The card\u2019s description, dialogue and cast '
+            + 'survive untouched, and a facet the entry says nothing about is left alone. Reports which '
+            + 'facets it applied and which it skipped. Regenerate the frame afterwards to see it.',
+        path: a => `/film/shots/${a.shot_id}/style-book/${a.entry_id}`,
+        body: () => ({}),
+        schema: { shot_id: { type: 'string' }, entry_id: { type: 'string' } },
+        required: ['shot_id', 'entry_id'],
     },
     {
         name: 'mood_board_add',
