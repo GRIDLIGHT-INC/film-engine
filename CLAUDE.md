@@ -250,6 +250,7 @@ film-engine/
 │       ├── dev-server.test.js           # An edit you cannot see is an edit that did not happen
 │       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
+│       ├── manual-edit.test.js          # If the app stores it, a person can type it
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
@@ -739,6 +740,34 @@ It now follows the same rule, unchanged: `current_frame_version` when a version 
 `tests/current-frame.test.js` gains playback to its `SURFACES` list — the whole point of that list being that a surface not in it is a surface nobody checked — and the new assertion is **behavioural**, because the fault was not a wrong query but *no* query: no version selected, no ordering, and a `.find()` that took whatever came back first.
 
 **And a second bug found while reading it.** `loadPlayback` computed the shot to open on and then called `loadShotIntoStage(0)`, discarding it on the next line — so playback always opened at the top of the film however carefully the mark had been kept. The mark was working; the thing that read it was not.
+
+### If the App Stores It, a Person Can Type It
+*"I should be able to edit everything in the app manually (text) like the character description."*
+
+A field a route **accepts** and the database **stores**, with no control on any page, is settable only from an agent or curl. That is the failure this codebase has paid for repeatedly under other names — camera mode built, tested and then removed from the page; eight `regenerateShot` parameters reachable only from an agent host; `previs/apply` with no button. Measured against the routes' own field lists:
+
+| | | |
+|---|---|---|
+| character | 9/13 | no ethnicity, build, hair, distinguishing |
+| location | 6/7 | no sound_notes |
+| prop | 7/8 | no notes |
+| project | 5/6 | **no style_preset** |
+
+**The last one is the serious one.** `style_preset` is appended to **every** image prompt in a production, plates included, and the only ways to set it were the mood board's *Apply look* — which **composes** it, so it cannot be hand-corrected — and curl. The single string that decides how every frame looks could not be read by the person responsible for it. This is the field that once put a flayed quadruped in an establishing shot whose card reads *"Empty, ordinary, still."*
+
+It now sits in Settings with the subject check rendered beside it. The route has returned `style_warning` on every style write since look development shipped and **nothing rendered it** — a warning nobody displays is a warning that does not exist. It is `{subjects, detail}` rather than a string, so printing it directly gives `[object Object]`, which is a warning that teaches the reader to ignore warnings.
+
+The four character fields are grouped and **labelled as what they are**: notes for a person, read by no prompt builder. Saying so is the point — a field beside *Appearance Prompt* that looks like it conditions generation and does not is worse than one that is absent.
+
+**The denominator is derived from the routes** — every `update*` / `set*` handler and the fields it accepts — so a field added later is covered or the test fails. Machine fields are excluded **by named shape** (identifiers, timestamps, percentages, orderings, arrays the app assembles from an upload or a drag), never by a list of exceptions.
+
+Two things the audit got wrong first, both worth keeping:
+
+**A control need not be named after its field, and four are not.** The transition `<select>` is built at runtime with no `data-field`, `budget_total` is sent from a control called `budget_limit`, `template` comes from `budgetTemplateSelect` and `annotation_feedback` from `annotFeedbackToggle`. The first detector reported all four as missing — and a check that cries wolf four times out of five gets switched off, taking the one real gap with it. They are exempt **by name, with the control named**, so the exemption is checkable rather than a story.
+
+**Scope matters more than presence.** `data-field="notes"` exists in more than one modal, so an app-wide search reported the *prop* modal as having a notes control when the control belonged to continuity — and the mutation deleting the prop one passed. The entity check now walks each modal's own `<div>` nesting.
+
+The remaining gaps are **named rather than dropped from the denominator**, because a gap written down is work and a gap silently excluded is one nobody finds again: music-cue rights (the Music Cues page renders no controls at all), title cards (no page exists), per-credit fields, subtitle language/speaker/style/position, three fields on the Rights register, and two on the live-action estimate. A stale entry fails too — an exemption claiming a gap that no longer exists makes the whole list a lie.
 
 ### Which Generator Should I Use
 The rate book has carried per-model prices, source URLs and checked dates since metering shipped — 7 image/video pairs plus a `gridlight:*` wildcard, every one sourced and dated. None of it could answer *which one should I use*.
@@ -1931,6 +1960,7 @@ node --test backend/tests/staleness-accept.test.js
 node --test backend/tests/dev-server.test.js
 node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
+node --test backend/tests/manual-edit.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js

@@ -5578,6 +5578,28 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <label>Genre</label>
                     <input type="text" id="settingsGenre" data-field="genre">
                 </div>
+                <!--
+                  THE STYLE PRESET, which had no control anywhere in the app.
+                  It is appended to EVERY image prompt in the production, and the
+                  only ways to set it were the mood board's Apply look (which
+                  COMPOSES it, so it cannot be hand-corrected) and curl. So the
+                  single string that decides how every frame looks could not be
+                  read or edited by the person responsible for it — and this is
+                  the field that once put a flayed quadruped in an establishing
+                  shot whose card reads "Empty, ordinary, still."
+                -->
+                <div class="form-group">
+                    <label>Style preset &mdash; the look every frame is generated in</label>
+                    <textarea id="settingsStylePreset" data-field="style_preset" rows="3"
+                              placeholder="anamorphic, teal and amber, wet streets, heavy grain"></textarea>
+                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                        Appended to <strong>every</strong> image prompt in this project, including the
+                        reference plates. Describe a <em>look</em> &mdash; lenses, grade, light, texture.
+                        Naming a <em>subject</em> here draws it in every frame, whatever the shot is about.
+                        The mood board composes this for you; editing it here overwrites what it wrote.
+                    </p>
+                    <div id="settingsStyleWarning"></div>
+                </div>
                 <div class="form-group">
                     <label>Status</label>
                     <select id="settingsStatus" data-field="status">
@@ -6012,6 +6034,30 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <div class="form-group"><label>Age Range</label><input type="text" data-field="age_range" placeholder="20s, 30-40"></div>
                     <div class="form-group"><label>Gender</label><input type="text" data-field="gender" placeholder="Male, Female, etc."></div>
                 </div>
+                <!--
+                  These four are stored by film_characters and accepted by
+                  PUT /characters/:id, and had no control on any page — settable
+                  only from an agent or curl. A field the app persists and a
+                  person cannot type is indistinguishable from one that does not
+                  exist.
+
+                  They are NOT read by any prompt builder today (appearance_prompt
+                  is what conditions a plate), so they are grouped and labelled as
+                  what they are: the character bible, for a person to read and for
+                  whoever writes the appearance prompt to work from.
+                -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>Ethnicity</label><input type="text" data-field="ethnicity" placeholder="As you would describe it in the bible"></div>
+                    <div class="form-group"><label>Build</label><input type="text" data-field="build" placeholder="Slight, heavy-set, athletic"></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>Hair</label><input type="text" data-field="hair" placeholder="Dark, cropped short"></div>
+                    <div class="form-group"><label>Distinguishing</label><input type="text" data-field="distinguishing" placeholder="Scar through the left eyebrow"></div>
+                </div>
+                <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
+                    These four are notes for you and are <strong>not</strong> sent to an image model &mdash;
+                    Appearance Prompt is the field that conditions every frame this character appears in.
+                </p>
                 <div class="form-group"><label>Personality Notes</label><textarea data-field="personality_notes" rows="2" placeholder="Personality traits..."></textarea></div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                     <div class="form-group"><label>LoRA ID</label><input type="text" data-field="lora_id" placeholder="Optional LoRA model"></div>
@@ -6039,6 +6085,16 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <div class="form-group"><label>Time of Day</label><input type="text" data-field="time_of_day_default" placeholder="day, night, dusk..."></div>
                 </div>
                 <div class="form-group"><label>Atmosphere Notes</label><textarea data-field="atmosphere_notes" rows="2" placeholder="Mood, atmosphere..."></textarea></div>
+                <!-- Stored by film_locations and accepted by PUT /locations/:id
+                     with no control anywhere: a field only an agent could set. -->
+                <div class="form-group">
+                    <label>Sound Notes</label>
+                    <textarea data-field="sound_notes" rows="2" placeholder="Traffic two streets over, a screen door, gulls..."></textarea>
+                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                        Notes for you and for whoever writes the ambient cue. Not sent to a generator &mdash;
+                        an ambient bed is generated from the scene, not from this field.
+                    </p>
+                </div>
                 <div class="btn-row">
                     <button class="btn btn-primary" onclick="saveLocation()">Save</button>
                     <button class="btn btn-secondary" onclick="closeModal('locationModal')">Cancel</button>
@@ -6077,6 +6133,12 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         <option value="clothing">Clothing</option>
                         <option value="personal">Personal Item</option>
                     </select>
+                </div>
+                <!-- Stored by film_props and accepted by PUT /props/:id with no
+                     control anywhere: a field only an agent could set. -->
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea data-field="notes" rows="2" placeholder="Where it came from, which scenes it must match, anything continuity needs to know..."></textarea>
                 </div>
                 <div class="btn-row">
                     <button class="btn btn-primary" onclick="saveProp()">Save</button>
@@ -23156,6 +23218,8 @@ ${fountainText.slice(0, 50000)}`;
             pc.classList.remove('hidden');
             document.getElementById('settingsTitle').value = state.currentProject.title || '';
             document.getElementById('settingsLogline').value = state.currentProject.logline || '';
+            document.getElementById('settingsStylePreset').value = state.currentProject.style_preset || '';
+            document.getElementById('settingsStyleWarning').innerHTML = '';
             document.getElementById('settingsGenre').value = state.currentProject.genre || '';
             document.getElementById('settingsStatus').value = state.currentProject.status || 'concept';
         } else {
@@ -23562,12 +23626,32 @@ ${fountainText.slice(0, 50000)}`;
             logline: document.getElementById('settingsLogline').value.trim(),
             genre: document.getElementById('settingsGenre').value.trim(),
             status: document.getElementById('settingsStatus').value,
+            style_preset: document.getElementById('settingsStylePreset').value.trim(),
         };
         try {
             const p = await api('/projects/' + state.currentProject.id, { method: 'PUT', body: JSON.stringify(data) });
             state.currentProject = { ...state.currentProject, ...p };
             document.getElementById('navProjectName').textContent = state.currentProject.title;
             setStatusDot(state.currentProject.status);
+
+            /*
+             * The route already runs the subject check on every style write and
+             * returns `style_warning`. It WARNS rather than blocks, on the
+             * precedent previs set — a creature film may genuinely want a
+             * creature in every frame, and refusing the save would overrule the
+             * author. But a warning nobody renders is a warning that does not
+             * exist, so it is shown beside the field it is about.
+             */
+            const warn = document.getElementById('settingsStyleWarning');
+            // `style_warning` is {subjects, detail}, not a string — rendering it
+            // directly prints [object Object], which is a warning that teaches
+            // the reader to ignore warnings.
+            warn.innerHTML = p.style_warning
+                ? '<p class="text-sm" style="margin-top:6px;color:var(--gl-warning);line-height:1.5;">'
+                  + esc(p.style_warning.detail
+                        || ('This style names a subject: ' + (p.style_warning.subjects || []).join(', ')))
+                  + '</p>'
+                : '';
             setStatus('Project updated');
         } catch (err) { setStatus('Error: ' + err.message); }
     }
