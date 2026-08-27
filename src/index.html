@@ -22193,14 +22193,31 @@ ${fountainText.slice(0, 50000)}`;
      * cul-de-sac produce four different cul-de-sacs — so a new view is anchored
      * on an existing plate and is the same street from a new position.
      */
+    /*
+     * A RENDER THAT THROWS MUST SAY SO.
+     *
+     * This wrote "Loading views…" and then built its markup with no guard, so
+     * one bad reference left the panel showing "Loading" permanently — which
+     * reads as the plates being missing, and was reported as exactly that. A
+     * spinner that never resolves is worse than an error: an error can be acted
+     * on.
+     */
     async function renderLocationViews(locationId) {
         const host = document.getElementById('locationViewsSection');
         if (!host) return;
         host.innerHTML = '<p class="text-sm text-muted">Loading views…</p>';
 
-        let views = [];
-        try { views = (await api(`/locations/${locationId}/plate/views`)).views || []; }
+        // The whole response: the location's NAME is on it, and the view cards
+        // need it for the viewer's title. Reaching for an `r` that was never in
+        // scope here threw mid-render and left the panel on "Loading views…"
+        // forever — a source check for openPlateViewer passed while the panel
+        // was dead, which is the same grep-versus-behaviour gap the truncated
+        // onclick had.
+        let payload = { views: [], location: '' };
+        try { payload = await api(`/locations/${locationId}/plate/views`); }
         catch (err) { host.innerHTML = `<p class="text-sm text-muted">Could not read the views: ${esc(err.message)}</p>`; return; }
+        const views = payload.views || [];
+        const locationName = payload.location || 'Location';
 
         const card = v => `
             <div style="flex:0 0 200px;position:relative;">
@@ -22208,7 +22225,7 @@ ${fountainText.slice(0, 50000)}`;
                     ? `<img src="${API_BASE}${esc(v.image_url)}"
                              style="width:100%;border-radius:6px;display:block;cursor:zoom-in;"
                              title="Click to see it full size"
-                             onclick="openPlateViewer('${API_BASE}${esc(v.image_url)}', ${jsAttr((r.location || 'Location') + ' — ' + (v.label || v.view))})">`
+                             onclick="openPlateViewer('${API_BASE}${esc(v.image_url)}', ${jsAttr(locationName + ' — ' + (v.label || v.view || 'default'))})">`
                     : `<div class="text-sm text-muted" style="padding:20px;border:1px dashed var(--gl-border,#444);border-radius:6px;">
                          ${esc(v.unavailable_reason || 'the file for this view is missing')}
                        </div>`}
@@ -22223,6 +22240,7 @@ ${fountainText.slice(0, 50000)}`;
                 <div class="text-sm" style="margin-top:6px;line-height:1.4;">${esc(v.label)}</div>
             </div>`;
 
+        try {
         host.innerHTML = `
             <h4 style="margin:0 0 6px;">Views of this location</h4>
             <p class="text-sm text-muted" style="margin:0 0 10px;line-height:1.5;">
@@ -22247,6 +22265,16 @@ ${fountainText.slice(0, 50000)}`;
                 All four sides turns the plate you have into north, east, south and west &mdash; each one
                 a quarter turn from it, so they agree with each other. It is what a reverse angle needs.
             </p>`;
+        } catch (err) {
+            /*
+             * A render that throws must SAY so. Without this, one bad
+             * reference left the panel on "Loading views…" permanently and the
+             * plates read as missing — which is how three perfectly good
+             * compass views were reported as lost.
+             */
+            host.innerHTML = '<p class="text-sm">Could not draw the views: ' + esc(err.message)
+                + '. The plates are still there — this is a display fault.</p>';
+        }
     }
 
     /**

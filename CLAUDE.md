@@ -266,6 +266,7 @@ film-engine/
 │       ├── requested-size.test.js       # A resolution that reaches nothing is worse than none
 │       ├── style-book-media.test.js    # A visual arrives as a file or a link, and both must work
 │       ├── headline-plate.test.js      # A compass side is an extra view, never the headline plate
+│       ├── loading-never-sticks.test.js # A spinner that never resolves is worse than an error
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -652,6 +653,15 @@ A failed preview left **Generate armed** — a gate whose whole purpose is inspe
 Naming the current version and omitting it described **the same picture and gave opposite answers** — four shots on a real board were in that state. And the cost was presented as definitive while `callImageGen` walks the chain past a refusal, so it is labelled first-attempt-only with the fallback chain disclosed.
 
 A recomposed frame is **deliberately unstamped**: the keyframe fingerprint means "the card's current image payload", and this frame was never generated from that. `skip_fingerprint` is an explicit documented exception rather than a quiet omission, and `input_refs` records the true provenance as identifiers — never data URIs, because two megabytes of base64 in a provenance column is a copy, not a record.
+
+### A Spinner That Never Resolves Is Worse Than an Error
+Three compass plates were generated, stored correctly and served correctly by the API — and reported as **missing**, because the panel that shows them sat on *"Loading views…"* forever.
+
+The cause was mine, introduced with the plate viewer: the render built its card markup with `r.location`, and there is no `r` in `renderLocationViews` — it was a leftover from the character turnaround, where `r` *is* the response. The template threw mid-build, nothing caught it, and the placeholder stayed. **From the outside that is indistinguishable from the plates not existing**, which is exactly how it was reported. A source check for `openPlateViewer` passed the whole time, because the text was all present.
+
+Two things fixed, and the second is the general one. The renderer now takes the whole response and reads the location's name off it. And **any renderer that paints a loading placeholder must have a path that replaces it** — the render is wrapped, and a failure says *"the plates are still there, this is a display fault"* rather than leaving a spinner.
+
+The test is over **every** renderer that writes a placeholder into a panel, so the next one is covered. Two versions of it were wrong first: it matched any `Loading…` string and swept in nine `setStatus('Loading scenes…')` calls, which write to the status bar and cannot leave a panel stuck — nine false positives is how a check gets switched off, taking the one real case with it. And it looked for a recovery after the **first** `catch`, which is the fetch's, with the whole main render sitting after it; a mutation replacing the render's own handler with `setStatus()` passed. It reads the **last** catch now.
 
 ### A Compass Side Is an Extra View, Never the Headline Plate
 Reported with the evidence: after a compass sweep wrote east then south, the location's `reference_image_url` pointed at **south** — the last side written, and it would have been west had west completed. The master plate on disk was untouched; only the pointer moved.
@@ -2150,6 +2160,7 @@ node --test backend/tests/location-plate-resolution.test.js
 node --test backend/tests/requested-size.test.js
 node --test backend/tests/style-book-media.test.js
 node --test backend/tests/headline-plate.test.js
+node --test backend/tests/loading-never-sticks.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
