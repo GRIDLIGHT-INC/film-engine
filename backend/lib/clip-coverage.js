@@ -221,4 +221,40 @@ function foldShots(shots, coverage, measured) {
     return { shots: out, folded };
 }
 
-module.exports = { setCoverage, coverageFor, foldShots, measuredDurations };
+
+/**
+ * How long a scene actually RUNS, measured from the clips that exist.
+ *
+ * Music was written to `cue.duration_ms || scene.estimated_duration || 30000`,
+ * and `estimated_duration` is 0 on every scene in both real projects — 0 is
+ * falsy, so every cue fell through to a hardcoded thirty seconds. Wingfall
+ * scene 1 holds 22.08s of footage and scene 2 holds 10.05s; both would have
+ * been scored at 30.
+ *
+ * The engine already knew the right number: `measuredDurations` reads the real
+ * length of every clip off disk, and the conform and all three NLE exporters
+ * build the film with it. Music was the one thing still guessing.
+ *
+ * Returns NULL when nothing has been shot, never 0. "No footage" and "a
+ * zero-length scene" are different answers, and conflating them is exactly
+ * what let a 0 fall through to a default nobody chose.
+ *
+ * @returns {number|null} milliseconds, or null if no clip has been measured
+ */
+function sceneCutLength(db, sceneId) {
+    const scene = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!scene) return null;
+
+    const measured = measuredDurations(db, scene.project_id);
+    const shots = db.prepare('SELECT id FROM film_shots WHERE scene_id = ?').all(sceneId);
+
+    let total = 0;
+    let any = false;
+    for (const shot of shots) {
+        const ms = measured.get(shot.id);
+        if (ms > 0) { total += ms; any = true; }
+    }
+    return any ? total : null;
+}
+
+module.exports = { setCoverage, coverageFor, foldShots, measuredDurations, sceneCutLength };

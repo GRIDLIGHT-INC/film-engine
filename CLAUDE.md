@@ -267,6 +267,7 @@ film-engine/
 │       ├── style-book-media.test.js    # A visual arrives as a file or a link, and both must work
 │       ├── headline-plate.test.js      # A compass side is an extra view, never the headline plate
 │       ├── loading-never-sticks.test.js # A spinner that never resolves is worse than an error
+│       ├── cue-length.test.js          # A cue is written to the length of the cut, not a default
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -1936,6 +1937,21 @@ Related: `file-storage.getFilePath()` enforces that a DB-sourced `file_name` can
 ### Lip-Sync
 Combines raw video with dialogue audio to produce lip-synced video. Requires both `video_raw` and `audio_dialogue` assets. Output stored as `data/video/{project_id}/{shot_code}_synced.mp4`.
 
+### A Cue Is Written to the Length of the Cut
+*"If we generate a soundtrack for a clip, how do we know the final length and feed the right prompt?"*
+
+We did not. `buildMusicPrompt` read `cue.duration_ms || scene.estimated_duration || 30000`, and `estimated_duration` is **0 on every scene in both real projects** — 0 is falsy, so every cue fell through to a hardcoded thirty seconds. Measured: Wingfall scene 1 holds **22.08s** of footage and scene 2 holds **10.05s**; both would have been scored at 30.
+
+The engine already knew the number. `measuredDurations()` reads the real length of every clip off disk, and the conform and all three NLE exporters build the film with it — music was the one thing still guessing. `sceneCutLength()` sums it per scene, and the order is now **what the composer asked for → the measured cut → the estimate → thirty seconds**. An explicit `duration_ms` still wins, because an underscore running past a scene is a legitimate choice.
+
+It returns **null when nothing has been shot, never 0**: "no footage" and "a zero-length scene" are different answers, and conflating them is exactly what let a 0 fall through to a default nobody chose. The default is still there and now **says why** — a director told *"30 seconds, because nothing has been measured for this scene"* can shoot it first or set the length by hand.
+
+The handle is required **lazily** rather than threaded through the call sites. This module is used by the route, the orchestrator and the flow canvas; passing a database through all three to fix one number is how two of them end up still guessing.
+
+**The NLE seam is one-way, and that is the honest limit.** There is no FCPXML, EDL or xmeml *parser* anywhere here — export only. So the engine can score its own assembly and cannot follow a re-cut made in Premiere. A test asserts the absence, so building an importer forces the claim to be revisited rather than left stale.
+
+**And there is a place for music direction.** `film_music_cues.description` is the free text that reaches the prompt, and it always did. Three fields did not: `instruments` and `key_signature` were **read by the generator with no control in the form**, and `reference_track` — *"sounds like X"*, the clearest music note a director gives — was stored and read by nothing. All three are wired now, the reference phrased as a style to match rather than a title to quote. Length is typed in seconds and stored in milliseconds, blank meaning *score the measured cut*; instruments are split from a comma list, because the route JSON-stringifies whatever it is handed and a raw string becomes one instrument called *"solo cello, brushed kit"*.
+
 ### Music & Sound Design
 Generates music scores, sound effects, and ambient audio. Maps 14 moods to tempo/instruments/energy, 18 locations to ambient sound descriptions, 6 time-of-day modifiers. Stored at `data/music/{project_id}/`.
 
@@ -2161,6 +2177,7 @@ node --test backend/tests/requested-size.test.js
 node --test backend/tests/style-book-media.test.js
 node --test backend/tests/headline-plate.test.js
 node --test backend/tests/loading-never-sticks.test.js
+node --test backend/tests/cue-length.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js

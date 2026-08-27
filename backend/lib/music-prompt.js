@@ -74,12 +74,30 @@ const TIME_AMBIENT_MODIFIER = {
  * @param {object} project - film_projects row
  * @returns {object} Payload for POST /music (type: 'score')
  */
-function buildMusicPrompt(musicCue, scene, project) {
+/**
+ * @param {object} musicCue
+ * @param {object} scene
+ * @param {object} [project]
+ * @param {{db?: object}} [opts] a database handle for measuring the cut. Left
+ *        out, one is required lazily — so every existing caller measures the
+ *        real length with no change at the call site, which is the point.
+ */
+function buildMusicPrompt(musicCue, scene, project, opts) {
     const cue = musicCue || {};
     const mood = cue.mood || 'calm';
     const moodConfig = MOOD_TO_MUSIC[mood] || MOOD_TO_MUSIC['calm'];
 
     const promptParts = [];
+
+    /*
+     * "Sounds like X" is the clearest music note a director gives, and
+     * `reference_track` was stored and read by nothing. Named as a REFERENCE
+     * rather than pasted in raw, so it reads as a style to match instead of a
+     * title to quote.
+     */
+    if (cue.reference_track) {
+        promptParts.push(`in the style of ${String(cue.reference_track).trim()}`);
+    }
 
     // Cue description or auto-generated
     if (cue.description) {
@@ -106,8 +124,47 @@ function buildMusicPrompt(musicCue, scene, project) {
         promptParts.push(`${project.genre} film score`);
     }
 
-    // Duration from cue or scene
-    const durationMs = cue.duration_ms || (scene && scene.estimated_duration) || 30000;
+    /*
+     * THE LENGTH OF THE CUT, not an estimate.
+     *
+     * In order: what the composer asked for, then the measured length of the
+     * footage in this scene, then thirty seconds. The middle one is new and is
+     * the one that matters — `scene.estimated_duration` is 0 on every real
+     * scene, and 0 is falsy, so every cue was written at the default.
+     *
+     * A cue longer than the cut is a legitimate choice — an underscore running
+     * past a scene is ordinary — so an explicit `duration_ms` still wins.
+     */
+    let durationMs = null;
+    let durationSource = 'default';
+    let durationNote = null;
+
+    if (cue.duration_ms) {
+        durationMs = cue.duration_ms;
+        durationSource = 'cue';
+    } else if (scene && scene.id) {
+        try {
+            // Lazily required rather than demanded at the call site: this
+            // module is used by the route, the orchestrator and the flow
+            // canvas, and threading a handle through all three to fix one
+            // number is how two of them end up still guessing.
+            const handle = (opts && opts.db) || require('../db/database').db;
+            const measured = require('./clip-coverage').sceneCutLength(handle, scene.id);
+            if (measured) { durationMs = measured; durationSource = 'measured'; }
+        } catch (_) { /* a measurement that fails must not stop a generation */ }
+    }
+    if (!durationMs && scene && scene.estimated_duration) {
+        durationMs = scene.estimated_duration;
+        durationSource = 'estimate';
+    }
+    if (!durationMs) {
+        durationMs = 30000;
+        durationSource = 'default';
+        // A silent default is the problem, not the default. Told this, a
+        // director can shoot the scene first or set the cue length by hand.
+        durationNote = 'No footage has been measured for this scene yet, so the cue is 30 seconds. '
+            + 'Generate the shots first, or set the cue length by hand, to score the real cut.';
+    }
     const durationS = durationMs / 1000;
 
     // Tempo
@@ -119,6 +176,8 @@ function buildMusicPrompt(musicCue, scene, project) {
         type: 'score',
         prompt: promptParts.join(', '),
         duration_s: durationS,
+        duration_source: durationSource,
+        ...(durationNote ? { duration_note: durationNote } : {}),
         model: 'musicgen-large',
         tempo_bpm: tempoBpm,
         key: cue.key_signature || '',

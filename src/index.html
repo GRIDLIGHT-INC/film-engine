@@ -6358,8 +6358,41 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <div class="form-group"><label>Mood</label><input type="text" data-field="mood" placeholder="Tense, Upbeat..."></div>
                     <div class="form-group"><label>Genre</label><input type="text" data-field="genre" placeholder="Orchestral, Electronic..."></div>
                 </div>
-                <div class="form-group"><label>Tempo (BPM)</label><input type="number" data-field="tempo_bpm" placeholder="120"></div>
-                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="Describe the cue..."></textarea></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group"><label>Tempo (BPM)</label><input type="number" data-field="tempo_bpm" placeholder="120"></div>
+                    <div class="form-group"><label>Key</label><input type="text" data-field="key_signature" placeholder="D minor"></div>
+                </div>
+                <!--
+                  instruments and key_signature were READ BY THE PROMPT and had
+                  no control — a field the generator uses that nobody can set is
+                  the same gap as a control that reaches nothing, seen from the
+                  other side.
+                -->
+                <div class="form-group"><label>Instruments</label>
+                    <input type="text" data-field="instruments" placeholder="solo cello, brushed kit, upright bass">
+                    <p class="text-sm text-muted" style="margin-top:6px;">Comma separated. These reach the generator.</p>
+                </div>
+                <div class="form-group"><label>Sounds like</label>
+                    <input type="text" data-field="reference_track" placeholder="Blade Runner end titles">
+                    <p class="text-sm text-muted" style="margin-top:6px;">
+                        Sent as a style to match, not a track to copy &mdash; the clearest music note
+                        there is, and it was stored and read by nothing until now.
+                    </p>
+                </div>
+                <div class="form-group"><label>Description &mdash; what the cue does</label>
+                    <textarea data-field="description" rows="3" placeholder="Holds under the dialogue, lifts when she stands, out on the door."></textarea>
+                    <p class="text-sm text-muted" style="margin-top:6px;">
+                        This is the free text that reaches the prompt. Say what the music DOES against
+                        the scene, not only what it sounds like.
+                    </p>
+                </div>
+                <div class="form-group"><label>Length &mdash; seconds</label>
+                    <input type="number" step="0.5" min="0" data-field="duration_s" placeholder="leave blank to match the cut">
+                    <p class="text-sm text-muted" style="margin-top:6px;">
+                        Blank scores the measured length of this scene's footage. Set it only to run
+                        deliberately past or under the cut.
+                    </p>
+                </div>
                 <div class="btn-row">
                     <button class="btn btn-primary" onclick="createMusicCue()">Create</button>
                     <button class="btn btn-secondary" onclick="closeModal('musicCueModal')">Cancel</button>
@@ -23288,6 +23321,28 @@ ${fountainText.slice(0, 50000)}`;
     async function createMusicCue() {
         if (!state.currentProject) return;
         const data = getModalData('musicCueModal');
+
+        /*
+         * Two conversions the form cannot do for itself.
+         *
+         * Length is typed in SECONDS because that is how a cue is discussed,
+         * and stored in milliseconds like every other duration here. Blank
+         * stays blank — 0 would be a deliberate zero-length cue, and the
+         * generator reads a falsy length as "score the measured cut", which is
+         * what blank means.
+         *
+         * Instruments are typed as a comma list and stored as an array, which
+         * is what the route JSON-stringifies and the prompt joins. Sending the
+         * raw string would store `"solo cello, kit"` as a single instrument.
+         */
+        if (data.duration_s !== undefined && data.duration_s !== '') {
+            data.duration_ms = Math.round(Number(data.duration_s) * 1000) || 0;
+        }
+        delete data.duration_s;
+        if (typeof data.instruments === 'string') {
+            data.instruments = data.instruments.split(',').map(x => x.trim()).filter(Boolean);
+        }
+
         try {
             await api('/projects/' + state.currentProject.id + '/music-cues', { method: 'POST', body: JSON.stringify(data) });
             closeModal('musicCueModal');
