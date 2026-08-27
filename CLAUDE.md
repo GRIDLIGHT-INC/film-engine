@@ -257,6 +257,7 @@ film-engine/
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
 │       ├── credentials-global.test.js   # A key is entered once, for the machine, not once per film
 │       ├── plate-views.test.js         # A turnaround is three pictures, and the app used the wrong one
+│       ├── style-book-research.test.js # The style book design covers every surface it touches
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -346,6 +347,7 @@ film-engine/
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
 │   ├── api-film.md         # Full API reference
+│   ├── plans/              # Design research (previs camera, style book)
 │   └── adr/                # Architecture decision records (5 ADRs)
 ├── src/
 │   ├── index.html          # Frontend SPA
@@ -2034,6 +2036,7 @@ node --test backend/tests/manual-edit.test.js
 node --test backend/tests/provider-config-merge.test.js
 node --test backend/tests/credentials-global.test.js
 node --test backend/tests/plate-views.test.js
+node --test backend/tests/style-book-research.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
