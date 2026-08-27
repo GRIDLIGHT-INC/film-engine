@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**167 tools, 43 families.** Everything the app can do, you can ask for in a
+**168 tools, 44 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -262,6 +262,21 @@ preset is set — without one, it will not match. Write the prompt as the
 
 `marketing_delete` removes the record and deliberately leaves the artwork file
 on disk, because it cost money to make.
+
+### Before you spend: the dry run
+
+`dry_run` reports, for every capability the production uses, which provider and
+model would run, **what the request is composed from**, the exact body the
+provider would receive, and what it costs. It sends nothing and opens no socket.
+
+It is built from the same construction path the real generations use and from
+each adapter's own request builder, so it cannot drift from what is actually
+sent. Credentials never appear in it and pictures are described rather than
+printed — a reference is megabytes of base64, and a report nobody can read is
+one nobody checks.
+
+Use it to answer *what will this cost and what will it be asked for* before
+committing to a run.
 
 ## What costs money
 

@@ -621,6 +621,18 @@ const server = http.createServer(async (req, res) => {
             return handleBackups(req, res, parts, query);
         }
 
+        /*
+         * Route: /film/projects/:id/dry-run
+         *
+         * Registered with the other dashboard sub-routes. A sub-path that is
+         * not dispatched here falls through to the project route, which
+         * happily returns the PROJECT — a 200 with the wrong body, which reads
+         * as a working endpoint returning nonsense rather than as a missing one.
+         */
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'dry-run') {
+            return handleDashboard(req, res, parts, query);
+        }
+
         // Route: /film/projects/:id/dashboard
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'home') {
             return handleDashboard(req, res, parts, query);

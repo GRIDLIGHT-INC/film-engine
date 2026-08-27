@@ -34,6 +34,7 @@ const { handleProjects } = require('../routes/projects');
 const { handleProviders } = require('../routes/providers');
 const { handleContinuity } = require('../routes/continuity');
 const { handleMarketing } = require('../routes/marketing');
+const { handleDashboard } = require('../routes/dashboard');
 const { handleStoryStructure } = require('../routes/story-structure');
 const { handleScripts } = require('../routes/scripts');
 const { handleScenes } = require('../routes/scenes');
@@ -291,6 +292,26 @@ const PRODUCTION_TOOLS = [
             force: { type: 'boolean', description: 'Replace a frame on a LOCKED board.' },
         },
         required: ['shot_id', 'image'],
+    },
+    {
+        name: 'dry_run',
+        handler: handleDashboard, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/dry-run`
+            + (a.shot_id ? `?shot_id=${encodeURIComponent(a.shot_id)}` : ''),
+        description: 'FREE and sends NOTHING. For every capability this production uses, reports the '
+            + 'provider and model that would run, what the request is composed FROM (scene card, '
+            + 'style preset, plates, keyframe, blocking), the exact body the provider would '
+            + 'receive, and what the rate book says it costs. Built from the same construction path '
+            + 'the real generations use and from each adapter\u2019s own request builder, so it '
+            + 'cannot drift from what is actually sent. Credentials never appear and pictures are '
+            + 'described rather than printed. Use it to answer "what will this cost and what will '
+            + 'it be asked for" before spending anything.',
+        schema: {
+            project_id: { type: 'string' },
+            shot_id: { type: 'string', description: 'Describe from this shot. Omitted, the most '
+                + 'built-up shot is used, so the report shows a real request rather than an empty one.' },
+        },
+        required: ['project_id'],
     },
     {
         name: 'marketing_list',

@@ -29,6 +29,59 @@ function handleDashboard(req, res, urlParts, query) {
 
     const sub = urlParts[3];
 
+    /*
+     * GET /film/projects/:id/dry-run — every service, described, nothing sent.
+     *
+     * FREE and side-effect free: no socket is opened, no credential appears in
+     * the answer, and pictures are described rather than printed. It exists
+     * because the per-path previews each answer for one operation, and the
+     * question "what does this production actually send, and to whom" had no
+     * answer at all.
+     */
+    if (sub === 'dry-run' && req.method === 'GET') {
+        const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
+        if (!project) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Project not found' }));
+        }
+        const { describeCapability } = require('../lib/dry-run');
+        const providers = require('../lib/providers');
+        const { providerConfigOf } = require('../lib/provider-config');
+
+        // The shot with the most built on it, so the report describes a real
+        // request rather than an empty one.
+        const shot = (query && query.shot_id)
+            ? db.prepare('SELECT * FROM film_shots WHERE id = ?').get(query.shot_id)
+            : db.prepare(`SELECT sh.* FROM film_shots sh JOIN film_scenes sc ON sc.id = sh.scene_id
+                          WHERE sc.project_id = ?
+                          ORDER BY (SELECT COUNT(*) FROM film_assets a WHERE a.shot_id = sh.id) DESC
+                          LIMIT 1`).get(projectId);
+
+        let ctx = { project };
+        if (shot) {
+            try {
+                const { loadShotContext } = require('../lib/capability-payloads');
+                ctx = { ...loadShotContext(shot.id), project };
+            } catch (_) { ctx = { project, shot }; }
+        }
+        const cfg = providerConfigOf(project);
+        const capabilities = providers.CAPABILITIES
+            .filter(c => c !== 'stock')
+            .map(cap => describeCapability(cap, ctx, cfg));
+
+        const spend = capabilities.reduce((n, c) =>
+            n + ((c.cost && !c.cost.subscription && !c.cost.self_hosted) ? c.cost.estimate_usd : 0), 0);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            project: project.title,
+            built_from_shot: shot ? shot.shot_code : null,
+            capabilities,
+            estimated_spend_usd: Number(spend.toFixed(4)),
+            note: 'Nothing was sent. No credential appears here and pictures are described, not printed.',
+        }));
+    }
+
     // GET /film/projects/:id/home — the six blocks the home page renders.
     if (sub === 'home' && req.method === 'GET') {
         const { buildHome } = require('../lib/home');

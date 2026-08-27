@@ -22,6 +22,7 @@ film-engine/
 │   ├── server.js           # HTTP server + routing (port 3100)
 │   ├── mcp-server.js       # MCP stdio server (JSON-RPC, no SDK)
 │   ├── preflight.js        # End-to-end readiness report (CLI, exits 1 if blocked)
+│   ├── dry-run.js          # What every service would be sent, without sending it (CLI)
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
@@ -110,6 +111,7 @@ film-engine/
 │   │   ├── project-bundle.js    # Project export/import (.tar.gz bundles)
 │   │   ├── quality-tiers.js      # Draft/Standard/Precision → a provider and a model
 │   │   ├── generation-override.js # What a director chose for THIS generation, read once
+│   │   ├── dry-run.js           # Every capability described from its own builder, nothing sent
 │   │   ├── thumbnails.js        # A 260px card should not cost 1.5MB
 │   │   ├── flow-cost.js          # Projected cost + the budget gate (Phase 3)
 │   │   ├── flow-templates.js     # Six ready-made flows, validated at load (Phase 5)
@@ -180,6 +182,7 @@ film-engine/
 │       ├── reference-capability.test.js # Tags only reach providers that can read them
 │       ├── provider-tiers.test.js      # Every adapter declares its contract; every tier resolves
 │       ├── gridlight-optin.test.js     # The local gateway is off until switched on, for all 10 capabilities
+│       ├── dry-run.test.js             # The report shows the real request, no keys, no printed pictures
 │       ├── paid-image-controls.test.js # Every image button: pick the model, read the prompt, edit it
 │       ├── thumbnails.test.js         # Boards fetch thumbnails; bundles survive subdirectories
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
@@ -1825,6 +1828,7 @@ node --test backend/tests/image-fallback.test.js
 node --test backend/tests/reference-capability.test.js
 node --test backend/tests/provider-tiers.test.js
 node --test backend/tests/gridlight-optin.test.js
+node --test backend/tests/dry-run.test.js
 node --test backend/tests/paid-image-controls.test.js
 node --test backend/tests/thumbnails.test.js
 node --test backend/tests/previs-storyboard.test.js
