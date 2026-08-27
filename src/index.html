@@ -5052,6 +5052,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <div class="tab-bar" id="budgetTabs">
                     <button class="tab-btn active" data-tab="spend" onclick="switchBudgetTab('spend')">AI Spend</button>
                     <button class="tab-btn" data-tab="tracking" onclick="switchBudgetTab('tracking')">Ledger</button>
+                    <button class="tab-btn" data-tab="compare" onclick="switchBudgetTab('compare')">Compare Generators</button>
                     <button class="tab-btn" data-tab="rates" onclick="switchBudgetTab('rates')">Rates</button>
                     <button class="tab-btn" data-tab="estimation" onclick="switchBudgetTab('estimation')">Live-action Estimate</button>
                 </div>
@@ -5074,6 +5075,23 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <div id="spendOverTime" class="mb-16"></div>
                 <div id="spendByModel" class="mb-16"></div>
                 <div id="spendByShot" class="mb-16"></div>
+            </div>
+
+            <!-- Compare Tab — which generator to use, priced per unit of real work -->
+            <div id="budgetTabCompare" class="budget-tab-content" style="display:none;">
+                <div class="flex-between mb-16" style="flex-wrap:wrap;gap:8px;">
+                    <div class="tab-bar" id="compareCapTabs">
+                        <button class="tab-btn active" data-cap="image" onclick="loadGeneratorCompare('image')">Images</button>
+                        <button class="tab-btn" data-cap="video" onclick="loadGeneratorCompare('video')">Video</button>
+                    </div>
+                    <div id="compareClipWrap" style="display:none;align-items:center;gap:6px;">
+                        <label class="text-sm text-muted" for="compareClipSeconds">Clip length</label>
+                        <input id="compareClipSeconds" type="number" min="1" max="60" step="1" value="5"
+                               style="width:64px;" onchange="loadGeneratorCompare('video')">
+                        <span class="text-sm text-muted">s</span>
+                    </div>
+                </div>
+                <div id="generatorCompare"></div>
             </div>
 
             <!-- Rates Tab — where every number comes from -->
@@ -24102,6 +24120,126 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { el.innerHTML = ''; }
     }
 
+
+    // ── Compare generators ────────────────────────────────────────────────
+    /*
+     * WHICH GENERATOR SHOULD I USE.
+     *
+     * The rate book had the answer and no way to read it: one card per
+     * provider, and the per-model table printed "1 image(s) per image" for
+     * every row because the renderer used native_per_unit where the route was
+     * already serving the price. Seven cards, no money, no ordering.
+     *
+     * This table exists to be READ ACROSS, so every row is priced for the same
+     * unit of real work — a frame, a clip — and for a scene of them, since a
+     * few cents per image is invisible until multiplied by a board. Cost sits
+     * beside the tier's stated PURPOSE rather than replacing it: cheapest-wins
+     * is the wrong read when draft models exist to be rolled repeatedly and
+     * precision models exist to be right once.
+     */
+    let currentCompareCapability = 'image';
+
+    async function loadGeneratorCompare(capability) {
+        currentCompareCapability = capability || 'image';
+        const el = document.getElementById('generatorCompare');
+        if (!el) return;
+
+        document.querySelectorAll('#compareCapTabs .tab-btn').forEach(b =>
+            b.classList.toggle('active', b.dataset.cap === currentCompareCapability));
+        const clipWrap = document.getElementById('compareClipWrap');
+        if (clipWrap) clipWrap.style.display = currentCompareCapability === 'video' ? 'flex' : 'none';
+
+        el.innerHTML = '<p class="text-sm text-muted">Reading the rate book…</p>';
+        try {
+            const params = ['capability=' + encodeURIComponent(currentCompareCapability)];
+            // The project only supplies the delivery frame — the per-megapixel
+            // providers cannot be priced without one, so a comparison with no
+            // project is priced at a stated default rather than a hidden guess.
+            if (state.currentProject) params.push('project_id=' + state.currentProject.id);
+            if (currentCompareCapability === 'video') {
+                const secs = parseInt(document.getElementById('compareClipSeconds')?.value, 10);
+                if (secs > 0) params.push('clip_seconds=' + secs);
+            }
+            const r = await api('/spend/compare?' + params.join('&'));
+            renderGeneratorCompare(r);
+        } catch (err) {
+            el.innerHTML = '<p class="text-sm">Could not read the rate book: ' + esc(err.message) + '</p>';
+        }
+    }
+
+    /*
+     * Precision follows magnitude, because the whole table is a comparison.
+     * Two decimals rendered $0.011 and $0.015 as the same "$0.01" — the exact
+     * distinction the cheapest two image models differ by, flattened away by
+     * the formatter.
+     */
+    function usd(n) {
+        if (!(n > 0)) return '$0.00';
+        if (n < 0.01) return '$' + n.toFixed(4);
+        if (n < 1) return '$' + n.toFixed(3);
+        return '$' + n.toFixed(2);
+    }
+
+    function renderGeneratorCompare(r) {
+        const el = document.getElementById('generatorCompare');
+        const cheapest = r.rows.find(x => x.available && !x.self_hosted);
+
+        const rows = r.rows.map(x => {
+            const dim = x.available ? '' : 'opacity:.55;';
+            return `<tr style="${dim}">
+                <td class="text-sm">
+                    <strong>${esc(x.provider_label)}</strong>
+                    <div class="text-sm text-muted">${esc(x.model)}</div>
+                </td>
+                <td class="text-sm">
+                    ${x.tier ? `<span class="badge" title="${esc(x.tier.why || '')}">${esc(x.tier.label)}</span>` : ''}
+                    ${x.inferred ? '<span class="badge" title="Not published by the provider — inferred, and may be wrong">inferred</span>' : ''}
+                    ${x.self_hosted ? '<span class="badge" title="No per-call charge. Zero because nobody bills for it, not because it is cheap.">self-hosted</span>' : ''}
+                    ${x.available ? '' : `<span class="badge" style="background:var(--gl-warning);" title="${esc(x.needs || '')}">no key</span>`}
+                </td>
+                <td class="text-sm text-muted" style="text-align:right;white-space:nowrap;">
+                    ${usd(x.usd_per_unit)}<span class="text-muted">/${esc(x.unit)}</span>
+                    ${x.units_per_work !== 1
+                        ? `<div class="text-sm text-muted">&times; ${x.units_per_work.toFixed(2)}</div>` : ''}
+                </td>
+                <td class="text-sm" style="text-align:right;white-space:nowrap;">
+                    <strong>${usd(x.usd_per_work)}</strong>
+                    ${cheapest && x === cheapest ? ' <span class="badge">cheapest</span>' : ''}
+                </td>
+                <td class="text-sm text-muted" style="text-align:right;white-space:nowrap;">${usd(x.usd_per_scene)}</td>
+                <td class="text-sm text-muted" style="text-align:right;white-space:nowrap;">
+                    ${x.source ? `<a href="${esc(x.source)}" target="_blank" rel="noopener">source</a>` : ''}
+                    <div class="text-sm text-muted">${esc(x.checked || '')}${
+                        x.checked_age_days !== null && x.checked_age_days > 90
+                            ? ' <span class="badge" style="background:var(--gl-warning);" title="Nobody has re-verified this rate in over 90 days">stale</span>' : ''}</div>
+                </td>
+            </tr>`;
+        }).join('');
+
+        el.innerHTML = `
+            <div class="card">
+                <table class="render-table" style="width:100%;">
+                    <thead><tr>
+                        <th class="text-sm" style="text-align:left;">Generator</th>
+                        <th class="text-sm" style="text-align:left;">For</th>
+                        <th class="text-sm" style="text-align:right;">Rate</th>
+                        <th class="text-sm" style="text-align:right;">${esc(r.work.work_label)}</th>
+                        <th class="text-sm" style="text-align:right;">${esc(r.work.scene_label)}</th>
+                        <th class="text-sm" style="text-align:right;">Checked</th>
+                    </tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+            ${r.unpriced && r.unpriced.length ? `
+                <div class="card mb-8" style="border-color:var(--gl-warning);">
+                    <strong class="text-sm">Not priced</strong>
+                    ${r.unpriced.map(u => `<p class="text-sm">${esc(u.provider)} — ${esc(u.why)}</p>`).join('')}
+                </div>` : ''}
+            <p class="text-sm text-muted" style="margin-top:8px;">${esc(r.note)}</p>
+            <p class="text-sm text-muted">A tier badge says what a model is FOR. Cheapest is not
+               best: a draft model is meant to be rolled repeatedly, a precision one to be right once.</p>`;
+    }
+
     // ── Rates ─────────────────────────────────────────────────────────────
 
     async function loadSpendRates() {
@@ -24135,7 +24273,14 @@ ${fountainText.slice(0, 50000)}`;
                                     <td class="text-sm">${esc(m.model)}${m.inferred ? ' <span class="badge">inferred</span>' : ''}</td>
                                     <td class="text-sm text-muted" style="text-align:right;">${m.components
                                         ? `$${(m.components.input * 1e6).toFixed(2)}/M in &middot; $${(m.components.output * 1e6).toFixed(2)}/M out`
-                                        : `${qty(m.native_per_unit)} ${esc(rate.native_unit)}(s) per ${esc(rate.unit)}`}</td>
+                                        : /*
+                                           * THE PRICE, not the conversion factor.
+                                           * This printed `${qty(m.native_per_unit)} ${native_unit}(s) per ${unit}`
+                                           * — "1 image(s) per image" for every row — while the route
+                                           * was already serving usd_per_native. The one table that
+                                           * could compare models showed no money at all.
+                                           */
+                                          `$${Number(m.usd_per_native ?? 0).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')} per ${esc(rate.unit)}`}</td>
                                 </tr>`).join('')}
                             </table>
                         </details>` : ''}
@@ -24272,6 +24417,7 @@ ${fountainText.slice(0, 50000)}`;
     // added later cannot end up with nothing to show — which is exactly how the
     // previous two-tab version would have failed the moment a third arrived.
     const BUDGET_PANELS = { spend: 'budgetTabSpend', tracking: 'budgetTabTracking',
+                            compare: 'budgetTabCompare',
                             rates: 'budgetTabRates', estimation: 'budgetTabEstimation' };
 
     function switchBudgetTab(tab) {
@@ -24284,6 +24430,7 @@ ${fountainText.slice(0, 50000)}`;
         }
         if (tab === 'spend') loadSpend();
         if (tab === 'rates') loadSpendRates();
+        if (tab === 'compare') loadGeneratorCompare(currentCompareCapability);
         if (tab === 'estimation' && !currentBudgetEstimate) generateBudgetEstimate();
     }
 

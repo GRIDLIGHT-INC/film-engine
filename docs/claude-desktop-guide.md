@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**168 tools, 44 families.** Everything the app can do, you can ask for in a
+**169 tools, 44 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -294,7 +294,7 @@ These resolve a provider and bill you:
 
 ### What it actually cost
 
-`spend_report` · `spend_usage` · `spend_backfill` · `spend_rates`
+`spend_report` · `spend_usage` · `spend_backfill` · `spend_rates` · `spend_compare`
 
 Every provider call is metered automatically — nothing to enter by hand.
 `spend_report` gives dollars *and* the provider's own units (credits at Meshy
@@ -307,6 +307,18 @@ know *why* a number is what it is.
 date it was checked. Meshy publishes what an operation costs in credits and not
 what a credit costs, so its dollar figure is the Pro-plan rate — correct it for
 your plan and past events keep the rate they were priced at.
+
+`spend_compare` answers the question you have BEFORE generating: which
+generator should I use. Every image or video model, priced against one unit of
+real work — a frame, a clip — and against a scene of them. That conversion is
+the point: the providers do not bill in the same unit (Runway and OpenAI per
+image, Meshy per call, BFL per megapixel, video per second), so a raw rate
+cannot be ranked. Pass `project_id` to price the per-megapixel providers
+against your film's actual delivery frame. Uncredentialed providers are listed
+and marked rather than hidden, because "this one is half the price if you sign
+up" is part of the decision. Cheapest is not best — each row carries the tier
+it serves, and a draft model exists to be rolled repeatedly while a precision
+one exists to be right once.
 
 `spend_backfill` reconstructs what a project spent *before* metering existed, by
 pricing the assets already on record. It is a floor: a generation that failed

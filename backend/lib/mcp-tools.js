@@ -1149,6 +1149,39 @@ const PRODUCTION_TOOLS = [
         required: ['project_id'],
     },
     {
+        name: 'spend_compare',
+        handler: handleBudget, method: 'GET',
+        description:
+            'Compare every generator that can produce images or video, priced against ONE UNIT OF '
+            + 'REAL WORK so the numbers are commensurable \u2014 the providers do not bill in the same '
+            + 'unit (Runway and OpenAI per image, Meshy per call, BFL per megapixel, video per '
+            + 'second), so a raw rate cannot be ranked. FREE: reads the registries, generates '
+            + 'nothing. Each row carries the price for one frame or clip, the price for a scene of '
+            + 'them, whether a credential exists (a price you cannot use is not a choice, so '
+            + 'uncredentialed providers are listed and marked rather than hidden), the source URL '
+            + 'and the date the rate was checked. A row marked inferred was not published by the '
+            + 'provider. A self-hosted row is $0 because nobody bills for it, NOT because it is '
+            + 'cheap. Cheapest is not best: the tier badge says what a model is FOR \u2014 a draft '
+            + 'model exists to be rolled repeatedly, a precision one to be right once. Pass '
+            + 'project_id to price per-megapixel providers against that film\u2019s delivery frame.',
+        path: a => {
+            const q = [`capability=${encodeURIComponent(a.capability || 'image')}`];
+            if (a.project_id) q.push(`project_id=${a.project_id}`);
+            if (a.clip_seconds) q.push(`clip_seconds=${a.clip_seconds}`);
+            return `/film/spend/compare?${q.join('&')}`;
+        },
+        schema: {
+            capability: { type: 'string', enum: ['image', 'video'],
+                description: 'Which generators to compare. Defaults to image.' },
+            project_id: { type: 'string',
+                description: 'Optional. Supplies the delivery frame, without which the '
+                    + 'per-megapixel providers cannot be priced honestly.' },
+            clip_seconds: { type: 'number',
+                description: 'Optional, video only. Length of the clip to price. Defaults to 5.' },
+        },
+        required: [],
+    },
+    {
         name: 'spend_rates',
         handler: handleBudget, method: 'GET',
         description: 'The rate book every cost is priced from: per provider and capability, the billing unit, the provider-native unit (usually credits), the USD rate, the published source URL and the date it was checked. Meshy publishes credit costs but not what a credit costs, so its dollar figure is the Pro-plan rate and can be corrected per install; a rate marked inferred was not in the published table and inherits its tier.',

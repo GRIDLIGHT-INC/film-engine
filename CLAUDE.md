@@ -162,6 +162,7 @@ film-engine/
 │   │   ├── llm-client.js         # Shared LLM call helper
 │   │   ├── budget-estimator.js   # Pre-flight cost estimation
 │   │   ├── provider-pricing.js  # What a generation costs, in the provider's own units
+│   │   ├── generator-costs.js   # Which generator to use: every price, one comparable unit
 │   │   ├── usage-meter.js       # Every provider call, metered and attributed
 │   │   ├── mcp-usage.js         # The agent host is the model; its traffic is the LLM meter
 │   │   ├── spend-backfill.js    # What a project spent before anything was tracking it
@@ -248,6 +249,7 @@ film-engine/
 │       ├── staleness-accept.test.js     # A warning you cannot act on is one you learn to ignore
 │       ├── dev-server.test.js           # An edit you cannot see is an edit that did not happen
 │       ├── card-overflow.test.js        # A button drawn outside its own card
+│       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
@@ -737,6 +739,23 @@ It now follows the same rule, unchanged: `current_frame_version` when a version 
 `tests/current-frame.test.js` gains playback to its `SURFACES` list — the whole point of that list being that a surface not in it is a surface nobody checked — and the new assertion is **behavioural**, because the fault was not a wrong query but *no* query: no version selected, no ordering, and a `.find()` that took whatever came back first.
 
 **And a second bug found while reading it.** `loadPlayback` computed the shot to open on and then called `loadShotIntoStage(0)`, discarding it on the next line — so playback always opened at the top of the film however carefully the mark had been kept. The mark was working; the thing that read it was not.
+
+### Which Generator Should I Use
+The rate book has carried per-model prices, source URLs and checked dates since metering shipped — 7 image/video pairs plus a `gridlight:*` wildcard, every one sourced and dated. None of it could answer *which one should I use*.
+
+**The Rates panel rendered one card per provider**, so ranking meant expanding seven cards and sorting in your head. **And the per-model table printed `1 image(s) per image` for every row** — the renderer used `native_per_unit` where the route was already serving `usd_per_native`, so the one table that could compare models showed no money at all. Declared, served, and thrown away at the last step.
+
+**The units are not the same, which is the whole difficulty.** Runway and OpenAI bill per **image**, Meshy per **call**, BFL per **megapixel**, and video per **second** — so $0.030 and $0.042 are not comparable numbers. Every row is priced against one unit of real work (a frame, a clip) and against a scene of ten, because a few cents an image is invisible until multiplied by a board.
+
+I got that wrong on the first pass and it is worth recording: pricing a megapixel as a frame put `flux-2-pro` at **$0.030** when a 1920×1080 frame is 2.07 MP and really costs **$0.062**, which moved BFL to the top of a table whose only purpose is ranking. Wrong at the top of a ranked table is worse than no table. Megapixels therefore depend on the delivery size, so `project_id` prices the comparison against *that film's* frame and the frame used is reported back — a per-megapixel row is only as true as the size it was priced at.
+
+Three things keep it honest. **Uncredentialed providers are listed and marked, never hidden**: hiding them answers "which of these should I use" while withholding "and this one is half the price if you sign up". **A self-hosted zero sorts last, not first** — it is zero because nobody bills for it, and at the top of a ranked table that reads as a recommendation. And **cheapest is not best**, so each row carries the tier it serves and that tier's stated purpose: a draft model exists to be rolled repeatedly, a precision one to be right once.
+
+The denominator is **derived from `providers.list()`** — every adapter declaring the capability — so an adapter added later is in the comparison or the test fails. An adapter that can generate and cannot be priced is **named**, since an unpriced generation reports as free.
+
+The credential rule is probed **by removing the credentials**, not by reading the rows: every provider is credentialed on a working install, so "if unavailable then it says why" is vacuously true and passes just as happily against a filter that drops them. The first version of that test did exactly that, and the mutation inserting `continue` for uncredentialed providers did not fail it.
+
+Served at `GET /film/spend/compare`, on the Budget page's **Compare Generators** tab, and as `spend_compare` (**169 tools**).
 
 ### The Title Page Is Not Body Pages
 Found by enumerating the element types the **editor** emits rather than the ten this module happened to list. The editor emits **eleven**; `MAY_END_PAGE` answered ten. The eleventh is `title-page`, and the paginator read it as an ordinary block.
@@ -1911,6 +1930,7 @@ node --test backend/tests/resolution-trickle.test.js
 node --test backend/tests/staleness-accept.test.js
 node --test backend/tests/dev-server.test.js
 node --test backend/tests/card-overflow.test.js
+node --test backend/tests/generator-costs.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js

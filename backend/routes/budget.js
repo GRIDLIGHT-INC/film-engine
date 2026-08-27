@@ -12,6 +12,7 @@
  * GET    /film/spend/rates                  — the published rate book
  * PUT    /film/spend/rates                  — correct a rate for this install
  */
+const { compareGenerators, COMPARABLE } = require('../lib/generator-costs');
 const { db, generateId } = require('../db/database');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -64,6 +65,12 @@ function handleBudget(req, res, urlParts, query) {
     // /film/spend/subscription — MCP host traffic against the plan windows.
     if (urlParts[1] === 'spend' && urlParts[2] === 'subscription' && req.method === 'GET') {
         return subscriptionReport(req, res, query);
+    }
+
+    // /film/spend/compare — every generator that can serve a capability,
+    // priced against one unit of real work so the numbers are comparable.
+    if (urlParts[1] === 'spend' && urlParts[2] === 'compare' && req.method === 'GET') {
+        return compareReport(req, res, query);
     }
 
     // /film/spend/rates — the rate book, and per-install corrections to it.
@@ -457,6 +464,55 @@ function safeJson(raw) {
 function notFound(res, msg) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: msg }));
+}
+
+
+/**
+ * GET /film/spend/compare?capability=image|video[&project_id=&clip_seconds=]
+ *
+ * Free. Reads two registries and spends nothing — the point is to decide
+ * BEFORE generating, which is exactly when a price is useful.
+ *
+ * `project_id` is optional and only supplies the delivery frame, because the
+ * per-megapixel providers cannot be priced without one. Passing a project
+ * therefore prices the comparison for THAT film's frame rather than for a
+ * default nobody chose.
+ */
+function compareReport(req, res, query) {
+    const capability = String(query.capability || 'image');
+    if (!COMPARABLE.includes(capability)) {
+        return badReq(res, `capability must be one of: ${COMPARABLE.join(', ')}`);
+    }
+
+    const opts = {};
+
+    const seconds = Number(query.clip_seconds);
+    if (Number.isFinite(seconds) && seconds > 0) opts.clip_seconds = seconds;
+
+    if (query.project_id) {
+        if (!UUID_RE.test(query.project_id)) return badReq(res, 'Invalid project ID');
+        const project = db.prepare(
+            'SELECT target_resolution, aspect_ratio FROM film_projects WHERE id = ?'
+        ).get(query.project_id);
+        if (!project) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Project not found' }));
+        }
+        const m = /^(\d+)\s*[xX*]\s*(\d+)$/.exec(String(project.target_resolution || ''));
+        // An unparseable or absent resolution falls back rather than guessing:
+        // a made-up frame would silently reprice every megapixel row.
+        if (m) opts.frame = { width: Number(m[1]), height: Number(m[2]) };
+    }
+
+    let report;
+    try {
+        report = compareGenerators(capability, opts);
+    } catch (err) {
+        return badReq(res, err.message);
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(report));
 }
 
 module.exports = { handleBudget, VALID_COST_TYPES };
