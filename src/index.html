@@ -6153,6 +6153,34 @@ table, .render-table { border-radius:12px; overflow:hidden; }
     <!-- The style-book editor. Every camera facet the card carries has a
          control, and each says what it is FOR — height in particular, which is
          the facet that makes a low-angle sayable and the one nobody fills in. -->
+    <!--
+      THE PLATE VIEWER — any reference picture, at the size it was generated.
+
+      A plate conditions every frame its subject appears in, and until now it
+      could only be seen at the width of whatever box it sat in: a 48px avatar,
+      a 120px banner, a 340px column. The storyboard has had a full-screen frame
+      viewer since it shipped; the plates had nothing.
+
+      Deliberately NOT the frame viewer. That one carries a markup canvas and
+      shot-to-shot stepping, both meaningless for a plate — reusing it would
+      mean either dead controls or a second set of conditions inside it.
+    -->
+    <div class="modal-overlay" id="plateViewerModal" onclick="closeModal('plateViewerModal')">
+        <div class="modal" style="max-width:min(96vw,1400px);width:auto;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <strong id="plateViewerTitle"></strong>
+                <button class="modal-close" onclick="closeModal('plateViewerModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding-top:0;">
+                <!-- contain, never cover: a viewer that crops hides exactly the
+                     edges a director is checking. -->
+                <img id="plateViewerImg" alt=""
+                     style="max-width:100%;max-height:78vh;object-fit:contain;display:block;margin:0 auto;border-radius:6px;background:#08080a;">
+                <p id="plateViewerMeta" class="text-sm text-muted" style="margin-top:8px;text-align:center;"></p>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="styleBookModal">
         <div class="modal">
             <div class="modal-header"><h3 id="styleBookModalTitle">New shot</h3><button class="modal-close" onclick="closeModal('styleBookModal')">&times;</button></div>
@@ -22068,7 +22096,9 @@ ${fountainText.slice(0, 50000)}`;
             <div style="display:flex;gap:20px;flex-wrap:wrap;">
                 <div style="flex:1 1 340px;min-width:280px;">
                     ${img
-                        ? `<img src="${API_BASE}${esc(img)}" style="width:100%;border-radius:6px;display:block;"
+                        ? `<img src="${API_BASE}${esc(img)}" style="width:100%;border-radius:6px;display:block;cursor:zoom-in;"
+                             title="Click to see it full size"
+                             onclick="openPlateViewer('${API_BASE}${esc(img)}', ${jsAttr(row.name || 'Reference')})"
                              onerror="this.parentElement.innerHTML='<p class=text-muted>The plate file is missing.</p>'">`
                         : '<p class="text-sm text-muted">No plate generated yet. Generate one so every frame with this subject draws the same thing.</p>'}
                 </div>
@@ -22142,7 +22172,10 @@ ${fountainText.slice(0, 50000)}`;
         const card = v => `
             <div style="flex:0 0 200px;position:relative;">
                 ${v.available
-                    ? `<img src="${API_BASE}${esc(v.image_url)}" style="width:100%;border-radius:6px;display:block;">`
+                    ? `<img src="${API_BASE}${esc(v.image_url)}"
+                             style="width:100%;border-radius:6px;display:block;cursor:zoom-in;"
+                             title="Click to see it full size"
+                             onclick="openPlateViewer('${API_BASE}${esc(v.image_url)}', ${jsAttr((r.location || 'Location') + ' — ' + (v.label || v.view))})">`
                     : `<div class="text-sm text-muted" style="padding:20px;border:1px dashed var(--gl-border,#444);border-radius:6px;">
                          ${esc(v.unavailable_reason || 'the file for this view is missing')}
                        </div>`}
@@ -22393,7 +22426,12 @@ ${fountainText.slice(0, 50000)}`;
                     <div class="entity-card" style="cursor:pointer;" onclick="inspectEntity('character', '${c.id}')" title="Open details and the full-size plate">
                         <div class="entity-card-header">
                             ${c.reference_image_url
-                                ? '<img src="' + API_BASE + c.reference_image_url + '" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML=\'<div class=entity-avatar>' + esc(c.name.charAt(0)) + '</div>\'">'
+                                ? '<img src="' + API_BASE + c.reference_image_url + '" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;cursor:zoom-in;" title="Click to see the plate full size"'
+                                    // stopPropagation: the card is itself clickable and opens the
+                                    // inspector, so without this you get both and the one you
+                                    // asked for is underneath.
+                                    + ' onclick="event.stopPropagation(); openPlateViewer(\'' + API_BASE + c.reference_image_url + '\', ' + jsAttr(c.name) + ')"'
+                                    + ' onerror="this.outerHTML=\'<div class=entity-avatar>' + esc(c.name.charAt(0)) + '</div>\'">'
                                 : '<div class="entity-avatar">' + esc(c.name.charAt(0)) + '</div>'}
                             <div>
                                 <h3>${esc(c.name)}</h3>
@@ -22446,7 +22484,10 @@ ${fountainText.slice(0, 50000)}`;
                                 /* API_BASE, because the route returns a PATH and the
                                    page is served from a different port — without it
                                    every picture is a perfectly good string and a 404. */
-                                ? `<img src="${API_BASE}${esc(v.image_url)}" alt="${esc(v.view)}" style="width:100%;border-radius:6px;display:block;">`
+                                ? `<img src="${API_BASE}${esc(v.image_url)}" alt="${esc(v.view)}"
+                                       style="width:100%;border-radius:6px;display:block;cursor:zoom-in;"
+                                       title="Click to see it full size"
+                                       onclick="openPlateViewer('${API_BASE}${esc(v.image_url)}', ${jsAttr(r.character + ' — ' + v.view)})">`
                                 : `<div class="text-sm text-muted" style="padding:24px 8px;text-align:center;">${esc(v.unavailable_reason || 'No picture')}</div>`}
                             <div class="flex-between" style="margin-top:6px;">
                                 <strong class="text-sm">${esc(v.view)}</strong>
@@ -22858,7 +22899,9 @@ ${fountainText.slice(0, 50000)}`;
                 el.innerHTML = state.locations.map(l => `
                     <div class="entity-card" style="cursor:pointer;" onclick="inspectEntity('location', '${l.id}')" title="Open details and the full-size plate">
                         ${l.reference_image_url
-                            ? '<img src="' + API_BASE + l.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;" onerror="this.style.display=\'none\'">'
+                            ? '<img src="' + API_BASE + l.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;cursor:zoom-in;" title="Click to see the plate full size"'
+                                + ' onclick="event.stopPropagation(); openPlateViewer(\'' + API_BASE + l.reference_image_url + '\', ' + jsAttr(l.name) + ')"'
+                                + ' onerror="this.style.display=\'none\'">'
                             : ''}
                         <div class="entity-card-header">
                             <div class="entity-avatar" style="border-radius:8px;">&#128205;</div>
@@ -22981,7 +23024,9 @@ ${fountainText.slice(0, 50000)}`;
                 el.innerHTML = filtered.map(p => `
                     <div class="entity-card" style="cursor:pointer;" onclick="inspectEntity('prop', '${p.id}')" title="Open details and the full-size plate">
                         ${p.reference_image_url
-                            ? '<img src="' + API_BASE + p.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;" onerror="this.style.display=\'none\'">'
+                            ? '<img src="' + API_BASE + p.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;cursor:zoom-in;" title="Click to see the plate full size"'
+                                + ' onclick="event.stopPropagation(); openPlateViewer(\'' + API_BASE + p.reference_image_url + '\', ' + jsAttr(p.name) + ')"'
+                                + ' onerror="this.style.display=\'none\'">'
                             : ''}
                         <div class="entity-card-header">
                             <div class="entity-avatar" style="border-radius:8px;font-size:14px;">&#127917;</div>
@@ -23926,6 +23971,52 @@ ${fountainText.slice(0, 50000)}`;
                 : '';
             setStatus('Project updated');
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /**
+     * A JS string literal safe inside a double-quoted HTML attribute.
+     *
+     * `JSON.stringify` emits DOUBLE quotes, which terminate onclick="…" — the
+     * handler is cut off mid-argument and the browser silently keeps the
+     * truncated prefix. Every source check still passes, because the text is
+     * all present in the template; only the rendered attribute is broken.
+     * That is the grep-versus-behaviour failure this codebase has paid for
+     * more than once.
+     */
+    function jsAttr(value) {
+        return "'" + String(value === undefined || value === null ? '' : value)
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/"/g, '&quot;')
+            .replace(/\n/g, ' ') + "'";
+    }
+
+    /**
+     * Show one reference picture at full size.
+     *
+     * ONE opener for every plate surface — the detail panel, the turnaround,
+     * the location views and all three cards. Two would be how the grid and
+     * the full-screen viewer came to normalise markup coordinates differently,
+     * and how the board and the viewer came to disagree about their own tools.
+     *
+     * @param {string} src    already-resolved URL, API_BASE included
+     * @param {string} title  what this is a picture OF — which view of which
+     *                        subject, since a turnaround makes that ambiguous
+     */
+    function openPlateViewer(src, title) {
+        if (!src) return;
+        const img = document.getElementById('plateViewerImg');
+        const meta = document.getElementById('plateViewerMeta');
+        document.getElementById('plateViewerTitle').textContent = title || 'Reference';
+        meta.textContent = '';
+        img.onload = () => {
+            // The size it was generated at, which is the thing a plate is
+            // being judged on when someone opens it this large.
+            meta.textContent = `${img.naturalWidth} \u00d7 ${img.naturalHeight}`;
+        };
+        img.onerror = () => { meta.textContent = 'The picture file is missing.'; };
+        img.src = src;
+        showModal('plateViewerModal');
     }
 
     // ══════════════════════════════════════════════════════════════

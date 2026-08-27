@@ -411,9 +411,18 @@ test('clicking a character shows the whole turnaround, not one picture', () => {
      * they found a separate control. A capability behind a button nobody
      * presses is indistinguishable from one that is missing.
      */
+    /*
+     * Bounded by the NEXT function, not by a fixed offset.
+     *
+     * This sliced 5000 characters and broke the moment the panel grew — the
+     * plate images gained a click handler and the views call fell outside the
+     * window, reporting a working panel as unwired. A fixed window over a
+     * renderer is the same brittleness `panelSource` already documents.
+     */
     const at = SPA.indexOf('async function inspectEntity');
     assert.notStrictEqual(at, -1, 'the detail panel is gone');
-    const fn = SPA.slice(at, at + 5000);
+    const nextFn = SPA.indexOf('\n    function ', at + 40);
+    const fn = SPA.slice(at, nextFn > at ? nextFn : at + 9000);
 
     assert.match(fn, /characterViewsSection/,
         'the character detail panel has no place to put the other views');

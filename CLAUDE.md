@@ -261,6 +261,7 @@ film-engine/
 │       ├── style-book-research.test.js # The style book design covers every surface it touches
 │       ├── style-book-plan.test.js     # The implementation plan wires into every registry it must
 │       ├── style-book.test.js          # A director's shots, reusable across films
+│       ├── plate-viewer.test.js        # A plate you cannot see full size is one you cannot judge
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -780,6 +781,15 @@ A named shot with the camera details you know and reference visuals, kept across
 **The visuals are for a person, and the UI says so.** `KIND_RANK` is `anchor 0, character 1, location 2, prop 3, style 4` against three references on Runway and five on Meshy — a style still already ranks last and is dropped before the request is built on any shot with a cast and a location, and a clip reaches no generator at all. Saying it outright is the difference between a reference library and a director attaching five pictures believing the frame is conditioned on them.
 
 Cross-project, so the page is in `ALWAYS_AVAILABLE` rather than one of the nine `PROJECT_PHASES`: a library that outlives every project does not belong inside the workflow of one. Served at `GET|POST /film/style-book`, `GET|PUT|DELETE /film/style-book/:id`, `POST /film/shots/:id/style-book/:entryId`, on a rail button between Setup and Terms, and as six tools (**175 tools**).
+
+### A Plate You Cannot See Full Size Is One You Cannot Judge
+Every plate was rendered at the width of whatever box it sat in — a 48px avatar on a character card, a 120px banner on a location, a ~340px column in the detail panel. A reference plate is the picture that conditions **every frame its subject appears in**, and it could not be seen at the size it was generated at. The storyboard has had a full-screen frame viewer since it shipped; the plates had nothing.
+
+`openPlateViewer(src, title)` is one opener for all **six** surfaces — the detail panel, the character turnaround, the location views and the three cards. Deliberately **not** the frame viewer: that one carries a markup canvas and shot-to-shot stepping, both meaningless for a plate, so reusing it would mean either dead controls or a second set of conditions inside it. It shows the picture with `object-fit: contain` — `cover` is right for a thumbnail and wrong for a viewer, since it fills the frame by cutting exactly the edges a director is checking — and reports the real pixel size, which is what a plate is being judged on when someone opens it that large.
+
+**The bug worth recording is the one my own test missed.** The title was built with `JSON.stringify`, which emits **double quotes** — and inside `onclick="…"` a double quote ends the attribute. The browser kept `openPlateViewer('…', ` and silently discarded the rest, so every plate click did nothing while the card's own handler opened the inspector instead. Every source check passed, because all the text is present in the template; only the **rendered attribute** was broken, and it took clicking one in a real browser to see it. `jsAttr()` produces an attribute-safe literal, and the test now **executes** it and refuses `JSON.stringify` at any call site.
+
+Clicking a card's plate calls `stopPropagation` — the card is itself clickable and opens the inspector, so without it you get both and the one you asked for is underneath.
 
 ### A Regenerated Plate Has to Look Regenerated
 *"I had to hard refresh to see the picture of a character plate, generated through MCP."*
@@ -2068,6 +2078,7 @@ node --test backend/tests/plate-views.test.js
 node --test backend/tests/style-book-research.test.js
 node --test backend/tests/style-book-plan.test.js
 node --test backend/tests/style-book.test.js
+node --test backend/tests/plate-viewer.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
