@@ -5713,10 +5713,23 @@ table, .render-table { border-radius:12px; overflow:hidden; }
             <!-- AI Providers (Phase 1: multi-provider layer) -->
             <div class="card mt-16" style="max-width:560px;" id="settingsProvidersCard">
                 <h3 class="mb-8">AI Providers</h3>
-                <p class="text-sm text-muted mb-16">Choose which service generates each type of content, and store API keys. Keys are kept on the server and never sent back to the browser.</p>
-                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">API Keys</h4>
+                <p class="text-sm text-muted mb-16">Keys are kept on the server and never sent back to the browser.</p>
+                <!--
+                  WHICH HALF OF THIS PAGE IS GLOBAL.
+                  Both halves lived here under one heading, and the lower one
+                  needs a project open — so the whole panel read as
+                  project-scoped and a key entered once looked like it might
+                  need entering again per film. It never did: keys are stored
+                  by provider with no project column at all. Said outright,
+                  because the ambiguity cost an afternoon of re-entering.
+                -->
+                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">
+                    API Keys <span class="text-sm" style="text-transform:none;letter-spacing:0;">(shared by every project on this machine &mdash; enter once)</span>
+                </h4>
                 <div id="providerCredentials" class="mb-16"></div>
-                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">Provider per capability <span class="text-sm" style="text-transform:none;letter-spacing:0;">(this project)</span></h4>
+                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">
+                    Provider per capability <span class="text-sm" style="text-transform:none;letter-spacing:0;">(this project only &mdash; the keys above are shared)</span>
+                </h4>
                 <div id="providerCapabilityMap"></div>
                 <div class="btn-row" style="margin-top:16px;">
                     <button class="btn btn-primary" onclick="saveProviderConfig()">Save Providers</button>

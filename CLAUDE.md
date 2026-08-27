@@ -253,6 +253,7 @@ film-engine/
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
+│       ├── credentials-global.test.js   # A key is entered once, for the machine, not once per film
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -756,6 +757,17 @@ Two projects lost their image and video providers. The tell was that `image_qual
 **And `provider_config` was not writable over MCP** — `project_update` refused it, so an agent could create a project and neither configure nor repair it, which is the wrong constraint for a pipeline whose reasoning happens in an agent host. Merged there too, with `null` clearing, so one payload cannot mean two things.
 
 **A placeholder is not a credential.** Six providers were stored holding the single character `k`. Everything downstream reported them configured — `isProviderConfigured` asks only whether the string is non-empty, the panel showed `set ••••k`, readiness passed — and the first sign was a **401 at generation time**, on a job already committed to, with a message blaming the vendor. Refused at the write, where it is cheap and unambiguous: no real key is under eight characters, so this cannot reject something legitimate. Rows written earlier are **flagged rather than treated as unset** — the key IS stored, and saying "not set" to someone looking straight at it is its own confusion.
+
+### A Key Is Entered Once, for the Machine
+*"So none of the keys I added are stored anywhere?"* — correct, and the reason is worth recording because nothing about it was visible.
+
+`getCredential()` reads `<PROVIDER>_API_KEY` from the **environment first** and falls back to the database. Images generated on Meshy for days because the process running the server had those variables; the stored row had held the placeholder `k` since 26 July. Restarting that server from a shell without them dropped resolution to the placeholder, and the failure arrived as `meshy 401: Invalid API key` — a message that blames the vendor for a credential that was never there.
+
+The settings page was not at fault and was checked: a 40-character value typed into it stores correctly, `last4` and all. What the page did do was **show `set ••••k`**, so a placeholder wore the same green badge as a working key.
+
+Three things close it. A key under **eight characters is refused at the write** — no real key is shorter, the shortest here being an ElevenLabs `sk_` plus 48 — so this cannot reject something legitimate while it does stop the state that made every readiness signal lie. Rows written earlier are **flagged, not disguised as unset**: the value IS there, and saying "not set" to someone looking straight at it is its own confusion. And the placeholders were deleted, so those providers now read *not set*, which is true.
+
+**Credentials were already global and the page implied otherwise.** `film_provider_credentials` is keyed by provider and has no project column — a key cannot be scoped to a film because there is nowhere to record which film. But API keys and per-project provider *choices* sat under one heading, and the lower half needs a project open, so the whole card read as project-scoped and a key entered once looked like it might need entering again per film. Both halves now say which they are. The test asserts the absence of a project column **structurally**, since that absence is the guarantee: add one and every "enter it once" claim on the page becomes false at the same moment.
 
 ### A Transition Is Not a Character
 `FADE OUT` was listed as a character with a scene count, so every report built on scene presence carried a phantom; and RAY MERCER (introduced in action) and RAY (cued in dialogue) became two people, as did JUNE MERCER / JUNE.
@@ -1989,6 +2001,7 @@ node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js
 node --test backend/tests/provider-config-merge.test.js
+node --test backend/tests/credentials-global.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
