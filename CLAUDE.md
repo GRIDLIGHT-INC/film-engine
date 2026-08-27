@@ -269,6 +269,7 @@ film-engine/
 │       ├── loading-never-sticks.test.js # A spinner that never resolves is worse than an error
 │       ├── cue-length.test.js          # A cue is written to the length of the cut, not a default
 │       ├── music-cue-mcp.test.js       # An agent can write the music direction, not only press generate
+│       ├── mobile-feasibility.test.js  # Could a Film Engine project be worked from a phone
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -2184,6 +2185,7 @@ node --test backend/tests/headline-plate.test.js
 node --test backend/tests/loading-never-sticks.test.js
 node --test backend/tests/cue-length.test.js
 node --test backend/tests/music-cue-mcp.test.js
+node --test backend/tests/mobile-feasibility.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
