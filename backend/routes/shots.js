@@ -169,6 +169,8 @@ function updateShotCard(req, res, shotId) {
 function cardVocabulary(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
+        prop_categories: require('../lib/prop-categories').PROP_CATEGORIES,
+        prop_category_labels: require('../lib/prop-categories').PROP_CATEGORY_LABELS,
         shot_types: VALID_SHOT_TYPES,
         camera_moves: VALID_CAMERA_MOVES,
         lighting: VALID_LIGHTING,

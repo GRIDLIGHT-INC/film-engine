@@ -280,6 +280,69 @@ function updateProject(req, res, id) {
         }
     }
 
+    /*
+     * PROVIDER CONFIG, MERGED — NEVER REPLACED.
+     *
+     * Provider selection is per project, and this route refused the field
+     * outright, so an agent could create a project and then could not
+     * configure it or repair one whose config had been damaged. The only way
+     * in was the SPA, which is precisely the wrong constraint for a pipeline
+     * whose reasoning happens in an agent host.
+     *
+     * Merged for the same reason PUT /providers merges: a partial write is the
+     * normal case, and replacing drops every capability the caller did not
+     * happen to name. `null` removes a key, matching the providers route so
+     * the two cannot mean different things by the same payload.
+     */
+    if (body.provider_config !== undefined) {
+        const incoming = body.provider_config;
+        if (incoming === null || typeof incoming !== 'object' || Array.isArray(incoming)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                error: 'provider_config must be an object of capability -> provider id',
+                hint: 'Send null as a value to clear one capability. Keys you omit are left alone.',
+            }));
+            return;
+        }
+        let merged = {};
+        try {
+            merged = JSON.parse(
+                (db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(id) || {})
+                    .provider_config || '{}'
+            ) || {};
+        } catch (_) { merged = {}; }
+
+        const providers = require('../lib/providers');
+        const unknown = [];
+        for (const [key, value] of Object.entries(incoming)) {
+            if (value === null) { delete merged[key]; continue; }
+            if (typeof value !== 'string') continue;
+            const v = value.trim();
+            if (!v) continue;                       // no opinion — keep what is stored
+            if (providers.CAPABILITIES.includes(key)) {
+                // A capability may only name a provider that exists, or the
+                // pin is stored, sent, and silently ignored at generation time.
+                if (!providers.get(v)) { unknown.push(`${key}: ${v}`); continue; }
+                merged[key] = v;
+            } else if (key === 'image_quality' || key === 'image_model') {
+                merged[key] = v.slice(0, 80);
+            } else {
+                unknown.push(key);
+            }
+        }
+        if (unknown.length) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                error: `Unknown provider or capability: ${unknown.join(', ')}`,
+                capabilities: providers.CAPABILITIES,
+                providers: providers.list().map(a => a.id),
+            }));
+            return;
+        }
+        fields.push('provider_config = ?');
+        values.push(JSON.stringify(merged));
+    }
+
     if (fields.length === 0) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'No valid fields to update' }));

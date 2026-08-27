@@ -52,7 +52,16 @@ function credStatus(provider) {
     const declared = adapter && adapter.connection && adapter.connection.fields;
     if (Array.isArray(declared)) for (const f of declared) fields[f.key] = !!meta[f.key];
     const connected = !!meta.access_token; // OAuth-connected
-    return { set: !!key || connected || Object.values(fields).some(Boolean), last4: key ? key.slice(-4) : null, fields, connected };
+    return {
+        set: !!key || connected || Object.values(fields).some(Boolean),
+        last4: key ? key.slice(-4) : null,
+        // Rows written before the write-time check existed. Reported rather
+        // than silently treated as unset: the key IS stored, and telling
+        // someone "not set" when they can see it there is its own confusion.
+        suspect: !!key && key.length < 8,
+        fields,
+        connected,
+    };
 }
 
 function handleProviders(req, res, urlParts, query) {
@@ -132,6 +141,32 @@ function setCredentials(req, res, provider) {
 
     if (!apiKey && !fields) return json(res, 400, { error: 'api_key or fields required' });
 
+    /*
+     * A PLACEHOLDER IS NOT A CREDENTIAL.
+     *
+     * Six providers were stored holding the single character `k`. Everything
+     * downstream reported them configured — `isProviderConfigured` asks only
+     * whether the string is non-empty, the settings panel showed
+     * "set ••••k", the readiness check passed, and the resolver happily chose
+     * them. The first sign was a 401 at generation time, on a job the director
+     * had already committed to, with a message blaming the vendor.
+     *
+     * Refused at the WRITE, where it is cheap and unambiguous. No real provider
+     * key is under eight characters — the shortest here is an ElevenLabs `sk_`
+     * plus 48 — so this cannot reject something legitimate, while it does stop
+     * the state that made every readiness signal lie.
+     */
+    const MIN_KEY = 8;
+    if (apiKey && apiKey.length < MIN_KEY) {
+        return json(res, 400, {
+            error: `That does not look like an API key — it is ${apiKey.length} character`
+                + `${apiKey.length === 1 ? '' : 's'} long.`,
+            hint: 'Paste the whole key. A placeholder stored here reports as configured everywhere '
+                + 'and fails as a 401 at generation time, long after you have committed to a run.',
+            provider,
+        });
+    }
+
     const existing = getMeta(provider);
     const merged = { ...existing };
     if (fields) {
@@ -205,16 +240,28 @@ function setProjectProviders(req, res, projectId) {
     ) || {}; } catch (_) { clean = {}; }
     for (const cap of CAPABILITIES) {
         const pid = incoming[cap];
-        if (typeof pid !== 'string') continue;
+
         /*
-         * An explicitly-empty value CLEARS the pin.
+         * CLEARING IS SAID WITH null, NOT WITH AN EMPTY STRING.
          *
-         * Without this a capability could be pinned and never unpinned: the
-         * merge keeps whatever was there, so "let the quality tier decide"
-         * was unsayable and the tier picker's own advice — clear the pin under
-         * Advanced — pointed at something that could not be done.
+         * Unpinning has to be possible — otherwise "let the quality tier
+         * decide" is unsayable and the tier picker's own advice points at
+         * something that cannot be done. But an empty string carried that
+         * meaning, and the page sends EVERY capability on EVERY save, so any
+         * moment a select reads blank — rendered before its options arrived,
+         * rendered for a different project, a capability whose provider list
+         * came back empty — silently deleted a pin the director had chosen.
+         *
+         * The two states are genuinely different and were spelled the same:
+         *   null  — "remove this pin", said deliberately
+         *   ""    — "I have no opinion about this one", which is what a blank
+         *           control in a bulk payload actually means
+         * so "" now leaves the stored value alone. A partial write is the
+         * normal case, and the destructive reading was the default.
          */
-        if (!pid.trim()) { delete clean[cap]; continue; }
+        if (pid === null) { delete clean[cap]; continue; }
+        if (typeof pid !== 'string') continue;
+        if (!pid.trim()) continue;               // no opinion — keep what is stored
         if (providers.get(pid)) clean[cap] = pid;
     }
 

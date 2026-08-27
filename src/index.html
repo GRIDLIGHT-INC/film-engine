@@ -4711,7 +4711,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <div style="display:flex;gap:8px;">
                     <button class="btn btn-secondary" onclick="describeFromScreenplay('loadProps')"
                             title="Write the missing descriptions from the screenplay. Only fills what is blank — a description you wrote is a decision and is never overwritten.">Describe from screenplay</button>
-                    <button class="btn btn-primary" onclick="showModal('propModal')">+ Prop</button>
+                    <button class="btn btn-primary" onclick="fillPropCategories();showModal('propModal')">+ Prop</button>
                 </div>
             </div>
             <div class="filter-pills" id="propFilters"></div>
@@ -6121,17 +6121,18 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     </div>
                 </div>
                 <p class="text-sm text-muted" style="margin:-4px 0 10px;line-height:1.5;">An image model has no sense of scale, and a reference plate makes it worse &mdash; a plate is a close-up filling its own frame, so conditioning on one without a size reproduces what it was shown. This is how a 30cm sprinkler comes out the size of a car.</p>
+                <!--
+                  Filled from GET /film/card-vocabulary, never typed here.
+                  This list was hand-written and offered `clothing` and
+                  `personal`, NEITHER of which the CHECK constraint on
+                  film_props.category allows — so picking either failed the
+                  insert, and the picker was the only place that believed they
+                  were real. The editor must not be able to offer a value the
+                  database refuses.
+                -->
                 <div class="form-group"><label>Category</label>
-                    <select data-field="category">
+                    <select data-field="category" id="propCategorySelect">
                         <option value="generic">Generic</option>
-                        <option value="weapon">Weapon</option>
-                        <option value="vehicle">Vehicle</option>
-                        <option value="furniture">Furniture</option>
-                        <option value="technology">Technology</option>
-                        <option value="food">Food/Drink</option>
-                        <option value="document">Document</option>
-                        <option value="clothing">Clothing</option>
-                        <option value="personal">Personal Item</option>
                     </select>
                 </div>
                 <!-- Stored by film_props and accepted by PUT /props/:id with no
@@ -22799,11 +22800,45 @@ ${fountainText.slice(0, 50000)}`;
 
     function filterProps(cat) { state.propFilter = cat; loadProps(); }
 
-    function editProp(id) {
+    /*
+     * The prop categories the database will actually accept.
+     *
+     * Loaded once and cached; a failure leaves the single fallback option in
+     * place rather than an empty select, since a picker with nothing in it
+     * looks broken while a short one merely looks short.
+     */
+    let _propCategories = null;
+    async function fillPropCategories() {
+        const sel = document.getElementById('propCategorySelect');
+        if (!sel) return;
+        if (!_propCategories) {
+            try {
+                const v = await api('/card-vocabulary');
+                _propCategories = (v.prop_categories || []).map(id => ({
+                    id, label: (v.prop_category_labels || {})[id] || id,
+                }));
+            } catch (_) { return; }
+        }
+        if (!_propCategories.length) return;
+        const current = sel.value;
+        sel.innerHTML = _propCategories
+            .map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('');
+        if (current) sel.value = current;
+    }
+
+    async function editProp(id) {
         const p = state.props.find(x => x.id === id);
         if (!p) return;
         document.getElementById('propModalTitle').textContent = 'Edit Prop';
         document.getElementById('propEditId').value = id;
+        /*
+         * AWAITED, because the options have to exist before the value is set.
+         * Fired without awaiting, the fetch resolved AFTER setModalData, and
+         * assigning `vehicle` to a select that still held only `generic` fails
+         * silently — so every prop opened reading "Generic" and saving it would
+         * have quietly recategorised the prop.
+         */
+        await fillPropCategories();
         setModalData('propModal', p);
         showModal('propModal');
     }
@@ -23352,7 +23387,13 @@ ${fountainText.slice(0, 50000)}`;
                 }
 
                 // 3) Single API-key providers (OpenAI, ElevenLabs).
-                const status = c.set ? '<span class="tag" style="background:var(--gl-success,#166534);">set ••••' + esc(c.last4 || '') + '</span>' : '<span class="tag">not set</span>';
+                // A stored placeholder must not wear the same green badge as a
+                // working key: "set ••••k" is what let six providers look
+                // configured until a 401 arrived mid-generation.
+                const status = c.suspect
+                    ? '<span class="tag" style="background:var(--gl-warning);">stored value is too short to be a key</span>'
+                    : c.set ? '<span class="tag" style="background:var(--gl-success,#166534);">set ••••' + esc(c.last4 || '') + '</span>'
+                    : '<span class="tag">not set</span>';
                 const helpUrl = conn && conn.helpUrl;
                 const getKeyBtn = helpUrl ? '<a class="btn btn-secondary btn-sm" href="' + esc(helpUrl) + '" target="_blank" rel="noopener" title="Opens the provider\'s key page">Get key &#8599;</a>' : '';
                 return `<div class="form-group">
@@ -23439,6 +23480,10 @@ ${fountainText.slice(0, 50000)}`;
                     </div>
                 </div>`;
 
+            // Which project these controls were built from — read by
+            // saveProviderConfig before it writes anything.
+            const stamp = `<input type="hidden" id="providerPanelProject" value="${esc(proj.project_id || (state.currentProject && state.currentProject.id) || '')}">`;
+
             const advanced = caps.map(cap => {
                 const opts = supportsCap(cap);
                 if (opts.length === 0) return '';
@@ -23467,7 +23512,7 @@ ${fountainText.slice(0, 50000)}`;
                 <details style="margin-top:6px;">
                     <summary style="cursor:pointer;font-weight:600;">Advanced — choose providers and models directly</summary>
                     <div style="margin-top:12px;">
-                        ${advanced}
+                        ${stamp}${advanced}
                         <div class="form-group" style="display:flex;align-items:center;gap:10px;">
                             <label style="flex:0 0 110px;margin:0;">Image model</label>
                             <div style="flex:1;">
@@ -23579,13 +23624,36 @@ ${fountainText.slice(0, 50000)}`;
 
     async function saveProviderConfig() {
         if (!state.currentProject) { setStatus('Open a project first'); return; }
+        /*
+         * A PANEL RENDERED FOR ANOTHER PROJECT MUST NOT BE SAVED TO THIS ONE.
+         *
+         * Every control here is read by id, so the selects survive a project
+         * switch holding the previous film's answers — and a tier click saves
+         * immediately, with no second confirmation. Writing those answers onto
+         * the project now open is how a deliberate choice disappears without
+         * anybody touching the control that held it.
+         */
+        const renderedFor = document.getElementById('providerPanelProject');
+        if (renderedFor && renderedFor.value && renderedFor.value !== state.currentProject.id) {
+            setStatus('Provider settings were showing another project — reloading them');
+            loadProviders();
+            return;
+        }
+
         const caps = (_providerCatalog && _providerCatalog.capabilities) || [];
         const config = {};
         caps.forEach(cap => {
             const sel = document.getElementById('provcap-' + cap);
-            // Sent even when blank: blank means "clear the pin", and skipping it
-            // would let the merge keep a choice the user just cleared.
-            if (sel) config[cap] = sel.value;
+            if (!sel) return;
+            /*
+             * null means "unpin this", and it is only said when the control
+             * genuinely offers Automatic and the user is on it. A blank sent as
+             * "" means "no opinion" and the server keeps what it has — because
+             * a blank control in a bulk payload is far more often a render that
+             * has not caught up than a decision to clear something.
+             */
+            config[cap] = sel.value ? sel.value
+                : (sel.options.length > 1 ? null : '');
         });
         // Carried explicitly: the route keeps only keys it recognises, so a
         // tier left out here would save as nothing and the setting would look

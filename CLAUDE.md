@@ -163,6 +163,7 @@ film-engine/
 │   │   ├── budget-estimator.js   # Pre-flight cost estimation
 │   │   ├── provider-pricing.js  # What a generation costs, in the provider's own units
 │   │   ├── generator-costs.js   # Which generator to use: every price, one comparable unit
+│   │   ├── prop-categories.js   # What a prop may be, said once for the picker, the tool and the CHECK
 │   │   ├── usage-meter.js       # Every provider call, metered and attributed
 │   │   ├── mcp-usage.js         # The agent host is the model; its traffic is the LLM meter
 │   │   ├── spend-backfill.js    # What a project spent before anything was tracking it
@@ -251,6 +252,8 @@ film-engine/
 │       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
+│       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
+│       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
@@ -740,6 +743,30 @@ It now follows the same rule, unchanged: `current_frame_version` when a version 
 `tests/current-frame.test.js` gains playback to its `SURFACES` list — the whole point of that list being that a surface not in it is a surface nobody checked — and the new assertion is **behavioural**, because the fault was not a wrong query but *no* query: no version selected, no ordering, and a `.find()` that took whatever came back first.
 
 **And a second bug found while reading it.** `loadPlayback` computed the shot to open on and then called `loadShotIntoStage(0)`, discarding it on the next line — so playback always opened at the top of the film however carefully the mark had been kept. The mark was working; the thing that read it was not.
+
+### A Save Must Not Drop the Choices It Was Not Asked About
+Two projects lost their image and video providers. The tell was that `image_quality` **survived the same write** that dropped the other two — a partial reconstruction, not a UI-state problem. Two independent causes, and either alone would have been visible.
+
+**`defaultProviderConfig()` read a preference table that had changed shape under it.** When `image` and `video` became ordered *walks* — `["google","meshy","bfl","openai"]` — `isProviderConfigured()` was handed an **array**, looked it up in the registry, got `undefined` and answered false. So every project created after that change was written with the six string-valued capabilities and **no image or video choice at all**. `firstConfigured` is now shared with `resolveId` rather than reimplemented; two readings of one table is exactly how they came to disagree.
+
+**An empty string meant "delete this".** The page sends every capability on every save, so any moment a select read blank — rendered before its options arrived, rendered for another project — silently removed a pin. `null` now clears and `""` means *no opinion*; the two states are genuinely different and were spelled the same. The page also stamps the panel with the project it was built for and refuses to write across a switch.
+
+**Then a second failure hid the first.** With nothing pinned, resolution fell through to the same vendor ranking and picked a company the account had never named, and the error read `google: API_KEY_INVALID` — which blames a credential. `resolveIdWithReason` reports **where the answer came from** and whether anyone chose it; `explicit` is the load-bearing field, and a failure carrying it says *resolved provider: google (FALLBACK: this project pins no image provider)* instead of quoting an upstream 401. `default_image_provider` / `default_video_provider` in app settings give the fallback an owner: the built-in walk is a defensible default for a shipped product and the wrong one for a person's own machine, which has an obvious right answer.
+
+**And `provider_config` was not writable over MCP** — `project_update` refused it, so an agent could create a project and neither configure nor repair it, which is the wrong constraint for a pipeline whose reasoning happens in an agent host. Merged there too, with `null` clearing, so one payload cannot mean two things.
+
+**A placeholder is not a credential.** Six providers were stored holding the single character `k`. Everything downstream reported them configured — `isProviderConfigured` asks only whether the string is non-empty, the panel showed `set ••••k`, readiness passed — and the first sign was a **401 at generation time**, on a job already committed to, with a message blaming the vendor. Refused at the write, where it is cheap and unambiguous: no real key is under eight characters, so this cannot reject something legitimate. Rows written earlier are **flagged rather than treated as unset** — the key IS stored, and saying "not set" to someone looking straight at it is its own confusion.
+
+### A Transition Is Not a Character
+`FADE OUT` was listed as a character with a scene count, so every report built on scene presence carried a phantom; and RAY MERCER (introduced in action) and RAY (cued in dialogue) became two people, as did JUNE MERCER / JUNE.
+
+**Three faults, and the third is why the obvious fix did nothing.** The detector matches *two* capitalised words while the stopword list held `FADE` and `OUT` separately, so each was rejected alone and the pair sailed through — a name made **entirely** of transition words is now refused. Re-typing the line as `> FADE OUT.` changed nothing because the parser only honoured a forced transition **after a blank line**, so a `>` written directly under an action paragraph was swallowed into it as prose: a force that only works in some positions is not a force. The unforced check stays gated, since a bare capitalised line mid-action may be a shout, and `> THE END <` is still centred.
+
+**A first name is the same person as the full name.** Collapsed on a **word-boundary** prefix, never a substring — `RAY` starts `RAY MERCER` and does not start `RAYMOND`, and a substring rule merges strangers. The canonical form is the one that already **has a character record**, because the point is to reach the row carrying the description and the plate; with no record either way the fuller name wins, since that is what the action line established. Applied once the whole screenplay has been read rather than per scene: a character can be introduced in full in scene 1 and cued by their first name in scene 9.
+
+On the reported screenplay: five characters, three of them phantoms, became **two real ones with nothing undescribed**.
+
+**And a picker must not offer what the database refuses.** There were three answers to what a prop may be and no two agreed — the CHECK allowed ten values, the page offered nine including `clothing` and `personal` which the constraint **rejects**, and the MCP tool typed it as a free string so an agent learned the legal set from a constraint violation. `lib/prop-categories.js` states it once; the picker is filled from `card-vocabulary` and the test reads the **migration**, since that is what actually rejects a value.
 
 ### If the App Stores It, a Person Can Type It
 *"I should be able to edit everything in the app manually (text) like the character description."*
@@ -1961,6 +1988,8 @@ node --test backend/tests/dev-server.test.js
 node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js
+node --test backend/tests/provider-config-merge.test.js
+node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
 node --test backend/tests/screenplay-port.test.js

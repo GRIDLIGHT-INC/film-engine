@@ -132,10 +132,37 @@ const PREFERRED_WHEN_CONFIGURED = {
  * project created before a key is added does not claim a provider it cannot
  * reach.
  */
+/**
+ * The choices a new project starts with.
+ *
+ * A PREFERENCE MAY BE A STRING OR AN ORDERED WALK, and this read only strings.
+ * When `image` and `video` became walks — `["google","meshy","bfl","openai"]` —
+ * `isProviderConfigured()` was handed an ARRAY, looked it up in the registry,
+ * got undefined and answered false. So every project created after that change
+ * was written with the six string-valued capabilities and **no image or video
+ * choice at all**, silently.
+ *
+ * That is the visible half of a two-part failure: with nothing pinned, the
+ * generation path falls through to the same walk and picks whatever is
+ * credentialed first, so a project set up for one vendor generated on another
+ * and the only symptom was an authentication error naming a company the
+ * director never chose.
+ *
+ * `firstConfigured` is shared with resolveId rather than reimplemented — two
+ * readings of one preference table is exactly how they came to disagree.
+ */
+function firstConfigured(preference) {
+    for (const id of Array.isArray(preference) ? preference : [preference]) {
+        if (typeof id === 'string' && isProviderConfigured(id)) return id;
+    }
+    return null;
+}
+
 function defaultProviderConfig() {
     const config = {};
-    for (const [capability, id] of Object.entries(PREFERRED_WHEN_CONFIGURED)) {
-        if (isProviderConfigured(id)) config[capability] = id;
+    for (const [capability, preference] of Object.entries(PREFERRED_WHEN_CONFIGURED)) {
+        const id = firstConfigured(preference);
+        if (id) config[capability] = id;
     }
     return config;
 }
@@ -179,7 +206,33 @@ function localGatewayEnabled() {
 /** Called when the setting is written, so a restart is not needed. */
 function refreshLocalGateway() { _gatewayEnabled = null; }
 
-function resolveId(capability, projectConfig) {
+
+/**
+ * The person's own default generator for a capability, or null.
+ *
+ * Cached per capability because resolveId runs on every generation and this is
+ * a database read; the settings route clears it on write, so changing the
+ * setting does not need a restart.
+ */
+const _accountDefaults = new Map();
+
+function accountDefaultFor(capability) {
+    if (capability !== 'image' && capability !== 'video') return null;
+    if (_accountDefaults.has(capability)) return _accountDefaults.get(capability);
+    let value = null;
+    try {
+        const { readSettings } = require('../../routes/app-settings');
+        const settings = readSettings() || {};
+        const raw = settings[`default_${capability}_provider`];
+        value = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+    } catch (_) { value = null; }
+    _accountDefaults.set(capability, value);
+    return value;
+}
+
+function refreshAccountDefaults() { _accountDefaults.clear(); }
+
+function resolveIdWithReason(capability, projectConfig) {
     const cfg = projectConfig || {};
     /*
      * An explicit per-project choice wins — EXCEPT a disabled local gateway.
@@ -189,11 +242,13 @@ function resolveId(capability, projectConfig) {
      * switch exists to end.
      */
     if (cfg[capability]) {
-        if (cfg[capability] !== DEFAULT_PROVIDER || localGatewayEnabled()) return cfg[capability];
+        if (cfg[capability] !== DEFAULT_PROVIDER || localGatewayEnabled()) {
+            return { id: cfg[capability], source: 'project', explicit: true };
+        }
     }
     const envKey = `PROVIDER_${String(capability).toUpperCase()}`;
-    if (process.env[envKey]) return process.env[envKey];
-    if (process.env.PROVIDER_DEFAULT) return process.env.PROVIDER_DEFAULT;
+    if (process.env[envKey]) return { id: process.env[envKey], source: 'env', explicit: true };
+    if (process.env.PROVIDER_DEFAULT) return { id: process.env.PROVIDER_DEFAULT, source: 'env', explicit: true };
 
     /*
      * THE QUALITY TIER, consulted here and nowhere else.
@@ -223,11 +278,40 @@ function resolveId(capability, projectConfig) {
      * immediately: the picker said every tier used Meshy while the project
      * resolved to OpenAI, and both were telling the truth about different code.
      */
+    /*
+     * THE ACCOUNT DEFAULT OUTRANKS AN UNSET TIER, and loses to a set one.
+     *
+     * The tier below answers for images even when the project never chose one,
+     * because a default tier is how an un-opinionated project gets a sensible
+     * model. That is right when nobody has said anything at all — and wrong the
+     * moment a person HAS said something, at the account level, about which
+     * company they use. Placed after the tier it could never fire for images,
+     * which is the whole capability the setting exists for.
+     *
+     * A tier the project actually set is a deliberate statement about this
+     * film and still wins.
+     */
+    if (!cfg[`${capability}_quality`]) {
+        const preset = accountDefaultFor(capability);
+        if (preset && isProviderConfigured(preset)) {
+            return { id: preset, source: 'account_default', explicit: true };
+        }
+    }
+
     if (capability === 'image') {
         try {
             const { resolveTier } = require('../quality-tiers');
             const chosen = resolveTier(cfg.image_quality, cfg);
-            if (chosen && chosen.provider) return chosen.provider;
+            if (chosen && chosen.provider) {
+                return {
+                    id: chosen.provider,
+                    // A tier nobody set is a default, not a decision. Reporting
+                    // it as "chosen by the quality tier" is how a fallback
+                    // reads as a choice in an error message.
+                    source: cfg.image_quality ? 'quality_tier' : 'default_quality_tier',
+                    explicit: !!cfg.image_quality,
+                };
+            }
         } catch (_) { /* a broken tier must never block a generation */ }
     }
 
@@ -244,9 +328,29 @@ function resolveId(capability, projectConfig) {
      * A bare string is still accepted, because most capabilities have exactly
      * one hosted adapter and a list of one is noise.
      */
+    /*
+     * THE ACCOUNT DEFAULT, above the built-in walk.
+     *
+     * The walk below is a list of vendors ranked in this repository. It is a
+     * defensible default for a shipped product and the wrong one for a
+     * person's own machine, which has an obvious right answer: whoever they
+     * actually use. Without this, a project that pinned nothing generated on
+     * whichever company came first in an ordering it had never seen, and the
+     * failure surfaced as an authentication error naming a vendor the director
+     * had never chosen.
+     *
+     * Read lazily and never allowed to throw: this is on the path of every
+     * generation, and a settings table that cannot be read must not stop a
+     * render.
+     */
+    const accountDefault = accountDefaultFor(capability);
+    if (accountDefault && isProviderConfigured(accountDefault)) {
+        return { id: accountDefault, source: 'account_default', explicit: true };
+    }
+
     const preferred = PREFERRED_WHEN_CONFIGURED[capability];
     for (const id of (Array.isArray(preferred) ? preferred : [preferred])) {
-        if (id && isProviderConfigured(id)) return id;
+        if (id && isProviderConfigured(id)) return { id, source: 'built_in_preference', explicit: false };
     }
 
     /*
@@ -254,8 +358,45 @@ function resolveId(capability, projectConfig) {
      * honest answer, not a fallback: a capability nothing serves that reports a
      * provider is how a run gets started and dies at its last step.
      */
-    return localGatewayEnabled() ? DEFAULT_PROVIDER : null;
+    return localGatewayEnabled()
+        ? { id: DEFAULT_PROVIDER, source: 'local_gateway', explicit: false }
+        : { id: null, source: 'none', explicit: false };
 }
+
+/**
+ * WHERE THE ANSWER CAME FROM, not just what it is.
+ *
+ * A provider id alone cannot distinguish "this project chose Runway" from
+ * "nothing was set, so a list in this repository picked one" — and those two
+ * produce identical, confident errors when the pick is wrong. A plate that
+ * failed on an account set up for Meshy reported `google: API_KEY_INVALID`,
+ * which reads as a broken key and was actually a project with no image pin
+ * falling through a vendor ranking it had never seen.
+ *
+ * `explicit` is the load-bearing field: true when a person stated this
+ * somewhere, false when we guessed. An error carrying it can say so.
+ */
+function resolveId(capability, projectConfig) {
+    return resolveIdWithReason(capability, projectConfig).id;
+}
+
+/** One sentence a person can act on, for an error message. */
+function describeResolution(capability, projectConfig) {
+    const r = resolveIdWithReason(capability, projectConfig);
+    if (!r.id) return `no ${capability} provider is available — nothing serves it and the local gateway is off`;
+    const why = {
+        project: 'pinned by this project',
+        env: 'set by an environment variable',
+        quality_tier: 'chosen by the quality tier',
+        account_default: 'your account default',
+        default_quality_tier: 'FALLBACK — this project pins no provider and set no quality, '
+            + 'so the default tier picked one',
+        built_in_preference: 'FALLBACK — this project pins no provider, so a built-in preference order picked one',
+        local_gateway: 'FALLBACK — the local gateway, because nothing else is configured',
+    }[r.source] || r.source;
+    return `resolved provider: ${r.id} (${why})`;
+}
+
 
 /**
  * True when the provider has usable credentials.
@@ -419,4 +560,5 @@ function metered(adapter, projectConfig) {
 register(gridlightAdapter);
 _autoload();
 
-module.exports = { register, get, list, resolve, resolveId, resolveGenerator, metered, isProviderConfigured, defaultProviderConfig, localGatewayEnabled, refreshLocalGateway, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };
+module.exports = {
+    firstConfigured, resolveIdWithReason, describeResolution, accountDefaultFor, refreshAccountDefaults, register, get, list, resolve, resolveId, resolveGenerator, metered, isProviderConfigured, defaultProviderConfig, localGatewayEnabled, refreshLocalGateway, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };

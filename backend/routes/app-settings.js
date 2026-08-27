@@ -59,6 +59,32 @@ const SETTINGS = {
         description: 'Your own measurement of how many tokens fit in one rolling 5-hour window. Anthropic publishes no such number, so the spend gauge shows no percentage until you set this. Leave blank to see raw consumption without a bar.',
         default: '',
     },
+    /*
+     * WHICH GENERATOR A PROJECT THAT NAMED NONE SHOULD USE.
+     *
+     * Before this, an unpinned capability fell through to
+     * PREFERRED_WHEN_CONFIGURED — an ordered list of vendors written in this
+     * repository. So a project that named nothing generated on whichever
+     * company happened to be first in a walk it had never seen, and the only
+     * symptom was an authentication error naming a vendor the director never
+     * chose. That is a defensible default for a shipped product and a bad one
+     * for a person's own account, which has an obvious right answer: whoever
+     * they actually use.
+     *
+     * Per person rather than per project, like `author`: it is the same answer
+     * every time. Blank keeps the built-in walk, so nothing changes for anyone
+     * who does not set it.
+     */
+    default_image_provider: {
+        description: 'Which image generator a project that pins none should use. Blank falls back to '
+            + 'the built-in preference order, which is a list of vendors chosen here rather than by you.',
+        default: '',
+    },
+    default_video_provider: {
+        description: 'Which video generator a project that pins none should use. Blank falls back to '
+            + 'the built-in preference order.',
+        default: '',
+    },
     subscription_pro_baseline_tokens: {
         description: 'A Pro-plan 5-hour baseline. Set this instead of the above and the published plan multipliers (Max 5x, Max 20x) scale it for you, so one measurement calibrates every plan.',
         default: '',
@@ -114,7 +140,14 @@ function putSettings(req, res) {
      * watches do nothing, and flips back.
      */
     if (changed.includes('gridlight_enabled')) {
-        try { require('../lib/providers').refreshLocalGateway(); } catch (_) { /* not fatal */ }
+        try {
+            const providers = require('../lib/providers');
+            providers.refreshLocalGateway();
+            // The account default is cached on the generation path for the
+            // same reason the gateway switch is; changing it must not need
+            // a restart, or the setting appears not to work.
+            providers.refreshAccountDefaults();
+        } catch (_) { /* not fatal */ }
     }
 
     if (!changed.length) {

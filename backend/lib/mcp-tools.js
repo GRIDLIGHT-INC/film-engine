@@ -21,6 +21,7 @@
  * without a process boundary.
  */
 
+const { PROP_CATEGORIES } = require('./prop-categories');
 const { NODE_TYPES, PORT_TYPES, nodeType } = require('./flow-node-types');
 const { handlerFor } = require('./node-handlers');
 const { handleFlows, runContext } = require('../routes/flows');
@@ -678,6 +679,17 @@ const PRODUCTION_TOOLS = [
                     + 'Default false, in which case markup is notation for a human only. Turning it on '
                     + 'applies every NOTED mark on a shot to every subsequent generation of it, until '
                     + 'the mark is deleted — marks are about the shot, not about one attempt at it.',
+            },
+            provider_config: {
+                type: 'object',
+                description: 'Which generator this project uses, per capability — '
+                    + '{"image":"meshy","video":"runway"}. MERGED, never replaced: keys you omit keep '
+                    + 'their stored value, so configuring one capability cannot drop the others. Send '
+                    + 'null as a value to clear one and fall back to automatic resolution. Also '
+                    + 'accepts image_quality (draft/standard/precision/auto) and image_model. '
+                    + 'A project that pins nothing resolves through your account default and then '
+                    + 'through a built-in preference order, which may pick a vendor you never chose — '
+                    + 'so pin the ones that matter.',
             },
         },
         required: ['project_id'],
@@ -1387,11 +1399,14 @@ const PRODUCTION_TOOLS = [
             name: { type: 'string' },
             visual_prompt: { type: 'string' },
             description: { type: 'string' },
-            category: { type: 'string' },
+            category: {
+                type: 'string',
+                enum: PROP_CATEGORIES,
+                description: 'One of the ten stored categories. A value outside this set is refused '
+                    + 'by a database constraint, which is how the legal list used to be discovered.',
+            },
         },
-        height_m: { type: 'number', description: 'Height in metres.' },
-            width_m: { type: 'number', description: 'Width in metres.' },
-            required: ['project_id', 'name'],
+        required: ['project_id', 'name'],
     },
     {
         name: 'character_delete',
@@ -1442,7 +1457,7 @@ const PRODUCTION_TOOLS = [
             prop_id: { type: 'string' },
             visual_prompt: { type: 'string', description: 'What this object looks like, in prompt terms.' },
             description: { type: 'string' },
-            category: { type: 'string' },
+            category: { type: 'string', enum: PROP_CATEGORIES },
             name: { type: 'string' },
         },
             required: ['prop_id'],

@@ -56,6 +56,7 @@ const MACHINE_SHAPES = [
     /^assumptions$/, /^missing_data$/,    // computed by the estimator
     /^image_path$/, /^asset_id$/,         // set by an upload, never typed
     /^at$/,                               // a beat's position in the story, a number
+    /^provider_config$/,                  // an object of capability -> provider, set by pickers
 ];
 const MACHINE = { test: f => MACHINE_SHAPES.some(re => re.test(f)) };
 

@@ -80,6 +80,16 @@ function isRefusal(error) {
  */
 function imageProviderChain(projectConfig) {
     const preferred = providers.resolveGenerator('image', projectConfig || {});
+    /*
+     * Carried so a failure can say WHERE the provider came from.
+     *
+     * A plate that failed on an account set up for Meshy reported
+     * `google: API_KEY_INVALID` — which reads as a broken key and was really a
+     * project with no image pin falling through a vendor ranking written in
+     * this repository. The key was beside the point; the routing was the fault,
+     * and nothing in the message could tell them apart.
+     */
+    const resolution = providers.resolveIdWithReason('image', projectConfig || {});
     const chain = [];
     const seen = new Set();
 
@@ -91,6 +101,7 @@ function imageProviderChain(projectConfig) {
         chain.push(preferred);
         seen.add(preferred.id);
     }
+    chain.resolution = resolution;
 
     for (const adapter of providers.list()) {
         if (seen.has(adapter.id) || !usable(adapter)) continue;
@@ -187,11 +198,42 @@ async function runImageFallbackChain(chain, payloadOrFactory, opts) {
         if (!isRefusal(result.error)) break;
     }
 
-    return { ...(last || { ok: false, error: 'image generation failed' }), _chain: attempts };
+    /*
+     * A FAILURE SAYS WHICH PROVIDER RAN AND WHY IT WAS CHOSEN.
+     *
+     * Without this the message is the upstream one — "google:
+     * API_KEY_INVALID" — which blames a credential when the real fault may be
+     * that nothing pinned a provider and a built-in ordering picked a company
+     * the director never named. The two need different fixes and read
+     * identically.
+     */
+    const failed = { ...(last || { ok: false, error: 'image generation failed' }), _chain: attempts };
+    const r = chain && chain.resolution;
+    if (r && !r.explicit) {
+        failed.resolution = r;
+        failed.error = `${failed.error || 'image generation failed'} — resolved provider: ${r.id} `
+            + '(FALLBACK: this project pins no image provider, so it was chosen for you). '
+            + 'Set one in Provider Settings, or set an account default.';
+    } else if (r) {
+        failed.resolution = r;
+    }
+    return failed;
 }
 
 async function generateImageWithFallback(payloadOrFactory, projectConfig, opts) {
-    return runImageFallbackChain(imageProviderChain(projectConfig), payloadOrFactory, opts);
+    const chain = imageProviderChain(projectConfig);
+    if (!chain.length) {
+        // Naming the capability and the remedy, rather than letting this
+        // surface as a 502 wrapping a truncated upstream payload.
+        return {
+            ok: false,
+            error: 'no image provider is configured — set one in Provider Settings, '
+                + 'add an account default, or switch on the local gateway',
+            resolution: chain.resolution || { id: null, source: 'none', explicit: false },
+            _chain: [],
+        };
+    }
+    return runImageFallbackChain(chain, payloadOrFactory, opts);
 }
 
 module.exports = {

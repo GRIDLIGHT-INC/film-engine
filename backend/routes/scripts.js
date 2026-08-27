@@ -301,6 +301,26 @@ function extractScenesFromFountain(parsed, projectId) {
         scenes.push(currentScene);
     }
 
+    /*
+     * Collapse RAY/RAY MERCER once the whole screenplay has been read.
+     *
+     * Per screenplay rather than per scene: a character can be introduced in
+     * full in scene 1 and cued by their first name in scene 9, and a per-scene
+     * pass would see only one form in each and merge nothing.
+     */
+    const everyName = new Set();
+    for (const sc of scenes) for (const n of sc.characters_present) everyName.add(n);
+    let records = new Set();
+    try {
+        records = new Set(require('../db/database').db
+            .prepare('SELECT name FROM film_characters WHERE project_id = ?').all(projectId)
+            .map(r => r.name));
+    } catch (_) { /* a fresh upload has no records yet, which is the normal case */ }
+    const canonical = canonicaliseCharacterNames(everyName, records);
+    for (const sc of scenes) {
+        sc.characters_present = [...new Set(sc.characters_present.map(n => canonical.get(n) || n))];
+    }
+
     return scenes;
 }
 
@@ -1418,6 +1438,19 @@ function actionIntroducedCharacters(parsed, knownLocations) {
             const name = m[1].trim().replace(/['\u2018\u2019]+$/, '').trim();
             if (name.length < 3) continue;
             if (ACTION_CAPS_STOPWORDS.has(name)) continue;
+            /*
+             * A NAME MADE ENTIRELY OF TRANSITION WORDS IS A TRANSITION.
+             *
+             * The stopword check matched whole names, and the regex captures
+             * TWO words — so FADE and OUT were each rejected while "FADE OUT"
+             * sailed through and became a character with a scene count. Same
+             * for CUT TO, MATCH CUT, IRIS OUT, THE END.
+             *
+             * The parser types a real `FADE OUT.` line as a transition and this
+             * never sees it; what reaches here is the phrase sitting INSIDE an
+             * action paragraph, where it is still not a person.
+             */
+            if (name.split(/\s+/).every(w => ACTION_CAPS_STOPWORDS.has(w))) continue;
             // A location already named by a slugline is a place, not a person.
             if (knownLocations.has(name.toUpperCase())) continue;
             // A whole line in caps is a shout or a slug, not an introduction.
@@ -1549,6 +1582,49 @@ function applyScreenplaySuggestions(req, res, projectId) {
  * suggest the DRAGON as a character while another reported it present in no
  * scene.
  */
+/**
+ * RAY and RAY MERCER ARE ONE PERSON.
+ *
+ * A screenplay introduces someone in action by their full name and then cues
+ * their dialogue by their first — that is the convention, not a mistake. Read
+ * literally it produces two entries for one actor, so `elements_list` reports
+ * phantom undescribed characters, DOOD counts them separately, and a scene card
+ * naming the variant that has no record reaches generation as a bare name with
+ * no plate and no locked profile.
+ *
+ * Collapsed on a WORD-BOUNDARY prefix, never a substring: "RAY" is the start of
+ * "RAY MERCER" and is not the start of "RAYMOND", and a substring rule would
+ * merge two different people whose names happen to share letters.
+ *
+ * The canonical form is the one that already has a character record — the point
+ * is to reach the row that carries the description and the plate. With no
+ * record either way the longer name wins, since a full name is the more
+ * complete identity and is what the action line actually established.
+ */
+function canonicaliseCharacterNames(names, knownRecords) {
+    const list = [...new Set([...names].map(n => String(n || '').trim()).filter(Boolean))];
+    const known = new Set([...(knownRecords || [])].map(n => String(n).trim().toUpperCase()));
+
+    const startsWord = (short, long) => {
+        const a = short.toUpperCase();
+        const b = long.toUpperCase();
+        return b !== a && b.startsWith(a) && /\s/.test(b.charAt(a.length));
+    };
+
+    const canonical = new Map();
+    for (const name of list) {
+        // Everything this name is a prefix of, plus itself.
+        const family = list.filter(other => other === name
+            || startsWord(name, other) || startsWord(other, name));
+        const recorded = family.filter(n => known.has(n.toUpperCase()));
+        const pick = recorded.length
+            ? recorded.sort((a, b) => b.length - a.length)[0]
+            : family.sort((a, b) => b.length - a.length)[0];
+        canonical.set(name, pick);
+    }
+    return canonical;
+}
+
 function actionCapsInLine(text) {
     return actionIntroducedCharacters(
         { elements: [{ type: 'action', text: String(text || '') }] }, new Set());
@@ -1944,4 +2020,5 @@ function handleComments(req, res, urlParts, query) {
 // with a trailing apostrophe becomes a second subject that looks correct in
 // every report it appears in — and a test that greps the source for a regex
 // proves nothing about what the regex does.
-module.exports = { handleScripts, handleComments, actionCapsInLine };
+module.exports = {
+    canonicaliseCharacterNames, handleScripts, handleComments, actionCapsInLine };

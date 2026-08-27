@@ -538,20 +538,40 @@
                 }
             }
 
+            /*
+             * A FORCED TRANSITION IS FORCED WHEREVER IT APPEARS.
+             *
+             * This sat behind `prevLineBlank`, so `> FADE OUT.` written on the
+             * line straight after an action paragraph — no blank line between,
+             * which is how people actually type it — was swallowed into that
+             * paragraph as ordinary prose. It then read as two capitalised
+             * words inside action text and was detected as a CHARACTER called
+             * "FADE OUT", complete with a scene count, in every report built on
+             * scene presence.
+             *
+             * That is also why re-typing the line with a `>` did not fix
+             * anything: the marker was being ignored, so the author's explicit
+             * instruction changed nothing at all.
+             *
+             * `>` is the author saying "this is a transition". A force that
+             * only works in some positions is not a force. The UNFORCED check
+             * below stays gated, because a bare capitalised line in the middle
+             * of action may well be a shout.
+             */
+            const forcedTransition = trimmed.match(PATTERNS.FORCED_TRANSITION);
+            if (forcedTransition && !PATTERNS.CENTERED.test(trimmed)) {
+                finishCurrentElement();
+                pushElement({
+                    type: ELEMENT_TYPES.TRANSITION,
+                    text: forcedTransition[1]
+                });
+                prevLineBlank = true;
+                expectingDialogue = false;
+                continue;
+            }
+
             // Check for transition
             if (prevLineBlank) {
-                const forcedTransition = trimmed.match(PATTERNS.FORCED_TRANSITION);
-                if (forcedTransition && !PATTERNS.CENTERED.test(trimmed)) {
-                    finishCurrentElement();
-                    pushElement({
-                        type: ELEMENT_TYPES.TRANSITION,
-                        text: forcedTransition[1]
-                    });
-                    prevLineBlank = true;
-                    expectingDialogue = false;
-                    continue;
-                }
-
                 const transMatch = trimmed.match(PATTERNS.TRANSITION);
                 const commonTrans = trimmed.match(PATTERNS.COMMON_TRANSITIONS);
                 if ((transMatch || commonTrans) && isUpperCase(trimmed.replace(/[:\s]/g, ''))) {
