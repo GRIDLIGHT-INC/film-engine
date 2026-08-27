@@ -209,7 +209,9 @@ test('the page can reach the turnaround, and prefixes the API origin', () => {
     assert.match(SPA, /showCharacterViews\('\$\{c\.id\}'\)/, 'no control on the character card');
     assert.match(SPA, /refsheet\/views/, 'the page never calls the views route');
 
-    const at = SPA.indexOf('function showCharacterViews');
+    // The markup lives in the shared renderer, not in either caller.
+    const at = SPA.indexOf('function characterViewsHtml');
+    assert.notStrictEqual(at, -1, 'the shared turnaround renderer is gone');
     const body = SPA.slice(at, at + 2200);
     assert.match(body, /\$\{API_BASE\}\$\{esc\(v\.image_url\)\}/,
         'the picture src omits API_BASE, so every view 404s against the page origin');
@@ -301,4 +303,61 @@ test('both builders share one isolation clause', () => {
         assert.ok(!/plain seamless backdrop'|plain seamless background'/.test(src),
             `${name} still carries a private isolation literal`);
     }
+});
+
+test('regenerating a view replaces its row rather than adding one', () => {
+    /*
+     * The file is written to the same per-view name and overwrites, so a second
+     * generation produced a NEW asset row pointing at the same picture. Ray was
+     * regenerated once through MCP and the views list showed SIX entries for
+     * three files; every regeneration after that adds three more, forever.
+     *
+     * Not merely cosmetic: two rows for one view means "the plate" is whichever
+     * the query happens to return, the fingerprint is stamped on one of them,
+     * and accepting staleness on the visible row leaves the other still
+     * reported as behind.
+     */
+    const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'characters.js'), 'utf8');
+
+    const insertAt = src.indexOf("VALUES (?, ?, ?, 'character_sheet'");
+    assert.notStrictEqual(insertAt, -1, 'the character sheet insert is gone');
+
+    // The delete must be in the same block, BEFORE the insert — scoped to the
+    // subject and the view, not to the filename.
+    const before = src.slice(Math.max(0, insertAt - 2500), insertAt);
+    assert.match(before, /DELETE FROM film_assets/,
+        'a regenerated view is inserted without removing the row it replaces');
+    assert.match(before, /json_extract\(metadata, '\$\.view'\) = \?/,
+        'the replacement is not scoped to the view, so it would drop the whole turnaround');
+    assert.match(before, /character_id = \?/,
+        'the replacement is not scoped to the character');
+
+    // The FILE must survive: it is the same path this generation just wrote.
+    const deleteBlock = before.slice(before.indexOf('const stale'));
+    assert.ok(!/unlinkSync/.test(deleteBlock),
+        'the replacement deletes the file it just wrote');
+});
+
+test('clicking a character shows the whole turnaround, not one picture', () => {
+    /*
+     * The Views button existed and this panel still showed ONE image — so two
+     * of the three plates a director had just paid for were invisible unless
+     * they found a separate control. A capability behind a button nobody
+     * presses is indistinguishable from one that is missing.
+     */
+    const at = SPA.indexOf('async function inspectEntity');
+    assert.notStrictEqual(at, -1, 'the detail panel is gone');
+    const fn = SPA.slice(at, at + 5000);
+
+    assert.match(fn, /characterViewsSection/,
+        'the character detail panel has no place to put the other views');
+    assert.match(fn, /renderCharacterViewsInto\('characterViewsSection'/,
+        'the views section is created and never filled');
+
+    // One renderer for both surfaces: two copies is how the board and the
+    // viewer came to disagree about their own markup tools.
+    assert.match(SPA, /function characterViewsHtml/, 'no shared renderer');
+    const uses = (SPA.match(/characterViewsHtml\(/g) || []).length;
+    assert.ok(uses >= 3,
+        `the turnaround markup is not shared between the detail panel and the Views button (${uses} uses)`);
 });

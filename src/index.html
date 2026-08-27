@@ -21995,7 +21995,19 @@ ${fountainText.slice(0, 50000)}`;
                     ${fields || '<p class="text-sm text-muted">Nothing described yet. An entity with no description reaches the image prompt as a bare name, and every frame invents its own version of it.</p>'}
                 </div>
             </div>
-            ${kind === 'location' ? `<div id="locationViewsSection" style="margin-top:18px;"></div>` : ''}`;
+            ${kind === 'location' ? `<div id="locationViewsSection" style="margin-top:18px;"></div>` : ''}
+            ${kind === 'character' ? `<div id="characterViewsSection" style="margin-top:18px;"></div>` : ''}`;
+
+        /*
+         * THE WHOLE TURNAROUND, where a person looks for it.
+         *
+         * A reference sheet is front, side and back. This panel showed ONE
+         * picture — whichever the card had picked — so two of the three plates
+         * a director had just paid for were invisible unless they found a
+         * separate button. Locations already listed their views here; the
+         * character, which is the subject a turnaround is FOR, did not.
+         */
+        if (kind === 'character') renderCharacterViewsInto('characterViewsSection', id);
 
         // Now that the record is readable, ask whether the plate is behind.
         (async () => {
@@ -22343,10 +22355,9 @@ ${fountainText.slice(0, 50000)}`;
      * Saying which one is doing the work is the point of this panel: it was
      * silently the BACK, because the picker took the newest row.
      */
-    async function showCharacterViews(charId) {
-        try {
-            const r = await api(`/characters/${charId}/refsheet/views`);
-            const body = r.views.length ? `
+    /** The turnaround as markup. Shared by the detail modal and the Views button. */
+    function characterViewsHtml(r, charId) {
+        return r.views.length ? `
                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">
                     ${r.views.map(v => `
                         <div style="border:1px solid ${v.is_identity_plate ? 'var(--gl-accent,#6690ff)' : 'var(--gl-border-subtle)'};border-radius:8px;padding:8px;min-width:0;">
@@ -22367,7 +22378,36 @@ ${fountainText.slice(0, 50000)}`;
                         </div>`).join('')}
                 </div>
                 <p class="text-sm text-muted" style="margin-top:12px;line-height:1.5;">${esc(r.note)}</p>`
-                : '<p class="text-sm text-muted">No plates yet. Generate Image makes a front/side/back turnaround.</p>';
+            : '<p class="text-sm text-muted">No plates yet. Generate Image makes a front/side/back turnaround.</p>';
+    }
+
+    /**
+     * Render a character's views into a container.
+     *
+     * One renderer for both surfaces — the detail modal and the Views button —
+     * because two copies is exactly how the board and the viewer came to
+     * disagree about their own markup tools.
+     */
+    async function renderCharacterViewsInto(hostId, charId) {
+        const host = document.getElementById(hostId);
+        if (!host) return;
+        host.innerHTML = '<p class="text-sm text-muted">Loading views…</p>';
+        try {
+            const r = await api(`/characters/${charId}/refsheet/views`);
+            if (!host.isConnected) return;
+            host.innerHTML = r.views.length > 1 || (r.views.length === 1 && r.views[0].view !== 'front')
+                ? `<div class="section-label" style="margin-bottom:8px;">Reference views &middot; ${r.views.length}</div>`
+                  + characterViewsHtml(r, charId)
+                : '';
+        } catch (err) {
+            host.innerHTML = `<p class="text-sm text-muted">Could not read the views: ${esc(err.message)}</p>`;
+        }
+    }
+
+    async function showCharacterViews(charId) {
+        try {
+            const r = await api(`/characters/${charId}/refsheet/views`);
+            const body = characterViewsHtml(r, charId);
 
             // Reuses the entity inspector rather than inventing a second
             // modal: two panels showing a subject's pictures is how they come

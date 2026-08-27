@@ -780,6 +780,37 @@ async function generateRefSheet(req, res, charId) {
                 continue;
             }
 
+            /*
+             * A REGENERATED VIEW REPLACES ITS ROW.
+             *
+             * The file is written to the same per-view name and overwrites, so
+             * a second generation produced a NEW asset row pointing at the same
+             * picture. Ray was regenerated once and the views list showed six
+             * entries for three files; every regeneration after that adds three
+             * more, forever.
+             *
+             * It is not only cosmetic. Two rows for one view means "the plate"
+             * is whichever the query happens to return, the fingerprint is
+             * stamped on one of them, and accepting staleness on the visible
+             * row leaves the other still reported as behind.
+             *
+             * Scoped to subject AND view across extensions, the same rule the
+             * upload path follows: an uploaded JPEG lands beside a generated
+             * PNG of the same view otherwise.
+             */
+            const stale = db.prepare(
+                `SELECT id, file_path FROM film_assets
+                  WHERE project_id = ? AND character_id = ?
+                    AND asset_type IN ('character_sheet', 'reference_image')
+                    AND json_extract(metadata, '$.view') = ?`
+            ).all(ch.project_id, charId, view);
+            for (const old of stale) {
+                // The row goes; the FILE does not, because it is the same path
+                // that was just written to. Deleting it here would remove the
+                // picture this generation just produced.
+                db.prepare('DELETE FROM film_assets WHERE id = ?').run(old.id);
+            }
+
             const assetId = generateId();
             db.prepare(
                 // character_id goes in its own column, not only in metadata.
