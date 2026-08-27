@@ -240,29 +240,92 @@ const { buildPlatePrompt } = require('../lib/reference-plates');
 const SCENE_STYLE = 'amber and chrome, hard low-sun key raking through glass, practical tungsten '
     + 'warmth blooming in frame, light visible as shafts in heavy haze, 40mm anamorphic';
 
-test('a subject plate asks for isolation beside the medium, not after the style', () => {
+test('a subject plate opens with the empty frame, before any look is applied', () => {
     /*
-     * POSITION is the assertion, not presence. "Whatever leads a prompt is
-     * what the image is of" is the rule this codebase learned expensively, and
-     * an isolation clause further down is a footnote to the scene the style
-     * already established.
+     * POSITION, measured against the whole prompt. An earlier version checked
+     * only that the clause preceded the subject description, and passed while
+     * 276 characters of "hard low-sun key raking through glass … shafts in
+     * heavy haze … practical tungsten warmth blooming in frame" sat in front
+     * of it. Every one of those is a room with a window, asserted first and at
+     * length, and whatever leads a prompt is what the image is of.
      */
     const prompts = {
         character: buildRefSheetPrompt({ name: 'RAY', appearance_prompt: 'mid-40s man' }, 'front', SCENE_STYLE),
         prop: buildPlatePrompt('prop', { name: 'SALT SHAKER', visual_prompt: 'chrome shaker' }, SCENE_STYLE, null, false),
     };
-
     for (const kind of ISOLATED_KINDS) {
         const prompt = String(prompts[kind]);
-        assert.ok(prompt.includes(ISOLATION_CLAUSE),
-            `the ${kind} plate does not ask for an empty frame`);
-
-        // It must arrive before the subject description, not trailing it.
-        const isolationAt = prompt.indexOf(ISOLATION_CLAUSE);
-        const subjectAt = prompt.toLowerCase().indexOf(kind === 'character' ? 'mid-40s' : 'chrome shaker');
-        assert.ok(subjectAt === -1 || isolationAt < subjectAt,
-            `the ${kind} plate states the subject before it says the frame is empty`);
+        assert.ok(prompt.includes(ISOLATION_CLAUSE), `the ${kind} plate does not ask for an empty frame`);
+        const at = prompt.indexOf(ISOLATION_CLAUSE);
+        assert.ok(at < 110,
+            `the ${kind} plate says the frame is empty ${at} characters in, which is not the opening`);
     }
+});
+
+test('NO scene description reaches a character or prop plate', () => {
+    /*
+     * The rule, stated as the thing that must not happen. A style preset
+     * describes finished FRAMES — light through windows, practicals in shot —
+     * so on a plate it asks for the room the plate exists to exclude.
+     *
+     * Scoping it with "read this as look only" was an earlier attempt and it
+     * is a hedge: it hands the model the rooms and asks it not to build them.
+     * The plate takes the MEDIUM instead, and the scene description stays
+     * where it belongs — on the frames.
+     */
+    const SCENE_WORDS = ['raking through glass', 'shafts in heavy haze', 'tungsten', 'blooming in frame',
+                         'negative space', 'moving camera'];
+    const prompts = {
+        character: buildRefSheetPrompt({ name: 'RAY', appearance_prompt: 'mid-40s man' }, 'front', SCENE_STYLE),
+        prop: buildPlatePrompt('prop', { name: 'SHAKER', visual_prompt: 'chrome' }, SCENE_STYLE, null, false),
+    };
+    for (const kind of ISOLATED_KINDS) {
+        const prompt = String(prompts[kind]).toLowerCase();
+        for (const word of SCENE_WORDS) {
+            assert.ok(!prompt.includes(word.toLowerCase()),
+                `the ${kind} plate carries "${word}" from the style preset — that is a scene`);
+        }
+        assert.ok(!prompt.includes(SCENE_STYLE.toLowerCase().slice(0, 40)),
+            `the ${kind} plate carries the style preset verbatim`);
+    }
+});
+
+test('the medium comes from the mood board, and is never left unsaid', () => {
+    /*
+     * `medium` is the first entry in the board's KIND_ORDER precisely because
+     * it decides what kind of picture this is — photoreal, 3D render, cel
+     * animation. That is the one thing a plate needs from the look, and the
+     * one thing that has to match across a production.
+     *
+     * Never left unsaid: an unstated medium is what a model fills in with clip
+     * art, which is the defect the whole style-leads ordering was built
+     * against.
+     */
+    const { projectMedium, DEFAULT_MEDIUM } = require('../lib/plate-isolation');
+
+    const pid = 'c0000000-0000-4000-8000-0000000000aa';
+    db.prepare(`INSERT INTO film_projects (id, title, created_at, updated_at)
+                VALUES (?, 'm', datetime('now'), datetime('now'))`).run(pid);
+
+    // No board entry: photoreal, not nothing.
+    assert.strictEqual(projectMedium(pid), DEFAULT_MEDIUM);
+    assert.ok(DEFAULT_MEDIUM.length > 0, 'the default medium is empty, which is what invites clip art');
+
+    db.prepare(`INSERT INTO film_mood_board (id, project_id, kind, note, sort_order, created_at)
+                VALUES (?, ?, 'medium', 'stylised 3D animation', 0, datetime('now'))`)
+        .run(crypto.randomUUID(), pid);
+    assert.strictEqual(projectMedium(pid), 'stylised 3D animation');
+
+    // It reaches the plate, and the framing noun does not contradict it.
+    const prompt = buildRefSheetPrompt({ name: 'RAY', appearance_prompt: 'x' }, 'front', SCENE_STYLE, pid);
+    assert.ok(prompt.startsWith('stylised 3D animation'),
+        'the board medium does not lead the plate prompt');
+    assert.ok(!/photograph/i.test(prompt.slice(0, 120)),
+        'the opening says "photograph" for a 3D-animated production — two incompatible mediums in one clause');
+
+    // An unreadable board must never stop a plate being generated.
+    assert.strictEqual(projectMedium(null), DEFAULT_MEDIUM);
+    assert.strictEqual(projectMedium('no-such-project'), DEFAULT_MEDIUM);
 });
 
 test('a location plate is exempt, and stays an environment', () => {
@@ -298,8 +361,11 @@ test('both builders share one isolation clause', () => {
     for (const [name, file] of [['characters route', 'routes/characters.js'],
                                 ['reference-plates', 'lib/reference-plates.js']]) {
         const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-        assert.match(src, /ISOLATION_CLAUSE/,
-            `${name} writes its own isolation wording instead of sharing one`);
+        // They share the whole OPENING now, not merely the clause: the medium,
+        // the framing noun and the empty frame are one construction, and a
+        // builder assembling its own would be free to reorder them.
+        assert.match(src, /subjectPlateOpening\(/,
+            `${name} writes its own plate opening instead of sharing one`);
         assert.ok(!/plain seamless backdrop'|plain seamless background'/.test(src),
             `${name} still carries a private isolation literal`);
     }

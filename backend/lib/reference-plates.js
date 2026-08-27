@@ -20,7 +20,7 @@
  * here so a fix lands once.
  */
 
-const { ISOLATION_CLAUSE, ISOLATED_KINDS, isolationNegativeFor } = require('./plate-isolation');
+const { ISOLATED_KINDS, isolationNegativeFor, subjectPlateOpening, projectMedium } = require('./plate-isolation');
 const { db, generateId } = require('../db/database');
 const { persistProviderMedia } = require('./provider-media');
 const { getFileUrl, ensureDir } = require('./file-storage');
@@ -58,7 +58,9 @@ const PLATE_KINDS = {
         // and a hand into every frame that references the object. The clause
         // is shared with the character sheet: two literals is how the two
         // came to ask for isolation with different force.
-        constraints: [ISOLATION_CLAUSE, 'no people'],
+        // The isolation itself now LEADS the prompt; what stays here is the
+        // one thing that is not covered by "nothing else visible".
+        constraints: ['no people'],
     },
 };
 
@@ -235,11 +237,31 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
         // length, and an isolation clause further down is a footnote to it.
         // A LOCATION plate is exempt — it IS an environment, and asking one for
         // "no scenery" would ask for a picture of a place with no place in it.
-        ISOLATED_KINDS.includes(kind)
-            ? (style ? `${style}. Photograph of the ${kind}, ${ISOLATION_CLAUSE}`
-                     : `photoreal cinematic photograph of the ${kind}, ${ISOLATION_CLAUSE}`)
-            : (style ? `${style}. Photograph of the ${kind}`
-                     : `photoreal cinematic photograph of the ${kind}`),
+        /*
+         * For a character or a prop the EMPTY FRAME is the first thing said,
+         * and the style follows scoped to look only. Isolation after the style
+         * was measurably not enough: a real preset put 276 characters of rooms
+         * and windows ahead of it.
+         *
+         * A LOCATION plate keeps the original order untouched — it IS an
+         * environment, its style legitimately describes the place, and there is
+         * nothing here to exclude.
+         */
+        /*
+         * A subject plate takes the MEDIUM and nothing else from the look.
+         *
+         * The style preset describes finished frames, so on a plate it asks
+         * for the room the plate exists to exclude. What has to match across a
+         * production is what KIND of picture this is — photoreal, 3D render,
+         * cel animation — and the mood board records exactly that.
+         *
+         * A LOCATION plate is untouched: it IS an environment, its style
+         * legitimately describes the place, and there is nothing to exclude.
+         */
+        ...(ISOLATED_KINDS.includes(kind)
+            ? [subjectPlateOpening(projectMedium(subject.project_id), `Studio image of the ${kind}`)]
+            : [style ? `${style}. Photograph of the ${kind}`
+                     : `photoreal cinematic photograph of the ${kind}`]),
         framing,
     ];
 

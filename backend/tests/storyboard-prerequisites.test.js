@@ -55,19 +55,39 @@ const PLATE_BUILDERS = [
         build: style => buildRefSheetPrompt(
             { name: 'MAYA', appearance_prompt: 'mid-30s woman, rust cardigan' }, 'front', style),
         // The phrase that asks for a stock asset render.
-        boilerplate: /reference sheet|T-pose|seamless background|white background/i,
+        boilerplate: /reference sheet|T-pose|white background/i,
+        /*
+         * A SUBJECT plate takes the MEDIUM, not the style preset.
+         *
+         * The original rule here — the style must reach every plate and lead
+         * it — was written against a plate that came back as a flat vector
+         * cutout, and it fixed that. It also carried the style's SCENE
+         * description onto plates that exist to have no scene: a real preset
+         * put 276 characters of "hard low-sun key raking through glass …
+         * practical tungsten warmth blooming in frame" on a picture whose
+         * whole job is an empty frame.
+         *
+         * The guarantee is unchanged — a plate must never leave its medium
+         * unsaid — and it is now carried by the mood board's `medium` rather
+         * than by the whole preset.
+         */
+        takesStyle: false,
     },
     {
         id: 'location',
         build: style => buildPlatePrompt('location',
             { name: 'SUBURBAN STREET', description: 'late-1970s cul-de-sac' }, style),
         boilerplate: /reference plate/i,
+        // A location plate IS an environment; its style legitimately
+        // describes the place, and there is nothing to exclude.
+        takesStyle: true,
     },
     {
         id: 'prop',
         build: style => buildPlatePrompt('prop',
             { name: 'Grocery bag', description: 'brown paper bag' }, style),
         boilerplate: /reference plate/i,
+        takesStyle: false,
     },
 ];
 
@@ -104,20 +124,52 @@ test('the previs op list matches what the route actually dispatches', () => {
     }
 });
 
-test('every plate is rendered in the project look, not a stock asset style', () => {
+test('every plate states what kind of picture it is, before any boilerplate', () => {
+    /*
+     * The guarantee is that a plate never lets boilerplate decide its medium —
+     * that is what produced a flat vector cutout with a shrug emoji. WHICH
+     * statement carries the medium now differs by kind: a location takes the
+     * project style, and a character or prop takes the mood board's `medium`,
+     * because a style preset describes finished frames and a subject plate
+     * exists to have no frame around it.
+     */
     const broken = [];
     for (const b of PLATE_BUILDERS) {
         const prompt = b.build(STYLE);
-        const stylePos = prompt.indexOf(STYLE.slice(0, 30));
         const boiler = prompt.match(b.boilerplate);
-        if (stylePos < 0) { broken.push(`${b.id}: the style never reaches the prompt`); continue; }
+
+        const mediumPos = b.takesStyle
+            ? prompt.indexOf(STYLE.slice(0, 30))
+            : (/^(photoreal|[a-z0-9 ,'-]*?(animation|render|photoreal|illustration))/i.exec(prompt) ? 0 : -1);
+
+        if (mediumPos < 0) {
+            broken.push(b.takesStyle
+                ? `${b.id}: the style never reaches the prompt`
+                : `${b.id}: the prompt does not open by saying what kind of picture it is`);
+            continue;
+        }
         if (!boiler) continue;   // no boilerplate to outrank
-        if (stylePos > boiler.index) {
-            broken.push(`${b.id}: "${boiler[0]}" leads and the style trails at ${stylePos} — `
-                + 'the medium is decided before the look is mentioned');
+        if (mediumPos > boiler.index) {
+            broken.push(`${b.id}: "${boiler[0]}" leads and the medium trails at ${mediumPos} — `
+                + 'the kind of picture is decided before it is stated');
         }
     }
     assert.deepStrictEqual(broken, [], `\n  ${broken.join('\n  ')}`);
+});
+
+test('a subject plate does not carry the style preset at all', () => {
+    // The rule stated negatively, beside the one above: whatever the style
+    // says about places must not reach a picture that has no place in it.
+    for (const b of PLATE_BUILDERS.filter(x => !x.takesStyle)) {
+        const prompt = b.build(STYLE);
+        assert.ok(!prompt.includes(STYLE.slice(0, 30)),
+            `${b.id} carries the style preset, which describes a scene`);
+    }
+    // And the one that legitimately does still does.
+    for (const b of PLATE_BUILDERS.filter(x => x.takesStyle)) {
+        assert.ok(b.build(STYLE).includes(STYLE.slice(0, 30)),
+            `${b.id} lost the style preset, which describes the place it is a plate of`);
+    }
 });
 
 test('a plate with no style still names its medium, so it cannot default to clip art', () => {

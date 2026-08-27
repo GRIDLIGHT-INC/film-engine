@@ -7,7 +7,7 @@
  * POST /film/characters/:id/refsheet/generate     — FILM-014: Generate reference sheet
  * GET  /film/characters/:id/refsheet              — FILM-014: Get reference sheet status
  */
-const { ISOLATION_CLAUSE, isolationNegativeFor } = require('../lib/plate-isolation');
+const { isolationNegativeFor, subjectPlateOpening, projectMedium } = require('../lib/plate-isolation');
 const { orderByViewSql } = require('../lib/plate-views');
 const { db, generateId } = require('../db/database');
 const { stampSubject } = require('../lib/story-bible');
@@ -542,9 +542,12 @@ const REFSHEET_NEGATIVE_BASE = 'blurry, low quality, distorted, multiple charact
  */
 const REFSHEET_NEGATIVE = isolationNegativeFor('character', REFSHEET_NEGATIVE_BASE);
 
-function buildRefSheetPrompt(character, view, stylePreset) {
+function buildRefSheetPrompt(character, view, stylePreset, projectId) {
     const parts = [];
     const style = stylePreset && String(stylePreset).trim();
+    // The board decides the medium. With no board entry this is photoreal —
+    // never nothing, because nothing is what a model fills in with clip art.
+    const medium = projectMedium(projectId);
 
     // The MEDIUM leads. Appending the look last left "character reference
     // sheet, front view, full body, T-pose, plain seamless background" to
@@ -569,9 +572,36 @@ function buildRefSheetPrompt(character, view, stylePreset) {
      * length, against three trailing words. Whatever leads is what the image
      * is of, and that applies to what is NOT in it too.
      */
-    parts.push(style
-        ? `${style}. Full-body studio photograph, ${ISOLATION_CLAUSE}`
-        : `photoreal cinematic full-body studio photograph, ${ISOLATION_CLAUSE}`);
+    /*
+     * THE EMPTY FRAME IS THE FIRST THING SAID.
+     *
+     * Isolation after the style was not enough, and the measurement is the
+     * argument: a real preset put 276 characters of "hard low-sun key raking
+     * through glass … shafts in heavy haze … practical tungsten warmth
+     * blooming in frame" ahead of it. Every one of those is a room with a
+     * window, asserted first and at length.
+     *
+     * The medium is still explicit and still leads, so the clip-art defect
+     * this ordering was built against does not return: "photoreal full-body
+     * studio photograph" names a medium far more plainly than a colour palette
+     * does. What must never lead again is `character reference sheet, front
+     * view, T-pose`, which names a DOCUMENT.
+     */
+    /*
+     * THE MEDIUM, NOT THE STYLE PRESET.
+     *
+     * The preset describes finished frames — light through windows, practicals
+     * in shot — so on a plate it asks for the room the plate exists to
+     * exclude. A plate needs exactly one thing from the look: what KIND of
+     * picture this is. Photoreal, 3D render, cel animation. That is what has
+     * to match across a production, and leaving it unsaid is what made a plate
+     * come back as a flat vector cutout.
+     *
+     * `stylePreset` is still accepted so every existing caller and test keeps
+     * working; it is used only when the board records no medium, and only its
+     * medium-bearing intent is wanted.
+     */
+    parts.push(subjectPlateOpening(medium, 'Full-body studio image of the subject'));
     // The view still has to be named, or three plates are three unrelated
     // pictures rather than a turnaround.
     parts.push(`${view} view of the subject`);
@@ -629,7 +659,7 @@ function previewRefSheet(req, res, charId, query) {
         spendContext(project || { id: ch.project_id }, null, null, tierOverride)));
 
     const view = q.view || REFSHEET_VIEWS[0];
-    const prompt = buildRefSheetPrompt(ch, view, project && project.style_preset);
+    const prompt = buildRefSheetPrompt(ch, view, project && project.style_preset, ch.project_id);
     const payload = require('../lib/capability-payloads').withTierModel(
         { prompt }, { project: project || { id: ch.project_id }, tierOverride }, adapter);
 
@@ -703,8 +733,8 @@ async function generateRefSheet(req, res, charId) {
         // look plate starts voting on who that is.
         const styleRefs = require('../lib/reference-plates').styleReferencesFor(db, ch.project_id);
         let prompt = styleRefs.length && styleRefs[0].tag
-            ? `${buildRefSheetPrompt(ch, view, projectStyle)}, in the light, palette and colour grade of @${styleRefs[0].tag}`
-            : buildRefSheetPrompt(ch, view, projectStyle);
+            ? `${buildRefSheetPrompt(ch, view, projectStyle, ch.project_id)}, in the light, palette and colour grade of @${styleRefs[0].tag}`
+            : buildRefSheetPrompt(ch, view, projectStyle, ch.project_id);
         /*
          * An edited prompt replaces the composed one for THIS view.
          *
@@ -760,7 +790,7 @@ async function generateRefSheet(req, res, charId) {
                 const { reference_images: _dropped, ...styleless } = payload;
                 result = await imageProvider.generate('image', {
                     ...styleless,
-                    prompt: buildRefSheetPrompt(ch, view, null),
+                    prompt: buildRefSheetPrompt(ch, view, null, ch.project_id),
                 }, { timeout: 300000 });
                 if (result.ok) styleApplied = false;
             }
