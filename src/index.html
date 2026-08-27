@@ -6216,6 +6216,39 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     tatami level, <strong>1.6m</strong> is eye level. Leave anything blank you do not know.
                 </p>
                 <div class="form-group"><label>Note to yourself</label><textarea data-field="note" rows="2" placeholder="Why this works, what it needs..."></textarea></div>
+
+                <!--
+                  VISUALS — a file or a link, because a reference lives in both
+                  places: a frame grab on this machine, and a clip that shows a
+                  move a still cannot. Only offered on a SAVED entry: an
+                  attachment needs something to attach to, and uploading into an
+                  entry that is then cancelled would orphan the file.
+                -->
+                <div id="styleBookMediaSection" style="display:none;">
+                    <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">Visuals</h4>
+                    <div id="styleBookMediaList" class="mb-8"></div>
+                    <div class="form-group">
+                        <label>Add a picture or clip</label>
+                        <input type="file" id="styleBookMediaFile" accept="image/*,video/*">
+                    </div>
+                    <div class="form-group">
+                        <label>&hellip;or paste a link</label>
+                        <input type="text" id="styleBookMediaUrl" placeholder="https://youtube.com/watch?v=… or a direct image/clip URL">
+                    </div>
+                    <div class="form-group">
+                        <label>What it shows</label>
+                        <input type="text" id="styleBookMediaNote" placeholder="The push-in at 1:24">
+                    </div>
+                    <div class="btn-row" style="margin-bottom:12px;">
+                        <button class="btn btn-secondary btn-sm" id="styleBookAddMediaBtn">Add visual</button>
+                    </div>
+                    <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
+                        Visuals are reference for you. A style still is the lowest-ranked reference kind and
+                        is dropped before a request is built on any shot with a cast and a location; a clip
+                        reaches no generator at all. What reaches a picture is the camera facets above.
+                    </p>
+                </div>
+
                 <div class="btn-row">
                     <button class="btn btn-primary" onclick="saveStyleBookEntry()">Save</button>
                     <button class="btn btn-secondary" onclick="closeModal('styleBookModal')">Cancel</button>
@@ -24121,10 +24154,42 @@ ${fountainText.slice(0, 50000)}`;
         for (const f of ['shot_type', 'movement', 'lens', 'sensor', 'aperture', 'height_m', 'focus_distance_m', 'note']) {
             set(f, c[f]);
         }
+
+        /*
+         * Visuals need something to attach to. On a NEW entry the section is
+         * hidden and appears after the first save — an upload into an entry
+         * that is then cancelled would leave a file with no owner.
+         */
+        /*
+         * ALWAYS SHOWN.
+         *
+         * Hiding it until the entry was saved meant pressing "+ Shot" offered
+         * no way to add a picture at all — which reads as the feature being
+         * missing, and was reported as exactly that. The invariant it was
+         * protecting is real (an upload needs an owner, or the file is
+         * orphaned by a cancel), so Add visual SAVES THE ENTRY FIRST rather
+         * than making the director do it.
+         */
+        const mediaSection = document.getElementById('styleBookMediaSection');
+        const addBtn = document.getElementById('styleBookAddMediaBtn');
+        mediaSection.style.display = '';
+        addBtn.onclick = () => addStyleBookMedia(entry ? entry.id : null);
+        if (entry) refreshStyleBookMedia(entry.id);
+        else {
+            document.getElementById('styleBookMediaList').innerHTML =
+                '<p class="text-sm text-muted">Add one below &mdash; the shot is saved automatically '
+                + 'when you do.</p>';
+        }
         showModal('styleBookModal');
     }
 
-    async function saveStyleBookEntry() {
+    /**
+     * @param {{keepOpen?: boolean}} [opts] keepOpen leaves the modal up and
+     *        returns the saved entry, so a visual can be attached to a shot
+     *        that did not exist a moment ago.
+     */
+    async function saveStyleBookEntry(opts) {
+        const keepOpen = !!(opts && opts.keepOpen);
         const m = document.getElementById('styleBookModal');
         const get = f => (m.querySelector(`[data-field="${f}"]`)?.value || '').trim();
         const num = f => { const raw = get(f); return raw === '' ? undefined : Number(raw); };
@@ -24141,17 +24206,137 @@ ${fountainText.slice(0, 50000)}`;
             name: get('name'), description: get('description'),
             tags: get('tags'), scope: get('scope') || 'library', camera,
         };
-        if (!body.name) { setStatus('Give the shot a name'); return; }
+        if (!body.name) { setStatus('Give the shot a name first'); return null; }
 
         const id = document.getElementById('styleBookEditId').value;
         try {
-            if (id) await api('/style-book/' + id, { method: 'PUT', body: JSON.stringify(body) });
-            else await api((state.currentProject ? '/projects/' + state.currentProject.id : '') + '/style-book',
-                { method: 'POST', body: JSON.stringify(body) });
-            closeModal('styleBookModal');
+            const r = id
+                ? await api('/style-book/' + id, { method: 'PUT', body: JSON.stringify(body) })
+                : await api((state.currentProject ? '/projects/' + state.currentProject.id : '') + '/style-book',
+                    { method: 'POST', body: JSON.stringify(body) });
+            if (!keepOpen) closeModal('styleBookModal');
             setStatus('Style book saved');
             loadStyleBook();
+            return (r && r.entry) || { id };
+        } catch (err) { setStatus('Error: ' + err.message); return null; }
+    }
+
+    /**
+     * Attach a visual to a style-book entry — a file or a link.
+     *
+     * Both, because a reference lives in both places: a frame grab on this
+     * machine, and a YouTube clip that demonstrates a move a still cannot. The
+     * two are stored differently (bytes on disk versus a URL) and rendered
+     * differently, so the control offers both plainly rather than making the
+     * director work out which field applies.
+     */
+    async function addStyleBookMedia(entryId) {
+        /*
+         * An unsaved entry is saved first, here, rather than refusing.
+         * "Save it, then re-open it, then attach" is three steps to do one
+         * thing, and the reason for the constraint — a file needs an owner —
+         * is satisfied just as well by creating the owner.
+         */
+        if (!entryId) {
+            const saved = await saveStyleBookEntry({ keepOpen: true });
+            if (!saved) return;                 // no name yet, or the save failed
+            entryId = saved.id;
+            document.getElementById('styleBookEditId').value = saved.id;
+            document.getElementById('styleBookAddMediaBtn').onclick = () => addStyleBookMedia(saved.id);
+        }
+        const file = document.getElementById('styleBookMediaFile');
+        const urlBox = document.getElementById('styleBookMediaUrl');
+        const note = (document.getElementById('styleBookMediaNote')?.value || '').trim();
+        const url = (urlBox?.value || '').trim();
+
+        try {
+            if (file && file.files && file.files[0]) {
+                const f = file.files[0];
+                const data = await new Promise((resolve, reject) => {
+                    const r = new FileReader();
+                    r.onload = () => resolve(r.result);
+                    r.onerror = () => reject(new Error('could not read that file'));
+                    r.readAsDataURL(f);
+                });
+                await api(`/style-book/${entryId}/media`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        data, name: f.name, note,
+                        media_kind: /^video\//.test(f.type) ? 'video' : 'image',
+                    }),
+                });
+                file.value = '';
+            } else if (url) {
+                await api(`/style-book/${entryId}/media`, {
+                    method: 'POST', body: JSON.stringify({ source_url: url, note }),
+                });
+                urlBox.value = '';
+            } else {
+                setStatus('Choose a file or paste a link first');
+                return;
+            }
+            if (document.getElementById('styleBookMediaNote')) {
+                document.getElementById('styleBookMediaNote').value = '';
+            }
+            setStatus('Visual added');
+            await refreshStyleBookMedia(entryId);
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function removeStyleBookMedia(entryId, mediaId) {
+        if (!confirm('Remove this visual from the entry?')) return;
+        try {
+            await api(`/style-book/media/${mediaId}`, { method: 'DELETE' });
+            await refreshStyleBookMedia(entryId);
+            loadStyleBook();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /** Render one visual as what it actually is. */
+    function styleBookMediaTile(entryId, m) {
+        const src = m.url && m.url.startsWith('/film/') ? API_BASE + m.url : m.url;
+        let body;
+        if (m.embed_url) {
+            // A move is what a clip is FOR — an embedded player shows it where
+            // a thumbnail would only prove a link exists.
+            body = `<iframe src="${esc(m.embed_url)}" allowfullscreen loading="lazy"
+                        style="width:100%;aspect-ratio:16/9;border:0;border-radius:6px;display:block;"></iframe>`;
+        } else if (m.link_kind === 'video' || m.media_kind === 'video') {
+            body = `<video src="${esc(src)}" controls preload="metadata"
+                        style="width:100%;border-radius:6px;display:block;"></video>`;
+        } else if (m.link_kind === 'link') {
+            body = `<a href="${esc(src)}" target="_blank" rel="noopener"
+                       class="text-sm" style="display:block;padding:18px 10px;text-align:center;">
+                       ${esc(src.slice(0, 60))}&hellip;</a>`;
+        } else {
+            body = `<img src="${esc(src)}" alt="" loading="lazy"
+                        style="width:100%;border-radius:6px;display:block;cursor:zoom-in;"
+                        onclick="openPlateViewer('${esc(src)}', ${jsAttr(m.note || 'Reference')})"
+                        onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'text-sm text-muted',textContent:'This picture could not be loaded.'}))">`;
+        }
+        return `<div style="border:1px solid var(--gl-border-subtle);border-radius:8px;padding:8px;min-width:0;">
+            ${body}
+            ${m.note ? `<p class="text-sm" style="margin-top:6px;">${esc(m.note)}</p>` : ''}
+            <div class="card-actions">
+                <button class="btn btn-danger btn-sm"
+                        onclick="removeStyleBookMedia('${esc(entryId)}','${esc(m.id)}')">Remove</button>
+            </div>
+        </div>`;
+    }
+
+    async function refreshStyleBookMedia(entryId) {
+        const host = document.getElementById('styleBookMediaList');
+        if (!host) return;
+        try {
+            const r = await api(`/style-book/${entryId}`);
+            const media = r.entry.media || [];
+            host.innerHTML = media.length
+                ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">`
+                  + media.map(m => styleBookMediaTile(entryId, m)).join('') + '</div>'
+                : '<p class="text-sm text-muted">No visuals yet.</p>';
+        } catch (err) {
+            host.innerHTML = `<p class="text-sm text-muted">Could not load visuals: ${esc(err.message)}</p>`;
+        }
     }
 
     async function deleteStyleBookEntry(id) {
@@ -24821,6 +25006,9 @@ ${fountainText.slice(0, 50000)}`;
                     ${x.honours_resolution === false
                         ? `<span class="badge" style="background:var(--gl-warning);"
                                  title="${esc(x.size_note || '')}">ignores your resolution</span>` : ''}
+                    ${x.max_size
+                        ? `<span class="badge" title="The largest output this MODEL offers — not the provider's best"
+                           >max ${esc(x.max_size)}</span>` : ''}
                     ${x.inferred ? '<span class="badge" title="Not published by the provider — inferred, and may be wrong">inferred</span>' : ''}
                     ${x.self_hosted ? '<span class="badge" title="No per-call charge. Zero because nobody bills for it, not because it is cheap.">self-hosted</span>' : ''}
                     ${x.available ? '' : `<span class="badge" style="background:var(--gl-warning);" title="${esc(x.needs || '')}">no key</span>`}

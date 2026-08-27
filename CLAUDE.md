@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (83 migrations)
+│   │   └── migrations/     # SQL migration files (84 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -264,6 +264,7 @@ film-engine/
 │       ├── plate-viewer.test.js        # A plate you cannot see full size is one you cannot judge
 │       ├── location-plate-resolution.test.js # A location plate is 2K or better, or says why not
 │       ├── requested-size.test.js       # A resolution that reaches nothing is worse than none
+│       ├── style-book-media.test.js    # A visual arrives as a file or a link, and both must work
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -781,6 +782,12 @@ A named shot with the camera details you know and reference visuals, kept across
 **A stage pose is not carried.** `position` and `rotation` are six degrees of freedom in one previs stage's coordinate space; the same numbers put the camera somewhere else entirely in another scene. They are in `POSE_FACETS`, reported in `skipped` — an omission that is stated is a decision, one that is silent is a bug. The carried set is **derived from the scene-card schema source**, so a facet added to the card later is carried with nothing to remember.
 
 **The visuals are for a person, and the UI says so.** `KIND_RANK` is `anchor 0, character 1, location 2, prop 3, style 4` against three references on Runway and five on Meshy — a style still already ranks last and is dropped before the request is built on any shot with a cast and a location, and a clip reaches no generator at all. Saying it outright is the difference between a reference library and a director attaching five pictures believing the frame is conditioned on them.
+
+**Visuals arrive two ways, and both had to be built.** The table and the route shipped with **no way in** — no upload control, no link field, and the entry card linked to a serving route that was never written, so an attached picture would have rendered broken. A reference lives in both places: a frame grab on this machine, and a clip that shows a move a still cannot.
+
+An upload has bytes and needs a route; a **link has neither and must not be given a fake `file_path`**, or the serving route 404s on something that was never a file — hence `source_url` as its own column (migration 086). `classifyLink` decides once on the server what a URL points at — `youtube`, `vimeo`, `image`, `video` or a bare `link` — with an `embed_url` where one applies, so the page does not guess and an agent reading the entry knows too. Only `http(s)` is accepted: a `javascript:` URL in something the page renders is a script injection with extra steps.
+
+The section is shown on a **new** shot as well as a saved one. Hiding it until the entry existed meant pressing *+ Shot* offered no way to add a picture at all — which reads as the feature not existing, and was reported as exactly that. The invariant it protected is real (an upload needs an owner, or a cancelled entry orphans the file) and is satisfied by **creating** the owner: *Add visual* saves the shot first and stays open. "Save it, re-open it, then attach" is three steps to do one thing.
 
 Cross-project, so the page is in `ALWAYS_AVAILABLE` rather than one of the nine `PROJECT_PHASES`: a library that outlives every project does not belong inside the workflow of one. Served at `GET|POST /film/style-book`, `GET|PUT|DELETE /film/style-book/:id`, `POST /film/shots/:id/style-book/:entryId`, on a rail button between Setup and Terms, and as six tools (**175 tools**).
 
@@ -1945,7 +1952,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (83 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (84 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -2127,6 +2134,7 @@ node --test backend/tests/style-book.test.js
 node --test backend/tests/plate-viewer.test.js
 node --test backend/tests/location-plate-resolution.test.js
 node --test backend/tests/requested-size.test.js
+node --test backend/tests/style-book-media.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js

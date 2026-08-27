@@ -212,6 +212,15 @@ function compareGenerators(capability, opts = {}) {
                 size_control: adapter.sizeControl || 'ratio-only',
                 honours_resolution: !!adapter.sizeControl && adapter.sizeControl !== 'ratio-only',
                 size_note: adapter.sizeControlReason || null,
+                /*
+                 * Per MODEL where the adapter can say. Google's draft model is
+                 * 1K only while its other two reach 4K, so "this provider does
+                 * 2K" is true of the provider and false of the model the draft
+                 * tier would actually run — the same over-promise one level
+                 * down.
+                 */
+                max_size: (model && typeof adapter.maxSizeForModel === 'function')
+                    ? adapter.maxSizeForModel(model) : null,
 
                 tier: tierFor(capability, adapter.id, model),
                 source: r.source || base.source || null,

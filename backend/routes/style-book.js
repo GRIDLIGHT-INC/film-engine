@@ -34,6 +34,44 @@ const MEDIA_NOTE = 'Visuals are reference for you. A still is the lowest-ranked 
     + 'and is dropped before the request is built on any shot with a cast and a location; a clip '
     + 'reaches no generator at all. What reaches a picture is the camera facets, via the shot card.';
 
+
+/**
+ * What a link POINTS AT, decided once on the server.
+ *
+ * A YouTube URL and a JPEG URL are both "a link" and render completely
+ * differently — one is an embedded player, the other a picture. Classifying it
+ * here means the page does not guess and an agent reading the entry knows too.
+ */
+function classifyLink(url) {
+    const raw = String(url || '').trim();
+    let parsed;
+    try { parsed = new URL(raw); } catch (_) { return null; }
+    // http(s) only. A javascript: or data: URL in something the page renders
+    // is a script injection with extra steps.
+    if (!/^https?:$/.test(parsed.protocol)) return null;
+
+    const host = parsed.hostname.replace(/^www\./, '');
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+        const v = parsed.searchParams.get('v');
+        if (v) return { link_kind: 'youtube', embed_url: `https://www.youtube.com/embed/${v}` };
+    }
+    if (host === 'youtu.be') {
+        const v = parsed.pathname.slice(1);
+        if (v) return { link_kind: 'youtube', embed_url: `https://www.youtube.com/embed/${v}` };
+    }
+    if (host === 'vimeo.com') {
+        const v = parsed.pathname.split('/').filter(Boolean)[0];
+        if (/^\d+$/.test(v || '')) return { link_kind: 'vimeo', embed_url: `https://player.vimeo.com/video/${v}` };
+    }
+    if (/\.(png|jpe?g|gif|webp|avif)$/i.test(parsed.pathname)) {
+        return { link_kind: 'image', embed_url: null };
+    }
+    if (/\.(mp4|webm|mov|m4v)$/i.test(parsed.pathname)) {
+        return { link_kind: 'video', embed_url: null };
+    }
+    return { link_kind: 'link', embed_url: null };
+}
+
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
@@ -63,10 +101,20 @@ function present(row, media) {
 }
 
 function mediaFor(entryId) {
-    return db.prepare(
-        `SELECT id, media_kind, asset_id, file_path, note, sort_order
+    const rows = db.prepare(
+        `SELECT id, media_kind, asset_id, file_path, source_url, note, sort_order
            FROM film_style_book_media WHERE entry_id = ? ORDER BY sort_order, created_at`
     ).all(entryId);
+    return rows.map(r => {
+        const link = r.source_url ? classifyLink(r.source_url) : null;
+        return {
+            ...r,
+            // An uploaded visual gets a URL to fetch it by; a link is its own.
+            url: r.file_path ? `/film/style-book/media/${r.id}/file` : (r.source_url || null),
+            link_kind: link ? link.link_kind : null,
+            embed_url: link ? link.embed_url : null,
+        };
+    });
 }
 
 /**
@@ -206,15 +254,55 @@ function addMedia(req, res, entryId) {
     if (known.length && !known.includes(kind)) {
         return json(res, 400, { error: `media_kind must be one of: ${known.join(', ')}`, media_kinds: known });
     }
-    if (!body.file_path && !body.asset_id) {
-        return json(res, 400, { error: 'a visual needs a file_path or an asset_id' });
+    /*
+     * Three ways in, and they are genuinely different.
+     *
+     * `data` is an upload: bytes arrive and are written to disk under this
+     * entry, and the row gets a file_path and a serving URL. `source_url` is a
+     * reference that lives somewhere else — no bytes, no path, and it must NOT
+     * be given a fake one or the serving route 404s on something that was
+     * never a file. `asset_id` points at something the engine already made.
+     */
+    let filePath = '';
+    let sourceUrl = '';
+
+    if (body.data) {
+        const decoded = /^data:([^;,]+)?(?:;base64)?,(.*)$/s.exec(String(body.data));
+        if (!decoded) return json(res, 400, { error: 'data must be a data: URI' });
+        let bytes;
+        try { bytes = Buffer.from(decoded[2], 'base64'); } catch (_) { bytes = null; }
+        if (!bytes || !bytes.length) return json(res, 400, { error: 'the upload decoded to nothing' });
+
+        const fsx = require('fs');
+        const pathx = require('path');
+        const dir = pathx.join(process.env.FILM_DATA_DIR
+            || pathx.join(require('os').homedir(), '.gridlight', 'film-engine', 'data'),
+        'stylebook', entryId);
+        fsx.mkdirSync(dir, { recursive: true });
+        const safe = String(body.name || 'visual').replace(/[^\w.-]/g, '_').slice(0, 80) || 'visual';
+        filePath = pathx.join(dir, `${Date.now()}_${safe}`);
+        fsx.writeFileSync(filePath, bytes);
+    } else if (body.source_url) {
+        const link = classifyLink(body.source_url);
+        if (!link) {
+            return json(res, 400, {
+                error: 'That is not a usable link. Paste an http(s) URL — a YouTube or Vimeo page, '
+                    + 'or a direct link to an image or a clip.',
+            });
+        }
+        sourceUrl = String(body.source_url).trim();
+    } else if (!body.asset_id && !body.file_path) {
+        return json(res, 400, { error: 'a visual needs an uploaded file, a link, or an asset id' });
+    } else {
+        filePath = String(body.file_path || '');
     }
 
     const id = generateId();
     db.prepare(
-        `INSERT INTO film_style_book_media (id, entry_id, media_kind, asset_id, file_path, note, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, entryId, kind, body.asset_id || null, String(body.file_path || ''),
+        `INSERT INTO film_style_book_media
+           (id, entry_id, media_kind, asset_id, file_path, source_url, note, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, entryId, kind, body.asset_id || null, filePath, sourceUrl,
         String(body.note || '').slice(0, 500),
         Number.isFinite(body.sort_order) ? body.sort_order : mediaFor(entryId).length);
 
@@ -276,6 +364,41 @@ function applyToShot(req, res, shotId, entryId) {
     });
 }
 
+
+/**
+ * Serve an uploaded visual.
+ *
+ * The entry card linked here before this existed, so every uploaded picture
+ * rendered as a broken image — the same "a perfectly good string that 404s"
+ * that servedUrlFor and the media-import URL each shipped once.
+ *
+ * Containment is by RESOLVED PATH: the row's file_path comes from the
+ * database, and the style-book directory sits beside the project database and
+ * every provider credential.
+ */
+function serveMedia(res, mediaId) {
+    const fsx = require('fs');
+    const pathx = require('path');
+    const row = db.prepare('SELECT file_path FROM film_style_book_media WHERE id = ?').get(mediaId);
+    if (!row || !row.file_path) return json(res, 404, { error: 'Visual not found' });
+
+    const root = pathx.resolve(process.env.FILM_DATA_DIR
+        || pathx.join(require('os').homedir(), '.gridlight', 'film-engine', 'data'), 'stylebook');
+    const resolved = pathx.resolve(row.file_path);
+    if (!resolved.startsWith(root + pathx.sep)) {
+        return json(res, 403, { error: 'That file is outside the style book' });
+    }
+    if (!fsx.existsSync(resolved)) return json(res, 404, { error: 'The file is missing' });
+
+    const ext = pathx.extname(resolved).toLowerCase();
+    const type = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif', '.webp': 'image/webp', '.mp4': 'video/mp4',
+        '.webm': 'video/webm', '.mov': 'video/quicktime' }[ext] || 'application/octet-stream';
+
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=31536000' });
+    res.end(fsx.readFileSync(resolved));
+}
+
 function handleStyleBook(req, res, urlParts, query) {
     // /film/projects/:id/style-book
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'style-book') {
@@ -298,9 +421,10 @@ function handleStyleBook(req, res, urlParts, query) {
             // the common case the awkward one.
             if (req.method === 'POST') return createEntry(req, res, null);
         }
-        // /film/style-book/media/:id
+        // /film/style-book/media/:id[/file]
         if (urlParts[2] === 'media' && urlParts[3]) {
-            if (req.method === 'DELETE') return deleteMedia(res, urlParts[3]);
+            if (urlParts[4] === 'file' && req.method === 'GET') return serveMedia(res, urlParts[3]);
+            if (!urlParts[4] && req.method === 'DELETE') return deleteMedia(res, urlParts[3]);
         }
         // /film/style-book/:id[/media]
         if (urlParts[2] && urlParts[2] !== 'media') {

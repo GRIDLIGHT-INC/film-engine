@@ -204,6 +204,19 @@ const googleImageAdapter = {
     // How a requested width/height is treated. Declared, never inferred \u2014 the
     // same rule promptLimit and maxReferenceImages follow, and for the same reason:
     // a size that reaches nothing produced a confident 2048x1152 arriving as 1376x768.
+    /**
+     * The largest size tier a given model offers.
+     *
+     * Per MODEL, not per provider: `gemini-3.1-flash-lite-image` — which the
+     * DRAFT tier routes to — is 1K only, while the other two reach 4K. A
+     * caller that asks the adapter "can you do 2K" and gets a yes would be
+     * told the truth about the provider and a lie about the model it is
+     * actually going to run.
+     */
+    maxSizeForModel(model) {
+        const sizes = (MODELS[model] || MODELS[DEFAULT_MODEL]).sizes;
+        return sizes[sizes.length - 1];
+    },
     sizeControl: 'snapped',
     sizeControlReason: 'The request carries image_size as a TIER \u2014 512px, 1K, 2K or 4K \u2014 '
         + 'not a pixel pair, so a requested width and height selects the nearest tier at the '

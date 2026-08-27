@@ -203,3 +203,35 @@ test('a declared ceiling is what the provider returns, not what its models could
         `${a.id}: declares a pixel ceiling without explaining that the size cannot be requested`);
     }
 });
+
+test('a model that cannot reach 2K is not sold on its provider reaching it', () => {
+    /*
+     * Google's draft model, gemini-3.1-flash-lite-image, is 1K ONLY — Google's
+     * own docs say so — while its other two reach 4K. "This provider does 2K"
+     * is true of the provider and false of the model the draft tier would
+     * actually run, which is the same over-promise as claiming Meshy does 2K
+     * because the models behind it can, one level further down.
+     */
+    const { compareGenerators } = require('../lib/generator-costs');
+    const google = compareGenerators('image').rows.filter(r => r.provider === 'google');
+    if (!google.length) return;
+
+    const draft = google.find(r => r.tier && r.tier.id === 'draft');
+    assert.ok(draft, 'no draft-tier google row to check');
+    assert.strictEqual(draft.max_size, '1K',
+        'the draft model is reported as reaching more than 1K — Google documents it as 1K only');
+
+    const better = google.filter(r => r.max_size && r.max_size !== '1K');
+    assert.ok(better.length, 'no google model reports a size above 1K, so 2K is unreachable there too');
+
+    // And every row that can say, says.
+    for (const r of google) {
+        assert.ok(r.max_size, `${r.model}: no maximum size reported, so the tier cannot be judged`);
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    const SPA = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    assert.match(SPA, /max \$\{esc\(x\.max_size\)\}/,
+        'the per-model maximum is computed and never shown');
+});

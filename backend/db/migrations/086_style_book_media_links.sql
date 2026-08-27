@@ -1,0 +1,11 @@
+-- A visual can be a LINK, not only a file.
+--
+-- "I can't add a picture/image upload or link or a video link... local or
+-- youtube." The table held asset_id and file_path — both of which describe
+-- bytes on this machine — so a reference that lives on YouTube had nowhere to
+-- go, and giving it a fake file_path would 404 the serving route on something
+-- that was never a file.
+--
+-- Nullable and separate from file_path, because the two are genuinely
+-- different: an upload has bytes and needs a route, a link has neither.
+ALTER TABLE film_style_book_media ADD COLUMN source_url TEXT NOT NULL DEFAULT '';
