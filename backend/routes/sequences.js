@@ -14,6 +14,21 @@
  */
 
 const { db, generateId } = require('../db/database');
+const { imageOverride } = require('../lib/generation-override');
+
+/**
+ * The config a sequence generation should resolve against.
+ *
+ * A sequence buys several clips at once, so which generator makes them is the
+ * same per-generation choice a single clip has — read through the one helper
+ * every other paid path uses rather than a second reading of the same fields.
+ */
+function seqConfig(projectId, req) {
+    const base = providerConfigFor(projectId);
+    const o = imageOverride((req && req.body) || {});
+    if (!o || !o.image) return base;
+    return { ...base, video: o.image };
+}
 const { resolve } = require('../lib/providers');
 const { providerConfigFor } = require('../lib/provider-config');
 const { planSequence } = require('../lib/video-sequence');
@@ -104,10 +119,13 @@ function shotsOf(row) {
  * N-1. A provider that genuinely cannot be resolved is reported as unresolved
  * rather than described as limited.
  */
-function keyframeCeiling(projectId) {
+function keyframeCeiling(projectId, req) {
     let adapter = null;
     try {
-        adapter = resolve('video', providerConfigFor(projectId));
+        // `req` is optional: the ceiling is also read from paths that have no
+        // request in hand. Passing an undefined one resolves against the
+        // project's own config, which is the right default.
+        adapter = resolve('video', seqConfig(projectId, req));
     } catch (err) {
         return { max: 1, provider: null, unresolved: err.message };
     }
@@ -218,7 +236,7 @@ async function generateNativeSequence(req, res, id) {
     const shots = shotsOf(row);
     if (shots.length < 3 || shots.length > 5) return json(res, 409, { error: 'Native multi-shot requires 3–5 shots' });
     if (shots.some(s => !s.keyframe)) return json(res, 409, { error: 'Every native multi-shot sequence needs an approved frame' });
-    const provider = resolve('video', providerConfigFor(row.project_id));
+    const provider = resolve('video', seqConfig(row.project_id, req));
     if (!provider || provider.id !== 'runway') return json(res, 409, { error: 'Native multi-shot requires the Runway provider' });
     const { toDataUri } = require('../lib/reference-images');
     const payload = {
@@ -245,14 +263,14 @@ async function generateSequence(req, res, id) {
     const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
     if (!row) return json(res, 404, { error: 'Sequence not found' });
 
-    const ceiling = keyframeCeiling(row.project_id);
+    const ceiling = keyframeCeiling(row.project_id, req);
     const runway = ceiling.provider === 'runway' ? require('../lib/providers/runway') : null;
     const model = runway ? (process.env.RUNWAY_VIDEO_MODEL || 'gen4.5') : null;
     const plan = planSequence(shotsOf(row), { maxKeyframes: ceiling.max, description: row.description,
         modelPolicy: runway && runway.RUNWAY_VIDEO_MODELS[model] });
     if (plan.refused) return json(res, 409, { sequence_id: id, ...plan });
 
-    const provider = resolve('video', providerConfigFor(row.project_id));
+    const provider = resolve('video', seqConfig(row.project_id, req));
     if (!provider || typeof provider.generate !== 'function') {
         return json(res, 502, { error: 'no video provider resolved' });
     }

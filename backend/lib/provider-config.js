@@ -69,12 +69,20 @@ function spendContext(project, shot, scene, overrides) {
      * put back, which is how a project ends up shooting a whole board on the
      * expensive tier because of one difficult shot.
      */
-    if (overrides && (overrides.image_quality || overrides.image_model || overrides.image)) {
-        config = tag({ ...config,
-            ...(overrides.image ? { image: overrides.image } : {}),
-            ...(overrides.image_quality ? { image_quality: overrides.image_quality } : {}),
-            ...(overrides.image_model ? { image_model: overrides.image_model } : {}),
-        }, projectId);
+    /*
+     * ANY capability, not just image.
+     *
+     * This listed the three image keys by name, so a video override was
+     * accepted by the route, renamed correctly at the boundary, and then
+     * silently dropped here — every source check passed and choosing Runway
+     * still resolved to Seedance. A allow-list of field names is exactly how a
+     * second capability gets wired and does nothing.
+     *
+     * Copied wholesale instead: the override is already validated where it is
+     * read, and this function's job is to carry it, not to re-judge it.
+     */
+    if (overrides && typeof overrides === 'object' && Object.keys(overrides).length) {
+        config = tag({ ...config, ...overrides }, projectId);
     }
     // Shot rows reach this two ways. A `SELECT * FROM film_shots` row has
     // `id`; the storyboard's shotlist query aliases it to `shot_id` and joins

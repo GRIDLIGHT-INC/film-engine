@@ -25982,53 +25982,39 @@ ${fountainText.slice(0, 50000)}`;
      * The preview is FREE and leads, the same shape every image path has had
      * since shot_prompt.
      */
-    async function generateVideoFor(shotId, btn) {
-        let p;
-        try { p = await api(`/shots/${shotId}/video/preview`); }
-        catch (err) {
-            // A gate whose purpose is inspection before spending must not
-            // permit the spend when the inspection fails.
-            return alert('Could not check what would be sent: ' + err.message);
-        }
-        if (!p.can_generate) {
-            return alert('This shot cannot generate a clip yet.\n\n' + (p.warnings || []).join('\n'));
-        }
+    async function generateVideoFor(shotId) {
         /*
-         * The WHOLE prompt, never a slice.
+         * Footage goes through the same pre-spend surface as a frame, and for
+         * the same reason — it is the more expensive half. A clip is $0.48
+         * where a frame is $0.13, so being unable to choose the generator cost
+         * more here, not less.
          *
-         * A first version showed 500 characters under the heading "what it will
-         * be asked for", which is a confident lie about the rest — and the
-         * whole reason this dialog exists is a director who would not spend
-         * without seeing what was sent.
-         *
-         * fps is deliberately NOT shown as a film rate: the generator's own fps
-         * is a fact about the model (8 for several), and printing it beside the
-         * resolution reads as "your film is 8fps". The delivery rate is a
-         * project setting and is applied afterwards.
+         * The prompt is read-only: a motion prompt is composed from the shot
+         * card and the approved camera path by a different builder, and the
+         * editable-prompt work covered images only. Said rather than omitted.
          */
-        if (!confirm(`Generate the clip for this shot?\n\n`
-            + `Provider: ${p.provider}${p.model ? ' · ' + p.model : ''}\n`
-            + `${p.duration_s}s · ${p.width}×${p.height}\n`
-            + `Storyboard frame attached: ${p.init_image ? 'yes' : 'NO'}\n`
-            + `Camera direction: ${p.camera_control_delivery === 'translated-to-prompt-text' ? 'approved path translated to prompt text' : (p.camera_control ? p.camera_control.type || 'movement words' : 'none')}\n`
-            + `Estimated cost: ${p.estimated_credits == null ? 'unavailable' : `${p.estimated_credits} credits (~$${Number(p.estimated_usd).toFixed(2)})`}\n`
-            + `\nExact outbound request (image bytes hidden):\n${JSON.stringify(p.outbound || {}, null, 2)}\n\n`
-            + `What it will be asked for (${(p.prompt || '').length} characters, in full):\n`
-            + `${p.prompt || '(nothing)'}\n`
-            + (p.negative_prompt ? `\nRefusing: ${p.negative_prompt}\n` : '')
-            + ((p.warnings || []).length ? `\n${p.warnings.join('\n')}\n` : '')
-            + `\nThis costs credits.`)) return;
-
-        if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
-        setStatus('Generating video...', true);
-        try {
-            const res = await api('/shots/' + shotId + '/video/generate', { method: 'POST', body: JSON.stringify({}) });
-            setStatus(res.status === 'complete' ? 'Video generated' : 'Video job queued');
-            loadVideoShots();
-        } catch (err) {
-            setStatus('Error: ' + err.message);
-            if (btn) { btn.disabled = false; btn.textContent = 'Generate Video'; }
-        }
+        markCurrentShot(shotId);
+        return confirmPaidImage({
+            capability: 'video',
+            title: 'Generate this clip',
+            note: 'Costs credits. The storyboard frame travels as the first keyframe, so the clip '
+                + 'starts from the picture you approved.',
+            previewUrl: `/shots/${shotId}/video/preview`,
+            editable: false,
+            notEditableWhy: 'A motion prompt is composed from the shot card and the approved camera '
+                + 'path. Change the card or the blocking, then preview again.',
+            send: async choices => {
+                const done = frameBusy(shotId, 'Generating');
+                setStatus('Generating clip...', true);
+                try {
+                    const res = await api('/shots/' + shotId + '/video/generate',
+                        { method: 'POST', body: JSON.stringify(choices) });
+                    done();
+                    setStatus(res && res.provider ? `Clip generated via ${res.provider}.` : 'Clip generated.');
+                    if (typeof loadVideoShots === 'function') loadVideoShots();
+                } catch (err) { done(); setStatus('Could not generate: ' + err.message); }
+            },
+        });
     }
 
     // Generic per-entity action (backends already exist). `reload` refreshes the page.
@@ -28295,17 +28281,21 @@ ${fountainText.slice(0, 50000)}`;
      * replaced by the generic dialog. They gain the model picker and the
      * editable prompt; they do not lose the facts.
      */
-    async function confirmExtras(prompt, ceiling) {
+    async function confirmExtras(prompt, ceiling, capability) {
+        const gen = await generatorPicker(capability || 'image');
         let tiers = [];
         try { tiers = (await api(`/projects/${state.currentProject.id}/providers`)).image_tiers || []; }
         catch (_) { tiers = []; }
         CONFIRM_GEN_PROMPT = prompt || '';
         CONFIRM_GEN_EDITED = false;
         CONFIRM_GEN_QUALITY = null;
+        CONFIRM_GEN_PROVIDER = null;
         const n = Number(ceiling) || 0;
         return `
+          ${gen}
+          ${await generatorPicker(o.capability || 'image')}
           ${tiers.length ? `<div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
-              <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Generator for this one</div>
+              <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Quality for this one</div>
               <div style="display:flex;gap:6px;flex-wrap:wrap;">
                 ${tiers.map(t => `<button type="button" class="btn btn-secondary btn-sm" data-tier="${esc(t.id)}"
                     onclick="pickGenQuality('${esc(t.id)}')" ${t.available ? '' : 'disabled'}
@@ -28333,6 +28323,7 @@ ${fountainText.slice(0, 50000)}`;
     /** What the director chose in the confirmation just closed. */
     function confirmChoices() {
         return {
+            ...(CONFIRM_GEN_PROVIDER ? { provider: CONFIRM_GEN_PROVIDER } : {}),
             ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
             ...(CONFIRM_GEN_EDITED && confirmGenEditedPrompt()
                 ? { prompt_override: confirmGenEditedPrompt() } : {}),
@@ -28861,6 +28852,55 @@ ${fountainText.slice(0, 50000)}`;
      * an edited prompt passes `editable: false` and the box is read-only rather
      * than offering an edit that would be silently dropped.
      */
+
+    /**
+     * Which GENERATOR this one goes to.
+     *
+     * The tiers say how good; this says who. They are different questions and
+     * the picker only answered the first — "select the image or video generator
+     * on every generation" needs the provider named, not implied by a tier.
+     *
+     * `capability` is 'image' or 'video': video has no tiers at all, so for
+     * footage this is the whole choice.
+     */
+    async function generatorPicker(capability) {
+        let list = [];
+        try {
+            const cat = await api('/providers');
+            list = (cat.providers || [])
+                .filter(p => (p.capabilities || []).includes(capability))
+                .filter(p => p.credentials && p.credentials.set);
+        } catch (_) { return ''; }
+        if (list.length < 2) return '';     // no choice to offer
+
+        return `<div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
+            <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Generator for this one</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button type="button" class="btn btn-sm" data-gen="" onclick="pickGenerator('')"
+                      style="flex:1;min-width:110px;">Project default</button>
+              ${list.map(p => `<button type="button" class="btn btn-secondary btn-sm" data-gen="${esc(p.id)}"
+                    onclick="pickGenerator('${esc(p.id)}')" style="flex:1;min-width:110px;">
+                    ${esc(p.label || p.id)}</button>`).join('')}
+            </div>
+            <div class="text-sm" style="opacity:.6;margin-top:6px;" id="confirmGenProviderNote">
+              This generation only. Nothing is pinned to the project.
+            </div>
+          </div>`;
+    }
+
+    function pickGenerator(id) {
+        CONFIRM_GEN_PROVIDER = id || null;
+        document.querySelectorAll('#confirmGenModal [data-gen]').forEach(b => {
+            b.classList.toggle('btn-secondary', b.dataset.gen !== (id || ''));
+        });
+        const note = document.getElementById('confirmGenProviderNote');
+        if (note) {
+            note.textContent = id
+                ? `This generation goes to ${id}. Nothing is pinned to the project.`
+                : 'Using the project default. Nothing is pinned to the project.';
+        }
+    }
+
     async function confirmPaidImage(o) {
         const body = document.getElementById('confirmGenBody');
         const title = document.getElementById('confirmGenTitle');
@@ -28872,6 +28912,7 @@ ${fountainText.slice(0, 50000)}`;
         CONFIRM_GEN_PROMPT = null;
         CONFIRM_GEN_EDITED = false;
         CONFIRM_GEN_QUALITY = null;
+        CONFIRM_GEN_PROVIDER = null;
         showModal('confirmGenModal');
         const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
 
@@ -28945,6 +28986,7 @@ ${fountainText.slice(0, 50000)}`;
         if (!ok) return;
 
         return o.send({
+            ...(CONFIRM_GEN_PROVIDER ? { provider: CONFIRM_GEN_PROVIDER } : {}),
             ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
             ...(CONFIRM_GEN_EDITED && confirmGenEditedPrompt()
                 ? { prompt_override: confirmGenEditedPrompt() } : {}),
@@ -29135,6 +29177,7 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     let CONFIRM_GEN_QUALITY = null;
+    let CONFIRM_GEN_PROVIDER = null;
     let CONFIRM_GEN_PROMPT = null;      // the text as it was offered
     let CONFIRM_GEN_EDITED = false;
 

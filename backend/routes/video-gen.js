@@ -19,6 +19,13 @@ const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-p
 const { needsStitching, planClips, buildStitchPayload, calculateTransitions } = require('../lib/video-stitcher');
 const { resolve } = require('../lib/providers');
 const { providerConfigFor, spendContext } = require('../lib/provider-config');
+/*
+ * The same per-generation override the image paths read. Video was stuck on
+ * whatever the project happened to say, so "select the generator on every
+ * generation" was true of pictures and false of footage — which is the more
+ * expensive half.
+ */
+const { imageOverride } = require('../lib/generation-override');
 const { buildShotReferencePayload, recordConsistencyCheck } = require('../lib/consistency-context');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -58,7 +65,26 @@ function resultJobId(result) {
  * sent does not spend, and the feature fails for a reason that has nothing to
  * do with how good the generation is.
  */
-async function previewVideo(res, shotId) {
+
+/**
+ * Which generator this ONE clip is made on.
+ *
+ * `video` is a capability like any other, so the override reuses the image
+ * helper and is renamed at the boundary — a second reader would be a second
+ * place for "provider" and "quality" to mean subtly different things.
+ */
+function videoOverrideOf(req, query) {
+    const src = { ...(query || {}), ...((req && req.body) || {}) };
+    const o = imageOverride(src);
+    if (!o) return null;
+    // imageOverride speaks in image_* keys; video resolves on `video`.
+    const out = {};
+    if (o.image) out.video = o.image;
+    if (o.image_model) out.video_model = o.image_model;
+    return Object.keys(out).length ? out : null;
+}
+
+async function previewVideo(res, shotId, previewOverride) {
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
 
     let ctx;
@@ -79,7 +105,8 @@ async function previewVideo(res, shotId) {
         });
     }
 
-    const provider = resolve('video', parseProjectConfig(ctx.scene && ctx.scene.project_id));
+    const provider = resolve('video',
+        spendContext({ id: ctx.scene && ctx.scene.project_id }, null, null, previewOverride));
 
     /*
      * WHAT THE ADAPTER WILL SEND, not what the payload asked for.
@@ -180,7 +207,7 @@ function handleVideoGen(req, res, urlParts, query) {
         // What this clip would cost and contain. Free. Under /video/ because
         // the dispatch above scopes on urlParts[3] === 'video'; a sibling
         // segment never reaches this handler at all.
-        if (sub === 'preview' && req.method === 'GET') return previewVideo(res, shotId);
+        if (sub === 'preview' && req.method === 'GET') return previewVideo(res, shotId, videoOverrideOf(req, query));
         if (sub === 'generate' && req.method === 'POST') {
             if (urlParts[5] === 'stream') return generateVideoStream(req, res, shotId);
             return generateVideo(req, res, shotId);
@@ -197,7 +224,7 @@ function handleVideoGen(req, res, urlParts, query) {
 
         const sub = urlParts[4];
         if (sub === 'batch' && req.method === 'POST') {
-            if (urlParts[5] === 'stream') return batchVideoStream(req, res, projectId);
+            if (urlParts[5] === 'stream') return batchVideoStream(req, res, projectId, query);
             return batchVideo(req, res, projectId);
         }
         if (!sub && req.method === 'GET') return listVideoJobs(req, res, projectId, query);
@@ -214,7 +241,8 @@ async function generateVideo(req, res, shotId) {
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
 
     const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
-    const videoProvider = resolve('video', spendContext({ id: scene.project_id }, shot, scene));
+    const videoProvider = resolve('video',
+        spendContext({ id: scene.project_id }, shot, scene, videoOverrideOf(req)));
     const consistencyContext = buildShotReferencePayload(shot, scene, project);
 
     ctx.consistency = consistencyContext;
@@ -299,7 +327,8 @@ async function generateVideoStream(req, res, shotId) {
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
 
     const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
-    const videoProvider = resolve('video', spendContext({ id: scene.project_id }, shot, scene));
+    const videoProvider = resolve('video',
+        spendContext({ id: scene.project_id }, shot, scene, videoOverrideOf(req)));
     const consistencyContext = buildShotReferencePayload(shot, scene, project);
     ctx.consistency = consistencyContext;
     ctx.overrides = { seed: consistencyContext.locked_seed };
@@ -385,10 +414,11 @@ async function generateVideoStream(req, res, shotId) {
 
 // -- Batch Video Generation ----------------------------------------------
 
-async function batchVideoStream(req, res, projectId) {
+async function batchVideoStream(req, res, projectId, query) {
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
-    const videoProvider = resolve('video', parseProjectConfig(projectId));
+    const videoProvider = resolve('video',
+        spendContext({ id: projectId }, null, null, videoOverrideOf(req, query)));
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',

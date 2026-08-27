@@ -183,7 +183,7 @@ film-engine/
 │       ├── provider-tiers.test.js      # Every adapter declares its contract; every tier resolves
 │       ├── gridlight-optin.test.js     # The local gateway is off until switched on, for all 10 capabilities
 │       ├── dry-run.test.js             # The report shows the real request, no keys, no printed pictures
-│       ├── paid-image-controls.test.js # Every image button: pick the model, read the prompt, edit it
+│       ├── paid-image-controls.test.js # Every image AND video button: pick the generator, read the prompt, edit it
 │       ├── thumbnails.test.js         # Boards fetch thumbnails; bundles survive subdirectories
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop

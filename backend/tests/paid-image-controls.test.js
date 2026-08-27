@@ -23,6 +23,16 @@
  *              cannot read first is not editing, it is guessing.
  */
 
+/*
+ * Isolated. This file inserts probe projects, and without FILM_DATA_DIR they
+ * land in the developer's REAL database — three of them did, and only
+ * test-isolation.test.js noticed. A test that writes to the live data is one
+ * that quietly edits the work it is meant to be checking.
+ */
+const os = require('os');
+process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
+    || require('path').join(os.tmpdir(), 'film-engine-paidctl-' + Date.now());
+
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -35,6 +45,30 @@ const read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
  * excused without one is a gap somebody closed by writing `false`.
  */
 const PAID_IMAGE_ROUTES = [
+    /*
+     * VIDEO IS IN THIS SET TOO.
+     *
+     * "On every generation we should be able to select the image or video
+     *  generator."
+     *
+     * It was true of pictures and false of footage — the more expensive half.
+     * A clip is $0.48 where a frame is $0.13, so being stuck on whatever the
+     * project happened to say costs more there, not less.
+     */
+    { fn: 'generateVideo', file: 'routes/video-gen.js', preview: 'preview',
+      promptEditable: false,
+      why: 'A clip prompt is composed from the shot card and the approved camera path; the '
+        + 'editable-prompt work covered images only, and a motion prompt is a separate builder.' },
+    { fn: 'generateVideoStream', file: 'routes/video-gen.js', preview: 'preview',
+      promptEditable: false,
+      why: 'The streaming twin of generateVideo — same payload, same reason.' },
+    { fn: 'batchVideoStream', file: 'routes/video-gen.js', preview: 'preview',
+      promptEditable: false,
+      why: 'A batch composes a prompt PER SHOT, so there is no single text to edit.' },
+    { fn: 'generateSequence', file: 'routes/sequences.js', preview: 'plan',
+      promptEditable: false,
+      why: 'A sequence composes one prompt per LEG from the shots it travels between.' },
+
     { fn: 'regenerateShot', file: 'routes/storyboard.js', preview: 'prompt' },
     { fn: 'refineShot', file: 'routes/storyboard.js', preview: 'refine-preview' },
     { fn: 'recomposeShot', file: 'routes/storyboard.js', preview: 'recompose-preview' },
@@ -73,7 +107,14 @@ test('every paid image route takes a per-generation model choice', () => {
         // better shape, and a test that only knows the inline form pushes
         // seven routes into seven hand-written readings, which is how three
         // accept `quality` and a fourth silently ignores it.
-        if (!/body\.quality|image_quality|imageOverride\s*\(/.test(body)) missing.push(`${r.fn} (${r.file})`);
+        /*
+         * Read inline, or through one of the named helpers. Video resolves on
+         * a `video` key rather than `image`, so it renames at the boundary —
+         * a matcher that only knew the image helper reported four correctly
+         * wired routes as stuck.
+         */
+        const reads = /body\.quality|image_quality|imageOverride\s*\(|videoOverrideOf\s*\(|seqConfig\s*\(/;
+        if (!reads.test(body)) missing.push(`${r.fn} (${r.file})`);
     }
     assert.deepStrictEqual(missing, [],
         `these spend on an image and cannot be told which model to use, so they are stuck `
@@ -111,6 +152,32 @@ test('the shared override helper reads what the routes stop reading themselves',
     assert.strictEqual(promptOverride({ prompt_override: '  x  ' }), 'x');
     assert.strictEqual(promptOverride({ prompt_override: '   ' }), null,
         'a blank override would replace the composed prompt with nothing');
+});
+
+test('the video helpers rename the override rather than reading it twice', () => {
+    /*
+     * Video resolves on a `video` key and images on `image`, so the shared
+     * helper is renamed at the boundary instead of being re-read. Two readings
+     * of the same request fields is how one path comes to accept `quality`
+     * while another silently ignores it — which is the state video was in.
+     */
+    const fs2 = require('fs');
+    const vg = fs2.readFileSync(path.join(__dirname, '..', 'routes', 'video-gen.js'), 'utf8');
+    const sq = fs2.readFileSync(path.join(__dirname, '..', 'routes', 'sequences.js'), 'utf8');
+
+    for (const [name, src] of [['video-gen', vg], ['sequences', sq]]) {
+        assert.ok(/require\('\.\.\/lib\/generation-override'\)/.test(src),
+            `${name} reads the override itself instead of through the shared helper`);
+        assert.ok(/video:\s*o\.image|\.video\s*=\s*o\.image/.test(src),
+            `${name} does not map the chosen provider onto the video capability, so the pick `
+            + 'would be stored under a key nothing resolves on');
+    }
+
+    // And the ceiling lookup must not reference a request it was never given —
+    // it sits inside a try/catch that turns any throw into "this provider takes
+    // one keyframe", which silently degrades a sequence to a series of stills.
+    assert.ok(/function keyframeCeiling\(projectId, req\)/.test(sq),
+        'keyframeCeiling uses a request that is not one of its parameters');
 });
 
 test('every paid image route has a free preview to edit from', () => {
@@ -196,4 +263,52 @@ test('the page offers all three on every image control', () => {
         if (!gated) bad.push(`${fn}: does not go through the shared pre-spend confirmation`);
     }
     assert.deepStrictEqual(bad, [], bad.join('; '));
+});
+
+test('a per-generation provider choice really changes the adapter, for image AND video', () => {
+    /*
+     * BEHAVIOURAL, because the source checks above passed while this was
+     * broken. spendContext carried an allow-list of three image field names, so
+     * a video override was accepted by the route, renamed correctly at the
+     * boundary, and silently dropped one function later — every wiring
+     * assertion green, and choosing Runway still resolved to Seedance.
+     *
+     * That is the "declared but never consumed" failure this codebase has now
+     * shipped five times. A test that reads the call and not the outcome cannot
+     * see it.
+     */
+    // An isolated data dir starts empty, so the schema has to be built before
+    // anything can be inserted into it.
+    require('../db/schema').ensureSchema();
+    const { spendContext } = require('../lib/provider-config');
+    const { db } = require('../db/database');
+    const providersReg = require('../lib/providers');
+    const crypto2 = require('crypto');
+
+    const id = crypto2.randomUUID();
+    db.prepare('INSERT INTO film_projects (id, title, provider_config) VALUES (?, ?, ?)')
+        .run(id, 'override probe', '{}');
+    for (const p of ['runway', 'seedance', 'meshy', 'google', 'bfl', 'openai']) {
+        db.prepare(`INSERT INTO film_provider_credentials (provider, api_key, meta) VALUES (?, 'k', '{}')
+                    ON CONFLICT(provider) DO UPDATE SET api_key = excluded.api_key`).run(p);
+    }
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(id);
+    const resolveWith = (cap, ov) => providersReg.resolveId(cap, spendContext(project, null, null, ov));
+
+    for (const [cap, choices] of [['video', ['runway', 'seedance']], ['image', ['meshy', 'bfl', 'openai']]]) {
+        for (const choice of choices) {
+            assert.strictEqual(resolveWith(cap, { [cap]: choice }), choice,
+                `choosing ${choice} for one ${cap} generation resolved somewhere else`);
+        }
+        // Two different choices must give two different answers, or the
+        // override is being ignored and happening to match the default.
+        const seen = new Set(choices.map(c => resolveWith(cap, { [cap]: c })));
+        assert.strictEqual(seen.size, choices.length,
+            `${cap}: ${choices.length} choices produced ${seen.size} distinct providers`);
+    }
+
+    // And it must not become a pin: the next generation is unaffected.
+    assert.strictEqual(
+        db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(id).provider_config,
+        '{}', 'a per-generation choice was written to the project as a pin');
 });
