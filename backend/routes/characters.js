@@ -7,6 +7,8 @@
  * POST /film/characters/:id/refsheet/generate     — FILM-014: Generate reference sheet
  * GET  /film/characters/:id/refsheet              — FILM-014: Get reference sheet status
  */
+const { ISOLATION_CLAUSE, isolationNegativeFor } = require('../lib/plate-isolation');
+const { orderByViewSql } = require('../lib/plate-views');
 const { db, generateId } = require('../db/database');
 const { stampSubject } = require('../lib/story-bible');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
@@ -56,6 +58,22 @@ function handleCharacters(req, res, urlParts, query) {
              * than sitting beside it, and every shot referencing the character picks
              * it up with nothing else to change.
              */
+            /*
+             * The three views of a turnaround, listed.
+             *
+             * A reference sheet is front, side and back — three files, three
+             * asset rows — and there was nowhere in the app to see that they
+             * existed. Locations have had `plate/views` since the compass work;
+             * characters, which are the subject a turnaround is FOR, had
+             * nothing.
+             */
+            if (urlParts[4] === 'views' && !urlParts[5] && req.method === 'GET') {
+                return listRefsheetViews(res, charId);
+            }
+            if (urlParts[4] === 'views' && urlParts[5] && req.method === 'DELETE') {
+                return deleteRefsheetView(res, charId, decodeURIComponent(urlParts[5]));
+            }
+
             if (urlParts[4] === 'import' && req.method === 'POST') {
                 const body = req.body || {};
                 if (!body.data) return badRequest(res, 'no image supplied');
@@ -107,7 +125,10 @@ function listCharacters(req, res, projectId) {
     const costumeCount = db.prepare('SELECT COUNT(*) AS count FROM film_costumes WHERE character_id = ?');
     const voiceCheck = db.prepare('SELECT id FROM film_voice_profiles WHERE character_id = ? LIMIT 1');
     const refsheetCheck = db.prepare(
-        "SELECT file_name, project_id FROM film_assets WHERE asset_type = 'character_sheet' AND metadata LIKE ? ORDER BY created_at DESC LIMIT 1"
+        // Front first, for the same reason the prompt gather takes the front:
+        // a card showing the back of someone's head identifies nobody.
+        `SELECT file_name, project_id FROM film_assets WHERE asset_type = 'character_sheet'
+           AND metadata LIKE ? ORDER BY ${orderByViewSql()}, created_at DESC LIMIT 1`
     );
 
     for (const ch of rows) {
@@ -510,9 +531,16 @@ const REFSHEET_VIEWS = ['front', 'side', 'back'];
  * first real plate. A reference that carries printed matter teaches every frame
  * that references it to carry printed matter too.
  */
-const REFSHEET_NEGATIVE = 'blurry, low quality, distorted, multiple characters, background clutter, '
+const REFSHEET_NEGATIVE_BASE = 'blurry, low quality, distorted, multiple characters, '
     + 'text, label, labels, annotation, annotations, caption, handwriting, chart, colour chart, '
     + 'swatch, swatches, watermark, logo, arrows, callouts, measurement marks, collage, multiple views';
+
+/*
+ * The negative is what actually holds once the style has spent four hundred
+ * characters describing a place. "background clutter" asked for a TIDY room;
+ * the isolation list refuses the room.
+ */
+const REFSHEET_NEGATIVE = isolationNegativeFor('character', REFSHEET_NEGATIVE_BASE);
 
 function buildRefSheetPrompt(character, view, stylePreset) {
     const parts = [];
@@ -531,13 +559,25 @@ function buildRefSheetPrompt(character, view, stylePreset) {
     // of tape. The person underneath was right; the document around them was
     // not. A plate conditions every frame its subject appears in, so anything
     // printed on it bleeds into all of them.
-    parts.push(style ? `${style}. Full-body studio photograph` : 'photoreal cinematic full-body studio photograph');
+    /*
+     * Isolation is said WITH the medium, not three clauses later.
+     *
+     * The backdrop was already asked for and the plates still came back with
+     * full rooms behind the subject, because a real style preset is largely a
+     * description of a SCENE — "hard low-sun key raking through glass",
+     * "practical tungsten warmth blooming in frame" — stated first and at
+     * length, against three trailing words. Whatever leads is what the image
+     * is of, and that applies to what is NOT in it too.
+     */
+    parts.push(style
+        ? `${style}. Full-body studio photograph, ${ISOLATION_CLAUSE}`
+        : `photoreal cinematic full-body studio photograph, ${ISOLATION_CLAUSE}`);
     // The view still has to be named, or three plates are three unrelated
     // pictures rather than a turnaround.
     parts.push(`${view} view of the subject`);
     parts.push(style
-        ? 'standing, arms slightly away from body, neutral expression, plain seamless backdrop'
-        : 'standing, arms slightly away from body, plain seamless backdrop');
+        ? 'standing, arms slightly away from body, neutral expression'
+        : 'standing, arms slightly away from body');
 
     if (character.appearance_prompt) parts.push(character.appearance_prompt);
     if (character.gender) parts.push(character.gender);
@@ -810,6 +850,117 @@ function getRefSheetStatus(req, res, charId) {
             metadata: a.metadata ? JSON.parse(a.metadata) : null,
         })),
     }));
+}
+
+
+/**
+ * Every stored view of a character, in turnaround order.
+ *
+ * Ordered front → side → back rather than by recency, because that is the
+ * order a person reads a turnaround in, and because the front is the one that
+ * matters: it is what conditions every frame the character appears in.
+ */
+function listRefsheetViews(res, charId) {
+    const fs = require('fs');
+    const path = require('path');
+    const { viewRank } = require('../lib/plate-views');
+
+    const ch = db.prepare('SELECT id, project_id, name FROM film_characters WHERE id = ?').get(charId);
+    if (!ch) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Character not found' }));
+    }
+
+    const rows = db.prepare(
+        `SELECT id, file_name, file_path, metadata, created_at FROM film_assets
+          WHERE project_id = ? AND character_id = ?
+            AND asset_type IN ('character_sheet', 'reference_image')
+       ORDER BY created_at ASC`).all(ch.project_id, charId);
+
+    const views = rows.map(r => {
+        let meta = {};
+        try { meta = JSON.parse(r.metadata || '{}'); } catch (_) { meta = {}; }
+        const view = String(meta.view || '').trim();
+
+        // Whether the picture is really THERE — the same mistake plate views
+        // made once already, manufacturing a URL for a file that was gone.
+        let available = false;
+        try { available = !!(r.file_path && fs.existsSync(r.file_path)); } catch (_) { available = false; }
+        const subdir = (() => {
+            try { return path.basename(path.dirname(path.dirname(r.file_path))); } catch (_) { return null; }
+        })();
+
+        return {
+            asset_id: r.id,
+            view: view || 'front',
+            is_identity_plate: false,        // filled in below
+            file_name: r.file_name,
+            available,
+            unavailable_reason: available ? null : 'Picture unavailable — generate this view again.',
+            image_url: (available && subdir) ? getFileUrl(subdir, ch.project_id, r.file_name) : null,
+            created_at: r.created_at,
+        };
+    }).sort((a, b) => viewRank(a.view) - viewRank(b.view)
+        || String(a.created_at).localeCompare(String(b.created_at)));
+
+    /*
+     * WHICH ONE ACTUALLY REACHES A PROMPT, said out loud.
+     *
+     * Three plates exist and exactly one is attached to a frame — the
+     * reference budget is three on Runway and five on Meshy, shared with the
+     * location, the props and the anchor, so a second view of the same person
+     * costs a slot a subject with no picture at all would otherwise get.
+     * Which one that is used to be invisible, and it was the wrong one.
+     */
+    const identity = views.find(v => v.available);
+    if (identity) identity.is_identity_plate = true;
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        character_id: charId,
+        character: ch.name,
+        views,
+        identity_plate: identity ? identity.view : null,
+        note: identity
+            ? `Every frame ${ch.name} appears in is conditioned on the ${identity.view} view. `
+              + 'The others are kept for reference and for a shot that needs them.'
+            : 'No usable plate yet — every frame will invent this character from the description alone.',
+    }));
+}
+
+/** Remove one view: the row and the file together. */
+function deleteRefsheetView(res, charId, rawView) {
+    const fs = require('fs');
+    const view = String(rawView || '').trim().toLowerCase();
+
+    const ch = db.prepare('SELECT id, project_id, name FROM film_characters WHERE id = ?').get(charId);
+    if (!ch) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Character not found' }));
+    }
+
+    const rows = db.prepare(
+        `SELECT id, file_path, metadata FROM film_assets
+          WHERE project_id = ? AND character_id = ?
+            AND asset_type IN ('character_sheet', 'reference_image')`).all(ch.project_id, charId);
+
+    const match = rows.find(r => {
+        let meta = {};
+        try { meta = JSON.parse(r.metadata || '{}'); } catch (_) { meta = {}; }
+        return String(meta.view || 'front').trim().toLowerCase() === view;
+    });
+    if (!match) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: `${ch.name} has no ${view} view` }));
+    }
+
+    // Row and file together: half a delete lists a view whose picture is gone,
+    // or leaves a file nobody can find.
+    try { if (match.file_path) fs.unlinkSync(match.file_path); } catch (_) { /* already gone */ }
+    db.prepare('DELETE FROM film_assets WHERE id = ?').run(match.id);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ character_id: charId, deleted_view: view }));
 }
 
 module.exports = { handleCharacters, buildRefSheetPrompt, REFSHEET_NEGATIVE };

@@ -22315,12 +22315,76 @@ ${fountainText.slice(0, 50000)}`;
                         </div>
                         <div class="card-actions">
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generateCharacterImage('${c.id}')" title="Generate reference image">${c.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
+                            <!--
+                              A turnaround is three pictures and the app showed one.
+                              Front, side and back were generated, stored and
+                              registered, with nowhere to look at them — and only
+                              one reaches a prompt, so which one it is has to be
+                              visible or the other two look like they are working.
+                            -->
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); showCharacterViews('${c.id}')" title="Front, side and back — and which one conditions every frame">Views</button>
                             ${uploadControl('character-plate', `/characters/${c.id}/refsheet/import`, { extra: { view: 'front' }, after: 'loadCharacters', title: 'Use a picture you already have — a photograph, a Midjourney export, art you were handed' })}
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editCharacter('${c.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteCharacter('${c.id}')">Delete</button>
                         </div>
                     </div>`).join('');
             }
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+
+    /*
+     * THE TURNAROUND, and which view actually reaches a prompt.
+     *
+     * Three plates are generated and exactly ONE is attached to a frame — the
+     * reference budget is three on Runway and five on Meshy, shared with the
+     * location, the props and the anchor, so a second view of the same person
+     * costs a slot a subject with no picture at all would otherwise get.
+     * Saying which one is doing the work is the point of this panel: it was
+     * silently the BACK, because the picker took the newest row.
+     */
+    async function showCharacterViews(charId) {
+        try {
+            const r = await api(`/characters/${charId}/refsheet/views`);
+            const body = r.views.length ? `
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">
+                    ${r.views.map(v => `
+                        <div style="border:1px solid ${v.is_identity_plate ? 'var(--gl-accent,#6690ff)' : 'var(--gl-border-subtle)'};border-radius:8px;padding:8px;min-width:0;">
+                            ${v.image_url
+                                /* API_BASE, because the route returns a PATH and the
+                                   page is served from a different port — without it
+                                   every picture is a perfectly good string and a 404. */
+                                ? `<img src="${API_BASE}${esc(v.image_url)}" alt="${esc(v.view)}" style="width:100%;border-radius:6px;display:block;">`
+                                : `<div class="text-sm text-muted" style="padding:24px 8px;text-align:center;">${esc(v.unavailable_reason || 'No picture')}</div>`}
+                            <div class="flex-between" style="margin-top:6px;">
+                                <strong class="text-sm">${esc(v.view)}</strong>
+                                ${v.is_identity_plate ? '<span class="badge">used in every frame</span>' : ''}
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn btn-danger btn-sm"
+                                    onclick="deleteCharacterView('${charId}','${esc(v.view)}')">Delete</button>
+                            </div>
+                        </div>`).join('')}
+                </div>
+                <p class="text-sm text-muted" style="margin-top:12px;line-height:1.5;">${esc(r.note)}</p>`
+                : '<p class="text-sm text-muted">No plates yet. Generate Image makes a front/side/back turnaround.</p>';
+
+            // Reuses the entity inspector rather than inventing a second
+            // modal: two panels showing a subject's pictures is how they come
+            // to disagree about which one is in use.
+            document.getElementById('entityInspectTitle').textContent = `${r.character} — reference views`;
+            document.getElementById('entityInspectBody').innerHTML = body;
+            document.getElementById('entityInspectModal').classList.add('open');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteCharacterView(charId, view) {
+        if (!confirm(`Delete the ${view} view?\n\nThe picture and its record go together, and it cost money to generate.`)) return;
+        try {
+            await api(`/characters/${charId}/refsheet/views/${encodeURIComponent(view)}`, { method: 'DELETE' });
+            setStatus(`${view} view deleted`);
+            document.getElementById('entityInspectModal').classList.remove('open');
+            loadCharacters();
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 

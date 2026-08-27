@@ -24,6 +24,7 @@
  * whole parity suite testable without I/O.
  */
 
+const { orderByViewSql } = require('./plate-views');
 const { selectReferences } = require('./reference-images');
 
 /**
@@ -70,11 +71,22 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
     for (const ch of matchedChars || []) {
         if (!ch || !ch.id) continue;
         if (isCovered(ch.name)) continue;
+        /*
+         * THE FRONT VIEW IS THE ONE THAT CARRIES IDENTITY.
+         *
+         * This ordered by `created_at DESC`, and a turnaround is generated
+         * front, side, back — so the newest row is always the BACK, and every
+         * frame a character appeared in was conditioned on the back of their
+         * head. Generating three views cost three times as much as one and
+         * made the result worse than not bothering, and the symptom was a
+         * plausible stranger in the frame, which reads as weak conditioning
+         * rather than as the wrong picture being sent.
+         */
         const plate = database().prepare(
             `SELECT file_path, file_name FROM film_assets
              WHERE project_id = ? AND character_id = ?
                AND asset_type IN ('character_sheet', 'reference_image')
-             ORDER BY version DESC, created_at DESC LIMIT 1`
+             ORDER BY ${orderByViewSql()}, version DESC, created_at DESC LIMIT 1`
         ).get(projectId, ch.id);
         if (plate) candidates.push({ name: ch.name, kind: 'character', file_path: plate.file_path });
     }

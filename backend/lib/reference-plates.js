@@ -20,6 +20,7 @@
  * here so a fix lands once.
  */
 
+const { ISOLATION_CLAUSE, ISOLATED_KINDS, isolationNegativeFor } = require('./plate-isolation');
 const { db, generateId } = require('../db/database');
 const { persistProviderMedia } = require('./provider-media');
 const { getFileUrl, ensureDir } = require('./file-storage');
@@ -53,10 +54,11 @@ const PLATE_KINDS = {
         subdir: 'refsheets',
         assetType: 'reference_image',
         framing: 'single object product shot, centred',
-        // A prop plate must isolate its subject: a plain ground and nobody
-        // holding it, or the plate carries a room and a hand into every frame
-        // that references the object.
-        constraints: ['plain seamless background', 'no people'],
+        // A prop plate must isolate its subject, or the plate carries a room
+        // and a hand into every frame that references the object. The clause
+        // is shared with the character sheet: two literals is how the two
+        // came to ask for isolation with different force.
+        constraints: [ISOLATION_CLAUSE, 'no people'],
     },
 };
 
@@ -228,7 +230,16 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
         ...lead,
         // "reference plate" reads as a document to an image model the same way
         // "reference sheet" does. Ask for the photograph itself.
-        style ? `${style}. Photograph of the ${kind}` : `photoreal cinematic photograph of the ${kind}`,
+        // For a character or a prop the isolation rides WITH the medium: a real
+        // style preset is largely a description of a scene, stated first and at
+        // length, and an isolation clause further down is a footnote to it.
+        // A LOCATION plate is exempt — it IS an environment, and asking one for
+        // "no scenery" would ask for a picture of a place with no place in it.
+        ISOLATED_KINDS.includes(kind)
+            ? (style ? `${style}. Photograph of the ${kind}, ${ISOLATION_CLAUSE}`
+                     : `photoreal cinematic photograph of the ${kind}, ${ISOLATION_CLAUSE}`)
+            : (style ? `${style}. Photograph of the ${kind}`
+                     : `photoreal cinematic photograph of the ${kind}`),
         framing,
     ];
 
@@ -520,7 +531,8 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         // The negative refuses the old viewpoint only where the old viewpoint
         // is actually attached. With nothing to repeat, refusing "identical
         // framing" spends the negative on a risk that is not present.
-        negative_prompt: anchored ? `${NEGATIVE}, ${VIEW_NEGATIVE}` : NEGATIVE,
+        negative_prompt: isolationNegativeFor(kind,
+            anchored ? `${NEGATIVE}, ${VIEW_NEGATIVE}` : NEGATIVE),
         aspect_ratio: aspectRatio || undefined,
         // The project's delivery size, so a plate matches the frames that
         // reference it. Absent when the project states none.

@@ -164,6 +164,8 @@ film-engine/
 │   │   ├── provider-pricing.js  # What a generation costs, in the provider's own units
 │   │   ├── generator-costs.js   # Which generator to use: every price, one comparable unit
 │   │   ├── prop-categories.js   # What a prop may be, said once for the picker, the tool and the CHECK
+│   │   ├── plate-views.js       # Which view of a subject carries identity
+│   │   ├── plate-isolation.js   # A subject plate is the subject and nothing else
 │   │   ├── usage-meter.js       # Every provider call, metered and attributed
 │   │   ├── mcp-usage.js         # The agent host is the model; its traffic is the LLM meter
 │   │   ├── spend-backfill.js    # What a project spent before anything was tracking it
@@ -254,6 +256,7 @@ film-engine/
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
 │       ├── credentials-global.test.js   # A key is entered once, for the machine, not once per film
+│       ├── plate-views.test.js         # A turnaround is three pictures, and the app used the wrong one
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -757,6 +760,26 @@ Two projects lost their image and video providers. The tell was that `image_qual
 **And `provider_config` was not writable over MCP** — `project_update` refused it, so an agent could create a project and neither configure nor repair it, which is the wrong constraint for a pipeline whose reasoning happens in an agent host. Merged there too, with `null` clearing, so one payload cannot mean two things.
 
 **A placeholder is not a credential.** Six providers were stored holding the single character `k`. Everything downstream reported them configured — `isProviderConfigured` asks only whether the string is non-empty, the panel showed `set ••••k`, readiness passed — and the first sign was a **401 at generation time**, on a job already committed to, with a message blaming the vendor. Refused at the write, where it is cheap and unambiguous: no real key is under eight characters, so this cannot reject something legitimate. Rows written earlier are **flagged rather than treated as unset** — the key IS stored, and saying "not set" to someone looking straight at it is its own confusion.
+
+### A Turnaround Is Three Pictures, and the App Used the Wrong One
+*"We just generated plates for a character with front, side, back — but have no place to put them."*
+
+They were stored correctly: three files, three asset rows, each carrying its view in metadata. Two things were wrong with what happened next.
+
+**Which one attaches.** Both places that pick *the* plate ordered by `created_at DESC LIMIT 1`, and a turnaround is generated front, side, back — so the newest row is always the **back**. Every frame a character appeared in was conditioned on the back of their head, and the card showed the same. Generating three views cost three times as much as one and made the result **worse than not bothering**, while the symptom — a plausible stranger in the frame — reads as conditioning being weak rather than as the wrong picture being sent. `lib/plate-views.js` ranks front first; `LIMIT 1` is deliberate and unchanged, because the reference budget is three on Runway and five on Meshy and is shared with the location, the props and the anchor.
+
+**Where to see them.** Locations have had `plate/views` since the compass work; characters, the subject a turnaround is *for*, had nothing. `GET|DELETE /characters/:id/refsheet/views[/:view]` and a **Views** control on the card, which names the identity plate outright — three plates exist and exactly one is attached, so the other two look like they are working when they are not.
+
+A mutation caught the test being vacuous: it grepped each module for `orderByViewSql`, which the **import line alone** satisfies, so removing it from the ORDER BY left the test green while every frame went back to the back of the head. It now reads inside the clause.
+
+### A Subject Plate Is the Subject and Nothing Else
+*"When we do character or prop plates let's make sure we don't include backgrounds."*
+
+Both builders already asked for a *plain seamless backdrop* and both came back with full rooms. The instruction was not missing, it was **outranked**. The style preset **leads** — deliberately, because that is what stops a plate coming back as clip art — and a real style preset is largely a description of a **scene**: the one that produced these plates reads *"hard low-sun key raking through glass, practical tungsten warmth blooming in frame, light visible as shafts in heavy haze"*. Those are rooms with windows and lamps, stated first and at four hundred characters, against three trailing words. And the negative said *background clutter*, which asks for a **tidy room** rather than for no room.
+
+So isolation is stated **in the same breath as the medium** rather than trailing it, and refused outright in the negative with concrete nouns a model can act on. Both together: the positive says what the picture is, the negative is what holds once the style has described a place at length.
+
+**Location plates are exempt and must stay so** — a location plate *is* an environment, and asking one for "no scenery" would ask for a picture of a place with no place in it. Its own constraint is the opposite one. One shared `ISOLATION_CLAUSE`, because two literals is exactly how the two came to ask for isolation with different force: one said *backdrop*, the other *background*, and neither held.
 
 ### A Key Is Entered Once, for the Machine
 *"So none of the keys I added are stored anywhere?"* — correct, and the reason is worth recording because nothing about it was visible.
@@ -2002,6 +2025,7 @@ node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js
 node --test backend/tests/provider-config-merge.test.js
 node --test backend/tests/credentials-global.test.js
+node --test backend/tests/plate-views.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js
