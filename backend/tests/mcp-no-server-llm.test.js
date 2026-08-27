@@ -166,6 +166,9 @@ const ENTITY_ROUTES = [
     { kind: 'annotation', file: 'annotations.js', verbs: { POST: 'shot_annotate', DELETE: 'annotation_delete' } },
     { kind: 'mood board', file: 'mood-board.js', verbs: { POST: 'mood_board_add', DELETE: 'mood_board_remove' } },
     { kind: 'consistency', file: 'consistency.js', verbs: { POST: 'consistency_create', DELETE: 'consistency_delete' } },
+    // A cue carries the music DIRECTION. An agent that can generate music and 
+    // cannot write the brief for it has the wrong half of the job.
+    { kind: 'music cue', file: 'assets.js', verbs: { POST: 'music_cue_create', PUT: 'music_cue_update', DELETE: 'music_cue_delete' } },
 ];
 
 test('every entity route an agent should reach has a tool', () => {

@@ -85,6 +85,19 @@ function handleAssets(req, res, urlParts, query) {
         return getAssetProvenance(req, res, assetId);
     }
 
+    /*
+     * /film/music-cues/:id — change or remove a cue.
+     *
+     * Only POST and GET existed, so a cue's DIRECTION could be written once
+     * and never revised — and an agent could generate music while being unable
+     * to write the brief for it, which is the wrong way round when the
+     * connected model is the writer.
+     */
+    if (urlParts[1] === 'music-cues' && urlParts[2] && !urlParts[3]) {
+        if (req.method === 'PUT') return updateMusicCue(req, res, urlParts[2]);
+        if (req.method === 'DELETE') return deleteMusicCue(res, urlParts[2]);
+    }
+
     // /film/music-cues/:id/rights — update license fields
     if (urlParts[1] === 'music-cues' && urlParts[2] && urlParts[3] === 'rights' && req.method === 'PUT') {
         const cueId = urlParts[2];
@@ -568,6 +581,79 @@ function createColorPreset(req, res, projectId) {
     const row = db.prepare('SELECT * FROM film_color_presets WHERE id = ?').get(id);
     res.writeHead(201, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(row));
+}
+
+
+/**
+ * Change a cue. MERGED, never replaced.
+ *
+ * A cue is a whole brief — mood, instruments, the reference, the description —
+ * and refining one sentence of direction must not clear the rest. The scene
+ * card and the provider config both learned this; a swap here would drop the
+ * instruments every time somebody rewrote a note.
+ */
+function updateMusicCue(req, res, cueId) {
+    const existing = db.prepare('SELECT * FROM film_music_cues WHERE id = ?').get(cueId);
+    if (!existing) return json(res, 404, { error: 'Music cue not found' });
+
+    const body = req.body || {};
+    const fields = [];
+    const values = [];
+
+    const TEXT = { title: 200, description: 2000, mood: 100, genre: 100,
+        key_signature: 20, reference_track: 500, notes: 2000 };
+    for (const [field, max] of Object.entries(TEXT)) {
+        if (body[field] === undefined) continue;
+        fields.push(`${field} = ?`);
+        values.push(String(body[field]).slice(0, max));
+    }
+    for (const field of ['tempo_bpm', 'start_ms', 'duration_ms', 'fade_in_ms', 'fade_out_ms']) {
+        if (body[field] === undefined) continue;
+        const n = Number(body[field]);
+        if (!Number.isFinite(n) || n < 0) return json(res, 400, { error: `${field} must be a positive number` });
+        fields.push(`${field} = ?`);
+        values.push(n);
+    }
+    if (body.cue_type !== undefined) {
+        if (!VALID_CUE_TYPES.includes(body.cue_type)) {
+            return json(res, 400, { error: `cue_type must be one of: ${VALID_CUE_TYPES.join(', ')}` });
+        }
+        fields.push('cue_type = ?');
+        values.push(body.cue_type);
+    }
+    if (body.instruments !== undefined) {
+        // Stored as JSON, and accepted either as a list or as the comma string
+        // a person types — a raw string stored whole becomes one instrument
+        // called "solo cello, brushed kit".
+        const list = Array.isArray(body.instruments)
+            ? body.instruments
+            : String(body.instruments).split(',').map(x => x.trim()).filter(Boolean);
+        fields.push('instruments = ?');
+        values.push(JSON.stringify(list));
+    }
+
+    if (!fields.length) return json(res, 400, { error: 'Nothing to change' });
+
+    db.prepare(`UPDATE film_music_cues SET ${fields.join(', ')} WHERE id = ?`).run(...values, cueId);
+    // The bare row, matching what createMusicCue returns — two shapes for one
+    // entity is a needless thing for a caller to have to know.
+    const cue = db.prepare('SELECT * FROM film_music_cues WHERE id = ?').get(cueId);
+    return json(res, 200, cue);
+}
+
+/** Remove a cue. The generated audio is an asset and is left alone. */
+function deleteMusicCue(res, cueId) {
+    const cue = db.prepare('SELECT id FROM film_music_cues WHERE id = ?').get(cueId);
+    if (!cue) return json(res, 404, { error: 'Music cue not found' });
+    /*
+     * The cue goes; the AUDIO stays. A generated track cost money and lives in
+     * film_assets on its own scene — deleting a brief must not delete the
+     * music written from it, the same rule that keeps a sequence's clips when
+     * the sequence is deleted.
+     */
+    db.prepare('DELETE FROM film_music_cues WHERE id = ?').run(cueId);
+    return json(res, 200, { deleted: cueId, note: 'The cue is removed. Any audio generated from it '
+        + 'is kept — it is an asset on the scene and cost money to make.' });
 }
 
 module.exports = { handleAssets };

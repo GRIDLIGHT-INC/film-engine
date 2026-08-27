@@ -46,6 +46,7 @@ const { handleStoryboard } = require('../routes/storyboard');
 const { handleComments } = require('../routes/scripts');
 const { handleMoodBoard } = require('../routes/mood-board');
 const { handleStyleBook } = require('../routes/style-book');
+const { handleAssets } = require('../routes/assets');
 const { handleMediaImport } = require('../routes/media-import');
 const { handleVideoGen } = require('../routes/video-gen');
 const { handleSequences } = require('../routes/sequences');
@@ -1277,6 +1278,85 @@ const PRODUCTION_TOOLS = [
             text: { type: 'string', description: 'Required for a text note.' },
         },
         required: ['shot_id', 'kind', 'points'],
+    },
+    {
+        name: 'music_cue_create',
+        handler: handleAssets, method: 'POST',
+        description: 'Write the brief for a piece of music \u2014 the direction, not the generation. '
+            + 'WHAT REACHES THE GENERATOR: description (the free text, and the field that matters most), '
+            + 'mood, genre, instruments, tempo_bpm, key_signature and reference_track. `notes` is '
+            + 'production-facing and reaches NOTHING, so do not put the brief there. '
+            + 'In `description`, say what the music DOES against the scene \u2014 "holds under the '
+            + 'dialogue, lifts when she stands, out on the door" \u2014 not only what it sounds like; '
+            + 'the mood and genre already carry that. `reference_track` is sent as a style to match '
+            + '("in the style of X"), which is the clearest single note a director gives. '
+            + 'OMIT duration_ms and the cue is scored to the MEASURED length of that scene\u2019s '
+            + 'footage; set it only to run deliberately past or under the cut.',
+        path: a => `/film/projects/${a.project_id}/music-cues`,
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        schema: {
+            project_id: { type: 'string' },
+            scene_id: { type: 'string', description: 'The scene this cue plays over. Required for the '
+                + 'length to be measured from real footage.' },
+            title: { type: 'string' },
+            cue_type: { type: 'string', enum: ['score', 'source', 'sfx', 'ambient', 'transition'] },
+            description: { type: 'string', description: 'The free text that REACHES the generator. '
+                + 'What the music does against the scene.' },
+            mood: { type: 'string', description: 'Reaches the generator, and sets tempo and instrument '
+                + 'defaults when those are left blank.' },
+            genre: { type: 'string', description: 'Reaches the generator.' },
+            instruments: { type: 'array', items: { type: 'string' },
+                description: 'Reaches the generator. A list, e.g. ["solo cello","brushed kit"].' },
+            tempo_bpm: { type: 'number', description: 'Reaches the generator.' },
+            key_signature: { type: 'string', description: 'Reaches the generator, e.g. "D minor".' },
+            reference_track: { type: 'string', description: 'Reaches the generator as "in the style of X".' },
+            duration_ms: { type: 'number', description: 'OMIT to score the measured length of the '
+                + 'scene\u2019s footage \u2014 that is almost always what you want. Set it only to run '
+                + 'deliberately past or under the cut.' },
+            notes: { type: 'string', description: 'Production notes. Reaches NO generator.' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'music_cue_list',
+        handler: handleAssets, method: 'GET',
+        description: 'The music briefs on a project, with what each one would be generated from.',
+        path: a => `/film/projects/${a.project_id}/music-cues`
+            + (a.cue_type ? `?cue_type=${encodeURIComponent(a.cue_type)}` : ''),
+        schema: {
+            project_id: { type: 'string' },
+            cue_type: { type: 'string', enum: ['score', 'source', 'sfx', 'ambient', 'transition'] },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'music_cue_update',
+        handler: handleAssets, method: 'PUT',
+        description: 'Revise a cue. MERGED, never replaced \u2014 rewriting one sentence of direction '
+            + 'cannot clear the instruments or the reference. Use this to refine a brief rather than '
+            + 'creating a second cue for the same moment.',
+        path: a => `/film/music-cues/${a.cue_id}`,
+        body: a => { const { cue_id, ...rest } = a || {}; return rest; },
+        schema: {
+            cue_id: { type: 'string' },
+            title: { type: 'string' }, description: { type: 'string' },
+            mood: { type: 'string' }, genre: { type: 'string' },
+            instruments: { type: 'array', items: { type: 'string' } },
+            tempo_bpm: { type: 'number' }, key_signature: { type: 'string' },
+            reference_track: { type: 'string' }, duration_ms: { type: 'number' },
+            cue_type: { type: 'string', enum: ['score', 'source', 'sfx', 'ambient', 'transition'] },
+            notes: { type: 'string' },
+        },
+        required: ['cue_id'],
+    },
+    {
+        name: 'music_cue_delete',
+        handler: handleAssets, method: 'DELETE',
+        description: 'Remove a cue. Any audio generated from it is KEPT \u2014 it is an asset on the '
+            + 'scene and cost money to make.',
+        path: a => `/film/music-cues/${a.cue_id}`,
+        schema: { cue_id: { type: 'string' } },
+        required: ['cue_id'],
     },
     {
         name: 'stylebook_list',

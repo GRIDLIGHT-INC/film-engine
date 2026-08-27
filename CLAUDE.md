@@ -268,6 +268,7 @@ film-engine/
 │       ├── headline-plate.test.js      # A compass side is an extra view, never the headline plate
 │       ├── loading-never-sticks.test.js # A spinner that never resolves is worse than an error
 │       ├── cue-length.test.js          # A cue is written to the length of the cut, not a default
+│       ├── music-cue-mcp.test.js       # An agent can write the music direction, not only press generate
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -1950,6 +1951,10 @@ The handle is required **lazily** rather than threaded through the call sites. T
 
 **The NLE seam is one-way, and that is the honest limit.** There is no FCPXML, EDL or xmeml *parser* anywhere here — export only. So the engine can score its own assembly and cannot follow a re-cut made in Premiere. A test asserts the absence, so building an importer forces the claim to be revisited rather than left stale.
 
+**And an agent can write the brief, not only press generate.** `node_gen_music` was reachable and the cue that carries the direction was not — the thing that spends money was fully exposed while the field deciding *what the music is* could only be typed by hand. Four tools close it (`music_cue_create`, `_list`, `_update`, `_delete`, **179 tools**), and the routes they needed did not exist either: only POST and GET, so a cue's direction could be written once and never revised. `music_cue_update` **merges**, because a cue is a whole brief and rewriting one sentence must not clear the instruments; deleting a cue **keeps the audio**, which is an asset on the scene that cost money.
+
+The tool descriptions say which fields reach the generator and which do not — `notes` is production-facing and reaches nothing, and an agent not told that will write the brief into it. Music cues are now in `ENTITY_ROUTES`, so the next missing verb fails a derived test rather than being invisible: a cue absent from that registry is exactly how this gap survived.
+
 **And there is a place for music direction.** `film_music_cues.description` is the free text that reaches the prompt, and it always did. Three fields did not: `instruments` and `key_signature` were **read by the generator with no control in the form**, and `reference_track` — *"sounds like X"*, the clearest music note a director gives — was stored and read by nothing. All three are wired now, the reference phrased as a style to match rather than a title to quote. Length is typed in seconds and stored in milliseconds, blank meaning *score the measured cut*; instruments are split from a comma list, because the route JSON-stringifies whatever it is handed and a raw string becomes one instrument called *"solo cello, brushed kit"*.
 
 ### Music & Sound Design
@@ -2178,6 +2183,7 @@ node --test backend/tests/style-book-media.test.js
 node --test backend/tests/headline-plate.test.js
 node --test backend/tests/loading-never-sticks.test.js
 node --test backend/tests/cue-length.test.js
+node --test backend/tests/music-cue-mcp.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js

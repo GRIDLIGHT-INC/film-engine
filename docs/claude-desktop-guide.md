@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**175 tools, 44 families.** Everything the app can do, you can ask for in a
+**179 tools, 44 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -291,6 +291,29 @@ These resolve a provider and bill you:
 **Free and worth reading first:** `shot_prompt` (what a frame would send),
 `flow_estimate` (projected cost), `run_plan` (cost of a whole batch),
 `beats_get`, `script_stats`, `scene_history`, `outline_get`, `shot_frames`.
+
+### Telling it what the music should be
+
+`music_cue_create` · `music_cue_list` · `music_cue_update` · `music_cue_delete`
+
+A cue is the BRIEF for a piece of music, separate from generating it. What
+reaches the generator: description, mood, genre, instruments, tempo, key and
+reference_track. "notes" is production-facing and reaches nothing, so the brief
+must not go there.
+
+In description, say what the music DOES against the scene — "holds under the
+dialogue, lifts when she stands, out on the door" — rather than only what it
+sounds like; mood and genre already carry that. reference_track is sent as
+"in the style of X", which is the clearest single note a director gives and was
+stored and read by nothing until now.
+
+OMIT duration_ms and the cue is scored to the MEASURED length of that scene's
+footage. Set it only to run deliberately past or under the cut. Before this,
+every cue was generated at a hardcoded thirty seconds.
+
+`music_cue_update` merges, so refining one sentence cannot clear the
+instruments. Deleting a cue keeps any audio generated from it — that is an
+asset on the scene and cost money to make.
 
 ### Your own shots, kept across every film
 

@@ -327,6 +327,9 @@ const CREATE_DELETE_PAIRS = [
     // agent that can add one and not remove it turns a scratch note into a
     // permanent fixture of every project.
     { create: 'stylebook_create', remove: 'stylebook_delete' },
+    // A cue is a brief someone writes and rewrites; one an agent can add and
+    // not remove turns a first attempt into a permanent fixture of the scene.
+    { create: 'music_cue_create', remove: 'music_cue_delete' },
     // A profile is a commitment, and one an agent can make it must be able to
     // withdraw — otherwise a wrong subject is locked in with no way back out.
     { create: 'consistency_create', remove: 'consistency_delete' },
