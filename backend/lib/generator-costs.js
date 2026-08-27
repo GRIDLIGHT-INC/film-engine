@@ -199,6 +199,20 @@ function compareGenerators(capability, opts = {}) {
                 needs: credentialed || !adapter.requiresKey ? null
                     : `no credential for ${adapter.label || adapter.id}`,
 
+                /*
+                 * Whether this provider can be TOLD a size.
+                 *
+                 * Measured from a real file: a plate came back 1376x768 on a
+                 * project set to 2048x1080, because Meshy's text-to-image has
+                 * no width, height or size field and a requested resolution
+                 * can only become an aspect ratio. That is invisible from
+                 * cost alone and changes which generator you should pick, so
+                 * it belongs beside the price.
+                 */
+                size_control: adapter.sizeControl || 'ratio-only',
+                honours_resolution: !!adapter.sizeControl && adapter.sizeControl !== 'ratio-only',
+                size_note: adapter.sizeControlReason || null,
+
                 tier: tierFor(capability, adapter.id, model),
                 source: r.source || base.source || null,
                 checked,

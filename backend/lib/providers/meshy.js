@@ -658,6 +658,14 @@ const adapter = {
     // two megapixels. Held there rather than assumed unlimited: over-asking
     // produces a rejection at the provider, which is worse than a smaller
     // picture generated here where the clamp can be reported.
+    // How a requested width/height is treated. Declared, never inferred \u2014 the
+    // same rule promptLimit and maxReferenceImages follow, and for the same reason:
+    // a size that reaches nothing produced a confident 2048x1152 arriving as 1376x768.
+    sizeControl: 'ratio-only',
+    sizeControlReason: "Meshy's text-to-image documents ai_model, prompt, aspect_ratio, "
+        + 'generate_multi_view, pose_mode and remove_background \u2014 and no width, height, size or '
+        + 'quality. A requested size can only become a ratio, and Meshy chooses the pixels: a 16:9 ask '
+        + 'comes back about 1376x768. https://docs.meshy.ai/en/api/text-to-image',
     maxImagePixels: 2048 * 2048,
     promptLimit: 16000,
     // Declared, not assumed. The negative is FOLDED into the positive because

@@ -201,6 +201,14 @@ const googleImageAdapter = {
 
     // Documented at 4K for both named models — the first provider here that
     // makes the frame size a real choice rather than something to clamp.
+    // How a requested width/height is treated. Declared, never inferred \u2014 the
+    // same rule promptLimit and maxReferenceImages follow, and for the same reason:
+    // a size that reaches nothing produced a confident 2048x1152 arriving as 1376x768.
+    sizeControl: 'snapped',
+    sizeControlReason: 'The request carries image_size as a TIER \u2014 512px, 1K, 2K or 4K \u2014 '
+        + 'not a pixel pair, so a requested width and height selects the nearest tier at the '
+        + 'requested aspect rather than being reproduced exactly. 2K is reachable, which is what '
+        + 'a location plate needs.',
     maxImagePixels: 3840 * 2160,
     // Gemini takes a very long prompt; held at the largest figure any adapter
     // here uses rather than assumed unbounded.

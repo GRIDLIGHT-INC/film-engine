@@ -263,6 +263,7 @@ film-engine/
 │       ├── style-book.test.js          # A director's shots, reusable across films
 │       ├── plate-viewer.test.js        # A plate you cannot see full size is one you cannot judge
 │       ├── location-plate-resolution.test.js # A location plate is 2K or better, or says why not
+│       ├── requested-size.test.js       # A resolution that reaches nothing is worse than none
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
@@ -782,6 +783,27 @@ A named shot with the camera details you know and reference visuals, kept across
 **The visuals are for a person, and the UI says so.** `KIND_RANK` is `anchor 0, character 1, location 2, prop 3, style 4` against three references on Runway and five on Meshy — a style still already ranks last and is dropped before the request is built on any shot with a cast and a location, and a clip reaches no generator at all. Saying it outright is the difference between a reference library and a director attaching five pictures believing the frame is conditioned on them.
 
 Cross-project, so the page is in `ALWAYS_AVAILABLE` rather than one of the nine `PROJECT_PHASES`: a library that outlives every project does not belong inside the workflow of one. Served at `GET|POST /film/style-book`, `GET|PUT|DELETE /film/style-book/:id`, `POST /film/shots/:id/style-book/:entryId`, on a rail button between Setup and Terms, and as six tools (**175 tools**).
+
+### A Resolution That Reaches Nothing Is Worse Than No Resolution
+Measured from the file: a prop plate came back **1376×768** on a project set to **2048×1080**. The size calculation was correct and the provider never saw it. Meshy's text-to-image documents `ai_model`, `prompt`, `aspect_ratio`, `generate_multi_view`, `pose_mode` and `remove_background` — and **no width, height, size or quality**. The adapter turns a requested width and height into an aspect ratio because that is the only field the API has.
+
+So "the project's delivery size" is not one behaviour, it is **three**, and nothing said so:
+
+| | | |
+|---|---|---|
+| `exact` | the adapter sends pixels and gets them | bfl, openai |
+| `snapped` | it is told a size and answers at the nearest one it offers | runway (pixel-pair list), google (512px/1K/2K/4K **tier**) |
+| `ratio-only` | it cannot be told a size at all; the provider chooses | **meshy**, gridlight |
+
+Declared per adapter with its source, the same rule `promptLimit`, `maxReferenceImages` and `referenceMode` already follow. An adapter that declares nothing is read as **ratio-only**: over-promising is precisely what produced a confident 2048×1152 arriving as 1376×768.
+
+**And this corrects the 2K location floor shipped an hour earlier.** It computed 2048×1152 for Meshy, saw it under Meshy's ceiling, and reported the floor as **met** — on the provider both real projects use, where the number is discarded. A floor that cannot be honoured and says it was is the one outcome worse than having no floor. `honoured: false` now forces `below_floor: true` with the reason, and the plate result carries `requested_size_ignored` so the width and height in the response cannot be read as what was generated.
+
+**This is not a plate problem, it is a provider problem, and it applies to storyboard frames identically.** Both go through the same adapter, so on a ratio-only provider *every frame in a production* comes back at whatever that provider chooses — and since the plates are what the video model draws from, resolution lost here is lost everywhere downstream.
+
+What a location plate really gets at 2048×1080: **bfl and google reach 2K**; runway caps at 1920×1080 and openai at 1536×1024; **meshy and gridlight ignore the size entirely**. The remedy is a provider choice, not a setting — so the Compare Generators table carries an **"ignores your resolution"** badge with the reason, beside the price. It changes which generator you should pick and is invisible from cost alone: the only way to find out used to be opening the file and reading its pixels.
+
+The test that caught my own mis-declaration is worth keeping: it reads each adapter's SOURCE and refuses a claim of `exact` from an adapter that sends no pixel dimensions. Google was declared `exact` and sends `image_size: '2K'` — a tier, not a pixel pair.
 
 ### A Location Plate Is Generated at 2K or Better
 A location plate is the one reference that is **re-shot from**. A character or prop plate is a close-up filling its own frame, so the subject occupies most of the pixels; a location plate's subject is the whole environment, and any given shot uses a *fraction* of it — a corner of the street, one house front, the far kerb. Detail that is adequate on a portrait is mush on a crop, and the plate is what every shot in that scene is built against.
@@ -2100,6 +2122,7 @@ node --test backend/tests/style-book-plan.test.js
 node --test backend/tests/style-book.test.js
 node --test backend/tests/plate-viewer.test.js
 node --test backend/tests/location-plate-resolution.test.js
+node --test backend/tests/requested-size.test.js
 node --test backend/tests/screenplay-entities.test.js
 node --test backend/tests/recompose.test.js
 node --test backend/tests/recompose-payload.test.js

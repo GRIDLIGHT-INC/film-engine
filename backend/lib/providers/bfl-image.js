@@ -181,6 +181,11 @@ const bflImageAdapter = {
     capabilities: ['image'],
 
     // FLUX.2 is documented up to 4MP; asking beyond it is a rejection.
+    // How a requested width/height is treated. Declared, never inferred \u2014 the
+    // same rule promptLimit and maxReferenceImages follow, and for the same reason:
+    // a size that reaches nothing produced a confident 2048x1152 arriving as 1376x768.
+    sizeControl: 'exact',
+    sizeControlReason: 'FLUX.2 takes explicit width and height, and bills by the megapixel \u2014 the size asked for is the size generated and the size charged for.',
     maxImagePixels: 4 * 1024 * 1024,
     promptLimit: PROMPT_LIMIT,
     supportsNegativePrompt: 'folded',

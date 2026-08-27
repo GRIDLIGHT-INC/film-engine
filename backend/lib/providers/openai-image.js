@@ -400,6 +400,11 @@ const adapter = {
     // and the clamp is reported rather than silently applied.
     // The Images API documents 1024x1024, 1536x1024 and 1024x1536. Anything
     // larger is a 400, which costs a request and returns nothing.
+    // How a requested width/height is treated. Declared, never inferred \u2014 the
+    // same rule promptLimit and maxReferenceImages follow, and for the same reason:
+    // a size that reaches nothing produced a confident 2048x1152 arriving as 1376x768.
+    sizeControl: 'exact',
+    sizeControlReason: 'The Images API takes an explicit `size`, so the requested dimensions are what is generated, within the documented set.',
     maxImagePixels: 1536 * 1024,
     promptLimit: 4000,
     // The Images API has no negative field; this adapter has always folded it

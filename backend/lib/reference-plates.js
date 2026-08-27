@@ -403,7 +403,32 @@ function styleReferencesFor(db, projectId) {
  */
 const LOCATION_MIN_EDGE = 2048;
 
-function plateImageSize(project, maxPixels, kind) {
+/**
+ * Will the provider actually be told this size?
+ *
+ * Three behaviours, and the difference is invisible from the payload: `exact`
+ * sends pixels and gets them, `snapped` sends a pixel pair from a fixed list,
+ * and `ratio-only` cannot be told a size at all — a requested width and height
+ * can only become an aspect ratio, and the provider chooses the pixels.
+ *
+ * An adapter that declares nothing is read as NOT honouring it. Over-promising
+ * is exactly what produced a confident 2048x1152 that arrived as 1376x768.
+ */
+function sizeIsHonoured(adapter) {
+    /*
+     * `snapped` counts. Runway answers at the nearest pixel pair from a
+     * documented list and Google at the nearest size TIER — neither reproduces
+     * the ask exactly, but both are TOLD it, so the ceiling check below is
+     * meaningful and a big request genuinely returns a big picture.
+     *
+     * `ratio-only` does not: a width and height can only become an aspect
+     * ratio, the provider chooses the pixels, and no ceiling arithmetic here
+     * changes what comes back.
+     */
+    return !!adapter && adapter.sizeControl && adapter.sizeControl !== 'ratio-only';
+}
+
+function plateImageSize(project, maxPixels, kind, adapter) {
     const p = project || {};
     const { imageBudget } = require('./capability-payloads');
     const stated = String(p.target_resolution || '').match(/^\s*\d+\s*x\s*\d+\s*$/i);
@@ -415,7 +440,10 @@ function plateImageSize(project, maxPixels, kind) {
         // every plate in every existing project.
         if (!stated) return null;
         const d = imageBudget(p.aspect_ratio, p.target_resolution, maxPixels);
-        return { width: d.width, height: d.height, clamped: !!d.clamped, below_floor: false };
+        return {
+            width: d.width, height: d.height, clamped: !!d.clamped, below_floor: false,
+            honoured: sizeIsHonoured(adapter),
+        };
     }
 
     /*
@@ -457,8 +485,26 @@ function plateImageSize(project, maxPixels, kind) {
 
     const cap = Number(maxPixels) > 0 ? Number(maxPixels) : null;
     const asked = wanted.width * wanted.height;
+    const honoured = sizeIsHonoured(adapter);
     if (!cap || asked <= cap) {
-        return { ...wanted, clamped: false, below_floor: false, floor_reason: null };
+        /*
+         * Fits the ceiling — but on a provider that cannot be told a size, the
+         * number reaches nothing and the plate comes back at whatever the
+         * provider chooses. Reporting the floor as met there is the one
+         * outcome worse than not having a floor: it is a promise that is
+         * checked and found true while the file on disk is 1376x768.
+         */
+        if (!honoured) {
+            return {
+                ...wanted, clamped: false, honoured: false, below_floor: true,
+                floor_reason: adapter && adapter.sizeControlReason
+                    ? `This provider cannot be told a size \u2014 a width and height can only become an `
+                      + `aspect ratio, so it chooses the pixels. ${adapter.sizeControlReason}`
+                    : 'This provider cannot be told a size; a width and height can only become an '
+                      + 'aspect ratio, so the provider chooses the pixels.',
+            };
+        }
+        return { ...wanted, clamped: false, honoured: true, below_floor: false, floor_reason: null };
     }
 
     /*
@@ -476,7 +522,8 @@ function plateImageSize(project, maxPixels, kind) {
         clamped: true,
         asked_width: wanted.width,
         asked_height: wanted.height,
-        below_floor: Math.max(got.width, got.height) < LOCATION_MIN_EDGE,
+        honoured,
+        below_floor: !honoured || Math.max(got.width, got.height) < LOCATION_MIN_EDGE,
         floor_reason: `This provider caps an image at ${cap.toLocaleString()} pixels, so a location `
             + `plate comes back ${got.width}x${got.height} rather than the ${LOCATION_MIN_EDGE}px `
             + 'long edge a location wants. Meshy and BFL can serve it; Runway and OpenAI cannot.',
@@ -649,7 +696,8 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         // LOCATION, which has a 2K floor whether the project stated a size or
         // not, because it is the plate every shot in a scene is cropped from.
         ...(() => {
-            const size = plateImageSize(project, provider && provider.maxImagePixels, kind);
+            // The adapter itself, so the report knows whether the size reaches it.
+            const size = plateImageSize(project, provider && provider.maxImagePixels, kind, provider);
             if (!size) return {};
             return {
                 width: size.width,
@@ -658,6 +706,7 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
                 // delivers less is worse than no floor, because the director
                 // stops checking.
                 ...(size.below_floor ? { __below_floor: size.floor_reason } : {}),
+                ...(size.honoured === false ? { __size_ignored: true } : {}),
             };
         })(),
         ...(refs.length ? { reference_images: refs } : {}),
@@ -671,7 +720,9 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
      * travel to Runway or Meshy with the request.
      */
     const belowFloor = basePayload.__below_floor || null;
+    const sizeIgnored = !!basePayload.__size_ignored;
     delete basePayload.__below_floor;
+    delete basePayload.__size_ignored;
 
     /*
      * The quality tier reaches plates too.
@@ -789,12 +840,16 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         // measured off the file.
         ...(basePayload.width ? { width: basePayload.width, height: basePayload.height } : {}),
         ...(belowFloor ? { below_resolution_floor: belowFloor } : {}),
+        // The size we computed reached nothing. Said plainly, because the
+        // width/height in this response would otherwise read as what was
+        // generated — and it is not.
+        ...(sizeIgnored ? { requested_size_ignored: true } : {}),
         ...provenance,
     };
 }
 
 module.exports = {
-    LOCATION_MIN_EDGE,
+    LOCATION_MIN_EDGE, sizeIsHonoured,
     COMPASS_VIEWS, compassView, planCompassSweep, plateImageSize,
     buildPlateRefinePrompt, REFINE_NEGATIVE,
     plateFileName, PLATE_KINDS, buildPlatePrompt, generatePlate, styleReferencesFor, NEGATIVE };

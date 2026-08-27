@@ -24818,6 +24818,9 @@ ${fountainText.slice(0, 50000)}`;
                 </td>
                 <td class="text-sm">
                     ${x.tier ? `<span class="badge" title="${esc(x.tier.why || '')}">${esc(x.tier.label)}</span>` : ''}
+                    ${x.honours_resolution === false
+                        ? `<span class="badge" style="background:var(--gl-warning);"
+                                 title="${esc(x.size_note || '')}">ignores your resolution</span>` : ''}
                     ${x.inferred ? '<span class="badge" title="Not published by the provider — inferred, and may be wrong">inferred</span>' : ''}
                     ${x.self_hosted ? '<span class="badge" title="No per-call charge. Zero because nobody bills for it, not because it is cheap.">self-hosted</span>' : ''}
                     ${x.available ? '' : `<span class="badge" style="background:var(--gl-warning);" title="${esc(x.needs || '')}">no key</span>`}
@@ -24862,7 +24865,11 @@ ${fountainText.slice(0, 50000)}`;
                 </div>` : ''}
             <p class="text-sm text-muted" style="margin-top:8px;">${esc(r.note)}</p>
             <p class="text-sm text-muted">A tier badge says what a model is FOR. Cheapest is not
-               best: a draft model is meant to be rolled repeatedly, a precision one to be right once.</p>`;
+               best: a draft model is meant to be rolled repeatedly, a precision one to be right once.</p>
+            <p class="text-sm text-muted">&ldquo;Ignores your resolution&rdquo; means the provider has no
+               width or height field &mdash; a requested size can only become an aspect ratio and the
+               provider picks the pixels. Your project&rsquo;s delivery size reaches it in name only, and
+               that applies to storyboard frames as much as to plates.</p>`;
     }
 
     // ── Rates ─────────────────────────────────────────────────────────────

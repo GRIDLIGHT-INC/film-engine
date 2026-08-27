@@ -651,6 +651,11 @@ const adapter = {
     // and the clamp is reported rather than silently applied.
     // gen4_image's largest documented ratio is 1920:1080; 2112:912 is wider but
     // no taller, so this is the pixel ceiling either way.
+    // How a requested width/height is treated. Declared, never inferred \u2014 the
+    // same rule promptLimit and maxReferenceImages follow, and for the same reason:
+    // a size that reaches nothing produced a confident 2048x1152 arriving as 1376x768.
+    sizeControl: 'snapped',
+    sizeControlReason: 'gen4_image takes a `ratio` from a documented list of pixel pairs, so a request is answered at one of those sizes rather than the one asked for \u2014 a 1920x1080 ask generates at the nearest listed ratio and is scaled afterwards.',
     maxImagePixels: 1920 * 1080,
     promptLimit: 1000,
     // Declared honestly: the negative is folded into the positive because

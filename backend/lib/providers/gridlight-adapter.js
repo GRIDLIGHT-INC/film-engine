@@ -158,6 +158,11 @@ const gridlightAdapter = {
     // and the clamp is reported rather than silently applied.
     // A swappable local agent whose real ceiling is unknowable from here. Held
     // conservative, on the same reasoning as its prompt and reference limits.
+    // How a requested width/height is treated. Declared, never inferred \u2014 the
+    // same rule promptLimit and maxReferenceImages follow, and for the same reason:
+    // a size that reaches nothing produced a confident 2048x1152 arriving as 1376x768.
+    sizeControl: 'ratio-only',
+    sizeControlReason: 'A swappable local agent whose endpoint is unknowable from here. It is sent a ratio and no dimensions, so it decides the pixels. Held at the strict reading rather than guessed upward: over-claiming reports a size the file does not have.',
     maxImagePixels: 1536 * 1536,
     promptLimit: 1000,
     // The gateway receives the payload verbatim, so a negative and a seed both
