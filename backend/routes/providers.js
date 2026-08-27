@@ -103,7 +103,19 @@ function getCatalog(res) {
             capabilities: a.capabilities || [],
             requiresKey: !!a.requiresKey,
             connection: a.connection || null, // { instructions, fields?, oauth? } — what the user must provide
-            credentials: needsSetup ? credStatus(a.id) : { set: true, last4: null, fields: {}, connected: true },
+            /*
+             * A keyless provider is not automatically ready.
+             *
+             * The local gateway needs no credential, so this reported it as
+             * `set: true` — "nothing to configure" read as "available" — which
+             * is the opposite of the truth once it is switched off. It reports
+             * what isProviderConfigured() actually answers, and says why.
+             */
+            credentials: needsSetup
+                ? credStatus(a.id)
+                : { set: providers.isProviderConfigured(a.id), last4: null, fields: {}, connected: false },
+            enabled: providers.isProviderConfigured(a.id),
+            needs_enabling: !needsSetup && !providers.isProviderConfigured(a.id),
         };
     });
     json(res, 200, { capabilities: CAPABILITIES, providers: catalog });

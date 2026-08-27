@@ -118,8 +118,15 @@ test('every tier resolves to an adapter that exists and can serve images', () =>
         }
     }
 
-    // Resolution must be by CREDENTIAL, not by hope: a tier pointing at a
-    // provider with no key has to fall through rather than fail at generation.
+    /*
+     * Resolution is by CREDENTIAL, not by hope. Seeded here because the local
+     * gateway is now off unless switched on, so a database with no credentials
+     * resolves to NOTHING — which is the honest answer and makes this assertion
+     * about an empty machine rather than about routing.
+     */
+    require('../db/database').db.prepare(
+        `INSERT INTO film_provider_credentials (provider, api_key, meta) VALUES ('openai', 'k', '{}')
+         ON CONFLICT(provider) DO UPDATE SET api_key = excluded.api_key`).run();
     const chosen = resolveTier('standard', {});
     assert.ok(chosen && chosen.provider,
         'no tier resolves at all — every project would fail to generate');

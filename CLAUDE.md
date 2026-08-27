@@ -179,6 +179,7 @@ film-engine/
 │       ├── image-fallback.test.js      # Image generation survives a provider refusal
 │       ├── reference-capability.test.js # Tags only reach providers that can read them
 │       ├── provider-tiers.test.js      # Every adapter declares its contract; every tier resolves
+│       ├── gridlight-optin.test.js     # The local gateway is off until switched on, for all 10 capabilities
 │       ├── paid-image-controls.test.js # Every image button: pick the model, read the prompt, edit it
 │       ├── thumbnails.test.js         # Boards fetch thumbnails; bundles survive subdirectories
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
@@ -1823,6 +1824,7 @@ node --test backend/tests/reference-plates.test.js
 node --test backend/tests/image-fallback.test.js
 node --test backend/tests/reference-capability.test.js
 node --test backend/tests/provider-tiers.test.js
+node --test backend/tests/gridlight-optin.test.js
 node --test backend/tests/paid-image-controls.test.js
 node --test backend/tests/thumbnails.test.js
 node --test backend/tests/previs-storyboard.test.js

@@ -28,6 +28,13 @@
  */
 
 const test = require('node:test');
+/*
+ * These assert what an UNTAGGABLE provider receives, and the local gateway is
+ * the untaggable one they use. It is off unless switched on, so without this
+ * the config resolves to a refusing adapter and the assertions are about
+ * nothing. Set before the registry is required, which caches the answer.
+ */
+process.env.GRIDLIGHT_ENABLED = '1';
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');

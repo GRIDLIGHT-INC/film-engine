@@ -5486,6 +5486,25 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 </div>
             </div>
             <div class="card mt-16" style="max-width:500px;">
+                <h3 class="mb-8">Local endpoints</h3>
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                        <input type="checkbox" id="settingsGridlight" style="width:auto;margin:0;"
+                               onchange="saveGridlightEnabled()">
+                        <span>Use the local Gridlight endpoints</span>
+                    </label>
+                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                        Off by default. Gridlight needs no API key, so while it was always on it read as
+                        &ldquo;ready&rdquo; whether or not anything was listening on the port &mdash; and it is the
+                        fallback every capability drops to. Until you switch it on, nothing resolves to it, and
+                        a capability it is the only provider for says <em>nothing serves this</em> rather than
+                        failing at generation time.
+                    </p>
+                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;" id="gridlightServes"></p>
+                </div>
+            </div>
+
+            <div class="card mt-16" style="max-width:500px;">
                 <h3 class="mb-8">You</h3>
                 <div class="form-group">
                     <label>Author</label>
@@ -23018,7 +23037,46 @@ ${fountainText.slice(0, 50000)}`;
         try {
             const res = await api('/settings');
             el.value = (res.settings && res.settings.author) || '';
+
+            const gl = document.getElementById('settingsGridlight');
+            if (gl) gl.checked = !!String((res.settings && res.settings.gridlight_enabled) || '').trim();
+            // What it would serve, so the consequence of the switch is visible
+            // rather than something to be discovered at generation time.
+            const serves = document.getElementById('gridlightServes');
+            if (serves) {
+                try {
+                    const cat = await api('/providers');
+                    const g = (cat.providers || []).find(x => x.id === 'gridlight');
+                    serves.textContent = g
+                        ? `Serves ${(g.capabilities || []).join(', ')} when enabled.`
+                        : '';
+                } catch (_) { serves.textContent = ''; }
+            }
         } catch (_) { /* leave it blank; the field says what it is for */ }
+    }
+
+    /**
+     * Saved on the click, not on a separate Save button.
+     *
+     * The author field below shares a Save; this does not, because a switch
+     * that looks flipped and has not been saved is exactly the state where a
+     * director believes the local endpoints are on and every generation quietly
+     * resolves somewhere else.
+     */
+    async function saveGridlightEnabled() {
+        const gl = document.getElementById('settingsGridlight');
+        if (!gl) return;
+        try {
+            await api('/settings', { method: 'PUT',
+                body: JSON.stringify({ gridlight_enabled: gl.checked ? '1' : '' }) });
+            setStatus(gl.checked
+                ? 'Local Gridlight endpoints enabled.'
+                : 'Local Gridlight endpoints disabled — nothing will resolve to them.');
+            if (typeof loadProviders === 'function') loadProviders();
+        } catch (err) {
+            gl.checked = !gl.checked;   // or the box lies about what was stored
+            setStatus('Could not save: ' + err.message);
+        }
     }
 
     async function saveAppSettings() {

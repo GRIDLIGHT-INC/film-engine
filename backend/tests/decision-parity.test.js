@@ -60,6 +60,13 @@
  */
 
 const test = require('node:test');
+/*
+ * The local gateway is OFF unless switched on, so a suite that stands up a mock
+ * Gridlight and generates against it has to enable it — exactly as an operator
+ * running the real service does. Set before anything requires the provider
+ * registry, which caches the answer.
+ */
+process.env.GRIDLIGHT_ENABLED = '1';
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');

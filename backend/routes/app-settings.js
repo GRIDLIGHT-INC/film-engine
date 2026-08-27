@@ -29,6 +29,28 @@ const SETTINGS = {
     // across every film they work on. Stored here for the same reason `author`
     // is: it is the same answer every time and belongs to whoever is sitting
     // at the machine.
+    /*
+     * The local Gridlight gateway, OFF until switched on.
+     *
+     * It declares `requiresKey: false`, so every readiness check has answered
+     * "configured" for it whether or not anything is listening on the port —
+     * and it is the fallback every capability drops to. A capability with no
+     * hosted adapter therefore resolved to a service that may not be running,
+     * and the only symptom was a connection refused at generation time, per
+     * capability, after the work had been committed to.
+     *
+     * Default is OFF rather than on. A feature that is enabled until you find
+     * the setting is one every existing project is already using without having
+     * chosen to, and here "using" means pointing paid generation at a closed
+     * port.
+     */
+    gridlight_enabled: {
+        description: 'Turn on the local Gridlight endpoints. Off by default: until it is enabled, '
+            + 'nothing resolves to it, and a capability it is the only provider for reports that '
+            + 'nothing serves it rather than failing at generation time. Set GRIDLIGHT_URL if the '
+            + 'service is not on localhost:8080.',
+        default: '',
+    },
     subscription_plan: {
         description: 'Which Claude/ChatGPT plan drives the MCP host: free, pro, max_5x, max_20x. Used only to scale a calibrated baseline across plans — no ceiling is assumed from the name alone.',
         default: '',
@@ -83,6 +105,16 @@ function putSettings(req, res) {
         if (body[key] === undefined) continue;      // merge, so an absent key is "leave it"
         upsert.run(key, String(body[key]));
         changed.push(key);
+    }
+
+    /*
+     * Turning the local gateway on or off takes effect NOW, not at the next
+     * restart. The resolver caches the answer because it is read on every
+     * generation, and a switch that needs a restart is one a director flips,
+     * watches do nothing, and flips back.
+     */
+    if (changed.includes('gridlight_enabled')) {
+        try { require('../lib/providers').refreshLocalGateway(); } catch (_) { /* not fatal */ }
     }
 
     if (!changed.length) {

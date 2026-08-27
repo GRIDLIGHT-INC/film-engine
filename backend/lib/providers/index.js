@@ -140,11 +140,57 @@ function defaultProviderConfig() {
     return config;
 }
 
+
+/*
+ * THE LOCAL GATEWAY IS OFF UNTIL SOMEBODY TURNS IT ON.
+ *
+ * Gridlight declares `requiresKey: false`, so isProviderConfigured() answered
+ * TRUE for it whether or not anything was listening — and it is the floor every
+ * resolution falls to. A capability with no hosted adapter therefore pointed at
+ * a service that may not be running, and the only symptom was a connection
+ * refused at generation time, per capability, after the work was committed to.
+ *
+ * Cached because resolveId runs on every generation and this is a database
+ * read; refreshed explicitly when the setting is written, and by the settings
+ * route, so turning it on does not need a restart.
+ */
+let _gatewayEnabled = null;
+
+function localGatewayEnabled() {
+    if (_gatewayEnabled !== null) return _gatewayEnabled;
+    // The env var is a deployment override, the same shape credentials use: a
+    // container that ships with the gateway should not need a UI click.
+    if (process.env.GRIDLIGHT_ENABLED) {
+        _gatewayEnabled = !/^(0|false|no|off)$/i.test(process.env.GRIDLIGHT_ENABLED);
+        return _gatewayEnabled;
+    }
+    try {
+        const { db } = require('../../db/database');
+        const row = db.prepare("SELECT value FROM film_app_settings WHERE key = 'gridlight_enabled'").get();
+        _gatewayEnabled = !!(row && String(row.value || '').trim());
+    } catch (_) {
+        // No database yet (a unit test, a first boot): off, because the safe
+        // answer to "is a local service running" is no.
+        _gatewayEnabled = false;
+    }
+    return _gatewayEnabled;
+}
+
+/** Called when the setting is written, so a restart is not needed. */
+function refreshLocalGateway() { _gatewayEnabled = null; }
+
 function resolveId(capability, projectConfig) {
     const cfg = projectConfig || {};
-    // An explicit per-project choice always wins, including choosing Gridlight
-    // back over the preferred default.
-    if (cfg[capability]) return cfg[capability];
+    /*
+     * An explicit per-project choice wins — EXCEPT a disabled local gateway.
+     *
+     * Otherwise the switch is advisory: a project pinned to gridlight before it
+     * was switched off would go on using it, which is exactly the state the
+     * switch exists to end.
+     */
+    if (cfg[capability]) {
+        if (cfg[capability] !== DEFAULT_PROVIDER || localGatewayEnabled()) return cfg[capability];
+    }
     const envKey = `PROVIDER_${String(capability).toUpperCase()}`;
     if (process.env[envKey]) return process.env[envKey];
     if (process.env.PROVIDER_DEFAULT) return process.env.PROVIDER_DEFAULT;
@@ -203,7 +249,12 @@ function resolveId(capability, projectConfig) {
         if (id && isProviderConfigured(id)) return id;
     }
 
-    return DEFAULT_PROVIDER;
+    /*
+     * The floor. With the gateway off there is no floor — and NULL is the
+     * honest answer, not a fallback: a capability nothing serves that reports a
+     * provider is how a run gets started and dies at its last step.
+     */
+    return localGatewayEnabled() ? DEFAULT_PROVIDER : null;
 }
 
 /**
@@ -219,7 +270,12 @@ function isProviderConfigured(id) {
     if (!adapter) return false;
 
     const needsFields = !!(adapter.connection && Array.isArray(adapter.connection.fields) && adapter.connection.fields.length);
-    if (!adapter.requiresKey && !needsFields) return true;   // e.g. gridlight
+    if (!adapter.requiresKey && !needsFields) {
+        // "Nothing to configure" and "switched off" are different answers, and
+        // reading the first as ready is what made every readiness check report
+        // a gateway that may not be running as available.
+        return id === DEFAULT_PROVIDER ? localGatewayEnabled() : true;
+    }
 
     try {
         const { getCredential } = require('./credentials');
@@ -248,15 +304,63 @@ function isProviderConfigured(id) {
  * config can never break generation.
  * @returns {object} adapter
  */
+
+/**
+ * The adapter returned when NOTHING serves a capability.
+ *
+ * `resolveId` answers null in that case, and null is the honest answer — but
+ * thirty-one call sites do `resolve(cap, cfg).generate(...)`, so returning it
+ * would turn a missing provider into a TypeError with a stack trace instead of
+ * a sentence a director can act on.
+ *
+ * So the shape stays an adapter and the refusal is the behaviour: every
+ * generate answers with what is missing and how to fix it. That is strictly
+ * better than the old floor, which handed back a local gateway that may not
+ * have been running and failed at the socket.
+ */
+function unavailableAdapter(capability) {
+    const hosted = list()
+        .filter(a => a.id !== DEFAULT_PROVIDER && (a.capabilities || []).includes(capability))
+        .map(a => a.id);
+    const remedy = hosted.length
+        ? `Add an API key for ${hosted.join(' or ')} in Provider Settings`
+        : 'No hosted provider serves this capability';
+    const error = `nothing is configured to generate ${capability}. ${remedy}, `
+        + 'or switch on the local Gridlight endpoints in Settings.';
+    return {
+        id: null,
+        kind: 'unavailable',
+        label: `No provider for ${capability}`,
+        capabilities: [capability],
+        unavailable: true,
+        supports: c => c === capability,
+        generate: async () => ({ ok: false, status: 503, error }),
+        generateStream: async () => ({ ok: false, status: 503, error }),
+        meter: () => null,
+        health: async () => ({ ok: false, error }),
+    };
+}
+
 function resolve(capability, projectConfig) {
     if (!isCapability(capability)) {
-        // Unknown capability: still hand back the default adapter; callers guard.
+        /*
+         * An unknown capability. This handed back the local gateway, which was
+         * defensible while the gateway was always there and is not now: it
+         * would be the one branch that still routes to a service nobody
+         * enabled. A refusal names the capability, which is more use than a
+         * connection error against an endpoint that was never going to serve it.
+         */
+        if (!localGatewayEnabled()) return metered(unavailableAdapter(capability), projectConfig);
         return metered(get(DEFAULT_PROVIDER) || gridlightAdapter, projectConfig);
     }
     const id = resolveId(capability, projectConfig);
+    // Nothing serves it: refuse in words rather than falling to a gateway that
+    // may not be running, which is what the old floor did.
+    if (id === null) return metered(unavailableAdapter(capability), projectConfig);
     const adapter = get(id);
     if (adapter && (!adapter.supports || adapter.supports(capability))) return metered(adapter, projectConfig);
-    // Configured provider missing / unsupported → safe fallback.
+    // A configured provider that is missing or cannot serve this capability.
+    if (!localGatewayEnabled()) return metered(unavailableAdapter(capability), projectConfig);
     return metered(get(DEFAULT_PROVIDER) || gridlightAdapter, projectConfig);
 }
 
@@ -269,6 +373,7 @@ function resolve(capability, projectConfig) {
 function resolveGenerator(capability, projectConfig) {
     const adapter = resolve(capability, projectConfig);
     if (adapter && typeof adapter.generate === 'function') return adapter;
+    if (!localGatewayEnabled()) return metered(unavailableAdapter(capability), projectConfig);
     return metered(get(DEFAULT_PROVIDER) || gridlightAdapter, projectConfig);
 }
 
@@ -314,4 +419,4 @@ function metered(adapter, projectConfig) {
 register(gridlightAdapter);
 _autoload();
 
-module.exports = { register, get, list, resolve, resolveId, resolveGenerator, metered, isProviderConfigured, defaultProviderConfig, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };
+module.exports = { register, get, list, resolve, resolveId, resolveGenerator, metered, isProviderConfigured, defaultProviderConfig, localGatewayEnabled, refreshLocalGateway, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };

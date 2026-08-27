@@ -6,6 +6,13 @@
  * job/asset persistence → file serving.
  */
 const { describe, it, before, after } = require('node:test');
+/*
+ * The local gateway is OFF unless switched on, so a suite that stands up a mock
+ * Gridlight and generates against it has to enable it — exactly as an operator
+ * running the real service does. Set before anything requires the provider
+ * registry, which caches the answer.
+ */
+process.env.GRIDLIGHT_ENABLED = '1';
 const assert = require('node:assert/strict');
 const { spawn } = require('child_process');
 const path = require('path');

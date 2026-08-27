@@ -111,12 +111,25 @@ test('a project with no configuration resolves to the credentialed provider', ()
 });
 
 test('an explicit project choice still wins over the preference', () => {
-    // The preference is a default, not a policy. Choosing Gridlight back has to
-    // keep working or the setting is a lie.
+    /*
+     * The preference is a default, not a policy. Choosing Gridlight back has to
+     * keep working or the setting is a lie — but only once the gateway is
+     * SWITCHED ON: a pin to a local service nobody enabled points at something
+     * that certainly cannot run, and honouring it would make the switch
+     * advisory for exactly the projects that had chosen it.
+     */
+    const { db } = require('../db/database');
+    db.prepare(`INSERT INTO film_app_settings (key, value) VALUES ('gridlight_enabled', '1')
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run();
+    providers.refreshLocalGateway();
+
     for (const capability of Object.keys(PREFERRED_WHEN_CONFIGURED)) {
         assert.strictEqual(providers.resolveId(capability, { [capability]: DEFAULT_PROVIDER }), DEFAULT_PROVIDER,
             `${capability}: an explicit choice was overridden by the preference`);
     }
+
+    db.prepare("UPDATE film_app_settings SET value = '' WHERE key = 'gridlight_enabled'").run();
+    providers.refreshLocalGateway();
 });
 
 test('an uncredentialed preference does not hijack the capability', () => {

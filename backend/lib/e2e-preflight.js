@@ -162,10 +162,34 @@ async function checkCapability(capability, projectConfig, cache) {
         out.fixes.push(`point ${capability} at a provider that serves it`);
     }
 
+    /*
+     * NOTHING serves it.
+     *
+     * resolveId answers null once the local gateway is off and no hosted
+     * adapter is credentialed. That is a different report from "the provider
+     * has no key": there is no provider to give a key to.
+     */
+    if (!effective) {
+        out.verdict = 'blocked';
+        out.reasons.push(`nothing is configured to generate '${capability}'`);
+        out.fixes.push(`add a key for a provider that serves ${capability}, `
+            + 'or switch on the local Gridlight endpoints in Settings');
+        return out;
+    }
+
     if (!isProviderConfigured(effective)) {
         out.verdict = 'blocked';
-        out.reasons.push(`'${effective}' has no credential`);
-        out.fixes.push(`set ${effective.toUpperCase()}_API_KEY, or store the key in Provider Settings`);
+        // A keyless local service is not missing a credential — it is switched
+        // off, and telling someone to set GRIDLIGHT_API_KEY sends them looking
+        // for a key that does not exist.
+        if (effective === 'gridlight') {
+            out.reasons.push('the local Gridlight endpoints are switched off');
+            out.fixes.push('turn them on in Settings, or point '
+                + `${capability} at a hosted provider`);
+        } else {
+            out.reasons.push(`'${effective}' has no credential`);
+            out.fixes.push(`set ${effective.toUpperCase()}_API_KEY, or store the key in Provider Settings`);
+        }
     }
 
     // Gridlight is a local service rather than a hosted API: having no key is

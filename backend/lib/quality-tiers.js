@@ -189,7 +189,18 @@ function resolveTier(tier, config, request) {
      * and a table that cannot be overridden is a reason to stop using tiers at
      * all, the same argument every ignore_* override in this codebase rests on.
      */
-    if (cfg.image && providers.get(cfg.image)) {
+    /*
+     * A pin wins — except a local gateway that is switched off.
+     *
+     * Narrow on purpose. The first version refused ANY pin whose provider was
+     * not configured, which broke the older and stronger contract that an
+     * explicit choice always wins: a key can arrive from the environment at
+     * generation time, and second-guessing a director's stated provider is not
+     * this function's job. A gateway nobody enabled is the one case where the
+     * pin points at something that certainly cannot run.
+     */
+    if (cfg.image && providers.get(cfg.image)
+        && (cfg.image !== 'gridlight' || providers.isProviderConfigured('gridlight'))) {
         /*
          * Pinning a PROVIDER is not pinning a MODEL.
          *
@@ -237,8 +248,13 @@ function resolveTier(tier, config, request) {
     for (const id of spec.order) {
         const adapter = providers.get(id);
         if (!adapter) continue;
-        // Gridlight is the local gateway and needs no key — it is the floor of
-        // every order so a tier can never resolve to nothing.
+        /*
+         * The local gateway is the floor of every order and is OFF unless
+         * switched on, so it is skipped like an uncredentialed provider: a tier
+         * that lands on a service nobody enabled is the same silent dead end,
+         * reached through the picker rather than the fallback.
+         */
+        if (id === 'gridlight' && !providers.isProviderConfigured('gridlight')) { skipped.push(id); continue; }
         if (adapter.requiresKey && !hasCredential(id)) { skipped.push(id); continue; }
         const first = spec.order.find(x => providers.get(x));
         return {

@@ -104,11 +104,17 @@ describe('Provider Settings API', () => {
     });
 
     it('returns per-project provider config with effective defaults', async () => {
+        /*
+         * With no credentials and the local gateway switched OFF, "effective"
+         * is NULL rather than the gateway. That is the honest answer: nothing
+         * is configured to generate these, and reporting a provider that cannot
+         * run is how a run gets started and dies at its first paid step.
+         */
         const res = await request(`/film/projects/${projectId}/providers`);
         assert.equal(res.status, 200);
         assert.deepEqual(res.data.config, {});
-        assert.equal(res.data.effective.image, 'gridlight');
-        assert.equal(res.data.effective.voice, 'gridlight');
+        assert.equal(res.data.effective.image, null);
+        assert.equal(res.data.effective.voice, null);
     });
 
     it('persists a valid per-project provider choice and filters unknown ones', async () => {
@@ -118,8 +124,15 @@ describe('Provider Settings API', () => {
         assert.equal(res.status, 200);
         assert.equal(res.data.config.image, 'gridlight');   // registered → kept
         assert.equal(res.data.config.video, undefined);      // unknown → filtered
-        // Effective still resolves everything.
-        assert.equal(res.data.effective.video, 'gridlight');
+        /*
+         * The CHOICE is stored — the gateway is a registered provider and
+         * picking it is legitimate — but it does not resolve while the switch
+         * is off. Storing a pin you cannot currently use is right: turning the
+         * switch on later must restore the choice rather than require it to be
+         * made again.
+         */
+        assert.equal(res.data.effective.video, null);
+        assert.equal(res.data.effective.image, null);
     });
 
     it('404s provider config for an unknown project', async () => {

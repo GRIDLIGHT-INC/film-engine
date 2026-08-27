@@ -2,6 +2,20 @@
  * Unit tests for the provider adapter layer (lib/providers/*).
  * Pure — no server, no DB.
  */
+/*
+ * Isolated, and the gateway pinned OFF.
+ *
+ * localGatewayEnabled() reads film_app_settings, so once the switch existed
+ * this file — which sets no FILM_DATA_DIR — began resolving against whatever
+ * the real database happened to say. A unit test whose answer depends on the
+ * developer's own settings is one that passes on their machine and fails in
+ * CI, which is the failure test-isolation.test.js exists to prevent.
+ */
+const os = require('os');
+const path = require('path');
+process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
+    || path.join(os.tmpdir(), 'film-engine-providers-' + Date.now());
+process.env.GRIDLIGHT_ENABLED = '0';
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const providers = require('../lib/providers');
@@ -72,8 +86,17 @@ describe('providers/registry resolve', () => {
                 assert.notEqual(resolved, 'gridlight',
                     `${cap} fell to gridlight despite a credentialed alternative`);
             } else {
-                assert.equal(resolved, 'gridlight', `${cap} should fall back to gridlight`);
-                assert.equal(providers.resolve(cap, {}).id, 'gridlight');
+                /*
+                 * The local gateway is OFF unless switched on, so with no
+                 * credentialed alternative the honest answer is NOTHING — not
+                 * a fallback to a service that may not be running. That was the
+                 * old behaviour and its only symptom was a connection refused
+                 * at generation time, per capability, after the work had been
+                 * committed to.
+                 */
+                assert.strictEqual(resolved, null,
+                    `${cap} has no credentialed provider and the gateway is off, so it must `
+                    + `report nothing rather than "${resolved}"`);
             }
         }
     });
@@ -86,12 +109,23 @@ describe('providers/registry resolve', () => {
         assert.equal(providers.resolve('image', { image: '__test_img__' }).id, '__test_img__');
     });
 
-    it('falls back to gridlight for an unknown configured provider', () => {
-        assert.equal(providers.resolve('image', { image: 'does-not-exist' }).id, 'gridlight');
+    it('refuses in words for an unknown configured provider', () => {
+        /*
+         * This used to fall to the local gateway. With the gateway off that
+         * would be a swap onto a service nobody enabled, so resolution hands
+         * back a refusing adapter instead: still an object with generate(), so
+         * the thirty-one call sites do not crash, but it answers with what is
+         * missing rather than failing at a socket.
+         */
+        const a = providers.resolve('image', { image: 'does-not-exist' });
+        assert.ok(a && typeof a.generate === 'function', 'resolution returned nothing to call');
+        assert.ok(a.unavailable, `swapped to "${a.id}" rather than refusing`);
     });
 
-    it('unknown capability still returns the default adapter', () => {
-        assert.equal(providers.resolve('teleport', {}).id, 'gridlight');
+    it('unknown capability refuses rather than inventing a provider', () => {
+        const a = providers.resolve('teleport', {});
+        assert.ok(a && typeof a.generate === 'function');
+        assert.ok(a.unavailable, `swapped to "${a.id}"`);
     });
 
     it('registry exposes gridlight via get()/list()', () => {

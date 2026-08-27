@@ -89,11 +89,24 @@ test('a configured provider that is not registered is reported, not silently swa
 });
 
 test('resolveGenerator really does swap silently — the behaviour being guarded', () => {
-    // Not a redundant check: it is the reason the preflight cannot simply trust
-    // that resolution succeeded.
+    /*
+     * Not a redundant check: it is the reason the preflight cannot simply trust
+     * that resolution succeeded.
+     *
+     * The swap target CHANGED. It used to be the local gateway — a service that
+     * may not be running, reached silently — and with the gateway off it is a
+     * refusing adapter that answers every generate with what is missing. Still
+     * a silent swap at resolution time, which is what the preflight exists to
+     * catch; the difference is that spending against it now fails in words
+     * rather than at a socket.
+     */
     const adapter = providers.resolveGenerator('image', { image: 'a-provider-that-was-deleted' });
     assert.ok(adapter, 'resolution threw or returned nothing');
-    assert.strictEqual(adapter.id, 'gridlight', 'fallback target changed; the preflight message needs updating');
+    assert.notStrictEqual(adapter.id, 'a-provider-that-was-deleted',
+        'a dead provider resolved to itself, so the preflight has nothing to catch');
+    assert.ok(adapter.unavailable || adapter.id === 'gridlight',
+        `swapped to "${adapter.id}" — neither the gateway nor a refusal, so the preflight `
+        + 'message needs updating');
 });
 
 test('a capability whose provider does not serve it is blocked', async () => {
