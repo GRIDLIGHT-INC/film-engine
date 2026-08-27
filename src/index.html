@@ -18394,6 +18394,32 @@ THREE.GLTFLoader = GLTFLoader;
     };
 
     // FILM-108: Render soft page break indicators
+    /*
+     * THE BODY BLOCKS — every screenplay element EXCEPT the title page.
+     *
+     * The title page is not body pages: it is display:none on screen and its
+     * own page in print, and `film_script_elements` has no row for it (index 0
+     * is the first scene heading). Two consumers already excluded it by name
+     * and three did not, so the same root cause produced two separate defects:
+     *
+     *  - PAGINATION counted its 46 characters of stored title data — invisible
+     *    on screen — as 2 lines against the 55-line body budget, so every page
+     *    break in every screenplay landed two lines early.
+     *  - INLINE COMMENTS anchored on `blocks.indexOf(block)`, which is one
+     *    higher than the element's real index. Read and write were off by the
+     *    same one, so the comment appeared in the right place in the editor
+     *    while the index STORED pointed at the previous element — wrong for the
+     *    server, the export and every reader that is not this function.
+     *
+     * One accessor rather than five selectors: the two that were already right
+     * were right because someone remembered, which is why the other three
+     * were not.
+     */
+    function bodyBlocks(root) {
+        return Array.from((root || document.getElementById('screenplayEditor'))
+            .querySelectorAll('[data-element-type]:not([data-element-type="title-page"])'));
+    }
+
     function updatePageBreakIndicators(editor) {
         if (!editor) return;
 
@@ -18401,7 +18427,7 @@ THREE.GLTFLoader = GLTFLoader;
         const existing = editor.querySelectorAll('.page-break-indicator');
         existing.forEach(el => el.remove());
 
-        const blocks = Array.from(editor.querySelectorAll('[data-element-type]'));
+        const blocks = bodyBlocks(editor);
         let currentLine = 0;
         let pageNum = 1;
         let lastBreakAt = null;
@@ -25377,8 +25403,9 @@ ${fountainText.slice(0, 50000)}`;
         const editor = document.getElementById('screenplayEditor');
         if (!editor) return;
 
-        // Show comment markers in the margin
-        const blocks = editor.querySelectorAll('[data-element-type]');
+        // Show comment markers in the margin. Same list the anchor was written
+        // against — element_index is an index into the BODY, not into the DOM.
+        const blocks = bodyBlocks(editor);
         screenplayComments.forEach(c => {
             if (c.resolved) return;
             const block = blocks[c.element_index];
@@ -25417,7 +25444,7 @@ ${fountainText.slice(0, 50000)}`;
         while (block && !block.dataset?.elementType && block !== editor) block = block.parentElement;
         if (!block || block === editor) return;
 
-        const blocks = Array.from(editor.querySelectorAll('[data-element-type]'));
+        const blocks = bodyBlocks(editor);
         const elementIndex = blocks.indexOf(block);
 
         try {

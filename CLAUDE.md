@@ -738,6 +738,19 @@ It now follows the same rule, unchanged: `current_frame_version` when a version 
 
 **And a second bug found while reading it.** `loadPlayback` computed the shot to open on and then called `loadShotIntoStage(0)`, discarding it on the next line — so playback always opened at the top of the film however carefully the mark had been kept. The mark was working; the thing that read it was not.
 
+### The Title Page Is Not Body Pages
+Found by enumerating the element types the **editor** emits rather than the ten this module happened to list. The editor emits **eleven**; `MAY_END_PAGE` answered ten. The eleventh is `title-page`, and the paginator read it as an ordinary block.
+
+It is `display:none` on screen and its own page in print, and `film_script_elements` has **no row for it** — index 0 is the first scene heading. Two consumers already excluded it by name and three did not, so one cause produced two defects:
+
+**Pagination counted a block nobody can see.** Measured on The Glass Harbour: the block reports `display: none` and still scores **2 lines** (46 characters of stored title data) against the 55-line budget — so every page break in every screenplay was placed two lines early. After the fix all five breaks on that file moved, and all five are still legal.
+
+**Every inline comment was anchored one element late.** The anchor was `blocks.indexOf(block)` over a list whose index 0 is the title page. Read and write were off by the *same* one, so it looked correct in the editor while the `element_index` written to the database pointed at the **previous** element — wrong for the server, the export, and every reader that is not that one function. Nothing had been stored yet (0 rows live and in the repo), so there was nothing to migrate.
+
+`bodyBlocks()` is the one accessor. Five sites asked this question and the two that were right were right because someone remembered — which is precisely why the other three were not.
+
+The test **exempts by name with a reason, never by pattern**: the dual-dialogue columns cannot contain a title page, and the remaining queries iterate for styling or compute an index relative to the list they built, where a constant offset cancels. An exemption matching on text would quietly excuse the next site that gets it wrong. Four mutations — dropping the exclusion from the accessor, and each of the three sites rebuilding its own list — all fail.
+
 ### A Button Drawn Outside Its Own Card
 *"the delete button leaks out of the card"* — on Characters, which is where it was noticed.
 

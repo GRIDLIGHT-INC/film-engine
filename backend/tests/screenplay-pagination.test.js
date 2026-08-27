@@ -28,6 +28,9 @@ const {
     ELEMENT_TYPES, MAY_END_PAGE, LINES_PER_PAGE, elementLines, pageBreakPositions,
 } = require('../lib/screenplay-pagination');
 
+/** The SPA itself: the rule is inlined there (build.target is single-html). */
+const SPA = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+
 test('every element type states whether a page may end after it', () => {
     /*
      * Declared per type rather than as a list of exceptions: a new element type
@@ -173,4 +176,100 @@ test('no code reads the block next to a page break without stepping over it', ()
 
     assert.deepStrictEqual(offenders, [],
         `these would see a page break where a block should be:\n  ${offenders.join('\n  ')}`);
+});
+
+/*
+ * THE TITLE PAGE IS NOT BODY PAGES.
+ *
+ * Found by enumerating the element types the EDITOR emits rather than the ones
+ * this module happens to list. The editor emits eleven; `MAY_END_PAGE` answers
+ * ten. The eleventh is `title-page`, and the paginator was reading it as an
+ * ordinary block.
+ *
+ * It is display:none on screen and its own page in print, and
+ * `film_script_elements` has no row for it — index 0 is the first scene
+ * heading. Two consumers already excluded it by name and three did not, which
+ * produced two separate defects from one cause:
+ *
+ *  - PAGINATION: measured on The Glass Harbour, the block reports
+ *    display "none" and still scores 2 lines (46 characters of stored title
+ *    data) against the 55-line budget, so EVERY page break in EVERY screenplay
+ *    was placed two lines early. After the fix all five breaks on that file
+ *    moved and all five are still legal.
+ *  - INLINE COMMENTS: the anchor was `blocks.indexOf(block)` over a list whose
+ *    index 0 is the title page, so the stored `element_index` was one higher
+ *    than the element's real index. Read and write were off by the same one,
+ *    so it LOOKED right in the editor while the value written to the database
+ *    pointed at the previous element — wrong for the server, the export, and
+ *    every reader that is not that one function. Nothing had been stored yet
+ *    (0 rows in the live database and in the repo's), so there was nothing to
+ *    migrate.
+ */
+
+/** Every `[data-element-type]` query the SPA makes against the editor. */
+function blockQueries() {
+    const out = [];
+    const re = /(\w+)\.querySelectorAll\('\[data-element-type\][^']*'\)/g;
+    let m;
+    while ((m = re.exec(SPA))) {
+        out.push({
+            root: m[1],
+            line: SPA.slice(0, m.index).split('\n').length,
+            text: m[0],
+            excludesTitlePage: /:not\(\[data-element-type="title-page"\]\)/.test(m[0]),
+        });
+    }
+    return out;
+}
+
+test('the paginator does not count the title page', () => {
+    const fn = SPA.slice(SPA.indexOf('function bodyBlocks'), SPA.indexOf('function bodyBlocks') + 700);
+    assert.match(fn, /:not\(\[data-element-type="title-page"\]\)/,
+        'bodyBlocks() must exclude the title page — it is not body pages');
+
+    // And the paginator must actually USE it. A helper nothing calls is the
+    // failure this codebase has paid for five times.
+    const pag = SPA.slice(SPA.indexOf('// Remove existing page break indicators'));
+    const body = pag.slice(0, pag.indexOf('page-break-indicator\';'));
+    assert.match(body, /bodyBlocks\(/,
+        'the paginator still builds its own block list, so the title page is still counted');
+});
+
+test('a comment is anchored against the body, not the DOM', () => {
+    // Both ends of the round trip, because being wrong at BOTH ends is what
+    // made this invisible: the offsets cancelled on screen and the stored
+    // index was wrong for everyone else.
+    for (const marker of ['const elementIndex = blocks.indexOf(block);',
+                          'const block = blocks[c.element_index];']) {
+        const at = SPA.indexOf(marker);
+        assert.notStrictEqual(at, -1, `comment site missing: ${marker}`);
+        const preceding = SPA.slice(Math.max(0, at - 400), at);
+        assert.match(preceding, /const blocks = bodyBlocks\(/,
+            `this comment site builds its own block list, so element_index is off by one: ${marker}`);
+    }
+});
+
+test('every editor block query either excludes the title page or is exempt by name', () => {
+    /*
+     * Exempt by NAME with a reason, never by pattern. These are the queries
+     * that genuinely may see the title page: the dual-dialogue columns cannot
+     * contain one, and the rest iterate for styling or compute an index
+     * RELATIVE to the same list they built, so a constant offset cancels.
+     *
+     * An exemption matching on text would quietly excuse the next site that
+     * gets it wrong, which is exactly how three of five ended up wrong.
+     */
+    const EXEMPT_ROOTS = new Set(['leftCol', 'rightCol']);
+
+    const offenders = blockQueries().filter(q => {
+        if (q.excludesTitlePage) return false;
+        if (EXEMPT_ROOTS.has(q.root)) return false;
+        // Relative/cosmetic uses are allowed, but only where nothing downstream
+        // treats the position as an absolute element index or a line budget.
+        const after = SPA.slice(SPA.indexOf(q.text), SPA.indexOf(q.text) + 500);
+        return /element_index|currentLine\s*[+=]/.test(after);
+    });
+
+    assert.deepStrictEqual(offenders.map(o => `line ${o.line}: ${o.text}`), [],
+        'these sites treat a DOM position as a body index or a line budget while counting the title page');
 });
