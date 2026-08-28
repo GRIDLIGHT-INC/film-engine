@@ -96,11 +96,40 @@ function fail(id, code, message, data) {
     send({ jsonrpc: '2.0', id, error: { code, message, ...(data ? { data } : {}) } });
 }
 
-/** A tool result becomes text content; failure is flagged, not thrown. */
+/**
+ * A tool result becomes content the model can actually use.
+ *
+ * This emitted text and nothing else, so an agent could generate a shot and
+ * then had no way to LOOK at it — "compare this frame with the storyboard" was
+ * blocked at the transport rather than at the prompt. MCP allows image content
+ * blocks; we simply never produced one.
+ *
+ * Any tool opts in by returning `images: [{ data_uri, label }]`. The pictures
+ * go alongside the text rather than instead of it, because the numbers and the
+ * frame answer different halves of the question. A result with no images is
+ * byte-identical to before.
+ *
+ * This is what makes shot validation free: the connected model IS the LLM here,
+ * so it can do the comparison itself and nothing calls a server-side model.
+ */
 function toolResult(result) {
     const shown = api().presentResult(result);
-    const text = typeof shown === 'string' ? shown : JSON.stringify(shown, null, 2);
-    const out = { content: [{ type: 'text', text }] };
+    const images = [];
+    let body = shown;
+    if (shown && typeof shown === 'object' && Array.isArray(shown.images)) {
+        const { images: carried, ...rest } = shown;
+        body = rest;
+        for (const img of carried) {
+            const uri = String((img && (img.data_uri || img.dataUri)) || '');
+            const m = /^data:([^;,]+);base64,(.*)$/s.exec(uri);
+            // Bare base64 and a mime type: a data: URI inside `data` is a
+            // protocol error that renders as a broken image with no reason.
+            if (m) images.push({ type: 'image', data: m[2], mimeType: m[1] });
+            else if (img && img.data && img.mimeType) images.push({ type: 'image', data: img.data, mimeType: img.mimeType });
+        }
+    }
+    const text = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+    const out = { content: [{ type: 'text', text }, ...images] };
     if (api().isFailure(result)) out.isError = true;
     return out;
 }
@@ -255,4 +284,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { METHODS, handle, SUPPORTED_PROTOCOLS, SERVER_INFO };
+module.exports = { METHODS, handle, toolResult, SUPPORTED_PROTOCOLS, SERVER_INFO };

@@ -63,16 +63,68 @@ const DEFAULT_IMAGE_MODEL = process.env.RUNWAY_IMAGE_MODEL || 'gen4_image';
  * payload works and an explicit Runway model is still honoured.
  */
 const RUNWAY_VIDEO_SOURCE = 'https://docs.dev.runwayml.com/api/';
+/*
+ * Every model states what it costs in FULL: the output rate, what a reference
+ * costs, and any minimum charge. Partial metadata is worse than none — a model
+ * missing `imageReferenceCredits` is priced as though references were free,
+ * which is exactly the direction that under-estimates a reference-heavy shot.
+ *
+ * Runway bills credits at $0.01. Rates below are from the published pricing
+ * page; a rate with no source cannot be re-checked and decays into a confident
+ * lie, so `source` is required on every entry.
+ *
+ * Seedance 2.0 and 2.5 are SEPARATE models on Runway with different rates, and
+ * `seedance2` here has always been 2.0. It is not renamed: renaming it would
+ * silently reprice every estimate already made against it.
+ */
 const RUNWAY_VIDEO_MODELS = Object.freeze({
-    'gen4.5': { endpoint: 'image_to_video', duration: { min: 2, max: 10 }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '672:1584', '960:960'], creditsPerSecond: 12, status: 'active', source: RUNWAY_VIDEO_SOURCE },
-    gen4_turbo: { endpoint: 'image_to_video', duration: { min: 5, max: 10, allowed: [5, 10] }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '960:960'], creditsPerSecond: 5, status: 'active', source: RUNWAY_VIDEO_SOURCE },
-    'veo3.1': { endpoint: 'image_to_video', duration: { min: 5, max: 8, allowed: [5, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 40, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
-    'veo3.1_fast': { endpoint: 'image_to_video', duration: { min: 5, max: 8, allowed: [5, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 15, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
-    happyhorse_1_0: { endpoint: 'image_to_video', duration: { min: 5, max: 10 }, ratios: ['1280:720', '720:1280', '1920:1080', '1080:1920'], creditsPerSecond: 15, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
-    seedance2: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 36, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
-    seedance2_fast: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 29, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
-    seedance2_mini: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 16, minimumCredits: 64, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
-    gemini_omni_flash: { endpoint: 'image_to_video', duration: { min: 5, max: 10 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 10, firstFrameCredits: 1, status: 'active', source: RUNWAY_VIDEO_SOURCE },
+    'gen4.5': { endpoint: 'image_to_video', duration: { min: 2, max: 10 }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '672:1584', '960:960'], creditsPerSecond: 12, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
+    gen4_turbo: { endpoint: 'image_to_video', duration: { min: 5, max: 10, allowed: [5, 10] }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '960:960'], creditsPerSecond: 5, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
+    'veo3.1': { endpoint: 'image_to_video', duration: { min: 5, max: 8, allowed: [5, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 40, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
+    'veo3.1_fast': { endpoint: 'image_to_video', duration: { min: 5, max: 8, allowed: [5, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 15, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
+    happyhorse_1_0: { endpoint: 'image_to_video', duration: { min: 5, max: 10 }, ratios: ['1280:720', '720:1280', '1920:1080', '1080:1920'], creditsPerSecond: 15, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+
+    /*
+     * MiniMax H3. The reference economics are the reason it is the production
+     * tier: 2 credits per reference IMAGE means a nine-picture role package
+     * costs 18 credits, so a 10s 768P shot with the full package is 118
+     * credits — two credits CHEAPER than Gen-4.5 with no references at all.
+     */
+    hailuo3: {
+        endpoint: 'image_to_video', duration: { min: 5, max: 10 },
+        ratios: ['1280:720', '720:1280', '1920:1080', '1080:1920'],
+        creditsPerSecond: 10,
+        resolutions: { '768P': { creditsPerSecond: 10 }, '2K': { creditsPerSecond: 15 } },
+        defaultResolution: '768P',
+        imageReferenceCredits: 2, videoReferenceCreditsPerSecond: 10, audioReferenceCredits: 0,
+        minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE,
+    },
+
+    /*
+     * Seedance 2.5 — the precision model, and the expensive one for the reason
+     * that is easy to miss: reference VIDEO is billed at half the output rate
+     * PER SECOND, so three 5s reference clips on a 10s shot adds 225 credits.
+     * Reference images and audio are free. The 80-credit minimum means a short
+     * clip bills as a longer one.
+     */
+    seedance2_5: {
+        endpoint: 'image_to_video', duration: { min: 4, max: 30 },
+        ratios: ['1280:720', '720:1280', '1920:1080', '1080:1920'],
+        creditsPerSecond: 30,
+        resolutions: {
+            '480p': { creditsPerSecond: 20, videoReferenceCreditsPerSecond: 10 },
+            '720p': { creditsPerSecond: 30, videoReferenceCreditsPerSecond: 15 },
+            '1080p': { creditsPerSecond: 68, videoReferenceCreditsPerSecond: 34 },
+        },
+        defaultResolution: '720p',
+        imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 15, audioReferenceCredits: 0,
+        minimumCredits: 80, status: 'active', source: RUNWAY_VIDEO_SOURCE,
+    },
+
+    seedance2: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 36, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    seedance2_fast: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 29, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    seedance2_mini: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 16, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 64, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    gemini_omni_flash: { endpoint: 'image_to_video', duration: { min: 5, max: 10 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 10, firstFrameCredits: 1, imageReferenceCredits: 1, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
 });
 const KNOWN_VIDEO_MODELS = new Set(Object.keys(RUNWAY_VIDEO_MODELS));
 const KNOWN_IMAGE_MODELS = new Set(['gen4_image', 'gen4_image_turbo', 'gemini_2.5_flash']);

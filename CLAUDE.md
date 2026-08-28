@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (84 migrations)
+│   │   └── migrations/     # SQL migration files (85 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -279,6 +279,7 @@ film-engine/
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
+│       ├── video-model-contracts.test.js # Rates, reference contracts, tiers, and the picture an agent can see
 │       ├── music-prompt.test.js        # Music prompt unit tests
 │       ├── pipeline-engine.test.js     # Pipeline engine unit tests
 │       ├── viseme-builder.test.js     # Viseme builder unit tests
@@ -598,6 +599,23 @@ Worse, the tags it showed were the **card's** camera. On a blocked shot those ar
 `GET /projects/:id/storyboard` gains `effective` and `previs` per frame, and the frame carries a badge with **three** states — `block in previs`, `staged`, `approved`, and `staged · changed since approval`. Three rather than two, because "approved" and "approved, then restaged" is the distinction the iterate-until-happy loop turns on, and folding them together is how a director meets a 409 at generation time for a shot the board told them was signed off.
 
 **What markup does *not* do by default.** Arrows, rectangles and notes are **notation** unless a project says otherwise — stored, drawn, kept with the shot, and read by nothing in generation. An arrow drawn to mean "dolly in" changes no prompt and no payload; the movement that does is `camera_control`, set on the card or staged in previs. Turning on `annotation_feedback` makes *noted* marks reach the prompt — see **Markup That Steers a Frame** below — and leaves an unnoted arrow exactly as decorative as it was.
+
+### A Video Model Is a Rate Card, a Reference Contract and a Tier
+The storyboard side had tiers, a fallback chain, per-adapter contracts and a cost comparison. The video side had `DEFAULT_VIDEO_MODEL = 'gen4.5'` and nothing else — nine models declared and nothing that ever chose between them.
+
+**The registry was describing Seedance 2.0 under a name everyone was reading as 2.5.** Runway exposes both, at different rates; `seedance2` here has always been 2.0. It is **not renamed** — renaming it would silently reprice every estimate already made against it — and `seedance2_5` is added beside it with its own card: 20/30/68 credits a second at 480/720/1080p, an **80-credit minimum**, free image references, and reference **video billed at half the output rate per second**.
+
+**`hailuo3` is the interesting one, and the reason is the reference economics.** H3 charges **2 credits per reference image**, so a nine-picture role package costs 18 credits. A 10-second 768P shot with the full package is **118 credits — two credits cheaper than Gen-4.5 carrying no references at all**. That is what makes it the production tier rather than the cheap option.
+
+**References are semantic, not a list.** `lib/video-reference.js` gives each picture a **role** — keyframe, character, creature, prop, location, style, motion, audio — and each model a contract declaring which roles it takes and how many, with the reason stated, the same series `promptLimit`, `maxReferenceImages`, `referenceMode`, `maxKeyframes` and `sizeControl` already follow. **Gen-4.5 stays keyframe-only**, which is the decision being protected: plates were removed from image-to-video deliberately, because the keyframe was already generated from them and re-sending them asks the model which picture is the truth. What changed is that H3 and Seedance can *name* a reference, and `recompose` already proved that references work when they have jobs and fail when they compete. Over-budget references are **reported**, never dropped in silence.
+
+**Tiers are policy, not aliases** (`lib/video-tiers.js`). `draft = gen4_turbo` at 5 credits a second makes a five-second blocking check cost **25 credits**, so trying three angles is a question of taste rather than budget. `production` prefers H3 768P with the role package. **`hero` deliberately has no preferred model**: the most expensive generation in a production should be a decision, not a default — and eventually a router's, from real acceptance data.
+
+**The estimate is computed locally and first.** `lib/video-cost.js` reads the rate card rather than calling a provider's estimate endpoint: a local estimate works before you have an account, works when the network does not, and cannot fail in the way that would block the check it exists to provide. It models the three things that make an estimate wrong — resolution changing the rate, reference **video** billed per second, and minimum charges — and returns the **lines**, because a total with no breakdown cannot be checked and the line a director needs to see is the one they did not expect.
+
+**And an agent can finally see the shot.** Every MCP tool result was `[{type:'text'}]`, so a model could generate a clip and had no way to look at it — "compare this against the board" was blocked at the transport rather than the prompt. `toolResult` now emits image content when a tool returns `images`, and `shot_review` (**180 tools**) hands over the selected board frame plus frames sampled across the clip with the bundled ffmpeg. This is what makes validation free: the connected model **is** the LLM here, so nothing calls a server-side model to do it.
+
+**Every attempt is recorded before the next real shots are generated** (`film_video_attempts`, migration 087). The router is deliberately **not** built: one tuned on no acceptance data is a guess with extra steps. Recording the shot's shape alongside the outcome is what makes the next ten shots of the actual film into the benchmark — *"H3 is strong on single-character wides and weak on two-character interaction"* is what routes a shot, and it cannot be recovered later if nobody wrote down what the shot was.
 
 ### Nothing Has Ever Been Taken All the Way Through
 Preflight reports **15 stages: 12 ready, 3 finished in the NLE, 0 blocked**. Nothing is in the way — and no project has ever been run through. Measured: *From the Mist* has 61 shots and **no assets at all**; *Wingfall* has 82 storyboard frames and 2 raw clips; *The Glass Harbour* has 20 frames. Total spend ever recorded is **$14.12**, every cent of it images, which is also how we know the two Wingfall clips were made on Runway directly rather than through the engine.
@@ -2067,7 +2085,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (84 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (85 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -2112,6 +2130,7 @@ SQLite via `better-sqlite3`. Schema auto-migrates on startup (84 migrations).
 - `film_provider_rates` — Per-install corrections to the published rate book
 - `film_backups` — Project backup metadata
 - `film_3d_jobs` — 3D asset generation jobs (text→mesh, image→mesh, rig, retexture, animate)
+- `film_video_attempts` — every video generation attempt: model, references, cost, acceptance
 
 ## Epic Status
 
@@ -2284,6 +2303,7 @@ node --test backend/tests/image-prompt-ceiling.test.js
 node --test backend/tests/prompt-quality.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
+node --test backend/tests/video-model-contracts.test.js
 node --test backend/tests/music-prompt.test.js
 node --test backend/tests/pipeline-engine.test.js
 node --test backend/tests/viseme-builder.test.js

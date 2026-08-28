@@ -2233,6 +2233,119 @@ async function callRouteTool(t, args) {
 
 const BATCH_TOOLS = [
     {
+        name: 'shot_review',
+        description:
+            'Hand over the pictures for a shot so YOU can look at them: the storyboard frame the '
+            + 'director selected, and — when a clip has been generated — frames sampled across it '
+            + '(start, quarter, half, three-quarter, end). This is how a shot gets validated without '
+            + 'a server-side model: you compare the board against what came back and say what moved. '
+            + 'Costs nothing. Returns the images alongside the shot card, so the words and the '
+            + 'picture can be judged together.',
+        schema: {
+            shot_id: { type: 'string' },
+            samples: { type: 'number', description: 'How many frames to sample from the clip (default 5, max 10).' },
+        },
+        required: ['shot_id'],
+        async run(a) {
+            const fsx = require('fs');
+            const pathx = require('path');
+            const { db } = require('../db/database');
+            const { getFilePath } = require('./file-storage');
+
+            const shot = db.prepare(
+                `SELECT sh.*, s.project_id, s.scene_number
+                   FROM film_shots sh JOIN film_scenes s ON s.id = sh.scene_id
+                  WHERE sh.id = ?`).get(a.shot_id);
+            if (!shot) return { status: 404, error: 'Shot not found' };
+
+            const images = [];
+            const notes = [];
+            const asDataUri = (file, mime) => {
+                try { return `data:${mime};base64,` + fsx.readFileSync(file).toString('base64'); }
+                catch (_) { return null; }
+            };
+
+            /*
+             * The frame the BOARD is showing, not the newest one. A shot with a
+             * chosen version shows that version everywhere else; handing over a
+             * different picture here would have the model validating a frame
+             * nobody is looking at.
+             */
+            const wanted = shot.current_frame_version;
+            const frameRow = db.prepare(
+                `SELECT * FROM film_assets
+                  WHERE shot_id = ? AND asset_type = 'storyboard'
+                    ${wanted ? 'AND version = ?' : ''}
+                  ORDER BY version DESC LIMIT 1`).get(...(wanted ? [a.shot_id, wanted] : [a.shot_id]));
+            if (frameRow) {
+                const p = getFilePath('storyboards', shot.project_id, frameRow.file_name);
+                const uri = asDataUri(p, 'image/png');
+                if (uri) images.push({ data_uri: uri, label: `storyboard ${shot.shot_code}` });
+                else notes.push('the storyboard row exists but its file could not be read');
+            } else {
+                notes.push('no storyboard frame yet — generate the keyframe before validating a clip');
+            }
+
+            // Frames out of the clip, if there is one. ffmpeg is bundled, so
+            // this is free; a missing encoder is reported rather than throwing.
+            const clip = db.prepare(
+                `SELECT * FROM film_assets WHERE shot_id = ?
+                    AND asset_type IN ('video_final','video_synced','video_raw')
+                  ORDER BY CASE asset_type WHEN 'video_final' THEN 0 WHEN 'video_synced' THEN 1 ELSE 2 END,
+                           created_at DESC LIMIT 1`).get(a.shot_id);
+            if (clip) {
+                const { resolveFfmpeg, probe } = require('./ffmpeg');
+                const bin = resolveFfmpeg();
+                if (!bin || !bin.available) {
+                    notes.push('a clip exists but no encoder is available to sample frames from it');
+                } else {
+                    const src = getFilePath('video', shot.project_id, clip.file_name);
+                    let seconds = 0;
+                    try { seconds = (probe(src) || {}).durationSeconds || 0; } catch (_) { seconds = 0; }
+                    const n = Math.min(10, Math.max(2, Number(a.samples) || 5));
+                    const dir = fsx.mkdtempSync(pathx.join(require('os').tmpdir(), 'fe-frames-'));
+                    for (let i = 0; i < n; i++) {
+                        const at = seconds ? (seconds * i) / (n - 1 || 1) : 0;
+                        const out = pathx.join(dir, `f${i}.png`);
+                        try {
+                            require('child_process').execFileSync(bin.path,
+                                ['-y', '-ss', String(Math.max(0, at - 0.001)), '-i', src,
+                                    '-frames:v', '1', '-q:v', '2', out],
+                                { stdio: 'ignore', timeout: 20000 });
+                            const uri = asDataUri(out, 'image/png');
+                            if (uri) images.push({ data_uri: uri,
+                                label: `clip ${Math.round((i / (n - 1 || 1)) * 100)}% (${at.toFixed(1)}s)` });
+                        } catch (_) { /* one missing sample is not a failed call */ }
+                    }
+                    try { fsx.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* temp */ }
+                    if (images.length <= 1) notes.push('the clip could not be sampled');
+                }
+            } else {
+                notes.push('no clip generated for this shot yet');
+            }
+
+            let card = {};
+            try { card = JSON.parse(shot.scene_card_yaml || '{}') || {}; } catch (_) { card = {}; }
+
+            return {
+                shot_id: shot.id,
+                shot_code: shot.shot_code,
+                scene_number: shot.scene_number,
+                card,
+                showing_version: wanted || (frameRow ? frameRow.version : null),
+                frame_count: images.length,
+                notes,
+                how_to_read:
+                    'The first image is the board — what this shot is meant to be. Any that follow are '
+                    + 'sampled from the generated clip in order. Compare composition, who is where, the '
+                    + 'camera height and angle, and whether the action happens in the right order. Say '
+                    + 'what MOVED and by roughly how much, not just a score: "MAYA is about 18% too far '
+                    + 'left" is actionable and "composition 0.82" is not.',
+                images,
+            };
+        },
+    },
+    {
         name: 'production_describe',
         description:
             'Describe a whole production in one call: the project look plus every character and location. '

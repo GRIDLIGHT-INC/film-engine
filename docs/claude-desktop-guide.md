@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**179 tools, 44 families.** Everything the app can do, you can ask for in a
+**180 tools, 44 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -127,6 +127,8 @@ lock it — `consistency_lock` is the commitment generation conditions on.
 
 `shot_create` · `shot_tag` · `shot_get` · `shot_update` · `shot_list` ·
 `shot_delete` · `shot_prompt` · `shot_frames` · `shot_frame_restore` ·
+
+`shot_review` hands you the pictures themselves — the board frame the director selected, plus frames sampled across the generated clip — so you can compare them and say what moved and by how much. Costs nothing, and nothing calls a server-side model to do it: you are the model. Read it after a clip comes back, before deciding whether to refine or regenerate.
 `shot_annotate` · `card_vocabulary` · `breakdown_summary` · `elements_list` ·
 `sides_report` · `dood_report` · `board_groups` · `setups`
 

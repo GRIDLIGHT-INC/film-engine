@@ -9,6 +9,11 @@ const { planSequence } = require('../lib/video-sequence');
 const OFFICIAL_IMAGE_TO_VIDEO = [
     'gen4.5', 'gen4_turbo', 'veo3.1', 'veo3.1_fast', 'happyhorse_1_0',
     'seedance2', 'seedance2_fast', 'seedance2_mini', 'gemini_omni_flash',
+    // Added Aug 2026, per Runway's published pricing page. `seedance2_5` is a
+    // SEPARATE model from `seedance2`, not a rename: Runway exposes both, at
+    // different rates, and renaming 2.0 would have silently repriced every
+    // estimate already made against it.
+    'hailuo3', 'seedance2_5',
 ];
 
 test('every currently documented Runway video model has an explicit safe policy', () => {
