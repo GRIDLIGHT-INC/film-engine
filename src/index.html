@@ -27237,6 +27237,8 @@ ${fountainText.slice(0, 50000)}`;
             note: 'Costs credits. The storyboard frame travels as the first keyframe, so the clip '
                 + 'starts from the picture you approved.',
             previewUrl: `/shots/${shotId}/video/preview`,
+            // Draft / production / hero, priced live from the free preview.
+            videoTiers: true,
             editable: false,
             notEditableWhy: 'A motion prompt is composed from the shot card and the approved camera '
                 + 'path. Change the card or the blocking, then preview again.',
@@ -27245,7 +27247,10 @@ ${fountainText.slice(0, 50000)}`;
                 setStatus('Generating clip...', true);
                 try {
                     const res = await api('/shots/' + shotId + '/video/generate',
-                        { method: 'POST', body: JSON.stringify(choices) });
+                        { method: 'POST', body: JSON.stringify({
+                            ...choices,
+                            tier: CONFIRM_GEN_VIDEO_TIER || 'production',
+                        }) });
                     done();
                     setStatus(res && res.provider ? `Clip generated via ${res.provider}.` : 'Clip generated.');
                     if (typeof loadVideoShots === 'function') loadVideoShots();
@@ -30138,6 +30143,77 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
+
+    /*
+     * The video tier row, and what it costs.
+     *
+     * A tier is a POLICY choice — how cheap, how good, how many attempts are
+     * reasonable — so it belongs beside the Generate button rather than in a
+     * settings page. Picking one re-reads the FREE preview, so the number under
+     * the button is the number that will be charged, including the reference
+     * images and any minimum.
+     */
+    let CONFIRM_GEN_VIDEO_TIER = null;
+    let CONFIRM_GEN_PREVIEW_URL = null;
+
+    const VIDEO_TIER_BLURB = {
+        draft: 'Is the blocking right? The cheapest possible answer.',
+        production: 'The shot as it will be cut, with the reference package.',
+        hero: 'The shot the film is judged on. You pick the model.',
+    };
+
+    function videoEstimateHtml(d) {
+        const e = d && d.estimate;
+        if (!e || !e.credits) return '<div class="text-sm" style="opacity:.6;">No estimate available for this model.</div>';
+        const refs = (d.references && d.references.sending) || 0;
+        const dropped = (d.references && d.references.dropped) || [];
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <strong style="font-size:15px;">$${Number(e.usd).toFixed(2)}</strong>
+            <span class="text-sm" style="opacity:.6;">${e.credits} credits${
+                e.minimumApplied ? ' &middot; minimum applied' : ''}</span>
+          </div>
+          <div class="text-sm" style="opacity:.7;margin-top:5px;line-height:1.6;">
+            ${(e.lines || []).map(l => `${esc(l.label)} &middot; ${l.credits} cr`).join('<br>')}
+          </div>
+          ${refs ? `<div class="text-sm" style="opacity:.6;margin-top:5px;">Sending ${refs} reference${
+                refs === 1 ? '' : 's'}: ${esc((d.references.roles || []).join(', '))}</div>` : ''}
+          ${dropped.length ? `<div class="text-sm" style="color:var(--warning,#b8860b);margin-top:5px;">Not sent: ${
+                esc(dropped.map(x => x.role + (x.subject ? ' ' + x.subject : '')).join(', '))}</div>` : ''}`;
+    }
+
+    function videoTierRow(d) {
+        const ids = ['draft', 'production', 'hero'];
+        const on = CONFIRM_GEN_VIDEO_TIER || d.tier || 'production';
+        return `<div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
+            <div class="text-sm" style="opacity:.7;margin-bottom:6px;">How good does this one need to be?</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              ${ids.map(id => `<button type="button" class="btn ${id === on ? 'btn-primary' : 'btn-secondary'} btn-sm"
+                  data-video-tier="${id}" onclick="pickVideoTier('${id}')"
+                  style="flex:1;min-width:112px;text-transform:capitalize;">${id}</button>`).join('')}
+            </div>
+            <div class="text-sm" style="opacity:.6;margin-top:6px;">${esc(VIDEO_TIER_BLURB[on] || '')}</div>
+            <div id="confirmVideoEstimate" style="margin-top:9px;">${videoEstimateHtml(d)}</div>
+          </div>`;
+    }
+
+    async function pickVideoTier(id) {
+        CONFIRM_GEN_VIDEO_TIER = id;
+        const holder = document.getElementById('confirmVideoTierRow');
+        if (!holder || !CONFIRM_GEN_PREVIEW_URL) return;
+        holder.innerHTML = '<div class="text-sm" style="opacity:.6;">Re-reading what this would cost&hellip;</div>';
+        try {
+            const d = await api(CONFIRM_GEN_PREVIEW_URL
+                + (CONFIRM_GEN_PREVIEW_URL.includes('?') ? '&' : '?') + 'tier=' + encodeURIComponent(id));
+            holder.innerHTML = videoTierRow(d);
+        } catch (err) {
+            // A failed re-read must not leave a stale price under the button.
+            holder.innerHTML = `<div class="text-sm" style="color:var(--gl-danger,#ef4444);">
+                Could not re-price this tier: ${esc(err.message)}</div>`;
+        }
+    }
+    window.pickVideoTier = pickVideoTier;
+
     async function confirmPaidImage(o) {
         const body = document.getElementById('confirmGenBody');
         const title = document.getElementById('confirmGenTitle');
@@ -30150,6 +30226,8 @@ ${fountainText.slice(0, 50000)}`;
         CONFIRM_GEN_EDITED = false;
         CONFIRM_GEN_QUALITY = null;
         CONFIRM_GEN_PROVIDER = null;
+        CONFIRM_GEN_VIDEO_TIER = null;
+        CONFIRM_GEN_PREVIEW_URL = o.previewUrl || null;
         showModal('confirmGenModal');
         const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
 
@@ -30184,6 +30262,8 @@ ${fountainText.slice(0, 50000)}`;
                 ? d.estimated_cost.native + ' ' + esc(d.estimated_cost.native_unit || '') + ' ≈ ' : ''}$${
                 Number(d.estimated_cost.usd).toFixed(3)}</strong>` : ''}
           </div>
+
+          ${o.videoTiers ? `<div id="confirmVideoTierRow">${videoTierRow(d)}</div>` : ''}
 
           ${tiers.length ? `<div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
               <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Generator for this one</div>

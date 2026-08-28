@@ -309,6 +309,29 @@ function imagePromptLimit(project) {
     }
 }
 
+/**
+ * The pictures a shot already has, restated as video reference ROLES.
+ *
+ * Deliberately reuses what the image path gathered (`ctx.references`), rather
+ * than gathering again: two gatherers is how two surfaces come to disagree
+ * about who is in a shot, which this codebase has paid for more than once.
+ */
+function referencesToRoles(ctx) {
+    const KIND_TO_ROLE = { anchor: 'keyframe', character: 'character', location: 'location', prop: 'prop', style: 'style' };
+    const out = [];
+    if (ctx && ctx.initImage) out.push({ assetId: 'keyframe', role: 'keyframe', sourceType: 'image', uri: ctx.initImage });
+    for (const ref of (ctx && ctx.references) || []) {
+        const role = KIND_TO_ROLE[ref.kind];
+        if (!role || role === 'keyframe') continue;      // the board is the init_image, not a reference
+        out.push({
+            assetId: ref.id || ref.assetId || ref.tag || role,
+            role, subject: ref.name || ref.subject || undefined,
+            sourceType: 'image', uri: ref.uri, priority: ref.priority || 0,
+        });
+    }
+    return out;
+}
+
 const CAPABILITY_BUILDERS = {
     image(ctx) {
         requireCtx(ctx, ['sceneCard', 'project'], 'image');
@@ -418,7 +441,28 @@ const CAPABILITY_BUILDERS = {
         const overrides = ctx.overrides || {};
         const cc = ctx.consistency || {};
 
-        return buildVideoPayload(ctx.sceneCard, ctx.characters, ctx.location, ctx.project.style_preset, {
+        /*
+         * The reference package, chosen by the MODEL's own contract.
+         *
+         * This is not a return of the plates that were removed. That removal
+         * stands and is why the default here is keyframe-only: on Gen-4.5 the
+         * keyframe IS the init_image and was already generated from the plates,
+         * so re-sending them asks the model which picture is the truth.
+         *
+         * What changed is that H3 and Seedance 2.5 can be told what each
+         * picture is FOR. A named reference is a different thing from a pile of
+         * them — recompose proved that — and on H3 nine of them cost 18
+         * credits, which is why the package is worth assembling at all.
+         *
+         * An unknown model resolves to the keyframe-only contract, so every
+         * existing shot builds byte-identically.
+         */
+        const videoRef = require('./video-reference');
+        const contract = videoRef.contractFor(overrides.model);
+        const offered = referencesToRoles(ctx);
+        const picked = videoRef.selectReferences(offered, contract);
+
+        const built = buildVideoPayload(ctx.sceneCard, ctx.characters, ctx.location, ctx.project.style_preset, {
             init_image: ctx.initImage || undefined,
             seed: overrides.seed !== undefined ? overrides.seed : cc.locked_seed,
             model: overrides.model,
@@ -456,6 +500,19 @@ const CAPABILITY_BUILDERS = {
             // film is actually delivered at rather than a constant.
             project: ctx.project,
         });
+
+        /*
+         * Attached AFTER the build, not passed into it: buildVideoPayload
+         * assembles its payload from the fields it knows about and silently
+         * drops anything else, so passing the package in as an option left it
+         * reaching nothing while every source check said it was wired.
+         *
+         * Only when the model takes more than its keyframe, so a Gen-4.5
+         * payload gains no new field at all and stays byte-identical.
+         */
+        if (picked.selected.length > 1) built.video_references = picked.selected;
+        if (picked.dropped.length) built.references_dropped = picked.dropped;
+        return built;
     },
 
     /** One payload per dialogue line. An empty dialogue array yields none. */

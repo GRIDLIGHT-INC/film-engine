@@ -280,6 +280,7 @@ film-engine/
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── video-model-contracts.test.js # Rates, reference contracts, tiers, and the picture an agent can see
+│       ├── video-surfaces.test.js      # A capability with no control does not exist
 │       ├── music-prompt.test.js        # Music prompt unit tests
 │       ├── pipeline-engine.test.js     # Pipeline engine unit tests
 │       ├── viseme-builder.test.js     # Viseme builder unit tests
@@ -615,7 +616,7 @@ The storyboard side had tiers, a fallback chain, per-adapter contracts and a cos
 
 **And an agent can finally see the shot.** Every MCP tool result was `[{type:'text'}]`, so a model could generate a clip and had no way to look at it — "compare this against the board" was blocked at the transport rather than the prompt. `toolResult` now emits image content when a tool returns `images`, and `shot_review` (**180 tools**) hands over the selected board frame plus frames sampled across the clip with the bundled ffmpeg. This is what makes validation free: the connected model **is** the LLM here, so nothing calls a server-side model to do it.
 
-**Every attempt is recorded before the next real shots are generated** (`film_video_attempts`, migration 087). The router is deliberately **not** built: one tuned on no acceptance data is a guess with extra steps. Recording the shot's shape alongside the outcome is what makes the next ten shots of the actual film into the benchmark — *"H3 is strong on single-character wides and weak on two-character interaction"* is what routes a shot, and it cannot be recovered later if nobody wrote down what the shot was.
+**Every attempt is recorded before the next real shots are generated** (`lib/video-attempt.js`, `film_video_attempts`, migration 087). The router is deliberately **not** built: one tuned on no acceptance data is a guess with extra steps. Recording the shot's shape alongside the outcome is what makes the next ten shots of the actual film into the benchmark — *"H3 is strong on single-character wides and weak on two-character interaction"* is what routes a shot, and it cannot be recovered later if nobody wrote down what the shot was.
 
 ### Nothing Has Ever Been Taken All the Way Through
 Preflight reports **15 stages: 12 ready, 3 finished in the NLE, 0 blocked**. Nothing is in the way — and no project has ever been run through. Measured: *From the Mist* has 61 shots and **no assets at all**; *Wingfall* has 82 storyboard frames and 2 raw clips; *The Glass Harbour* has 20 frames. Total spend ever recorded is **$14.12**, every cent of it images, which is also how we know the two Wingfall clips were made on Runway directly rather than through the engine.
@@ -2304,6 +2305,7 @@ node --test backend/tests/prompt-quality.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/video-model-contracts.test.js
+node --test backend/tests/video-surfaces.test.js
 node --test backend/tests/music-prompt.test.js
 node --test backend/tests/pipeline-engine.test.js
 node --test backend/tests/viseme-builder.test.js

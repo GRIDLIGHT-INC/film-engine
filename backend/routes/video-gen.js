@@ -73,6 +73,31 @@ function resultJobId(result) {
  * helper and is renamed at the boundary — a second reader would be a second
  * place for "provider" and "quality" to mean subtly different things.
  */
+/**
+ * The tier this generation is being made at.
+ *
+ * A tier is POLICY — how cheap, how good, how many attempts are reasonable —
+ * and it supplies a model only until a router can choose one from real
+ * acceptance data. An explicit `model` always wins over the tier's preference:
+ * a default that beats a deliberate choice is worse than no default.
+ */
+function videoTierOf(req, query) {
+    const { resolveVideoTier } = require('../lib/video-tiers');
+    const src = { ...(query || {}), ...((req && req.body) || {}) };
+    return resolveVideoTier(src.tier);
+}
+
+/** What the tier contributes, without overriding anything explicitly asked for. */
+function applyTier(tier, req, query) {
+    const src = { ...(query || {}), ...((req && req.body) || {}) };
+    return {
+        model: src.model || tier.preferredModel || undefined,
+        durationSeconds: Number(src.duration_s) || tier.durationSeconds || undefined,
+        resolution: src.resolution || tier.resolution || undefined,
+        tierId: tier.id,
+    };
+}
+
 function videoOverrideOf(req, query) {
     const src = { ...(query || {}), ...((req && req.body) || {}) };
     const o = imageOverride(src);
@@ -84,8 +109,9 @@ function videoOverrideOf(req, query) {
     return Object.keys(out).length ? out : null;
 }
 
-async function previewVideo(res, shotId, previewOverride) {
+async function previewVideo(res, shotId, previewOverride, tierChoice) {
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
+    const { estimateVideoCost } = require('../lib/video-cost');
 
     let ctx;
     try { ctx = await loadShotContext(shotId); }
@@ -122,6 +148,25 @@ async function previewVideo(res, shotId, previewOverride) {
      * having its payload reported as fact: falling back silently is how this
      * returns the moment a new adapter arrives.
      */
+    /*
+     * What the button costs, worked out here rather than asked of a provider:
+     * a local estimate works before there is an account and when the network is
+     * down, and cannot fail in the way that would block the check it exists to
+     * provide. The lines matter as much as the total — the one a director needs
+     * to see is the one they did not expect, which is nearly always reference
+     * video.
+     */
+    const chosen = tierChoice || { model: payload.model, durationSeconds: payload.duration_s };
+    const refs = Array.isArray(payload.video_references) ? payload.video_references : [];
+    const estimate = estimateVideoCost({
+        model: chosen.model || payload.model,
+        resolution: chosen.resolution,
+        durationSeconds: chosen.durationSeconds || payload.duration_s,
+        imageReferences: refs.filter(r => (r.sourceType || 'image') === 'image').length,
+        videoReferenceSeconds: refs.filter(r => r.sourceType === 'video')
+            .reduce((n, r) => n + (Number(r.durationSeconds) || 0), 0),
+    });
+
     let sent = null, unverified = false;
     if (provider && typeof provider.describeVideoRequest === 'function') {
         try { sent = provider.describeVideoRequest(payload); }
@@ -182,8 +227,22 @@ async function previewVideo(res, shotId, previewOverride) {
         duration_s: sent && sent.duration_s ? sent.duration_s : payload.duration_s,
         ratio: sent ? sent.ratio : null,
         outbound: sent && sent.outbound ? sent.outbound : null,
+        // The adapter's own figure, kept as corroboration.
         estimated_credits: sent && sent.estimated_credits !== undefined ? sent.estimated_credits : null,
         estimated_usd: sent && sent.estimated_usd !== undefined ? sent.estimated_usd : null,
+        /*
+         * The local estimate, which is the one a director reads: it models the
+         * three things that make a figure wrong — resolution changing the rate,
+         * reference VIDEO billed per second, and minimum charges — and returns
+         * the lines, because a total with no breakdown cannot be checked.
+         */
+        estimate,
+        tier: tierChoice ? tierChoice.tierId : null,
+        references: {
+            sending: refs.length,
+            roles: refs.map(r => r.role),
+            dropped: (payload.references_dropped || []).map(d => ({ role: d.role, subject: d.subject, reason: d.reason })),
+        },
         width: payload.width, height: payload.height, fps: payload.fps,
         seed: payload.seed === undefined ? null : payload.seed,
         warnings,
@@ -207,7 +266,10 @@ function handleVideoGen(req, res, urlParts, query) {
         // What this clip would cost and contain. Free. Under /video/ because
         // the dispatch above scopes on urlParts[3] === 'video'; a sibling
         // segment never reaches this handler at all.
-        if (sub === 'preview' && req.method === 'GET') return previewVideo(res, shotId, videoOverrideOf(req, query));
+        if (sub === 'preview' && req.method === 'GET') {
+            const tier = videoTierOf(req, query);
+            return previewVideo(res, shotId, videoOverrideOf(req, query), applyTier(tier, req, query));
+        }
         if (sub === 'generate' && req.method === 'POST') {
             if (urlParts[5] === 'stream') return generateVideoStream(req, res, shotId);
             return generateVideo(req, res, shotId);
@@ -246,11 +308,23 @@ async function generateVideo(req, res, shotId) {
     const consistencyContext = buildShotReferencePayload(shot, scene, project);
 
     ctx.consistency = consistencyContext;
+    const tier = videoTierOf(req, null);
+    const chosen = applyTier(tier, req, null);
     ctx.overrides = {
         seed: req.body && req.body.seed ? req.body.seed : consistencyContext.locked_seed,
-        model: req.body && req.body.model ? req.body.model : undefined,
+        // The tier supplies a model only when the caller named none: a default
+        // that beats a deliberate choice is worse than no default.
+        model: chosen.model,
     };
     const payload = buildCapabilityPayload('video', ctx).payload;
+    const startedAt = Date.now();
+    const videoRefs = Array.isArray(payload.video_references) ? payload.video_references : [];
+    const estimate = require('../lib/video-cost').estimateVideoCost({
+        model: chosen.model || payload.model,
+        resolution: chosen.resolution,
+        durationSeconds: chosen.durationSeconds || payload.duration_s,
+        imageReferences: videoRefs.filter(r => (r.sourceType || 'image') === 'image').length,
+    });
 
     const jobId = generateId();
     db.prepare(
@@ -295,6 +369,22 @@ async function generateVideo(req, res, shotId) {
             assetId, scene.project_id, shotId, filePath, filename, durationMs,
             videoProvider.id, resultModel(result, payload), resultJobId(result), JSON.stringify(consistencyContext.input_refs || [])
         );
+        /*
+         * Every attempt, recorded with the SHAPE of the shot. Without this the
+         * eventual router has nothing to learn from, and the shape cannot be
+         * reconstructed after the fact.
+         */
+        require('../lib/video-attempt').recordVideoAttempt(db, {
+            shotId, projectId: scene.project_id, shotVersion: shot.current_frame_version,
+            provider: videoProvider.id, model: resultModel(result, payload), tier: chosen.tierId,
+            durationSeconds: payload.duration_s, resolution: chosen.resolution || '',
+            referenceImages: videoRefs.filter(r => (r.sourceType || 'image') === 'image').length,
+            referenceVideos: videoRefs.filter(r => r.sourceType === 'video').length,
+            referenceAudio: videoRefs.filter(r => r.sourceType === 'audio').length,
+            referenceRoles: videoRefs.map(r => r.role),
+            estimatedCredits: estimate.credits, generationMs: Date.now() - startedAt,
+            sceneCard, assetId,
+        });
         recordConsistencyCheck(shot, scene, { id: scene.project_id }, {
             context: consistencyContext,
             output_asset_id: assetId,

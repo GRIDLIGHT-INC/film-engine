@@ -468,15 +468,11 @@ const PRODUCTION_TOOLS = [
     {
         name: 'video_preview',
         handler: handleVideoGen, method: 'GET',
-        path: a => `/film/shots/${a.shot_id}/video/preview`,
-        description:
-            'What generating this shot\u2019s clip would SEND, and what is missing, without sending it. '
-            + 'FREE. Reports the provider, the model, the length and size, the full prompt, whether the '
-            + 'STORYBOARD FRAME is attached, and whether a camera path from previs is going. The '
-            + 'keyframe line is the one that matters: a prompt reads perfectly while the frame that '
-            + 'would have made the clip match the board is absent, so the words look right and the '
-            + 'footage comes back a different place. Read this before video_generate.',
-        schema: { shot_id: { type: 'string' } },
+        path: a => `/film/shots/${a.shot_id}/video/preview`
+            + (a.tier ? `?tier=${encodeURIComponent(a.tier)}` : ''),
+        description: 'What a clip for this shot would be asked for, and what it would COST \u2014 free, and nothing is generated. Reports the model, the length, whether the storyboard frame is attached, the reference package the model would receive, and an itemised credit estimate including reference charges and any minimum. Pass `tier` (draft | production | hero) to price the tier you are considering: a draft is 25 credits for five seconds, the cheap way to check blocking before buying the real shot. SPENDS NOTHING.',
+        schema: { shot_id: { type: 'string' },
+            tier: { type: 'string', enum: ['draft', 'production', 'hero'], description: 'Price and plan this tier. draft = Gen-4 Turbo, 5s, 25 credits — the blocking check. production = H3 768P with the reference package. hero = your choice.' } },
         required: ['shot_id'],
     },
     {
