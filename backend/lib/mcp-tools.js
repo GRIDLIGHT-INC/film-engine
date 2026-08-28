@@ -446,6 +446,39 @@ const PRODUCTION_TOOLS = [
         required: ['project_id', 'model'],
     },
     {
+        name: 'refsheet_orbit_preview',
+        handler: handleCharacters, method: 'GET',
+        description: 'What an orbit turnaround would cost and produce, for FREE. A character sheet '
+            + 'made from ONE clip that orbits the character, cut into front / three-quarter / side / '
+            + 'back — frames of one continuous motion cannot disagree with each other, which three '
+            + 'separately generated plates can and have. Reports the credit estimate, the frames it '
+            + 'would cut, and whether an approved front plate exists to seed it. SPENDS NOTHING.',
+        path: a => `/film/characters/${a.character_id}/refsheet/orbit/preview`
+            + (a.seconds ? `?seconds=${encodeURIComponent(a.seconds)}` : ''),
+        schema: {
+            character_id: { type: 'string' },
+            seconds: { type: 'number', description: 'Clip length; 5 is the default and costs 25 credits.' },
+        },
+        required: ['character_id'],
+    },
+    {
+        name: 'refsheet_orbit',
+        handler: handleCharacters, method: 'POST',
+        description: 'Generate a character turnaround from ONE orbiting clip and cut it into views. '
+            + 'SPENDS CREDITS — about 25 for a 5-second orbit, against roughly 45 for three separate '
+            + 'plates, and the views are consistent because they are frames of the same motion. '
+            + 'Seeded from the approved front plate when one exists; without it the orbit invents a '
+            + 'new person, so generate the front plate first. Read refsheet_orbit_preview before this.',
+        path: a => `/film/characters/${a.character_id}/refsheet/orbit`,
+        body: a => ({ seconds: a.seconds, model: a.model }),
+        schema: {
+            character_id: { type: 'string' },
+            seconds: { type: 'number', description: 'Clip length in seconds; 5 by default.' },
+            model: { type: 'string', description: 'Video model; gen4_turbo by default (5 credits/second).' },
+        },
+        required: ['character_id'],
+    },
+    {
         name: 'plate_refine',
         handler: handleLocations, method: 'POST',
         path: a => `/film/${a.kind === 'prop' ? 'props' : 'locations'}/${a.subject_id}/plate/refine`,

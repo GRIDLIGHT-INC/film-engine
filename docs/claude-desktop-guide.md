@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**180 tools, 44 families.** Everything the app can do, you can ask for in a
+**182 tools, 44 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -113,6 +113,8 @@ is not tracked against the subject's description, so editing that description
 will never tell you to regenerate over a picture you supplied.
 
 `plate_generate` · `plate_upload` · `plate_refine` · `plate_compass` ·
+
+`refsheet_orbit` builds a character turnaround from ONE orbiting clip and cuts it into five views — front, three-quarter, profile, back three-quarter, back. Frames of one motion cannot disagree with each other the way three separately generated plates can. It SPENDS CREDITS (~25 for a 5-second orbit, against roughly 45 for three plates); read `refsheet_orbit_preview` first, which is free. It is a bootstrap: it will not replace an approved front anchor, and says which views it left alone.
 `storyboard_upload` · `previs_image_upload` · `model_upload` · `plate_view_list` · `plate_view_delete` · `plate_generate_all` · `consistency_create` ·
 `consistency_lock` · `consistency_list` · `consistency_unlock` ·
 `consistency_delete` · `mood_board_add` · `mood_board_compose` ·

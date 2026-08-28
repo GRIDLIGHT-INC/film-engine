@@ -22765,6 +22765,7 @@ ${fountainText.slice(0, 50000)}`;
                         </div>
                         <div class="card-actions">
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generateCharacterImage('${c.id}')" title="Generate reference image">${c.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); orbitRefsheet('${c.id}')" title="Turnaround from one orbiting clip — front, three-quarter, side and back that cannot disagree with each other">Orbit Sheet</button>
                             <!--
                               A turnaround is three pictures and the app showed one.
                               Front, side and back were generated, stored and
@@ -23188,6 +23189,42 @@ ${fountainText.slice(0, 50000)}`;
             if (label && label.firstChild && original) label.firstChild.textContent = original;
             event.target.value = '';
         }
+    }
+
+    /*
+     * A turnaround from ONE orbit rather than three separate generations.
+     *
+     * Three plates are three independent rolls of the dice and can disagree
+     * about the face, the wardrobe and the build; frames of one continuous
+     * motion cannot. It is also cheaper — about 25 credits against 45.
+     *
+     * Goes through the same pre-spend confirmation as every other paid button,
+     * built from the FREE preview, so the number under the button is the number
+     * that will be charged.
+     */
+    async function orbitRefsheet(characterId) {
+        return confirmPaidImage({
+            capability: 'video',
+            title: 'Turnaround from one orbit',
+            note: 'Generates a short clip that orbits the character, then cuts it into front, '
+                + 'three-quarter, side and back. The views come from one motion, so they cannot '
+                + 'disagree with each other the way three separate plates can.',
+            previewUrl: `/characters/${characterId}/refsheet/orbit/preview`,
+            editable: false,
+            notEditableWhy: 'The orbit prompt is composed from the character description and the '
+                + 'film\'s medium. Edit the character, then preview again.',
+            send: async () => {
+                setStatus('Generating orbit turnaround…', true);
+                try {
+                    const res = await api(`/characters/${characterId}/refsheet/orbit`,
+                        { method: 'POST', body: JSON.stringify({}) });
+                    const n = (res && res.views ? res.views.length : 0);
+                    setStatus(n ? `Turnaround cut: ${res.views.map(v => v.view).join(', ')}`
+                        : (res && res.error) || 'The orbit produced no frames.');
+                    if (typeof loadCharacters === 'function') loadCharacters();
+                } catch (err) { setStatus('Could not generate the orbit: ' + err.message); }
+            },
+        });
     }
 
     async function generateCharacterImage(charId) {

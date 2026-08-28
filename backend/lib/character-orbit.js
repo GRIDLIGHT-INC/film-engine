@@ -36,8 +36,28 @@ const ORBIT_VIEWS = Object.freeze([
     Object.freeze({ view: 'front', degrees: 0 }),
     Object.freeze({ view: 'three-quarter', degrees: 45 }),
     Object.freeze({ view: 'side', degrees: 90 }),
+    Object.freeze({ view: 'back-three-quarter', degrees: 135 }),
     Object.freeze({ view: 'back', degrees: 180 }),
 ]);
+
+/**
+ * The views that ARE the character's identity.
+ *
+ * The guide is explicit twice — "an optional turnaround bootstrap, not the
+ * final identity source", and in the defaults, "optional bootstrap and angle
+ * discovery tool". So an orbit frame may fill a view that does not exist yet,
+ * and may refresh a non-identity angle, but must never silently replace an
+ * APPROVED identity anchor: front is the picture that attaches to every shot
+ * the character appears in, and a cheap orbit frame overwriting it is the exact
+ * failure the guide is warning about.
+ */
+const IDENTITY_VIEWS = Object.freeze(['front']);
+
+/** May an orbit frame take this view's slot? */
+function mayOverwrite(view, existing) {
+    if (!IDENTITY_VIEWS.includes(view)) return true;      // any other angle: refresh freely
+    return !(existing && existing.approved);              // bootstrap only into an empty slot
+}
 
 /** What the turnaround being replaced costs: three image generations. */
 const REPLACES = Object.freeze({ generations: 3, credits: 45, note: 'three separate plate generations' });
@@ -119,4 +139,4 @@ function orbitPrompt(character, medium, opts) {
     };
 }
 
-module.exports = { ORBIT_VIEWS, ORBIT_CREDITS_PER_SECOND, REPLACES, orbitPlan, orbitPrompt };
+module.exports = { ORBIT_VIEWS, IDENTITY_VIEWS, mayOverwrite, ORBIT_CREDITS_PER_SECOND, REPLACES, orbitPlan, orbitPrompt };

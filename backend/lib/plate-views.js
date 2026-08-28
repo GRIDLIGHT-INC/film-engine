@@ -28,10 +28,21 @@
 
 /** Lower sorts first. Anything unlisted ranks last but is still usable. */
 const VIEW_RANK = Object.freeze({
+    /*
+     * Walk-around order: front, three-quarter, profile, back three-quarter,
+     * back. The back three-quarter was missing, and it is the angle a camera
+     * moving behind a character actually lands on — the guide lists five views
+     * for exactly that reason.
+     *
+     * Front stays 0 because it is the IDENTITY view: with one reference slot
+     * this is the one that attaches, and ranking it anywhere else is how a
+     * turnaround once put the back of a head on every frame.
+     */
     front: 0,
     'three-quarter': 1,
     side: 2,
-    back: 3,
+    'back-three-quarter': 3,
+    back: 4,
 });
 
 const UNRANKED = 9;

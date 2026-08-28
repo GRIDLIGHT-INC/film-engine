@@ -52,6 +52,22 @@ function handleCharacters(req, res, urlParts, query) {
         }
         if (sub === 'refsheet') {
             /*
+             * A turnaround from ONE orbit rather than three separate rolls.
+             *
+             * Three plates are three independent generations that can disagree
+             * about the face, the wardrobe and the build — and this codebase
+             * has already paid for that. Frames of one continuous motion
+             * cannot disagree with each other.
+             *
+             * The preview is free and comes first, like every other paid path
+             * here: an orbit spends credits, so the number is shown before the
+             * button rather than discovered on the ledger.
+             */
+            if (urlParts[4] === 'orbit') {
+                if (urlParts[5] === 'preview' && req.method === 'GET') return previewOrbit(res, charId, query);
+                if (!urlParts[5] && req.method === 'POST') return generateOrbit(req, res, charId);
+            }
+            /*
              * A character sheet supplied from outside — a photograph, a Midjourney
              * export, art the department already made. It lands under the same
              * per-view filename as a generated sheet, so it REPLACES that view rather
@@ -1052,5 +1068,175 @@ function deleteRefsheetView(res, charId, rawView) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ character_id: charId, deleted_view: view }));
 }
+
+/**
+ * What an orbit turnaround would cost and produce. Spends nothing.
+ */
+function previewOrbit(res, charId, query) {
+    const { orbitPlan, orbitPrompt, ORBIT_VIEWS } = require('../lib/character-orbit');
+    const ch = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(charId);
+    if (!ch) return json(res, 404, { error: 'Character not found' });
+
+    const seconds = Number((query || {}).seconds) || 5;
+    const plan = orbitPlan({ seconds });
+    const front = frontPlateUriFor(ch);
+    const built = orbitPrompt(ch, projectMedium(ch.project_id, db), { frontPlateUri: front || undefined });
+
+    return json(res, 200, {
+        character: ch.name,
+        seconds,
+        views: ORBIT_VIEWS.map(v => v.view),
+        frames: plan.frames,
+        estimate: { credits: plan.credits, usd: plan.usd },
+        compared_to: plan.comparedTo,
+        saving_credits: plan.saving,
+        seeded_from_front_plate: !!front,
+        warnings: front ? [] : [
+            'No front plate yet. The orbit will invent this character rather than turning the '
+            + 'one you approved — generate the front plate first, or accept a new face.',
+        ],
+        prompt: built.prompt,
+        negative_prompt: built.negative_prompt,
+        note: 'Nothing was generated and nothing was spent.',
+    });
+}
+
+/** The approved front plate, as a data URI, or null. */
+function frontPlateUriFor(ch) {
+    try {
+        const row = db.prepare(
+            `SELECT file_name FROM film_assets
+              WHERE character_id = ? AND asset_type = 'character_sheet'
+                AND json_extract(metadata, '$.view') = 'front'
+              ORDER BY created_at DESC LIMIT 1`).get(ch.id);
+        if (!row) return null;
+        const fsx = require('fs');
+        const { getFilePath } = require('../lib/file-storage');
+        const p = getFilePath(ch.project_id, 'refsheets', row.file_name);
+        if (!fsx.existsSync(p)) return null;
+        return `data:image/png;base64,${fsx.readFileSync(p).toString('base64')}`;
+    } catch (_) { return null; }
+}
+
+/**
+ * Generate the orbit, then cut it into the turnaround.
+ *
+ * The frames are stored exactly as generated plates are — same per-view
+ * filename, same per-view replacement — so `gatherShotReferences` and
+ * `headlinePlate` pick them up with nothing else to change.
+ */
+async function generateOrbit(req, res, charId) {
+    const { orbitPlan, orbitPrompt, mayOverwrite } = require('../lib/character-orbit');
+    const ch = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(charId);
+    if (!ch) return json(res, 404, { error: 'Character not found' });
+
+    const seconds = Number((req.body || {}).seconds) || 5;
+    const plan = orbitPlan({ seconds });
+    const built = orbitPrompt(ch, projectMedium(ch.project_id, db),
+        { frontPlateUri: frontPlateUriFor(ch) || undefined });
+
+    const provider = resolve('video', parseProjectConfig(ch.project_id));
+    const result = await provider.generate('video', {
+        prompt: built.prompt,
+        negative_prompt: built.negative_prompt,
+        init_image: built.init_image,
+        motion: built.motion,
+        camera_control: built.camera_control,
+        duration_s: seconds,
+        model: (req.body || {}).model || 'gen4_turbo',
+        width: 1280, height: 720,
+    }, { timeout: 300000 });
+    if (!result.ok) return json(res, result.status || 500, { error: result.error });
+
+    const fsx = require('fs');
+    const pathx = require('path');
+    ensureDir(ch.project_id, 'video');
+    const clipName = `${String(ch.name).replace(/[^\w.-]/g, '_')}_orbit.mp4`;
+    let clipPath;
+    try {
+        clipPath = await persistProviderMedia(ch.project_id, 'video', clipName, result.data, { serveDir: 'videos' });
+    } catch (err) {
+        return json(res, 502, { error: `orbit generated but could not be stored: ${err.message}` });
+    }
+
+    const { resolveFfmpeg } = require('../lib/ffmpeg');
+    const bin = resolveFfmpeg();
+    if (!bin || !bin.available) {
+        return json(res, 200, {
+            clip: clipName, views: [],
+            error: 'The orbit was generated but no encoder is available to cut it into frames. '
+                + 'Install ffmpeg, or set FFMPEG_PATH.',
+        });
+    }
+
+    ensureDir(ch.project_id, 'refsheets');
+    const safeName = String(ch.name).replace(/[^\w.-]/g, '_');
+    const made = [];
+    const kept = [];
+    for (const frame of plan.frames) {
+        const filename = `${safeName}_${frame.view}.png`;
+        const filePath = require('../lib/file-storage').getFilePath(ch.project_id, 'refsheets', filename);
+        try {
+            require('child_process').execFileSync(bin.path,
+                ['-y', '-ss', String(frame.atSeconds), '-i', clipPath, '-frames:v', '1', '-q:v', '2', filePath],
+                { stdio: 'ignore', timeout: 30000 });
+        } catch (_) { continue; }
+        if (!fsx.existsSync(filePath)) continue;
+
+        /*
+         * A BOOTSTRAP, not the identity source.
+         *
+         * The guide says this twice, and the first version of this route
+         * ignored it: it replaced every view it produced, including FRONT —
+         * the picture that attaches to every shot this character appears in. A
+         * cheap orbit frame silently overwriting an approved anchor is exactly
+         * what "not the final identity source" is warning about.
+         *
+         * So an identity view is filled only when it is empty. Any other angle
+         * is refreshed freely, with the same per-view replacement the still
+         * plates use, because two rows claiming one view means "the plate" is
+         * whichever the query happens to return.
+         */
+        const stale = db.prepare(
+            `SELECT id FROM film_assets
+              WHERE project_id = ? AND character_id = ?
+                AND asset_type IN ('character_sheet', 'reference_image')
+                AND json_extract(metadata, '$.view') = ?`
+        ).all(ch.project_id, charId, frame.view);
+        if (!mayOverwrite(frame.view, { approved: stale.length > 0 })) {
+            // Reported, never silent: a view the orbit declined to take is a
+            // thing the director asked for and did not get.
+            kept.push({ view: frame.view, reason: 'an approved identity anchor already exists — '
+                + 'an orbit frame is a bootstrap and will not replace it' });
+            try { fsx.unlinkSync(filePath); } catch (_) { /* the frame we just cut */ }
+            continue;
+        }
+        for (const old of stale) db.prepare('DELETE FROM film_assets WHERE id = ?').run(old.id);
+
+        const assetId = generateId();
+        db.prepare(
+            `INSERT INTO film_assets (
+                id, project_id, character_id, asset_type, file_path, file_name, format, mime_type,
+                version, metadata, provider, provider_model, license_source, license_status
+             ) VALUES (?, ?, ?, 'character_sheet', ?, ?, 'png', 'image/png', 1, ?, ?, ?, 'generated', 'generated')`
+        ).run(assetId, ch.project_id, charId, filePath, filename,
+            JSON.stringify({ character_id: charId, view: frame.view, from: 'orbit', at_seconds: frame.atSeconds }),
+            provider.id, result.provider_model || '');
+        made.push({ view: frame.view, file: filename, at_seconds: frame.atSeconds });
+    }
+
+    return json(res, 200, {
+        character: ch.name,
+        clip: clipName,
+        views: made,
+        kept_existing: kept,
+        estimate: { credits: plan.credits, usd: plan.usd },
+        note: made.length
+            ? `Turnaround cut from one orbit — ${made.length} views that cannot disagree with each other.`
+                + (kept.length ? ` ${kept.length} left alone: an orbit bootstraps a turnaround, it does not replace an approved identity anchor.` : '')
+            : 'The orbit generated but no frames could be cut from it.',
+    });
+}
+
 
 module.exports = { handleCharacters, buildRefSheetPrompt, REFSHEET_NEGATIVE };

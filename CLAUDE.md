@@ -262,6 +262,9 @@ film-engine/
 │       ├── credentials-global.test.js   # A key is entered once, for the machine, not once per film
 │       ├── plate-views.test.js         # A turnaround is three pictures, and the app used the wrong one
 │       ├── character-orbit.test.js     # Frames of one motion cannot disagree with each other
+│       ├── character-orbit-surfaces.test.js # ...and it is reachable everywhere a plate is
+│       ├── character-sheet-guide.test.js # Five views, and an orbit is a bootstrap not an anchor
+│       ├── character-orbit-surfaces.test.js # ...and it is reachable everywhere a plate is
 │       ├── style-book-research.test.js # The style book design covers every surface it touches
 │       ├── style-book-plan.test.js     # The implementation plan wires into every registry it must
 │       ├── style-book.test.js          # A director's shots, reusable across films
@@ -1011,7 +1014,7 @@ They were stored correctly: three files, three asset rows, each carrying its vie
 
 A mutation caught the test being vacuous: it grepped each module for `orderByViewSql`, which the **import line alone** satisfies, so removing it from the ORDER BY left the test green while every frame went back to the back of the head. It now reads inside the clause.
 
-### A Turnaround From One Orbit (core built, not yet wired)
+### A Turnaround From One Orbit
 A three-view turnaround is **three independent generations** — front, side and back, each its own roll of the dice — so they can disagree about the face, the wardrobe and the build. This codebase has already paid for that: the newest of the three rows was the **back** view, and it was the picture attached to every frame the character appeared in.
 
 The alternative is the *360 video character trick*: generate one clip that orbits the character and take the frames as the sheet. **Frames of one continuous motion cannot disagree with each other** — that is the whole argument, and it is structural rather than stylistic. It is also cheaper: a 5-second Gen-4 Turbo orbit is **25 credits** against roughly **45** for three plates.
@@ -1024,7 +1027,15 @@ The alternative is the *360 video character trick*: generate one clip that orbit
 
 Views are named with the **existing plate vocabulary** (`VIEW_RANK`) rather than in degrees, because `headlinePlate` and the shot gatherer select by view name — a frame labelled "72°" is a picture nothing can choose. Front is frame 0 exactly, because the orbit is **seeded from the approved front plate** (without it the orbit invents a new person) and because front is the view that attaches to a shot.
 
-**Deliberately not wired yet.** The technique comes from a video I cannot watch; I have its chapter list and description but not its conclusions — specifically *"Did It Make A Difference?"* and *"The Real Secret"* — and two other methods it tests (blacked-out faces for multi-character bleed, first-frame vs omni) may matter more. Wiring the route on a partial reading would be the wrong work, so the core is tested and the surface waits.
+**Reachable the four ways a plate already is**, because a capability with no control is indistinguishable from one that does not exist: `POST /film/characters/:id/refsheet/orbit`, a **free** `GET …/orbit/preview`, the `refsheet_orbit` and `refsheet_orbit_preview` tools (**182 tools**), and an *Orbit Sheet* button beside *Regen Image* going through the same pre-spend confirmation every other paid button uses.
+
+Frames are stored **exactly as generated plates are** — same per-view filename, same per-view replacement — so `gatherShotReferences` and `headlinePlate` pick them up with nothing to change. Re-running replaces each view rather than accumulating rows, which is the bug that once left six entries for three pictures.
+
+**An orbit with no front plate is warned about, not refused.** Without one the clip invents a new person rather than turning the one already approved; that is a legitimate thing to want on a character with no plate yet, and a silent invention is not.
+
+**Two of the video's other methods are not built** — the blacked-out-faces technique for multi-character bleed, and first-frame vs omni — because their verdicts are in chapters I cannot watch (*"Did It Make A Difference?"*, *"The Real Secret"*). Named rather than dropped; the bleed one looks the most valuable, since our reference package sends several character plates at once and has no defence against features crossing between them.
+
+Five of the first seven mutations against this survived, and all five for the same reason: the assertions were **file-wide** where they should have been **bound**. `/'orbit'/` matched the preview line after the POST was deleted; the tool check matched `refsheet_orbit_preview` after the generating tool was renamed away; the per-view replacement matched the *still-plate* path's identical clause. Each is now bound to the specific dispatch, the specific tool name, or the enclosing function body.
 
 ### A Subject Plate Is the Subject and Nothing Else
 *"When we do character or prop plates let's make sure we don't include backgrounds."*
@@ -2387,6 +2398,9 @@ node --test backend/tests/provider-config-merge.test.js
 node --test backend/tests/credentials-global.test.js
 node --test backend/tests/plate-views.test.js
 node --test backend/tests/character-orbit.test.js
+node --test backend/tests/character-orbit-surfaces.test.js
+node --test backend/tests/character-sheet-guide.test.js
+node --test backend/tests/character-orbit-surfaces.test.js
 node --test backend/tests/style-book-research.test.js
 node --test backend/tests/style-book-plan.test.js
 node --test backend/tests/style-book.test.js
