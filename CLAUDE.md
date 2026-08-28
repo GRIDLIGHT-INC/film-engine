@@ -166,6 +166,7 @@ film-engine/
 │   │   ├── generator-costs.js   # Which generator to use: every price, one comparable unit
 │   │   ├── prop-categories.js   # What a prop may be, said once for the picker, the tool and the CHECK
 │   │   ├── plate-views.js       # Which view of a subject carries identity
+│   │   ├── character-orbit.js   # A turnaround from ONE orbit, not three separate rolls
 │   │   ├── plate-isolation.js   # A subject plate is the subject and nothing else
 │   │   ├── style-book.js        # The director's own shots, applied to a film's
 │   │   ├── usage-meter.js       # Every provider call, metered and attributed
@@ -260,6 +261,7 @@ film-engine/
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
 │       ├── credentials-global.test.js   # A key is entered once, for the machine, not once per film
 │       ├── plate-views.test.js         # A turnaround is three pictures, and the app used the wrong one
+│       ├── character-orbit.test.js     # Frames of one motion cannot disagree with each other
 │       ├── style-book-research.test.js # The style book design covers every surface it touches
 │       ├── style-book-plan.test.js     # The implementation plan wires into every registry it must
 │       ├── style-book.test.js          # A director's shots, reusable across films
@@ -1008,6 +1010,21 @@ They were stored correctly: three files, three asset rows, each carrying its vie
 **A regenerated view replaces its row.** The file is written to the same per-view name and overwrites, so a second generation inserted a NEW asset row pointing at the same picture: Ray was regenerated once through MCP and the list showed **six entries for three files**, with three more every time after. Not merely cosmetic — two rows for one view means "the plate" is whichever the query returns, the fingerprint is stamped on one of them, and accepting staleness on the visible row leaves the other still reported as behind. The row goes and the **file stays**, because it is the same path the generation just wrote.
 
 A mutation caught the test being vacuous: it grepped each module for `orderByViewSql`, which the **import line alone** satisfies, so removing it from the ORDER BY left the test green while every frame went back to the back of the head. It now reads inside the clause.
+
+### A Turnaround From One Orbit (core built, not yet wired)
+A three-view turnaround is **three independent generations** — front, side and back, each its own roll of the dice — so they can disagree about the face, the wardrobe and the build. This codebase has already paid for that: the newest of the three rows was the **back** view, and it was the picture attached to every frame the character appeared in.
+
+The alternative is the *360 video character trick*: generate one clip that orbits the character and take the frames as the sheet. **Frames of one continuous motion cannot disagree with each other** — that is the whole argument, and it is structural rather than stylistic. It is also cheaper: a 5-second Gen-4 Turbo orbit is **25 credits** against roughly **45** for three plates.
+
+`lib/character-orbit.js` is the pure core. Two decisions carry it:
+
+**The camera moves and the subject does not.** A character who walks or turns gives you different *poses*, which is not a turnaround — a turnaround is one pose seen from several angles. The prompt says so explicitly, and the test asserts it does.
+
+**It is still a plate**, so the same isolation applies: empty frame, no room, no scenery. Whatever is behind the character in a turnaround is dragged into every frame that references them.
+
+Views are named with the **existing plate vocabulary** (`VIEW_RANK`) rather than in degrees, because `headlinePlate` and the shot gatherer select by view name — a frame labelled "72°" is a picture nothing can choose. Front is frame 0 exactly, because the orbit is **seeded from the approved front plate** (without it the orbit invents a new person) and because front is the view that attaches to a shot.
+
+**Deliberately not wired yet.** The technique comes from a video I cannot watch; I have its chapter list and description but not its conclusions — specifically *"Did It Make A Difference?"* and *"The Real Secret"* — and two other methods it tests (blacked-out faces for multi-character bleed, first-frame vs omni) may matter more. Wiring the route on a partial reading would be the wrong work, so the core is tested and the surface waits.
 
 ### A Subject Plate Is the Subject and Nothing Else
 *"When we do character or prop plates let's make sure we don't include backgrounds."*
@@ -2369,6 +2386,7 @@ node --test backend/tests/manual-edit.test.js
 node --test backend/tests/provider-config-merge.test.js
 node --test backend/tests/credentials-global.test.js
 node --test backend/tests/plate-views.test.js
+node --test backend/tests/character-orbit.test.js
 node --test backend/tests/style-book-research.test.js
 node --test backend/tests/style-book-plan.test.js
 node --test backend/tests/style-book.test.js
