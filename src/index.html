@@ -18756,8 +18756,7 @@ THREE.GLTFLoader = GLTFLoader;
                 if (child.nodeType === Node.TEXT_NODE) {
                     text += child.textContent;
                 } else if (child.nodeType === Node.ELEMENT_NODE &&
-                           !child.classList.contains('scene-number-gutter') &&
-                           !child.classList.contains('page-break-indicator')) {
+                           !child.classList.contains('scene-number-gutter')) {
                     text += child.innerText || '';
                 }
             }
@@ -18815,8 +18814,16 @@ THREE.GLTFLoader = GLTFLoader;
         document.getElementById('editorWordCount').textContent = `Words: ${words.toLocaleString()}`;
         document.getElementById('editorPageCount').textContent = `~${pages} pages (~${pages} min)`;
 
-        // FILM-108: Update page break indicators
-        updatePageBreakIndicators(editor);
+        /*
+         * The editor is a continuous scroll while you write.
+         *
+         * The page COUNT stays — it is genuinely useful, one page being about
+         * one minute — and calculatePageEstimate counts BLOCKS, so it never
+         * needed the markers. What is gone is the furniture: nothing is
+         * inserted into the contenteditable, which removes the class of bug
+         * rather than defending against it. Pagination now happens on a clone
+         * at print time, in exportToPDF.
+         */
     }
 
     /**
@@ -18868,7 +18875,27 @@ THREE.GLTFLoader = GLTFLoader;
             .querySelectorAll('[data-element-type]:not([data-element-type="title-page"])'));
     }
 
-    function updatePageBreakIndicators(editor) {
+    /**
+     * Insert page-break markers into a container.
+     *
+     * Deliberately takes a CONTAINER rather than reaching for the editor: the
+     * live editor must never hold these. An indicator is a <div> with a class,
+     * no element type and no text — indistinguishable from an empty block — so
+     * while it lived in the contenteditable the orphan-adoption loop kept
+     * turning five of them into 32px of nothing on every keystroke.
+     *
+     * The editor is now one continuous scroll. Pagination happens on a DETACHED
+     * CLONE at print time, where the markers are exactly what
+     * `.page-break-indicator { page-break-after: always }` needs, and where
+     * nothing is typing into them.
+     *
+     * The rule itself is unchanged and still walks a break UP past anything
+     * that belongs with what follows — a cue stranded at the foot of a page
+     * leaves its dialogue alone at the top of the next, where it reads as
+     * action. Held in lockstep with lib/screenplay-pagination.js.
+     */
+    function paginateInto(container) {
+        const editor = container;
         if (!editor) return;
 
         // Remove existing page break indicators
@@ -19844,8 +19871,21 @@ THREE.GLTFLoader = GLTFLoader;
             return;
         }
 
-        // Clone the editor content and sanitize for print
-        const content = editor.innerHTML
+        /*
+         * Paginate a DETACHED CLONE, never the live editor.
+         *
+         * The markers are what `.page-break-indicator { page-break-after:
+         * always }` acts on in the print stylesheet, so without them the
+         * browser breaks pages wherever it likes — including between a
+         * character cue and its dialogue, which is the whole thing
+         * MAY_END_PAGE exists to prevent. Doing it on a clone keeps the
+         * editor a continuous scroll and keeps the PDF correctly paginated.
+         */
+        const printable = editor.cloneNode(true);
+        paginateInto(printable);
+
+        // Sanitize for print
+        const content = printable.innerHTML
             .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
             .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
 

@@ -336,6 +336,7 @@ film-engine/
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
 │       ├── screenplay-furniture.test.js # The editor's own furniture is not content
 │       ├── screenplay-mutators.test.js # Every way a screenplay is written leaves the editor sound
+│       ├── screenplay-continuous.test.js # The editor scrolls; pages are for the count and the print
 │       ├── mcp-first-writing.test.js # MCP is the default path; HTTP says it cost you something
 │       ├── act-structure.test.js   # Acts are sections; the table and its readers are gone
 │       ├── frame-versions.test.js  # Which attempt is which, and which can be chosen
@@ -1068,6 +1069,23 @@ The denominator is **derived from `providers.list()`** — every adapter declari
 The credential rule is probed **by removing the credentials**, not by reading the rows: every provider is credentialed on a working install, so "if unavailable then it says why" is vacuously true and passes just as happily against a filter that drops them. The first version of that test did exactly that, and the mutation inserting `continue` for uncredentialed providers did not fail it.
 
 Served at `GET /film/spend/compare`, on the Budget page's **Compare Generators** tab, and as `spend_compare` (**169 tools**).
+
+### The Editor Scrolls; Pages Are for the Count and the Print
+*"I don't think the page number is important when we're editing… would it solve the issue if we're not trying to do page breaks? Just one continuous screen scroll as we edit."*
+
+Yes — and it removes the **class** of bug rather than defending against it. A page-break indicator is a `<div>` with a class, no element type and no text, which is indistinguishable from an empty block, so while it lived inside the contenteditable the orphan-adoption loop kept turning five of them into 32px of nothing on every keystroke. Two passes were taught to recognise furniture; taking the furniture out of the editor entirely is better.
+
+**But they were doing a second job, and dropping them blindly would have been a silent regression.** `generatePrintHTML` carries `.page-break-indicator { page-break-after: always }` — those same nodes are what break the pages in an exported PDF. Without them the browser breaks wherever it likes, including between a character cue and its dialogue, which is exactly what `MAY_END_PAGE` exists to prevent.
+
+So pagination moved rather than went: `paginateInto(container)` takes a **container** instead of reaching for the editor, and `exportToPDF` runs it on a **detached clone**. The editor is a continuous scroll and never holds furniture; the PDF is paginated correctly; and nothing is typing into the markers while they are inserted.
+
+**The page count stays**, because it is genuinely useful — one page is about one minute — and `calculatePageEstimate` counts **blocks**, so it never needed the markers. It also carried a dead filter skipping `page-break-indicator` among a block's *children*; indicators are inserted as **siblings** (`blocks[at].after(…)`), so that clause could never have fired. Removed.
+
+The furniture defences stay even with no furniture to defend: a contenteditable will still hand back bare `<div>`s, and removing the recognition because the indicators left would re-open the empty-block bug the moment anything else inserts a node.
+
+Verified in a real browser: **0 indicators in the editor**, 189 blocks steady through 25 keystrokes, 0 empty blocks, no JavaScript errors — and the print clone still gets its **5 page breaks**.
+
+The test's walk-up assertion was written with a `[^\]]` class that cannot cross the `]` inside `MAY_END_PAGE[blocks[at].dataset.elementType]`, so it matched nothing and passed against a paginator with the rule deleted. **Third time this codebase has paid for a bounded character class**; it is non-greedy now, and the mutation fails.
 
 ### Every Way a Screenplay Is Written, Not Just Typing
 *"you fixed probably just this screenplay, what we must fix and how we do all this… when a screenplay is being written or edited."*
@@ -2358,6 +2376,7 @@ node --test backend/tests/screenplay-pagination.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js
 node --test backend/tests/screenplay-furniture.test.js
 node --test backend/tests/screenplay-mutators.test.js
+node --test backend/tests/screenplay-continuous.test.js
 node --test backend/tests/mcp-first-writing.test.js
 node --test backend/tests/act-structure.test.js
 node --test backend/tests/frame-versions.test.js
