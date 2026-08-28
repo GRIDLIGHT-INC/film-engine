@@ -87,6 +87,7 @@ film-engine/
 │   │   ├── nle-export.js         # NLE format generators (pure functions)
 │   │   ├── screenplay-parser.js   # INT./EXT. scene heading parser
 │   │   ├── screenplay-pagination.js # Where a page may break, and what it may not split
+│   │   ├── screenplay-blocks.js   # An empty block is 32px of nothing, except where the caret is
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
 │   │   ├── reference-images.js    # Tagged reference plates: data URIs, tags, ≤3 selection
@@ -332,6 +333,7 @@ film-engine/
 │       ├── story-structure.test.js  # Beats find their holes; a scene's history is derived, not stored
 │       ├── screenplay-polish.test.js # Export fidelity, and an edit batch that is all-or-nothing
 │       ├── screenplay-pagination.test.js # No page ends between a cue and its dialogue
+│       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
 │       ├── mcp-first-writing.test.js # MCP is the default path; HTTP says it cost you something
 │       ├── act-structure.test.js   # Acts are sections; the table and its readers are gone
 │       ├── frame-versions.test.js  # Which attempt is which, and which can be chosen
@@ -1064,6 +1066,34 @@ The denominator is **derived from `providers.list()`** — every adapter declari
 The credential rule is probed **by removing the credentials**, not by reading the rows: every provider is credentialed on a working install, so "if unavailable then it says why" is vacuously true and passes just as happily against a filter that drops them. The first version of that test did exactly that, and the mutation inserting `continue` for uncredentialed providers did not fail it.
 
 Served at `GET /film/spend/compare`, on the Budget page's **Compare Generators** tab, and as `spend_compare` (**169 tools**).
+
+### An Empty Block Is 32px of Nothing
+*"there is still an issue when we are typing in the screenplay where it adds extra space… As soon as we type away or click away from the screen it fixes it."*
+
+Measured in a real browser on The Glass Harbour. The correct gap between a line of dialogue and the next character cue is **16px** — one blank line, drawn by `.sp-character { margin-top: 1em }`. Each stale **empty block** sitting between them adds exactly **32px**: its own line, plus the margin its type carries.
+
+| | |
+|---|---|
+| correct | 16px |
+| + 1 empty block | 48px |
+| + 2 | 80px |
+| + 3 | **112px** |
+
+The reported screenshot showed roughly 130px between every dialogue and the cue after it — three or four of them.
+
+**They mean nothing, which is why it healed itself.** `serializeElement` opens with `if (!text) return;`, so an empty block writes **nothing** to the Fountain. The moment anything re-parses the document and rebuilds the editor, every one of them vanishes at once. The screenplay was never wrong; only the DOM was. That is exactly the "click away and it fixes itself" — and it is also why this was easy to dismiss as cosmetic.
+
+**They accumulate because the editor manufactured them.** `onEditorInput`'s orphan-adoption branch called `createBlock(text, defaultType)` **even when `text` was `''`**, so every bare `<div>` the browser leaves behind in a contenteditable became a permanent empty `action` block. Nothing ever removed one.
+
+Two changes. The orphan branch now **drops** a textless node instead of adopting it — unless the caret is in it, in which case it becomes a real block so the cursor survives. And `sweepEmptyBlocks()` clears anything still empty after each input.
+
+**The caret is the exception, and it is the whole safety of this.** The block you are typing into is empty precisely because you have not typed yet; sweeping it would delete the line being written. `blockHoldsCaret()` reads the live selection, and the test follows the call to make sure the predicate it delegates to actually does.
+
+`lib/screenplay-blocks.js` holds the rule and the SPA mirrors it, on the `screenplay-pagination.js` precedent — the page cannot require a node module (`build.target: single-html`), and two rules that disagree is how a fix survives in the tests and not on the screen. The exemption list is **named** (`title-page`: no body text and entirely meaningful) and the two copies are compared element by element.
+
+`tests/screenplay-empty-blocks.test.js` is set-based over **every type the editor can put on a block** — derived from `ELEMENT_TYPES` unioned with the editor's own `nextType` map, 12 of them — because a sweep that cleans `action` and leaves `character` fixes the reported case and leaves eleven others. Verified end to end in a real browser: three planted empty blocks took the gap to 112px, one input returned it to 16px with zero empties left, and typing `RAY` then a line of dialogue produced the correct 16/0/16 spacing.
+
+One of the checks was vacuous first and is worth recording: the guard regex was bounded with `[^)]`, which cannot cross the `)` in `blockHoldsCaret(node)`, so it matched nothing and passed against the bug — the same character-class mistake the headline-plate work already paid for.
 
 ### The Title Page Is Not Body Pages
 Found by enumerating the element types the **editor** emits rather than the ten this module happened to list. The editor emits **eleven**; `MAY_END_PAGE` answered ten. The eleventh is `title-page`, and the paginator read it as an ordinary block.
@@ -2289,6 +2319,7 @@ node --test backend/tests/screenplay-structure.test.js
 node --test backend/tests/story-structure.test.js
 node --test backend/tests/screenplay-polish.test.js
 node --test backend/tests/screenplay-pagination.test.js
+node --test backend/tests/screenplay-empty-blocks.test.js
 node --test backend/tests/mcp-first-writing.test.js
 node --test backend/tests/act-structure.test.js
 node --test backend/tests/frame-versions.test.js

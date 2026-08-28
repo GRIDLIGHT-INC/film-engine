@@ -17075,6 +17075,61 @@ THREE.GLTFLoader = GLTFLoader;
             .replace(/"/g, '&quot;');
     }
 
+
+    /*
+     * Empty blocks are 32px of nothing.
+     *
+     * A block with no text serialises to NOTHING — serializeElement opens with
+     * `if (!text) return;` — but on screen it still costs its own line plus the
+     * margin its type carries. Measured on a real document: the correct gap
+     * between dialogue and the next character cue is 16px; one stale empty
+     * block makes it 48, two make it 80, three make it 112. That is the "extra
+     * space", and it disappeared whenever anything re-parsed the document and
+     * rebuilt the editor, which is why it looked like it fixed itself.
+     *
+     * They accumulate because the browser leaves bare <div>s behind in a
+     * contenteditable and onEditorInput used to adopt every one of them into a
+     * block, empty or not.
+     *
+     * THE CARET IS THE EXCEPTION, and it is the whole safety of this: the block
+     * you are typing into is empty because you have not typed yet. Removing it
+     * would delete the line being written.
+     *
+     * Mirrors lib/screenplay-blocks.js, held in lockstep by
+     * screenplay-empty-blocks.test.js — the SPA cannot require a node module
+     * (build.target is single-html), and two rules that disagree is how a fix
+     * survives in the tests and not on the screen.
+     */
+    const SP_KEEP_EMPTY = ['title-page'];
+
+    function blockHoldsCaret(block) {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return false;
+        const node = sel.getRangeAt(0).startContainer;
+        return !!node && block.contains(node);
+    }
+
+    function sweepEmptyBlocks(editor) {
+        if (!editor) return 0;
+        let removed = 0;
+        for (const block of [...editor.children]) {
+            const type = block.dataset && block.dataset.elementType;
+            if (!type) continue;                                   // not a block
+            if (SP_KEEP_EMPTY.includes(type)) continue;
+            if (block.classList.contains('page-break-indicator')) continue;
+            if ((block.innerText || '').trim() !== '') continue;
+            if (blockHoldsCaret(block)) continue;
+            block.remove();
+            removed++;
+        }
+        return removed;
+    }
+
+    /** A node's printable text — whitespace is not content in a screenplay. */
+    function textOf(node) {
+        return String((node && (node.innerText || node.textContent)) || '').trim();
+    }
+
     function onEditorInput() {
         editorDirty = true;
         updateEditorStats();
@@ -17110,12 +17165,24 @@ THREE.GLTFLoader = GLTFLoader;
                 const selector = document.getElementById('elementTypeSelector');
                 if (selector) selector.value = defaultType;
             } else if (node.nodeType === 1 && !node.dataset.elementType) {
-                // Element without data-element-type - add it
-                const text = node.innerText || '';
+                /*
+                 * A bare <div> the browser left behind. Adopting it into a
+                 * block when it has NO TEXT is what manufactured the empty
+                 * blocks: 32px of layout that writes nothing to the Fountain.
+                 * Unless the caret is in it — in which case it is where the
+                 * next character is about to be typed, and it becomes a real
+                 * block so the cursor survives.
+                 */
+                const text = textOf(node);
+                if (!text && !blockHoldsCaret(node)) { node.remove(); continue; }
                 const block = createBlock(text, defaultType);
                 editor.replaceChild(block, node);
+                if (!text) setCursorToBlock(block);
             }
         }
+
+        // Anything still empty and not under the caret is 32px of nothing.
+        sweepEmptyBlocks(editor);
 
         // FILM-101: Debounced auto-detection of element types
         if (autoDetectTimer) clearTimeout(autoDetectTimer);
