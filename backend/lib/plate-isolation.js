@@ -130,7 +130,80 @@ const DEFAULT_MEDIUM = 'photoreal, shot on a real camera';
  * Never throws — a board that cannot be read must not stop a plate from being
  * generated, the rule stampAsset already documents.
  */
+/**
+ * Words that name what KIND of picture this is.
+ *
+ * Deliberately short and concrete, and matched on WHOLE WORDS. The style-check
+ * work already paid for the alternative: substring matching turns "grainy" into
+ * "rain", and a detector that fires on ordinary description gets switched off
+ * within a day and then protects nothing.
+ */
+const MEDIUM_WORDS = Object.freeze([
+    'painted', 'painting', 'paint', 'painterly', 'hand-painted', 'illustration', 'illustrated',
+    'concept art', 'matte painting', 'watercolour', 'watercolor', 'gouache', 'oil', 'acrylic',
+    'ink', 'inked', 'halftone', 'comic', 'graphic novel', 'woodcut', 'etching', 'linocut',
+    'charcoal', 'pastel', 'sketch', 'sketched', 'drawn', 'line art', 'storybook',
+    'cel', 'anime', 'animation', 'animated', 'cartoon', 'claymation', 'stop-motion',
+    '2d', '3d', 'render', 'rendered', 'cg', 'cgi', 'low-poly', 'voxel', 'pixel art',
+    'photoreal', 'photorealistic', 'photograph', 'photographic', 'live-action', 'film still',
+]);
+
+/**
+ * The medium a style preset declares, in the DIRECTOR'S OWN WORDS.
+ *
+ * Returns the sentences of the preset that name a medium, and nothing else.
+ * Whole sentences rather than matched keywords because the phrasing carries
+ * meaning a label would lose — "NOT a photograph, NOT photorealistic" is the
+ * instruction, and a tidy summary like "painted" throws away the negation that
+ * the model most needs to hear.
+ *
+ * Only the medium sentences: an isolated plate takes the MEDIUM and never the
+ * scene, because a real preset is largely a description of a room and appending
+ * it is what once produced plates that WERE rooms.
+ */
+function mediumFromStyle(style) {
+    const text = String(style || '').trim();
+    if (!text) return '';
+    /*
+     * CLAUSES, not sentences.
+     *
+     * A real style preset is usually one long comma-separated string with no
+     * full stops at all — the project that exposed this is a single sentence
+     * of forty clauses. Splitting on sentences returned the WHOLE preset as
+     * the "medium", which is precisely the scene-description leak that
+     * isolating these plates exists to prevent: colour, lighting, lens and
+     * period would all have gone into a character plate.
+     */
+    const clauses = text.split(/(?<=[.!?])\s+|\n+|,/).map(x => x.trim()).filter(Boolean);
+    const names = clause => MEDIUM_WORDS.some(w => new RegExp(
+        `(^|[^a-z0-9-])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9-]|$)`, 'i',
+    ).test(clause.toLowerCase()));
+    // Join with a comma, except after a clause that already ended a sentence —
+    // "ILLUSTRATION., Hand-painted" is text a model reads.
+    return clauses.filter(names).reduce((out, clause) => (
+        !out ? clause : `${out}${/[.!?]$/.test(out) ? '' : ','} ${clause}`
+    ), '').replace(/\s+/g, ' ').trim();
+}
+
 function projectMedium(projectId, database) {
+    /*
+     * Where a character or prop plate's medium comes from, in order:
+     *
+     *   1. the mood board's `medium` entry — stated deliberately, so it wins;
+     *   2. the medium named in the project's STYLE PRESET;
+     *   3. the photoreal default, only when neither says anything.
+     *
+     * Step 2 was missing, and it is the whole bug. A real project's preset
+     * opened "A PAINTED DIGITAL ILLUSTRATION. Hand-painted concept art. NOT a
+     * photograph, NOT photorealistic" — with no board entry, every character
+     * plate was told "photoreal, shot on a real camera" instead. No wording
+     * could win, because the preset was never in the prompt: three paid
+     * attempts changed only the colour, which is exactly what a reference used
+     * as a grade rather than a medium does.
+     *
+     * Locations were unaffected because they are not isolated and get the whole
+     * preset — hence painted places and photographic people in one film.
+     */
     if (!projectId) return DEFAULT_MEDIUM;
     try {
         const db = database || require('../db/database').db;
@@ -138,8 +211,14 @@ function projectMedium(projectId, database) {
             `SELECT note FROM film_mood_board
               WHERE project_id = ? AND kind = 'medium' AND TRIM(note) <> ''
               ORDER BY sort_order, created_at`).all(projectId);
-        const words = rows.map(r => String(r.note).trim()).filter(Boolean).join(', ');
-        return words || DEFAULT_MEDIUM;
+        const stated = rows.map(r => String(r.note).trim()).filter(Boolean).join(', ');
+        if (stated) return stated;
+
+        const project = db.prepare('SELECT style_preset FROM film_projects WHERE id = ?').get(projectId);
+        const fromStyle = mediumFromStyle(project && project.style_preset);
+        // The default is right when nobody has said otherwise; inventing a
+        // medium would silently restyle every project that never named one.
+        return fromStyle || DEFAULT_MEDIUM;
     } catch (_) {
         return DEFAULT_MEDIUM;
     }
@@ -147,5 +226,5 @@ function projectMedium(projectId, database) {
 
 module.exports = {
     ISOLATED_KINDS, ISOLATION_CLAUSE, ISOLATION_NEGATIVE, isolationNegativeFor,
-    subjectPlateOpening, projectMedium, DEFAULT_MEDIUM,
+    subjectPlateOpening, projectMedium, mediumFromStyle, MEDIUM_WORDS, DEFAULT_MEDIUM,
 };

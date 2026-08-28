@@ -2337,7 +2337,7 @@ const BATCH_TOOLS = [
                         const at = seconds ? (seconds * i) / (n - 1 || 1) : 0;
                         const out = pathx.join(dir, `f${i}.png`);
                         try {
-                            require('child_process').execFileSync(bin.path,
+                            require('child_process').execFileSync(bin.bin,
                                 ['-y', '-ss', String(Math.max(0, at - 0.001)), '-i', src,
                                     '-frames:v', '1', '-q:v', '2', out],
                                 { stdio: 'ignore', timeout: 20000 });

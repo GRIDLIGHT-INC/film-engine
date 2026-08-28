@@ -1177,7 +1177,7 @@ async function generateOrbit(req, res, charId) {
         const filename = `${safeName}_${frame.view}.png`;
         const filePath = require('../lib/file-storage').getFilePath(ch.project_id, 'refsheets', filename);
         try {
-            require('child_process').execFileSync(bin.path,
+            require('child_process').execFileSync(bin.bin,
                 ['-y', '-ss', String(frame.atSeconds), '-i', clipPath, '-frames:v', '1', '-q:v', '2', filePath],
                 { stdio: 'ignore', timeout: 30000 });
         } catch (_) { continue; }

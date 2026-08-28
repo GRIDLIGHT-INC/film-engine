@@ -261,6 +261,8 @@ film-engine/
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
 │       ├── credentials-global.test.js   # A key is entered once, for the machine, not once per film
 │       ├── plate-views.test.js         # A turnaround is three pictures, and the app used the wrong one
+│       ├── plate-medium.test.js        # A character plate takes the film's medium, not a hardcoded photograph
+│       ├── ffmpeg-consumers.test.js    # Everything that spawns the encoder reads the field it returns
 │       ├── character-orbit.test.js     # Frames of one motion cannot disagree with each other
 │       ├── character-orbit-surfaces.test.js # ...and it is reachable everywhere a plate is
 │       ├── character-sheet-guide.test.js # Five views, and an orbit is a bootstrap not an anchor
@@ -1036,6 +1038,23 @@ Frames are stored **exactly as generated plates are** — same per-view filename
 **Two of the video's other methods are not built** — the blacked-out-faces technique for multi-character bleed, and first-frame vs omni — because their verdicts are in chapters I cannot watch (*"Did It Make A Difference?"*, *"The Real Secret"*). Named rather than dropped; the bleed one looks the most valuable, since our reference package sends several character plates at once and has no defence against features crossing between them.
 
 Five of the first seven mutations against this survived, and all five for the same reason: the assertions were **file-wide** where they should have been **bound**. `/'orbit'/` matched the preview line after the POST was deleted; the tool check matched `refsheet_orbit_preview` after the generating tool was renamed away; the per-view replacement matched the *still-plate* path's identical clause. Each is now bound to the specific dispatch, the specific tool name, or the enclosing function body.
+
+### A Character Plate Takes the Film's Medium, Not a Photograph
+*"Location plates come back painted. Character plates come back photographic. Same project, same preset, same model."* Reported after three paid attempts, and the deduction from outside was exactly right.
+
+Character and prop plates are **isolated**: they take only the MEDIUM from the look, never the whole style preset, because a real preset is largely a description of a **scene** and appending it produced plates that were full rooms. That reasoning stands. What was wrong is where the medium came from — the mood board's `medium` entry, else `DEFAULT_MEDIUM = 'photoreal, shot on a real camera'`. **The style preset was never consulted.**
+
+So on a real project whose preset opens *"A PAINTED DIGITAL ILLUSTRATION. Hand-painted concept art. NOT a photograph, NOT photorealistic"*, and which has no board entry, every character plate was explicitly told **"photoreal, shot on a real camera"**. No wording could win because the preset was not in the prompt at all — which is exactly why three attempts with stronger and stronger negations changed only the colour. Locations were unaffected because they are not isolated and receive the whole preset: painted places, photographic people, one film.
+
+The chain is now **board entry → the medium named in the style preset → the photoreal default**, and the default only when neither says anything. Inventing a medium would silently restyle every project that never named one.
+
+**It takes the director's own words, not a label.** `mediumFromStyle` returns the clauses that name a medium and nothing else — *"NOT a photograph, NOT photorealistic"* is the instruction, and a tidy summary like "painted" throws away the negation the model most needs to hear.
+
+**Clauses, not sentences**, and that distinction is the whole fix. A real preset is usually one long comma-separated string with no full stops: the first version split on sentences and returned the entire forty-clause preset as the "medium" — colour, lighting, lens and period all bound for a character plate, which is precisely the leak isolation exists to prevent. On the three real projects it now yields the painted instruction, the photoreal default, and `"photographic, not CGI, not a 3D render, not illustration"` — the medium clauses only.
+
+Matching is **whole-word** against a short concrete vocabulary, on the precedent the style subject-check already set: substring matching turns "grainy" into "rain", and a detector that fires on ordinary description gets switched off within a day.
+
+**And two encoder call sites were broken.** `resolveFfmpeg()` returns `{ available, bin, source }`; the character orbit's frame cutting and the `shot_review` tool both read `bin.path`, which is `undefined` — so `execFileSync(undefined, …)` throws at the moment the feature is used. `tests/ffmpeg-consumers.test.js` derives the field set from the module's own returns and checks every consumer, because calling the resolver once only samples the branch this machine takes: on a box with an encoder you never see `reason`, which the unavailable branch sets, and a consumer reading it would be reported as broken.
 
 ### A Subject Plate Is the Subject and Nothing Else
 *"When we do character or prop plates let's make sure we don't include backgrounds."*
@@ -2397,6 +2416,8 @@ node --test backend/tests/manual-edit.test.js
 node --test backend/tests/provider-config-merge.test.js
 node --test backend/tests/credentials-global.test.js
 node --test backend/tests/plate-views.test.js
+node --test backend/tests/plate-medium.test.js
+node --test backend/tests/ffmpeg-consumers.test.js
 node --test backend/tests/character-orbit.test.js
 node --test backend/tests/character-orbit-surfaces.test.js
 node --test backend/tests/character-sheet-guide.test.js
