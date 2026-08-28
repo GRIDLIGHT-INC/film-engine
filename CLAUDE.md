@@ -307,6 +307,7 @@ film-engine/
 │       ├── previs-director-readiness.test.js # Model visibility/scale and direct six-axis stage camera actions
 │       ├── previs-camera-contract.test.js # Camera-key units, seams, browser/server parity, staged controls
 │       ├── e2e-readiness.test.js         # Preflight covers every stage screenplay→final
+│       ├── e2e-first-film-plan.test.js    # The plan for the first finished film, held to the stage registry
 │       ├── fixtures/thirty-second.fountain # 30-second E2E test screenplay
 │       ├── phase6-live-runs.test.js       # SSE streaming, orchestrator persistence (Phase 6)
 │       ├── flow-branches.test.js         # Fan-out, select gate, budget guard (Phase 3)
@@ -597,6 +598,17 @@ Worse, the tags it showed were the **card's** camera. On a blocked shot those ar
 `GET /projects/:id/storyboard` gains `effective` and `previs` per frame, and the frame carries a badge with **three** states — `block in previs`, `staged`, `approved`, and `staged · changed since approval`. Three rather than two, because "approved" and "approved, then restaged" is the distinction the iterate-until-happy loop turns on, and folding them together is how a director meets a 409 at generation time for a shot the board told them was signed off.
 
 **What markup does *not* do by default.** Arrows, rectangles and notes are **notation** unless a project says otherwise — stored, drawn, kept with the shot, and read by nothing in generation. An arrow drawn to mean "dolly in" changes no prompt and no payload; the movement that does is `camera_control`, set on the card or staged in previs. Turning on `annotation_feedback` makes *noted* marks reach the prompt — see **Markup That Steers a Frame** below — and leaves an unnoted arrow exactly as decorative as it was.
+
+### Nothing Has Ever Been Taken All the Way Through
+Preflight reports **15 stages: 12 ready, 3 finished in the NLE, 0 blocked**. Nothing is in the way — and no project has ever been run through. Measured: *From the Mist* has 61 shots and **no assets at all**; *Wingfall* has 82 storyboard frames and 2 raw clips; *The Glass Harbour* has 20 frames. Total spend ever recorded is **$14.12**, every cent of it images, which is also how we know the two Wingfall clips were made on Runway directly rather than through the engine.
+
+`docs/plans/e2e-first-film.md` is the plan for closing that, and its useful number is the cost: **≈ $2.04**. The breakdown is free because `anthropic:llm` is a subscription window reached over MCP rather than a bill — 458 calls and 11.3M tokens recorded at $0. The spend is five keyframes at the **measured** $0.15 (93 Meshy calls, 708 credits → 7.61 credits each), 25 seconds of video at $0.05/s, and a few cents of audio. The whole acceptance criterion can be proven for about the price of a coffee.
+
+It runs on `tests/fixtures/thirty-second.fountain` rather than finishing Wingfall, because 13 shots through every stage costs several times more to prove the same sentence — on a board that already carries creative decisions worth protecting.
+
+Two ceilings are stated up front rather than discovered: Meshy is **ratio-only** and returns 1376×768, and Runway's `image_to_video` documents 1280:720. **The first finished film is a 720p short**, and that proves the claim exactly as well as a 4K one would.
+
+`tests/e2e-first-film-plan.test.js` derives its denominator from `lib/e2e-preflight` — the same registry preflight walks — so a plan naming 12 of 15 stages fails rather than reading as complete and leaving the film unfinished at the point nobody checked.
 
 ### A Path Out of the Database Is Not a Path You May Act On
 A security pass over the previous change found that fixing one bug had created a worse one.
@@ -2287,6 +2299,7 @@ node --test backend/tests/subtitle-generator.test.js
 node --test backend/tests/backup.test.js
 node --test backend/tests/mcp-tools.test.js
 node --test backend/tests/e2e-readiness.test.js
+node --test backend/tests/e2e-first-film-plan.test.js
 node --test backend/tests/previs-plan.test.js
 node --test backend/tests/previs-camera.test.js
 node --test backend/tests/previs-blocking.test.js
