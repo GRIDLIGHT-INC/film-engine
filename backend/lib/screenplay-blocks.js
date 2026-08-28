@@ -32,6 +32,30 @@
  */
 const KEEP_EMPTY = Object.freeze(['title-page']);
 
+/**
+ * The editor's OWN furniture: things it inserts among the blocks that are not
+ * content and never were.
+ *
+ * A page-break indicator is a <div> with a class, no element type and no text —
+ * which is precisely the shape of an empty block. The orphan-adoption loop met
+ * five of them on every keystroke and turned each into an empty `action` block:
+ * 32px of nothing, five per keypress, then counted as lines, which inflated the
+ * page estimate, which inserted more indicators, which became more empty
+ * blocks. That is where "a huge space that is left" came from, and why it grew
+ * the longer you typed.
+ *
+ * Deleting them instead is not the fix either — that silently removes the
+ * pagination. Furniture must be INVISIBLE to both passes.
+ */
+const FURNITURE_CLASSES = Object.freeze(['page-break-indicator']);
+
+/** Is this the editor's own furniture rather than something the writer typed? */
+function isFurniture(node) {
+    if (!node) return false;
+    const cls = String(node.className || '');
+    return FURNITURE_CLASSES.some(c => cls.split(/\s+/).includes(c));
+}
+
 /** A block is empty when it has no text a screenplay would print. */
 function isEmptyBlock(block) {
     if (!block) return true;
@@ -50,6 +74,7 @@ function droppableEmpties(blocks) {
     for (let i = 0; i < list.length; i++) {
         const b = list[i];
         if (!b) continue;
+        if (isFurniture(b)) continue;          // not content, never was
         if (KEEP_EMPTY.includes(b.type)) continue;
         if (b.hasCaret) continue;              // you are typing in it
         if (!isEmptyBlock(b)) continue;
@@ -58,4 +83,4 @@ function droppableEmpties(blocks) {
     return out;
 }
 
-module.exports = { KEEP_EMPTY, isEmptyBlock, droppableEmpties };
+module.exports = { KEEP_EMPTY, FURNITURE_CLASSES, isFurniture, isEmptyBlock, droppableEmpties };

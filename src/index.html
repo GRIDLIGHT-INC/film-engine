@@ -17102,6 +17102,26 @@ THREE.GLTFLoader = GLTFLoader;
      */
     const SP_KEEP_EMPTY = ['title-page'];
 
+    /*
+     * The editor's own furniture — inserted among the blocks, and not content.
+     *
+     * updateEditorStats() paginates at the TOP of onEditorInput, so by the time
+     * the orphan-adoption loop runs the indicators are already sitting there
+     * looking exactly like empty blocks: a <div> with a class, no element type,
+     * no text. The loop adopted each into an empty `action` block — five per
+     * keystroke — which were then counted as lines, inflating the page estimate,
+     * which inserted more indicators, which became more empty blocks. That is
+     * the space that grew the longer you typed.
+     *
+     * Mirrors FURNITURE_CLASSES in lib/screenplay-blocks.js.
+     */
+    const SP_FURNITURE = ['page-break-indicator'];
+
+    function isEditorFurniture(node) {
+        return !!(node && node.classList
+            && SP_FURNITURE.some(c => node.classList.contains(c)));
+    }
+
     function blockHoldsCaret(block) {
         const sel = window.getSelection();
         if (!sel || sel.rangeCount === 0) return false;
@@ -17116,7 +17136,7 @@ THREE.GLTFLoader = GLTFLoader;
             const type = block.dataset && block.dataset.elementType;
             if (!type) continue;                                   // not a block
             if (SP_KEEP_EMPTY.includes(type)) continue;
-            if (block.classList.contains('page-break-indicator')) continue;
+            if (isEditorFurniture(block)) continue;
             if ((block.innerText || '').trim() !== '') continue;
             if (blockHoldsCaret(block)) continue;
             block.remove();
@@ -17143,6 +17163,10 @@ THREE.GLTFLoader = GLTFLoader;
         const defaultType = existingBlocks.length === 0 ? 'scene-heading' : 'action';
 
         for (const node of childNodes) {
+            // The editor's own furniture is not an orphan. It has no element
+            // type and no text by design, which is exactly what made the loop
+            // adopt it.
+            if (isEditorFurniture(node)) continue;
             // Skip if already a proper element with data-element-type
             if (node.nodeType === 1 && node.dataset && node.dataset.elementType) continue;
 

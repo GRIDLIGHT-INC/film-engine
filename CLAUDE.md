@@ -334,6 +334,7 @@ film-engine/
 │       ├── screenplay-polish.test.js # Export fidelity, and an edit batch that is all-or-nothing
 │       ├── screenplay-pagination.test.js # No page ends between a cue and its dialogue
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
+│       ├── screenplay-furniture.test.js # The editor's own furniture is not content
 │       ├── mcp-first-writing.test.js # MCP is the default path; HTTP says it cost you something
 │       ├── act-structure.test.js   # Acts are sections; the table and its readers are gone
 │       ├── frame-versions.test.js  # Which attempt is which, and which can be chosen
@@ -1066,6 +1067,23 @@ The denominator is **derived from `providers.list()`** — every adapter declari
 The credential rule is probed **by removing the credentials**, not by reading the rows: every provider is credentialed on a working install, so "if unavailable then it says why" is vacuously true and passes just as happily against a filter that drops them. The first version of that test did exactly that, and the mutation inserting `continue` for uncredentialed providers did not fail it.
 
 Served at `GET /film/spend/compare`, on the Budget page's **Compare Generators** tab, and as `spend_compare` (**169 tools**).
+
+### The Editor Ate Its Own Page Breaks
+The empty-block sweep stopped the space growing while typing and did not explain where the blocks came from. They came from the editor eating its own furniture.
+
+`updateEditorStats()` paginates at the **top** of `onEditorInput`, so by the time the orphan-adoption loop walks the editor's children the page-break indicators are already sitting there — and an indicator is a `<div>` with a class, **no `data-element-type` and no text**, which is precisely the shape the loop was written to adopt. Measured in a real browser on a 189-block screenplay: **five indicators, and the loop treated all five as orphans on every keystroke.**
+
+So each keypress turned five indicators into five empty `action` blocks. Those were then counted as lines, which inflated the page estimate — **6 → 9 → 15 pages on an unchanged 1,451 words** — which inserted *more* indicators, which became more empty blocks. That is the "huge space that is left", and it is why it grew the longer you typed and why the estimate climbed with it.
+
+The empty-block fix made the loop **delete** textless nodes instead, which stopped the growth and silently removed the pagination display: 5 indicators to 0 on the first keystroke. Better, and still wrong. **Furniture must be invisible to both passes**, not adopted by one and eaten by the other.
+
+`FURNITURE_CLASSES` names it — `page-break-indicator` today — mirrored on the page as `SP_FURNITURE`, skipped by the orphan loop *before it decides anything* and by the sweep, and the two lists are compared element by element.
+
+The denominator is **derived from the page**: every `<div>` the SPA creates with a class and inserts among the editor's own children. The first version of that scan matched every `createElement('div')` in a 2MB file and reported the sidebar's `nav-group` as editor furniture — so it is scoped to insertions whose target is `editor`, a `block`, or `blocks[…]`, which is what "among the editor's children" actually means.
+
+A test also pins the ordering that makes this necessary: pagination runs before the orphan loop, so reordering would "fix" it by accident and break again the next time something inserts during input.
+
+Verified end to end: 20 keystrokes on the real document leave the block count at 189, empties at 0, **page breaks at 5**, and the estimate steady at ~6 pages.
 
 ### An Empty Block Is 32px of Nothing
 *"there is still an issue when we are typing in the screenplay where it adds extra space… As soon as we type away or click away from the screen it fixes it."*
@@ -2320,6 +2338,7 @@ node --test backend/tests/story-structure.test.js
 node --test backend/tests/screenplay-polish.test.js
 node --test backend/tests/screenplay-pagination.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js
+node --test backend/tests/screenplay-furniture.test.js
 node --test backend/tests/mcp-first-writing.test.js
 node --test backend/tests/act-structure.test.js
 node --test backend/tests/frame-versions.test.js
