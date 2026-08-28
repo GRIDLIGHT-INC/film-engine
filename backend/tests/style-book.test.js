@@ -217,9 +217,17 @@ test('an entry holds several visuals, and video is stored as reference-only', as
         { name: 'with pictures', scope: 'library' });
     const id = created.body.entry.id;
 
+    /*
+     * Real uploads, not a hand-written `file_path`. This fixture used to post
+     * `/tmp/<uuid>.bin` — an arbitrary absolute path — which is precisely the
+     * input that made the delete an arbitrary-file-deletion primitive, and is
+     * now refused at the boundary. The test's subject is "several visuals, and
+     * video among them", which the bytes express just as well.
+     */
+    const BYTES = 'data:application/octet-stream;base64,' + Buffer.from('vis').toString('base64');
     for (const kind of ['image', 'image', 'video']) {
         const r = await call('POST', ['film', 'style-book', id, 'media'],
-            { media_kind: kind, file_path: `/tmp/${kind}-${crypto.randomUUID()}.bin`, note: kind });
+            { media_kind: kind, name: `${kind}-${crypto.randomUUID()}.bin`, data: BYTES, note: kind });
         assert.strictEqual(r.status, 201, JSON.stringify(r.body));
     }
     const got = await call('GET', ['film', 'style-book', id]);

@@ -242,10 +242,87 @@ function updateEntry(req, res, entryId) {
  * WROTE is removed. Never throws: a file already gone is the state we wanted,
  * and failing a delete over it would leave a row nobody can remove.
  */
+/**
+ * A path this module is allowed to act on.
+ *
+ * `addMedia` accepted `file_path` from the request body verbatim and the
+ * delete unlinked whatever the row held, so two unauthenticated calls
+ * (register the path, delete the visual) removed any file the server process
+ * could write to. The API binds every interface and answers
+ * `Access-Control-Allow-Origin: *`, so that was reachable from the network.
+ *
+ * `serveMedia` had this check and the delete did not: one rule written twice
+ * with only one copy correct, which is the shape this codebase keeps paying
+ * for. It is one function now, and it THROWS rather than silently correcting —
+ * the contract `file-storage.getFilePath()` already states, because a caller
+ * that handed us an outside path has a different idea of what it is doing
+ * than we do, and quietly rewriting it hides that.
+ */
+function stylebookRoot() {
+    const pathx = require('path');
+    const fsx = require('fs');
+    const root = pathx.resolve(process.env.FILM_DATA_DIR
+        || pathx.join(require('os').homedir(), '.gridlight', 'film-engine', 'data'), 'stylebook');
+    /*
+     * Real path on BOTH sides or the comparison is meaningless: on macOS /var
+     * is a symlink to /private/var, so a file under a temp root resolves to
+     * /private/var/... while the root stays /var/... — and then EVERY path
+     * looks outside, which passes a containment test for entirely the wrong
+     * reason while refusing every legitimate upload.
+     */
+    try { return fsx.existsSync(root) ? fsx.realpathSync(root) : root; } catch (_) { return root; }
+}
+
+function stylebookPath(candidate) {
+    const pathx = require('path');
+    const fsx = require('fs');
+    const root = stylebookRoot();
+    const raw = String(candidate || '');
+    if (!raw) { const e = new Error('no path'); e.code = 'OUTSIDE_STYLE_BOOK'; throw e; }
+    /*
+     * Real-path the nearest ancestor that EXISTS, then re-attach the rest: a
+     * file being written does not exist yet, and a symlink planted inside the
+     * root must not read out.
+     */
+    let resolved = pathx.resolve(raw);
+    try {
+        let head = resolved;
+        const tail = [];
+        while (!fsx.existsSync(head)) {
+            const parent = pathx.dirname(head);
+            if (parent === head) break;
+            tail.unshift(pathx.basename(head));
+            head = parent;
+        }
+        if (fsx.existsSync(head)) resolved = pathx.join(fsx.realpathSync(head), ...tail);
+    } catch (_) { /* keep the plain resolve */ }
+    // Trailing separator, so a sibling sharing the prefix (…/stylebook-else)
+    // does not pass as a child.
+    if (resolved !== root && !resolved.startsWith(root + pathx.sep)) {
+        const e = new Error('That file is outside the style book');
+        e.code = 'OUTSIDE_STYLE_BOOK';
+        throw e;
+    }
+    return resolved;
+}
+
+/** True when a path may be acted on; never throws, for use at a boundary. */
+function insideStyleBook(candidate) {
+    try { stylebookPath(candidate); return true; } catch (_) { return false; }
+}
+
 function dropMediaFile(row) {
     if (!row || !row.file_path) return;
     if (row.asset_id) return;              // owned by film_assets, not by us
-    try { require('fs').unlinkSync(row.file_path); } catch (_) { /* already gone */ }
+    /*
+     * Contained before it is touched. A row written before the boundary check
+     * existed — or by any other writer — must not become a delete primitive.
+     * The ROW still goes either way: it is ours to remove even when the bytes
+     * are not ours to unlink.
+     */
+    let target;
+    try { target = stylebookPath(row.file_path); } catch (_) { return; }
+    try { require('fs').unlinkSync(target); } catch (_) { /* already gone */ }
 }
 
 function deleteEntry(res, entryId) {
@@ -302,7 +379,7 @@ function addMedia(req, res, entryId) {
         'stylebook', entryId);
         fsx.mkdirSync(dir, { recursive: true });
         const safe = String(body.name || 'visual').replace(/[^\w.-]/g, '_').slice(0, 80) || 'visual';
-        filePath = pathx.join(dir, `${Date.now()}_${safe}`);
+        filePath = stylebookPath(pathx.join(dir, `${Date.now()}_${safe}`));
         fsx.writeFileSync(filePath, bytes);
     } else if (body.source_url) {
         const link = classifyLink(body.source_url);
@@ -315,8 +392,19 @@ function addMedia(req, res, entryId) {
         sourceUrl = String(body.source_url).trim();
     } else if (!body.asset_id && !body.file_path) {
         return json(res, 400, { error: 'a visual needs an uploaded file, a link, or an asset id' });
-    } else {
-        filePath = String(body.file_path || '');
+    } else if (body.file_path) {
+        /*
+         * A caller-supplied path is only ever a file this module already
+         * wrote. Anything else is somebody asking us to adopt — and later
+         * delete — a file that is not ours.
+         */
+        if (!insideStyleBook(body.file_path)) {
+            return json(res, 400, {
+                error: 'file_path must be a file inside the style book. Upload the bytes with '
+                    + '`data`, or point at something the engine made with `asset_id`.',
+            });
+        }
+        filePath = String(body.file_path);
     }
 
     const id = generateId();
@@ -407,10 +495,8 @@ function serveMedia(res, mediaId) {
     const row = db.prepare('SELECT file_path FROM film_style_book_media WHERE id = ?').get(mediaId);
     if (!row || !row.file_path) return json(res, 404, { error: 'Visual not found' });
 
-    const root = pathx.resolve(process.env.FILM_DATA_DIR
-        || pathx.join(require('os').homedir(), '.gridlight', 'film-engine', 'data'), 'stylebook');
-    const resolved = pathx.resolve(row.file_path);
-    if (!resolved.startsWith(root + pathx.sep)) {
+    let resolved;
+    try { resolved = stylebookPath(row.file_path); } catch (_) {
         return json(res, 403, { error: 'That file is outside the style book' });
     }
     if (!fsx.existsSync(resolved)) return json(res, 404, { error: 'The file is missing' });

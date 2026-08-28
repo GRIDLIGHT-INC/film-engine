@@ -263,6 +263,7 @@ film-engine/
 │       ├── style-book-plan.test.js     # The implementation plan wires into every registry it must
 │       ├── style-book.test.js          # A director's shots, reusable across films
 │       ├── style-book-gaps.test.js     # The unproven half: deletes, merges, ceilings, NEVER_WRITES
+│       ├── style-book-path-containment.test.js # A path out of the database is not a path you may act on
 │       ├── style-book-qa.test.js       # The QA case set, derived from the code it audits
 │       ├── plate-viewer.test.js        # A plate you cannot see full size is one you cannot judge
 │       ├── location-plate-resolution.test.js # A location plate is 2K or better, or says why not
@@ -596,6 +597,25 @@ Worse, the tags it showed were the **card's** camera. On a blocked shot those ar
 `GET /projects/:id/storyboard` gains `effective` and `previs` per frame, and the frame carries a badge with **three** states — `block in previs`, `staged`, `approved`, and `staged · changed since approval`. Three rather than two, because "approved" and "approved, then restaged" is the distinction the iterate-until-happy loop turns on, and folding them together is how a director meets a 409 at generation time for a shot the board told them was signed off.
 
 **What markup does *not* do by default.** Arrows, rectangles and notes are **notation** unless a project says otherwise — stored, drawn, kept with the shot, and read by nothing in generation. An arrow drawn to mean "dolly in" changes no prompt and no payload; the movement that does is `camera_control`, set on the card or staged in previs. Turning on `annotation_feedback` makes *noted* marks reach the prompt — see **Markup That Steers a Frame** below — and leaves an unnoted arrow exactly as decorative as it was.
+
+### A Path Out of the Database Is Not a Path You May Act On
+A security pass over the previous change found that fixing one bug had created a worse one.
+
+`addMedia` accepted `file_path` from the request body **verbatim**, and the `dropMediaFile()` added an hour earlier unlinked whatever the row held. So two unauthenticated calls — register the path, delete the visual — **removed any file the server process could write to**. Demonstrated end to end: a file outside the style book, gone, `200 OK`. The API binds every interface and answers `Access-Control-Allow-Origin: *`, so it was reachable from the network and cross-origin.
+
+**The leak was the safer bug.** Before the delete was wired up the same two calls left the file alone; adding the unlink turned a resource leak into a **file-deletion primitive**. That is the general lesson: closing a "nothing happens" bug can promote an unvalidated input into an action, and the input needs re-examining at the moment the action is added, not before.
+
+**`serveMedia` had the containment check and the delete did not.** One rule written twice with only one copy correct — the shape this codebase keeps paying for. `stylebookPath()` is the single rule now, used by the read, the write and the delete, and it **throws** rather than silently correcting, the contract `file-storage.getFilePath()` already states: a caller that handed us an outside path has a different idea of what it is doing than we do, and quietly rewriting it hides that. The boundary refuses an outside `file_path` at the write with a 400 that names the two legitimate ways in; the containment behind it is defence in depth for rows written before the check existed.
+
+**The row still goes when the bytes do not.** A media row is ours to delete even when the file it names is not ours to unlink — refusing the whole delete would leave a row nobody can remove.
+
+Two details are load-bearing and both were got wrong first:
+
+**Real-path BOTH sides.** On macOS `/var` is a symlink to `/private/var`, so a file under a temp root resolves to `/private/var/…` while an unresolved root stays `/var/…`. Every legitimate upload was then refused as an escape — and a containment check that breaks the happy path is deleted within a day, taking the protection with it. Worse, it made the test pass for **entirely the wrong reason**: with the root unresolved, *everything* looks outside, so the check appeared to work while doing nothing. The sibling-prefix case is now built with both directories present on disk, which is what makes dropping the trailing separator fail.
+
+**Real-path the nearest ancestor that exists.** A file being written does not exist yet, so resolving only what is there compares a resolved root against an unresolved target.
+
+`tests/style-book-path-containment.test.js` is set-based over **every filesystem call in the module**, derived from the source — and the detector counts `require('fs').unlink(…)` as well as `fsx.unlink(…)`, because the first version missed exactly the call site that was vulnerable. A call site the detector cannot see is one it cannot police.
 
 ### A Declared Constant That Nothing Consults
 Closing the style book's 21 unproven cases found **six real defects**, and eleven cases where the code was already right and only the test was missing. The split matters: writing the tests is what separated them, and reading the code would not have.
@@ -2217,6 +2237,7 @@ node --test backend/tests/style-book-plan.test.js
 node --test backend/tests/style-book.test.js
 node --test backend/tests/style-book-qa.test.js
 node --test backend/tests/style-book-gaps.test.js
+node --test backend/tests/style-book-path-containment.test.js
 node --test backend/tests/plate-viewer.test.js
 node --test backend/tests/location-plate-resolution.test.js
 node --test backend/tests/requested-size.test.js
