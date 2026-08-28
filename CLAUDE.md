@@ -282,6 +282,7 @@ film-engine/
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── video-model-contracts.test.js # Rates, reference contracts, tiers, and the picture an agent can see
 │       ├── video-surfaces.test.js      # A capability with no control does not exist
+│       ├── provider-image-encoding.test.js # A bare base64 blob is not an image a provider accepts
 │       ├── music-prompt.test.js        # Music prompt unit tests
 │       ├── pipeline-engine.test.js     # Pipeline engine unit tests
 │       ├── viseme-builder.test.js     # Viseme builder unit tests
@@ -605,6 +606,26 @@ Worse, the tags it showed were the **card's** camera. On a blocked shot those ar
 `GET /projects/:id/storyboard` gains `effective` and `previs` per frame, and the frame carries a badge with **three** states — `block in previs`, `staged`, `approved`, and `staged · changed since approval`. Three rather than two, because "approved" and "approved, then restaged" is the distinction the iterate-until-happy loop turns on, and folding them together is how a director meets a 409 at generation time for a shot the board told them was signed off.
 
 **What markup does *not* do by default.** Arrows, rectangles and notes are **notation** unless a project says otherwise — stored, drawn, kept with the shot, and read by nothing in generation. An arrow drawn to mean "dolly in" changes no prompt and no payload; the movement that does is `camera_control`, set on the card or staged in previs. Turning on `annotation_feedback` makes *noted* marks reach the prompt — see **Markup That Steers a Frame** below — and leaves an unnoted arrow exactly as decorative as it was.
+
+### The Keyframe Was Never a Data URI
+Zero video has ever been generated through this engine. `promptImage: Invalid input` blocked every attempt, and the two clips that exist were made on Runway's website by hand. The cause was one line, and its correct twin sits one file away:
+
+```
+lib/reference-images.js:97   `data:${mime};base64,${…toString('base64')}`      plates    ✅
+lib/capability-payloads.js   initImage = fs.readFileSync(p).toString('base64')  keyframe  ❌
+```
+
+A **bare base64 blob is not a URL, not a data URI and not a provider handle**, so the API rejected it. The reference plates were always right; the keyframe — the one thing every image-to-video call depends on — never was.
+
+**It was not the size cap**, which is where the reasoning naturally goes and where the external research landed: Runway documents 5MB encoded for an inline image, and a real keyframe here is 1.51MB, about 2.01MB encoded — comfortably inside. The bytes were fine and the envelope was missing.
+
+Built in **`loadShotContext`** rather than at a call site, because the per-domain route, the orchestrator and the flow canvas all read `ctx.initImage`; fixing one would leave the other two sending a blob.
+
+The ceiling is now declared anyway (`DATA_URI_LIMIT`, `tooLargeForDataUri`), because a 2K location plate can approach it — and an oversize frame is **refused with the remedy named** (Runway's ephemeral upload endpoint, `POST /v1/uploads` → a `runway://` URI, 200MB) rather than sent to buy a rejection whose message reads like a credential problem. That endpoint is not implemented yet and the refusal says so.
+
+`tests/provider-image-encoding.test.js` is set-based over every site in `lib/` that inlines bytes with `toString('base64')`, so the next one is covered. `providers/oauth.js` is exempt **by file with a reason** — base64url for a PKCE verifier, never sent as media.
+
+Also corrected from the same research: `hailuo3` was registered with a 10-second ceiling and Runway documents **15**, so a legitimate 15-second request was being clamped.
 
 ### A Video Model Is a Rate Card, a Reference Contract and a Tier
 The storyboard side had tiers, a fallback chain, per-adapter contracts and a cost comparison. The video side had `DEFAULT_VIDEO_MODEL = 'gen4.5'` and nothing else — nine models declared and nothing that ever chose between them.
@@ -2394,6 +2415,7 @@ node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/video-model-contracts.test.js
 node --test backend/tests/video-surfaces.test.js
+node --test backend/tests/provider-image-encoding.test.js
 node --test backend/tests/music-prompt.test.js
 node --test backend/tests/pipeline-engine.test.js
 node --test backend/tests/viseme-builder.test.js

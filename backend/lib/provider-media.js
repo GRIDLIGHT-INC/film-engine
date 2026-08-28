@@ -129,3 +129,31 @@ async function persistProviderMedia(projectId, subdir, filename, data, opts) {
 }
 
 module.exports = { persistProviderMedia, extractMediaUrl, resolveMediaUrl, isGatewayUrl };
+
+/**
+ * How much image a data: URI may carry.
+ *
+ * Runway documents 5MB ENCODED for an inline image — about 3.3MB of file. A
+ * real keyframe here is 1.51MB (2.01MB encoded) and comfortably inside it, so
+ * this is not what was breaking video; the envelope was. But a 2K location
+ * plate can approach it, and sending anyway buys a rejection that reads like a
+ * credential problem rather than a size one.
+ *
+ * Above this the documented path is Runway's ephemeral upload endpoint
+ * (POST /v1/uploads → runway:// URI, 200MB), which is named in the refusal so
+ * the message points at the fix.
+ */
+const DATA_URI_LIMIT = 5 * 1024 * 1024;
+
+/** Is this inline image beyond what a provider will accept inline? */
+function tooLargeForDataUri(uri, limit) {
+    const s = String(uri || '');
+    if (!s.startsWith('data:')) return false;
+    const comma = s.indexOf(',');
+    const payload = comma >= 0 ? s.length - comma - 1 : s.length;
+    return payload > (Number(limit) || DATA_URI_LIMIT);
+}
+
+module.exports.DATA_URI_LIMIT = DATA_URI_LIMIT;
+module.exports.tooLargeForDataUri = tooLargeForDataUri;
+

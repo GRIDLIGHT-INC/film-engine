@@ -91,7 +91,7 @@ const RUNWAY_VIDEO_MODELS = Object.freeze({
      * credits — two credits CHEAPER than Gen-4.5 with no references at all.
      */
     hailuo3: {
-        endpoint: 'image_to_video', duration: { min: 5, max: 10 },
+        endpoint: 'image_to_video', duration: { min: 5, max: 15 },
         ratios: ['1280:720', '720:1280', '1920:1080', '1080:1920'],
         creditsPerSecond: 10,
         resolutions: { '768P': { creditsPerSecond: 10 }, '2K': { creditsPerSecond: 15 } },
@@ -410,6 +410,30 @@ function buildVideoRequest(payload) {
         ratio: pickRatio(p.width, p.height, mode, model),
         duration: durationForModel(p.duration_s !== undefined ? p.duration_s : p.duration, model),
     };
+    /*
+     * An inline image has a ceiling: Runway documents 5MB ENCODED for a data
+     * URI. Above it the documented path is the ephemeral upload endpoint
+     * (POST /v1/uploads -> a runway:// URI, 200MB), which this adapter does not
+     * implement yet.
+     *
+     * So an oversize frame is REPORTED rather than sent. Sending it buys a
+     * rejection whose message reads like a credential or model problem, which
+     * is how "promptImage: Invalid input" cost this project every second of
+     * footage in the first place.
+     */
+    const { tooLargeForDataUri, DATA_URI_LIMIT } = require('../provider-media');
+    const oversize = []
+        .concat(Array.isArray(promptImage) ? promptImage.map(k => k.uri) : [promptImage])
+        .filter(u => tooLargeForDataUri(u, DATA_URI_LIMIT));
+    if (oversize.length) {
+        return {
+            url: `${baseUrl()}/${mode}`, headers: jsonHeaders(), body, mode,
+            refused: `image too large to send inline (over ${Math.round(DATA_URI_LIMIT / 1048576)}MB encoded). `
+                + 'Runway takes a bigger file through its ephemeral upload endpoint '
+                + '(POST /v1/uploads -> runway:// URI), which this adapter does not implement yet.',
+            oversizeImages: oversize.length,
+        };
+    }
     if (promptImage) body.promptImage = promptImage;
 
     const seed = normalizeSeed(p.seed);

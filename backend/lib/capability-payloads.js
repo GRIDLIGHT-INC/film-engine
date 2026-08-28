@@ -850,11 +850,29 @@ function loadShotContext(shotId, opts) {
         'SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1'
     ).get(scene.id);
 
+    /*
+     * The keyframe, as a DATA URI.
+     *
+     * This produced a bare base64 string, which is not a URL, not a data URI
+     * and not a provider handle — so `promptImage` was rejected as invalid
+     * input and EVERY second of footage in this project was blocked by it. The
+     * reference plates one file over have always been correct
+     * (`data:${mime};base64,…` in lib/reference-images.js); the keyframe, which
+     * every image-to-video call depends on, never was.
+     *
+     * Built HERE rather than at a call site: the per-domain route, the
+     * orchestrator and the flow canvas all read ctx.initImage, and patching one
+     * of them would leave the other two sending a bare blob.
+     */
     let initImage = null;
     if (keyframeAsset && keyframeAsset.file_name) {
         try {
             const imgPath = getFilePath(scene.project_id, 'storyboards', keyframeAsset.file_name);
-            if (fs.existsSync(imgPath)) initImage = fs.readFileSync(imgPath).toString('base64');
+            if (fs.existsSync(imgPath)) {
+                const mime = /\.jpe?g$/i.test(imgPath) ? 'image/jpeg'
+                    : /\.webp$/i.test(imgPath) ? 'image/webp' : 'image/png';
+                initImage = `data:${mime};base64,${fs.readFileSync(imgPath).toString('base64')}`;
+            }
         } catch (_) { initImage = null; }
     }
 
