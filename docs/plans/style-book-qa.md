@@ -68,19 +68,19 @@ database (`FILM_DATA_DIR` is redirected — the `test-isolation` contract).
 **Scenario** Create with no `name`.
 **Inputs** `validateEntry({ camera: { lens: '85mm' } })`.
 **Expected** `valid: false`. A book of unnamed entries cannot be searched.
-**Failure means** entries accumulate that a director cannot identify. **GAP**.
+**Failure means** entries accumulate that a director cannot identify. **COVERED** (`style-book-gaps.test.js`).
 
-#### SB-VAL-05 — `NAME_MAX` truncates rather than rejecting
-**Scenario** A 500-character name against `NAME_MAX` (200).
-**Inputs** `POST /film/style-book` with the long name.
-**Expected** stored at exactly 200 characters; 201 request succeeds.
-**Failure means** either a silent 500 from the column, or a rejection for something the app could simply trim. **GAP** — `NAME_MAX` appears in no test.
+#### SB-VAL-05 — `NAME_MAX` is enforced at the boundary
+**Scenario** A name of exactly `NAME_MAX` (200) and one of 201 characters.
+**Inputs** `POST /film/style-book` with each.
+**Expected** 200 characters -> 201 Created; 201 characters -> 400 naming the limit.
+**Failure means** a director's title is silently shortened. *Corrected from the original expectation of truncation*: `validateEntry` refuses, and refusing is right — trimming a name to fit discards words the director typed and leaves them looking at something they did not write. The `.slice(NAME_MAX)` in the route is belt-and-braces behind the refusal, not the policy. **COVERED** (`style-book-gaps.test.js`).
 
-#### SB-VAL-06 — `DESCRIPTION_MAX` and `TAGS_MAX` behave the same way
-**Scenario** Over-long description (2000) and tags (500).
-**Inputs** strings of 3000 and 900 characters.
-**Expected** truncated to `DESCRIPTION_MAX` / `TAGS_MAX`, entry created.
-**Failure means** an inconsistent limit policy — one field trims, another rejects — which is impossible to explain in a UI. **GAP**.
+#### SB-VAL-06 — `DESCRIPTION_MAX` and `TAGS_MAX` behave identically
+**Scenario** Description and tags at exactly their limit, and one character over.
+**Inputs** 2000/2001 and 500/501 characters.
+**Expected** at the limit -> created; over -> 400 naming the limit.
+**Failure means** an inconsistent policy — one field trims, another rejects — which cannot be explained in a UI. Tested set-based over all three limited fields, because a rule applied to the name and forgotten on the tags is indistinguishable from a working one. **COVERED** (`style-book-gaps.test.js`).
 
 ---
 
@@ -114,7 +114,7 @@ database (`FILM_DATA_DIR` is redirected — the `test-isolation` contract).
 **Scenario** An entry whose stored camera JSON contains `aspect_ratio`, `resolution`, `frame_rate`, `color_space` (`NEVER_WRITES`).
 **Inputs** apply to a card.
 **Expected** none of the four reach the card; each is reported skipped.
-**Failure means** look development leaks into one shot: a single shot silently delivered at a different aspect or frame rate than the film, which surfaces as drift in the cut long after it was paid for. **GAP** — `NEVER_WRITES` appears in no shipped test.
+**Failure means** look development leaks into one shot: a single shot silently delivered at a different aspect or frame rate than the film, which surfaces as drift in the cut long after it was paid for. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-APPLY-06 — applying reaches the generator, not just the row
 **Scenario** Apply an entry naming an 85mm, then build the image and video payloads.
@@ -126,19 +126,19 @@ database (`FILM_DATA_DIR` is redirected — the `test-isolation` contract).
 **Scenario** A shot with saved previs blocking, then an entry applied.
 **Inputs** `effectiveCamera` for that shot.
 **Expected** the entry writes **onto the card**; it does not become a fourth precedence level.
-**Failure means** a thing consulted at generation time becomes a display that eventually disagrees with the generator. **GAP**.
+**Failure means** a thing consulted at generation time becomes a display that eventually disagrees with the generator. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-APPLY-08 — `POST /film/shots/:id/style-book/:entryId` on an unknown entry
 **Scenario** Apply a non-existent entry id (`applyToShot`).
 **Inputs** valid shot, `entryId` that does not exist.
 **Expected** 404, card unchanged.
-**Failure means** a typo silently no-ops and reads as "the style book does nothing". **GAP**.
+**Failure means** a typo silently no-ops and reads as "the style book does nothing". **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-APPLY-09 — `applyToShot` on an unknown shot
 **Scenario** A valid entry is applied to a shot id that does not exist.
 **Inputs** `POST /film/shots/00000000-0000-0000-0000-000000000000/style-book/:entryId`.
 **Expected** 404; no row written anywhere.
-**Failure means** an agent applying to a stale shot id gets a success it can act on. **GAP**.
+**Failure means** an agent applying to a stale shot id gets a success it can act on. **COVERED** (`style-book-gaps.test.js`).
 
 ---
 
@@ -178,37 +178,37 @@ database (`FILM_DATA_DIR` is redirected — the `test-isolation` contract).
 **Scenario** An entry that was deleted, or an id with a typo, is read.
 **Inputs** `GET /film/style-book/does-not-exist`.
 **Expected** 404 with a message — never 200 carrying null.
-**Failure means** a caller cannot distinguish "deleted" from "empty", and an agent proceeds on nothing. **GAP**.
+**Failure means** a caller cannot distinguish "deleted" from "empty", and an agent proceeds on nothing. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-CRUD-07 — `PUT /film/style-book/:id` MERGES (`updateEntry`)
 **Scenario** An entry carrying a name, a description and `camera.lens` is renamed and nothing else.
 **Inputs** `PUT /film/style-book/:entryId` with `{ name: 'Renamed' }`.
 **Expected** the name changes; the description and `camera.lens` are byte-identical afterwards.
-**Failure means** renaming an entry clears the camera details that were the only reason to keep it — a whole-document replace where the tool description promises a merge. **GAP** — no shipped test issues a `PUT` at all.
+**Failure means** renaming an entry clears the camera details that were the only reason to keep it — a whole-document replace where the tool description promises a merge. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-CRUD-08 — an explicit `null` facet CLEARS it
 **Scenario** An entry carries `camera.lens`; the director removes just that facet.
 **Inputs** `PUT` with `{ camera: { lens: null } }`.
 **Expected** `lens` is absent from the stored camera; the other facets survive.
-**Failure means** a facet can be added and never removed — the destructive-default problem in reverse, and the entry becomes unusable on any shot with a different lens. **GAP**.
+**Failure means** a facet can be added and never removed — the destructive-default problem in reverse, and the entry becomes unusable on any shot with a different lens. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-CRUD-09 — a merge that produces an invalid entry is refused whole
 **Scenario** An update introduces a shot type the scene card refuses.
 **Inputs** `PUT` with `{ camera: { shot_type: 'worm-cam' } }`.
 **Expected** 400 with details; the stored row unchanged, not partially written.
-**Failure means** the update route becomes the one way to get a broken entry into the book, and it fails later at apply time. **GAP**.
+**Failure means** the update route becomes the one way to get a broken entry into the book, and it fails later at apply time. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-CRUD-10 — `scope` can be changed both ways
 **Scenario** An entry authored inside a film is promoted to the library, then demoted again.
 **Inputs** `PUT { scope: 'library' }`, then `PUT { scope: 'project', project_id: <id> }`.
 **Expected** `project_id` becomes NULL, then is set again.
-**Failure means** an entry written while a project happened to be open can never join the library, which is how the library stays empty. **GAP**.
+**Failure means** an entry written while a project happened to be open can never join the library, which is how the library stays empty. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-CRUD-11 — `sort_order` is honoured only when finite
 **Scenario** An ordering is set, then a non-number is submitted for the same field.
 **Inputs** `PUT { sort_order: 3 }`, then `PUT { sort_order: 'x' }`.
 **Expected** 3 stored; the second is ignored and the order stays 3.
-**Failure means** ordering silently resets, or a bad value writes NULL into an ordering column and the book reshuffles itself. **GAP** — `sort_order` appears in no test.
+**Failure means** ordering silently resets, or a bad value writes NULL into an ordering column and the book reshuffles itself. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-CRUD-12 — `DELETE /film/style-book/:id` removes the entry (`deleteEntry`)
 **Scenario** An entry the director no longer wants is removed.
@@ -220,7 +220,7 @@ database (`FILM_DATA_DIR` is redirected — the `test-isolation` contract).
 **Scenario** An entry holding one upload and one link is deleted.
 **Inputs** `DELETE /film/style-book/:entryId`, then inspect `film_style_book_media` and the disk.
 **Expected** no rows for that entry; the uploaded file is gone.
-**Failure means** orphan rows pointing at nothing, or disk nobody can find — the half-delete the plate views already paid for once. **GAP**.
+**Failure means** orphan rows pointing at nothing, or disk nobody can find — the half-delete the plate views already paid for once. **COVERED** (`style-book-gaps.test.js`).
 
 ---
 
@@ -296,19 +296,19 @@ database (`FILM_DATA_DIR` is redirected — the `test-isolation` contract).
 **Scenario** One visual is removed from an entry that has two.
 **Inputs** `DELETE /film/style-book/media/:mediaId`.
 **Expected** the row and its file go together; the entry and its other visual survive.
-**Failure means** either a listed visual whose picture is gone, or a file nobody can find. **GAP**.
+**Failure means** either a listed visual whose picture is gone, or a file nobody can find. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-MEDIA-13 — an oversize upload answers before it hangs up
 **Scenario** A full-resolution frame grab beyond the media limit is uploaded.
 **Inputs** a payload larger than the configured ceiling.
 **Expected** HTTP 413 naming the limit, sent **before** the request is destroyed.
-**Failure means** the browser reports a network error, which `api()` maps to "Backend offline" — indistinguishable from a dead server, on the one feature where large files are normal. **GAP**.
+**Failure means** the browser reports a network error, which `api()` maps to "Backend offline" — indistinguishable from a dead server, on the one feature where large files are normal. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-MEDIA-14 — the reference-slot reality is stated where visuals are added
 **Scenario** A director attaches five visuals to an entry.
 **Inputs** the entry page with five visuals present.
 **Expected** the page says plainly that visuals are **for a person**: `KIND_RANK` puts `style` last against 3 references on Runway and 5 on Meshy, so a style still is dropped before the request is built on any shot with a cast and a location, and a clip reaches no generator at all.
-**Failure means** a director attaches five pictures believing the frame is conditioned on them — a reference library that is really a scrapbook. **COVERED** in the design documents; **GAP** at runtime.
+**Failure means** a director attaches five pictures believing the frame is conditioned on them — a reference library that is really a scrapbook. **COVERED** (`style-book-gaps.test.js`).
 
 ---
 
@@ -336,7 +336,7 @@ database (`FILM_DATA_DIR` is redirected — the `test-isolation` contract).
 **Scenario** An agent renames an entry over MCP and changes nothing else.
 **Inputs** `stylebook_update({ entry_id, name: 'Renamed' })`.
 **Expected** camera facets survive — identical semantics to SB-CRUD-07.
-**Failure means** the two write paths disagree and the agent path is the destructive one, which is the worse half since agents write more often. **GAP**.
+**Failure means** the two write paths disagree and the agent path is the destructive one, which is the worse half since agents write more often. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-MCP-05 — `stylebook_delete` removes an entry and its visuals
 **Scenario** An agent tidies the book.
@@ -369,8 +369,8 @@ database (`FILM_DATA_DIR` is redirected — the `test-isolation` contract).
 #### SB-SCOPE-02 — deleting a project DOES remove its project-scoped entries and their media
 **Scenario** A project with its own entries and uploaded visuals is deleted.
 **Inputs** `DELETE /film/projects/:id`, then count rows in every child table.
-**Expected** no orphan rows in `film_style_book` or `film_style_book_media`.
-**Failure means** a slow leak that surfaces much later as assets nothing can reach. **GAP** — `project-delete` is example-based and must be extended by hand.
+**Expected** the entries **survive** with `project_id` NULL, and keep their visuals.
+**Failure means** a director's recorded angle is destroyed because they deleted the film it was born in. *Corrected from the original expectation of removal*: the FK is `ON DELETE SET NULL` deliberately, so a project-scoped entry is **promoted to the library**, never cascaded away — the `film_refsheet_jobs` trap of migration 067, not repeated. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-INT-01 — `docs-drift`: both new files are named in CLAUDE.md
 **Scenario** The documentation is checked against the tree on disk.
@@ -411,14 +411,14 @@ database (`FILM_DATA_DIR` is redirected — the `test-isolation` contract).
 #### SB-INT-07 — `project-delete`: the child tables are enumerated
 **Scenario** The list of tables a worked-on project accumulates is checked.
 **Inputs** `node --test backend/tests/project-delete.test.js`.
-**Expected** `film_style_book_media` is included.
-**Failure means** the delete is only as safe as whoever remembered to extend the list. **GAP**.
+**Expected** style-book rows are **not** in the removed set — they are promoted, per SB-SCOPE-02.
+**Failure means** the child-table list is extended in the wrong direction and a cascade is added that deletes the library. **COVERED** (`style-book-gaps.test.js`).
 
 #### SB-INT-08 — `card-overflow`: the entry card's action row wraps
 **Scenario** An entry card is rendered at a narrow width with all its buttons.
 **Inputs** `node --test backend/tests/card-overflow.test.js`.
 **Expected** `.card-actions` inside the entry card wraps; no button painted outside its own card.
-**Failure means** the Delete button leaks past the card border, exactly as it did on Characters. **GAP** — example-based, extend by hand.
+**Failure means** the Delete button leaks past the card border, exactly as it did on Characters. **COVERED** (`style-book-gaps.test.js`).
 
 ---
 
@@ -429,23 +429,28 @@ database (`FILM_DATA_DIR` is redirected — the `test-isolation` contract).
 and `style-book-research.test.js` (8) which police the design documents rather
 than the runtime.
 
-## Gaps — what is NOT covered today
+## Gaps — all closed
 
-Named individually rather than counted, because a gap written down is work and a
-gap silently excluded is one nobody finds again. Each was confirmed by searching
-the shipped tests for the identifier, not by reading the test titles.
+Every case above is COVERED. The 21 that were GAP are closed by
+`backend/tests/style-book-gaps.test.js` (17 tests, set-based over
+`NEVER_WRITES`, the three length limits, and the seven row lookups).
 
-| Gap | Cases | Why it matters |
+Eleven of them were coverage gaps only — the code was already right. **Six were
+real defects**, found by writing the tests rather than by reading the code:
+
+| Defect | Case | What it would have cost |
 |---|---|---|
-| `NEVER_WRITES` is enforced nowhere | SB-APPLY-05 | an entry could write a delivery spec onto one shot |
-| No test issues a `PUT` | SB-CRUD-07/08/09/10, SB-MCP-04 | merge-not-replace is promised in the tool description and unproven |
-| `NAME_MAX` / `DESCRIPTION_MAX` / `TAGS_MAX` | SB-VAL-05/06 | truncation policy is unverified in both directions |
-| `sort_order` | SB-CRUD-11 | ordering can silently reset |
-| Media and entry deletion | SB-CRUD-13, SB-MEDIA-12 | orphan rows or unreachable files |
-| Error paths (404s) | SB-CRUD-06, SB-APPLY-08/09 | a typo no-ops and reads as "it does nothing" |
-| Oversize upload | SB-MEDIA-13 | surfaces as "Backend offline" |
-| Example-based contracts | SB-SCOPE-02, SB-INT-07, SB-INT-08 | must be extended by hand; they do not self-derive |
+| `NEVER_WRITES` was declared and consumed by nothing | SB-APPLY-05 | the four delivery specs were excluded only *because* `mergeableFacets()` happens not to list them — an accident that ends the day one is added to the scene card, at which point the constant named to prevent it does nothing |
+| `deleteEntry` removed rows and left the files | SB-CRUD-13 | bytes on disk nothing points at, unreachable and unfindable |
+| `deleteMedia` removed the row and left the file | SB-MEDIA-12 | the same, one visual at a time |
+| a style-book visual was capped at the 10MB JSON default | SB-MEDIA-13 | `/media` does not end in `import`, so it missed the file ceiling; a 4K frame grab — the normal case — is refused as a destroyed connection, which the page reports as "Backend offline" |
+| the modal hardcoded a second copy of `MEDIA_NOTE` | SB-MEDIA-14 | two literals, which is how a page and its API come to disagree about what a visual does |
+| the QA spec itself was wrong twice | SB-VAL-05/06, SB-SCOPE-02/SB-INT-07 | it expected truncation where the code refuses, and removal where the code promotes; the code is right in both and the spec was corrected |
 
-**Priority order for closing them**: SB-APPLY-05 (silent wrong output), then the
-`PUT` group (a promised guarantee that is unproven), then deletion, then the
-404s, then the example-based contracts.
+Two corrections are worth keeping, because both were the spec asserting a
+*plausible* behaviour against a *deliberate* one:
+
+- **Limits refuse, they do not truncate.** Trimming a name to fit discards
+  words the director typed and shows them something they did not write.
+- **A project delete promotes, it does not cascade.** `ON DELETE SET NULL` is
+  there so an angle recorded while a film was open outlives that film.

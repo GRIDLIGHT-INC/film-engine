@@ -131,6 +131,16 @@ function applyEntryToShot(entry, card) {
     for (const [facet, value] of Object.entries(source)) {
         if (value === undefined || value === null || value === '') continue;
         if (POSE_FACETS.includes(facet)) { skipped.push(facet); continue; }
+        /*
+         * Refused EXPLICITLY rather than left to fall through the carried
+         * list. These are excluded today only because mergeableFacets() is
+         * derived from the scene card's own camera facets and none of these
+         * is one — an accident that ends the day a delivery spec is added to
+         * the card, at which point the constant named to prevent this would
+         * be doing nothing at all. Declared-and-never-consumed is the failure
+         * this codebase keeps paying for; this is the consumer.
+         */
+        if (NEVER_WRITES.includes(facet)) { skipped.push(facet); continue; }
         if (!carried.includes(facet)) { skipped.push(facet); continue; }
         next.camera[facet] = value;
         applied.push(facet);

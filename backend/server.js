@@ -195,6 +195,8 @@ function stripDangerousKeys(obj) {
 }
 
 // Parse JSON body from request
+const bodyLimit = require('./lib/body-limit');
+
 function readBody(req, maxSize = 10 * 1024 * 1024, res = null) {
     return new Promise((resolve, reject) => {
         let body = '';
@@ -321,10 +323,7 @@ const server = http.createServer(async (req, res) => {
          * rather than a message. Derived from the URL shape instead, so a new
          * import target inherits it with nothing to remember.
          */
-        const isMediaImport = parts.length > 2 && parts[parts.length - 1] === 'import';
-        const maxSize = isBundleImport ? 500 * 1024 * 1024
-            : isMediaImport ? 150 * 1024 * 1024 // base64-encoded Meshy GLBs can be large
-            : 10 * 1024 * 1024;
+        const maxSize = isBundleImport ? bodyLimit.BUNDLE_LIMIT : bodyLimit.bodyLimitFor(parts);
         try {
             req.body = await readBody(req, maxSize, res);
         } catch (err) {

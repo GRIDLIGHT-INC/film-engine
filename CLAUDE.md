@@ -262,6 +262,7 @@ film-engine/
 │       ├── style-book-research.test.js # The style book design covers every surface it touches
 │       ├── style-book-plan.test.js     # The implementation plan wires into every registry it must
 │       ├── style-book.test.js          # A director's shots, reusable across films
+│       ├── style-book-gaps.test.js     # The unproven half: deletes, merges, ceilings, NEVER_WRITES
 │       ├── style-book-qa.test.js       # The QA case set, derived from the code it audits
 │       ├── plate-viewer.test.js        # A plate you cannot see full size is one you cannot judge
 │       ├── location-plate-resolution.test.js # A location plate is 2K or better, or says why not
@@ -595,6 +596,21 @@ Worse, the tags it showed were the **card's** camera. On a blocked shot those ar
 `GET /projects/:id/storyboard` gains `effective` and `previs` per frame, and the frame carries a badge with **three** states — `block in previs`, `staged`, `approved`, and `staged · changed since approval`. Three rather than two, because "approved" and "approved, then restaged" is the distinction the iterate-until-happy loop turns on, and folding them together is how a director meets a 409 at generation time for a shot the board told them was signed off.
 
 **What markup does *not* do by default.** Arrows, rectangles and notes are **notation** unless a project says otherwise — stored, drawn, kept with the shot, and read by nothing in generation. An arrow drawn to mean "dolly in" changes no prompt and no payload; the movement that does is `camera_control`, set on the card or staged in previs. Turning on `annotation_feedback` makes *noted* marks reach the prompt — see **Markup That Steers a Frame** below — and leaves an unnoted arrow exactly as decorative as it was.
+
+### A Declared Constant That Nothing Consults
+Closing the style book's 21 unproven cases found **six real defects**, and eleven cases where the code was already right and only the test was missing. The split matters: writing the tests is what separated them, and reading the code would not have.
+
+**`NEVER_WRITES` was declared and consumed by nothing.** `aspect_ratio`, `resolution`, `frame_rate` and `color_space` are the mood board's **delivery** decisions about a whole film, and a per-shot template writing one would be two systems fighting over the frame size. The constant naming them existed, was exported, and was referenced by no code at all. They were excluded only *because* `mergeableFacets()` is derived from the scene card's own camera facets and none of these is one — an accident that ends the day a delivery spec is added to the card, at which point the thing named to prevent this does nothing. `applyEntryToShot` now consults it explicitly and reports each as `skipped`, so the protection is stated rather than incidental.
+
+**Both deletes removed the row and left the bytes.** `deleteEntry` relied on the media rows CASCADEing from the entry — which they do — and never touched the files, so an uploaded visual became bytes on disk nothing points at: unreachable and unfindable. `deleteMedia` had the same shape one visual at a time. `dropMediaFile()` is the one rule, and it deliberately leaves alone what it does not own: a link has no bytes, and a row carrying an `asset_id` belongs to the asset registry and is only *referenced* here. It never throws — a file already gone is the state we wanted, and failing the delete over it would leave a row nobody can remove.
+
+**A style-book visual was capped at the 10MB JSON default.** `lib/body-limit.js` states the rule once: the ceiling is **derived from the URL shape**, and the shape that carries a file is a last segment of `import` **or `media`**. A visual is posted to `/film/style-book/:id/media`, which ends in `media`, so it missed a rule written when only `import` existed — and a 4K frame grab, which is the *normal* reference for a shot, base64-encodes well past 10MB. Refused, it reaches the page as a network error, which `api()` reports as **"Backend offline"**: indistinguishable from a dead server, on the one feature where large files are the point. It is a `lib/` module rather than a function in `server.js` because that file calls `start()` at import, so requiring it to read one rule would boot a listener on the live port.
+
+**The modal hardcoded a second copy of `MEDIA_NOTE`.** The sentence explaining that a style still is the lowest-ranked reference — dropped before the request is built on any shot with a cast and a location — was served by the API *and* typed again into the page. Two literals is exactly how a page and its API come to disagree about what a feature does. One `styleBookNoteInto()` paints the served note, and it is painted **where visuals are added**, not only under the grid: a 260px card is not where that is read.
+
+**And the QA specification was wrong twice, in the same direction — asserting a plausible behaviour against a deliberate one.** It expected over-long fields to be **truncated**; `validateEntry` refuses, and refusing is right, because trimming a name discards words the director typed and shows them something they did not write. It expected a project delete to **remove** that project's entries; the FK is `ON DELETE SET NULL` on purpose, so an entry is **promoted to the library** — an angle recorded while a film was open must outlive that film, which is the `film_refsheet_jobs` trap of migration 067 not being repeated. The code was right both times and the specification was corrected.
+
+`tests/style-book-gaps.test.js` is set-based over the registries that fail **partially**: the four `NEVER_WRITES` fields (a rule catching three is indistinguishable from one that works), the three length-limited fields, and the seven row lookups in the router (a 404 on six teaches a caller to trust the seventh).
 
 ### The App Shell on a Phone
 *"like neoncore (codebase) would it be possible to create a mobile version that allows us to work on a film engine project"*
@@ -2200,6 +2216,7 @@ node --test backend/tests/style-book-research.test.js
 node --test backend/tests/style-book-plan.test.js
 node --test backend/tests/style-book.test.js
 node --test backend/tests/style-book-qa.test.js
+node --test backend/tests/style-book-gaps.test.js
 node --test backend/tests/plate-viewer.test.js
 node --test backend/tests/location-plate-resolution.test.js
 node --test backend/tests/requested-size.test.js

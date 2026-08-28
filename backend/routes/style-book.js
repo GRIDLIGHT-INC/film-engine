@@ -234,12 +234,34 @@ function updateEntry(req, res, entryId) {
     return json(res, 200, { entry: present(row, mediaFor(entryId)) });
 }
 
+/**
+ * Remove the bytes a visual owns, if it owns any.
+ *
+ * A link owns nothing and must not be touched; an asset row belongs to the
+ * asset registry and is only referenced here, so only a file this subsystem
+ * WROTE is removed. Never throws: a file already gone is the state we wanted,
+ * and failing a delete over it would leave a row nobody can remove.
+ */
+function dropMediaFile(row) {
+    if (!row || !row.file_path) return;
+    if (row.asset_id) return;              // owned by film_assets, not by us
+    try { require('fs').unlinkSync(row.file_path); } catch (_) { /* already gone */ }
+}
+
 function deleteEntry(res, entryId) {
     const row = db.prepare('SELECT id FROM film_style_book WHERE id = ?').get(entryId);
     if (!row) return json(res, 404, { error: 'Style-book entry not found' });
-    // Media CASCADEs from the entry.
+    /*
+     * The ROWS cascade from the entry; the FILES do not. Deleting only the
+     * rows leaves bytes on disk that nothing points at — unreachable and
+     * unfindable, which is the half-delete the plate views already paid for
+     * once, in the opposite direction.
+     */
+    const media = db.prepare('SELECT file_path, asset_id FROM film_style_book_media WHERE entry_id = ?')
+        .all(entryId);
     db.prepare('DELETE FROM film_style_book WHERE id = ?').run(entryId);
-    return json(res, 200, { deleted: entryId });
+    for (const m of media) dropMediaFile(m);
+    return json(res, 200, { deleted: entryId, visuals_removed: media.length });
 }
 
 function addMedia(req, res, entryId) {
@@ -310,9 +332,12 @@ function addMedia(req, res, entryId) {
 }
 
 function deleteMedia(res, mediaId) {
-    const row = db.prepare('SELECT id FROM film_style_book_media WHERE id = ?').get(mediaId);
+    const row = db.prepare('SELECT id, file_path, asset_id FROM film_style_book_media WHERE id = ?')
+        .get(mediaId);
     if (!row) return json(res, 404, { error: 'Visual not found' });
+    // The row and its bytes go together, or the picture outlives the record.
     db.prepare('DELETE FROM film_style_book_media WHERE id = ?').run(mediaId);
+    dropMediaFile(row);
     return json(res, 200, { deleted: mediaId });
 }
 

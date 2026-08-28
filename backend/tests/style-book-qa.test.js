@@ -146,20 +146,32 @@ test('every integration contract the plan committed to is carried into QA', () =
 
 /* ── the audit has to be honest about what is NOT covered today ──────── */
 
-test('the gaps found in the existing suite are named as gaps, not glossed', () => {
+test('the gap list matches reality in BOTH directions', () => {
+    /*
+     * A gap list is only useful while it is true. Checked both ways: an
+     * identifier the shipped tests now exercise must NOT still be listed as a
+     * gap, and one they do not must still be listed. A stale gap list is worse
+     * than none, because it is believed.
+     */
     const d = doc();
-    const existing = ['style-book', 'style-book-media'].map(f =>
+    const shipped = ['style-book', 'style-book-media', 'style-book-gaps'].map(f =>
         fs.readFileSync(path.join(__dirname, `${f}.test.js`), 'utf8')).join('\n');
 
-    // Each of these is absent from the shipped tests. If one later becomes
-    // covered, this fails and the spec must stop calling it a gap — a stale
-    // gap list is worse than none, because it is believed.
-    const claimedGaps = ['NEVER_WRITES', 'NAME_MAX', 'sort_order'];
-    for (const g of claimedGaps) {
-        assert.ok(!existing.includes(g),
-            `${g} is now covered by the shipped tests — the spec must stop listing it as a gap`);
-        assert.ok(d.includes(g), `the spec does not name ${g} as a gap`);
+    const gapSection = d.slice(d.search(/^## Gaps/im));
+    for (const id of ['NEVER_WRITES', 'NAME_MAX', 'sort_order']) {
+        const covered = shipped.includes(id);
+        const listedAsGap = /\*\*GAP\*\*/.test(gapSection) && gapSection.includes(id)
+            && /what is NOT covered/i.test(gapSection);
+        assert.ok(covered, `${id} is still not exercised by any shipped test`);
+        assert.ok(!listedAsGap, `${id} is covered but the spec still lists it as a gap`);
     }
+    // Scoped to CASE BODIES: the document's own sentence explaining the
+    // COVERED/GAP convention is prose, not a case marking.
+    const cases = [...d.matchAll(/^#### (SB-[A-Z]+-\d+)/gm)];
+    const open = cases.filter((c, i) => /\*\*GAP\*\*/.test(
+        d.slice(c.index, i + 1 < cases.length ? cases[i + 1].index : d.length))).map(c => c[1]);
+    assert.deepStrictEqual(open, [],
+        'still marked GAP — close them or say in the gap section why they stay open');
     assert.match(d, /^##.*gap/im, 'the spec has no gap section');
 });
 

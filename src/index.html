@@ -6299,11 +6299,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <div class="btn-row" style="margin-bottom:12px;">
                         <button class="btn btn-secondary btn-sm" id="styleBookAddMediaBtn">Add visual</button>
                     </div>
-                    <p class="text-sm text-muted" style="margin:-4px 0 12px;line-height:1.5;">
-                        Visuals are reference for you. A style still is the lowest-ranked reference kind and
-                        is dropped before a request is built on any shot with a cast and a location; a clip
-                        reaches no generator at all. What reaches a picture is the camera facets above.
-                    </p>
+                    <p class="text-sm text-muted" id="styleBookMediaNote_" style="margin:-4px 0 12px;line-height:1.5;"></p>
                 </div>
 
                 <div class="btn-row">
@@ -24237,6 +24233,11 @@ ${fountainText.slice(0, 50000)}`;
         return bits.map(b => '<span class="tag">' + b + '</span>').join('');
     }
 
+    /** The one note about what visuals are for, from the API, never a second literal. */
+    function styleBookNoteInto(el) {
+        if (el) el.textContent = (_styleBook && _styleBook.note) || '';
+    }
+
     function renderStyleBook() {
         const grid = document.getElementById('styleBookGrid');
         if (!grid) return;
@@ -24289,6 +24290,7 @@ ${fountainText.slice(0, 50000)}`;
      * that makes a low-angle sayable and the one nobody thinks to fill in.
      */
     function openStyleBookModal(entry) {
+        styleBookNoteInto(document.getElementById('styleBookMediaNote_'));
         const c = (entry && entry.camera) || {};
         document.getElementById('styleBookModalTitle').textContent = entry ? 'Edit shot' : 'New shot';
         document.getElementById('styleBookEditId').value = entry ? entry.id : '';
