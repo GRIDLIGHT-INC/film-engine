@@ -94,9 +94,17 @@ test('the responsive reality is stated, not assumed', () => {
     assert.ok(d.includes(`${queries.length} media`) || d.includes(`${queries.length} screen`),
         `the assessment does not state how many non-print media queries exist (${queries.length})`);
 
-    // The load-bearing claim: the shell is not responsive.
-    assert.strictEqual(shellAware.length, 0,
-        'a media query now touches the app shell — the assessment says none do, and it must be revisited');
+    /*
+     * The load-bearing claim, inverted by Option B. It used to be "no query
+     * touches the shell"; it is now "exactly one does, and it is the phone
+     * breakpoint". A second shell-aware query is the thing to catch: two
+     * breakpoints editing the same offsets is how a layout acquires a width
+     * at which it is broken and nobody owns the rule.
+     */
+    assert.strictEqual(shellAware.length, 1,
+        `expected exactly one shell-aware media query (the phone breakpoint), got ${shellAware.length}`);
+    assert.match(shellAware[0].query, /max-width:\s*700px/,
+        'the one shell-aware query should be the phone breakpoint');
     assert.match(d, /shell/i, 'the assessment does not distinguish the app shell from incidental rules');
 });
 
@@ -120,11 +128,14 @@ test('the transport facts are stated, and each is true', () => {
         'CORS no longer allows any origin — a phone app could not call it');
     assert.match(d, /CORS/i, 'the assessment does not mention CORS');
 
-    // 3. the PAGE server is localhost-only — the concrete blocker
-    assert.match(dev, /listen\(port, '127\.0\.0\.1'/,
-        'the dev page server binding changed — the assessment names it as the blocker');
+    // 3. the PAGE server was localhost-only — the concrete blocker, now openable
+    assert.match(dev, /FILM_ENGINE_HOST/,
+        'the page server must offer a way onto the LAN — it was the one hard blocker');
     assert.match(d, /127\.0\.0\.1|localhost only|loopback/i,
         'the assessment does not name the page server binding, which is the one hard blocker');
+    // ...and that blocker is now openable, without the default moving.
+    assert.strictEqual(require('../dev-server.js').bindHost({}), '127.0.0.1',
+        'the page server must still default to loopback');
 });
 
 test('the agent surface is weighed, because it is already mobile', () => {

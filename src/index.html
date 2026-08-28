@@ -3974,6 +3974,63 @@ body.fe-status .main { bottom:calc(var(--fe-gap) + 26px); }
 .fe-panel-blurb { font-size:11.5px; color:#8e8e97; line-height:1.45; margin-top:4px; }
 .fe-panel-list { flex:1; overflow-y:auto; overflow-x:hidden; padding:8px; }
 .fe-panel-list .nav-item { box-sizing:border-box; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   PHONE — the context panel becomes a drawer
+   ══════════════════════════════════════════════════════════════════════
+   The shell is three fixed panes offset past a 232px panel, so a 390px
+   screen got 232px of menu and 128px of page. Everything here lives behind
+   one breakpoint: above 700px not a single computed value changes.
+
+   The offsets are not overridden one by one — --fe-panel goes to zero and
+   all three collapse arithmetically. That is what the variable was kept
+   for when the rail was removed: one expression beats several hand-edited
+   numbers that can disagree. */
+/* Off-canvas furniture, defined outside the query so it is inert on desktop
+   rather than undefined there. */
+.fe-scrim { display:none; }
+.fe-burger { display:none; align-items:center; justify-content:center;
+  width:34px; height:34px; flex:0 0 auto; border:none; border-radius:9px;
+  background:transparent; color:#c8c8d0; cursor:pointer; padding:0; }
+.fe-burger:hover { background:#1d1d20; }
+
+@media (max-width:700px) {
+  :root { --fe-panel:0px; --fe-gap:6px; }
+
+  /* The panel keeps a real width and slides over the page instead of
+     reserving space in it. */
+  .fe-panel {
+    width:min(78vw,300px); z-index:400;
+    transform:translateX(-110%); transition:transform .2s ease;
+  }
+  body.fe-drawer .fe-panel { transform:translateX(0); }
+  .fe-scrim { display:block; position:fixed; inset:0; z-index:350;
+    background:rgba(0,0,0,.55); }
+  .fe-burger { display:flex; }
+
+  /* The phase track is MOVED here by applyShellMode(), not re-rendered:
+     it is the primary navigation and a second copy is how two navigations
+     come to disagree about which phase you are in. */
+  .fe-track.fe-track-drawer { flex-direction:column; flex:0 0 auto; gap:4px;
+    padding:8px; border-bottom:1px solid rgba(255,255,255,.07); }
+
+  .fe-top { gap:10px; padding:0 10px; }
+  .fe-brand { padding-right:10px; }
+  .fe-projsub { display:none; }
+  .fe-rail { overflow-x:auto; -webkit-overflow-scrolling:touch;
+    scrollbar-width:none; }
+  .fe-rail::-webkit-scrollbar { display:none; }
+  .fe-rail-btn { width:46px; flex:0 0 auto; }
+
+  .main { padding:16px 14px 40px; }
+
+  /* A modal sized for a desktop dialog is wider than the screen. */
+  .modal { width:100%; max-width:96vw; max-height:92vh; }
+
+  /* Cards at a desktop minimum force a sideways scroll on a phone. */
+  .entity-grid { grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); }
+}
+
 /* the app's own nav buttons, relocated — handlers untouched */
 .fe-panel-list .nav-item { padding:6px 9px; border-radius:9px; margin-bottom:1px;
   font-size:12.5px; color:#a3a3ab; border:1px solid transparent; width:100%; }
@@ -11401,7 +11458,15 @@ THREE.GLTFLoader = GLTFLoader;
     // ══════════════════════════════════════════════════════════════
     // CONFIG & STATE
     // ══════════════════════════════════════════════════════════════
-    const DEFAULT_API_BASE = 'http://localhost:3100';
+    /*
+     * The API lives beside the page on the same machine, one port over. Using
+     * a literal `localhost` meant a page opened on a phone called the PHONE's
+     * own localhost, failed every request, and surfaced as "Backend offline" —
+     * indistinguishable from a dead server. Following the host we were served
+     * from is correct on the laptop (localhost -> localhost) and correct on a
+     * phone with nothing to configure. An explicit override still wins.
+     */
+    const DEFAULT_API_BASE = location.protocol + '//' + (location.hostname || 'localhost') + ':3100';
     let API_BASE = localStorage.getItem('film_api_url') || DEFAULT_API_BASE;
     const API = () => API_BASE + '/film';
 
@@ -16012,6 +16077,8 @@ THREE.GLTFLoader = GLTFLoader;
     });
 
     function navigateTo(page) {
+        // On a phone the drawer covers the page you just chose.
+        if (window.closeDrawer) window.closeDrawer();
         applyNavFlow();
         state.currentPage = page;
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -32381,6 +32448,41 @@ ${fountainText.slice(0, 50000)}`;
     return null;
   }
 
+  /*
+   * The drawer.
+   *
+   * On a phone the context panel slides over the page rather than reserving
+   * 232px of it. The phase track is MOVED into the drawer rather than
+   * re-rendered there: it is the primary navigation — the panel lists the
+   * current phase's pages and the track is what changes the phase — so
+   * hiding it would strand you in whichever phase you happened to load on,
+   * and rendering a second one is how two navigations come to disagree.
+   */
+  var PHONE_Q = window.matchMedia ? window.matchMedia('(max-width:700px)') : null;
+
+  function isPhone() { return PHONE_Q ? PHONE_Q.matches : false; }
+  function toggleDrawer() { document.body.classList.toggle('fe-drawer'); }
+  function closeDrawer() { document.body.classList.remove('fe-drawer'); }
+
+  function applyShellMode() {
+    var top = document.querySelector('.fe-top');
+    var panel = document.querySelector('.fe-panel');
+    var track = document.querySelector('.fe-track');
+    if (!top || !panel || !track) return;
+    if (isPhone()) {
+      if (track.parentNode !== panel) panel.insertBefore(track, panel.firstChild);
+      track.classList.add('fe-track-drawer');
+    } else {
+      if (track.parentNode !== top) top.insertBefore(track, top.querySelector('.fe-rail'));
+      track.classList.remove('fe-track-drawer');
+      closeDrawer();   // a drawer left open on a resize is furniture nobody asked for
+    }
+  }
+
+  window.toggleDrawer = toggleDrawer;
+  window.closeDrawer = closeDrawer;
+  window.applyShellMode = applyShellMode;
+
   function build() {
     var nav = document.querySelector('#sidebarProjectNav') || document.querySelector('.sidebar');
     if (!nav) return;
@@ -32389,6 +32491,9 @@ ${fountainText.slice(0, 50000)}`;
     var top = document.createElement('div');
     top.className = 'fe-top';
     top.innerHTML =
+      '<button class="fe-burger" onclick="toggleDrawer()" aria-label="Menu" title="Menu">' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>' +
       '<div class="fe-brand" id="feBrand"><div class="fe-mark">FE</div>' +
       '<div><div class="fe-proj" id="feProjName">Film Engine</div>' +
       '<div class="fe-projsub" id="feProjSub">AI production pipeline</div></div></div>' +
@@ -32424,6 +32529,11 @@ ${fountainText.slice(0, 50000)}`;
       '<div class="fe-panel-list" id="fePhaseList"></div>';
     document.body.appendChild(panel);
 
+    var scrim = document.createElement('div');
+    scrim.className = 'fe-scrim';
+    scrim.onclick = closeDrawer;
+    document.body.appendChild(scrim);
+
     els.track = top.querySelector('#feTrack');
     els.list = panel.querySelector('#fePhaseList');
     els.kicker = panel.querySelector('#fePhaseKicker');
@@ -32441,6 +32551,12 @@ ${fountainText.slice(0, 50000)}`;
       b.onclick = function () { showPhase(p.id, true); };
       els.track.appendChild(b);
     });
+
+    applyShellMode();
+    if (PHONE_Q) {
+      if (PHONE_Q.addEventListener) PHONE_Q.addEventListener('change', applyShellMode);
+      else if (PHONE_Q.addListener) PHONE_Q.addListener(applyShellMode);
+    }
 
     /*
      * The film's name is how you leave the film.

@@ -252,6 +252,7 @@ film-engine/
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
 │       ├── staleness-accept.test.js     # A warning you cannot act on is one you learn to ignore
 │       ├── dev-server.test.js           # An edit you cannot see is an edit that did not happen
+│       ├── mobile-shell.test.js         # The shell on a 390px screen, computed rather than grepped
 │       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
@@ -593,6 +594,25 @@ Worse, the tags it showed were the **card's** camera. On a blocked shot those ar
 `GET /projects/:id/storyboard` gains `effective` and `previs` per frame, and the frame carries a badge with **three** states — `block in previs`, `staged`, `approved`, and `staged · changed since approval`. Three rather than two, because "approved" and "approved, then restaged" is the distinction the iterate-until-happy loop turns on, and folding them together is how a director meets a 409 at generation time for a shot the board told them was signed off.
 
 **What markup does *not* do by default.** Arrows, rectangles and notes are **notation** unless a project says otherwise — stored, drawn, kept with the shot, and read by nothing in generation. An arrow drawn to mean "dolly in" changes no prompt and no payload; the movement that does is `camera_control`, set on the card or staged in previs. Turning on `annotation_feedback` makes *noted* marks reach the prompt — see **Markup That Steers a Frame** below — and leaves an unnoted arrow exactly as decorative as it was.
+
+### The App Shell on a Phone
+*"like neoncore (codebase) would it be possible to create a mobile version that allows us to work on a film engine project"*
+
+The assessment (`docs/plans/mobile-feasibility.md`) measured six media queries, **none of which touched the app shell**: `.fe-panel` is a fixed 232px, `.main` and `.status-bar` are offset past it, and `body.fe` is `overflow:hidden`. At 390px that left **232px of menu and 128px of page**. Measured in a real browser at 386px, `.main` is now **362px** wide.
+
+**The offsets are not overridden one by one — `--fe-panel` goes to zero and all three collapse arithmetically.** That is exactly what the variable was kept for when the rail was removed: *one arithmetic expression beats five hand-edited numbers that can disagree*. So the phone rule sets a variable and the shell follows, rather than restating three `left:` values that would then need re-editing together.
+
+**The panel becomes a drawer, and the phase track MOVES into it.** Hiding the track was the obvious first move and is wrong: the panel lists the **current phase's** pages and the track is what changes the phase, so hiding it strands you in whichever phase you loaded on. Rendering a second track in the drawer is the other obvious move, and it is how two navigations come to disagree about which phase you are in — so `applyShellMode()` **relocates the one node** (`appendChild` moves rather than copies, so handlers and state survive) and puts it back on resize. `navigateTo` closes the drawer, because otherwise you tap a page and keep staring at the menu.
+
+**The blocker that would have made every other fix invisible was the API base.** `DEFAULT_API_BASE` was the literal `http://localhost:3100`, so a page opened on a phone called the **phone's** own localhost, failed every request, and surfaced as *"Backend offline"* — indistinguishable from a dead server, which is the same misdiagnosis the oversize-upload 413 produced. It follows `location.hostname` now: correct on the laptop, correct on a phone, nothing to configure, and the explicit `film_api_url` override still wins.
+
+**The page server binds loopback and stays that way unless told.** `FILM_ENGINE_HOST=0.0.0.0` opts in, prints the LAN addresses, and warns that the server is **unauthenticated** — anyone who can reach the machine can read and change the project. An env var rather than a stored setting because `dev-server.js` deliberately has no database import and no dependency ([ADR-002](docs/adr/002-vanilla-http-no-framework.md)), and a setting a server cannot read at bind time is one more thing declared and never consumed.
+
+`tests/mobile-shell.test.js` evaluates **computed values at a viewport width** — a small cascade evaluator with media-query filtering, `!important` and source order — rather than grepping for a breakpoint. A grep passes the moment a query exists and says nothing about whether it wins; it would not have caught that `.fe-burger { display:none }` written *after* the query beat the query on source order, which is the bug the first build shipped. Writing the evaluator also found that slicing one span from the first `<style>` to the last `</style>` swept up the vendored 3D library and the page markup between them, so selectors arrived carrying HTML and `:root` never matched `:root`.
+
+The shell offsets are **derived** from the CSS — every declaration positioning something by `var(--fe-panel)` or `var(--fe-rail)` — so a fourth one added later is in the denominator with nothing to remember. `.fe-panel` itself is exempt **by name with a reason** (it is `position:fixed`, so its own width never pushes the page), and the test asserts the exemption set is exactly that one and that the panel is still out of flow.
+
+Above 700px not a single computed value changes: verified in a real browser at 1920px (panel 232, `.main` at 262, status bar at 262, burger hidden, track in the top bar).
 
 ### The Frame You Are Shooting From
 Board generation never looked at another frame. A keyframe was conditioned on character plates, a location plate and a mood-board image — every one a picture of something *in the abstract* — so 1B rebuilt the street from scratch and put the well, the cart and the light somewhere else than 1A had. The only shot-to-shot chaining that existed was `POST /shots/:id/post/color-match`, on the finished **clip**, long after the frames were paid for.
@@ -2168,6 +2188,7 @@ node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js
 node --test backend/tests/staleness-accept.test.js
 node --test backend/tests/dev-server.test.js
+node --test backend/tests/mobile-shell.test.js
 node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js

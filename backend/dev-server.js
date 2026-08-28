@@ -104,14 +104,59 @@ function createDevServer(rootDir) {
     });
 }
 
+/*
+ * Which interface the page is served on.
+ *
+ * Loopback by default and deliberately so: this server has no authentication
+ * of any kind, and the API beside it already binds every interface — putting
+ * the page on the LAN is what makes the whole app reachable from another
+ * device, which is the machine owner's decision and not a default anyone
+ * should acquire by upgrading.
+ *
+ * FILM_ENGINE_HOST=0.0.0.0 opts in. It is an env var rather than a stored
+ * setting because this file deliberately has no database import and no
+ * dependency (ADR-002), and a setting that a server cannot read at bind time
+ * would be one more thing declared and never consumed.
+ */
+function bindHost(env) {
+    const host = String((env || {}).FILM_ENGINE_HOST || '').trim();
+    return host || '127.0.0.1';
+}
+
+function isLoopback(host) {
+    return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
+
+/** The addresses another device on the network could actually reach. */
+function lanAddresses() {
+    const nets = require('os').networkInterfaces();
+    const out = [];
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name] || []) {
+            if (net.family === 'IPv4' && !net.internal) out.push(net.address);
+        }
+    }
+    return out;
+}
+
 if (require.main === module) {
     const port = Number(process.argv[2]) || Number(process.env.PORT) || 3200;
     const dir = process.argv[3] || path.join(__dirname, '..', 'src');
-    createDevServer(dir).listen(port, '127.0.0.1', () => {
+    const host = bindHost(process.env);
+    createDevServer(dir).listen(port, host, () => {
         console.log(`Film Engine page on http://localhost:${port}`);
         console.log(`  serving ${path.resolve(dir)}`);
         console.log('  Cache-Control: no-store — an edit shows on an ordinary refresh.');
+        if (isLoopback(host)) {
+            console.log('  This machine only. To open it on a phone on the same network:');
+            console.log(`    FILM_ENGINE_HOST=0.0.0.0 node backend/dev-server.js ${port}`);
+        } else {
+            for (const address of lanAddresses())
+                console.log(`  On this network: http://${address}:${port}`);
+            console.log('  WARNING: served to the whole network and UNAUTHENTICATED — anyone');
+            console.log('  who can reach this machine can read and change the project.');
+        }
     });
 }
 
-module.exports = { createDevServer };
+module.exports = { createDevServer, bindHost, isLoopback, lanAddresses };

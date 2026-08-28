@@ -11,6 +11,32 @@ Nothing here is built. Every number below is measured from the code, not recalle
 
 ---
 
+
+## Status: Option B is built (2026-08-27)
+
+Option A needed nothing. **Option B was built**; Option C is still not recommended.
+
+What changed, and the measurements that replaced the ones above:
+
+| | assessed | now |
+|---|---|---|
+| `.main` width at 386px | 128px | **362px** |
+| Context panel | fixed 232px, always | off-canvas drawer under 700px |
+| Phase track on a phone | unreachable | **moved** into the drawer, one node |
+| API base | literal `http://localhost:3100` | follows `location.hostname` |
+| Page server | `127.0.0.1`, no opt-out | `FILM_ENGINE_HOST`, **default still loopback** |
+| Shell-aware media queries | 0 of 6 | **1 of 7 media queries** — the phone breakpoint |
+
+Verified in a real browser at both widths: at 1920px the panel is still 232px, `.main`
+still starts at 262px and the burger is hidden — **not one computed value above 700px
+changed**. At 386px the drawer opens to 300px, the scrim shows, tapping a page closes it,
+and nothing scrolls sideways on a real project.
+
+Option C's cost was never React Native. It is **a second surface**, and this codebase has
+paid three times in one week for two surfaces disagreeing (the plate pointer, the frame
+pointer, `effectiveCamera`). That argument is unchanged by Option B shipping.
+
+
 ## 1. The precedent, read rather than imagined
 
 `~/code/neoncore/mobile` is a **native React Native app** (React Native 0.86, ejected from
@@ -40,9 +66,9 @@ something. That is the single most useful thing to copy.
 | Rail entries | **7** | `var RAIL` |
 | MCP tools | **179** | `listTools()` |
 | SPA size | **2.01 MB** | one file, `build.target: single-html` |
-| Non-print media queries | **6** | and see below |
+| Non-print media queries | **7** | six incidental + the phone breakpoint Option B added; see below |
 
-**The responsive layout does not exist.** There are 6 media queries that are not `print`, and it
+**The responsive layout did not exist.** There were 6 media queries that are not `print`, and it
 is easy to read that as "already responsive". Not one of them touches the **app shell**. They
 govern:
 
@@ -53,7 +79,7 @@ govern:
 
 The sidebar is `position: fixed` at **260px**, `body` is `overflow: hidden`, and no breakpoint
 changes either. At 390px the sidebar alone takes two thirds of the screen and the body cannot
-scroll. So the honest statement is: **6 media queries exist and zero of them make the
+scroll. So the honest statement as assessed was: **6 media queries existed and zero of them made the
 application usable on a phone.** A test asserts that none touches the shell, so if that changes
 this assessment has to be revisited rather than quietly going stale.
 
@@ -63,7 +89,7 @@ this assessment has to be revisited rather than quietly going stale.
 |---|---|
 | The API binds **every interface** — `server.listen(PORT)` with no host, so 0.0.0.0 | ✅ reachable from a phone on the LAN |
 | CORS sends `Access-Control-Allow-Origin: *` | ✅ any origin, including a native app |
-| The **page** server binds `127.0.0.1` — `createDevServer(dir).listen(port, '127.0.0.1')` | ❌ **the SPA cannot be opened from a phone at all** |
+| The **page** server bound `127.0.0.1` unconditionally | ❌ was the one hard blocker — now `FILM_ENGINE_HOST` opts in, default still loopback |
 
 That last line is the whole reason "just open it on your phone" does not work today, and it is a
 one-line change. It is deliberately not made here: binding a server with no authentication to
