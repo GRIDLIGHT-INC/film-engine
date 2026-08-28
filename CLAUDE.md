@@ -262,6 +262,7 @@ film-engine/
 │       ├── style-book-research.test.js # The style book design covers every surface it touches
 │       ├── style-book-plan.test.js     # The implementation plan wires into every registry it must
 │       ├── style-book.test.js          # A director's shots, reusable across films
+│       ├── style-book-qa.test.js       # The QA case set, derived from the code it audits
 │       ├── plate-viewer.test.js        # A plate you cannot see full size is one you cannot judge
 │       ├── location-plate-resolution.test.js # A location plate is 2K or better, or says why not
 │       ├── requested-size.test.js       # A resolution that reaches nothing is worse than none
@@ -2198,6 +2199,7 @@ node --test backend/tests/plate-views.test.js
 node --test backend/tests/style-book-research.test.js
 node --test backend/tests/style-book-plan.test.js
 node --test backend/tests/style-book.test.js
+node --test backend/tests/style-book-qa.test.js
 node --test backend/tests/plate-viewer.test.js
 node --test backend/tests/location-plate-resolution.test.js
 node --test backend/tests/requested-size.test.js
