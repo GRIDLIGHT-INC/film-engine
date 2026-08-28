@@ -128,7 +128,7 @@ test('the editor never creates an empty block from an orphan node', () => {
     // The orphan-adoption branch called createBlock(text, defaultType) with
     // text === '', which is how a bare <div> from the browser became a
     // permanent 32px of nothing.
-    const i = SPA.indexOf('function onEditorInput');
+    const i = SPA.indexOf('function normalizeEditor');
     let depth = 0, j = SPA.indexOf('{', i), end = j;
     for (; j < SPA.length; j++) {
         if (SPA[j] === '{') depth++;
@@ -136,7 +136,7 @@ test('the editor never creates an empty block from an orphan node', () => {
     }
     const body = SPA.slice(i, end);
     assert.match(body, /sweepEmptyBlocks\s*\(/,
-        'onEditorInput does not sweep the empty blocks it and the browser leave behind');
+        'the normaliser does not sweep the empty blocks it and the browser leave behind');
     // The guard itself, not merely a mention of the text: the branch must
     // REFUSE to adopt a textless node, and the way it refuses is to drop it.
     // NOTE the character class: bounding it with [^)] cannot cross the ')' in

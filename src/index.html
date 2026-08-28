@@ -16850,6 +16850,7 @@ THREE.GLTFLoader = GLTFLoader;
             } else if (data.content) {
                 document.getElementById('scriptInput').value = data.content;
                 document.getElementById('screenplayEditor').innerHTML = '<div class="sp-action" data-element-type="action">' + escapeHtml(data.content) + '</div>';
+                normalizeEditor();   // every way in leaves the editor sound
                 currentScriptVersion = parseInt(ver);
                 updateSaveStatus('saved');
                 loadRevisionInfo(null);
@@ -16874,6 +16875,7 @@ THREE.GLTFLoader = GLTFLoader;
         } catch (err) {
             // No Fountain content yet - that's OK
             document.getElementById('screenplayEditor').innerHTML = '';
+            normalizeEditor();   // every way in leaves the editor sound
             currentScriptVersion = null;
             updateSaveStatus('saved');
             loadRevisionInfo(null);
@@ -16886,6 +16888,7 @@ THREE.GLTFLoader = GLTFLoader;
         // Using inline Fountain rendering (simplified)
         const html = parseFountainToHTML(fountainText);
         editor.innerHTML = html;
+        normalizeEditor();   // every way in leaves the editor sound
         editorDirty = false;
         updateSceneNavigator(fountainText);
         // FILM-107: Update scene numbers after loading
@@ -17150,33 +17153,45 @@ THREE.GLTFLoader = GLTFLoader;
         return String((node && (node.innerText || node.textContent)) || '').trim();
     }
 
-    function onEditorInput() {
-        editorDirty = true;
-        updateEditorStats();
+    /**
+     * Leave the editor structurally sound, whatever just wrote to it.
+     *
+     * A screenplay is written and edited fourteen different ways — typing, the
+     * AI writing into it, accepting a prose conversion, undo, redo, Enter,
+     * reordering scenes, loading a version, rendering the Fountain, rewriting
+     * the title page, changing an element's type. Only TYPING went through any
+     * repair, and a programmatic DOM change does not fire `input`, so every
+     * other path left whatever it made and waited for the writer's next
+     * keystroke to tidy up. That is the reported bug one level up from where it
+     * was fixed.
+     *
+     * Three jobs, in this order, because they depend on each other:
+     *   1. leave the editor's own furniture alone — a page-break indicator is
+     *      a <div> with a class, no element type and no text, which is exactly
+     *      what an orphan looks like;
+     *   2. adopt orphan TEXT into a block, and drop an orphan that has none;
+     *   3. sweep any block that is empty and is not where the caret is.
+     *
+     * Idempotent: running it twice changes nothing the second time, which
+     * matters because several of these paths call one another.
+     */
+    function normalizeEditor(editor) {
+        const ed = editor || document.getElementById('screenplayEditor');
+        if (!ed) return;
 
-        // Ensure block structure: wrap any orphan text nodes in blocks
-        const editor = document.getElementById('screenplayEditor');
-        const childNodes = [...editor.childNodes];
-
-        // Determine default type: scene-heading if no existing blocks (first line)
-        const existingBlocks = editor.querySelectorAll('[data-element-type]:not([data-element-type="title-page"])');
+        const existingBlocks = ed.querySelectorAll('[data-element-type]:not([data-element-type="title-page"])');
         const defaultType = existingBlocks.length === 0 ? 'scene-heading' : 'action';
 
-        for (const node of childNodes) {
-            // The editor's own furniture is not an orphan. It has no element
-            // type and no text by design, which is exactly what made the loop
-            // adopt it.
+        for (const node of [...ed.childNodes]) {
+            // The editor's own furniture is not an orphan.
             if (isEditorFurniture(node)) continue;
-            // Skip if already a proper element with data-element-type
             if (node.nodeType === 1 && node.dataset && node.dataset.elementType) continue;
 
-            // Text node or element without data-element-type
             if (node.nodeType === 3 && node.textContent.trim()) {
-                // Wrap text node in block — preserve cursor at end of typed text
                 const textLen = node.textContent.length;
                 const block = createBlock(node.textContent, defaultType);
-                editor.replaceChild(block, node);
-                // Place cursor at end of content (not start) so typing continues naturally
+                ed.replaceChild(block, node);
+                // Cursor at the END of what was typed, so typing continues.
                 const range = document.createRange();
                 const sel = window.getSelection();
                 const textNode = block.firstChild || block;
@@ -17185,28 +17200,35 @@ THREE.GLTFLoader = GLTFLoader;
                 range.collapse(true);
                 sel.removeAllRanges();
                 sel.addRange(range);
-                // Update element type selector
                 const selector = document.getElementById('elementTypeSelector');
                 if (selector) selector.value = defaultType;
+            } else if (node.nodeType === 3) {
+                // Whitespace between blocks. Not content, and it prints nothing.
+                if (!node.textContent.trim()) node.remove();
             } else if (node.nodeType === 1 && !node.dataset.elementType) {
                 /*
-                 * A bare <div> the browser left behind. Adopting it into a
-                 * block when it has NO TEXT is what manufactured the empty
-                 * blocks: 32px of layout that writes nothing to the Fountain.
-                 * Unless the caret is in it — in which case it is where the
-                 * next character is about to be typed, and it becomes a real
-                 * block so the cursor survives.
+                 * A bare <div> the browser left behind. Adopting it when it has
+                 * NO TEXT is what manufactured the empty blocks: 32px of layout
+                 * that writes nothing to the Fountain. Unless the caret is in
+                 * it, in which case it becomes a real block so the cursor
+                 * survives.
                  */
                 const text = textOf(node);
                 if (!text && !blockHoldsCaret(node)) { node.remove(); continue; }
                 const block = createBlock(text, defaultType);
-                editor.replaceChild(block, node);
+                ed.replaceChild(block, node);
                 if (!text) setCursorToBlock(block);
             }
         }
 
         // Anything still empty and not under the caret is 32px of nothing.
-        sweepEmptyBlocks(editor);
+        sweepEmptyBlocks(ed);
+    }
+
+    function onEditorInput() {
+        editorDirty = true;
+        updateEditorStats();
+        normalizeEditor(document.getElementById('screenplayEditor'));
 
         // FILM-101: Debounced auto-detection of element types
         if (autoDetectTimer) clearTimeout(autoDetectTimer);
@@ -17439,6 +17461,7 @@ THREE.GLTFLoader = GLTFLoader;
         const editor = document.getElementById('screenplayEditor');
         if (editor && previousState) {
             editor.innerHTML = previousState.html;
+            normalizeEditor();   // every way in leaves the editor sound
             restoreCursorPath(previousState.cursor);
             editorDirty = true;
             triggerAutoSave();
@@ -17464,6 +17487,7 @@ THREE.GLTFLoader = GLTFLoader;
         const editor = document.getElementById('screenplayEditor');
         if (editor && nextState) {
             editor.innerHTML = nextState.html;
+            normalizeEditor();   // every way in leaves the editor sound
             restoreCursorPath(nextState.cursor);
             editorDirty = true;
             triggerAutoSave();
@@ -18307,6 +18331,7 @@ THREE.GLTFLoader = GLTFLoader;
                 const defaultType = existingBlocks.length === 0 ? 'scene-heading' : 'action';
                 const newBlock = createBlock('', defaultType);
                 editor.appendChild(newBlock);
+                normalizeEditor();   // every way in leaves the editor sound
                 setCursorToBlock(newBlock);
                 return;
             }
@@ -19314,6 +19339,7 @@ THREE.GLTFLoader = GLTFLoader;
                     if (gutter) gutter.textContent = String(idx + 1);
                 }
                 editor.appendChild(block);
+                normalizeEditor();   // every way in leaves the editor sound
             });
         });
 
@@ -19543,6 +19569,7 @@ THREE.GLTFLoader = GLTFLoader;
 
         // Insert at the beginning of editor
         editor.insertBefore(block, editor.firstChild);
+        normalizeEditor();   // every way in leaves the editor sound
     }
 
     function serializeTitlePageToFountain(titlePage) {
@@ -20669,6 +20696,7 @@ THREE.GLTFLoader = GLTFLoader;
             newDiv.className = 'element-action';
             newDiv.textContent = text;
             editor.appendChild(newDiv);
+            normalizeEditor();   // every way in leaves the editor sound
         }
         editorDirty = true;
         triggerAutoSave();
@@ -20985,6 +21013,7 @@ THREE.GLTFLoader = GLTFLoader;
         } else {
             // Append to editor if no cursor position
             editor.innerHTML += html;
+            normalizeEditor();   // every way in leaves the editor sound
         }
 
         editorDirty = true;
@@ -21005,6 +21034,7 @@ THREE.GLTFLoader = GLTFLoader;
         // Parse and append to end
         const html = parseFountainToHTML(msg.rawContent);
         editor.innerHTML += html;
+        normalizeEditor();   // every way in leaves the editor sound
 
         editorDirty = true;
         triggerAutoSave();
@@ -21419,6 +21449,7 @@ THREE.GLTFLoader = GLTFLoader;
             const editor = document.getElementById('screenplayEditor');
             const newBlock = createBlock('', normalizedType);
             editor.appendChild(newBlock);
+            normalizeEditor();   // every way in leaves the editor sound
             setCursorToBlock(newBlock);
         }
     }
@@ -26560,6 +26591,7 @@ ${fountainText.slice(0, 50000)}`;
             temp.innerHTML = newBlocks;
             while (temp.firstChild) {
                 editor.appendChild(temp.firstChild);
+                normalizeEditor();   // every way in leaves the editor sound
             }
 
             // Trigger updates

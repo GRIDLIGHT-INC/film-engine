@@ -335,6 +335,7 @@ film-engine/
 │       ├── screenplay-pagination.test.js # No page ends between a cue and its dialogue
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
 │       ├── screenplay-furniture.test.js # The editor's own furniture is not content
+│       ├── screenplay-mutators.test.js # Every way a screenplay is written leaves the editor sound
 │       ├── mcp-first-writing.test.js # MCP is the default path; HTTP says it cost you something
 │       ├── act-structure.test.js   # Acts are sections; the table and its readers are gone
 │       ├── frame-versions.test.js  # Which attempt is which, and which can be chosen
@@ -1067,6 +1068,23 @@ The denominator is **derived from `providers.list()`** — every adapter declari
 The credential rule is probed **by removing the credentials**, not by reading the rows: every provider is credentialed on a working install, so "if unavailable then it says why" is vacuously true and passes just as happily against a filter that drops them. The first version of that test did exactly that, and the mutation inserting `continue` for uncredentialed providers did not fail it.
 
 Served at `GET /film/spend/compare`, on the Budget page's **Compare Generators** tab, and as `spend_compare` (**169 tools**).
+
+### Every Way a Screenplay Is Written, Not Just Typing
+*"you fixed probably just this screenplay, what we must fix and how we do all this… when a screenplay is being written or edited."*
+
+Correct, and it was the right thing to push back on. Both previous fixes landed in `onEditorInput` — the **typing** path. Derived from the source, the editor is written to by **19 functions**, of which **13 mutate its structure and normalised nothing**:
+
+`acceptConversion` · `appendAIContent` · `editorRedo` · `editorUndo` · `insertAIContentAtCursor` · `insertAITextAtCursor` · `loadLatestFountain` · `loadScriptVersion` · `onEditorKeydown` · `renderFountainToEditor` · `reorderScenes` · `setElementType` · `updateEditorTitlePage`
+
+**A programmatic DOM change does not fire `input`.** So the AI writing into the screenplay, accepting a prose conversion, undo, redo, pressing Enter, reordering scenes, loading a version, rewriting the title page and changing an element's type all left whatever they made and waited for the writer's next keystroke to tidy up. That is the reported bug one level above where it was fixed.
+
+`normalizeEditor()` is the one repair, and it does **three** jobs in an order that matters: leave the editor's own furniture alone, adopt orphan **text** into a block while dropping an orphan that has none, then sweep any block that is empty and not under the caret. It is idempotent, because several of these paths call one another.
+
+**Honest about what it corrects and what it merely guards.** On the typing and Enter paths it is corrective — that is where the empty blocks were manufactured. On the AI paths it is currently a no-op, because `parseFountainToHTML` already emits well-formed blocks; its value there is that they cannot silently stop being well-formed. Saying so is the difference between a guarantee and a claim.
+
+`tests/screenplay-mutators.test.js` **derives the writers from the source**, so the fourteenth way in fails the test rather than shipping. Exemptions are named with reasons: two functions only READ `innerHTML` (the undo snapshot, the PDF export) and three are `execCommand` on a selection, which fires a native `input` event and is therefore already covered. A stale exemption fails too — it must name a function that exists.
+
+Verified in a real browser on the live document: load, AI append, AI insert at cursor, element-type change, undo and redo all leave **189→194 blocks with 0 empties, 5 page breaks intact and the estimate steady at ~6 pages**, with no JavaScript errors.
 
 ### The Editor Ate Its Own Page Breaks
 The empty-block sweep stopped the space growing while typing and did not explain where the blocks came from. They came from the editor eating its own furniture.
@@ -2339,6 +2357,7 @@ node --test backend/tests/screenplay-polish.test.js
 node --test backend/tests/screenplay-pagination.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js
 node --test backend/tests/screenplay-furniture.test.js
+node --test backend/tests/screenplay-mutators.test.js
 node --test backend/tests/mcp-first-writing.test.js
 node --test backend/tests/act-structure.test.js
 node --test backend/tests/frame-versions.test.js

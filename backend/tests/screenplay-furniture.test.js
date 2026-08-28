@@ -115,7 +115,7 @@ function bodyOf(fnName) {
 }
 
 test('the orphan-adoption loop skips furniture before it decides anything', () => {
-    const body = bodyOf('onEditorInput');
+    const body = bodyOf('normalizeEditor');
     assert.match(body, /SP_FURNITURE|Furniture\s*\(|page-break-indicator/,
         'onEditorInput does not recognise the editor\'s own furniture — it will adopt it '
         + 'into an empty block or delete it, and both destroy the pagination');
@@ -145,7 +145,7 @@ test('the indicators are inserted before the loop that must ignore them', () => 
     // next time something inserts during input.
     const body = bodyOf('onEditorInput');
     const stats = body.indexOf('updateEditorStats(');
-    const loop = body.indexOf('for (const node of childNodes)');
+    const loop = body.indexOf('normalizeEditor(');
     assert.ok(stats >= 0 && loop > stats,
         'the pagination no longer runs before the orphan loop — if that is deliberate, this '
         + 'test should be updated to say so, because the skip is what makes the order safe');
