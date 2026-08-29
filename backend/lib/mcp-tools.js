@@ -37,6 +37,7 @@ const { handleContinuity } = require('../routes/continuity');
 const { handleMarketing } = require('../routes/marketing');
 const { handleDashboard } = require('../routes/dashboard');
 const { handleStoryStructure } = require('../routes/story-structure');
+const { handleStoryDevelopment } = require('../routes/story-development');
 const { handleScripts } = require('../routes/scripts');
 const { handleScenes } = require('../routes/scenes');
 const { handleShots } = require('../routes/shots');
@@ -831,6 +832,112 @@ const PRODUCTION_TOOLS = [
         description: 'Put the anchor down. Shots go back to generating from their own card and their subject plates.',
         path: a => `/film/projects/${a.project_id}/anchor`,
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    /*
+     * Reading a screenplay.
+     *
+     * Deliberately a PAIR rather than a single "analyse this" tool. The
+     * connected model is the one that reads: a tool that called a server-side
+     * LLM would ask for a second API key to answer a question this model has
+     * already read the material for, and would fail with a billing error the
+     * model cannot act on. So the engine hands over a brief and stores the
+     * conclusion. tests/mcp-no-server-llm.test.js enforces it.
+     */
+    {
+        name: 'analysis_brief',
+        handler: handleStoryDevelopment, method: 'GET',
+        description: 'Everything needed to read this screenplay properly, in one call, and it SPENDS NOTHING: the full screenplay text, the thirteen-dimension rubric merged from the Academy Nicholl scoring rubric and the Sundance curriculum (premise, structure, causality, character, conflict, scene function, pacing, dialogue, visual storytelling, theme, tone, voice, format), the four output layers, the note schema, and the mechanical findings the engine already computed so you do not have to count anything. YOU do the reading — this returns no judgement. Then write it back with analysis_write. Central rule: DIAGNOSE BEFORE PRESCRIBING. Say what a reader experiences and why, cite a scene or page for every observation, and hand the decision back to the writer rather than telling them what story to write. Never draft replacement dialogue or scene description: generated prose can disqualify a screenplay from competitions that prohibit AI-written material.',
+        path: a => `/film/projects/${a.project_id}/analysis/brief`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'analysis_write',
+        handler: handleStoryDevelopment, method: 'POST',
+        description: 'Store a reading of the screenplay, as the four layers: map (what is in the script), observations (patterns, each with evidence), questions (that let the writer test their intent), opportunities (prioritised, with likely impact). Every observation and opportunity must carry all seven fields — observation, evidence, effect, question, strategies, confidence (high|medium|low), kind (mechanical|interpretive) — and is REFUSED without them, because a note with no evidence cannot be checked and one with no question is a verdict. An overall score is refused: a number gets quoted without the reasoning that produced it. A note carrying rewritten prose is refused. Read analysis_brief first.',
+        path: a => `/film/projects/${a.project_id}/analysis`,
+        body: a => ({
+            analyst: a.analyst, map: a.map, observations: a.observations,
+            questions: a.questions, opportunities: a.opportunities,
+        }),
+        schema: {
+            project_id: { type: 'string' },
+            analyst: { type: 'string', description: 'Who read it — a model name, or a person.' },
+            map: { type: 'object', description: 'Characters, scenes, locations, chronology, goals, turning points, setups and payoffs.' },
+            observations: { type: 'array', description: 'Notes. Each: observation, evidence, effect, question, strategies[], confidence, kind.' },
+            questions: { type: 'array', description: 'Development questions, as strings.' },
+            opportunities: { type: 'array', description: 'Prioritised revision notes, same seven fields as an observation.' },
+        },
+        required: ['project_id', 'map', 'observations', 'questions', 'opportunities'],
+    },
+    {
+        name: 'analysis_get',
+        handler: handleStoryDevelopment, method: 'GET',
+        description: 'The last reading of this screenplay, or every reading with all=true. Says whether it is of the CURRENT draft: a report presented beside a screenplay it no longer describes is worse than none, because every note still reads as current. SPENDS NOTHING.',
+        path: a => `/film/projects/${a.project_id}/analysis${a.all ? '?all=true' : ''}`,
+        schema: { project_id: { type: 'string' }, all: { type: 'boolean' } },
+        required: ['project_id'],
+    },
+    {
+        name: 'analysis_delete',
+        handler: handleStoryDevelopment, method: 'DELETE',
+        description: 'Remove one stored reading.',
+        path: a => `/film/analysis/${a.analysis_id}`,
+        schema: { analysis_id: { type: 'string' } }, required: ['analysis_id'],
+    },
+
+    /*
+     * The treatment: prose before the screenplay.
+     *
+     * Stored apart from film_scripts because it is not a screenplay — the
+     * Fountain parser would read its paragraphs as action and manufacture
+     * scenes from nothing, and every report built on scene presence would then
+     * describe a document that has no scenes.
+     */
+    {
+        name: 'treatment_get',
+        handler: handleStoryDevelopment, method: 'GET',
+        description: 'The treatment: prose stating what happens, in order, without dialogue or screenplay format. This is what a screenplay is written FROM. Returns the latest version and its word count. SPENDS NOTHING.',
+        path: a => `/film/projects/${a.project_id}/treatment`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'treatment_write',
+        handler: handleStoryDevelopment, method: 'PUT',
+        description: 'Save a NEW version of the treatment. Versioned, so the draft you replaced is kept. An unchanged save writes nothing and reports changed:false, so "did that apply?" is a free question. To draft the screenplay FROM a treatment: read it with treatment_get, write the Fountain yourself, and save it with script_write — the treatment is the source, and this engine never generates the screenplay for you.',
+        path: a => `/film/projects/${a.project_id}/treatment`,
+        body: a => ({ content: a.content, title: a.title }),
+        schema: {
+            project_id: { type: 'string' },
+            content: { type: 'string', description: 'The treatment prose.' },
+            title: { type: 'string' },
+        },
+        required: ['project_id', 'content'],
+    },
+    {
+        name: 'treatment_versions',
+        handler: handleStoryDevelopment, method: 'GET',
+        description: 'Every version of the treatment, newest first. SPENDS NOTHING.',
+        path: a => `/film/projects/${a.project_id}/treatment/versions`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'treatment_delete',
+        handler: handleStoryDevelopment, method: 'DELETE',
+        description: 'Remove the LATEST treatment version, leaving the earlier ones. Deleting the whole history to undo one save is not what this does.',
+        path: a => `/film/projects/${a.project_id}/treatment`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+
+    {
+        name: 'script_timing',
+        handler: handleStoryDevelopment, method: 'GET',
+        description: 'Three separate numbers per scene, and the reason they are separate. page_eighths is how much printed page the scene occupies (objective, written the way a stripboard writes it: 4/8, never 1/2). screen_time is a RANGE with a confidence for how long it plays. production is how hard it is to SHOOT, which is independent of both — "The bridge explodes." is 1/8 of a page and can eat a shooting day. Where the page-per-minute rule disagrees with what the scene actually contains, the scene carries a disagreement saying which and why, rather than the two being averaged into one number that hides the method. Also flags phrases whose duration the page does not state ("They fight.", "Time passes.") — not bad writing, simply unreliable to schedule against. SPENDS NOTHING.',
+        path: a => `/film/projects/${a.project_id}/timing${a.delivery ? `?delivery=${a.delivery}` : ''}`,
+        schema: {
+            project_id: { type: 'string' },
+            delivery: { type: 'string', description: 'ceremonial | ordinary | rapid | overlapping — the dialogue rate to time against. Default ordinary.' },
+        },
+        required: ['project_id'],
     },
     {
         name: 'beats_get',

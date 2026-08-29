@@ -197,6 +197,9 @@ What an agent can do to a screenplay today (7 tools, verified from `lib/mcp-tool
 | 4 | `outline_write` — author sections/synopses | **BUILT** | — | **2 ✓** |
 | 5 | `script_stats` — words, pages, scenes, dialogue %, cast, runtime | **BUILT** | — | **3 ✓** |
 | 6 | `scene_card_write` — POV, conflict, outcome | **BUILT** | — | **2b ✓** |
+| 10 | `script_timing` — page eighths, screen-time range, shoot effort | **BUILT** | — | added after the port: the three production numbers, kept apart |
+| 11 | `treatment_get` / `treatment_write` / `treatment_versions` / `treatment_delete` — prose before the screenplay | **BUILT** | — | added after the port |
+| 12 | `analysis_brief` / `analysis_write` / `analysis_get` / `analysis_delete` — read the script against the Nicholl + Sundance rubric | **BUILT** | — | added after the port; the brief spends nothing and the model does the reading |
 | 7 | `scene_history` / `scene_restore` — per-scene, derived from script versions | **BUILT** | — | **2b ✓** |
 | 8 | `beats_get` / `beats_apply` / `beat_link` — structure, and its holes | **BUILT** | — | **2b ✓** |
 | 9 | `directives_get` / `directives_write` — house rules on the writing | **BUILT** | — | **2b ✓** |

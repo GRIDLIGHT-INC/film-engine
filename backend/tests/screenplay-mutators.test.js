@@ -97,11 +97,37 @@ test('EVERY way of writing a screenplay leaves the editor normalised', () => {
         return SPA.slice(i, end);
     };
 
+    /*
+     * Follows ONE call level, and no further.
+     *
+     * A writer may normalise directly, or delegate to a helper that does —
+     * `afterCardEdit()` normalises, saves and repaints, and three card
+     * functions call it rather than repeating those three lines. Refusing to
+     * follow the call would report a correct function as broken, and a check
+     * that cries wolf is one that gets relaxed until it protects nothing.
+     *
+     * One level rather than a full walk, deliberately: an unbounded walk
+     * follows the refresh callbacks into every function the page renders and
+     * eventually finds a `normalizeEditor` somewhere unrelated, which is how a
+     * detector comes to pass on a writer that normalises nothing. The same
+     * bound the clip-coverage detector settled on for the same reason.
+     */
+    const normalises = body => {
+        if (/normalizeEditor\s*\(/.test(body)) return true;
+        for (const m of body.matchAll(/\b([a-zA-Z_$][\w$]*)\s*\(/g)) {
+            const callee = m[1];
+            if (callee === 'function' || callee === 'if' || callee === 'for'
+                || callee === 'while' || callee === 'switch' || callee === 'catch') continue;
+            const inner = bodyOf(callee);
+            if (inner && /normalizeEditor\s*\(/.test(inner)) return true;
+        }
+        return false;
+    };
+
     const missing = [];
     for (const name of functionsThatMutateTheEditor()) {
         if (EXEMPT[name]) continue;
-        const body = bodyOf(name);
-        if (!/normalizeEditor\s*\(/.test(body)) missing.push(name);
+        if (!normalises(bodyOf(name))) missing.push(name);
     }
     assert.deepStrictEqual(missing, [],
         'these change the editor and never normalise it, so the writer sees whatever they left '
@@ -152,4 +178,102 @@ test('normalising is safe to call twice — it runs after every write', () => {
     const after = doc.filter((_, i) => !first.includes(i));
     assert.deepStrictEqual(blocks.droppableEmpties(after), [],
         'a second pass would keep removing things — the normaliser is not idempotent');
+});
+
+test('the scene-number badge is display, and never becomes part of the heading', () => {
+    /*
+     * The editor injects `<span class="scene-number-gutter">1</span>` into every
+     * scene heading. It is contenteditable="false" and drawn in the margin — and
+     * it is part of the block's textContent, so anything that reads a heading
+     * naively gets "1EXT. SUBURBAN STREET - DUSK". Writing that back puts the
+     * scene number INTO the screenplay, where the next parse reads it as part of
+     * the location and every location-keyed thing downstream — the plate, the
+     * reconciler, the elements list — sees a new place.
+     *
+     * Caught by opening a real card in a browser, not by any source check: the
+     * badge appears nowhere in the card code.
+     */
+    const src = SPA;
+    assert.ok(/function blockText\(/.test(src) && /function setBlockText\(/.test(src),
+        'no reader/writer pair that respects the injected badge');
+
+    const bodyOf = name => {
+        const i = src.indexOf(`function ${name}(`);
+        if (i < 0) return '';
+        let depth = 0, j = src.indexOf('{', i), end = j;
+        for (; j < src.length; j++) {
+            if (src[j] === '{') depth++;
+            else if (src[j] === '}') { depth--; if (!depth) { end = j; break; } }
+        }
+        return src.slice(i, end);
+    };
+    for (const fn of ['blockText', 'setBlockText']) {
+        assert.ok(/scene-number-gutter/.test(bodyOf(fn)),
+            `${fn} does not exclude the badge — it would read or overwrite it`);
+    }
+    // The card editor must go through them rather than touching textContent.
+    const save = bodyOf('saveIndexCard');
+    assert.ok(/setBlockText\s*\(/.test(save),
+        'saveIndexCard writes the heading directly, so the scene number would be written into the script');
+    assert.ok(!/block\.textContent\s*=/.test(save),
+        'saveIndexCard still assigns textContent, which destroys the badge and swallows the number');
+    const open_ = bodyOf('openIndexCard');
+    assert.ok(/blockText\s*\(/.test(open_),
+        'openIndexCard reads the parsed heading, which carries the scene number');
+});
+
+test('editing a scene card cannot shorten the scene', () => {
+    /*
+     * This one is written from damage, not from theory.
+     *
+     * The card editor loaded `scene.preview` — a TRUNCATED display string —
+     * into the synopsis field and wrote it straight back on save. Opening a
+     * real scene and pressing Save replaced its first action paragraph with an
+     * abbreviation of itself ("...parked at the kerb, nos...") and DELETED the
+     * four paragraphs after it, because the writer replaced the first action
+     * block and removed the rest.
+     *
+     * It was destructive rather than recoverable because the editor autosaves
+     * over the CURRENT script version rather than creating one: there was no
+     * v5 to roll back to, only a v4 that had already been overwritten.
+     *
+     * Two invariants, both bound to the specific function so a mutation to
+     * either fails:
+     *   - what is loaded into the field is the scene's real action;
+     *   - what is written back is as many paragraphs as it holds.
+     */
+    // Comments stripped FIRST. The comment explaining this fix names
+    // `scene.preview` — the very thing being refused — so a check that reads
+    // the raw body fails against the corrected code and passes against a
+    // version with the comment deleted. Exactly backwards, and this codebase
+    // has paid for it before.
+    const bodyOf = name => {
+        const i = SPA.indexOf(`function ${name}(`);
+        if (i < 0) return '';
+        let depth = 0, j = SPA.indexOf('{', i), end = j;
+        for (; j < SPA.length; j++) {
+            if (SPA[j] === '{') depth++;
+            else if (SPA[j] === '}') { depth--; if (!depth) { end = j; break; } }
+        }
+        return SPA.slice(i, end)
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/\/\/.*$/gm, '');
+    };
+
+    const open_ = bodyOf('openIndexCard');
+    assert.ok(open_, 'openIndexCard is gone');
+    assert.ok(!/scene\.preview/.test(open_),
+        'openIndexCard loads the truncated preview into a field that is written back to the script');
+    assert.ok(/sceneActionText\s*\(/.test(open_),
+        'openIndexCard does not read the real action out of the screenplay');
+
+    const reader = bodyOf('sceneActionText');
+    assert.ok(/scene-heading/.test(reader) && /action/.test(reader),
+        'sceneActionText does not walk the scene to its next heading');
+
+    const save = bodyOf('saveIndexCard');
+    assert.ok(/split\(/.test(save),
+        'saveIndexCard writes the field as ONE block: a four-paragraph scene would come back as one');
+    assert.ok(/forEach|for\s*\(/.test(save),
+        'saveIndexCard does not write back more than one paragraph');
 });

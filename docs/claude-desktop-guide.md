@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**182 tools, 44 families.** Everything the app can do, you can ask for in a
+**191 tools, 47 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -67,7 +67,41 @@ Each stage names the tools it uses; you can still just describe the goal.
 `scene_restore` ·
 `scene_card_write` · `outline_get` · `outline_write` ·
 `beats_get` · `beats_apply` · `beat_link` · `directives_get` ·
-`directives_write` · `screenplay_drift` · `screenplay_baseline`
+`directives_write` · `screenplay_drift` · `screenplay_baseline` ·
+`treatment_get` · `treatment_write` · `treatment_versions` · `treatment_delete` ·
+`analysis_brief` · `analysis_write` · `analysis_get` · `analysis_delete` ·
+`script_timing`
+
+**Start with a treatment if the story is not written yet.** `treatment_write`
+takes prose — what happens, in order, no dialogue and no format. Then ask Claude
+to draft the screenplay from it: it reads the treatment, writes the Fountain
+itself, and saves it with `script_write`. The engine never generates the
+screenplay for you, which is the same rule everywhere here — the model you are
+talking to is the one that writes.
+
+**Reading the script** is a pair of tools, not one. `analysis_brief` hands over
+the screenplay, a thirteen-dimension rubric merged from the Academy Nicholl
+scoring rubric and the Sundance curriculum, the output schema, and the
+mechanical findings the engine already computed — malformed sluglines, dense
+action blocks, characters whose names differ by one letter. **You** do the
+reading; `analysis_write` stores it.
+
+The rule the schema enforces is *diagnose before prescribing*. Every note
+carries evidence, the effect on a reader, a question that lets the writer test
+their own intent, and strategies — never drafted lines. An overall score is
+refused outright: a number gets quoted without the reasoning that produced it.
+Rewritten dialogue is refused too, and that one is practical as well as
+creative — the Nicholl rules prohibit AI-written dialogue, characters and scene
+description, so a tool that quietly rewrites your work can disqualify the
+screenplay it was helping.
+
+**`script_timing` gives three numbers per scene and keeps them apart.** How much
+page it occupies (`4/8`, the way a stripboard writes it), how long it is likely
+to play as a range with a confidence, and how hard it is to *shoot* — which is
+independent of both. `The bridge explodes.` is an eighth of a page and can eat a
+shooting day. Where the one-page-one-minute rule disagrees with what the scene
+actually contains, the scene says so rather than the two being averaged into a
+single number that hides which method produced it.
 
 **Importing a novel chapter by chapter** is what `scene_append` exists for. Paste
 or reference a chapter and ask Claude to convert it — *Claude* writes the

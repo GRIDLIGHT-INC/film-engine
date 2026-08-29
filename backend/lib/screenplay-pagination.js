@@ -51,10 +51,31 @@ const MAY_END_PAGE = Object.freeze({
     'dual-dialogue': false,
 });
 
+/**
+ * One element type, spelled two ways.
+ *
+ * The EDITOR writes `data-element-type="scene-heading"`; the PARSER and
+ * `film_script_elements` store `scene_heading`. Both are in the build and
+ * neither is wrong — they simply never met, because pagination runs on the
+ * editor's DOM and nothing else measured the stored rows.
+ *
+ * It stops being harmless the moment anything measures a screenplay from the
+ * DATABASE: `elementLines('scene_heading', n)` misses every case and falls to
+ * the default, so a heading is billed as a paragraph of action. That is a
+ * silent wrong number rather than an error, which is the worst kind.
+ *
+ * Normalised here, at the module that owns ELEMENT_TYPES, rather than in each
+ * consumer — a second mapping is how the two spellings arose in the first place.
+ */
+function normalizeElementType(type) {
+    const t = String(type || '').trim().toLowerCase().replace(/_/g, '-');
+    return ELEMENT_TYPES.includes(t) ? t : t;
+}
+
 /** Lines each element occupies, at the editor's own estimates. */
 const LINES_PER_PAGE = 55;
 function elementLines(type, charCount) {
-    switch (type) {
+    switch (normalizeElementType(type)) {
         case 'scene-heading': return 2;
         case 'action': return Math.ceil(charCount / 60) + 1;
         case 'character': return 1;
@@ -107,4 +128,4 @@ function pageBreakPositions(blocks) {
     return out;
 }
 
-module.exports = { ELEMENT_TYPES, MAY_END_PAGE, LINES_PER_PAGE, elementLines, pageBreakPositions };
+module.exports = { ELEMENT_TYPES, MAY_END_PAGE, LINES_PER_PAGE, normalizeElementType, elementLines, pageBreakPositions };

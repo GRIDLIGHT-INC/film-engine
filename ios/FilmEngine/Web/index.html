@@ -1308,6 +1308,43 @@
         }
 
         /* FILM-127: Index Cards View */
+        .index-cards-toolbar {
+            display: flex; align-items: center; gap: 10px;
+            flex-wrap: wrap; margin-bottom: 12px;
+        }
+        .treatment-text {
+            width: 100%; min-height: 460px; padding: 18px 20px;
+            background: var(--bg-secondary, #16161a); color: var(--text, #e8e8ea);
+            border: 1px solid var(--border, #2a2a30); border-radius: 6px;
+            font: 15px/1.7 Georgia, 'Times New Roman', serif; resize: vertical;
+        }
+        /* The gutter: shot numbers and page eighths beside the script.
+           Absolutely positioned markers rather than a table column, because the
+           screenplay is one flowing contenteditable and a column would have to
+           re-derive its own line breaks — a second layout that drifts from the
+           one on screen. */
+        .sp-gutter {
+            position: absolute; top: 0; left: 0; width: 118px;
+            pointer-events: none;
+        }
+        .sp-gutter-item {
+            position: absolute; left: 0; width: 108px; text-align: right;
+            font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+            color: var(--text-muted, #8a8a95); pointer-events: auto;
+        }
+        .sp-gutter-eighths { color: var(--text, #d8d8de); font-weight: 600; }
+        .sp-gutter-time { opacity: .8; }
+        .sp-gutter-shots { color: #6aa9ff; word-break: break-all; }
+        .sp-gutter-low { color: #e0a33a; }
+        .analysis-note {
+            border: 1px solid var(--border, #2a2a30); border-left: 3px solid #6aa9ff;
+            border-radius: 5px; padding: 12px 14px; margin-bottom: 10px;
+            background: var(--bg-secondary, #16161a);
+        }
+        .analysis-note.mechanical { border-left-color: #8a8a95; }
+        .analysis-note .ev { color: var(--text-muted, #8a8a95); font-size: 12px; margin: 4px 0; }
+        .analysis-note .q { font-style: italic; margin: 6px 0; }
+        .analysis-note ul { margin: 6px 0 0 18px; font-size: 13px; }
         .index-cards-view {
             display: none;
             padding: 12px;
@@ -4384,6 +4421,8 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         <div class="view-mode-toggle" style="margin-left:auto;">
                             <button class="view-mode-btn active" onclick="setViewMode('editor')" id="viewModeEditor">Editor</button>
                             <button class="view-mode-btn" onclick="setViewMode('cards')" id="viewModeCards">Index Cards</button>
+                            <button class="view-mode-btn" onclick="setViewMode('treatment')" id="viewModeTreatment">Treatment</button>
+                            <button class="view-mode-btn" onclick="setViewMode('analysis')" id="viewModeAnalysis">Analysis</button>
                         </div>
                     </div>
 
@@ -4402,7 +4441,36 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 
                     <!-- FILM-127: Index Cards View -->
                     <div class="index-cards-view" id="indexCardsView">
+                        <div class="index-cards-toolbar">
+                            <button class="btn btn-sm" onclick="addIndexCard()">+ Scene</button>
+                            <span class="text-muted text-sm">Click a card to edit it &middot; drag to reorder &middot; double-click to jump to it in the script</span>
+                        </div>
                         <div class="index-cards-grid" id="indexCardsGrid"></div>
+                    </div>
+
+                    <!-- The treatment: prose before the screenplay. -->
+                    <div class="index-cards-view" id="treatmentView">
+                        <div class="index-cards-toolbar">
+                            <button class="btn btn-sm btn-primary" onclick="saveTreatment()">Save treatment</button>
+                            <span id="treatmentMeta" class="text-muted text-sm"></span>
+                        </div>
+                        <p class="text-muted text-sm" style="margin:0 0 10px;">
+                            What happens, in order &mdash; no dialogue, no format. This is what the
+                            screenplay gets written <em>from</em>. Ask Claude to draft the script from it:
+                            it reads this, writes the Fountain and saves it as a new version.
+                        </p>
+                        <textarea id="treatmentText" class="treatment-text"
+                                  placeholder="Act one opens on&hellip;"></textarea>
+                    </div>
+
+                    <!-- The last reading of the screenplay. -->
+                    <div class="index-cards-view" id="analysisView">
+                        <div class="index-cards-toolbar">
+                            <button class="btn btn-sm" onclick="loadAnalysis()">Refresh</button>
+                            <span class="text-muted text-sm">Ask Claude: <em>read my screenplay and store the analysis</em>.
+                            It uses <code>analysis_brief</code> then <code>analysis_write</code>.</span>
+                        </div>
+                        <div id="analysisBody"></div>
                     </div>
 
                     <!-- Import Section (Collapsible) -->
@@ -6319,6 +6387,46 @@ table, .render-table { border-radius:12px; overflow:hidden; }
     </div>
 
     <!-- Edit Milestone -->
+    <!-- One scene, opened from its index card. Static markup shown by id, the
+         way every other modal in this page works: a bespoke helper for two
+         dialogs would be a second modal system to keep in step. -->
+    <div class="modal-overlay" id="sceneCardModal">
+        <div class="modal">
+            <div class="modal-header"><h3 id="sceneCardTitle">Scene</h3><button class="modal-close" onclick="closeModal('sceneCardModal')">&times;</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="sceneCardIndex">
+                <div class="form-group"><label>Scene heading</label>
+                    <input type="text" id="sceneCardHeading" placeholder="INT. KITCHEN - DAY"></div>
+                <div class="form-group"><label>What happens</label>
+                    <textarea id="sceneCardSynopsis" rows="7"></textarea></div>
+                <p class="text-muted text-sm">This writes into the screenplay itself &mdash; the
+                   heading, and the action beneath it. The cards are a view of the script, not a
+                   second copy of it.</p>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="saveIndexCard()">Save</button>
+                    <button class="btn btn-secondary" onclick="closeModal('sceneCardModal')">Cancel</button>
+                    <button class="btn btn-danger" onclick="deleteIndexCard()">Delete scene</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="newSceneCardModal">
+        <div class="modal">
+            <div class="modal-header"><h3>New scene</h3><button class="modal-close" onclick="closeModal('newSceneCardModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Scene heading</label>
+                    <input type="text" id="newSceneHeading" placeholder="INT. KITCHEN - DAY"></div>
+                <div class="form-group"><label>What happens</label>
+                    <textarea id="newSceneSynopsis" rows="6" placeholder="Ray waits by the window."></textarea></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="createIndexCard()">Add</button>
+                    <button class="btn btn-secondary" onclick="closeModal('newSceneCardModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="editMilestoneModal">
         <div class="modal">
             <div class="modal-header"><h3>Edit Milestone</h3><button class="modal-close" onclick="closeModal('editMilestoneModal')">&times;</button></div>
@@ -18949,25 +19057,37 @@ THREE.GLTFLoader = GLTFLoader;
     let indexCardsData = [];
     let draggedCardIndex = null;
 
+    /*
+     * Four ways to look at the same screenplay.
+     *
+     * Driven by one map rather than a chain of if/else on element ids: the
+     * previous two-mode version toggled two buttons and two containers by
+     * name, and a third mode added that way is three places to forget.
+     */
+    const SP_VIEWS = {
+        editor:    { btn: 'viewModeEditor',    el: 'editorViewContainer', onShow: () => renderScriptGutter() },
+        cards:     { btn: 'viewModeCards',     el: 'indexCardsView',      onShow: () => renderIndexCards() },
+        treatment: { btn: 'viewModeTreatment', el: 'treatmentView',       onShow: () => loadTreatment() },
+        analysis:  { btn: 'viewModeAnalysis',  el: 'analysisView',        onShow: () => loadAnalysis() },
+    };
+
     function setViewMode(mode) {
+        if (!SP_VIEWS[mode]) mode = 'editor';
         currentViewMode = mode;
 
-        // Update button states
-        document.getElementById('viewModeEditor').classList.toggle('active', mode === 'editor');
-        document.getElementById('viewModeCards').classList.toggle('active', mode === 'cards');
-
-        // Toggle visibility
-        const editorContainer = document.getElementById('editorViewContainer');
-        const cardsView = document.getElementById('indexCardsView');
-
-        if (mode === 'editor') {
-            editorContainer.style.display = 'block';
-            cardsView.classList.remove('active');
-        } else {
-            editorContainer.style.display = 'none';
-            cardsView.classList.add('active');
-            renderIndexCards();
+        for (const [id, view] of Object.entries(SP_VIEWS)) {
+            const btn = document.getElementById(view.btn);
+            if (btn) btn.classList.toggle('active', id === mode);
+            const el = document.getElementById(view.el);
+            if (!el) continue;
+            if (id === 'editor') {
+                el.style.display = id === mode ? 'block' : 'none';
+            } else {
+                el.classList.toggle('active', id === mode);
+            }
         }
+        const show = SP_VIEWS[mode].onShow;
+        if (show) show();
     }
 
     function renderIndexCards() {
@@ -19006,6 +19126,7 @@ THREE.GLTFLoader = GLTFLoader;
                      ondragover="onCardDragOver(event)"
                      ondragleave="onCardDragLeave(event)"
                      ondrop="onCardDrop(event, ${i})"
+                     onclick="openIndexCard(${i})"
                      ondblclick="jumpToSceneFromCard(${i})">
                     <div class="index-card-header">
                         <span class="index-card-number">Sc ${scene.num}</span>
@@ -19020,6 +19141,397 @@ THREE.GLTFLoader = GLTFLoader;
                 </div>
             `;
         }).join('');
+    }
+
+    /* ── the gutter: shot numbers and page eighths beside the script ──────
+     *
+     * Absolutely-positioned markers aligned to each scene heading's own
+     * offsetTop, rather than a column beside the page. The screenplay is one
+     * flowing contenteditable, so a column would have to re-derive its own line
+     * breaks — a second layout that drifts from the one actually on screen, and
+     * drifts differently at every zoom level.
+     *
+     * The three numbers are kept apart deliberately: eighths are objective,
+     * screen time is an estimate with a confidence, and neither is the shot
+     * count. A single blended figure would hide which is which.
+     */
+    let SCRIPT_TIMING = null;
+
+    async function loadScriptTiming() {
+        if (!state.currentProject) return null;
+        try {
+            SCRIPT_TIMING = await api(`/projects/${state.currentProject.id}/timing`);
+        } catch (err) {
+            SCRIPT_TIMING = null;
+        }
+        return SCRIPT_TIMING;
+    }
+
+    /** Shot codes per scene number, from the shot list the breakdown produced. */
+    function shotCodesByScene() {
+        const out = {};
+        for (const sh of (state.shots || [])) {
+            const n = String(sh.scene_number != null ? sh.scene_number : '');
+            if (!n) continue;
+            (out[n] = out[n] || []).push(sh.shot_code);
+        }
+        return out;
+    }
+
+    function mmss(seconds) {
+        const s = Math.max(0, Math.round(Number(seconds) || 0));
+        return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    }
+
+    async function renderScriptGutter() {
+        const container = document.getElementById('editorViewContainer');
+        const editor = document.getElementById('screenplayEditor');
+        if (!container || !editor) return;
+
+        let gutter = document.getElementById('spGutter');
+        if (!gutter) {
+            gutter = document.createElement('div');
+            gutter.id = 'spGutter';
+            gutter.className = 'sp-gutter';
+            // The gutter is a SIBLING of the page, never a child: anything
+            // inside the contenteditable is content the editor will try to
+            // adopt, normalise, and eventually sweep — which is exactly what
+            // the page-break indicators had to be taken out of it for.
+            container.style.position = container.style.position || 'relative';
+            container.appendChild(gutter);
+        }
+
+        if (!SCRIPT_TIMING) await loadScriptTiming();
+        const timing = SCRIPT_TIMING;
+        if (!timing || !timing.scenes) { gutter.innerHTML = ''; return; }
+
+        const codes = shotCodesByScene();
+        const headings = [...editor.querySelectorAll('[data-element-type="scene-heading"]')];
+        const editorTop = editor.offsetTop;
+
+        gutter.innerHTML = headings.map((el, i) => {
+            const scene = timing.scenes[i];
+            if (!scene) return '';
+            const top = el.offsetTop + editorTop;
+            const num = scene.scene_number;
+            const shots = codes[String(num)] || [];
+            const low = scene.screen_time.confidence === 'low';
+            return `<div class="sp-gutter-item" style="top:${top}px;">
+                <div class="sp-gutter-eighths">${esc(scene.eighths)}</div>
+                <div class="sp-gutter-time ${low ? 'sp-gutter-low' : ''}"
+                     title="${esc(scene.screen_time.minimum_seconds + '-' + scene.screen_time.maximum_seconds + 's, confidence ' + scene.screen_time.confidence)}">${mmss(scene.screen_time.likely_seconds)}${low ? ' ?' : ''}</div>
+                ${shots.length ? `<div class="sp-gutter-shots" title="${shots.length} shot(s)">${shots.map(esc).join(' ')}</div>` : ''}
+            </div>`;
+        }).join('');
+    }
+
+    /* ── treatment ──────────────────────────────────────────────────────── */
+
+    async function loadTreatment() {
+        if (!state.currentProject) return;
+        const box = document.getElementById('treatmentText');
+        const meta = document.getElementById('treatmentMeta');
+        if (!box) return;
+        try {
+            const t = await api(`/projects/${state.currentProject.id}/treatment`);
+            box.value = t.content || '';
+            meta.textContent = t.exists
+                ? `v${t.version} · ${t.word_count} words · saved ${t.updated_at || t.created_at}`
+                : 'No treatment yet.';
+        } catch (err) {
+            meta.textContent = 'Could not load the treatment: ' + err.message;
+        }
+    }
+
+    async function saveTreatment() {
+        if (!state.currentProject) return;
+        const box = document.getElementById('treatmentText');
+        const meta = document.getElementById('treatmentMeta');
+        meta.textContent = 'Saving…';
+        try {
+            const res = await api(`/projects/${state.currentProject.id}/treatment`, {
+                method: 'PUT', body: JSON.stringify({ content: box.value }),
+            });
+            // An unchanged save writes nothing and says so, rather than
+            // manufacturing a version that records no change.
+            meta.textContent = res.changed
+                ? `Saved as v${res.version}.`
+                : `No change — still v${res.version}.`;
+        } catch (err) {
+            meta.textContent = 'Save failed: ' + err.message;
+        }
+    }
+
+    /* ── analysis ───────────────────────────────────────────────────────── */
+
+    function analysisNoteHtml(n) {
+        const strategies = Array.isArray(n.strategies) ? n.strategies : [];
+        return `<div class="analysis-note ${n.kind === 'mechanical' ? 'mechanical' : ''}">
+            <div><strong>${esc(n.observation || '')}</strong></div>
+            <div class="ev">${esc(n.evidence || '')} · ${esc(n.confidence || '')} confidence · ${esc(n.kind || '')}</div>
+            <div>${esc(n.effect || '')}</div>
+            <div class="q">${esc(n.question || '')}</div>
+            ${strategies.length ? `<ul>${strategies.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        </div>`;
+    }
+
+    async function loadAnalysis() {
+        if (!state.currentProject) return;
+        const body = document.getElementById('analysisBody');
+        if (!body) return;
+        body.innerHTML = '<div class="text-muted">Loading…</div>';
+        try {
+            const res = await api(`/projects/${state.currentProject.id}/analysis`);
+            if (!res.exists) {
+                body.innerHTML = `<div class="empty-state"><h3>No reading yet</h3>
+                    <p>Ask Claude to read the screenplay. It calls <code>analysis_brief</code>,
+                    which hands over the script and a thirteen-dimension rubric and costs nothing,
+                    then stores what it concluded with <code>analysis_write</code>.</p>
+                    <p class="text-muted">Nothing here rewrites your script: the notes carry
+                    evidence, a question and strategies, never drafted lines.</p></div>`;
+                return;
+            }
+            const a = res.analysis;
+            const map = a.map || {};
+            body.innerHTML = `
+                ${res.of_current_draft ? '' : `<div class="warning-banner">${esc(res.warning)}</div>`}
+                <p class="text-muted text-sm">Read by ${esc(a.analyst || 'unknown')} · draft v${esc(String(a.script_version))} · ${esc(a.created_at)}</p>
+                ${Object.keys(map).length ? `<h3>Map</h3><pre class="text-sm">${esc(JSON.stringify(map, null, 1))}</pre>` : ''}
+                <h3>Observations (${(a.observations || []).length})</h3>
+                ${(a.observations || []).map(analysisNoteHtml).join('') || '<p class="text-muted">None.</p>'}
+                <h3>Questions</h3>
+                <ul>${(a.questions || []).map(q => `<li>${esc(typeof q === 'string' ? q : (q.question || ''))}</li>`).join('') || '<li class="text-muted">None.</li>'}</ul>
+                <h3>Revision opportunities (${(a.opportunities || []).length})</h3>
+                ${(a.opportunities || []).map(analysisNoteHtml).join('') || '<p class="text-muted">None.</p>'}`;
+        } catch (err) {
+            // A renderer that paints a placeholder must have a path that
+            // replaces it: a spinner that never resolves reads as the feature
+            // being broken rather than as a display fault.
+            body.innerHTML = `<div class="empty-state"><h3>Could not load the analysis</h3>
+                <p>${esc(err.message)}</p></div>`;
+        }
+    }
+
+    /* ── index cards you can actually work in ───────────────────────────── */
+
+    /**
+     * Open one card.
+     *
+     * The heading and the synopsis are written back into the SCREENPLAY, never
+     * into a store of their own: the cards are a view of the script, and a card
+     * holding its own text would be a second document that disagrees with the
+     * one being shot.
+     */
+    function openIndexCard(i) {
+        const scene = (indexCardsData || [])[i];
+        if (!scene) return;
+        document.getElementById('sceneCardIndex').value = String(i);
+        document.getElementById('sceneCardTitle').textContent = `Scene ${scene.num}`;
+        // Read from the DOM rather than the parsed card: the parse keeps the
+        // scene-number badge in its heading string, and this field is written
+        // straight back into the screenplay.
+        const block = sceneHeadingBlocks()[i];
+        document.getElementById('sceneCardHeading').value = block ? blockText(block) : (scene.heading || '');
+        /*
+         * The ACTION, read from the screenplay — never `scene.preview`.
+         *
+         * The card's preview is truncated for display. Loading it into a field
+         * that is written straight back replaces the scene's full action with
+         * an abbreviation of itself, silently, on save. Found by round-tripping
+         * a real scene in a browser: the first paragraph came back ending
+         * "...parked at the kerb, nos...".
+         */
+        document.getElementById('sceneCardSynopsis').value = sceneActionText(i);
+        showModal('sceneCardModal');
+    }
+
+    /**
+     * The text of a block, excluding the furniture the editor injected into it.
+     *
+     * A scene heading carries `<span class="scene-number-gutter">1</span>` —
+     * contenteditable="false", drawn in the margin, and part of the block's
+     * textContent. Reading the block naively gives "1EXT. SUBURBAN STREET" and
+     * writing that back puts the scene number INTO the screenplay, where the
+     * next parse reads it as part of the location. The badge is display, not
+     * content, and this is the one place that distinction is made.
+     */
+    function blockText(el) {
+        if (!el) return '';
+        let out = '';
+        for (const node of el.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE) { out += node.textContent; continue; }
+            if (node.nodeType !== Node.ELEMENT_NODE) continue;
+            if (node.classList && node.classList.contains('scene-number-gutter')) continue;
+            out += node.textContent;
+        }
+        return out.trim();
+    }
+
+    /** Every action paragraph of scene i, as it stands in the screenplay. */
+    function sceneActionText(i) {
+        const block = sceneHeadingBlocks()[i];
+        if (!block) return '';
+        const parts = [];
+        let node = nextEditorBlock(block);
+        while (node && node.dataset && node.dataset.elementType !== 'scene-heading') {
+            if (node.dataset.elementType === 'action') parts.push(blockText(node));
+            node = nextEditorBlock(node);
+        }
+        return parts.join('\n\n');
+    }
+
+    /** Replace a block's text while leaving its injected furniture alone. */
+    function setBlockText(el, text) {
+        if (!el) return;
+        for (const node of [...el.childNodes]) {
+            if (node.nodeType === Node.ELEMENT_NODE
+                && node.classList && node.classList.contains('scene-number-gutter')) continue;
+            node.remove();
+        }
+        el.appendChild(document.createTextNode(text));
+    }
+
+    function sceneHeadingBlocks() {
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return [];
+        return [...editor.querySelectorAll('[data-element-type="scene-heading"]')];
+    }
+
+    /**
+     * The next real block after this one, stepping over the editor's furniture.
+     *
+     * A page-break indicator is a div with a class, no data-element-type and no
+     * text — so a one-hop `nextElementSibling.dataset.elementType` reads
+     * undefined where a block should be. The editor holds no indicators today
+     * (it is a continuous scroll and pagination happens on a detached clone for
+     * print), but the recognition stays for the same reason normalizeEditor
+     * keeps it: a contenteditable hands back bare divs, and the next thing that
+     * inserts a node re-opens the bug for anything that assumed one hop.
+     */
+    function nextEditorBlock(node) {
+        let n = node ? node.nextElementSibling : null;
+        while (n && isEditorFurniture(n)) n = n.nextElementSibling;
+        return n;
+    }
+
+    /** Make a screenplay block of a given type, the way the editor makes them. */
+    function spBlock(type, text) {
+        const div = document.createElement('div');
+        div.className = 'sp-' + type;
+        div.dataset.elementType = type;
+        div.textContent = text;
+        return div;
+    }
+
+    /**
+     * After any card edit, put the editor back in a state it can be typed in.
+     *
+     * normalizeEditor is the one repair every writer of this editor has to run
+     * — a programmatic DOM change fires no `input` event, so without it the
+     * cleanup waits for the writer's next keystroke. onEditorInput then saves
+     * and re-paginates. Three cards edited without this is three chances to
+     * leave orphan blocks behind.
+     */
+    function afterCardEdit(message) {
+        const editor = document.getElementById('screenplayEditor');
+        normalizeEditor(editor);
+        onEditorInput();
+        renderIndexCards();
+        // The measurements describe the draft that was just replaced until
+        // they are re-read: stale eighths beside an edited scene are worse than
+        // none, because they look current.
+        SCRIPT_TIMING = null;
+        setTimeout(renderScriptGutter, 400);
+        if (message) setStatus(message);
+    }
+
+    function saveIndexCard() {
+        const i = Number(document.getElementById('sceneCardIndex').value);
+        const scene = (indexCardsData || [])[i];
+        const block = sceneHeadingBlocks()[i];
+        if (!scene || !block) return;
+
+        const heading = document.getElementById('sceneCardHeading').value.trim();
+        const synopsis = document.getElementById('sceneCardSynopsis').value.trim();
+        if (heading) setBlockText(block, heading.toUpperCase());
+
+        // Replace the action up to the NEXT heading, rather than the first
+        // paragraph only: a scene's action is however many paragraphs it has,
+        // and rewriting one would leave the rest describing the old version.
+        let node = nextEditorBlock(block);
+        const existing = [];
+        while (node && node.dataset && node.dataset.elementType !== 'scene-heading') {
+            if (node.dataset.elementType === 'action') existing.push(node);
+            node = nextEditorBlock(node);
+        }
+        /*
+         * Paragraphs in, paragraphs out.
+         *
+         * The field holds the scene's action separated by blank lines, so it is
+         * written back as that many blocks rather than one — collapsing a
+         * four-paragraph scene into a single block loses every beat break the
+         * writer put there, and the editor would render it as one wall.
+         */
+        const paras = synopsis.split(/\n\s*\n/).map(t => t.trim()).filter(Boolean);
+        let anchorEl = block;
+        paras.forEach(text => {
+            const reuse = existing.shift();
+            if (reuse) { setBlockText(reuse, text); anchorEl = reuse; }
+            else { const el = spBlock('action', text); anchorEl.after(el); anchorEl = el; }
+        });
+        existing.forEach(n => n.remove());
+
+        closeModal('sceneCardModal');
+        afterCardEdit(`Scene ${scene.num} updated`);
+    }
+
+    function deleteIndexCard() {
+        const i = Number(document.getElementById('sceneCardIndex').value);
+        const block = sceneHeadingBlocks()[i];
+        const scene = (indexCardsData || [])[i];
+        if (!block) return;
+        /*
+         * Names what it does NOT do.
+         *
+         * Deleting a scene from the screenplay leaves the shots already broken
+         * down from it on the shot list — they are separate rows with their own
+         * generated frames, which cost money. Saying so is the difference
+         * between an informed edit and discovering the orphans later.
+         */
+        if (!confirm(`Delete scene ${scene ? scene.num : ''} and everything in it?\n\n`
+            + 'This edits the screenplay. Shots already broken down from this scene are NOT '
+            + 'deleted \u2014 they stay on the shot list until you remove them there.')) return;
+
+        let node = nextEditorBlock(block);
+        const doomed = [block];
+        while (node && node.dataset && node.dataset.elementType !== 'scene-heading') {
+            doomed.push(node);
+            node = nextEditorBlock(node);
+        }
+        doomed.forEach(n => n.remove());
+        closeModal('sceneCardModal');
+        afterCardEdit('Scene deleted from the screenplay');
+    }
+
+    /** A new scene, added at the end — where a writer adds the next one. */
+    function addIndexCard() {
+        document.getElementById('newSceneHeading').value = '';
+        document.getElementById('newSceneSynopsis').value = '';
+        showModal('newSceneCardModal');
+    }
+
+    function createIndexCard() {
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+        const heading = document.getElementById('newSceneHeading').value.trim();
+        if (!heading) { setStatus('A scene needs a heading'); return; }
+        const synopsis = document.getElementById('newSceneSynopsis').value.trim();
+
+        editor.appendChild(spBlock('scene-heading', heading.toUpperCase()));
+        if (synopsis) editor.appendChild(spBlock('action', synopsis));
+
+        closeModal('newSceneCardModal');
+        afterCardEdit('Scene added');
     }
 
     function parseSceneBlocks() {
@@ -21728,6 +22240,25 @@ ${fountainText.slice(0, 50000)}`;
         checkScreenplaySuggestions();
         // FILM-124: Update scene status icons after a small delay to ensure editor is rendered
         setTimeout(updateSceneStatusIcons, 500);
+        /*
+         * The gutter is painted AFTER the editor has content and a layout.
+         *
+         * Its markers are positioned from each scene heading's own offsetTop,
+         * so painting before the Fountain has rendered puts every marker at 0 —
+         * which looks like the gutter is broken rather than early. The shot
+         * codes come from the shot list, which the same delay covers.
+         */
+        SCRIPT_TIMING = null;
+        setTimeout(async () => {
+            // The shot codes are a bonus, not a prerequisite: a screenplay with
+            // no breakdown yet still has eighths and a screen time, and failing
+            // the whole gutter for want of a shot list would hide them.
+            try {
+                const data = await api(`/projects/${state.currentProject.id}/shotlist`);
+                state.shots = data.shots || [];
+            } catch (_) { /* no breakdown yet */ }
+            renderScriptGutter();
+        }, 600);
     }
 
     // FILM-124: Update scene heading status icons in the screenplay editor

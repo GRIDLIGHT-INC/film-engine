@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (85 migrations)
+│   │   └── migrations/     # SQL migration files (86 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -74,6 +74,7 @@ film-engine/
 │   │   ├── app-settings.js     # Settings that belong to the person, not the project
 │   │   ├── events.js           # SSE: tell the page when another process wrote to the database
 │   │   ├── story-structure.js  # Beat sheets, holes, and house rules on the writing
+│   │   ├── story-development.js # Treatment, screenplay analysis, and what a scene costs in time
 │   │   ├── agent-presence.js   # Which path an AI request takes, and why
 │   │   ├── story-bible.js      # What things ARE, and which entity was written from which section
 │   │   ├── media-import.js     # Footage and sound made outside Film Engine: one route, all seven kinds
@@ -88,6 +89,8 @@ film-engine/
 │   │   ├── screenplay-parser.js   # INT./EXT. scene heading parser
 │   │   ├── screenplay-pagination.js # Where a page may break, and what it may not split
 │   │   ├── screenplay-blocks.js   # An empty block is 32px of nothing, except where the caret is
+│   │   ├── screenplay-timing.js   # Eighths, screen time and shooting effort are three numbers
+│   │   ├── screenplay-analysis.js # The rubric, the note schema; the model does the reading
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
 │   │   ├── reference-images.js    # Tagged reference plates: data URIs, tags, ≤3 selection
@@ -344,6 +347,8 @@ film-engine/
 │       ├── story-structure.test.js  # Beats find their holes; a scene's history is derived, not stored
 │       ├── screenplay-polish.test.js # Export fidelity, and an edit batch that is all-or-nothing
 │       ├── screenplay-pagination.test.js # No page ends between a cue and its dialogue
+│       ├── screenplay-timing.test.js # Eighths, screen time and shoot effort, kept apart
+│       ├── screenplay-analysis.test.js # Thirteen dimensions, seven fields, and no server-side model
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
 │       ├── screenplay-furniture.test.js # The editor's own furniture is not content
 │       ├── screenplay-mutators.test.js # Every way a screenplay is written leaves the editor sound
@@ -2295,6 +2300,44 @@ Per-shot and per-project audio mixing: dialogue (0dB) + music (-8dB) + SFX (-4dB
 ### Smart Scheduling
 Optimizes pipeline execution by grouping steps by GPU model to minimize VRAM swapping. Model profiles track VRAM requirements and load times for 10 models. VRAM budget management (default 24GB) with residency suggestions (keep frequent models loaded, evict rare ones).
 
+### Three Numbers About a Scene, and They Are Not Each Other
+A production measures a scene three ways and this engine had none of them: **page eighths** (how much printed page it occupies — objective), **screen time** (how long it plays — an estimate), and **shooting effort** (how hard it is to film — independent of both).
+
+Keeping them apart *is* the feature. *One page ≈ one minute* is a rule of thumb that holds across a whole conventionally formatted screenplay and is badly wrong for a single scene: `The armies collide.` is 1/8 of a page and minutes of film, while a dense page of overlapping dialogue plays in well under a minute. Multiplying eighths by 7.5 seconds and calling the answer a runtime is confidently wrong exactly where it matters — and a schedule then gets built on it. So `lib/screenplay-timing.js` reports **both** numbers and, when they diverge, a `disagreement` naming which method said what and why. Averaging them would produce one number that is wrong in a new way and hides which method produced it; the divergence is itself the signal, because it says *this scene is not what its page count suggests*.
+
+Eighths are written the way a stripboard writes them — `4/8`, never `1/2` — so a column of scene lengths adds without converting between halves, quarters and eighths on the way down, and **1/8 is the floor**: a scene occupying almost no page still occupies a strip.
+
+Nine **action classes** each carry their own uncertainty, and each carries a `why` — a duration with no reason is a magic number nobody can argue with later. A single seconds-per-word constant would give `John opens the door.` and `They fight.` the same confidence, which is the specific lie this exists to avoid. Confidence is computed from the **spread**, not the mean: a scene whose maximum is several times its minimum is not something to schedule against however plausible the middle number looks. Ambiguous phrases (`They fight.`, `Time passes.`) are **flagged with the phrase quoted**, never corrected — none of them is bad writing, and a low confidence that cannot name its cause is one nobody can act on.
+
+Shooting effort is scored from nine complexity factors, and each declares a `probe` — a line of action that must trigger it — which the test runs through the real estimator. A factor no text can ever fire looks like coverage and provides none.
+
+**And it found a divergence nobody had noticed.** The editor writes `data-element-type="scene-heading"`; the parser and `film_script_elements` store `scene_heading`. Both are in the build, neither is wrong, and they had never met — pagination only ever ran on the editor's DOM. The moment anything measured a screenplay from the **database**, `elementLines('scene_heading', n)` missed every case and fell to the default, billing a heading as a paragraph of action. Normalised at the module that owns `ELEMENT_TYPES`, because a second mapping is how the two spellings arose in the first place.
+
+### Reading a Screenplay Without the Engine Doing the Reading
+A screenplay analyzer should not ask *does this obey one famous beat sheet*. It should ask whether the story creates a coherent, emotionally engaging experience through character, conflict, causality and cinematic writing. `lib/screenplay-analysis.js` carries **thirteen dimensions** merged from the Academy Nicholl scoring rubric (Story, Voice, Characters, Craft, Meaning and Magic) and the Sundance curriculum (stakes, objectives, causality, scene function, subtext, setup and payoff, tone, visual storytelling).
+
+**The engine never reasons.** The connected agent *is* the model here, so there is no "run analysis" route: `analysis_brief` hands over the screenplay, the rubric, the output schema and every fact the engine can compute for free, and `analysis_write` stores what came back. A route that called a server-side LLM would ask for a second API key to answer a question the attached model has already read the material for, and would fail with a billing error the model cannot act on — which is what `tests/mcp-no-server-llm.test.js` has always existed to prevent.
+
+**Mechanical and interpretive are declared per dimension.** Counting parentheticals, finding a slugline that will not parse, spotting two character names that differ by one letter — that is arithmetic the engine does exactly, for free, every time, and asking a model to count is slower, costs tokens and is less reliable than a regex. Asking whether a premise generates difficult choices is the entire point. Declared rather than assumed, so the split cannot quietly drift into *ask the model everything*.
+
+**Diagnose before prescribing.** *"Add an inciting incident on page 12"* tells a writer what story to write. *"The protagonist's goal is not identifiable until scene 14 — if that delay is deliberate the earlier curiosity may need strengthening, and if not the disruption may need to arrive sooner"* tells them what a reader experienced and hands the decision back. Every note therefore carries seven fields — observation, evidence, effect, question, strategies, confidence, kind — and is **refused** without them: a note with no evidence cannot be checked, and one with no question is a verdict.
+
+Two refusals are structural. **An overall score is rejected**, because a number gets quoted without the reasoning that produced it. **Drafted prose is rejected**, and that one is practical as well as creative: the Nicholl rules prohibit AI-generated dialogue, characters and scene description, so a tool that silently rewrites the author's work can disqualify the screenplay it was helping.
+
+A stored analysis records **which draft it read**, `ON DELETE SET NULL` rather than CASCADE — a reading of a draft outlives that draft, and a report shown beside a screenplay it no longer describes is worse than none, because every note still reads as current. `GET /projects/:id/analysis` says `of_current_draft` outright.
+
+### A Treatment Is Not a Screenplay
+Prose that states what happens, in order, without dialogue or format — what the screenplay gets written *from*. Stored in its own table rather than as a `film_scripts` row, because the Fountain parser would read its paragraphs as action and manufacture scenes from nothing, and every report built on scene presence would then describe a document that has no scenes. Versioned for the reason screenplays are, and an unchanged save writes nothing and reports `changed: false` — *did that apply?* has to be a free question, and a version recording no change makes the version list useless as a record of what changed.
+
+Drafting the screenplay from it happens **in the conversation**: Claude reads the treatment, writes the Fountain itself, and saves it with `script_write`. Nothing here generates a screenplay.
+
+### The Gutter, and Index Cards You Can Work In
+The screenplay page now carries a **gutter**: per scene, its eighths, its likely screen time (amber and marked `?` when confidence is low) and **the shot codes broken down from it**. Absolutely-positioned markers aligned to each scene heading's own `offsetTop`, rather than a column beside the page — the screenplay is one flowing contenteditable, so a column would have to re-derive its own line breaks, which is a second layout that drifts from the one on screen and drifts differently at every zoom level. The gutter is a **sibling** of the page, never a child: anything inside the contenteditable is content the editor will adopt, normalise and eventually sweep, which is exactly why the page-break indicators had to be taken out of it.
+
+Index cards were a read-only contact sheet — draggable to reorder, double-click to jump, and a single click did nothing. They now open. Editing a card writes **into the screenplay** — the heading, and the action beneath it — because the cards are a view of the script, and a card holding its own text would be a second document that disagrees with the one being shot. The action is replaced up to the **next heading** rather than the first paragraph only: a scene's action is however many paragraphs it has, and rewriting one would leave the rest describing the old version. Deleting a scene names what it does *not* do — the shots already broken down from it stay on the shot list, with their generated frames, which cost money.
+
+Every card operation goes through `afterCardEdit`, which normalises then saves: a programmatic DOM change fires no `input` event, so without it the repair waits for the writer's next keystroke. `tests/screenplay-mutators.test.js` caught exactly that on the first build, and now **follows one call level** — a writer may normalise directly or delegate to a helper that does, and refusing to follow the call reports a correct function as broken. One level rather than an unbounded walk, which would follow refresh callbacks into every function the page renders and eventually find a `normalizeEditor` somewhere unrelated.
+
 ### A Scene's Score Is Not a Property of One Shot
 Every entry in `PIPELINE_STEPS` declares a `scope`, and `routes/pipeline.js` contained **no reading of it**. The runners walked shots and ran the whole plan on each one, so `music` and `ambient` — both scene-scoped, both built from `ctx.scene` and byte-identical for every shot in it — were generated once **per shot**. Measured on a real 13-shot, 3-scene project: **13 music payloads and 13 ambient payloads** where 3 and 3 were the work. Nothing failed; the spend was 4.3× on those two steps and the surplus rows accumulated, because `persistStepResult` inserts rather than replaces.
 
@@ -2324,7 +2367,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (85 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (86 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -2344,6 +2387,8 @@ SQLite via `better-sqlite3`. Schema auto-migrates on startup (85 migrations).
 - `film_music_cues` — Score/SFX cues
 - `film_color_presets` — LUT/color grade presets
 - `film_script_elements` — Fountain element-level queries
+- `film_treatments` — Prose before the screenplay, versioned
+- `film_screenplay_analyses` — A reading of a draft, as the four layers
 - `film_voice_jobs` — Voice generation job tracking
 - `film_video_jobs` — Video generation job tracking
 - `film_lipsync_jobs` — Lip-sync job tracking
@@ -2534,6 +2579,8 @@ node --test backend/tests/screenplay-structure.test.js
 node --test backend/tests/story-structure.test.js
 node --test backend/tests/screenplay-polish.test.js
 node --test backend/tests/screenplay-pagination.test.js
+node --test backend/tests/screenplay-timing.test.js
+node --test backend/tests/screenplay-analysis.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js
 node --test backend/tests/screenplay-furniture.test.js
 node --test backend/tests/screenplay-mutators.test.js

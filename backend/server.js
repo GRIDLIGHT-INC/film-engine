@@ -70,6 +70,7 @@ const { ensureSchema } = require('./db/schema');
 const { handleProjects, handleProjectSettingsPreset } = require('./routes/projects');
 const { handleScripts, handleComments } = require('./routes/scripts');
 const { handleStoryStructure } = require('./routes/story-structure');
+const { handleStoryDevelopment } = require('./routes/story-development');
 const { handleAgentPresence } = require('./routes/agent-presence');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
@@ -468,6 +469,17 @@ const server = http.createServer(async (req, res) => {
         // otherwise fall through to a project lookup.
         if (parts[1] === 'agent' && !parts[2]) {
             return handleAgentPresence(req, res, parts, query);
+        }
+
+        // Route: the writing tools — treatment, analysis, timing.
+        // Above the generic project routes for the same reason beats is: a
+        // /projects/:id matcher below would swallow them.
+        if (parts[1] === 'projects' && parts[2]
+            && (parts[3] === 'treatment' || parts[3] === 'analysis' || parts[3] === 'timing')) {
+            return handleStoryDevelopment(req, res, parts, query);
+        }
+        if (parts[1] === 'analysis' && parts[2]) {
+            return handleStoryDevelopment(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/beats and /film/projects/:id/directives.
