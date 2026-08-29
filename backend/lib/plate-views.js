@@ -40,9 +40,16 @@ const VIEW_RANK = Object.freeze({
      */
     front: 0,
     'three-quarter': 1,
-    side: 2,
-    'back-three-quarter': 3,
-    back: 4,
+    // A lone `side` cannot say which way the character is facing, so two shots
+    // from opposite sides resolved to the same plate. side-left and side-right
+    // are the real profiles; `side` is kept ranked between them because real
+    // projects hold plates under it, and dropping the name would leave those
+    // pictures on disk and unreachable.
+    'side-left': 2,
+    side: 2.5,
+    'side-right': 3,
+    'back-three-quarter': 4,
+    back: 5,
 });
 
 const UNRANKED = 9;

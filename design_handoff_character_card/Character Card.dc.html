@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #050506; }
+  a { color: oklch(0.76 0.11 200); text-decoration: none; }
+  a:hover { color: oklch(0.86 0.09 200); }
+  ::-webkit-scrollbar { height: 8px; width: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
+</style>
+</helmet>
+
+<div style="min-height: 100vh; padding: 48px 40px 72px; background:
+  radial-gradient(1100px 600px at 22% -10%, rgba(120,160,190,0.10), transparent 60%),
+  radial-gradient(900px 500px at 90% 110%, rgba(190,120,110,0.07), transparent 60%),
+  #050506; font-family: 'Instrument Sans', Helvetica, Arial, sans-serif; color: #e8e8ea;">
+
+  <div style="max-width: 1560px; margin: 0 auto; border-radius: 22px; border: 1px solid rgba(255,255,255,0.09);
+    background: linear-gradient(160deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018) 40%, rgba(255,255,255,0.01));
+    backdrop-filter: blur(34px); box-shadow: 0 40px 120px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06); overflow: hidden;">
+
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 32px; padding: 26px 32px 22px; border-bottom: 1px solid rgba(255,255,255,0.07);">
+      <div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;">
+          <h1 style="margin: 0; font-size: 30px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;">The Man</h1>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(232,232,234,0.42);">CHR-0142 · Prologue 1812</span>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;">
+          <span style="white-space: nowrap; flex: none; padding: 5px 10px; border-radius: 6px; border: 1px solid oklch(0.76 0.11 200 / 0.35); background: oklch(0.76 0.11 200 / 0.10); color: oklch(0.86 0.08 200);">Views locked 4/4</span>
+          <span style="white-space: nowrap; flex: none; padding: 5px 10px; border-radius: 6px; border: 1px solid oklch(0.76 0.11 75 / 0.30); background: oklch(0.76 0.11 75 / 0.09); color: oklch(0.86 0.08 75);">Concept in review</span>
+          <span style="white-space: nowrap; flex: none; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: rgba(232,232,234,0.55);">Lead · Kristy bloodline</span>
+        </div>
+      </div>
+      <div style="flex: none; display: flex; align-items: center; gap: 10px;">
+        <button style="padding: 9px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: #e8e8ea; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;" style-hover="background: rgba(255,255,255,0.09);">Export sheet</button>
+        <button style="padding: 9px 14px; border-radius: 8px; border: 1px solid oklch(0.76 0.11 200 / 0.4); background: oklch(0.76 0.11 200 / 0.14); color: oklch(0.9 0.07 200); font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;" style-hover="background: oklch(0.76 0.11 200 / 0.22);">Generate</button>
+        <button style="width: 34px; height: 34px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: rgba(232,232,234,0.6); font-size: 15px; cursor: pointer;" style-hover="color: #fff; background: rgba(255,255,255,0.06);">✕</button>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 520px minmax(0, 1fr); gap: 0;">
+
+      <div style="padding: 28px 28px 32px 32px; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; gap: 26px;">
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Official views</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.1em; color: oklch(0.8 0.09 200);">canonical · fed to generation</span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: {{ viewColumns }}; gap: 10px;">
+            <div style="position: relative; aspect-ratio: 3/4; border-radius: 12px; border: 1px solid oklch(0.76 0.11 200 / 0.30); overflow: hidden; background:
+              repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);">
+              <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(232,232,234,0.75);">Front</span>
+              <span style="position: absolute; bottom: 8px; left: 9px; right: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.35);">front plate</span>
+              <span style="position: absolute; top: 8px; right: 9px; width: 6px; height: 6px; border-radius: 50%; background: oklch(0.76 0.11 200);"></span>
+            </div>
+            <div style="position: relative; aspect-ratio: 3/4; border-radius: 12px; border: 1px solid oklch(0.76 0.11 200 / 0.30); overflow: hidden; background:
+              repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);">
+              <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(232,232,234,0.75);">Back</span>
+              <span style="position: absolute; bottom: 8px; left: 9px; right: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.35);">back plate</span>
+              <span style="position: absolute; top: 8px; right: 9px; width: 6px; height: 6px; border-radius: 50%; background: oklch(0.76 0.11 200);"></span>
+            </div>
+            <div style="position: relative; aspect-ratio: 3/4; border-radius: 12px; border: 1px solid oklch(0.76 0.11 200 / 0.30); overflow: hidden; background:
+              repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);">
+              <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(232,232,234,0.75);">Left</span>
+              <span style="position: absolute; bottom: 8px; left: 9px; right: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.35);">left profile</span>
+              <span style="position: absolute; top: 8px; right: 9px; width: 6px; height: 6px; border-radius: 50%; background: oklch(0.76 0.11 200);"></span>
+            </div>
+            <div style="position: relative; aspect-ratio: 3/4; border-radius: 12px; border: 1px dashed oklch(0.76 0.11 75 / 0.45); overflow: hidden; background:
+              repeating-linear-gradient(135deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 9px), rgba(255,255,255,0.015);">
+              <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(232,232,234,0.65);">Right</span>
+              <span style="position: absolute; inset: auto 9px 8px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: oklch(0.82 0.09 75);">regenerate →</span>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-radius: 9px; background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06); font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; color: rgba(232,232,234,0.45);">
+            <span>seed 84120·b — turntable v4</span>
+            <span>1024 × 1365 · png</span>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Physical spec</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; overflow: hidden;">
+            <div style="padding: 12px 14px; background: rgba(10,10,12,0.55);">
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(232,232,234,0.4);">Age</div>
+              <div style="margin-top: 5px; font-size: 14px;">45–50</div>
+            </div>
+            <div style="padding: 12px 14px; background: rgba(10,10,12,0.55);">
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(232,232,234,0.4);">Height</div>
+              <div style="margin-top: 5px; font-size: 14px;">1.80 m</div>
+            </div>
+            <div style="padding: 12px 14px; background: rgba(10,10,12,0.55);">
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(232,232,234,0.4);">Build</div>
+              <div style="margin-top: 5px; font-size: 14px;">Tall, thin, slight stoop</div>
+            </div>
+            <div style="padding: 12px 14px; background: rgba(10,10,12,0.55);">
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(232,232,234,0.4);">Era / place</div>
+              <div style="margin-top: 5px; font-size: 14px;">Regency 1812 · Manchester</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Palette lock</span>
+          <div style="display: flex; gap: 8px;">
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+              <div style="height: 44px; border-radius: 8px; background: #5c1620; border: 1px solid rgba(255,255,255,0.09);"></div>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.4);">banyan #5C1620</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+              <div style="height: 44px; border-radius: 8px; background: #e9e3d6; border: 1px solid rgba(255,255,255,0.09);"></div>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.4);">linen #E9E3D6</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+              <div style="height: 44px; border-radius: 8px; background: #23262b; border: 1px solid rgba(255,255,255,0.09);"></div>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.4);">breeches #23262B</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+              <div style="height: 44px; border-radius: 8px; background: #cfc9bd; border: 1px solid rgba(255,255,255,0.09);"></div>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.4);">skin #CFC9BD</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 28px 32px 32px 30px; display: flex; flex-direction: column; gap: 26px;">
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Appearance</span>
+            <sc-if value="{{ showCharCounts }}" hint-placeholder-val="{{ true }}">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.32);">676 chars · prompt source</span>
+            </sc-if>
+            <span style="flex: 1; height: 1px; background: rgba(255,255,255,0.07);"></span>
+            <button style="padding: 5px 9px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); color: rgba(232,232,234,0.6); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;" style-hover="color: #fff;">Copy</button>
+          </div>
+          <p style="margin: 0; font-size: 15.5px; line-height: 1.62; color: rgba(232,232,234,0.92); text-wrap: pretty; max-width: 74ch;">A gaunt English gentleman of about 45, Regency era 1812, Manchester. Long narrow face, hollow cheeks, pale sweat-sheened skin, wide pale-grey eyes set deep under dark brows, a long straight nose, thin mouth. Short dark hair worn disheveled and swept back off a high forehead, period side-whiskers down to the jawline, clean-shaven chin. Tall and thin, about 1.8m, narrow shoulders, slight stoop. Dressed for a Halloween night indoors: a long quilted banyan dressing gown of deep wine-red brocade worn open, over a loose white linen nightshirt, dark knee breeches and white stockings, no shoes. Hands empty. Strictly period-accurate 1812 Regency; absolutely no modern elements.</p>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px;">
+            <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.08em; color: rgba(232,232,234,0.55);">wine-red brocade banyan</span>
+            <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.08em; color: rgba(232,232,234,0.55);">white linen nightshirt</span>
+            <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.08em; color: rgba(232,232,234,0.55);">knee breeches</span>
+            <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.08em; color: rgba(232,232,234,0.55);">white stockings, barefoot</span>
+            <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.08em; color: rgba(232,232,234,0.55);">side-whiskers</span>
+            <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid oklch(0.76 0.11 75 / 0.3); background: oklch(0.76 0.11 75 / 0.08); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.08em; color: oklch(0.84 0.09 75);">no modern elements</span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1.35fr 1fr; gap: 26px;">
+          <div style="display: flex; flex-direction: column; gap: 9px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Description</span>
+              <span style="flex: 1; height: 1px; background: rgba(255,255,255,0.07);"></span>
+            </div>
+            <p style="margin: 0; font-size: 14.5px; line-height: 1.6; color: rgba(232,232,234,0.78); text-wrap: pretty;">The unnamed Manchester gentleman of the 1812 prologue. A scholar-collector who unearthed and pried open the ancient artifact, and so opened the mist that takes his wife and, finally, him. Kristy's distant ancestor - the origin of the bloodline.</p>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 9px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Personality</span>
+              <span style="flex: 1; height: 1px; background: rgba(255,255,255,0.07);"></span>
+            </div>
+            <p style="margin: 0; font-size: 14.5px; line-height: 1.6; color: rgba(232,232,234,0.78);">Obsessive, scholarly, unravelling. Detected from screenplay — 1 mention.</p>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.55);">stooped gait</span>
+              <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.55);">sweat sheen</span>
+              <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.55);">hands empty</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Wardrobe & props</span>
+            <span style="flex: 1; height: 1px; background: rgba(255,255,255,0.07);"></span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.32);">continuity checklist</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: start;">
+            <div style="display: flex; gap: 10px; align-items: flex-start; padding: 11px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.022);">
+              <div style="width: 38px; height: 46px; flex: none; border-radius: 6px; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.06) 0 2px, transparent 2px 8px), rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08);"></div>
+              <div>
+                <div style="font-size: 13px;">Quilted banyan</div>
+                <div style="margin-top: 3px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.4);">worn open · floor length</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: flex-start; padding: 11px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.022);">
+              <div style="width: 38px; height: 46px; flex: none; border-radius: 6px; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.06) 0 2px, transparent 2px 8px), rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08);"></div>
+              <div>
+                <div style="font-size: 13px;">Linen nightshirt</div>
+                <div style="margin-top: 3px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.4);">loose collar, untied</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: flex-start; padding: 11px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.022);">
+              <div style="width: 38px; height: 46px; flex: none; border-radius: 6px; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.06) 0 2px, transparent 2px 8px), rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08);"></div>
+              <div>
+                <div style="font-size: 13px;">Stockings, no shoes</div>
+                <div style="margin-top: 3px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.4);">white, knee height</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding: 28px 32px 34px; border-top: 1px solid rgba(255,255,255,0.07); background: rgba(0,0,0,0.25); display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Concept art & references</span>
+        <div style="display: flex; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;">
+          <span style="padding: 4px 9px; border-radius: 6px; background: rgba(255,255,255,0.07); color: #e8e8ea;">All 14</span>
+          <span style="padding: 4px 9px; border-radius: 6px; color: rgba(232,232,234,0.42);">Sketch 5</span>
+          <span style="padding: 4px 9px; border-radius: 6px; color: rgba(232,232,234,0.42);">Costume 4</span>
+          <span style="padding: 4px 9px; border-radius: 6px; color: rgba(232,232,234,0.42);">Face 3</span>
+          <span style="padding: 4px 9px; border-radius: 6px; color: rgba(232,232,234,0.42);">Mood 2</span>
+        </div>
+        <span style="flex: 1; height: 1px; background: rgba(255,255,255,0.07);"></span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.32);">starred refs are attached to the prompt</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: {{ refColumns }}; gap: 12px;">
+        <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid oklch(0.76 0.11 200 / 0.32); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.05) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);">
+          <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.7);">★ Face study</span>
+          <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.35);">hollow cheeks, grey eyes</span>
+        </div>
+        <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid oklch(0.76 0.11 200 / 0.32); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.05) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);">
+          <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.7);">★ Banyan ref</span>
+          <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.35);">brocade pattern, 1810s</span>
+        </div>
+        <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.04) 0 2px, transparent 2px 9px), rgba(255,255,255,0.018);">
+          <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.6);">Rough sketch</span>
+          <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.3);">silhouette pass 01</span>
+        </div>
+        <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.04) 0 2px, transparent 2px 9px), rgba(255,255,255,0.018);">
+          <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.6);">Costume pass</span>
+          <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.3);">layering, open front</span>
+        </div>
+        <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.04) 0 2px, transparent 2px 9px), rgba(255,255,255,0.018);">
+          <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.6);">Lighting mood</span>
+          <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.3);">candle, single source</span>
+        </div>
+        <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px dashed rgba(255,255,255,0.16); background: rgba(255,255,255,0.015); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer;" style-hover="border-color: oklch(0.76 0.11 200 / 0.5); background: rgba(255,255,255,0.03);">
+          <span style="font-size: 18px; color: rgba(232,232,234,0.4);">+</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(232,232,234,0.45);">Drop reference</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showCharCounts&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Card&quot;},&quot;viewLayout&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;2 × 2 grid&quot;,&quot;Single row&quot;],&quot;default&quot;:&quot;2 × 2 grid&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Official views&quot;},&quot;referenceDensity&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Comfortable&quot;,&quot;Dense&quot;],&quot;default&quot;:&quot;Comfortable&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;References&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const layout = this.props.viewLayout ?? "2 × 2 grid";
+    const density = this.props.referenceDensity ?? "Comfortable";
+    return {
+      showCharCounts: this.props.showCharCounts ?? true,
+      viewColumns: layout === "Single row" ? "repeat(4, minmax(0,1fr))" : "repeat(2, minmax(0,1fr))",
+      refColumns: density === "Dense" ? "repeat(8, minmax(0,1fr))" : "repeat(6, minmax(0,1fr))"
+    };
+  }
+}
+</script>
+</body>
+</html>

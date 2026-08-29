@@ -70,11 +70,20 @@ test('an agent can run it — this pipeline is driven from an agent host', () =>
 test('the page offers it where plates are already generated', () => {
     assert.match(SPA, /orbitRefsheet|refsheetOrbit/,
         'no control on the character surface runs an orbit');
-    // Anchored on the BUTTON, not the first occurrence of its label — the
-    // string "Regen Image" appears first in a CSS comment, so indexOf found
-    // prose and the assertion was about the wrong place in the file.
-    const i = SPA.indexOf("onclick=\"event.stopPropagation(); generateCharacterImage(");
-    assert.ok(i > 0, 'the existing plate control moved');
+    /*
+     * Anchored on the BUTTON, not the first occurrence of its label — the
+     * string "Regen Image" appears first in a CSS comment, so indexOf found
+     * prose and the assertion was about the wrong place in the file.
+     *
+     * And not on the CARD either: both controls moved into the character sheet
+     * when the card was cut back to Edit and Delete. The invariant is unchanged
+     * — the orbit sits beside the plate control it is an alternative to — so
+     * this follows them rather than pinning them to where they used to live.
+     */
+    const i = SPA.indexOf('onclick="generateCharacterImage(') >= 0
+        ? SPA.indexOf('onclick="generateCharacterImage(')
+        : SPA.indexOf('onclick="event.stopPropagation(); generateCharacterImage(');
+    assert.ok(i > 0, 'the existing plate control is gone from the page entirely');
     assert.match(SPA.slice(i, i + 700), /orbitRefsheet/,
         'the orbit control is not beside the plate control it is an alternative to');
 });

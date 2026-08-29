@@ -1310,6 +1310,118 @@
         /* FILM-127: Index Cards View */
         .modal-wide .modal, .modal.modal-wide { max-width: 1040px; width: 94vw; }
         .gal-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+        /* ── character sheet ────────────────────────────────────────────
+           Follows design_handoff_character_card: a glassy dark card, official
+           views top-left, everything written top-right, and a full-width
+           concept band underneath. Colours are the handoff's; the primitives
+           are this page's own (.btn, .modal) rather than the prototype's. */
+        .cs-overlay .cs-modal {
+            max-width: 1560px; width: 96vw; max-height: 92vh;
+            border-radius: 22px; overflow: hidden; display: flex; flex-direction: column;
+            border: 1px solid rgba(255,255,255,0.09);
+            background: linear-gradient(160deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018) 40%, rgba(255,255,255,0.01)), #0b0b0e;
+            box-shadow: 0 40px 120px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06);
+        }
+        .cs-head {
+            display:flex; justify-content:space-between; gap:32px; align-items:flex-start;
+            padding:22px 28px 18px; border-bottom:1px solid rgba(255,255,255,0.07); flex:none;
+        }
+        .cs-head-left { flex:1 1 auto; min-width:0; }
+        .cs-head-left h2 {
+            margin:0 0 8px; font-size:26px; font-weight:600; letter-spacing:.14em;
+            text-transform:uppercase; color:#e8e8ea;
+        }
+        .cs-head-right { flex:none; display:flex; gap:10px; align-items:center; }
+        /* Chips must never wrap mid-label; the ROW wraps as whole chips. */
+        .cs-chips { display:flex; gap:8px; flex-wrap:wrap; }
+        .cs-chip {
+            white-space:nowrap; flex:none; padding:5px 10px; border-radius:6px;
+            font-family:ui-monospace,Menlo,monospace; font-size:10.5px; letter-spacing:.12em;
+            text-transform:uppercase; border:1px solid rgba(255,255,255,0.12);
+            background:rgba(255,255,255,0.04); color:rgba(232,232,234,0.55);
+        }
+        .cs-chip.ok { border-color:rgba(90,200,220,0.35); background:rgba(90,200,220,0.10); color:#9fdce8; }
+        .cs-chip.warn { border-color:rgba(220,175,90,0.30); background:rgba(220,175,90,0.09); color:#e3c489; }
+        .cs-body { overflow:auto; flex:1 1 auto; }
+        .cs-top { display:grid; grid-template-columns:520px minmax(0,1fr); }
+        @media (max-width: 1180px) { .cs-top { grid-template-columns: 1fr; }
+            .cs-spec { grid-template-columns:1fr 1fr; } }
+        .cs-col-l { padding:24px 24px 28px 28px; border-right:1px solid rgba(255,255,255,0.06);
+            display:flex; flex-direction:column; gap:24px; }
+        .cs-col-r { padding:24px 28px 28px 26px; display:flex; flex-direction:column; gap:24px; min-width:0; }
+        .cs-label {
+            font-family:ui-monospace,Menlo,monospace; font-size:10.5px; letter-spacing:.2em;
+            text-transform:uppercase; color:rgba(232,232,234,0.5);
+            display:flex; align-items:center; gap:10px; margin-bottom:10px;
+        }
+        .cs-label .rule { flex:1; height:1px; background:rgba(255,255,255,0.07); }
+        .cs-label .note { color:#9fdce8; letter-spacing:.1em; }
+        .cs-views { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+        .cs-plate {
+            position:relative; aspect-ratio:3/4; border-radius:12px; overflow:hidden;
+            border:1px solid rgba(255,255,255,0.08); cursor:pointer;
+            background:repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);
+        }
+        .cs-plate.locked { border-color:rgba(90,200,220,0.30); }
+        .cs-plate.pending { border-style:dashed; border-color:rgba(220,175,90,0.45); }
+        .cs-plate img { width:100%; height:100%; object-fit:cover; display:block; }
+        .cs-plate .vlabel {
+            position:absolute; top:8px; left:9px; font-family:ui-monospace,Menlo,monospace;
+            font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+            color:rgba(232,232,234,0.85); text-shadow:0 1px 3px rgba(0,0,0,.8);
+        }
+        .cs-plate .vcap {
+            position:absolute; bottom:7px; left:9px; font-family:ui-monospace,Menlo,monospace;
+            font-size:9.5px; color:rgba(232,232,234,0.55); text-shadow:0 1px 3px rgba(0,0,0,.8);
+        }
+        .cs-plate .vdot { position:absolute; top:8px; right:8px; width:6px; height:6px;
+            border-radius:50%; background:#5ac8dc; }
+        .cs-spec { display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
+            background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.06);
+            border-radius:10px; overflow:hidden; }
+        .cs-spec .cell { padding:11px 13px; background:rgba(10,10,12,0.55); }
+        .cs-spec .k { font-family:ui-monospace,Menlo,monospace; font-size:9.5px; letter-spacing:.16em;
+            text-transform:uppercase; color:rgba(232,232,234,0.4); }
+        .cs-spec .v { font-size:14px; color:#e8e8ea; margin-top:5px; }
+        .cs-swatches { display:flex; gap:8px; }
+        .cs-swatch { flex:1; }
+        .cs-swatch .chip { height:44px; border-radius:8px; border:1px solid rgba(255,255,255,0.09); }
+        .cs-swatch .cap { font-family:ui-monospace,Menlo,monospace; font-size:9px;
+            color:rgba(232,232,234,0.4); margin-top:4px; }
+        .cs-prose { font-size:15px; line-height:1.62; color:rgba(232,232,234,0.9); max-width:74ch; }
+        .cs-prose.small { font-size:14px; color:rgba(232,232,234,0.78); }
+        .cs-ward { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+            gap:10px; align-items:start; }
+        .cs-ward .item { display:flex; gap:10px; align-items:flex-start; padding:11px 12px;
+            border-radius:10px; border:1px solid rgba(255,255,255,0.07); background:rgba(255,255,255,0.022); }
+        .cs-ward .thumb { width:38px; height:46px; border-radius:6px; flex:none;
+            border:1px solid rgba(255,255,255,0.08); object-fit:cover;
+            background:repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px); }
+        .cs-refs { padding:24px 28px 30px; border-top:1px solid rgba(255,255,255,0.07);
+            background:rgba(0,0,0,0.25); }
+        .cs-pills { display:flex; gap:6px; flex-wrap:wrap; }
+        .cs-pill { padding:4px 9px; border-radius:6px; cursor:pointer;
+            font-family:ui-monospace,Menlo,monospace; font-size:9.5px; text-transform:uppercase;
+            border:1px solid transparent; color:rgba(232,232,234,0.42); background:transparent; }
+        .cs-pill.active { background:rgba(255,255,255,0.07); color:#e8e8ea; }
+        .cs-tiles { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; }
+        @media (max-width:1400px){ .cs-tiles { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+        @media (max-width:1000px){ .cs-tiles { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+        @media (max-width:700px){ .cs-tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+        .cs-tile { position:relative; aspect-ratio:4/3; border-radius:11px; overflow:hidden;
+            border:1px solid rgba(255,255,255,0.08); cursor:pointer;
+            background:repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02); }
+        .cs-tile.starred { border-color:rgba(90,200,220,0.32); }
+        .cs-tile img { width:100%; height:100%; object-fit:cover; display:block; }
+        .cs-tile .tl { position:absolute; bottom:6px; left:8px; right:8px;
+            font-family:ui-monospace,Menlo,monospace; font-size:9.5px;
+            color:rgba(232,232,234,0.75); text-shadow:0 1px 3px rgba(0,0,0,.85);
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .cs-drop { display:flex; align-items:center; justify-content:center; flex-direction:column;
+            border:1px dashed rgba(255,255,255,0.16); background:rgba(255,255,255,0.015);
+            color:rgba(232,232,234,0.4); font-family:ui-monospace,Menlo,monospace; font-size:9.5px;
+            letter-spacing:.14em; }
+        .cs-drop:hover { border-color:rgba(90,200,220,0.5); background:rgba(255,255,255,0.03); }
         .voice-row {
             display:flex; align-items:center; gap:10px; padding:8px 10px;
             border:1px solid var(--border,#2a2a30); border-radius:5px; margin-bottom:6px;
@@ -6036,6 +6148,29 @@ table, .render-table { border-radius:12px; overflow:hidden; }
       This is a PLANNING surface: nothing here attaches to a shot, so a reading
       you were only trying out can never be mistaken for the take that ships.
     -->
+    <!--
+      The character sheet.
+      The card carried eight buttons and clicking it did nothing; every one of
+      those is something you do while LOOKING at the character, so they live
+      here where there is room to see what you are doing.
+    -->
+    <div class="modal-overlay cs-overlay" id="characterSheetModal">
+        <div class="modal cs-modal">
+            <div class="cs-head">
+                <div class="cs-head-left">
+                    <h2 id="csName">CHARACTER</h2>
+                    <div class="cs-chips" id="csChips"></div>
+                </div>
+                <div class="cs-head-right">
+                    <button class="btn btn-primary btn-sm" onclick="generateOfficialViews()">Generate views</button>
+                    <button class="btn btn-sm" onclick="exportCharacterSheet()">Export sheet</button>
+                    <button class="modal-close" onclick="closeModal('characterSheetModal')">&times;</button>
+                </div>
+            </div>
+            <div class="cs-body" id="csBody"></div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="castingModal">
         <div class="modal modal-wide">
             <div class="modal-header">
@@ -23215,7 +23350,7 @@ ${fountainText.slice(0, 50000)}`;
                 el.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#128100;</div><h3>No characters</h3><p>Add characters for your film production.</p></div>`;
             } else {
                 el.innerHTML = state.characters.map(c => `
-                    <div class="entity-card" style="cursor:pointer;" onclick="inspectEntity('character', '${c.id}')" title="Open details and the full-size plate">
+                    <div class="entity-card" style="cursor:pointer;" onclick="openCharacterSheet('${c.id}')" title="Open the character sheet">
                         <div class="entity-card-header">
                             ${c.reference_image_url
                                 ? '<img src="' + API_BASE + c.reference_image_url + '" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;cursor:zoom-in;" title="Click to see the plate full size"'
@@ -23261,19 +23396,19 @@ ${fountainText.slice(0, 50000)}`;
                             ${c.lora_id ? '<span class="tag">LoRA</span>' : ''}
                         </div>
                         <div class="card-actions">
-                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generateCharacterImage('${c.id}')" title="Generate reference image">${c.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
-                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); orbitRefsheet('${c.id}')" title="Turnaround from one orbiting clip — front, three-quarter, side and back that cannot disagree with each other">Orbit Sheet</button>
                             <!--
-                              A turnaround is three pictures and the app showed one.
-                              Front, side and back were generated, stored and
-                              registered, with nowhere to look at them — and only
-                              one reaches a prompt, so which one it is has to be
-                              visible or the other two look like they are working.
+                              Two buttons.
+                              Regen Image, Orbit Sheet, Views, Upload, Gallery
+                              and Voice all came off this row: every one of them
+                              is something you do while LOOKING at the
+                              character, and eight controls on a 260px tile in a
+                              grid of twelve is a worse place to do it than a
+                              sheet with room. They live in openCharacterSheet(),
+                              and tests/character-sheet.test.js holds each of
+                              them to still being reachable — removing a button
+                              is only a simplification if the thing it did has a
+                              home.
                             -->
-                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); showCharacterViews('${c.id}')" title="Front, side and back — and which one conditions every frame">Views</button>
-                            ${uploadControl('character-plate', `/characters/${c.id}/refsheet/import`, { extra: { view: 'front' }, after: 'loadCharacters', title: 'Use a picture you already have — a photograph, a Midjourney export, art you were handed' })}
-                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openGallery('character', '${c.id}', ${jsAttr(c.name)})">Gallery</button>
-                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); castCharacterVoice('${c.id}', ${jsAttr(c.name)})" title="Cast a voice and hear a line — before anything is shot">Voice</button>
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editCharacter('${c.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteCharacter('${c.id}')">Delete</button>
                         </div>
@@ -23378,6 +23513,345 @@ ${fountainText.slice(0, 50000)}`;
     // FILM-122: Track original name for rename confirmation
     let editingCharacterOriginalName = '';
     let editingLocationOriginalName = '';
+
+    /* ── the character sheet ───────────────────────────────────────────────
+     *
+     * The card carried eight buttons and clicking it did nothing. Every one of
+     * those is something you do while LOOKING at the character, so they live
+     * here. Built to design_handoff_character_card: official views top-left,
+     * everything written top-right, wardrobe and palette under it, and a
+     * full-width concept band across the bottom.
+     */
+
+    // Mirrors lib/character-sheet.js. The page cannot require a node module
+    // (build.target: single-html), so the registries are duplicated and held in
+    // lockstep by tests/character-sheet.test.js — the screenplay-pagination
+    // precedent.
+    const CS_VIEWS = [
+        { id: 'front', label: 'Front', caption: 'front plate' },
+        { id: 'side-left', label: 'Left', caption: 'left profile' },
+        { id: 'side-right', label: 'Right', caption: 'right profile' },
+        { id: 'back', label: 'Back', caption: 'back plate' },
+    ];
+    const CS_CATEGORIES = [
+        { id: 'sketch', label: 'Sketch' }, { id: 'costume', label: 'Costume' },
+        { id: 'face', label: 'Face' }, { id: 'mood', label: 'Mood' },
+    ];
+    const CS_LEGACY = { side: 'side-left', 'three-quarter': 'front', 'back-three-quarter': 'back' };
+
+    let SHEET = { id: null, character: null, gallery: [], costumes: [], filter: 'all' };
+
+    async function openCharacterSheet(id) {
+        SHEET = { id, character: null, gallery: [], costumes: [], filter: 'all' };
+        document.getElementById('csName').textContent = 'Loading…';
+        document.getElementById('csChips').innerHTML = '';
+        document.getElementById('csBody').innerHTML = '<div class="text-muted" style="padding:40px;">Loading…</div>';
+        showModal('characterSheetModal');
+        await renderCharacterSheet();
+    }
+
+    async function renderCharacterSheet() {
+        const body = document.getElementById('csBody');
+        try {
+            const [ch, gal, cos] = await Promise.all([
+                api(`/characters/${SHEET.id}`),
+                api(`/characters/${SHEET.id}/gallery`).catch(() => ({ items: [] })),
+                api(`/characters/${SHEET.id}/costumes`).catch(() => ({ costumes: [] })),
+            ]);
+            SHEET.character = ch.character || ch;
+            SHEET.gallery = gal.items || [];
+            SHEET.costumes = cos.costumes || cos || [];
+        } catch (err) {
+            // A renderer that paints a placeholder must have a path that
+            // replaces it, or a failure reads as the character being gone.
+            body.innerHTML = `<div class="empty-state" style="padding:40px;"><h3>Could not load this character</h3>
+                <p>${esc(err.message)}</p></div>`;
+            return;
+        }
+        const c = SHEET.character;
+        document.getElementById('csName').textContent = c.name || 'Character';
+
+        const plates = csPlatesByView();
+        const locked = CS_VIEWS.filter(v => plates[v.id]).length;
+        document.getElementById('csChips').innerHTML = `
+            <span class="cs-chip ${locked === 4 ? 'ok' : 'warn'}">Views ${locked}/4</span>
+            ${c.gender || c.age_range
+                ? `<span class="cs-chip">${esc([c.age_range, c.gender].filter(Boolean).join(' · '))}</span>` : ''}
+            <span class="cs-chip">${SHEET.gallery.length} reference(s)</span>`;
+
+        body.innerHTML = characterSheetHtml(c, plates);
+    }
+
+    /**
+     * Which picture holds each official view.
+     *
+     * Legacy names are folded in: a `side` plate predates the left/right split
+     * and would otherwise be ranked, on disk, and unreachable from this sheet —
+     * money spent and nothing to show for it.
+     */
+    function csPlatesByView() {
+        const out = {};
+        for (const item of SHEET.gallery) {
+            if (!item.sendable) continue;
+            const v = CS_VIEWS.some(x => x.id === item.view) ? item.view : CS_LEGACY[item.view];
+            if (v && !out[v]) out[v] = item;
+        }
+        return out;
+    }
+
+    function csImg(url) {
+        return url && !/^https?:/i.test(url) ? API_BASE + url : url;
+    }
+
+    function characterSheetHtml(c, plates) {
+        const spec = [
+            ['Age', c.age_range], ['Gender', c.gender],
+            ['Height', c.height_m ? c.height_m + ' m' : null], ['Build', c.build],
+            ['Hair', c.hair], ['Distinguishing', c.distinguishing],
+        ].filter(row => row[1]);
+
+        const palette = csPalette();
+        const refs = SHEET.gallery.filter(i => !i.sendable);
+        const shown = SHEET.filter === 'all' ? refs
+            : refs.filter(i => (i.metadata && i.metadata.ref_category) === SHEET.filter);
+
+        return `
+        <div class="cs-top">
+          <div class="cs-col-l">
+            <div class="cs-views-block">
+              <div class="cs-label"><span>Official views</span><span class="rule"></span>
+                <span class="note">canonical · fed to generation</span></div>
+              <div class="cs-views">${CS_VIEWS.map(v => {
+                  const p = plates[v.id];
+                  return `<div class="cs-plate ${p ? 'locked' : 'pending'}"
+                       onclick="${p ? `openPlateViewer(${jsAttr(csImg(p.image_url))}, ${jsAttr((c.name || '') + ' — ' + v.label)})`
+                                    : `generateOfficialViews(${jsAttr(v.id)})`}">
+                    ${p ? `<img src="${esc(csImg(p.image_url))}" alt="">` : ''}
+                    <span class="vlabel">${esc(v.label)}</span>
+                    <span class="vcap">${p ? esc(v.caption) : 'generate →'}</span>
+                    ${p ? '<span class="vdot"></span>' : ''}
+                  </div>`;
+              }).join('')}</div>
+            </div>
+
+            <div class="cs-actions">
+              <div class="cs-label"><span>Work on this character</span><span class="rule"></span></div>
+              <div class="card-actions" style="flex-wrap:wrap;">
+                <button class="btn btn-sm" onclick="generateCharacterImage('${c.id}')">Regen plate</button>
+                <button class="btn btn-sm" onclick="orbitRefsheet('${c.id}')">Orbit sheet</button>
+                <button class="btn btn-sm" onclick="showCharacterViews('${c.id}')">All views</button>
+                <button class="btn btn-sm" onclick="openGallery('character', '${c.id}', ${jsAttr(c.name)})">Gallery</button>
+                <button class="btn btn-sm" onclick="castCharacterVoice('${c.id}', ${jsAttr(c.name)})">Voice</button>
+                ${uploadControl('character-plate', `/characters/${c.id}/refsheet/import`,
+                    { extra: { view: 'front' }, after: 'renderCharacterSheet', title: 'Use a picture you already have' })}
+              </div>
+            </div>
+          </div>
+
+          <div class="cs-col-r">
+            <div class="cs-physical">
+              <div class="cs-label"><span>Physical spec</span><span class="rule"></span></div>
+              ${spec.length
+                  ? `<div class="cs-spec">${spec.map(([k, v]) =>
+                        `<div class="cell"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>`
+                  : `<p class="text-sm text-muted">Nothing recorded.
+                       <a style="cursor:pointer;color:var(--gl-accent,#818cf8);"
+                          onclick="closeModal('characterSheetModal'); editCharacter('${c.id}')">Add the physical spec</a>
+                       — voice casting and the size in every prompt read these.</p>`}
+            </div>
+            <div class="cs-details">
+              <div class="cs-label"><span>Appearance</span>
+                <span class="rule"></span>
+                <span class="note">${(c.appearance_prompt || '').length} chars · prompt source</span></div>
+              <div class="cs-prose">${esc(c.appearance_prompt || 'No appearance written. This is the text every plate is generated from.')}</div>
+            </div>
+            <div>
+              <div class="cs-label"><span>Description</span><span class="rule"></span></div>
+              <div class="cs-prose small">${esc(c.description || '—')}</div>
+            </div>
+            ${c.personality_notes ? `<div>
+              <div class="cs-label"><span>Personality</span><span class="rule"></span></div>
+              <div class="cs-prose small">${esc(c.personality_notes)}</div></div>` : ''}
+
+            <div class="cs-wardrobe">
+              <div class="cs-label"><span>Wardrobe &amp; props</span><span class="rule"></span>
+                <span class="note">continuity checklist</span></div>
+              ${SHEET.costumes.length
+                  ? `<div class="cs-ward">${SHEET.costumes.map(w => `
+                        <div class="item">
+                          <div class="thumb"></div>
+                          <div style="min-width:0;">
+                            <div style="font-size:13px;color:#e8e8ea;">${esc(w.name || 'Costume')}</div>
+                            <div class="text-sm text-muted">${esc(w.description || '')}</div>
+                          </div>
+                        </div>`).join('')}</div>`
+                  : '<p class="text-sm text-muted">No wardrobe recorded yet.</p>'}
+            </div>
+
+            <div class="cs-palette">
+              <div class="cs-label"><span>Palette</span><span class="rule"></span></div>
+              ${palette.length
+                  ? `<div class="cs-swatches">${palette.map(p => `
+                        <div class="cs-swatch"><div class="chip" style="background:${esc(p.hex)};"></div>
+                        <div class="cap">${esc(p.name || p.hex)}</div></div>`).join('')}</div>`
+                  : '<p class="text-sm text-muted">No palette locked. Set one on a costume to hold the colours across every frame.</p>'}
+            </div>
+          </div>
+        </div>
+
+        <div class="cs-refs">
+          <div class="cs-label"><span>Concept art &amp; references</span>
+            <div class="cs-pills">
+              <span class="cs-pill ${SHEET.filter === 'all' ? 'active' : ''}"
+                    onclick="csFilter('all')">All ${refs.length}</span>
+              ${CS_CATEGORIES.map(cat => {
+                  const n = refs.filter(i => (i.metadata && i.metadata.ref_category) === cat.id).length;
+                  return `<span class="cs-pill ${SHEET.filter === cat.id ? 'active' : ''}"
+                                onclick="csFilter('${cat.id}')">${esc(cat.label)} ${n}</span>`;
+              }).join('')}
+            </div>
+            <span class="rule"></span>
+            <span class="note">promoted refs are what conditions a frame</span></div>
+          <div class="cs-tiles">
+            ${shown.map(i => `
+              <div class="cs-tile ${i.role === 'concept' ? '' : 'starred'}"
+                   onclick="openPlateViewer(${jsAttr(csImg(i.image_url))}, ${jsAttr(c.name || '')})">
+                ${i.image_url ? `<img src="${esc(csImg(i.image_url))}" alt="">` : ''}
+                <span class="tl">${esc((i.metadata && i.metadata.ref_category) || i.role)}${i.note ? ' · ' + esc(i.note) : ''}</span>
+              </div>`).join('')}
+            <div class="cs-tile cs-drop" onclick="openGallery('character', '${c.id}', ${jsAttr(c.name)})">
+              <div style="font-size:18px;">+</div><div>ADD REFERENCE</div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function csFilter(id) { SHEET.filter = id; renderCharacterSheet(); }
+
+    /** The locked palette, from whichever costume carries one. */
+    function csPalette() {
+        for (const w of SHEET.costumes) {
+            let p = w.color_palette;
+            if (!p) continue;
+            if (typeof p === 'string') { try { p = JSON.parse(p); } catch (_) { continue; } }
+            if (Array.isArray(p) && p.length) {
+                return p.map(x => typeof x === 'string' ? { hex: x, name: x } : x);
+            }
+        }
+        return [];
+    }
+
+    /**
+     * Generate the official views — all four, or one.
+     *
+     * Previewed and confirmed like every other paid button. A named view
+     * generates only that one, which is what the pending plate's own click
+     * does; with no argument it asks whether to do all four.
+     */
+    async function generateOfficialViews(view) {
+        if (!SHEET.id) return;
+        const c = SHEET.character || {};
+        const wanted = view ? [view] : CS_VIEWS.map(v => v.id);
+        const label = view ? (CS_VIEWS.find(v => v.id === view) || {}).label || view : 'all four views';
+
+        if (!confirm(`Generate ${label} for ${c.name || 'this character'}?\n\n`
+            + `This SPENDS: ${wanted.length} image generation(s).\n\n`
+            + 'They are generated from the appearance text and whatever references are promoted '
+            + 'in the gallery, and each replaces the current plate for its view.')) return;
+
+        setStatus(`Generating ${wanted.length} view(s)…`);
+        let made = 0;
+        for (const v of wanted) {
+            try {
+                await api(`/characters/${SHEET.id}/refsheet/generate`, {
+                    method: 'POST', body: JSON.stringify({ views: [v] }),
+                });
+                made++;
+                setStatus(`Generated ${made} of ${wanted.length}…`);
+            } catch (err) {
+                // Stop on a refusal rather than asking four more times: a
+                // refusal repeated is a refusal paid for.
+                setStatus(`${made} of ${wanted.length} — then: ${err.message}`);
+                break;
+            }
+        }
+        if (made === wanted.length) setStatus(`${made} view(s) generated.`);
+        await renderCharacterSheet();
+        loadCharacters();
+    }
+
+    /**
+     * Export the sheet as a printable page.
+     *
+     * Its own print document rather than the app's dark UI: printing a black
+     * page wastes a cartridge and reads badly, which is the same reason the
+     * screenplay export builds its own.
+     */
+    function exportCharacterSheet() {
+        const c = SHEET.character;
+        if (!c) return;
+        const plates = csPlatesByView();
+        const spec = [['Age', c.age_range], ['Gender', c.gender],
+            ['Height', c.height_m ? c.height_m + ' m' : null], ['Build', c.build],
+            ['Hair', c.hair], ['Distinguishing', c.distinguishing]].filter(r => r[1]);
+        const refs = SHEET.gallery.filter(i => !i.sendable && i.image_url);
+
+        const win = window.open('', '_blank');
+        if (!win) { setStatus('Allow pop-ups to export the sheet'); return; }
+        win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+        <title>${esc(c.name || 'Character')} — character sheet</title>
+        <style>
+          @page { size: A4 portrait; margin: 14mm; }
+          * { box-sizing: border-box; }
+          body { font: 12px/1.55 Georgia, 'Times New Roman', serif; color:#111; background:#fff; margin:0; }
+          h1 { font: 600 30px/1.1 Helvetica, Arial, sans-serif; letter-spacing:.14em;
+               text-transform:uppercase; margin:0 0 2px; }
+          .sub { font: 10px/1.4 ui-monospace, Menlo, monospace; letter-spacing:.16em;
+                 text-transform:uppercase; color:#666; margin-bottom:16px; }
+          .rule { border-top:2px solid #111; margin:0 0 18px; }
+          h2 { font: 600 10px/1 ui-monospace, Menlo, monospace; letter-spacing:.2em;
+               text-transform:uppercase; color:#666; margin:22px 0 8px;
+               border-bottom:1px solid #ddd; padding-bottom:5px; }
+          .views { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+          .views figure { margin:0; }
+          .views img { width:100%; aspect-ratio:3/4; object-fit:cover; border:1px solid #ccc; }
+          .views figcaption { font:9px ui-monospace,Menlo,monospace; letter-spacing:.12em;
+              text-transform:uppercase; color:#666; margin-top:4px; }
+          .spec { display:grid; grid-template-columns:repeat(3,1fr); gap:0; border:1px solid #ddd; }
+          .spec div { padding:8px 10px; border-right:1px solid #eee; border-bottom:1px solid #eee; }
+          .spec .k { font:9px ui-monospace,Menlo,monospace; letter-spacing:.16em;
+              text-transform:uppercase; color:#888; }
+          .spec .v { font-size:13px; margin-top:3px; }
+          .prose { max-width:74ch; }
+          .refs { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
+          .refs img { width:100%; aspect-ratio:4/3; object-fit:cover; border:1px solid #ddd; }
+          .foot { margin-top:26px; padding-top:8px; border-top:1px solid #ddd;
+              font:9px ui-monospace,Menlo,monospace; letter-spacing:.14em;
+              text-transform:uppercase; color:#999; }
+          @media print { .noprint { display:none; } }
+        </style></head><body>
+        <h1>${esc(c.name || 'Character')}</h1>
+        <div class="sub">${esc([state.currentProject && state.currentProject.title,
+            [c.age_range, c.gender].filter(Boolean).join(' · ')].filter(Boolean).join(' — '))}</div>
+        <div class="rule"></div>
+        <h2>Official views</h2>
+        <div class="views">${CS_VIEWS.map(v => plates[v.id]
+            ? `<figure><img src="${esc(csImg(plates[v.id].image_url))}"><figcaption>${esc(v.label)}</figcaption></figure>`
+            : `<figure><div style="aspect-ratio:3/4;border:1px dashed #bbb;"></div><figcaption>${esc(v.label)} — not generated</figcaption></figure>`).join('')}</div>
+        ${spec.length ? `<h2>Physical spec</h2><div class="spec">${spec.map(([k, v]) =>
+            `<div><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>` : ''}
+        <h2>Appearance — prompt source</h2><div class="prose">${esc(c.appearance_prompt || '—')}</div>
+        ${c.description ? `<h2>Description</h2><div class="prose">${esc(c.description)}</div>` : ''}
+        ${SHEET.costumes.length ? `<h2>Wardrobe &amp; props</h2><ul>${SHEET.costumes.map(w =>
+            `<li><strong>${esc(w.name || '')}</strong>${w.description ? ' — ' + esc(w.description) : ''}</li>`).join('')}</ul>` : ''}
+        ${refs.length ? `<h2>Concept art &amp; references</h2><div class="refs">${refs.slice(0, 15).map(r =>
+            `<img src="${esc(csImg(r.image_url))}">`).join('')}</div>` : ''}
+        <div class="foot">Film Engine · character sheet · ${esc(new Date().toISOString().slice(0, 10))}</div>
+        <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 400); };<\/script>
+        </body></html>`);
+        win.document.close();
+        setStatus('Character sheet opened for printing');
+    }
 
     /* ── casting a voice, and hearing a line ───────────────────────────────
      *

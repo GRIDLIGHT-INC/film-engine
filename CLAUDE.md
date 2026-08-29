@@ -95,6 +95,7 @@ film-engine/
 │   │   ├── screenplay-analysis.js # The rubric, the note schema; the model does the reading
 │   │   ├── subject-gallery.js     # Reference, concept, inspiration: only one reaches a prompt
 │   │   ├── voice-casting.js       # Cast a voice, hear a line, before anything is shot
+│   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
 │   │   ├── reference-images.js    # Tagged reference plates: data URIs, tags, ≤3 selection
@@ -355,6 +356,7 @@ film-engine/
 │       ├── screenplay-analysis.test.js # Thirteen dimensions, seven fields, and no server-side model
 │       ├── subject-gallery.test.js  # A sketch must never condition a frame
 │       ├── dialogue-audition.test.js # Hearing a line before anything is shot
+│       ├── character-sheet.test.js  # Two buttons on the card, and everything else has a home
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
 │       ├── screenplay-furniture.test.js # The editor's own furniture is not content
 │       ├── screenplay-mutators.test.js # Every way a screenplay is written leaves the editor sound
@@ -2306,6 +2308,23 @@ Per-shot and per-project audio mixing: dialogue (0dB) + music (-8dB) + SFX (-4dB
 ### Smart Scheduling
 Optimizes pipeline execution by grouping steps by GPU model to minimize VRAM swapping. Model profiles track VRAM requirements and load times for 10 models. VRAM budget management (default 24GB) with residency suggestions (keep frequent models loaded, evict rare ones).
 
+### The Card Got Complicated for No Reason
+A character card carried **eight buttons** — Regen Image, Orbit Sheet, Views, Upload, Gallery, Voice, Edit, Delete — and clicking the card itself did nothing. Every one of those is something you do *while looking at* the character, and a 260px tile in a grid of twelve is a worse place to do it than a sheet with room. **Two buttons now: Edit and Delete.** Clicking opens the sheet.
+
+Removing a button is only a simplification **if the thing it did still has a home**. `RELOCATED_ACTIONS` lists the six that moved, and the test holds each to being reachable from the sheet — otherwise "simpler" quietly means "gone".
+
+Built to `design_handoff_character_card`: official views top-left, everything written top-right, wardrobe and palette beneath, and a full-width concept band across the bottom. `SHEET_REGIONS` names all six with an anchor the renderer must contain, because a sheet that draws the plates and silently drops the palette looks finished in a screenshot.
+
+**Four official views, and the fifth problem they solve.** `VIEW_RANK` shipped with a single `side`, which is half a turnaround: it cannot say which way the character is facing, so two shots from opposite sides both resolved to the same plate. `side-left` and `side-right` are the real profiles. **`side` is kept ranked between them** rather than deleted — real projects hold plates under it, and dropping the name would leave pictures that cost money on disk and unreachable from the sheet. `canonicalView` folds the legacy names onto the four, and reads a lone `side` as the LEFT profile because a 90° orbit is where every existing one came from.
+
+**A category is orthogonal to a role.** The gallery already answers *does this condition a frame* with reference/concept/inspiration; `REFERENCE_CATEGORIES` answers *what does it show* — sketch, costume, face, mood. Collapsing them would mean a costume study could not be promoted, or a promoted plate could not also be a face study, so the test asserts the two vocabularies do not collide.
+
+**Wardrobe and palette were already modelled and had no surface.** `film_costumes` has carried `character_id`, `color_palette` and `reference_images` since phase 2 with zero rows, no UI and no MCP tools — the same declared-and-unreachable shape as the voice column. The sheet reads them, and says what to do when they are empty rather than rendering a blank region.
+
+**The export builds its own print document.** Printing the app's dark UI wastes a cartridge and reads badly, which is why the screenplay export already does the same: A4, serif body, the four plates across the top, the spec as a hairline grid, and the references as a contact strip.
+
+Generating views is **all four or one**: a pending plate's own click generates just that view, and the header button asks before spending. It stops on a refusal rather than asking three more times — a refusal repeated is a refusal paid for.
+
 ### Hearing the Dialogue Before Anything Is Shot
 *"Where do we generate the dialogue in any of the sections? If I want to do a test run and see how it feels… this should be part of the planning phase."*
 
@@ -2637,6 +2656,7 @@ node --test backend/tests/screenplay-timing.test.js
 node --test backend/tests/screenplay-analysis.test.js
 node --test backend/tests/subject-gallery.test.js
 node --test backend/tests/dialogue-audition.test.js
+node --test backend/tests/character-sheet.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js
 node --test backend/tests/screenplay-furniture.test.js
 node --test backend/tests/screenplay-mutators.test.js
