@@ -39,6 +39,7 @@ const { handleDashboard } = require('../routes/dashboard');
 const { handleStoryStructure } = require('../routes/story-structure');
 const { handleStoryDevelopment } = require('../routes/story-development');
 const { handleSubjectGallery } = require('../routes/subject-gallery');
+const { handleVoiceCasting } = require('../routes/voice-casting');
 const { handleScripts } = require('../routes/scripts');
 const { handleScenes } = require('../routes/scenes');
 const { handleShots } = require('../routes/shots');
@@ -852,6 +853,88 @@ const PRODUCTION_TOOLS = [
      * without BEING it. These carry a role, and only an approved reference is
      * ever sent to a provider.
      */
+    /*
+     * Casting, and hearing a line before anything is shot.
+     *
+     * Dialogue generation shipped in phase 4 and could only be reached per
+     * SHOT — which means after a breakdown, which is after the point where
+     * hearing it would change what you write.
+     */
+    {
+        name: 'voice_catalogue',
+        handler: handleVoiceCasting, method: 'GET',
+        description: 'Every voice this ElevenLabs account can use, with gender, age, accent and a PREVIEW URL the provider hosts. The preview costs nothing to play, which is what makes this a casting session rather than a dropdown of names. SPENDS NOTHING.',
+        path: a => `/film/voices${a.refresh ? '?refresh=true' : ''}`,
+        schema: { refresh: { type: 'boolean', description: 'Skip the ten-minute cache.' } },
+        required: [],
+    },
+    {
+        name: 'voice_cast',
+        handler: handleVoiceCasting, method: 'PUT',
+        description: 'Cast a character in a voice. This is what every line of theirs is then spoken in — auditions, the table read, and the dialogue that ships. An UNCAST character is not an error: their lines generate in the provider\u2019s default voice, which sounds like a decision rather than an omission, so cast everyone who speaks. Read voice_catalogue first to choose a voice_id. SPENDS NOTHING.',
+        path: a => `/film/characters/${a.character_id}/voice`,
+        body: a => ({ voice_id: a.voice_id, voice_name: a.voice_name, cast_note: a.cast_note }),
+        schema: {
+            character_id: { type: 'string' },
+            voice_id: { type: 'string', description: 'From voice_catalogue.' },
+            voice_name: { type: 'string' },
+            cast_note: { type: 'string', description: 'Why this voice — the line you judged it on, so the choice has a reason three weeks later.' },
+        },
+        required: ['character_id', 'voice_id'],
+    },
+    {
+        name: 'casting_report',
+        handler: handleVoiceCasting, method: 'GET',
+        description: 'Who is cast and who is not, ordered by how many lines they have — so the uncast list is ordered by what it costs to leave uncast rather than alphabetically. SPENDS NOTHING.',
+        path: a => `/film/projects/${a.project_id}/casting`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'voice_audition_preview',
+        handler: handleVoiceCasting, method: 'GET',
+        description: 'What an audition would send, and in whose voice, before anything is spent. Warns when no voice is resolved, because the result would be the provider default and sound like a choice. SPENDS NOTHING.',
+        path: a => `/film/audition/preview?text=${encodeURIComponent(a.text || '')}`
+            + (a.voice_id ? `&voice_id=${encodeURIComponent(a.voice_id)}` : '')
+            + (a.character_id ? `&character_id=${encodeURIComponent(a.character_id)}` : ''),
+        schema: {
+            text: { type: 'string' },
+            voice_id: { type: 'string' },
+            character_id: { type: 'string', description: 'Use this character\u2019s cast voice.' },
+        },
+        required: ['text'],
+    },
+    {
+        name: 'voice_audition',
+        handler: handleVoiceCasting, method: 'POST',
+        description: 'SPENDS MONEY. Hear one line spoken, ATTACHED TO NOTHING. This is the planning-phase tool: try a line, try a voice, hear how it feels, before any shot exists. It registers no asset and names no shot, so the pipeline can never mistake a reading you were trying out for the take that ships. Pass character_id to use that character\u2019s cast voice, or voice_id to try one.',
+        path: () => '/film/audition',
+        body: a => ({ text: a.text, voice_id: a.voice_id, character_id: a.character_id,
+            project_id: a.project_id, speed: a.speed, stability: a.stability }),
+        schema: {
+            text: { type: 'string', description: 'The line to speak.' },
+            voice_id: { type: 'string' },
+            character_id: { type: 'string' },
+            project_id: { type: 'string' },
+            speed: { type: 'number' },
+            stability: { type: 'number' },
+        },
+        required: ['text'],
+    },
+    {
+        name: 'table_read_get',
+        handler: handleVoiceCasting, method: 'GET',
+        description: 'A scene\u2019s spoken lines in order, with who says each and which voice they are cast in. A parenthetical travels BESIDE its line as direction rather than inside it, because read aloud "(quietly) Get inside." becomes "quietly, get inside". Names anyone in the scene who is not cast. SPENDS NOTHING.',
+        path: a => `/film/scenes/${a.scene_id}/table-read`,
+        schema: { scene_id: { type: 'string' } }, required: ['scene_id'],
+    },
+    {
+        name: 'table_read',
+        handler: handleVoiceCasting, method: 'POST',
+        description: 'SPENDS MONEY. Generate every spoken line in a scene, each in its character\u2019s cast voice — a table read, before the breakdown. Attached to no shot. Generated sequentially, and a provider that starts refusing stops the read with the lines not attempted NAMED, because a partial read reported as success is how somebody listens to four lines of a seven-line scene and concludes the scene is short. Read table_read_get first to see the lines and the casting.',
+        path: a => `/film/scenes/${a.scene_id}/table-read`,
+        body: () => ({}),
+        schema: { scene_id: { type: 'string' } }, required: ['scene_id'],
+    },
     {
         name: 'gallery_get',
         handler: handleSubjectGallery, method: 'GET',

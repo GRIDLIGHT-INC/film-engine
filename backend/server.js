@@ -72,6 +72,7 @@ const { handleScripts, handleComments } = require('./routes/scripts');
 const { handleStoryStructure } = require('./routes/story-structure');
 const { handleStoryDevelopment } = require('./routes/story-development');
 const { handleSubjectGallery } = require('./routes/subject-gallery');
+const { handleVoiceCasting } = require('./routes/voice-casting');
 const { handleAgentPresence } = require('./routes/agent-presence');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
@@ -470,6 +471,18 @@ const server = http.createServer(async (req, res) => {
         // otherwise fall through to a project lookup.
         if (parts[1] === 'agent' && !parts[2]) {
             return handleAgentPresence(req, res, parts, query);
+        }
+
+        // Route: casting and auditioning. Above /characters/:id and
+        // /scenes/:id, which would otherwise swallow the sub-paths — the trap
+        // that has now bitten six times in this file.
+        if (parts[1] === 'voices'
+            || (parts[1] === 'characters' && parts[2] && parts[3] === 'voice')
+            || (parts[1] === 'projects' && parts[2] && parts[3] === 'casting')
+            || parts[1] === 'audition'
+            || (parts[1] === 'scenes' && parts[2] && parts[3] === 'table-read')
+            || (parts[1] === 'auditions' && parts[2] && parts[3])) {
+            return await handleVoiceCasting(req, res, parts, query);
         }
 
         // Route: the subject workspace — gallery, explore, inspiration, promote.

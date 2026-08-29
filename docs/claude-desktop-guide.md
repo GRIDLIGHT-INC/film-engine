@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**197 tools, 48 families.** Everything the app can do, you can ask for in a
+**204 tools, 51 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -126,6 +126,22 @@ becomes a different person in every frame.
 
 `scale_check` finds subjects whose size is undeclared — an image model has no
 metric sense, so a 30cm sprinkler comes back the size of a car.
+
+**Casting a voice, and hearing a line.** `voice_catalogue` lists what the
+account can use — gender, age, accent, and a preview the provider hosts, free
+to play. `voice_cast` gives a character a voice, which every line of theirs is
+then spoken in. `casting_report` says who is still uncast, ordered by how many
+lines they have.
+
+`voice_audition` speaks one line **attached to nothing** — no shot, no asset —
+so a reading you were trying out can never be mistaken for the take that ships.
+`table_read` does a whole scene, each character in their cast voice, before the
+breakdown. Both have free previews: `voice_audition_preview` and
+`table_read_get`.
+
+An uncast character is not an error: their lines generate in the provider's
+default voice, which sounds like a decision rather than an omission. Cast
+everyone who speaks.
 
 ### 3. Plates
 

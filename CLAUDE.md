@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (86 migrations)
+│   │   └── migrations/     # SQL migration files (87 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -76,6 +76,7 @@ film-engine/
 │   │   ├── story-structure.js  # Beat sheets, holes, and house rules on the writing
 │   │   ├── story-development.js # Treatment, screenplay analysis, and what a scene costs in time
 │   │   ├── subject-gallery.js  # A character, location or prop as a workspace, not a form
+│   │   ├── voice-casting.js    # The catalogue, the casting, the audition, the table read
 │   │   ├── agent-presence.js   # Which path an AI request takes, and why
 │   │   ├── story-bible.js      # What things ARE, and which entity was written from which section
 │   │   ├── media-import.js     # Footage and sound made outside Film Engine: one route, all seven kinds
@@ -93,6 +94,7 @@ film-engine/
 │   │   ├── screenplay-timing.js   # Eighths, screen time and shooting effort are three numbers
 │   │   ├── screenplay-analysis.js # The rubric, the note schema; the model does the reading
 │   │   ├── subject-gallery.js     # Reference, concept, inspiration: only one reaches a prompt
+│   │   ├── voice-casting.js       # Cast a voice, hear a line, before anything is shot
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
 │   │   ├── reference-images.js    # Tagged reference plates: data URIs, tags, ≤3 selection
@@ -352,6 +354,7 @@ film-engine/
 │       ├── screenplay-timing.test.js # Eighths, screen time and shoot effort, kept apart
 │       ├── screenplay-analysis.test.js # Thirteen dimensions, seven fields, and no server-side model
 │       ├── subject-gallery.test.js  # A sketch must never condition a frame
+│       ├── dialogue-audition.test.js # Hearing a line before anything is shot
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
 │       ├── screenplay-furniture.test.js # The editor's own furniture is not content
 │       ├── screenplay-mutators.test.js # Every way a screenplay is written leaves the editor sound
@@ -2303,6 +2306,39 @@ Per-shot and per-project audio mixing: dialogue (0dB) + music (-8dB) + SFX (-4dB
 ### Smart Scheduling
 Optimizes pipeline execution by grouping steps by GPU model to minimize VRAM swapping. Model profiles track VRAM requirements and load times for 10 models. VRAM budget management (default 24GB) with residency suggestions (keep frequent models loaded, evict rare ones).
 
+### Hearing the Dialogue Before Anything Is Shot
+*"Where do we generate the dialogue in any of the sections? If I want to do a test run and see how it feels… this should be part of the planning phase."*
+
+The honest answer was **nowhere in the app**. `POST /shots/:id/voice/generate` shipped in phase 4; `grep -c` for any voice control in the SPA returned **0**, and `film_voice_profiles` held **0 rows**. So a line could only be heard by curl or by an agent, and only for a SHOT — which means only after a breakdown, which is after the point where hearing it would change what you write.
+
+**And it would have been the same voice every time.** `buildVoicePayload` reads `voiceProfile.voice_id`; the column **did not exist**, so that branch was dead, the `voice_params` fallback was written by nothing, and the ElevenLabs adapter fell through to `DEFAULT_VOICE_ID`. A whole cast in one voice, silently, with no way to change it. Migration 089 adds the column the builder was already reading rather than bolting a parallel casting system beside it — the same shape as `scope` on `PIPELINE_STEPS` and `NEVER_WRITES` on the style book: declared, exported, and consumable by nobody.
+
+**Casting is a planning act, so the surfaces are.** `GET /film/voices` returns the account's catalogue with gender, age, accent and the **preview the provider hosts** — which costs nothing to play, and is what makes a list a casting session rather than a dropdown of names. Without it a director casts by pasting an opaque id copied from another website.
+
+**An audition is deliberately not a generation.** It attaches to no shot and registers no asset, written under `auditions/` with its own serving route: an audition that looked like a take would be picked up by the pipeline and ship a reading the director was only trying out. `POST /film/audition` takes a line and a voice — or a `character_id`, and uses whatever that character is cast in.
+
+**The table read** is the scene, out loud, before the breakdown. A **parenthetical travels beside its line as direction rather than inside it**, because read aloud *"(quietly) Get inside."* becomes *"quietly, get inside"*. Uncast characters are **named**, since the failure being replaced was silent: every line generated, nothing errored, and the film came back in the provider's default voice — which sounds like a decision rather than an omission. The casting report orders the uncast **by line count**, so the list is ordered by what it costs to leave uncast rather than alphabetically.
+
+Three faults were found by running it rather than by reading it:
+
+**`getCredential` returns `{apiKey, meta}`, not a string.** Passing it as the header made it `[object Object]` and the catalogue 401'd — with a key that works perfectly. Diagnosed by calling ElevenLabs directly with the same key and getting 200, which is what separated *my bug* from *a dead key*.
+
+**The audition was written as `.wav` and was an MP3.** `normalizeOutputFormat` only honours `mp3_*` and `pcm_*`, so asking for `wav` silently returns the adapter default. `file` on a real audition said *"Audio file with ID3 version 2.4.0, MPEG ADTS"* under a `.wav` name — the same lie an uploaded JPEG stored as `.png` already cost. The extension follows `result.format` now.
+
+**Only `scene_heading` rows carry a `scene_number`** in `film_script_elements`; every other element stores NULL. Filtering a scene's elements on it returns the heading alone — which holds no dialogue — so a scene with lines read as a scene with none, and a `matched.length ? … : all` fallback never fires because one row is not zero rows. Measured on Wingfall: one dialogue row in the script, zero found. A scene is sliced **from its heading to the next**.
+
+`tests/dialogue-audition.test.js` is set-based over the six scopes dialogue exists at, and each is required to be **bound to something clickable** rather than merely defined — a handler called from nowhere looks identical to a working page until somebody clicks it, which is precisely the state this feature was fixing. That check immediately caught three unbound handlers, including the shot and batch voice routes that had never had a control at all. The casting assertions are **differential**: cast a voice, and what the provider receives must change.
+
+**And the character sheet chooses the voice.** A flat list of twenty-one voices makes a director re-derive by ear what the engine already knows: `film_characters` records `gender` and `age_range`, so the catalogue is ordered for THIS character with the reason on each row — *matches female + young*. **Ranked, never filtered**: a director may want a voice the sheet does not predict, and removing it would make that choice unavailable without saying so.
+
+`ageBand` parses the numbers rather than matching phrasings, because a writer types "30s", "20-30" or "late 40s" and a parser that handles one silently stops suggesting for half the cast. Gender is **read, never inferred from the name** — both characters on the real project had none recorded, and DRAGON is not a woman because a regex reads the name that way. What is missing is **named on the surface with the way in**, since filtering on a guess is worse than not filtering and an unexplained flat list looks broken.
+
+**A voice already cast to another character is flagged and pushed last, not hidden.** Two characters in a scene sounding identical is the failure this exists to prevent; one performer doubling two small parts is a real choice, and hiding the voice would make it unsayable. Verified end to end: casting MAYA (female, 30s) as Sarah re-ordered her list to female/young first, and Sarah then appeared on DRAGON's list at position 21 of 21 marked *already MAYA*.
+
+The character card showed age and gender already — and rendered an **empty line** when both were absent, which reads as the fields not existing and was reported as exactly that. It now names what is missing and links to the form, because these are not decoration: voice casting ranks on them.
+
+Served at `GET /film/voices`, `GET|PUT|DELETE /film/characters/:id/voice`, `GET /film/projects/:id/casting`, `GET|POST /film/audition`, `GET|POST /film/scenes/:id/table-read`, and as seven tools (**204 tools**).
+
 ### A Subject Needs a Sketchbook, Not Just a Plate
 Every stored image of a character, location or prop **was** a candidate reference: `gatherShotReferences` selected on asset type and `headlinePlate` picked one. There was nowhere to put an image that **informs** the work without **being** it — the film still you are chasing, a photograph of the real street, four versions of a face you are choosing between. So an artist had one slot per view and every exploration overwrote the approved plate.
 
@@ -2385,7 +2421,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (86 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (87 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -2396,7 +2432,7 @@ SQLite via `better-sqlite3`. Schema auto-migrates on startup (86 migrations).
 - `film_locations` — Locations with lighting defaults
 - `film_props` — Props with scene assignments
 - `film_costumes` — Per-character costumes
-- `film_voice_profiles` — Speaker embeddings for TTS
+- `film_voice_profiles` — Which voice a character is cast in (and speaker embeddings)
 - `render_ledger` — Full render parameter history
 - `film_shot_versions` — Version history with thumbnails
 - `film_shot_notes` — Direction, revision, approval notes
@@ -2600,6 +2636,7 @@ node --test backend/tests/screenplay-pagination.test.js
 node --test backend/tests/screenplay-timing.test.js
 node --test backend/tests/screenplay-analysis.test.js
 node --test backend/tests/subject-gallery.test.js
+node --test backend/tests/dialogue-audition.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js
 node --test backend/tests/screenplay-furniture.test.js
 node --test backend/tests/screenplay-mutators.test.js

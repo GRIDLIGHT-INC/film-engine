@@ -326,8 +326,46 @@ const adapter = {
     },
 };
 
+/**
+ * What voices this account can use.
+ *
+ * A GET, not a generation: it costs nothing and returns the catalogue a
+ * director actually casts from — name, gender, age, accent, and a preview the
+ * provider hosts. Without it, casting means pasting an opaque id copied from
+ * another website, which is not casting.
+ *
+ * Never throws for a missing key: a page asking "what can I choose from" should
+ * say "no credential" rather than surfacing a stack trace, and the answer is
+ * needed before anything is configured.
+ */
+async function listVoices(opts) {
+    const cred = getCredential('elevenlabs') || {};
+    const apiKey = (opts && opts.apiKey) || cred.apiKey || (typeof cred === 'string' ? cred : null);
+    if (!apiKey) return { ok: false, error: 'No ElevenLabs credential is set.', voices: [] };
+
+    const baseUrl = (process.env.ELEVENLABS_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), (opts && opts.timeout) || 20000);
+    try {
+        const res = await fetch(`${baseUrl}/voices`, {
+            headers: { 'xi-api-key': apiKey, Accept: 'application/json' },
+            signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (!res.ok) {
+            return { ok: false, error: `elevenlabs ${res.status}`, voices: [] };
+        }
+        const body = await res.json();
+        return { ok: true, voices: Array.isArray(body.voices) ? body.voices : [] };
+    } catch (err) {
+        clearTimeout(timer);
+        return { ok: false, error: err.message, voices: [] };
+    }
+}
+
 module.exports = {
     adapter,
+    listVoices,
     buildVoiceRequest,
     buildSfxRequest,
     buildMusicRequest,

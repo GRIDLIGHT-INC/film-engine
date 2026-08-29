@@ -1310,6 +1310,15 @@
         /* FILM-127: Index Cards View */
         .modal-wide .modal, .modal.modal-wide { max-width: 1040px; width: 94vw; }
         .gal-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+        .voice-row {
+            display:flex; align-items:center; gap:10px; padding:8px 10px;
+            border:1px solid var(--border,#2a2a30); border-radius:5px; margin-bottom:6px;
+            flex-wrap:wrap;
+        }
+        .voice-row.is-cast { border-color:#4caf50; }
+        .voice-row .vname { font-weight:600; min-width:150px; }
+        .voice-row .vlabels { color:var(--text-muted,#8a8a95); font-size:12px; flex:1; min-width:120px; }
+        .voice-row audio { height:30px; }
         .gal-bar .input { flex:1; min-width:220px; }
         .gal-bar select { width:auto; min-width:64px; flex:0 0 auto; }
         .gal-group { margin-bottom: 22px; }
@@ -5240,6 +5249,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <div>
                     <button class="btn btn-secondary" onclick="downloadExport('premiere')" style="margin-right:8px;" data-tooltip="Export a Premiere Pro XML timeline (File → Import in Premiere)" data-tooltip-pos="bottom">Send to Premiere</button>
                     <button class="btn btn-primary" onclick="generateAllVideos()">Generate All Videos</button>
+                    <button class="btn btn-secondary" onclick="generateAllVoices()" title="Every line in the film, in each character's cast voice">Generate All Dialogue</button>
                 </div>
             </div>
             <div id="videoshotsProgress" style="display:none;" class="mb-16">
@@ -6021,6 +6031,34 @@ table, .render-table { border-radius:12px; overflow:hidden; }
       which foreign key holds them, and three near-identical panels is how one
       of them ends up with the promote rule and the others do not.
     -->
+    <!--
+      Casting a voice, and hearing a line.
+      This is a PLANNING surface: nothing here attaches to a shot, so a reading
+      you were only trying out can never be mistaken for the take that ships.
+    -->
+    <div class="modal-overlay" id="castingModal">
+        <div class="modal modal-wide">
+            <div class="modal-header">
+                <h3 id="castingTitle">Voice</h3>
+                <button class="modal-close" onclick="closeModal('castingModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="gal-bar">
+                    <input type="text" id="auditionLine" class="input"
+                           placeholder="A line to hear — leave blank to use one from the screenplay">
+                    <button class="btn btn-primary btn-sm" onclick="auditionVoice()">Audition</button>
+                    <span id="castingStatus" class="text-muted text-sm"></span>
+                </div>
+                <p class="text-muted text-sm" style="margin:0 0 12px;">
+                    Previews below are hosted by the provider and cost nothing.
+                    <strong>Audition</strong> speaks your line in the selected voice and does spend.
+                    Nothing here is attached to a shot.
+                </p>
+                <div id="castingBody"></div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="galleryModal">
         <div class="modal modal-wide">
             <div class="modal-header">
@@ -22552,6 +22590,14 @@ ${fountainText.slice(0, 50000)}`;
                     const breakdownBtn = canBreakdown
                         ? `<button class="btn btn-sm" onclick="event.stopPropagation(); breakdownScene('${s.id}')" title="Generate shots for this scene">&#9881; Break Down</button>`
                         : '';
+                    /*
+                     * Hearing the scene belongs HERE, next to breaking it down
+                     * — before the shots exist. Dialogue generation was
+                     * shot-scoped, so the only way to hear a line was after the
+                     * breakdown, which is after the point where hearing it
+                     * would change what you write.
+                     */
+                    const readBtn = `<button class="btn btn-sm" onclick="event.stopPropagation(); runTableRead('${s.id}')" title="Hear this scene read aloud, in each character's cast voice — attached to no shot">&#127908; Table Read</button>`;
 
                     return `
                     <div class="scene-row" id="scene-${s.id}">
@@ -22564,7 +22610,8 @@ ${fountainText.slice(0, 50000)}`;
                                 <h4>${esc(s.int_ext || '')} ${esc(s.location || '')} ${s.time_of_day ? '- ' + esc(s.time_of_day) : ''}</h4>
                                 <p>${esc(parseJsonArray(s.characters_present).join(', ') || 'No characters')} &middot; ${s.shot_count || 0} shot(s)</p>
                             </div>
-                            ${breakdownBtn}
+                            ${readBtn}
+                        ${breakdownBtn}
                             ${sceneDriftBadge(s)}
                             <span class="badge ${s.status}">${(s.status || '').replace(/_/g, ' ')}</span>
                             <button class="btn btn-sm scene-delete-btn"
@@ -23180,7 +23227,31 @@ ${fountainText.slice(0, 50000)}`;
                                 : '<div class="entity-avatar">' + esc(c.name.charAt(0)) + '</div>'}
                             <div>
                                 <h3>${esc(c.name)}</h3>
-                                <p class="text-sm text-muted">${c.age_range ? esc(c.age_range) : ''}${c.gender ? ' &middot; ' + esc(c.gender) : ''}</p>
+                                <p class="text-sm text-muted">${[
+                                    c.age_range ? esc(c.age_range) : null,
+                                    c.gender ? esc(c.gender) : null,
+                                    c.height_m ? esc(c.height_m) + 'm' : null,
+                                ].filter(Boolean).join(' &middot; ') || ''}${
+                                    /*
+                                     * What is MISSING, said where it is noticed.
+                                     *
+                                     * Both fields already rendered here and an
+                                     * absent one produced an empty line, which
+                                     * reads as the field not existing — it was
+                                     * reported as exactly that. They are not
+                                     * decoration: voice casting ranks the
+                                     * catalogue by them, so an unrecorded
+                                     * gender means twenty-one voices in
+                                     * arbitrary order.
+                                     */
+                                    (!c.age_range || !c.gender)
+                                    ? `<a class="text-sm" style="cursor:pointer;color:var(--gl-accent,#818cf8);"
+                                          onclick="event.stopPropagation(); editCharacter('${c.id}')"
+                                          title="Voice casting ranks the catalogue by these">${
+                                        c.age_range || c.gender ? ' &middot; ' : ''}+ ${
+                                        [!c.gender ? 'gender' : null, !c.age_range ? 'age' : null]
+                                            .filter(Boolean).join(' &amp; ')}</a>`
+                                    : ''}</p>
                             </div>
                         </div>
                         <p>${esc(c.description || 'No description')}</p>
@@ -23202,6 +23273,7 @@ ${fountainText.slice(0, 50000)}`;
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); showCharacterViews('${c.id}')" title="Front, side and back — and which one conditions every frame">Views</button>
                             ${uploadControl('character-plate', `/characters/${c.id}/refsheet/import`, { extra: { view: 'front' }, after: 'loadCharacters', title: 'Use a picture you already have — a photograph, a Midjourney export, art you were handed' })}
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openGallery('character', '${c.id}', ${jsAttr(c.name)})">Gallery</button>
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); castCharacterVoice('${c.id}', ${jsAttr(c.name)})" title="Cast a voice and hear a line — before anything is shot">Voice</button>
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editCharacter('${c.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteCharacter('${c.id}')">Delete</button>
                         </div>
@@ -23306,6 +23378,233 @@ ${fountainText.slice(0, 50000)}`;
     // FILM-122: Track original name for rename confirmation
     let editingCharacterOriginalName = '';
     let editingLocationOriginalName = '';
+
+    /* ── casting a voice, and hearing a line ───────────────────────────────
+     *
+     * A PLANNING surface. Dialogue generation shipped in phase 4 reachable only
+     * per SHOT — which means after a breakdown, which is after the point where
+     * hearing a line would change what you write. And it would have been the
+     * same voice every time: buildVoicePayload read a voice_id column that did
+     * not exist, so every character fell through to the provider default.
+     */
+    let CASTING = { characterId: null, name: '', voices: [], selected: null };
+
+    async function castCharacterVoice(characterId, name) {
+        CASTING = { characterId, name: name || '', voices: [], selected: null };
+        document.getElementById('castingTitle').textContent = `${name || 'Character'} — voice`;
+        document.getElementById('auditionLine').value = '';
+        document.getElementById('castingStatus').textContent = '';
+        showModal('castingModal');
+        await loadCastingBody();
+    }
+
+    async function loadCastingBody() {
+        const body = document.getElementById('castingBody');
+        body.innerHTML = '<div class="text-muted">Loading voices…</div>';
+        let current;
+        try {
+            current = await api(`/characters/${CASTING.characterId}/voice`);
+        } catch (err) {
+            body.innerHTML = `<div class="empty-state"><h3>Could not load the catalogue</h3>
+                <p>${esc(err.message)}</p></div>`;
+            return;
+        }
+
+        const sg = current.suggestions;
+        if (!sg || !sg.suggested.length) {
+            body.innerHTML = `<div class="empty-state"><h3>No voices available</h3>
+                <p>The provider returned no catalogue. Check the ElevenLabs credential in Setup.</p></div>`;
+            return;
+        }
+        CASTING.voices = sg.suggested;
+        CASTING.selected = CASTING.selected || current.voice_id || null;
+
+        /*
+         * What the sheet does not record is NAMED, with the way in.
+         *
+         * The engine already knows the character's gender and age; a flat list
+         * of twenty-one voices makes the director re-derive that by ear. When a
+         * field is missing the list is not narrowed — filtering on a guess is
+         * worse — so the reason has to be visible, and the fix is one click.
+         */
+        const missingNote = sg.missing.length
+            ? `<div class="warning-banner" style="margin-bottom:10px;">
+                 ${esc(sg.note)}
+                 <button class="btn btn-sm" style="margin-left:8px;"
+                         onclick="closeModal('castingModal'); editCharacter('${CASTING.characterId}')">
+                   Add ${esc(sg.missing.join(' and '))}
+                 </button>
+               </div>`
+            : `<p class="text-sm text-muted" style="margin:0 0 10px;">Ordered for ${esc(sg.for || '')} —
+                 ${esc([sg.matched_on.gender, sg.matched_on.age && String(sg.matched_on.age).replace('_', ' ')]
+                     .filter(Boolean).join(', '))}.</p>`;
+
+        body.innerHTML = missingNote + `
+            <p class="text-sm" style="margin:0 0 10px;">
+                ${current.cast
+                    ? `Currently cast: <strong>${esc(current.voice_name || current.voice_id)}</strong>`
+                    : `<span class="text-muted">${esc(current.warning || 'Not cast.')}</span>`}
+            </p>
+            ${sg.suggested.map(v => `
+                <div class="voice-row ${v.voice_id === CASTING.selected ? 'is-cast' : ''}">
+                    <span class="vname">${esc(v.name || v.voice_id)}</span>
+                    <span class="vlabels">
+                        ${esc([v.gender, v.age && String(v.age).replace('_', ' '), v.accent].filter(Boolean).join(' · ') || '—')}
+                        ${v.why && v.why.length
+                            ? `<span class="gal-badge reference" style="margin-left:6px;">matches ${esc(v.why.join(' + '))}</span>` : ''}
+                        ${v.taken_by
+                            ? `<span class="gal-badge inspiration" style="margin-left:6px;" title="Two characters in a scene sounding identical is usually a mistake — but doubling is a real choice, so this is flagged, not hidden">already ${esc(v.taken_by)}</span>` : ''}
+                    </span>
+                    ${v.preview_url
+                        ? `<audio controls preload="none" src="${esc(v.preview_url)}"></audio>`
+                        : '<span class="text-muted text-sm">no preview</span>'}
+                    <button class="btn btn-sm ${v.voice_id === CASTING.selected ? '' : 'btn-primary'}"
+                            onclick="pickVoice(${jsAttr(v.voice_id)}, ${jsAttr(v.name || '')})">
+                        ${v.voice_id === CASTING.selected ? 'Cast' : 'Cast this'}
+                    </button>
+                </div>`).join('')}`;
+    }
+
+    async function pickVoice(voiceId, voiceName) {
+        const status = document.getElementById('castingStatus');
+        status.textContent = 'Casting…';
+        try {
+            const res = await api(`/characters/${CASTING.characterId}/voice`, {
+                method: 'PUT', body: JSON.stringify({ voice_id: voiceId, voice_name: voiceName }),
+            });
+            CASTING.selected = voiceId;
+            status.textContent = res.changed ? (res.note || 'Cast.') : 'Already cast in this voice.';
+            await loadCastingBody();
+            loadCharacters();
+        } catch (err) { status.textContent = err.message; }
+    }
+
+    /**
+     * Hear a line. Attached to nothing.
+     *
+     * Previewed first and confirmed, like every other paid button — the preview
+     * is free, so the gate costs nothing to pass and everything to skip.
+     */
+    async function auditionVoice() {
+        const status = document.getElementById('castingStatus');
+        const text = document.getElementById('auditionLine').value.trim();
+        if (!text) { status.textContent = 'Type a line to hear.'; return; }
+
+        status.textContent = 'Checking…';
+        let pv;
+        try {
+            pv = await api(`/audition/preview?text=${encodeURIComponent(text)}`
+                + (CASTING.selected ? `&voice_id=${encodeURIComponent(CASTING.selected)}` : '')
+                + (CASTING.characterId ? `&character_id=${CASTING.characterId}` : ''));
+        } catch (err) { status.textContent = 'Preview failed: ' + err.message; return; }
+        if (pv.error) { status.textContent = pv.error; return; }
+
+        if (!confirm(`Speak this line?\n\n"${text}"\n\nProvider: ${pv.provider}\n`
+            + `Voice: ${pv.voice_id || 'the provider default'}\n`
+            + `${pv.warning ? '\n' + pv.warning + '\n' : ''}\n`
+            + 'This is an audition: it attaches to no shot.')) { status.textContent = ''; return; }
+
+        status.textContent = 'Generating…';
+        try {
+            const res = await api('/audition', {
+                method: 'POST',
+                body: JSON.stringify({ text, voice_id: CASTING.selected,
+                    character_id: CASTING.characterId,
+                    project_id: state.currentProject && state.currentProject.id }),
+            });
+            status.textContent = 'Playing.';
+            const body = document.getElementById('castingBody');
+            const bar = document.createElement('div');
+            bar.className = 'voice-row is-cast';
+            bar.innerHTML = `<span class="vname">Audition</span>
+                <span class="vlabels">${esc(text)}</span>
+                <audio controls autoplay src="${esc(API_BASE + res.audio_url)}"></audio>`;
+            body.prepend(bar);
+        } catch (err) { status.textContent = 'Audition failed: ' + err.message; }
+    }
+
+    /* ── the table read ─────────────────────────────────────────────────── */
+
+    /**
+     * Hear a whole scene, before anything is shot.
+     *
+     * The question the shot-scoped route could not answer: how does this scene
+     * PLAY. Free to read, paid to hear, and attached to no shot either way.
+     */
+    async function runTableRead(sceneId) {
+        setStatus('Reading the scene…');
+        let read;
+        try { read = await api(`/scenes/${sceneId}/table-read`); }
+        catch (err) { setStatus('Table read: ' + err.message); return; }
+
+        if (!read.total) { setStatus('This scene has no dialogue.'); return; }
+
+        const uncast = read.uncast && read.uncast.length
+            ? `\n\nNot cast: ${read.uncast.join(', ')} — their lines will use the provider default voice.`
+            : '';
+        if (!confirm(`Hear ${read.total} line(s) from ${read.heading || 'this scene'}?`
+            + `${uncast}\n\nThis spends, and attaches to no shot.\n\n`
+            + read.lines.slice(0, 6).map(l => `${l.character}: ${l.line}`).join('\n')
+            + (read.total > 6 ? `\n… and ${read.total - 6} more` : ''))) { setStatus(''); return; }
+
+        setStatus(`Generating ${read.total} line(s)…`);
+        try {
+            const res = await api(`/scenes/${sceneId}/table-read`, { method: 'POST', body: '{}' });
+            setStatus(res.error
+                ? `${res.made} of ${res.requested} — then: ${res.error}`
+                : `Table read: ${res.made} line(s).`);
+            showTableRead(res);
+        } catch (err) { setStatus('Table read failed: ' + err.message); }
+    }
+
+    function showTableRead(res) {
+        CASTING = { characterId: null, name: '', voices: [], selected: null };
+        document.getElementById('castingTitle').textContent = 'Table read';
+        document.getElementById('castingStatus').textContent =
+            `${res.made} line(s)${res.error ? ' — stopped early' : ''}`;
+        document.getElementById('castingBody').innerHTML = (res.lines || []).map(l => `
+            <div class="voice-row ${l.cast ? 'is-cast' : ''}">
+                <span class="vname">${esc(l.character || '—')}</span>
+                <span class="vlabels">${l.direction ? `<em>${esc(l.direction)}</em> ` : ''}${esc(l.line)}</span>
+                <audio controls preload="none" src="${esc(API_BASE + l.audio_url)}"></audio>
+            </div>`).join('');
+        showModal('castingModal');
+    }
+
+    /* ── the takes that ship ────────────────────────────────────────────── */
+
+    /**
+     * A shot's dialogue, and the whole film's.
+     *
+     * These routes have existed since phase 4 with no control on any page —
+     * generation reachable only from curl or an agent. Unlike an audition,
+     * THIS one registers against the shot and is what lip-sync and the mix
+     * consume, so the confirmation says which it is.
+     */
+    async function generateVoiceForShot(shotId, shotCode) {
+        if (!confirm(`Generate the dialogue for ${shotCode || 'this shot'}?\n\n`
+            + 'This SPENDS, and unlike an audition it is registered against the shot — it is the '
+            + 'take that lip-sync and the mix will use.')) return;
+        setStatus('Generating dialogue…');
+        try {
+            const res = await api(`/shots/${shotId}/voice/generate`, { method: 'POST', body: '{}' });
+            setStatus(res.error ? ('Dialogue: ' + res.error)
+                : `Dialogue generated for ${shotCode || 'shot'}.`);
+        } catch (err) { setStatus('Dialogue failed: ' + err.message); }
+    }
+
+    async function generateAllVoices() {
+        if (!state.currentProject) return;
+        if (!confirm('Generate dialogue for EVERY shot that has any?\n\n'
+            + 'This SPENDS on each line, and registers each take against its shot. '
+            + 'Cast your characters first, or uncast ones will speak in the provider default voice.')) return;
+        setStatus('Generating all dialogue…');
+        try {
+            const res = await api(`/projects/${state.currentProject.id}/voice/batch`,
+                { method: 'POST', body: '{}' });
+            setStatus(`Dialogue: ${res.generated || res.total || 0} line(s).`);
+        } catch (err) { setStatus('Batch failed: ' + err.message); }
+    }
 
     /* ── the subject workspace ─────────────────────────────────────────────
      *
@@ -27635,6 +27934,7 @@ ${fountainText.slice(0, 50000)}`;
                     ${supplied.length ? '<div class="text-sm text-muted" style="margin-top:5px;">Available: ' + supplied.map(esc).join(', ') + '</div>' : ''}
                     <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
                         <button class="btn btn-primary btn-sm" onclick="generateVideoFor('${s.id}', this)">${done ? 'Regenerate' : 'Generate Video'}</button>
+                        <button class="btn btn-secondary btn-sm" onclick="generateVoiceForShot('${s.id}', ${jsAttr(s.shot_code)})" title="The dialogue take that ships — registered against this shot, unlike an audition">Dialogue</button>
                         ${mediaUploadControl('video', 'video', 'shot', s.id, { after: 'loadVideoShots', label: 'Upload clip' })}
                         ${media.video_raw || media.video_final || media.video_synced
                             ? `<button class="btn btn-secondary btn-sm"
