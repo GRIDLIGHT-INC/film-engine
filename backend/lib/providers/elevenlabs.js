@@ -197,12 +197,79 @@ function buildMusicRequest(payload) {
     // instrumental is the default and has to be opted out of explicitly.
     const wantsVocals = payload.vocals === true || payload.force_instrumental === false;
 
-    const body = {
-        prompt,
-        model_id: modelId,
-        music_length_ms: lengthMs,
-        force_instrumental: !wantsVocals,
-    };
+    /*
+     * A cue that changes over its own length.
+     *
+     * `composition_plan` is named parts, each with its own direction and its own
+     * duration, and the API honours those durations. SIX rules govern it, and
+     * every one of them is otherwise a paid request that fails. All six were
+     * PROBED against the live API with deliberately invalid bodies, which
+     * validation rejects for free — two of them are not in the documentation at
+     * all and only running it found them:
+     *
+     *   1. "You must provide exactly one of `prompt` or `composition_plan`."
+     *   2. "You must not provide `music_length_ms` when passing `composition_plan`."
+     *   3. a part's duration_ms must be 3000..120000
+     *   4. `lines` is REQUIRED on a v1 section, even for an instrumental cue
+     *   5. "`force_instrumental` can only be used with `prompt`."   (undocumented)
+     *   6. THE SHAPE IS PER MODEL:                                  (undocumented)
+     *        music_v1 -> MusicPrompt   { positive_global_styles, sections[] }
+     *        music_v2 -> CompositionPlan { chunks[] }
+     *      sending v1's shape to v2 is
+     *      "Invalid type of `composition_plan` used for model music_v2".
+     *
+     * (6) is why the plan arrives here in a neutral shape and is converted at
+     * the adapter: which body a model wants is a provider fact, like
+     * promptLimit and referenceMode, and belongs beside the model ids.
+     */
+    const MODEL_PLAN_SHAPE = { music_v1: 'sections', music_v2: 'chunks' };
+
+    const plan = payload.composition_plan;
+    const hasPlan = plan && Array.isArray(plan.sections) && plan.sections.length > 0;
+
+    /*
+     * (5): a plan cannot carry force_instrumental, and silently dropping it
+     * would lose the protection it exists for — sung vocals over dialogue ruin
+     * a scene, and instrumental is this engine's default. The plan has its own
+     * way to say it: no `lines`, and `vocals` among the negatives. Expressed
+     * rather than abandoned.
+     */
+    const planNegatives = (() => {
+        const declared = (plan && Array.isArray(plan.negative_global_styles))
+            ? plan.negative_global_styles.slice() : [];
+        if (wantsVocals || declared.some(n => /vocal|sung|lyric|voice/i.test(String(n)))) return declared;
+        return [...declared, 'vocals'];
+    })();
+
+    function planBodyFor(shape) {
+        if (shape === 'chunks') {
+            // v2 has no globals of its own, so the cue's overall style travels
+            // with every chunk. That is the shape, not a workaround.
+            return {
+                chunks: plan.sections.map(s => ({
+                    text: s.direction || s.section_name,
+                    duration_ms: s.duration_ms,
+                    positive_styles: [...(plan.positive_global_styles || []), ...(s.positive_local_styles || [])],
+                    negative_styles: [...planNegatives, ...(s.negative_local_styles || [])],
+                })),
+            };
+        }
+        return {
+            positive_global_styles: plan.positive_global_styles || [],
+            negative_global_styles: planNegatives,
+            sections: plan.sections.map(s => ({
+                section_name: s.section_name,
+                positive_local_styles: s.positive_local_styles || [],
+                negative_local_styles: s.negative_local_styles || [],
+                duration_ms: s.duration_ms,
+                lines: [],
+            })),
+        };
+    }
+
+    const body = hasPlan
+        ? { composition_plan: planBodyFor(MODEL_PLAN_SHAPE[modelId] || 'chunks'), model_id: modelId }
+        : { prompt, model_id: modelId, music_length_ms: lengthMs, force_instrumental: !wantsVocals };
     if (Number.isInteger(payload.seed)) body.seed = payload.seed;
 
     return {
@@ -326,8 +393,14 @@ const adapter = {
         else if (capability === 'ambient') request = buildAmbientRequest(payload || {});
         else request = buildMusicRequest(payload || {});
 
-        // /music carries the description in `prompt`; the other two use `text`.
-        if (!request.body.text && !request.body.prompt) {
+        /*
+         * /music carries the description in `prompt`; the other two use `text`.
+         * A composition plan carries it in the SECTIONS and must not also send
+         * a prompt — the API refuses both together — so a planned cue is
+         * complete with neither field, and this guard rejected every one of
+         * them before the request was ever made.
+         */
+        if (!request.body.text && !request.body.prompt && !request.body.composition_plan) {
             return { ok: false, status: 400, error: `elevenlabs: ${capability === 'music' ? 'prompt' : 'text'} is required` };
         }
         return callElevenLabs(request, apiKey, opts);

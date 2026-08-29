@@ -5071,6 +5071,17 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                       heard, not seen, and its transport is the timeline's.
                     -->
                     <audio id="pbAudio" preload="auto" style="display:none;"></audio>
+                    <!--
+                      The scene's SCORE and its AMBIENT BED.
+                      Separate elements because they are separate decisions with
+                      separate levels, and a director wants to hear the score
+                      without the room and the room without the score. They span
+                      whole scenes, so they are not restarted at each cut —
+                      restarting a score on every shot is the one thing that
+                      would make it sound obviously wrong.
+                    -->
+                    <audio id="pbMusic" preload="auto" style="display:none;"></audio>
+                    <audio id="pbAmbient" preload="auto" style="display:none;"></audio>
                     <div id="pbStill" class="pb-still hidden"></div>
                     <div id="pbGap" class="pb-gap hidden">
                         <div>
@@ -5100,7 +5111,16 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                                    title="Play each shot's camera move over its storyboard frame">
                                 <input type="checkbox" id="pbMotion" checked onchange="pbMotionToggled()"> Camera move
                             </label>
+                            <label class="text-sm" id="pbScoreLabel" style="display:none;align-items:center;gap:6px;cursor:pointer;"
+                                   title="Play each scene's score under its shots">
+                                <input type="checkbox" id="pbScore" checked onchange="pbBedsToggled()"> Score
+                            </label>
+                            <label class="text-sm" id="pbAmbientLabel" style="display:none;align-items:center;gap:6px;cursor:pointer;"
+                                   title="Play each scene's ambient bed under its shots">
+                                <input type="checkbox" id="pbAmbient2" checked onchange="pbBedsToggled()"> Ambient
+                            </label>
                             <span id="pbMoveLabel" class="text-sm text-muted"></span>
+                            <span id="pbBedLabel" class="text-sm text-muted"></span>
                         </div>
                         <div class="pb-timecode">
                             <span id="pbTimecode">00:00:00:00</span>
@@ -6624,6 +6644,12 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         the scene, not only what it sounds like.
                     </p>
                 </div>
+                <div class="form-group"><label>Not this &mdash; what it must never be</label>
+                    <input type="text" data-field="negative_prompt" placeholder="vocals, drums, sentimental strings">
+                    <p class="text-sm text-muted" style="margin-top:6px;">
+                        Sent to the generator as a negative. A note a composer gives constantly.
+                    </p>
+                </div>
                 <div class="form-group"><label>Length &mdash; seconds</label>
                     <input type="number" step="0.5" min="0" data-field="duration_s" placeholder="leave blank to match the cut">
                     <p class="text-sm text-muted" style="margin-top:6px;">
@@ -6631,6 +6657,30 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         deliberately past or under the cut.
                     </p>
                 </div>
+
+                <!--
+                  SECTIONS — the cue over its own length.
+                  A film cue is sparse under the argument and opens out at the
+                  reveal; one description for three minutes cannot ask for that.
+                  Each section carries its own direction and its own length and
+                  the generator honours the lengths. Empty means one prompt for
+                  the whole cue, exactly as before.
+                -->
+                <div class="form-group">
+                    <label>Sections &mdash; how the cue changes as it plays</label>
+                    <div id="cueSections"></div>
+                    <div class="btn-row" style="margin-top:8px;">
+                        <button class="btn btn-secondary btn-sm" onclick="cueAddSection()">+ Section</button>
+                        <button class="btn btn-secondary btn-sm" onclick="cueClearSections()">Clear</button>
+                        <span class="text-sm text-muted" id="cueSectionTotal"></span>
+                    </div>
+                    <p class="text-sm text-muted" style="margin-top:6px;">
+                        Leave empty and the cue is one prompt for its whole length. With sections the
+                        cue is the <strong>sum of its parts</strong> and the length above is ignored.
+                        Each part runs 3&ndash;120 seconds &mdash; the generator's own limits.
+                    </p>
+                </div>
+
                 <div class="btn-row">
                     <button class="btn btn-primary" onclick="createMusicCue()">Create</button>
                     <button class="btn btn-secondary" onclick="closeModal('musicCueModal')">Cancel</button>
@@ -25439,6 +25489,53 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
+    /*
+     * ── Sections a director types ───────────────────────────────────────────
+     *
+     * Held in a plain array beside the modal rather than in the DOM, because a
+     * row rebuilt on every keystroke loses the caret in the field being typed
+     * into — the same reason the screenplay editor stopped adopting its own
+     * furniture.
+     */
+    let CUE_SECTIONS = [];
+
+    function cueRenderSections() {
+        const host = document.getElementById('cueSections');
+        if (!host) return;
+        if (!CUE_SECTIONS.length) {
+            host.innerHTML = '<p class="text-sm text-muted">No sections &mdash; one prompt for the whole cue.</p>';
+        } else {
+            host.innerHTML = CUE_SECTIONS.map((sec, i) => `
+                <div class="flex-row" style="gap:6px;align-items:flex-start;margin-bottom:6px;min-width:0;flex-wrap:wrap;">
+                    <input type="text" style="flex:0 0 130px;" value="${escapeHtml(sec.name || '')}"
+                           placeholder="under the argument" oninput="cueSectionEdit(${i},'name',this.value)">
+                    <input type="text" style="flex:1 1 220px;min-width:0;" value="${escapeHtml(sec.direction || '')}"
+                           placeholder="one held note, no drums" oninput="cueSectionEdit(${i},'direction',this.value)">
+                    <input type="number" step="1" min="3" max="120" style="flex:0 0 76px;" value="${Number(sec.seconds) || ''}"
+                           placeholder="sec" oninput="cueSectionEdit(${i},'seconds',this.value)">
+                    <button class="btn btn-secondary btn-sm" onclick="cueRemoveSection(${i})">&times;</button>
+                </div>`).join('');
+        }
+        const total = CUE_SECTIONS.reduce((sum, x) => sum + (Number(x.seconds) || 0), 0);
+        const bad = CUE_SECTIONS.filter(x => Number(x.seconds) && (x.seconds < 3 || x.seconds > 120)).length;
+        const label = document.getElementById('cueSectionTotal');
+        if (label) {
+            label.textContent = CUE_SECTIONS.length
+                ? `${CUE_SECTIONS.length} section${CUE_SECTIONS.length === 1 ? '' : 's'} · ${total.toFixed(0)}s total`
+                  + (bad ? ` · ${bad} outside 3–120s` : '')
+                : '';
+            label.style.color = bad ? 'var(--gl-warning, #d9a441)' : '';
+        }
+    }
+    function cueAddSection() { CUE_SECTIONS.push({ name: '', direction: '', seconds: 30 }); cueRenderSections(); }
+    function cueRemoveSection(i) { CUE_SECTIONS.splice(i, 1); cueRenderSections(); }
+    function cueClearSections() { CUE_SECTIONS = []; cueRenderSections(); }
+    function cueSectionEdit(i, field, value) {
+        if (!CUE_SECTIONS[i]) return;
+        CUE_SECTIONS[i][field] = field === 'seconds' ? Number(value) : value;
+        if (field === 'seconds') cueRenderSections();
+    }
+
     async function createMusicCue() {
         if (!state.currentProject) return;
         const data = getModalData('musicCueModal');
@@ -25463,11 +25560,16 @@ ${fountainText.slice(0, 50000)}`;
         if (typeof data.instruments === 'string') {
             data.instruments = data.instruments.split(',').map(x => x.trim()).filter(Boolean);
         }
+        // Sections replace the length: the provider refuses a length alongside
+        // a plan, and the sections' own durations are what it honours.
+        const sections = CUE_SECTIONS.filter(x => (x.direction || '').trim() && Number(x.seconds) > 0);
+        if (sections.length) { data.sections = sections; delete data.duration_ms; }
 
         try {
             await api('/projects/' + state.currentProject.id + '/music-cues', { method: 'POST', body: JSON.stringify(data) });
             closeModal('musicCueModal');
             clearModal('musicCueModal');
+            cueClearSections();
             loadMusicCues();
             setStatus('Music cue created');
         } catch (err) { setStatus('Error: ' + err.message); }
@@ -29232,11 +29334,18 @@ ${fountainText.slice(0, 50000)}`;
         setStatus('Loading music...');
         const pid = state.currentProject.id;
         try {
-            const [sceneData, jobData, provData] = await Promise.all([
+            const [sceneData, jobData, provData, cueData] = await Promise.all([
                 api('/projects/' + pid + '/scenes').catch(() => ({ scenes: [] })),
                 api('/projects/' + pid + '/music/jobs').catch(() => ({ jobs: [] })),
                 api('/projects/' + pid + '/providers').catch(() => ({ effective: {} })),
+                api('/projects/' + pid + '/music-cues').catch(() => ({ music_cues: [] })),
             ]);
+            // What a director has already said about how each scene sounds.
+            const ambientCues = {};
+            (cueData.music_cues || []).forEach(c => {
+                if (c.cue_type === 'ambient' && c.scene_id && !ambientCues[c.scene_id]) ambientCues[c.scene_id] = c;
+            });
+            window.__ambientCues = ambientCues;
             const scenes = sceneData.scenes || [];
             // Latest job per (scene, gen_type).
             const jobKey = {};
@@ -29299,6 +29408,18 @@ ${fountainText.slice(0, 50000)}`;
                         mediaUploadControl('music', 'audio', 'scene', sc.id, { after: 'loadMusic', label: 'Upload' }))}
                     ${audioRow('Ambient', sc, 'ambient', ambientProvider,
                         mediaUploadControl('ambient', 'audio', 'scene', sc.id, { after: 'loadMusic', label: 'Upload' }))}
+                    <!--
+                      The bed was assembled from a lookup table on the location
+                      NAME and the time of day, and a director had no way to say
+                      a word about it. Saved as an ambient cue on this scene, so
+                      it is durable and reaches the batch as well as the button.
+                    -->
+                    <div style="margin-top:6px;">
+                        <input type="text" id="amb_${sc.id}" class="text-sm" style="width:100%;"
+                               placeholder="Ambient direction: the fridge compressor cuts out halfway through"
+                               value="${esc((ambientCues[sc.id] || {}).description || '')}"
+                               onchange="saveAmbientDirection('${sc.id}', this.value, this)">
+                    </div>
                 </div>`).join('');
 
             const readyCount = scenes.filter(sc => assetsByScene[sc.id] && assetsByScene[sc.id].audio_music).length;
@@ -29318,9 +29439,47 @@ ${fountainText.slice(0, 50000)}`;
             + 'from the scene\u2019s mood, location and time of day.')) return;
         _shotAction(sceneId, btn, 'Generate', '/scenes/' + sceneId + '/music/generate', 'Scoring', loadMusic);
     }
+    /**
+     * Store the scene's ambient direction.
+     *
+     * An ambient cue is an ordinary music cue with cue_type 'ambient' — the
+     * same table, the same tools, the same negative and level and fades. A
+     * second store for "the same thing but for room tone" is how one of them
+     * acquires a fix the other does not.
+     */
+    async function saveAmbientDirection(sceneId, text, el) {
+        if (!state.currentProject) return;
+        const existing = (window.__ambientCues || {})[sceneId];
+        try {
+            if (existing) {
+                await api('/music-cues/' + existing.id, { method: 'PUT', body: JSON.stringify({ description: text }) });
+            } else {
+                const made = await api('/projects/' + state.currentProject.id + '/music-cues', {
+                    method: 'POST',
+                    body: JSON.stringify({ scene_id: sceneId, cue_type: 'ambient', title: 'Ambient', description: text }),
+                });
+                (window.__ambientCues = window.__ambientCues || {})[sceneId] = made;
+            }
+            if (el) el.style.borderColor = 'var(--gl-success, #166534)';
+            setStatus('Ambient direction saved');
+        } catch (err) {
+            if (el) el.style.borderColor = 'var(--gl-danger, #7f1d1d)';
+            setStatus('Error: ' + err.message);
+        }
+    }
+
     function generateAmbientFor(sceneId, btn) {
+        const said = ((window.__ambientCues || {})[sceneId] || {}).description
+            || (document.getElementById('amb_' + sceneId) || {}).value || '';
+        // Say what it is being told, because an empty direction means the bed
+        // is assembled from the location name and the hour and nothing else —
+        // which is what it always was, and worth knowing before paying for it.
         if (!confirm('Generate an ambient bed for this scene?\n\nThis costs credits. It is a short '
-            + 'loop that is tiled across the scene rather than a full-length render.')) return;
+            + 'loop that is tiled across the scene rather than a full-length render.\n\n'
+            + (said.trim()
+                ? 'Direction: ' + said.trim()
+                : 'No ambient direction written — the bed will come from the location, its sound '
+                  + 'notes and the time of day.'))) return;
         _shotAction(sceneId, btn, 'Generate', '/scenes/' + sceneId + '/ambient/generate', 'Generating ambient', loadMusic);
     }
 
@@ -33634,6 +33793,7 @@ ${fountainText.slice(0, 50000)}`;
 
         renderPlaylist();
         pbMotionLabel();
+        pbBedLabel();
         updatePlayhead();
     }
 
@@ -33821,6 +33981,123 @@ ${fountainText.slice(0, 50000)}`;
         pbMotionLabel();
     }
 
+    /*
+     * ── The beds a scene plays under ────────────────────────────────────────
+     *
+     * lib/timeline.js has resolved a shot's picture and its dialogue since it
+     * was written, and the asset query it is fed reads `shot_id IS NOT NULL` —
+     * which excludes a scene's score and ambient bed entirely. So you could
+     * score a scene, press play, and hear only the dialogue. From the outside
+     * that is indistinguishable from the score having failed to generate, which
+     * is how it was reported.
+     *
+     * A bed spans a whole scene, so it is NOT reloaded at each cut. It is
+     * seeded once when the playhead enters its span and then left to run;
+     * reloading a score on every shot boundary is the one behaviour that would
+     * make a perfectly good cue sound broken.
+     */
+    const BED_KINDS = [
+        { kind: 'music', el: 'pbMusic', toggle: 'pbScore', label: 'pbScoreLabel' },
+        { kind: 'ambient', el: 'pbAmbient', toggle: 'pbAmbient2', label: 'pbAmbientLabel' },
+    ];
+
+    /** A cue's level in dB, as a volume an <audio> element understands. */
+    function bedVolume(bed, atMs) {
+        const gain = Math.pow(10, (Number(bed.gain_db) || 0) / 20);
+        let fade = 1;
+        const into = atMs - bed.start_ms;
+        const left = bed.end_ms - atMs;
+        if (bed.fade_in_ms > 0 && into < bed.fade_in_ms) fade = Math.max(0, into / bed.fade_in_ms);
+        if (bed.fade_out_ms > 0 && left < bed.fade_out_ms) fade = Math.min(fade, Math.max(0, left / bed.fade_out_ms));
+        return Math.max(0, Math.min(1, gain * fade));
+    }
+
+    /** Which bed of this kind, if any, is playing at this moment on the film. */
+    function bedAt(kind, absoluteMs) {
+        const beds = (pb.timeline && pb.timeline.beds) || [];
+        return beds.find(b => b.kind === kind && absoluteMs >= b.start_ms && absoluteMs < b.end_ms) || null;
+    }
+
+    /**
+     * Put every bed where the playhead is.
+     *
+     * Re-seeks only when it has drifted, because setting currentTime every
+     * frame is what turns continuous audio into a stutter.
+     */
+    function pbSyncBeds() {
+        if (!pb.timeline) return;
+        const abs = pbAbsoluteMs();
+        for (const spec of BED_KINDS) {
+            const el = document.getElementById(spec.el);
+            if (!el) continue;
+            const on = document.getElementById(spec.toggle);
+            const bed = (on && on.checked) ? bedAt(spec.kind, abs) : null;
+
+            if (!bed) {
+                if (!el.paused) el.pause();
+                if (el.dataset.bedPath) { el.removeAttribute('src'); el.dataset.bedPath = ''; el.load(); }
+                continue;
+            }
+
+            const src = mediaUrl(bed.path);
+            if (el.dataset.bedPath !== src) {
+                el.dataset.bedPath = src;
+                el.src = src;
+                el.load();
+            }
+
+            // A bed shorter than its scene simply stops; it is not looped,
+            // because a score quietly repeating is a worse lie than one that
+            // ends where it ends, and the shortfall is reported beside it.
+            const into = (abs - bed.start_ms) / 1000;
+            const own = Number(el.duration);
+            if (Number.isFinite(own) && own > 0 && into >= own) {
+                if (!el.paused) el.pause();
+                continue;
+            }
+
+            el.volume = bedVolume(bed, abs);
+            if (Math.abs(el.currentTime - into) > 0.25) {
+                try { el.currentTime = Math.max(0, into); } catch (_) { /* not seekable yet */ }
+            }
+            if (pb.playing && el.paused) el.play().catch(() => {});
+            if (!pb.playing && !el.paused) el.pause();
+        }
+    }
+
+    /** Show the switches only for a film that HAS beds, and say what is under this shot. */
+    function pbBedLabel() {
+        const beds = (pb.timeline && pb.timeline.beds) || [];
+        for (const spec of BED_KINDS) {
+            const label = document.getElementById(spec.label);
+            if (label) label.style.display = beds.some(b => b.kind === spec.kind) ? 'inline-flex' : 'none';
+        }
+        const out = document.getElementById('pbBedLabel');
+        if (!out) return;
+        const abs = pbAbsoluteMs();
+        const bits = [];
+        let short = null;
+        for (const spec of BED_KINDS) {
+            const bed = bedAt(spec.kind, abs);
+            if (!bed) continue;
+            const on = document.getElementById(spec.toggle);
+            bits.push(spec.kind + (on && !on.checked ? ' (off)' : ''));
+            // A score 14 seconds shorter than the scene it plays under is a
+            // real thing to know before wondering why the music stopped.
+            const span = bed.end_ms - bed.start_ms;
+            if (bed.asset_duration_ms > 0 && span - bed.asset_duration_ms > 1000) {
+                short = `${spec.kind} ends ${((span - bed.asset_duration_ms) / 1000).toFixed(0)}s before the scene does`;
+            }
+        }
+        out.textContent = bits.length ? bits.join(' · ') + (short ? ' · ' + short : '') : '';
+        out.style.color = short ? 'var(--gl-warning, #d9a441)' : '';
+    }
+
+    function pbBedsToggled() {
+        pbSyncBeds();
+        pbBedLabel();
+    }
+
     function updatePlayhead() {
         if (!pb.timeline || !pb.timeline.total_duration_ms) return;
         const abs = pbAbsoluteMs();
@@ -33837,6 +34114,7 @@ ${fountainText.slice(0, 50000)}`;
             : '—';
 
         pbApplyMotion();
+        pbSyncBeds();
     }
 
     /** Mirror of the server's msToTimecode so the readout matches exactly. */
@@ -33877,6 +34155,9 @@ ${fountainText.slice(0, 50000)}`;
             video.pause();
             if (pb.raf) { cancelAnimationFrame(pb.raf); pb.raf = null; }
         }
+        // The beds follow the transport too. Without this, pressing pause
+        // stopped the picture and the dialogue and left the score running.
+        pbSyncBeds();
     }
 
     /**

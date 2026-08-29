@@ -189,15 +189,42 @@ test('every field the prompt reads has a control', () => {
     // Fields the generator derives rather than the director setting them.
     const DERIVED = new Set(['duration_s', 'category', 'sound', 'seed']);
 
+    /*
+     * A control need not be named after its field.
+     *
+     * Two are not, and both for a reason: a length is typed in seconds and
+     * stored in milliseconds, and sections are a repeating editor rather than
+     * one input. Exempt BY NAME with the control named, on the rule
+     * manual-edit.test.js already follows — an exemption matching on shape
+     * would quietly excuse the next field that has no control at all, which is
+     * the exact gap this test exists to catch. Each named control must exist
+     * AND be bound to something that runs.
+     */
+    const NAMED_CONTROLS = {
+        duration_ms: ['data-field="duration_s"', 'data.duration_ms = Math.round(Number(data.duration_s)'],
+        sections: ['id="cueSections"', 'onclick="cueAddSection()"', 'function cueAddSection()',
+            'data.sections = sections'],
+    };
+
     const at = SPA.indexOf('id="musicCueModal"');
     assert.notStrictEqual(at, -1, 'the cue form is gone');
-    const form = SPA.slice(at, at + 4200);
+    const form = SPA.slice(at, at + 6000);
 
     const missing = read.filter(f => !DERIVED.has(f)
-        && f !== 'duration_ms'                       // typed in seconds, converted on save
+        && !NAMED_CONTROLS[f]
         && !form.includes(`data-field="${f}"`));
     assert.deepStrictEqual(missing, [],
         `the generator reads these and nobody can set them: ${missing.join(', ')}`);
+
+    for (const [field, needles] of Object.entries(NAMED_CONTROLS)) {
+        assert.ok(read.includes(field),
+            `${field} is exempted with a named control and the generator no longer reads it — `
+            + 'a stale exemption makes the whole list a lie');
+        for (const needle of needles) {
+            assert.ok(SPA.includes(needle),
+                `${field} claims to be set by ${needle}, which is not in the page`);
+        }
+    }
 
     // Length is typed in seconds and stored in ms.
     assert.match(form, /data-field="duration_s"/, 'no way to set a cue length');

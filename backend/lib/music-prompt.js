@@ -205,6 +205,17 @@ function buildMusicPrompt(musicCue, scene, project, opts) {
     return {
         type: 'score',
         prompt: fitMusicPrompt(promptParts),
+        /*
+         * The same parts, before they were joined.
+         *
+         * A composition plan wants a LIST of global styles and the prompt is
+         * that list printed with commas. Re-splitting the finished string, or
+         * writing a second list beside it, is how a sectioned cue and a plain
+         * one come to describe different films.
+         */
+        prompt_parts: promptParts.filter(Boolean),
+        negative_prompt: (cue.negative_prompt || '').trim(),
+        sections: Array.isArray(cue.sections) ? cue.sections : [],
         duration_s: durationS,
         duration_source: durationSource,
         ...(durationNote ? { duration_note: durationNote } : {}),
@@ -261,8 +272,34 @@ function buildSFXPrompts(sceneCard, scene) {
  * @param {object|null} location - film_locations row
  * @returns {object} Payload for POST /music (type: 'ambient')
  */
-function buildAmbientPrompt(scene, location) {
+/**
+ * The bed a scene sits in.
+ *
+ * This read the scene's LOCATION NAME and its TIME OF DAY and nothing else, so
+ * every ambient bed in a production was assembled from a lookup table and a
+ * director had no way to say a word about it. Two things it never read:
+ *
+ * `film_locations.sound_notes` — a column called sound notes, with a textarea on
+ * the Locations page placeholdered "Traffic two streets over, a screen door,
+ * gulls...", stored since migration 006 and reaching nothing but the call sheet.
+ * The one field in this database whose entire purpose is to describe how a place
+ * SOUNDS was invisible to the only thing that generates how a place sounds.
+ *
+ * `direction` — what this scene needs, as opposed to what the place is like.
+ * The room tone of a diner is a property of the diner; "the fridge compressor
+ * cuts out halfway through" is a property of the scene, and the two are
+ * different notes that were both unsayable.
+ *
+ * The direction LEADS, because it is the specific thing about this scene; the
+ * place and the hour follow. Nothing is invented — a scene with neither gets
+ * exactly the bed it got before.
+ */
+function buildAmbientPrompt(scene, location, opts) {
     let promptParts = [];
+    const options = opts || {};
+
+    const direction = String(options.direction || '').trim();
+    if (direction) promptParts.push(direction);
 
     // Try to match location to known ambient
     const locationName = (scene.location || '').toLowerCase();
@@ -284,6 +321,12 @@ function buildAmbientPrompt(scene, location) {
         promptParts.push('quiet room ambiance');
     }
 
+    // What the location's own sound notes say. Appended rather than leading:
+    // it describes the place in general, and the scene's direction is about
+    // this scene.
+    const soundNotes = String((location && location.sound_notes) || '').trim();
+    if (soundNotes) promptParts.push(soundNotes);
+
     // INT/EXT modifier
     if (scene.int_ext === 'EXT') {
         promptParts.push('outdoor');
@@ -300,13 +343,26 @@ function buildAmbientPrompt(scene, location) {
     // generators cap well below that, so we ask for a short seamless loop and
     // tile it to length at mix time (see buildMixPayload). duration_s is the
     // LOOP; bed_duration_s is what that loop has to cover.
-    const bedMs = scene.estimated_duration || DEFAULT_AMBIENT_BED_MS;
+    /*
+     * How long the bed has to cover.
+     *
+     * `scene.estimated_duration` is 0 on every scene in every real project, and
+     * 0 is falsy — so this fell to a 30-second default for a scene of any
+     * length, exactly as the SCORE did until it was measured. The caller passes
+     * what the cut actually measures; the fallback is named rather than silent.
+     */
+    const measured = Number(options.bed_ms) > 0 ? Number(options.bed_ms) : 0;
+    const bedMs = measured || scene.estimated_duration || DEFAULT_AMBIENT_BED_MS;
     const bedSeconds = bedMs / 1000;
     const loopSeconds = Math.max(AMBIENT_LOOP_MIN_S, Math.min(AMBIENT_LOOP_MAX_S, bedSeconds));
 
     return {
         type: 'ambient',
         prompt: promptParts.join(', '),
+        prompt_parts: promptParts.filter(Boolean),
+        negative_prompt: String(options.negative_prompt || '').trim(),
+        bed_source: measured ? (options.bed_source || 'measured')
+            : (scene.estimated_duration ? 'scene estimate' : 'default'),
         duration_s: loopSeconds,
         bed_duration_s: bedSeconds,
         model: 'musicgen-ambient',

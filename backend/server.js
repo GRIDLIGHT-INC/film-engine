@@ -939,6 +939,18 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/music-cues/:id/rights
+        /*
+         * Route: /film/music-cues/:id — change or remove a cue.
+         *
+         * routes/assets.js has dispatched PUT and DELETE here since the update
+         * route was written, and the server only ever forwarded `/rights` — so
+         * `music_cue_update` and `music_cue_delete` were listed, described,
+         * schema'd, and answered 404 on every call. A handler nothing routes to
+         * looks identical to a working one until someone presses it.
+         */
+        if (parts[1] === 'music-cues' && parts[2] && !parts[3]) {
+            return handleAssets(req, res, parts, query);
+        }
         if (parts[1] === 'music-cues' && parts[2] && parts[3] === 'rights') {
             return handleAssets(req, res, parts, query);
         }

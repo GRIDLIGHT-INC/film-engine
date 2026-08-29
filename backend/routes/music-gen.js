@@ -211,8 +211,16 @@ function cueForScene(scene, project, body) {
     });
 
     if (written) {
-        return { cue: written, context, length, derived: false,
-            brief: scoreBrief(scene, context, project) };
+        // Sections come out of the row as JSON. Parsed here rather than at each
+        // reader, so the brief, the preview and the generation cannot disagree
+        // about the shape of the same cue.
+        let sections = [];
+        try { sections = JSON.parse(written.sections_json || '[]') || []; } catch (_) { sections = []; }
+        return {
+            cue: { ...written, sections: Array.isArray(sections) ? sections : [] },
+            context, length, derived: false,
+            brief: scoreBrief(scene, context, project),
+        };
     }
 
     const brief = scoreBrief(scene, context, project);
@@ -225,6 +233,66 @@ function cueForScene(scene, project, body) {
     if (length.seconds) derived.duration_ms = length.seconds * 1000;
 
     return { cue: derived, context, length, derived: true, brief };
+}
+
+/**
+ * A cue's payload, with its composition plan attached if it has sections.
+ *
+ * ONE builder for the free brief and for all three paid paths. Three sites built
+ * this independently and the batch one did not even go through cueForScene — so
+ * a scene generated from the Music page got the measured length and the same
+ * scene generated from the batch got a thirty-second default. A preview built
+ * differently from its purchase is worse than no preview, and this codebase has
+ * paid for that once already on the refine path.
+ */
+function musicPayloadFor(scored, scene, project) {
+    const { buildMusicPrompt } = require('../lib/music-prompt');
+    const { validateSections, compositionPlan, sectionFit } = require('../lib/music-sections');
+
+    const payload = buildMusicPrompt(scored.cue, scene, project);
+    if (scored.length && scored.length.seconds) {
+        payload.duration_s = scored.length.seconds;
+        payload.duration_source = scored.length.source;
+    }
+
+    const raw = Array.isArray(scored.cue.sections) ? scored.cue.sections : [];
+    if (!raw.length) return { payload, plan: null, fit: null, errors: [] };
+
+    const checked = validateSections(raw);
+    if (!checked.valid) return { payload, plan: null, fit: null, errors: checked.errors };
+
+    payload.composition_plan = compositionPlan(
+        payload.prompt_parts, checked.sections, payload.negative_prompt);
+    // The plan carries the length: the provider refuses music_length_ms
+    // alongside one, and the sections' own durations are what it honours.
+    payload.duration_s = checked.total_ms / 1000;
+    payload.duration_source = 'sections';
+    return {
+        payload, plan: payload.composition_plan,
+        /*
+         * Measured against the length this cue WOULD have had — the walk
+         * cue → footage → dialogue → nothing — not against footage alone.
+         * A dialogue scene with nothing shot yet has cut_ms 0, so comparing
+         * against that reports "no difference" for a cue 162 seconds short of
+         * its scene, which is worse than reporting nothing.
+         */
+        fit: {
+            ...sectionFit(checked.sections, (scored.length && scored.length.seconds || 0) * 1000),
+            cut_source: (scored.length && scored.length.source) || null,
+        },
+        errors: [],
+    };
+}
+
+/**
+ * A refusal that costs nothing, in the shape every paid path uses.
+ */
+function sectionRefusal(res, errors) {
+    return json(res, 400, {
+        error: "The cue's sections cannot be generated as written",
+        errors,
+        hint: 'Nothing was generated and nothing was charged. Fix the sections and try again.',
+    });
 }
 
 /**
@@ -241,9 +309,9 @@ function musicBrief(req, res, sceneId) {
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
 
     const scored = cueForScene(scene, project, null);
-    const { buildMusicPrompt } = require('../lib/music-prompt');
-    const wouldSend = buildMusicPrompt(scored.cue, scene, project);
-    if (scored.length.seconds) wouldSend.duration_s = scored.length.seconds;
+    const sectionLimits = require('../lib/music-sections');
+    const built = musicPayloadFor(scored, scene, project);
+    const wouldSend = built.payload;
 
     return json(res, 200, {
         free: true,
@@ -263,11 +331,38 @@ function musicBrief(req, res, sceneId) {
             reference_track: scored.cue.reference_track || null,
         },
         derived_description: scored.brief.description,
-        would_send: { prompt: wouldSend.prompt, duration_s: wouldSend.duration_s },
+        would_send: {
+            // A plan REPLACES the prompt at the provider — the two are mutually
+            // exclusive — so showing both would describe a request that cannot
+            // be made.
+            prompt: built.plan ? null : wouldSend.prompt,
+            duration_s: wouldSend.duration_s,
+            duration_source: wouldSend.duration_source || null,
+            composition_plan: built.plan,
+        },
+        sections: {
+            limits: {
+                min_section_ms: sectionLimits.SECTION_MIN_MS,
+                max_section_ms: sectionLimits.SECTION_MAX_MS,
+                max_cue_ms: sectionLimits.CUE_MAX_MS,
+            },
+            written: scored.cue.sections || [],
+            fit: built.fit,
+            errors: built.errors,
+            // A structural split for a cue too long to be one section. It says
+            // nothing about what any part should SOUND like — that is the
+            // judgement this hands to whoever is directing.
+            suggested: (scored.cue.sections || []).length ? null
+                : sectionLimits.splitToFit((scored.length.seconds || 0) * 1000, scored.brief.description),
+        },
         guidance: 'Decide the mood, the genre, the instruments and a reference track, then store '
             + 'them with music_cue_create. A cue you write always beats the derivation. Note the '
             + 'dialogue count: a wall-to-wall dialogue scene wants sparse underscore that never '
-            + 'becomes melodic, because a melody there fights the words.',
+            + 'becomes melodic, because a melody there fights the words. '
+            + 'To shape the cue OVER TIME — sparse under the argument, opening out at the reveal '
+            + '— write `sections`: each needs a name, a direction and a length between 3s and '
+            + '120s, and the generator honours those lengths. A cue with no sections sends one '
+            + 'prompt for its whole length, exactly as before.',
     });
 }
 
@@ -282,18 +377,11 @@ async function generateMusic(req, res, sceneId) {
     const scored = cueForScene(scene, project, req.body);
     let musicCue = scored.cue;
 
-    const payload = buildMusicPrompt(musicCue, scene, project);
-    /*
-     * The length the SCENE is, not the length a default guessed.
-     *
-     * Named, because "216 seconds because that is how long the dialogue runs"
-     * and "30 seconds because nothing was measured" are different claims and a
-     * director planning against the second needs to know which they have.
-     */
-    if (scored && scored.length && scored.length.seconds) {
-        payload.duration_s = scored.length.seconds;
-        payload.duration_source = scored.length.source;
-    }
+    // The same builder the free brief showed — the measured length, and the
+    // composition plan when the cue has sections.
+    const built = musicPayloadFor(scored, scene, project);
+    if (built.errors.length) return sectionRefusal(res, built.errors);
+    const payload = built.payload;
 
     const jobId = generateId();
     db.prepare(
@@ -361,18 +449,11 @@ async function generateMusicStream(req, res, sceneId) {
     const musicProvider = resolveGenerator('music', spendContext({ id: scene.project_id }, null, scene));
     const scored = cueForScene(scene, project, req.body);
     let musicCue = scored.cue;
-    const payload = buildMusicPrompt(musicCue, scene, project);
-    /*
-     * The length the SCENE is, not the length a default guessed.
-     *
-     * Named, because "216 seconds because that is how long the dialogue runs"
-     * and "30 seconds because nothing was measured" are different claims and a
-     * director planning against the second needs to know which they have.
-     */
-    if (scored && scored.length && scored.length.seconds) {
-        payload.duration_s = scored.length.seconds;
-        payload.duration_source = scored.length.source;
-    }
+    // The same builder the free brief showed — the measured length, and the
+    // composition plan when the cue has sections.
+    const built = musicPayloadFor(scored, scene, project);
+    if (built.errors.length) return sectionRefusal(res, built.errors);
+    const payload = built.payload;
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',
@@ -517,6 +598,41 @@ async function generateSFX(req, res, shotId) {
 
 // -- Generate Ambient for a Scene ----------------------------------------
 
+/**
+ * What a director has said about how this scene SOUNDS.
+ *
+ * An ambient cue is an ordinary row in film_music_cues with cue_type 'ambient'
+ * — a table that already carries a description, a negative, a level and fades,
+ * and which music_cue_create already manages. A second table for "the same
+ * thing but for room tone" is how one of them acquires a fix the other does not.
+ *
+ * The length is the measured cut, through the same walk the score uses:
+ * scene.estimated_duration is 0 on every scene in every real project, and 0 is
+ * falsy, so the bed fell to a thirty-second default whatever the scene was.
+ */
+function ambientOptions(scene, body) {
+    const { cueSeconds } = require('../lib/scene-score');
+    const cue = db.prepare(
+        "SELECT * FROM film_music_cues WHERE scene_id = ? AND cue_type = 'ambient' ORDER BY start_ms LIMIT 1"
+    ).get(scene.id);
+    const context = sceneScoreContext(scene);
+    const length = cueSeconds({
+        cue_ms: cue && cue.duration_ms,
+        cut_ms: context.cut_ms,
+        dialogue_ms: context.dialogue_ms,
+        explain: true,
+    });
+    return {
+        cue: cue || null,
+        // A body beats the stored cue: a caller asking for something specific
+        // on this run must not be overruled by a note written last week.
+        direction: String((body && body.direction) || (cue && cue.description) || '').trim(),
+        negative_prompt: String((body && body.negative_prompt) || (cue && cue.negative_prompt) || '').trim(),
+        bed_ms: (length.seconds || 0) * 1000,
+        bed_source: length.source,
+    };
+}
+
 async function generateAmbient(req, res, sceneId) {
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
@@ -526,7 +642,8 @@ async function generateAmbient(req, res, sceneId) {
         : null;
     const ambientProvider = resolveGenerator('ambient', spendContext({ id: scene.project_id }, null, scene));
 
-    const payload = buildAmbientPrompt(scene, location);
+    const ambient = ambientOptions(scene, req.body);
+    const payload = buildAmbientPrompt(scene, location, ambient);
 
     const jobId = generateId();
     db.prepare(
@@ -609,8 +726,20 @@ async function batchMusicStream(req, res, projectId) {
         if (clientGone || res.writableEnded) break; // client disconnected — stop remaining scenes
         // Music score
         sendEvent({ type: 'scene_start', scene_id: scene.id, scene_number: scene.scene_number, phase: 'music' });
-        let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(scene.id);
-        const musicPayload = buildMusicPrompt(musicCue, scene, project);
+        // Through cueForScene like every other path. This read the row
+        // directly, so a scene generated from the batch got a thirty-second
+        // default where the same scene generated from the Music page got its
+        // measured length — and would have silently skipped the sections too.
+        const musicScored = cueForScene(scene, project, null);
+        const musicCue = musicScored.cue;
+        const musicBuilt = musicPayloadFor(musicScored, scene, project);
+        const musicPayload = musicBuilt.payload;
+        if (musicBuilt.errors.length) {
+            sendEvent({ type: 'scene_error', scene_id: scene.id, phase: 'music',
+                error: `sections: ${musicBuilt.errors.join('; ')}` });
+            failed++;
+            continue;
+        }
 
         try {
             const result = await musicProvider.generate('music', musicPayload, { timeout: 300000 });
@@ -643,7 +772,11 @@ async function batchMusicStream(req, res, projectId) {
         // Ambient
         if (clientGone || res.writableEnded) break; // client left mid-scene — skip ambient
         const location = scene.location_id ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id) : null;
-        const ambientPayload = buildAmbientPrompt(scene, location);
+        // Through the same reading as the single route: a bed generated from
+        // the batch used to ignore the location's sound notes, the scene's own
+        // direction and the measured length, all three of which the Music page
+        // honoured.
+        const ambientPayload = buildAmbientPrompt(scene, location, ambientOptions(scene, null));
 
         try {
             const result = await ambientProvider.generate('ambient', ambientPayload, { timeout: 300000 });

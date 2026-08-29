@@ -88,10 +88,47 @@ function loadTimeline(projectId) {
      * still gives them their own slot and shows their storyboard frames after
      * the viewer has just watched them in the clip.
      */
+    /*
+     * The scene-scoped score and ambient.
+     *
+     * The asset query above reads `WHERE a.shot_id IS NOT NULL`, which is right
+     * for a shot's picture and its dialogue and excludes a scene's beds
+     * entirely — so a generated score was invisible to the assembled film and
+     * looked like it had not generated at all.
+     */
+    const sceneRows = db.prepare(`
+        SELECT a.scene_id, a.asset_type, a.file_path, a.duration_ms, a.created_at
+        FROM film_assets a
+        WHERE a.project_id = ? AND a.scene_id IS NOT NULL AND a.shot_id IS NULL
+          AND a.asset_type IN ('audio_music', 'audio_ambient')
+        ORDER BY a.created_at DESC
+    `).all(projectId);
+    const sceneAssets = {};
+    for (const row of sceneRows) {
+        // Newest first, so a regenerated bed wins over the one it replaced —
+        // the same rule the dialogue lines follow.
+        (sceneAssets[row.scene_id] ||= {})[row.asset_type] ||= row;
+    }
+
+    // The cue's own level, fades and offset. Declared since migration 016 and
+    // read only by the offline mixer; a player that ignores them is playing a
+    // different mix from the one being delivered.
+    const cues = {};
+    for (const row of db.prepare(`
+        SELECT c.* FROM film_music_cues c
+        WHERE c.project_id = ? AND c.scene_id IS NOT NULL
+        ORDER BY c.start_ms
+    `).all(projectId)) {
+        const kind = row.cue_type === 'ambient' ? 'ambient' : 'music';
+        (cues[row.scene_id] ||= {})[kind] ||= row;
+    }
+
     const { coverageFor } = require('../lib/clip-coverage');
     const timeline = buildTimeline(shots, assetsByShot, {
         fps: project.target_fps,
         coverage: coverageFor(db, projectId),
+        sceneAssets,
+        cues,
     });
 
     /*

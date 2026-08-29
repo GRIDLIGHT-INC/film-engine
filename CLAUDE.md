@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (88 migrations)
+│   │   └── migrations/     # SQL migration files (89 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -97,6 +97,7 @@ film-engine/
 │   │   ├── voice-casting.js       # Cast a voice, hear a line, before anything is shot
 │   │   ├── dialogue-delivery.js   # How a line is SAID, and how long to hold after it
 │   │   ├── scene-score.js        # A score for THIS scene, from facts the engine already holds
+│   │   ├── music-sections.js     # A cue that changes over its own length
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -363,6 +364,7 @@ film-engine/
 │       ├── dialogue-playback.test.js # Watching the scene AND hearing it
 │       ├── dialogue-delivery.test.js # How a line is said, and what makes it regenerate
 │       ├── scene-score.test.js     # Every scene fact must change the cue it produces
+│       ├── music-direction.test.js # Hearing the score, shaping it over time, directing the room
 │       ├── character-sheet.test.js  # Two buttons on the card, and everything else has a home
 │       ├── character-sheet-authoring.test.js # A region with no way in is a label
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
@@ -2321,6 +2323,42 @@ The tool descriptions say which fields reach the generator and which do not — 
 
 **And there is a place for music direction.** `film_music_cues.description` is the free text that reaches the prompt, and it always did. Three fields did not: `instruments` and `key_signature` were **read by the generator with no control in the form**, and `reference_track` — *"sounds like X"*, the clearest music note a director gives — was stored and read by nothing. All three are wired now, the reference phrased as a style to match rather than a title to quote. Length is typed in seconds and stored in milliseconds, blank meaning *score the measured cut*; instruments are split from a comma list, because the route JSON-stringifies whatever it is handed and a raw string becomes one instrument called *"solo cello, brushed kit"*.
 
+### Directing the Sound
+*"Generating music worked but we need to be able to select an option to play it when we use playback… and how can we influence the music at specific timelines or even the overall generated music? Or even the ambient sound?"*
+
+Three separate gaps, and the first one made the feature look broken.
+
+**A generated score was invisible to the assembled film.** Music and ambient are **scene-scoped** — their assets carry a `scene_id` and no `shot_id` — and the timeline's asset query reads `WHERE a.shot_id IS NOT NULL`, which is right for a shot's picture and its dialogue and excludes a scene's beds entirely. So you could score a scene, press play, and hear only the dialogue. From the outside that is indistinguishable from the score having failed to generate.
+
+A bed spans its whole scene, so it is laid out **once across that span** and seeded once when the playhead enters it — restarting a score at every cut is the one behaviour that would make a perfectly good cue sound broken. It comes with the cue's own **level, fades and offset**: `volume_db`, `fade_in_ms`, `fade_out_ms` and `start_ms` have been on `film_music_cues` since migration 016 and only the offline mixer ever read them, so a player ignoring them plays a different mix from the one being delivered. A cue that says nothing gets the delivered mix's own levels (music −8dB, ambient −12dB), because a player at unity is louder than the finished film. `start_ms` is an offset **into the scene**, which is what the mixer has always taken it as and the only reading that survives the scene being moved. A bed shorter than its scene simply stops and **says so** — *"music ends 176s before the scene does"* — rather than looping, which is a worse lie than ending where it ends.
+
+**A cue could not change over its own length.** A film cue is sparse under the argument and opens out when he finally says it; `film_music_cues` carried one description for the whole thing. ElevenLabs' `/music` takes a `composition_plan` — named parts, each with its own direction, its own negatives and its own duration, honoured. **Sections are opt-in and that is the safety**: `prompt` and `composition_plan` are mutually exclusive at the provider, so a cue nobody has sectioned sends byte-identically to what it always has.
+
+**Six rules govern that plan and every one is otherwise a paid request that fails.** All six were **probed against the live API with deliberately invalid bodies** — validation rejects those for free — rather than taken from memory, and **two are not in the documentation at all**:
+
+| | |
+|---|---|
+| 1 | `You must provide exactly one of ` prompt ` or ` composition_plan `.` |
+| 2 | `You must not provide ` music_length_ms ` when passing ` composition_plan `.` |
+| 3 | a part's `duration_ms` must be 3000–120000 |
+| 4 | `lines` is **required** on a v1 section, even for an instrumental cue |
+| 5 | **undocumented:** `` `force_instrumental` can only be used with `prompt`. `` |
+| 6 | **undocumented:** the shape is **per model** — `music_v1` takes `MusicPrompt {sections[]}`, `music_v2` takes `CompositionPlan {chunks[]}`; sending v1's shape to v2 is *"Invalid type of `composition_plan` used for model music_v2"* |
+
+(6) is why the plan arrives at the adapter in a **neutral** shape and is converted there: which body a model wants is a provider fact, like `promptLimit` and `referenceMode`, and belongs beside the model ids. (5) would have silently lost the instrumental default — sung vocals over dialogue ruin a scene — so the plan says the same thing with a **negative** rather than abandoning it.
+
+Sections are **refused, never rounded**: trimming a 130-second part to 120 gives the director a different piece of music than they asked for, and does it silently. A cue too long to be one section gets a **structural split** that says nothing about what any part should sound like — a 202-second scene cannot be one section and a director should not have to do that arithmetic, but inventing the shape of the music is the judgement this hands to whoever is directing.
+
+**And the ambient bed had no direction at all.** `buildAmbientPrompt` read the location NAME and the time of day from lookup tables and nothing else. Two things it never read: **`film_locations.sound_notes`** — a column called sound notes, with a textarea on the Locations page placeholdered *"Traffic two streets over, a screen door, gulls..."*, stored since migration 006 and reaching nothing but the call sheet; the one field whose entire purpose is to describe how a place SOUNDS was invisible to the only thing that generates how a place sounds. And a **scene's own direction** — the room tone of a diner is a property of the diner, *"the fridge compressor cuts out halfway through"* is a property of the scene, and both were unsayable. An ambient cue is an ordinary `film_music_cues` row with `cue_type: 'ambient'`, so it inherits the negative, the level and the fades rather than getting a second table. The bed length is the **measured cut** through the same walk the score uses: `scene.estimated_duration` is 0 on every scene in every real project and 0 is falsy, so it fell to a thirty-second default for a scene of any length — the same defect the score had, one function over.
+
+**Three sites built the music payload and three built the ambient one**, and the music batch did not even go through `cueForScene` — so a scene generated from the batch got a thirty-second default where the Music page got its measured length, and would have skipped the sections silently. One `musicPayloadFor` now serves the free brief and all three paid paths, because a preview built differently from its purchase is worse than no preview.
+
+**`music_cue_update` and `music_cue_delete` had never been callable.** `routes/assets.js` has dispatched PUT and DELETE on `/film/music-cues/:id` since the update route was written, and `server.js` only ever forwarded `/rights` — so both tools were listed, described, schema'd, and answered 404 on every call. Found by pressing one.
+
+Served as `beds` on the timeline, `sections`/`negative_prompt` on the cue routes and both cue tools, a **Score** and an **Ambient** switch on the Playback transport, a section editor on the cue form and an ambient direction on each scene of the Music page.
+
+`tests/music-direction.test.js` exercises the route rather than grepping it — a source check for `sections_json` passes against a route that writes `'[]'` into it — and asserts the per-model plan bodies from the adapter's own builder, because sending the wrong shape is the failure that cost a real request.
+
 ### Music & Sound Design
 Generates music scores, sound effects, and ambient audio. Maps 14 moods to tempo/instruments/energy, 18 locations to ambient sound descriptions, 6 time-of-day modifiers. Stored at `data/music/{project_id}/`.
 
@@ -2569,7 +2607,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (88 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (89 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -2789,6 +2827,7 @@ node --test backend/tests/dialogue-audition.test.js
 node --test backend/tests/dialogue-playback.test.js
 node --test backend/tests/dialogue-delivery.test.js
 node --test backend/tests/scene-score.test.js
+node --test backend/tests/music-direction.test.js
 node --test backend/tests/character-sheet.test.js
 node --test backend/tests/character-sheet-authoring.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js

@@ -241,9 +241,31 @@ function listMusicCues(req, res, projectId, query) {
     res.end(JSON.stringify({ music_cues: rows, count: rows.length }));
 }
 
+/**
+ * Sections as the generator will accept them, or a refusal.
+ *
+ * The provider's limits are hard — 3s to 120s a section, and the whole cue
+ * capped — and each one is otherwise a paid request that fails. Checked at the
+ * write, where it is free and where the director is looking at what they typed,
+ * rather than at generation time in front of a failed job.
+ */
+function normalizeCueSections(input) {
+    if (input === undefined || input === null || input === '') return [];
+    const { validateSections } = require('../lib/music-sections');
+    const checked = validateSections(Array.isArray(input) ? input : []);
+    if (!checked.valid) {
+        const err = new Error('These sections cannot be generated as written');
+        err.errors = checked.errors;
+        throw err;
+    }
+    return checked.sections;
+}
+
 function createMusicCue(req, res, projectId) {
     const body = req.body;
     const cueType = VALID_CUE_TYPES.includes(body.cue_type) ? body.cue_type : 'score';
+    try { normalizeCueSections(body.sections); }
+    catch (err) { return json(res, 400, { error: err.message, errors: err.errors || [] }); }
 
     const id = generateId();
     const now = new Date().toISOString();
@@ -252,8 +274,8 @@ function createMusicCue(req, res, projectId) {
         INSERT INTO film_music_cues (id, project_id, scene_id, shot_id, cue_type,
             title, description, mood, genre, tempo_bpm, key_signature,
             instruments, reference_track, start_ms, duration_ms,
-            volume_db, fade_in_ms, fade_out_ms, notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            volume_db, fade_in_ms, fade_out_ms, notes, negative_prompt, sections_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
         id, projectId,
         body.scene_id && UUID_RE.test(body.scene_id) ? body.scene_id : null,
@@ -273,6 +295,8 @@ function createMusicCue(req, res, projectId) {
         body.fade_in_ms || 0,
         body.fade_out_ms || 0,
         (body.notes || '').slice(0, 2000),
+        (body.negative_prompt || '').slice(0, 1000),
+        JSON.stringify(normalizeCueSections(body.sections)),
         now
     );
 
@@ -620,6 +644,17 @@ function updateMusicCue(req, res, cueId) {
         }
         fields.push('cue_type = ?');
         values.push(body.cue_type);
+    }
+    if (body.negative_prompt !== undefined) {
+        fields.push('negative_prompt = ?');
+        values.push(String(body.negative_prompt).slice(0, 1000));
+    }
+    if (body.sections !== undefined) {
+        let sections;
+        try { sections = normalizeCueSections(body.sections); }
+        catch (err) { return json(res, 400, { error: err.message, errors: err.errors || [] }); }
+        fields.push('sections_json = ?');
+        values.push(JSON.stringify(sections));
     }
     if (body.instruments !== undefined) {
         // Stored as JSON, and accepted either as a list or as the comma string

@@ -569,7 +569,10 @@ const CAPABILITY_BUILDERS = {
     /** Scene-scoped. Emits a loop plus the bed length it must cover. */
     ambient(ctx) {
         requireCtx(ctx, ['scene'], 'ambient');
-        return buildAmbientPrompt(ctx.scene, ctx.location);
+        // The scene's own ambient direction and the location's sound notes —
+        // the orchestrator and the flow canvas must describe the bed the same
+        // way the per-domain route does, which is the whole point of this file.
+        return buildAmbientPrompt(ctx.scene, ctx.location, ctx.ambient || {});
     },
 
     post(ctx) {
@@ -727,7 +730,7 @@ function withTierModel(payload, ctx, adapter) {
  * @param {string} capability
  * @param {object} ctx - { project, scene, shot, sceneCard, characters, location,
  *                         voiceProfiles, videoAsset, audioAsset, keyframeAsset,
- *                         musicCue, initImage, consistency, overrides }
+ *                         musicCue, ambient, initImage, consistency, overrides }
  * @returns {{ payload: object|object[], meta: object }}
  */
 /**
@@ -847,6 +850,22 @@ function loadShotContext(shotId, opts) {
     const musicCue = db.prepare(
         'SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1'
     ).get(scene.id);
+
+    /*
+     * The scene's ambient direction, if anyone has written one.
+     *
+     * An ambient cue is an ordinary film_music_cues row with cue_type
+     * 'ambient'. Read here so the orchestrator and the flow canvas describe the
+     * bed the same way the per-domain route does — the whole reason this file
+     * exists.
+     */
+    const ambientCue = db.prepare(
+        "SELECT * FROM film_music_cues WHERE scene_id = ? AND cue_type = 'ambient' ORDER BY start_ms LIMIT 1"
+    ).get(scene.id);
+    const ambient = {
+        direction: String((ambientCue && ambientCue.description) || '').trim(),
+        negative_prompt: String((ambientCue && ambientCue.negative_prompt) || '').trim(),
+    };
 
     /*
      * The keyframe, as a DATA URI.
@@ -1006,7 +1025,7 @@ function loadShotContext(shotId, opts) {
 
     return {
         shot, scene, project, sceneCard, characters, location, voiceProfiles, props,
-        keyframeAsset, videoAsset, audioAsset, musicCue, initImage,
+        keyframeAsset, videoAsset, audioAsset, musicCue, ambient, initImage,
         consistency: consistencyContext,
         previs,
         // State is useful for disclosure even when the durable payload rightly

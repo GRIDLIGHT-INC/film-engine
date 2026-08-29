@@ -251,6 +251,77 @@ function attachPauses(shot, media) {
  * @param {Object} opts       { fps }
  * @returns {Object} { entries, total_duration_ms, fps, shot_count, missing_count }
  */
+/**
+ * ── The beds a scene plays under ────────────────────────────────────────────
+ *
+ * Music and ambient are SCENE-scoped: their assets carry a scene_id and no
+ * shot_id, and the timeline's asset query reads `WHERE a.shot_id IS NOT NULL`.
+ * So a generated score was invisible to the assembled film — you could score a
+ * scene, watch it back, and hear nothing but the dialogue. It looked like the
+ * score had not generated.
+ *
+ * A bed is not a shot's audio. It spans every shot of its scene, so it is laid
+ * out ONCE across that span rather than restarted per entry — restarting it on
+ * each cut is the one thing that would make a score sound obviously wrong.
+ *
+ * The cue's own level and fades come with it. film_music_cues has carried
+ * `volume_db`, `fade_in_ms` and `fade_out_ms` since migration 016 and only the
+ * offline audio mixer ever read them; a player that ignores them is playing a
+ * different mix from the one being delivered.
+ */
+function sceneBeds(entries, sceneAssets = {}, cues = {}) {
+    const spans = new Map();
+    for (const entry of entries) {
+        if (!entry.scene_id) continue;
+        const at = spans.get(entry.scene_id);
+        if (!at) spans.set(entry.scene_id, { start_ms: entry.start_ms, end_ms: entry.end_ms });
+        else { at.start_ms = Math.min(at.start_ms, entry.start_ms); at.end_ms = Math.max(at.end_ms, entry.end_ms); }
+    }
+
+    const beds = [];
+    for (const [sceneId, span] of spans) {
+        const assets = sceneAssets[sceneId] || {};
+        for (const [kind, type] of [['music', 'audio_music'], ['ambient', 'audio_ambient']]) {
+            const asset = assets[type];
+            if (!asset || !asset.file_path) continue;
+            const cue = (cues[sceneId] || {})[kind] || null;
+            /*
+             * start_ms is an offset INTO THE SCENE, not into the film — that is
+             * what the mixer has always read it as, and it is the only reading
+             * that survives the scene being moved.
+             */
+            const offset = Math.max(0, Number(cue && cue.start_ms) || 0);
+            beds.push({
+                kind,
+                scene_id: sceneId,
+                type,
+                path: asset.file_path,
+                // Measured, so a bed shorter than its scene is visibly shorter
+                // rather than silently looping or silently stopping.
+                asset_duration_ms: Number(asset.duration_ms) || 0,
+                start_ms: span.start_ms + offset,
+                end_ms: span.end_ms,
+                // A cue that says nothing about level gets the delivered mix's
+                // level. `Number(null)` is 0 and 0 is finite, so guarding only
+                // the first read of the cue dereferences a null on the second.
+                gain_db: (cue && Number.isFinite(Number(cue.volume_db)) && Number(cue.volume_db) !== 0)
+                    ? Number(cue.volume_db) : DEFAULT_BED_GAIN_DB[kind],
+                fade_in_ms: Math.max(0, Number(cue && cue.fade_in_ms) || 0),
+                fade_out_ms: Math.max(0, Number(cue && cue.fade_out_ms) || 0),
+                cue_id: cue ? cue.id : null,
+            });
+        }
+    }
+    return beds.sort((a, b) => a.start_ms - b.start_ms);
+}
+
+/*
+ * Where a bed sits when its cue says nothing, from the mix the project actually
+ * delivers (lib/audio-mixer.js). A player at unity would be louder than the
+ * finished film and would send everyone reaching for the fader.
+ */
+const DEFAULT_BED_GAIN_DB = { music: -8, ambient: -12 };
+
 function buildTimeline(shots = [], assetsByShot = {}, opts = {}) {
     const fps = Number(opts.fps) > 0 ? Number(opts.fps) : DEFAULT_FPS;
     /*
@@ -299,6 +370,10 @@ function buildTimeline(shots = [], assetsByShot = {}, opts = {}) {
 
     return {
         entries,
+        // The scene-scoped score and ambient, laid across the shots they play
+        // under. Empty for every project that has generated none, which is what
+        // keeps a player with no beds behaving exactly as it did.
+        beds: sceneBeds(entries, opts.sceneAssets, opts.cues),
         fps,
         shot_count: entries.length,
         total_duration_ms: cursor,
@@ -363,6 +438,8 @@ function timecodeToMs(tc, fps = DEFAULT_FPS) {
 }
 
 module.exports = {
+    sceneBeds,
+    DEFAULT_BED_GAIN_DB,
     buildTimeline,
     resolveShotMedia,
     orderShots,

@@ -1618,7 +1618,10 @@ const PRODUCTION_TOOLS = [
             + 'the mood and genre already carry that. `reference_track` is sent as a style to match '
             + '("in the style of X"), which is the clearest single note a director gives. '
             + 'OMIT duration_ms and the cue is scored to the MEASURED length of that scene\u2019s '
-            + 'footage; set it only to run deliberately past or under the cut.',
+            + 'footage; set it only to run deliberately past or under the cut. '
+            + 'To shape the cue OVER TIME rather than describing it all at once, write `sections`: '
+            + 'each has a name, a direction and a length of 3\u2013120s, and the generator honours '
+            + 'those lengths. `negative_prompt` says what it must NOT be.',
         path: a => `/film/projects/${a.project_id}/music-cues`,
         body: a => { const { project_id, ...rest } = a || {}; return rest; },
         schema: {
@@ -1641,6 +1644,28 @@ const PRODUCTION_TOOLS = [
                 + 'scene\u2019s footage \u2014 that is almost always what you want. Set it only to run '
                 + 'deliberately past or under the cut.' },
             notes: { type: 'string', description: 'Production notes. Reaches NO generator.' },
+            negative_prompt: { type: 'string', description: 'What the cue must NOT be, sent to the '
+                + 'generator as a negative: "vocals, drums, sentimental strings". A note a composer '
+                + 'gives constantly and that had nowhere to live.' },
+            sections: {
+                type: 'array',
+                description: 'Shape the cue OVER TIME instead of describing the whole thing at once. '
+                    + 'Each section gets its own direction and its own length, and the generator '
+                    + 'honours those lengths \u2014 so "sparse under the argument, then it opens out '
+                    + 'when he finally says it" becomes two sections rather than one hopeful sentence. '
+                    + 'A section is 3s to 120s; the cue is the SUM of its sections, so omit '
+                    + 'duration_ms when you write these. Leave this empty and the cue sends one '
+                    + 'prompt for its whole length, exactly as before.',
+                items: {
+                    type: 'object',
+                    properties: {
+                        name: { type: 'string', description: 'How you refer to it, e.g. "under the argument".' },
+                        direction: { type: 'string', description: 'What this part of the cue does.' },
+                        seconds: { type: 'number', description: 'How long this part runs. 3 to 120.' },
+                        negative: { type: 'string', description: 'What this part must not be, e.g. "drums".' },
+                    },
+                },
+            },
         },
         required: ['project_id'],
     },
@@ -1673,6 +1698,28 @@ const PRODUCTION_TOOLS = [
             reference_track: { type: 'string' }, duration_ms: { type: 'number' },
             cue_type: { type: 'string', enum: ['score', 'source', 'sfx', 'ambient', 'transition'] },
             notes: { type: 'string' },
+            negative_prompt: { type: 'string', description: 'What the cue must NOT be, sent to the '
+                + 'generator as a negative: "vocals, drums, sentimental strings". A note a composer '
+                + 'gives constantly and that had nowhere to live.' },
+            sections: {
+                type: 'array',
+                description: 'Shape the cue OVER TIME instead of describing the whole thing at once. '
+                    + 'Each section gets its own direction and its own length, and the generator '
+                    + 'honours those lengths \u2014 so "sparse under the argument, then it opens out '
+                    + 'when he finally says it" becomes two sections rather than one hopeful sentence. '
+                    + 'A section is 3s to 120s; the cue is the SUM of its sections, so omit '
+                    + 'duration_ms when you write these. Leave this empty and the cue sends one '
+                    + 'prompt for its whole length, exactly as before.',
+                items: {
+                    type: 'object',
+                    properties: {
+                        name: { type: 'string', description: 'How you refer to it, e.g. "under the argument".' },
+                        direction: { type: 'string', description: 'What this part of the cue does.' },
+                        seconds: { type: 'number', description: 'How long this part runs. 3 to 120.' },
+                        negative: { type: 'string', description: 'What this part must not be, e.g. "drums".' },
+                    },
+                },
+            },
         },
         required: ['cue_id'],
     },
