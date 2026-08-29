@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**205 tools, 51 families.** Everything the app can do, you can ask for in a
+**206 tools, 51 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -258,12 +258,21 @@ frame that has the scene right, and the next shots are generated **from** it.
 ### 6. Previs
 
 `previs_get` · `previs_set` · `previs_solve` · `previs_from_card` ·
-`previs_apply` · `previs_approve` · `previs_to_storyboard`
+`previs_apply` · `previs_approve` · `previs_to_storyboard` · `shot_motion`
 
 Block a shot in 3D — lens, height, distance, movement, named staging, direction,
 background view and lighting — then `previs_apply` commits those staged choices
 to the card. `previs_to_storyboard` returns the exact staged image payload and
 states that it is unapplied; it generates nothing and spends nothing.
+
+`shot_motion` is the move as it will actually PLAY over the shot's storyboard
+frame: the transform track playback uses, computed from the blocking if the shot
+has any and from the movement written on its card if it does not. It also says
+what showing it costs — `magnification` (a travelling move has to push into the
+frame to have room), `carried` (false when the move is bigger than a still can
+honestly show), `perceptible` (false when the move is real but will not read at
+this framing). A still holds no parallax: the subject comes out right and the
+background travels with it. Free.
 
 ### 7. Video and audio
 

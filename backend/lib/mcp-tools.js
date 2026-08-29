@@ -1318,6 +1318,19 @@ const PRODUCTION_TOOLS = [
         schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
     },
     {
+        name: 'shot_motion',
+        handler: handlePrevis, method: 'GET',
+        description: 'What camera move this shot plays over its storyboard frame, and what showing it costs. '
+            + 'FREE — it reads rows and does arithmetic, so trying an angle is a question of taste rather than of budget. '
+            + 'Reads the shot\'s previs blocking if it has any, otherwise the movement written on its card, otherwise nothing. '
+            + 'Returns the transform track playback uses, plus: `magnification` (how tight the still is ever shown — a travelling '
+            + 'move has to push into the frame to have room), `carried` (false when the move is too big for a still to show honestly), '
+            + 'and `perceptible` (false when the move is real but will not read at this framing). '
+            + 'A still holds no parallax: the subject comes out right and the background travels with it.',
+        path: a => `/film/shots/${a.shot_id}/motion`,
+        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+    },
+    {
         name: 'previs_from_card',
         handler: handlePrevis, method: 'POST',
         description: 'Seed the 3D stage from what the scene card already says — shot type, lens, movement — instead of retyping it. Start here when exploring a shot. Refuses to clobber existing blocking unless overwrite is set.',

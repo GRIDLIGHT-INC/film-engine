@@ -579,6 +579,10 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/shots/:id/previs[/solve]  and  /film/previs/taxonomy
+        // /motion rides with previs because previs owns the blocking it reads.
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'motion') {
+            return handlePrevis(req, res, ['film', 'shots', parts[2], 'previs', 'motion'], query);
+        }
         if (parts[1] === 'shots' && parts[2] && parts[3] === 'previs') {
             return handlePrevis(req, res, parts, query);
         }

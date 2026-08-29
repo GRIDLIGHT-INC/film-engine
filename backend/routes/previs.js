@@ -18,7 +18,7 @@ const { saveFile, serveFile } = require('../lib/file-storage');
 const { EASINGS } = require('../lib/previs-blocking');
 const {
     RIGS, MOVEMENTS, SHOT_TYPES,
-    solveShot, samplePath, sampleSequence, normalizeCameraKeys, rigCanPerform, defaultBlocking, resolveTarget,
+    solveShot, samplePath, sampleSequence, normalizeCameraKeys, rigCanPerform, defaultBlocking, cardOptics, resolveTarget,
     legTimings, DEFAULT_MOVE_MS,
     DEFAULT_EYE_HEIGHT_M, DEFAULT_SUBJECT_HEIGHT_M,
 } = require('../lib/previs-blocking');
@@ -1013,22 +1013,9 @@ function fromCard(req, res, shotId) {
         filmDefaults = require('../lib/look-development').previsDefaults(board);
     } catch (_) { filmDefaults = {}; }
 
-    const shotType = SHOT_TYPES[cam.shot_type] ? cam.shot_type : 'medium';
-    const movement = MOVEMENTS[cam.movement] ? cam.movement : 'static';
-    // "50mm", "50 mm", 50 — the card's lens is a free string by design, so it
-    // is parsed rather than trusted, and an unparseable one falls back instead
-    // of failing: a card that says "anamorphic" should still open a stage.
-    const focalMm = (() => {
-        const raw = cam.focal_mm !== undefined ? cam.focal_mm : cam.lens;
-        const n = typeof raw === 'number' ? raw : parseFloat(String(raw || '').replace(/[^0-9.]/g, ''));
-        if (Number.isFinite(n) && n > 0) return n;
-        return Number(filmDefaults.focalMm) > 0 ? Number(filmDefaults.focalMm) : 50;
-    })();
-    const sensorId = SENSORS[cam.sensor] ? cam.sensor
-        : (SENSORS[filmDefaults.sensorId] ? filmDefaults.sensorId : 'super35');
-    const fStop = Number(cam.aperture) > 0 ? Number(cam.aperture)
-        : (Number(filmDefaults.fStop) > 0 ? Number(filmDefaults.fStop) : 2.8);
-    const heightM = Number(cam.height_m) > 0 ? Number(cam.height_m) : DEFAULT_EYE_HEIGHT_M;
+    // One reading of the card's optics, shared with playback's move — see
+    // cardOptics in lib/previs-blocking.js.
+    const { shotType, movement, focalMm, sensorId, fStop, heightM } = cardOptics(cam, filmDefaults);
 
     const sensor = sensorFor(sensorId);
 
@@ -1198,6 +1185,22 @@ function handlePrevis(req, res, urlParts) {
         if (urlParts[4] === 'to-video') {
             if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
             return toVideo(req, res, shotId);
+        }
+        /*
+         * The move this shot plays over its own storyboard frame — free.
+         *
+         * It reads rows and does arithmetic: nothing is generated and nothing
+         * is spent, which is what makes trying three lenses a question of taste
+         * rather than of budget. Same track playback uses.
+         */
+        if (urlParts[4] === 'motion' && req.method === 'GET') {
+            const track = require('../lib/shot-motion').loadShotMotion(shotId);
+            if (!track) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ error: 'Shot not found' }));
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify(track));
         }
         if (urlParts[4] === 'from-card') {
             if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });

@@ -140,6 +140,7 @@ film-engine/
 │   │   ├── flow-node-types.js    # Runtime node-type registry: ports, kinds, arity (Phase 1)
 │   │   ├── flow-seed.js          # Built-in flow derived from PIPELINE_STEPS (Phase 1)
 │   │   ├── mcp-tools.js          # MCP tool surface, generated from the registries
+│   │   ├── shot-motion.js       # A camera move, seen over the still you already have
 │   │   ├── previs-camera.js      # Previs optics: FOV, framing distance, DOF (Phase 0)
 │   │   ├── previs-blocking.js    # Previs blocking: rigs, movement paths, shot solving (Phase 1)
 │   │   ├── previs-primitives.js  # Stage primitives: standing figure, box, sphere (Phase 5)
@@ -203,6 +204,7 @@ film-engine/
 │       ├── dry-run.test.js             # The report shows the real request, no keys, no printed pictures
 │       ├── paid-image-controls.test.js # Every image AND video button: pick the generator, read the prompt, edit it
 │       ├── thumbnails.test.js         # Boards fetch thumbnails; bundles survive subdirectories
+│       ├── shot-motion.test.js       # The move plays over the frame, and says what showing it costs
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop
 │       ├── decision-parity.test.js     # Every director decision, held to five links across both surfaces
@@ -2134,6 +2136,35 @@ Parsed and decimated **server-side** (`GET /models/:assetId/geometry`), because 
 
 Design: [`docs/plans/previs-camera-implementation-plan.md`](docs/plans/previs-camera-implementation-plan.md), [`previs-camera-research.md`](docs/plans/previs-camera-research.md), machine-readable taxonomy in [`previs-camera-taxonomy.json`](docs/plans/previs-camera-taxonomy.json), conformance enforced by `tests/previs-plan.test.js`.
 
+### Deciding a Move, and Then Seeing It
+*"Mostly what I want from the previs is the ability to decide camera movements, and then see the movement with the static storyboard shot when we play it in playback."*
+
+Deciding was never the gap. Previs solves optics, flies a six-degree-of-freedom camera, samples compound moves, approves them and writes them onto the card; the scene card has carried a `movement` since it was written. **Seeing it was the gap.** `loadShotIntoStage` set a background image and held it there for the shot's slot, so *"slow dolly push-in down the cul-de-sac"* and *"locked off"* played identically — and the only way to find out whether a move worked was to buy the clip.
+
+`lib/shot-motion.js` turns a camera move into a transform over that still, and every number in it comes from the film's **own optics** rather than a feel-good constant: how far a 15° pan travels across the frame is a fact about the lens, so the same move on a 24mm and an 85mm produces different pictures — which is the thing a director is trying to see. The same pan needs a **1.55×** push-in on the 24 and **2.80×** on the 85.
+
+**The still is a window onto the scene, not a photograph standing in it.** A projectively correct pan over a flat card keystones; a real pan does not keystone the world, and previs answers *how does this shot read*. So a pan translates, a crane translates, a dolly scales by the real distance ratio and a roll rotates. What a still cannot do is stated rather than discovered: **it holds no parallax**, so the subject comes out right and the background travels with it — the same limit the previs plate quad already carries.
+
+**Precedence is `effectiveCamera`'s, not a fourth copy of it.** A blocked shot plays the path that was approved, with its own easing left alone; an unblocked shot — most of a real board — plays the word on its card, sampled through **previs's own `samplePath`** so the eighteen movements cannot mean one thing on the stage and another in playback; a shot that says nothing holds exactly as it does today.
+
+**A movement WORD is a proportional intent, not a dolly track in metres.** Held at the registry's literal 0.6m, Wingfall 1A's push-in came out at **1.2% of the frame** on a 26-metre establishing wide — invisible — while the same word on a close-up sent the camera a metre *through* a subject 0.96m away. A word names a move; metres only mean metres once someone has said how far away the subject is, so a metre amount is scaled against the distance the registry's own numbers were written for and a rotation is not (thirty degrees is thirty degrees). An amount someone **typed** in previs stays metres — rescaling it would overrule the director.
+
+**What it costs is reported, because a travelling move has to push in to have room.** `magnification` is the tightest the still is ever shown, and the crop alone was the wrong measure: a pan needs the frame pushed in and a dolly does not, so a dolly closing most of the distance enlarged the picture five times and reported as perfectly carried because no edge was exposed. Past 2× the label says **too big for a still** with the remedy; below 2% of frame it says **too small to read** with the number and the two ways out. Neither refuses — a director asking to see a 90° whip pan over one still is asking a fair question.
+
+Three defects surfaced while building it, each invisible until something moved:
+
+**The previs camera pane was mirrored.** `previsAim` built its direction as `+sin(yaw)` while `yawVector` — which `samplePath`'s orbit, `analyzePath`'s naming and `solveShot`'s azimuth all go through — turns the other way. So pressing pan-left swung the pane **right** while the provider was told pan-left, dragging the camera turned it against the mouse, and a shot solved at an azimuth pointed away from its own subject. Measured in the real page through the pane's own projection: pan left now moves what was centre to **+0.38 of a frame width**, where it was −0.38.
+
+**The playback stage was not the shape of the film.** `width: 100%` beside `max-height: 52vh` defeated the `aspect-ratio: 16/9` next to it — the height clamped, the width did not, and a stage declaring 16:9 rendered **3.18:1**. Harmless while nothing moved; fatal once something does, because the visible region is the stage, so a move would have been watched through a wide slot with the top and bottom of the frame outside it. The width is derived from the capped height now, at the **project's** aspect rather than a hardcoded one.
+
+**An orbit read as a dolly.** Measuring the dolly from travel along the camera's own Z doubled the subject on a 63° swing that never approached it — an orbit displaces the camera metres "forward" in its starting frame at constant radius. The scale is the real distance ratio to the plane being framed, measured **along the aim**, which previs's plate quad learned once already: a figure's stored position is its feet on the floor while the camera is at eye height.
+
+`transformAt` and `cssTransform` are mirrored in the SPA and held equal by test over every movement at eight moments — the page cannot require a node module (`build.target: single-html`), and the composition order is pinned in both (**scale first, then translate**, in units of the original frame) because a transform assembled the other way puts every travelling move somewhere else on a shot that also scales.
+
+Served on every timeline entry as `entry.motion`, at `GET /film/shots/:id/motion`, on the Playback transport as a **Camera move** switch naming the move and where it came from, and as `shot_motion` (**206 tools**) — free, because it reads rows and does arithmetic.
+
+`tests/shot-motion.test.js` is set-based over `MOVEMENTS` because the failure is partial by nature: a dolly is a scale and a pan is a translate, so a conversion that handles one perfectly can do nothing at all for the other. Its sign assertions are written in **film language** — *"pan left and what was centre swings right"* — never in axis language, because a test that agrees with the code's own axes cannot catch a mirrored camera, which is exactly what was found. The page half is **executed** rather than grepped: a checkbox existing says nothing about whether it is read, and a transform left on the element by the previous shot crops the next one — both look like a working page in the source.
+
 ### Free Camera Paths
 
 The shot camera is a full six-degree-of-freedom pose: position x/y/z and yaw/pitch/roll, with lens, sensor, stop and focus distance. It can be dragged on the frozen stage projection, turned with Shift-drag, entered numerically, and captured as ordered camera keys. The route already persisted nine of those ten components before this work; the limits were the page and the frontal-only solver. Focus distance was the missing validation and must remain positive and finite.
@@ -2661,6 +2692,7 @@ node --test backend/tests/gridlight-optin.test.js
 node --test backend/tests/dry-run.test.js
 node --test backend/tests/paid-image-controls.test.js
 node --test backend/tests/thumbnails.test.js
+node --test backend/tests/shot-motion.test.js
 node --test backend/tests/previs-storyboard.test.js
 node --test backend/tests/previs-loop.test.js
 node --test backend/tests/decision-parity.test.js

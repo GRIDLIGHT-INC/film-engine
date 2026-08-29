@@ -89,10 +89,23 @@ function loadTimeline(projectId) {
      * the viewer has just watched them in the clip.
      */
     const { coverageFor } = require('../lib/clip-coverage');
-    return buildTimeline(shots, assetsByShot, {
+    const timeline = buildTimeline(shots, assetsByShot, {
         fps: project.target_fps,
         coverage: coverageFor(db, projectId),
     });
+
+    /*
+     * The move each held frame plays.
+     *
+     * A storyboard still occupied its slot dead centre and dead still, so a
+     * shot written as a slow push over the cul-de-sac and a shot written as
+     * locked off played identically — and the only way to find out whether the
+     * move worked was to buy the clip. The track is computed HERE, from
+     * film_previs_blocking and the card, so playback and anything else that
+     * reads the timeline cannot come to different answers about the same move.
+     */
+    require('../lib/shot-motion').attachTracks(db, projectId, timeline);
+    return timeline;
 }
 
 function getTimeline(req, res, projectId) {

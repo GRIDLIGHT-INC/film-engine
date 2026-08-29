@@ -3910,17 +3910,51 @@
         .pb-stage {
             /* Cap the height: at full window width a 16:9 stage is ~730px tall
                and pushes the transport and note form below the fold, which
-               makes the player look broken until you scroll. */
-            position: relative; width: 100%; aspect-ratio: 16 / 9;
-            max-height: 52vh; margin: 0 auto;
+               makes the player look broken until you scroll.
+
+               `width: 100%` plus `max-height` DEFEATED the aspect-ratio beside
+               it: the height clamped, the width did not, and a stage declaring
+               16:9 rendered 3.18:1 — so every still played letterboxed inside a
+               box far wider than the film. Harmless while nothing moved; fatal
+               once something does, because the visible region is the stage, so
+               a move would have been watched through a wide slot with the top
+               and bottom of the frame outside it. Deriving the width from the
+               capped height instead makes the stage the FRAME, at the project's
+               own shape rather than a hardcoded 16:9. */
+            --pb-stage-h: 52vh;
+            position: relative; aspect-ratio: var(--pb-aspect, 1.7778);
+            width: min(100%, calc(var(--pb-stage-h) * var(--pb-aspect, 1.7778)));
+            max-height: var(--pb-stage-h); margin: 0 auto;
             background: #000; border: 1px solid var(--gl-border);
             border-radius: 6px; overflow: hidden;
             display: flex; align-items: center; justify-content: center;
         }
         .pb-video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+        /*
+          The still is the PICTURE's box, not the stage's.
+          
+          It used to be 100% x 100% of the stage with `background-size: contain`,
+          which paints the same pixels and puts the letterbox INSIDE the element
+          — so a transform of "move a quarter of a frame right" measured against
+          the element moved it a quarter of the STAGE, and on this stage
+          (3.18:1, far wider than a 16:9 frame) that is nearly twice as far.
+          Worse, the black bars are part of the element, so panning drags them
+          into shot.
+
+          Sized to the delivered aspect instead, the element IS the frame: a
+          percentage translate means a fraction of the picture, and the stage
+          clips what travels outside. A shot with no move renders identically —
+          the same contained rect, in the same place.
+        */
         .pb-still {
             width: 100%; height: 100%;
             background-size: contain; background-repeat: no-repeat; background-position: center;
+            /* The stage is now the frame's own shape, so a contained picture
+               fills it exactly and a translate of 25% is a quarter of the
+               FRAME. `contain` rather than a stretch so a stray asset of
+               another shape letterboxes instead of distorting. */
+            transform-origin: 50% 50%;
+            will-change: transform;
         }
         .pb-gap {
             position: absolute; inset: 0; display: flex;
@@ -5062,6 +5096,11 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                                    title="Play each shot's dialogue as its shot comes up">
                                 <input type="checkbox" id="pbDialogue" checked onchange="pbDialogueToggled()"> Dialogue
                             </label>
+                            <label class="text-sm" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;"
+                                   title="Play each shot's camera move over its storyboard frame">
+                                <input type="checkbox" id="pbMotion" checked onchange="pbMotionToggled()"> Camera move
+                            </label>
+                            <span id="pbMoveLabel" class="text-sm text-muted"></span>
                         </div>
                         <div class="pb-timecode">
                             <span id="pbTimecode">00:00:00:00</span>
@@ -15238,11 +15277,24 @@ THREE.GLTFLoader = GLTFLoader;
         return { position: blocking.camera.position, rotation: blocking.camera.rotation, focalMm: blocking.camera.focalMm };
     }
 
-    /** Where a camera at `pose` is looking — yaw/pitch applied to -Z. */
+    /**
+     * Where a camera at `pose` is looking — yaw/pitch applied to -Z.
+     *
+     * The X term was +sin(yaw) and the whole rest of the engine turns the other
+     * way: yawVector — which samplePath's orbit, analyzePath's naming and
+     * solveShot's azimuth all go through — has +yaw turning toward -X. So
+     * pressing pan-left swung this pane RIGHT while the provider was told
+     * pan-left, and a shot solved at an azimuth pointed the camera away from
+     * its own subject. Dragging the camera was written for the library's
+     * convention too, so the pane also turned the wrong way under the mouse.
+     *
+     * Held to lib/shot-motion.js aimVector by test, because a mirrored camera
+     * looks perfectly plausible until you compare it with the shot you get.
+     */
     function previsAim(pose) {
         const yaw = (pose.rotation[0] || 0) * P_DEG;
         const pitch = (pose.rotation[1] || 0) * P_DEG;
-        const dir = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
+        const dir = [-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
         return [pose.position[0] + dir[0] * 5, pose.position[1] + dir[1] * 5, pose.position[2] + dir[2] * 5];
     }
 
@@ -33484,6 +33536,10 @@ ${fountainText.slice(0, 50000)}`;
 
             renderPlaybackSummary();
             document.getElementById('pbTotalTimecode').textContent = timeline.total_timecode;
+            // The frame's own shape, so a move measured in frame widths travels
+            // a frame width. Served with the tracks it was computed against.
+            const stage = document.querySelector('.pb-stage');
+            if (stage) stage.style.setProperty('--pb-aspect', String(Number(timeline.aspect) > 0 ? timeline.aspect : 16 / 9));
 
             pb.index = playbackStartIndex((timeline && timeline.entries) || []); pb.localMs = 0;
             renderPlaylist();
@@ -33577,6 +33633,7 @@ ${fountainText.slice(0, 50000)}`;
         }
 
         renderPlaylist();
+        pbMotionLabel();
         updatePlayhead();
     }
 
@@ -33646,6 +33703,124 @@ ${fountainText.slice(0, 50000)}`;
         `).join('') + '<div class="pb-playhead" id="pbPlayhead" style="left:0"></div>';
     }
 
+    /*
+     * ── The move, over the frame you already have ───────────────────────────
+     *
+     * A storyboard still occupied its slot dead centre and dead still, so a
+     * shot written as a slow push over the cul-de-sac and a shot written as
+     * locked off played identically — the only way to find out whether the move
+     * worked was to buy the clip.
+     *
+     * The track is computed on the server from the shot's previs blocking, or
+     * from the movement written on its card, and arrives on the timeline entry.
+     * Nothing is decided here: these two functions are held byte-for-byte equal
+     * to lib/shot-motion.js by test, because the page cannot require a node
+     * module and two interpolations that must agree and are maintained apart
+     * eventually do not.
+     */
+
+    /** Mirror of shot-motion.transformAt. Keep in lockstep. */
+    function motionTransformAt(track, t) {
+        const keys = track && Array.isArray(track.keys) ? track.keys : [];
+        if (!keys.length) return { scale: 1, x: 0, y: 0, rotate: 0 };
+        const u = Math.max(0, Math.min(1, Number(t) || 0));
+        let i = 0;
+        while (i < keys.length - 2 && Number(keys[i + 1].t) < u) i++;
+        const a = keys[i];
+        const b = keys[i + 1] || a;
+        const span = Number(b.t) - Number(a.t);
+        const f = span > 0 ? Math.max(0, Math.min(1, (u - Number(a.t)) / span)) : 0;
+        const mix = (p, q) => Number(p) + (Number(q) - Number(p)) * f;
+        const crop = Number(track && track.crop) > 0 ? Number(track.crop) : 1;
+        return {
+            scale: crop * mix(a.scale, b.scale),
+            x: mix(a.x, b.x),
+            y: mix(a.y, b.y),
+            rotate: mix(a.rotate, b.rotate),
+        };
+    }
+
+    /** Mirror of shot-motion.cssTransform. Keep in lockstep. */
+    function motionCss(at) {
+        return `translate(${(at.x * 100).toFixed(4)}%, ${(at.y * 100).toFixed(4)}%) `
+            + `rotate(${at.rotate.toFixed(4)}deg) scale(${at.scale.toFixed(5)})`;
+    }
+
+    /** Is there a move to play on the shot on screen? */
+    function pbMovingTrack() {
+        const entry = pbEntry();
+        const on = document.getElementById('pbMotion');
+        if (!entry || (on && !on.checked)) return null;
+        const track = entry.motion;
+        if (!track || entry.kind !== 'still') return null;
+        return track.movement && track.movement !== 'static' ? track : null;
+    }
+
+    /**
+     * Paint the move at the current moment.
+     *
+     * Called from updatePlayhead, which runs on every frame AND on every seek —
+     * so scrubbing shows the move at the position you scrubbed to rather than
+     * only while playing. A shot with no move is reset explicitly: leaving the
+     * previous shot's transform on the element would crop the next one.
+     */
+    function pbApplyMotion() {
+        const still = document.getElementById('pbStill');
+        if (!still) return;
+        const entry = pbEntry();
+        const track = pbMovingTrack();
+        if (!track) {
+            still.style.transform = '';
+            still.classList.remove('moving');
+            return;
+        }
+        const span = entry && entry.duration_ms > 0 ? entry.duration_ms : 1;
+        still.classList.add('moving');
+        still.style.transform = motionCss(motionTransformAt(track, pb.localMs / span));
+    }
+
+    /**
+     * What the move IS, in words, beside the transport.
+     *
+     * A push-in that is playing and a push-in that was written and is not
+     * playing look identical for the first second, which is exactly how a
+     * director concludes the feature is broken. The line also carries what the
+     * move costs — a travelling move has to push into the frame to have room,
+     * and a director watching a softer picture deserves to know why.
+     */
+    function pbMotionLabel() {
+        const label = document.getElementById('pbMoveLabel');
+        if (!label) return;
+        const entry = pbEntry();
+        const track = entry && entry.motion;
+        if (!track || entry.kind !== 'still' || !track.movement || track.movement === 'static') {
+            label.textContent = '';
+            label.title = '';
+            return;
+        }
+        const on = document.getElementById('pbMotion');
+        const where = track.source === 'blocking' ? 'staged' : 'written';
+        const bits = [`${track.movement} (${where})`];
+        // The verdict, not the statistic. "31% of frame" is the measurement;
+        // what a director needs at a glance is that this move is not something
+        // a still can show, and the number is one hover away.
+        if (on && !on.checked) bits.push('off');
+        else if (!track.carried) bits.push(`too big for a still — ${track.shown_percent}% of frame`);
+        else if (!track.perceptible) bits.push('too small to read');
+        else if (track.shown_percent < 100) bits.push(`${track.shown_percent}% of frame`);
+        label.textContent = bits.join(' · ');
+        label.title = track.why || track.note
+            || `${track.movement}, ${where} on this shot. `
+               + `${track.focal_mm}mm at ${track.distance_m}m. A still holds no parallax: `
+               + 'the background travels with the subject.';
+        label.style.color = (track.carried && track.perceptible) ? '' : 'var(--gl-warning, #d9a441)';
+    }
+
+    function pbMotionToggled() {
+        pbApplyMotion();
+        pbMotionLabel();
+    }
+
     function updatePlayhead() {
         if (!pb.timeline || !pb.timeline.total_duration_ms) return;
         const abs = pbAbsoluteMs();
@@ -33660,6 +33835,8 @@ ${fountainText.slice(0, 50000)}`;
         document.getElementById('pbNoteTarget').textContent = entry
             ? `${entry.shot_code} @ ${msToTc(pb.localMs, pb.timeline.fps)}`
             : '—';
+
+        pbApplyMotion();
     }
 
     /** Mirror of the server's msToTimecode so the readout matches exactly. */

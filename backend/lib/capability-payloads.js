@@ -174,10 +174,8 @@ function preconditionError(message) {
  * show what will be in frame, which a square cannot do for a scope film.
  */
 function dimensionsForAspect(aspect, fallbackW, fallbackH) {
-    const m = String(aspect || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/i);
-    if (!m) return { width: fallbackW, height: fallbackH };
-    const ratio = Number(m[1]) / Number(m[2]);
-    if (!Number.isFinite(ratio) || ratio <= 0) return { width: fallbackW, height: fallbackH };
+    const ratio = require('./project-presets').aspectValue(aspect);
+    if (!ratio) return { width: fallbackW, height: fallbackH };
 
     const targetPixels = fallbackW * fallbackH;
     const round8 = n => Math.max(256, Math.round(n / 8) * 8);

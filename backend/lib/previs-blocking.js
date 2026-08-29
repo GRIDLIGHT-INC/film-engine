@@ -199,6 +199,41 @@ function noise(seed, index, channel) {
 // ── Blocking ────────────────────────────────────────────────────────────────
 
 /** A neutral stage: subject at the origin, camera back and at eye height. */
+/**
+ * What a scene card says the camera IS, read once.
+ *
+ * "50mm", "50 mm", 50 — the card's lens is a free string by design, so it is
+ * parsed rather than trusted, and an unparseable one falls back instead of
+ * failing: a card that says "anamorphic" should still open a stage.
+ *
+ * This was inline in the previs from-card seed, which was fine while previs was
+ * the only thing that had to turn a written shot into optics. It is not any
+ * more — playback has to compute the move a card names for shots nobody ever
+ * blocked, which on a real board is most of them — and two readings of the same
+ * free string is exactly how a stage and a playhead come to disagree about
+ * which lens a shot is on.
+ */
+function cardOptics(cam, filmDefaults) {
+    const camera = cam || {};
+    const film = filmDefaults || {};
+    const focalMm = (() => {
+        const raw = camera.focal_mm !== undefined ? camera.focal_mm : camera.lens;
+        const n = typeof raw === 'number' ? raw : parseFloat(String(raw || '').replace(/[^0-9.]/g, ''));
+        if (Number.isFinite(n) && n > 0) return n;
+        return Number(film.focalMm) > 0 ? Number(film.focalMm) : 50;
+    })();
+    return {
+        shotType: SHOT_TYPES[camera.shot_type] ? camera.shot_type : 'medium',
+        movement: MOVEMENTS[camera.movement] ? camera.movement : 'static',
+        focalMm,
+        sensorId: SENSORS[camera.sensor] ? camera.sensor
+            : (SENSORS[film.sensorId] ? film.sensorId : 'super35'),
+        fStop: Number(camera.aperture) > 0 ? Number(camera.aperture)
+            : (Number(film.fStop) > 0 ? Number(film.fStop) : 2.8),
+        heightM: Number(camera.height_m) > 0 ? Number(camera.height_m) : DEFAULT_EYE_HEIGHT_M,
+    };
+}
+
 function defaultBlocking(overrides) {
     return {
         camera: { position: [0, DEFAULT_EYE_HEIGHT_M, 3], rotation: [0, 0, 0], focalMm: 50, sensorId: 'super35', fStop: 2.8, focusDistanceM: 3 },
@@ -957,7 +992,8 @@ function effectiveCamera(cardCamera, previs, filmOptics, opts) {
 module.exports = {
     RIGS, MOVEMENTS, SHOT_TYPES, SENSORS,
     DEFAULT_EYE_HEIGHT_M, DEFAULT_SUBJECT_HEIGHT_M,
-    defaultBlocking, solveShot, samplePath, sampleSequence, sampleCameraKeys, normalizeCameraKeys,
+    defaultBlocking, cardOptics, solveShot, samplePath, sampleSequence, sampleCameraKeys, normalizeCameraKeys,
+    yawVector,
     shortestAngleDeltaDegrees, analyzePath, moveAmount, resolveTarget,
     rigCanPerform, toCameraControl, legTimings, movePace, groupLegs, DEFAULT_MOVE_MS,
     poseAt, EASINGS, easeT,

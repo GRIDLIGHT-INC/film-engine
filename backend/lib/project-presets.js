@@ -238,6 +238,24 @@ function parseResolution(resStr) {
     return { width: w, height: h };
 }
 
+
+/**
+ * A ratio written as a string, as a number.
+ *
+ * "16:9" also arrives as "16x9" and "16/9" depending on which surface wrote it,
+ * and the reading was inline in the image budget — which was fine while the
+ * frame's shape only decided the size of a picture. It decides how far a move
+ * has to travel now too, and one string read two ways is how a board and a
+ * playhead come to disagree about the shape of the same frame.
+ */
+function aspectValue(aspect, fallback) {
+    const m = String(aspect || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/i);
+    if (!m) return fallback === undefined ? null : fallback;
+    const ratio = Number(m[1]) / Number(m[2]);
+    if (!Number.isFinite(ratio) || ratio <= 0) return fallback === undefined ? null : fallback;
+    return ratio;
+}
+
 module.exports = {
     ASPECT_RATIOS,
     ASPECT_RATIO_IDS,
@@ -249,6 +267,7 @@ module.exports = {
     FRAME_RATE_VALUES,
     DELIVERY_PRESETS,
     DELIVERY_PRESET_IDS,
+    aspectValue,
     validateProjectSettings,
     resolveDeliveryPreset,
     computeResolution,
