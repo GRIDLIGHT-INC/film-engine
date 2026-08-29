@@ -1,16 +1,16 @@
 /**
  * The iOS app: a full replica, and actually shippable to TestFlight.
  *
- * "Full replica" is taken literally — it ships THE APP, all 38 pages, inside a
+ * "Full replica" is taken literally — it ships THE APP, all 28 pages, inside a
  * WKWebView, rather than a second implementation of it. That is the decision
  * this repo's own mobile assessment already argued for: option C's real cost is
  * never React Native, it is A SECOND SURFACE, and this codebase has paid three
  * times in one week for two surfaces disagreeing (the plate pointer, the frame
- * pointer, effectiveCamera). A rewrite of 38 pages would be weeks of work whose
+ * pointer, effectiveCamera). A rewrite of 28 pages would be weeks of work whose
  * first bug is a screen that disagrees with the desktop.
  *
  * Set-based over TWO registries, because both fail partially:
- *   - the 38 pages, so a bundle that ships 30 of them cannot read as complete;
+ *   - the 28 pages, so a bundle that ships 20 of them cannot read as complete;
  *   - the TestFlight requirements, because an archive missing one Info.plist
  *     key is rejected at upload, after the build has "succeeded".
  *

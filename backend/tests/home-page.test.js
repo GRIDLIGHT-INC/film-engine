@@ -100,16 +100,34 @@ test('the API serves a field for every block', async () => {
         `the home payload serves nothing for: ${missing.join(', ')} (got: ${Object.keys(body).join(', ')})`);
 });
 
-test('the phase fractions are the six the app already uses', () => {
-    // The UI declares write/plan/look/make/edit/deliver for its phase track.
-    // A home page inventing a second list would drift from the navigation on
-    // the first change to either.
+test('the phase fractions are declared once, and the page renders what it is served', () => {
+    /*
+     * This used to assert that home's phases matched the SPA's `var PHASES` —
+     * the phase track — on the reasoning that a second list would drift from
+     * the navigation. That match was a COINCIDENCE, and it stopped being true
+     * when the menu was reorganised into four groups: the track is where you
+     * work, and these six are how far the film has got. They are different
+     * questions and collapsing one into the other would throw away either a
+     * menu group or a measurement.
+     *
+     * What actually prevents drift is that there is only one list: lib/home.js
+     * declares the six, and homePhasesHtml renders whatever it is handed. So
+     * that is what is checked — the page must not grow its own copy.
+     */
+    const { PHASES } = require('../lib/home');
+    assert.deepEqual(PHASES.map(p => p.id),
+        ['write', 'plan', 'look', 'make', 'edit', 'deliver'],
+        'the progress phases changed; the home page measures these six');
+
     const src = html();
-    const declared = src.slice(src.indexOf('var PHASES = ['), src.indexOf('var PHASES = [') + 900);
-    for (const id of ['write', 'plan', 'look', 'make', 'edit', 'deliver']) {
-        assert.ok(new RegExp(`id:'${id}'`).test(declared), `the phase track lost ${id}`);
+    const render = src.slice(src.indexOf('function homePhasesHtml'),
+        src.indexOf('function homeActivityHtml'));
+    assert.ok(/\(phases \|\| \[\]\)\.map/.test(render),
+        'homePhasesHtml no longer renders the served list');
+    for (const id of PHASES.map(p => p.id)) {
+        assert.ok(!new RegExp(`id:\\s*'${id}'`).test(render),
+            `the page declares its own '${id}' phase — a second copy that will drift`);
     }
-    assert.ok(/PHASE_IDS|FE_PHASES|var PHASES/.test(src), 'no shared phase list to build the home page from');
 });
 
 test('every needs-you item carries a way in', () => {

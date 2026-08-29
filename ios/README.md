@@ -1,6 +1,6 @@
 # Film Engine for iOS
 
-A **full replica** — it ships `src/index.html`, all 38 pages, inside a WKWebView.
+A **full replica** — it ships `src/index.html`, all 28 pages, inside a WKWebView.
 Not a second implementation of them.
 
 That is deliberate. `docs/plans/mobile-feasibility.md` already argued it: a native

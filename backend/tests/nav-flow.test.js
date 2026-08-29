@@ -7,10 +7,16 @@
  * below Export; and Storyboard sat three groups away from the Shot Board it
  * feeds. The nav told you what the software contains instead of what to do next.
  *
- * The order is NOT invented here. `routes/production-status.js` already
- * declares the canonical one in PROJECT_PHASES, and the status machine advances
- * a project through exactly those nine. Deriving the sidebar from it means the
- * menu and the state machine cannot disagree about what phase a project is in.
+ * The order USED to be derived from PROJECT_PHASES, so the menu and the status
+ * machine could not disagree about what phase a project was in. That derivation
+ * was given up when the menu was reorganised into four groups that cut across
+ * the nine phases — Consistency is pre-production and sits under Plan, Assets is
+ * an export surface and sits under Post — and no merge of the nine produces the
+ * four. See `lib/nav-flow.js` and `tests/nav-reorg.test.js`.
+ *
+ * What survives here is the part that was doing the work: no page vanishes, no
+ * page appears twice, every page has a panel, and the order still runs write →
+ * plan → shoot → finish.
  *
  * Set-based over every data-page in the SPA: a page missing from the map is a
  * page that disappears from the sidebar, which is a worse failure than being in
@@ -23,7 +29,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { PROJECT_PHASES } = require('../routes/production-status');
-const { NAV_FLOW, phaseOf, orderedPhases, ALWAYS_AVAILABLE } = require('../lib/nav-flow');
+const { NAV_FLOW, GROUP_ORDER, phaseOf, orderedPhases, ALWAYS_AVAILABLE } = require('../lib/nav-flow');
 
 const INDEX_HTML = path.join(__dirname, '..', '..', 'src', 'index.html');
 
@@ -41,19 +47,20 @@ function pagePanels() {
 
 // ── The order comes from the state machine ──────────────────────────────────
 
-test('the phase order is the one the status machine already declares', () => {
-    assert.ok(Array.isArray(PROJECT_PHASES) && PROJECT_PHASES.length === 9,
-        'PROJECT_PHASES changed shape; the sidebar derives from it');
+test('the group order is declared once, and the map matches it', () => {
+    // GROUP_ORDER is the single statement of sequence. Two lists — one implicit
+    // in object key order and one explicit — is how a menu comes to disagree
+    // with itself depending on which the reader trusts.
     const declared = orderedPhases().map(p => p.id);
-    const expected = PROJECT_PHASES.filter(id => NAV_FLOW[id] && NAV_FLOW[id].pages.length);
+    const expected = GROUP_ORDER.filter(id => NAV_FLOW[id] && NAV_FLOW[id].pages.length);
     assert.deepStrictEqual(declared, expected,
-        'the sidebar groups are not in production order');
+        'the sidebar groups are not in the declared order');
 });
 
-test('every phase in the map is a real project phase', () => {
-    const invented = Object.keys(NAV_FLOW).filter(id => !PROJECT_PHASES.includes(id));
-    assert.deepStrictEqual(invented, [],
-        `phases the status machine does not know: ${invented.join(', ')}`);
+test('every group in the map is one the order knows about', () => {
+    const orphaned = Object.keys(NAV_FLOW).filter(id => !GROUP_ORDER.includes(id));
+    assert.deepStrictEqual(orphaned, [],
+        `groups missing from GROUP_ORDER would never be shown: ${orphaned.join(', ')}`);
 });
 
 test('every phase group has a label a filmmaker would recognise', () => {
@@ -65,7 +72,7 @@ test('every phase group has a label a filmmaker would recognise', () => {
 
 test('every page in the SPA is placed in exactly one phase', () => {
     const pages = pagesInSpa();
-    assert.ok(pages.length >= 30, `only found ${pages.length} pages — the parse is wrong`);
+    assert.ok(pages.length >= 25, `only found ${pages.length} pages — the parse is wrong`);
 
     // "In exactly one phase" OR pinned as always-available — those are the two
     // legal homes, and a page in neither is one that vanishes from the sidebar.
@@ -114,11 +121,15 @@ test('previs sits with the storyboard, because they are one loop', () => {
 });
 
 test('you write before you shoot, and shoot before you finish', () => {
-    const order = page => PROJECT_PHASES.indexOf(phaseOf(page));
+    // Grading and the colour pipeline were removed from the app, so the two
+    // assertions anchored on them are replaced by the same claim over surfaces
+    // that still exist. Deleting them outright would have quietly dropped the
+    // half of this test that checks POST comes last.
+    const order = page => GROUP_ORDER.indexOf(phaseOf(page));
     assert.ok(order('screenplay') < order('shotboard'), 'the screenplay comes after the shot board');
     assert.ok(order('characters') < order('videoshots'), 'casting comes after shooting');
-    assert.ok(order('videoshots') < order('colorgrading'), 'grading comes before shooting');
-    assert.ok(order('colorgrading') <= order('exportpage'), 'export comes before the grade');
+    assert.ok(order('videoshots') < order('exportpage'), 'export comes before shooting');
+    assert.ok(order('storyboard') < order('videoshots'), 'the board comes after the footage');
 });
 
 test('the always-available pages are the ones with no phase', () => {
@@ -149,11 +160,12 @@ test('the SPA renders the sidebar from this map rather than a second copy', () =
 
 test('the panel and the server agree about which pages exist', () => {
     /*
-     * There are TWO phase mappings: lib/nav-flow.js groups pages by the nine
-     * PROJECT_PHASES the status machine declares, and the chrome in index.html
-     * carries its own six-phase Write/Plan/Look/Make/Edit/Deliver grouping for
-     * the panel. Both are legitimate — they answer different questions — but
-     * nothing checked that a page appears in both.
+     * There are TWO copies of the grouping: lib/nav-flow.js on the server, and
+     * `var PHASES` in the chrome, which is what a person actually sees. They
+     * used to be different groupings that merely had to overlap; they are now
+     * the SAME four groups, and tests/nav-reorg.test.js holds them equal
+     * element by element. This check stays as the weaker containment one,
+     * because it is what caught the marketing page and costs nothing.
      *
      * So a page could be correctly placed server-side, pass every test here,
      * and still be absent from the panel a director actually reads. That is
@@ -168,7 +180,7 @@ test('the panel and the server agree about which pages exist', () => {
         .matchAll(/pages:\[([^\]]*)\]/g)]
         .flatMap(m => m[1].split(',').map(x => x.trim().replace(/^['"]|['"]$/g, '')))
         .filter(Boolean));
-    assert.ok(panelPages.size >= 30, `parsed only ${panelPages.size} panel pages — the parse is wrong`);
+    assert.ok(panelPages.size >= 20, `parsed only ${panelPages.size} panel pages — the parse is wrong`);
 
     const missing = [];
     for (const [phase, spec] of Object.entries(NAV_FLOW)) {

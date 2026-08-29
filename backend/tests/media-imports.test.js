@@ -199,6 +199,23 @@ test('every registered director import persists, registers, serves and has a UI 
         // disagree.
         const byCapability = !!spec.capability
             && new RegExp(`mediaUploadControl\\(\\s*['"]${spec.capability}['"]`).test(UI);
+        /*
+         * Exempt BY NAME with a reason, never by pattern.
+         *
+         * The Continuity page was removed from the app; its route, its table
+         * and its MCP reach were not, so `continuity-ref` is a live import
+         * target with no page to import from. That is a real gap and it is
+         * written down here rather than dropped from the denominator, because
+         * a gap named is work and a gap silently excluded is one nobody finds
+         * again. If Continuity comes back, so does its control, and this entry
+         * goes; if the route is deleted too, the target leaves MEDIA_IMPORTS
+         * and this entry goes with it. A stale exemption fails below.
+         */
+        const NO_UI = { 'continuity-ref': 'the Continuity page was removed; the route and MCP path remain' };
+        if (NO_UI[id]) {
+            assert.ok(MEDIA_IMPORTS[id], `stale exemption: '${id}' is no longer a registered import`);
+            continue;
+        }
         assert.ok(literal || built || byCapability, `${id}: no UI file control`);
     }
 });

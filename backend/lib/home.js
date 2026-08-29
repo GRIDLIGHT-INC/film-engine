@@ -182,7 +182,7 @@ function buildPhases(db, projectId, shots, scenes) {
         plan: { done: total, of: total, note: total ? `${total} shots carded` : 'No shots yet' },
         look: { done: keyframed, of: total, note: `${keyframed} of ${total} keyframed` },
         make: { done: filmed, of: total, note: filmed ? `${filmed} filmed` : 'Not started' },
-        edit: { done: approved, of: total, note: approved ? `${approved} approved` : 'No takes circled' },
+        edit: { done: approved, of: total, note: approved ? `${approved} approved` : 'Nothing approved yet' },
         deliver: { done: 0, of: total, note: 'Not started' },
     };
 

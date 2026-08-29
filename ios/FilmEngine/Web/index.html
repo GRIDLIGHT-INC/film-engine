@@ -1449,6 +1449,14 @@
         .home-need .dot { width:6px; height:6px; border-radius:50%; background:#6690ff; flex:0 0 auto; }
         .home-need a { margin-left:auto; color:#6690ff; text-decoration:none; font-size:12.5px; }
         .home-need a:hover { text-decoration:underline; }
+        .home-panels {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .home-panel { cursor: pointer; }
+        .home-panel:hover { border-color: var(--accent, #6aa9ff); }
         .home-phases { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
         @media (max-width:1200px) { .home-phases { grid-template-columns:repeat(3,1fr); } }
         @media (max-width:700px) { .home-phases { grid-template-columns:repeat(2,1fr); } }
@@ -4138,9 +4146,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <button class="nav-item" data-page="shotboard" onclick="navigateTo('shotboard')" data-tooltip="Kanban board of shots organized by scene with scene cards" data-tooltip-pos="right">
                     <span class="nav-icon">&#127919;</span> Shot Board
                 </button>
-                <button class="nav-item" data-page="production" onclick="navigateTo('production')" data-tooltip="Run plan, staleness, sides, DOOD, setups and the film master \u2014 every project-level read on one page" data-tooltip-pos="right">
-                    <span class="nav-icon">&#128203;</span> Plan &amp; Shoot
-                </button>
                 <button class="nav-item" data-page="moodboard" onclick="navigateTo('moodboard')" data-tooltip="Decide the look before generating: references, palette, lens and delivery specs" data-tooltip-pos="right">
                     <span class="nav-icon">&#127912;</span> Mood Board
                 </button>
@@ -4175,9 +4180,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <button class="nav-item" data-page="musiccues" onclick="navigateTo('musiccues')" data-tooltip="Score, SFX, and ambient audio cues tied to scenes" data-tooltip-pos="right">
                     <span class="nav-icon">&#127925;</span> Music Cues
                 </button>
-                <button class="nav-item" data-page="colorgrading" onclick="navigateTo('colorgrading')" data-tooltip="LUT presets and color correction parameters for shots" data-tooltip-pos="right">
-                    <span class="nav-icon">&#127912;</span> Color Grading
-                </button>
                 <div class="sidebar-divider"></div>
                 <div class="nav-section">Workflow</div>
                 <button class="nav-item" data-page="milestones" onclick="navigateTo('milestones')" data-tooltip="Production timeline tracking with target and completion dates" data-tooltip-pos="right">
@@ -4193,15 +4195,9 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <button class="nav-item" data-page="playback" onclick="navigateTo('playback')" data-tooltip="Watch the assembled cut and leave notes at an exact moment" data-tooltip-pos="right">
                     <span class="nav-icon">&#9654;</span> Playback
                 </button>
-                <button class="nav-item" data-page="selects" onclick="navigateTo('selects')" data-tooltip="Circled takes per shot and the selects reel" data-tooltip-pos="right">
-                    <span class="nav-icon">&#11088;</span> Selects
-                </button>
                 <!-- ==== CLAUDE:END ==== -->
                 <button class="nav-item" data-page="marketing" onclick="navigateTo('marketing')" data-tooltip="Posters, key art and social cards — upload your own or generate them" data-tooltip-pos="right">
                     <span class="nav-icon">&#127917;</span> Marketing
-                </button>
-                <button class="nav-item" data-page="continuity" onclick="navigateTo('continuity')" data-tooltip="Reference board for visual, wardrobe, prop, and lighting consistency" data-tooltip-pos="right">
-                    <span class="nav-icon">&#128247;</span> Continuity
                 </button>
                 <button class="nav-item" data-page="consistency" onclick="navigateTo('consistency')" data-tooltip="Lock canonical identity (reference, seed, voice) so shots stay consistent" data-tooltip-pos="right">
                     <span class="nav-icon">&#128274;</span> Consistency
@@ -4236,21 +4232,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                      navigation map, which reads the source for data-page. -->
                 <button class="nav-item" data-page="stylebook" onclick="navigateTo('stylebook')" data-tooltip="Your own shots — angles, lenses and references, kept across every film" data-tooltip-pos="right">
                     <span class="nav-icon">&#9635;</span> Style Book
-                </button>
-                <button class="nav-item" data-page="provenance" onclick="navigateTo('provenance'); loadProvenancePage()" data-tooltip="AI disclosure sidecar and generation provenance manifest" data-tooltip-pos="right">
-                    <span class="nav-icon">&#128220;</span> Provenance
-                </button>
-                <button class="nav-item" data-page="rights" onclick="navigateTo('rights'); loadRightsPage()" data-tooltip="Synthetic performer, voice, model, music, and asset rights register" data-tooltip-pos="right">
-                    <span class="nav-icon">&#128272;</span> Rights
-                </button>
-                <button class="nav-item" data-page="colorpipeline" onclick="navigateTo('colorpipeline'); loadColorPipelinePage()" data-tooltip="ACES/CDL delivery color pipeline" data-tooltip-pos="right">
-                    <span class="nav-icon">&#127912;</span> Color Pipeline
-                </button>
-                <button class="nav-item" data-page="dubbing" onclick="navigateTo('dubbing'); loadDubbingPage()" data-tooltip="Localization and dubbing packages from subtitle cues" data-tooltip-pos="right">
-                    <span class="nav-icon">&#127908;</span> Dubbing
-                </button>
-                <button class="nav-item" data-page="broadcastqc" onclick="navigateTo('broadcastqc'); loadBroadcastQCPage()" data-tooltip="Delivery-readiness QC for masters, captions, rights, and provenance metadata" data-tooltip-pos="right">
-                    <span class="nav-icon">&#9989;</span> Delivery QC
                 </button>
                 <!-- ==== CODEX:END ==== -->
                 <div class="sidebar-divider"></div>
@@ -4297,6 +4278,9 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 
             <div class="home-kicker">The whole film, phase by phase</div>
             <div id="homePhases" class="home-phases"></div>
+
+            <div class="home-kicker">Plan &amp; shoot</div>
+            <div id="homePanels" class="home-panels"></div>
 
             <div class="home-row-2">
                 <div class="home-card" id="homeActivity"></div>
@@ -4622,20 +4606,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
 
         <!-- ── 6. STORYBOARD ────────────────────────────────────── -->
-        <div class="page" id="page-production">
-            <div class="flex-between mb-16">
-                <h2>Plan &amp; Shoot</h2>
-                <div style="display:flex;gap:8px;">
-                    <button class="btn btn-secondary" onclick="loadProductionPage()">Refresh</button>
-                    <button class="btn btn-primary" onclick="productionConform()" data-tooltip="Conform every shot into one film" data-tooltip-pos="bottom">Conform film</button>
-                </div>
-            </div>
-            <!-- Ten project-level reads on one page. They were built as ten
-                 endpoints and would have been ten sidebar entries, which is how
-                 a sidebar stops being navigable. -->
-            <div id="productionPanels" class="entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));"></div>
-        </div>
-
         <div class="page" id="page-moodboard">
             <div class="flex-between mb-16">
                 <h2>Mood Board</h2>
@@ -4803,14 +4773,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
 
         <!-- ── 12. COLOR GRADING ────────────────────────────────── -->
-        <div class="page" id="page-colorgrading">
-            <div class="flex-between mb-16">
-                <h2>Color Grading</h2>
-                <button class="btn btn-primary" onclick="showModal('colorPresetModal')">+ Preset</button>
-            </div>
-            <div class="entity-grid" id="colorPresetGrid"></div>
-        </div>
-
         <!-- ── 13. MILESTONES ───────────────────────────────────── -->
         <div class="page" id="page-milestones">
             <div class="flex-between mb-16">
@@ -4906,47 +4868,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
 
         <!-- Gap 5 + 7d: circled takes, selects reel, prompt comparison -->
-        <div class="page" id="page-selects">
-            <div class="page-header"><h2>Selects</h2></div>
-            <div class="flex-between mb-16">
-                <div class="text-sm text-muted" id="selectsSummary">Loading…</div>
-                <button class="btn btn-secondary btn-sm" onclick="loadSelects()">Refresh</button>
-            </div>
-
-            <div id="selectsEmpty" class="glossary-empty hidden">
-                No shots yet. Once you generate renders, every render becomes a take
-                you can circle here.
-            </div>
-
-            <div id="selectsMain" class="hidden">
-                <div class="sel-coverage-bar" title="Shots with a circled take">
-                    <div class="sel-coverage-fill" id="selCoverageFill"></div>
-                </div>
-                <div class="text-sm text-muted mb-16" id="selCoverageLabel"></div>
-
-                <div class="sel-columns">
-                    <div>
-                        <div class="section-label">Shots</div>
-                        <div id="selShotList" class="sel-shot-list"></div>
-                    </div>
-                    <div>
-                        <div class="section-label">Takes for <span id="selCurrentShot">—</span></div>
-                        <div id="selTakeList" class="sel-take-list"></div>
-
-                        <!-- Gap 7d -->
-                        <div class="section-label mt-16">Compare prompts</div>
-                        <div class="sel-diff-box">
-                            <div class="flex-between mb-8">
-                                <select id="selDiffA" style="width:48%;"></select>
-                                <select id="selDiffB" style="width:48%;"></select>
-                            </div>
-                            <button class="btn btn-secondary btn-sm" onclick="selRunDiff()">Diff these takes</button>
-                            <div id="selDiffResult" class="mt-8"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
         <!-- ==== CLAUDE:END ==== -->
 
         <div class="page" id="page-notes">
@@ -5043,25 +4964,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
 
         <!-- ── ACTS (FILM-146) ─────────────────────────────────── -->
-        <div class="page" id="page-continuity">
-            <div class="flex-between mb-16">
-                <h2>Continuity Board</h2>
-                <div>
-                    <select id="continuityFilter" onchange="loadContinuity()" style="width:auto;display:inline-block;min-width:150px;margin-right:8px;">
-                        <option value="">All Types</option>
-                        <option value="visual">Visual</option>
-                        <option value="wardrobe">Wardrobe</option>
-                        <option value="prop">Prop</option>
-                        <option value="lighting">Lighting</option>
-                        <option value="color">Color</option>
-                        <option value="framing">Framing</option>
-                    </select>
-                    <button class="btn btn-primary" onclick="showModal('continuityModal')">+ Reference</button>
-                </div>
-            </div>
-            <div class="entity-grid" id="continuityGrid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));"></div>
-        </div>
-
         <!-- ── MARKETING ──────────────────────────────────────── -->
         <div class="page" id="page-marketing">
             <div class="flex-between mb-16">
@@ -5837,104 +5739,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
             <div id="jobsQueueList"></div>
         </div>
 
-        <div class="page" id="page-provenance">
-            <div class="flex-between mb-16">
-                <h2>Provenance</h2>
-                <div class="btn-row">
-                    <button class="btn btn-secondary" onclick="loadProvenancePage()">Refresh</button>
-                    <button class="btn btn-primary" onclick="exportProvenanceSidecar()">Export Sidecar</button>
-                </div>
-            </div>
-            <div id="provenanceBody"></div>
-        </div>
-
-        <div class="page" id="page-rights">
-            <div class="flex-between mb-16">
-                <h2>Rights Register</h2>
-                <div class="btn-row">
-                    <button class="btn btn-secondary" onclick="loadRightsPage()">Refresh</button>
-                    <button class="btn btn-primary" onclick="createRightsRecord()">Add Record</button>
-                </div>
-            </div>
-            <div class="card mb-16">
-                <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
-                    <input id="rightsSubject" placeholder="Subject">
-                    <select id="rightsEntityType">
-                        <option value="character">Character</option>
-                        <option value="voice">Voice</option>
-                        <option value="model">Model</option>
-                        <option value="music">Music</option>
-                        <option value="asset">Asset</option>
-                        <option value="output">Output</option>
-                    </select>
-                    <select id="rightsType">
-                        <option value="commercial_use">Commercial use</option>
-                        <option value="likeness">Likeness</option>
-                        <option value="voice_clone">Voice clone</option>
-                        <option value="model_license">Model license</option>
-                        <option value="music_license">Music license</option>
-                    </select>
-                    <select id="rightsStatus">
-                        <option value="unknown">Unknown</option>
-                        <option value="cleared">Cleared</option>
-                        <option value="restricted">Restricted</option>
-                        <option value="expired">Expired</option>
-                        <option value="blocked">Blocked</option>
-                    </select>
-                </div>
-            </div>
-            <div id="rightsBody"></div>
-        </div>
-
-        <div class="page" id="page-colorpipeline">
-            <div class="flex-between mb-16">
-                <h2>Color Pipeline</h2>
-                <button class="btn btn-primary" onclick="saveColorPipeline()">Save</button>
-            </div>
-            <div class="card" style="max-width:760px;">
-                <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;">
-                    <div class="form-group"><label>ACES Version</label><input id="colorAcesVersion" value="ACES 1.3"></div>
-                    <div class="form-group"><label>Working Space</label><input id="colorWorkingSpace" value="ACEScct"></div>
-                    <div class="form-group"><label>Input Transform</label><input id="colorInputTransform" placeholder="Input transform"></div>
-                    <div class="form-group"><label>Output Transform</label><input id="colorOutputTransform" value="Rec.709"></div>
-                    <div class="form-group"><label>Target Color Space</label><input id="colorTargetSpace" value="Rec.709"></div>
-                    <div class="form-group"><label>Target Nits</label><input id="colorTargetNits" type="number" value="100"></div>
-                    <div class="form-group"><label>CDL Slope</label><input id="colorCdlSlope" value="1,1,1"></div>
-                    <div class="form-group"><label>CDL Offset</label><input id="colorCdlOffset" value="0,0,0"></div>
-                    <div class="form-group"><label>CDL Power</label><input id="colorCdlPower" value="1,1,1"></div>
-                    <div class="form-group"><label>CDL Saturation</label><input id="colorCdlSaturation" type="number" step="0.01" value="1"></div>
-                </div>
-                <div class="form-group"><label>Notes</label><textarea id="colorNotes" rows="3"></textarea></div>
-            </div>
-            <div id="colorPipelineStatus" class="mt-16"></div>
-        </div>
-
-        <div class="page" id="page-dubbing">
-            <div class="flex-between mb-16">
-                <h2>Dubbing</h2>
-                <button class="btn btn-secondary" onclick="loadDubbingPage()">Refresh</button>
-            </div>
-            <div class="card mb-16">
-                <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;align-items:end;">
-                    <div class="form-group"><label>Source</label><input id="dubbingSourceLang" value="en"></div>
-                    <div class="form-group"><label>Target</label><input id="dubbingTargetLang" placeholder="es"></div>
-                    <div class="form-group"><label>Strategy</label><select id="dubbingStrategy"><option value="preserve_character">Preserve character</option><option value="new_cast">New cast</option><option value="subtitles_only">Subtitles only</option></select></div>
-                    <button class="btn btn-primary" onclick="createDubbingPackage()">Create Package</button>
-                </div>
-            </div>
-            <div id="dubbingBody"></div>
-        </div>
-
-        <div class="page" id="page-broadcastqc">
-            <div class="flex-between mb-16">
-                <h2>Delivery QC</h2>
-                <div class="btn-row">
-                    <button class="btn btn-secondary" onclick="loadBroadcastQCPage()">Refresh</button>
-                    <button class="btn btn-primary" onclick="runBroadcastQC()">Run Readiness QC</button>
-                </div>
-            </div>
-            <div id="broadcastQcBody"></div>
-        </div>
         <!-- ==== CODEX:END ==== -->
     </div>
 
@@ -13046,16 +12850,23 @@ THREE.GLTFLoader = GLTFLoader;
 
     const P_DEG = Math.PI / 180;
 
-    // ── Plan & Shoot: the project-level reads, on one page ─────────────────
+    // ── Plan & Shoot, on the page you land on ──────────────────────────────
     //
-    // Ten endpoints were built in phases 2 and 3 and none had a surface, so
-    // none of the work was usable from the app. Ten sidebar entries for ten
-    // read-only panels is the other failure mode, so they share a page.
+    // These were ten project-level reports behind their own menu item, which
+    // is one click further away than the thing they are for: they answer
+    // "what should I do next", and that is the question you have when you
+    // open the app, not one you go looking for a page to ask.
+    //
+    // Every panel here CARRIES ITS WAY IN. A read-only figure on a landing
+    // page is something to look at; this list is meant to be the route to the
+    // work, so a panel with no destination does not belong on it. That drops
+    // the conform panel ("Film master"), which had no `go` because conforming
+    // is an action rather than a place — it is reached from the Export page,
+    // where the other delivery actions are.
 
-    const PRODUCTION_PANELS = [
+    const HOME_PANELS = [
         { id: 'run-plan',          title: 'Run plan',        render: p => `${p.total_items} item(s) in ${p.strips.length} strip(s) · ${p.model_switches} model switch(es) · $${(p.projected_cost || 0).toFixed(2)}${p.refused ? ' · REFUSED (over budget)' : ''}`, go: 'pipeline' },
         { id: 'staleness',         title: 'Staleness',       render: p => `${p.summary.stale} stale · ${p.summary.fresh} current · ${p.summary.unknown} unknown`, go: 'storyboard' },
-        { id: 'conform',           title: 'Film master',     render: p => p.ok ? `Ready: ${p.clips.length} clip(s), ${Math.round((p.total_duration_ms || 0) / 1000)}s` : (p.error || 'not ready') },
         { id: 'dood',              title: 'Day out of days', render: p => `${p.characters.length} character(s) · ${p.needs_plate.length} still need a plate`, go: 'characters' },
         { id: 'sides',             title: 'Sides',           render: p => `${p.speaking} speaking · ${p.non_speaking.length} non-speaking`, go: 'screenplay' },
         { id: 'elements-list',     title: 'Elements',        render: p => `${p.elements.characters.length} characters · ${p.elements.locations.length} locations · ${p.elements.props.length} props · ${p.undescribed.length} undescribed`, go: 'props' },
@@ -13065,39 +12876,42 @@ THREE.GLTFLoader = GLTFLoader;
         { id: 'run-report',        title: 'Runs',            render: p => `${p.summary.total} run(s) · ${p.summary.failed} failed · $${(p.spend.recorded || 0).toFixed(2)} spent`, go: 'jobsqueue' },
     ];
 
-    async function loadProductionPage() {
-        if (!state.currentProject) return;
-        const grid = document.getElementById('productionPanels');
+    /**
+     * Paint the panels into the home page.
+     *
+     * Deliberately AFTER the rest of home has rendered and not awaited by it:
+     * nine endpoints answering in series is slower than the one /home call, and
+     * blocking the greeting on them would make the whole page feel like the
+     * slowest report. A panel that cannot load says so — nine silent empties
+     * would read as "nothing to report", which is a different claim.
+     */
+    async function loadHomePanels() {
+        const grid = document.getElementById('homePanels');
+        if (!grid || !state.currentProject) return;
         grid.innerHTML = '<div class="text-muted">Loading…</div>';
-        const cards = [];
-        for (const panel of PRODUCTION_PANELS) {
-            let body, ok = true;
-            try {
-                const data = await api(`/projects/${state.currentProject.id}/${panel.id}`);
-                body = esc(panel.render(data));
-            } catch (err) {
-                // A panel that cannot load says so. Ten silent empties would
-                // read as "nothing to report", which is a different claim.
-                ok = false; body = esc(err.message || 'unavailable');
-            }
-            cards.push(`<div class="card">
-                <div class="flex-between"><strong>${esc(panel.title)}</strong>
-                ${panel.go ? `<button class="btn btn-sm" onclick="navigateTo('${panel.go}')">Open</button>` : ''}</div>
-                <p class="text-sm ${ok ? '' : 'text-muted'}" style="margin-top:6px;">${body}</p>
-            </div>`);
-        }
-        grid.innerHTML = cards.join('');
-        setStatus('Plan & Shoot loaded');
-    }
 
-    async function productionConform() {
-        if (!state.currentProject) return;
-        setStatus('Conforming…', true);
-        try {
-            const res = await api(`/projects/${state.currentProject.id}/conform`, { method: 'POST', body: JSON.stringify({}) });
-            setStatus(res.ok ? `Film conformed: ${res.output}` : (res.error || 'Conform refused'));
-        } catch (err) { setStatus('Conform: ' + err.message); }
-        loadProductionPage();
+        /*
+         * Fetched CONCURRENTLY, unlike the generation paths.
+         *
+         * The sequential rule elsewhere exists because several generations at
+         * one provider is how a queue earns a 429 and the retry costs more than
+         * the wait. These are nine local reads against SQLite: in series they
+         * measured 8.9s before the block filled, which on the page you land on
+         * reads as the app being slow to start. Concurrently it is the slowest
+         * one.
+         */
+        const results = await Promise.all(HOME_PANELS.map(panel =>
+            api(`/projects/${state.currentProject.id}/${panel.id}`)
+                .then(data => ({ panel, body: esc(panel.render(data)), ok: true }))
+                // A panel that cannot load says so. Nine silent empties would
+                // read as "nothing to report", which is a different claim.
+                .catch(err => ({ panel, body: esc(err.message || 'unavailable'), ok: false }))));
+
+        grid.innerHTML = results.map(({ panel, body, ok }) => `<div class="card home-panel" onclick="navigateTo('${panel.go}')" title="Open ${esc(panel.go)}">
+                <div class="flex-between"><strong>${esc(panel.title)}</strong>
+                <button class="btn btn-sm" onclick="event.stopPropagation();navigateTo('${panel.go}')">Open</button></div>
+                <p class="text-sm ${ok ? '' : 'text-muted'}" style="margin-top:6px;">${body}</p>
+            </div>`).join('');
     }
 
     // ── Look board ─────────────────────────────────────────────────────────
@@ -16123,19 +15937,16 @@ THREE.GLTFLoader = GLTFLoader;
             props: loadProps,
             assets: loadAssets,
             musiccues: loadMusicCues,
-            colorgrading: loadColorPresets,
             milestones: loadMilestones,
             notes: loadNotesPage,
             renderhistory: loadRenderPage,
             exportpage: loadExportPage,
             pipeline: loadPipeline,
             flows: loadFlowsPage,
-            production: loadProductionPage,
             moodboard: loadMoodBoardPage,
             stylebook: loadStyleBook,
             previs: loadPrevisPage,
             settings: loadSettings,
-            continuity: loadContinuity,
             marketing: loadMarketing,
             consistency: loadConsistency,
             budget: () => { loadSpend(); loadBudget(); },
@@ -16144,7 +15955,6 @@ THREE.GLTFLoader = GLTFLoader;
             music: loadMusic,
             // ==== CLAUDE:START loaders (gaps 3/4/5/7d) ====
             playback: loadPlayback,
-            selects: loadSelects,
             // ==== CLAUDE:END ====
         };
         // Remembered so the page can reload itself without a navigation —
@@ -16343,6 +16153,7 @@ THREE.GLTFLoader = GLTFLoader;
         document.getElementById('homeActivity').innerHTML = homeActivityHtml(home.activity);
         document.getElementById('homeRunning').innerHTML = homeRunningHtml(home.running);
         setStatus(`${home.greeting.project_title} \u00b7 ${home.greeting.shot_count} shots`);
+        loadHomePanels();
     }
 
     function homeGreetingHtml(g) {
@@ -23641,42 +23452,6 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // COLOR GRADING
     // ══════════════════════════════════════════════════════════════
-    async function loadColorPresets() {
-        if (!state.currentProject) return;
-        try {
-            const data = await api('/projects/' + state.currentProject.id + '/color-presets');
-            state.colorPresets = data.color_presets || [];
-            const el = document.getElementById('colorPresetGrid');
-            if (state.colorPresets.length === 0) {
-                el.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#127912;</div><h3>No color presets</h3><p>Create color grading presets.</p></div>`;
-            } else {
-                el.innerHTML = state.colorPresets.map(p => {
-                    const temp = Number(p.temperature) || 0;
-                    const sat = Number(p.saturation) || 0;
-                    const con = Number(p.contrast) || 0;
-                    const warmHue = `hsl(${30 + temp * 0.3}, ${50 + sat * 0.3}%, ${40 + con * 0.1}%)`;
-                    const midHue = `hsl(${200 + temp * 0.2}, ${40 + sat * 0.2}%, ${45 + con * 0.1}%)`;
-                    const coolHue = `hsl(${240 - temp * 0.3}, ${30 + sat * 0.2}%, ${35 + con * 0.15}%)`;
-                    return `<div class="color-preset-card">
-                        <div class="color-preview">
-                            <div style="background:${warmHue};"></div>
-                            <div style="background:${midHue};"></div>
-                            <div style="background:${coolHue};"></div>
-                        </div>
-                        <h3 style="font-size:13px;">${esc(p.name)}</h3>
-                        <p class="text-sm text-muted">${esc(p.description || p.preset_type)}</p>
-                        <div class="tag-row" style="margin-top:6px;">
-                            <span class="tag">T:${temp}</span>
-                            <span class="tag">S:${sat}</span>
-                            <span class="tag">C:${con}</span>
-                            ${Number(p.grain_intensity) > 0 ? '<span class="tag">Grain:' + p.grain_intensity + '</span>' : ''}
-                        </div>
-                    </div>`;
-                }).join('');
-            }
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
     async function createColorPreset() {
         if (!state.currentProject) return;
         const data = getModalData('colorPresetModal');
@@ -24809,13 +24584,6 @@ ${fountainText.slice(0, 50000)}`;
     // FILM-163: CONTINUITY BOARD
     // ══════════════════════════════════════════════════════════════
     /** The served URL for a continuity photograph, keyed to the asset that holds it. */
-    function continuityImgSrc(r) {
-        // Plates and board images are served from the refsheets directory, which
-        // is where an imported continuity picture lands too.
-        const name = String(r.image_path || '').split('/').pop();
-        return `${API_BASE}/film/refsheets/${state.currentProject.id}/${encodeURIComponent(name)}?w=480`;
-    }
-
     const MARKETING_TYPE_ICON = { poster: '&#127917;', key_art: '&#127912;', banner: '&#128444;',
         social_card: '&#128241;', still: '&#128247;', thumbnail: '&#128443;', logo: '&#10024;' };
 
@@ -24924,66 +24692,6 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
-    async function loadContinuity() {
-        if (!state.currentProject) return;
-        setStatus('Loading continuity board...');
-        try {
-            const filter = document.getElementById('continuityFilter')?.value || '';
-            let url = '/projects/' + state.currentProject.id + '/continuity/board';
-            if (filter) url += '?ref_type=' + filter;
-            const data = await api(url);
-            const refs = data.refs || data.board || [];
-            const el = document.getElementById('continuityGrid');
-
-            if (refs.length === 0) {
-                el.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#128247;</div><h3>No continuity references</h3><p>Add references to track visual continuity across scenes.</p></div>';
-                setStatus('No continuity refs');
-                return;
-            }
-
-            // Group by ref_type
-            const groups = {};
-            refs.forEach(r => {
-                const type = r.ref_type || 'visual';
-                if (!groups[type]) groups[type] = [];
-                groups[type].push(r);
-            });
-
-            const typeIcons = { visual: '&#128065;', wardrobe: '&#128087;', prop: '&#127917;', lighting: '&#128161;', color: '&#127912;', framing: '&#128247;' };
-
-            el.innerHTML = Object.entries(groups).map(([type, items]) => `
-                <div style="grid-column:1/-1;">
-                    <h3 class="mb-8" style="font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">
-                        ${typeIcons[type] || ''} ${type}
-                    </h3>
-                </div>
-                ${items.map(r => `
-                    <div class="entity-card">
-                        <div class="entity-card-header">
-                            <div class="entity-avatar" style="background:var(--gl-bg-elevated);">${typeIcons[r.ref_type] || '&#128247;'}</div>
-                            <div>
-                                <h3 style="font-size:13px;">${esc(r.title || 'Untitled')}</h3>
-                                <p class="text-sm text-muted">${esc(r.ref_type)}</p>
-                            </div>
-                        </div>
-                        <p class="text-sm">${esc(r.description || '')}</p>
-                        ${r.tags ? '<div class="tag-row" style="margin-top:8px;">' + r.tags.split(',').map(t => '<span class="tag">' + esc(t.trim()) + '</span>').join('') + '</div>' : ''}
-                        ${r.image_path ? `<img src="${continuityImgSrc(r)}" alt=""
-                              style="width:100%;border-radius:6px;margin-top:8px;display:block;">` : ''}
-                        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-                            ${uploadControl('continuity-ref', `/continuity/${r.id}/import`,
-                                { extra: {}, after: 'loadContinuity',
-                                  label: r.image_path ? 'Replace' : 'Upload',
-                                  title: 'A continuity reference is usually a photograph of what was actually shot' })}
-                            <button class="btn btn-danger btn-sm" onclick="deleteContinuityRef('${r.id}')">Delete</button>
-                        </div>
-                    </div>
-                `).join('')}
-            `).join('');
-            setStatus(refs.length + ' continuity ref(s)');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
     async function saveContinuityRef() {
         if (!state.currentProject) return;
         const data = getModalData('continuityModal');
@@ -24992,15 +24700,6 @@ ${fountainText.slice(0, 50000)}`;
             closeModal('continuityModal');
             loadContinuity();
             setStatus('Continuity reference saved');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
-
-    async function deleteContinuityRef(refId) {
-        if (!confirm('Delete this continuity reference?')) return;
-        try {
-            await api('/continuity/' + refId, { method: 'DELETE' });
-            loadContinuity();
-            setStatus('Reference deleted');
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -32096,33 +31795,6 @@ ${fountainText.slice(0, 50000)}`;
     // ── Gap 5 + 7d: selects and prompt diff ──
     const sel = { data: null, shotId: null, takes: [] };
 
-    async function loadSelects() {
-        if (!state.currentProject) return;
-        const summary = document.getElementById('selectsSummary');
-        try {
-            const data = await api(`/projects/${state.currentProject.id}/selects`);
-            sel.data = data;
-
-            const hasShots = data.shots_total > 0;
-            document.getElementById('selectsEmpty').classList.toggle('hidden', hasShots);
-            document.getElementById('selectsMain').classList.toggle('hidden', !hasShots);
-            if (!hasShots) { summary.textContent = 'No shots in this project yet.'; return; }
-
-            summary.textContent = `${data.count} of ${data.shots_total} shots have a circled take`;
-            document.getElementById('selCoverageFill').style.width = data.coverage + '%';
-            document.getElementById('selCoverageLabel').textContent = `${data.coverage}% of shots selected`;
-
-            renderSelShotList();
-            // Open on the first shot still needing a decision — that is the
-            // work, rather than the first shot in the film.
-            const firstPending = (data.shots_without_select.find(s => s.reason === 'not_circled')
-                || data.shots_without_select[0] || data.selects[0]);
-            if (firstPending) selOpenShot(firstPending.shot_id, firstPending.shot_code);
-        } catch (err) {
-            summary.textContent = 'Error: ' + err.message;
-        }
-    }
-
     function renderSelShotList() {
         const el = document.getElementById('selShotList');
         if (!el || !sel.data) return;
@@ -32488,30 +32160,6 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
-    async function loadProvenancePage() {
-        const pid = requireCurrentProjectForOps();
-        if (!pid) return;
-        const el = document.getElementById('provenanceBody');
-        el.innerHTML = '<div class="card">Loading provenance...</div>';
-        try {
-            const data = await api(`/projects/${pid}/provenance`);
-            const m = data.manifest || {};
-            el.innerHTML = `<div class="card mb-16">
-                <h3 class="mb-8">AI Disclosure</h3>
-                <p class="text-sm">${esc(data.disclosure || '')}</p>
-                <p class="text-sm" style="color:#f59e0b;margin-top:8px;">Sidecar only. This is not C2PA certificate signing or trust-list conformance.</p>
-            </div>
-            <div class="stat-grid">
-                <div class="stat-card"><div class="stat-value">${m.counts?.assets || 0}</div><div class="stat-label">Assets</div></div>
-                <div class="stat-card"><div class="stat-value">${m.counts?.render_ledger_entries || 0}</div><div class="stat-label">Ledger rows</div></div>
-                <div class="stat-card"><div class="stat-value">${m.counts?.rights_records || 0}</div><div class="stat-label">Rights records</div></div>
-            </div>
-            <div class="card mt-16"><pre style="white-space:pre-wrap;max-height:320px;overflow:auto;">${esc(JSON.stringify({ format: m.format, sha256: m.sha256, c2pa: m.c2pa }, null, 2))}</pre></div>`;
-        } catch (err) {
-            el.innerHTML = `<div class="card"><p style="color:#dc2626;">${esc(err.message)}</p></div>`;
-        }
-    }
-
     async function exportProvenanceSidecar() {
         const pid = requireCurrentProjectForOps();
         if (!pid) return;
@@ -32521,23 +32169,6 @@ ${fountainText.slice(0, 50000)}`;
             loadProvenancePage();
         } catch (err) {
             setStatus(err.message);
-        }
-    }
-
-    async function loadRightsPage() {
-        const pid = requireCurrentProjectForOps();
-        if (!pid) return;
-        const el = document.getElementById('rightsBody');
-        el.innerHTML = '<div class="card">Loading rights...</div>';
-        try {
-            const data = await api(`/projects/${pid}/rights`);
-            el.innerHTML = data.rights.length ? data.rights.map(row => `<div class="card mb-8">
-                <div class="flex-between"><strong>${esc(row.subject)}</strong>${codexStatusBadge(row.status)}</div>
-                <p class="text-sm text-muted">${esc(row.entity_type)} / ${esc(row.rights_type)} · ${esc(row.territory || 'worldwide')}</p>
-                ${row.restrictions ? `<p class="text-sm">${esc(row.restrictions)}</p>` : ''}
-            </div>`).join('') : '<div class="card"><p class="text-muted">No rights records yet.</p></div>';
-        } catch (err) {
-            el.innerHTML = `<div class="card"><p style="color:#dc2626;">${esc(err.message)}</p></div>`;
         }
     }
 
@@ -32564,29 +32195,6 @@ ${fountainText.slice(0, 50000)}`;
         return parts.length === 3 && parts.every(Number.isFinite) ? parts : fallback;
     }
 
-    async function loadColorPipelinePage() {
-        const pid = requireCurrentProjectForOps();
-        if (!pid) return;
-        try {
-            const data = await api(`/projects/${pid}/post/color-pipeline`);
-            const p = data.pipeline || {};
-            document.getElementById('colorAcesVersion').value = p.aces_version || 'ACES 1.3';
-            document.getElementById('colorWorkingSpace').value = p.working_space || 'ACEScct';
-            document.getElementById('colorInputTransform').value = p.input_transform || '';
-            document.getElementById('colorOutputTransform').value = p.output_transform || 'Rec.709';
-            document.getElementById('colorTargetSpace').value = p.target_color_space || 'Rec.709';
-            document.getElementById('colorTargetNits').value = p.target_nits || 100;
-            document.getElementById('colorCdlSlope').value = JSON.parse(p.cdl_slope || '[1,1,1]').join(',');
-            document.getElementById('colorCdlOffset').value = JSON.parse(p.cdl_offset || '[0,0,0]').join(',');
-            document.getElementById('colorCdlPower').value = JSON.parse(p.cdl_power || '[1,1,1]').join(',');
-            document.getElementById('colorCdlSaturation').value = p.cdl_saturation || 1;
-            document.getElementById('colorNotes').value = p.notes || '';
-            document.getElementById('colorPipelineStatus').innerHTML = '<div class="card">Color pipeline loaded.</div>';
-        } catch (err) {
-            document.getElementById('colorPipelineStatus').innerHTML = `<div class="card"><p style="color:#dc2626;">${esc(err.message)}</p></div>`;
-        }
-    }
-
     async function saveColorPipeline() {
         const pid = requireCurrentProjectForOps();
         if (!pid) return;
@@ -32610,22 +32218,6 @@ ${fountainText.slice(0, 50000)}`;
         loadColorPipelinePage();
     }
 
-    async function loadDubbingPage() {
-        const pid = requireCurrentProjectForOps();
-        if (!pid) return;
-        const el = document.getElementById('dubbingBody');
-        el.innerHTML = '<div class="card">Loading dubbing packages...</div>';
-        try {
-            const data = await api(`/projects/${pid}/subtitles/dubbing`);
-            el.innerHTML = data.jobs.length ? data.jobs.map(job => `<div class="card mb-8">
-                <div class="flex-between"><strong>${esc(job.source_language)} to ${esc(job.target_language)}</strong>${codexStatusBadge(job.status)}</div>
-                <p class="text-sm text-muted">${job.cue_count || 0} cue(s) · ${esc(job.voice_strategy)}</p>
-            </div>`).join('') : '<div class="card"><p class="text-muted">No dubbing packages yet.</p></div>';
-        } catch (err) {
-            el.innerHTML = `<div class="card"><p style="color:#dc2626;">${esc(err.message)}</p></div>`;
-        }
-    }
-
     async function createDubbingPackage() {
         const pid = requireCurrentProjectForOps();
         if (!pid) return;
@@ -32640,24 +32232,6 @@ ${fountainText.slice(0, 50000)}`;
             }),
         });
         loadDubbingPage();
-    }
-
-    async function loadBroadcastQCPage() {
-        const pid = requireCurrentProjectForOps();
-        if (!pid) return;
-        const el = document.getElementById('broadcastQcBody');
-        el.innerHTML = '<div class="card">Loading QC reports...</div>';
-        try {
-            const data = await api(`/projects/${pid}/qa/broadcast`);
-            el.innerHTML = data.reports.length ? data.reports.map(report => `<div class="card mb-12">
-                <div class="flex-between"><strong>${esc(report.target_spec)}</strong>${codexStatusBadge(report.status)}</div>
-                <p class="text-sm text-muted">${esc(report.summary || '')}</p>
-                <p class="text-sm text-muted">Metadata readiness only. Run external waveform, loudness, gamut, caption-file, and bitstream QC before broadcast delivery.</p>
-                ${(report.checks || []).map(check => `<div class="text-sm">${codexStatusBadge(check.status)} ${esc(check.label)} — ${esc(check.detail)}</div>`).join('')}
-            </div>`).join('') : '<div class="card"><p class="text-muted">No broadcast QC reports yet.</p></div>';
-        } catch (err) {
-            el.innerHTML = `<div class="card"><p style="color:#dc2626;">${esc(err.message)}</p></div>`;
-        }
     }
 
     async function runBroadcastQC() {
@@ -32686,19 +32260,28 @@ ${fountainText.slice(0, 50000)}`;
      ══════════════════════════════════════════════════════════════ -->
 <script id="fe-redesign-js">
 (function () {
+  /*
+   * The groups, mirroring backend/lib/nav-flow.js.
+   *
+   * This is a SECOND copy of the nav and it is here for the same reason
+   * lib/screenplay-pagination.js is mirrored in this file: the page cannot
+   * require a node module (build.target: single-html), and the chrome is built
+   * synchronously at load — fetching the map first would leave the app with no
+   * menu until a request came back. `tests/nav-reorg.test.js` holds the two in
+   * lockstep, element by element, because two copies that nothing compares are
+   * exactly how the visible menu came to be reorganised in one place and not
+   * the other: the sidebar map was rewritten and this list, which is what a
+   * person actually sees, kept the old six phases.
+   */
   var PHASES = [
-    { id:'write',   label:'Write',   blurb:'The script, and everything read out of it.',
-      pages:['screenplay','scenes','notes'] },
-    { id:'plan',    label:'Plan',    blurb:'Shots, people, places, schedule and money.',
-      pages:['shotboard','production','characters','locations','props','milestones','budget'] },
-    { id:'look',    label:'Look',    blurb:'Decide the look before anything is generated.',
-      pages:['moodboard','storyboard','previs','continuity','consistency','colorgrading'] },
-    { id:'make',    label:'Make',    blurb:'Run the pipeline: picture, voice, score, post.',
-      pages:['pipeline','videoshots','music','threed','flows','jobsqueue','renderhistory'] },
-    { id:'edit',    label:'Edit',    blurb:'Watch it, circle the takes, keep the files straight.',
-      pages:['playback','selects','assets','musiccues'] },
-    { id:'deliver', label:'Deliver', blurb:'Exports, rights, QC — the paperwork of finishing.',
-      pages:['exportpage','colorpipeline','dubbing','broadcastqc','provenance','rights','marketing'] }
+    { id:'write',      label:'Write & Design', blurb:'The script, and everything designed out of it.',
+      pages:['screenplay','scenes','notes','moodboard','characters','locations','props','threed'] },
+    { id:'plan',       label:'Plan',           blurb:'Board it, block it, and know what it costs.',
+      pages:['storyboard','previs','consistency','milestones','budget'] },
+    { id:'production', label:'Production',     blurb:'Run the pipeline: picture, voice, score.',
+      pages:['shotboard','videoshots','music','musiccues','playback','pipeline','flows'] },
+    { id:'post',       label:'Post',           blurb:'Export it, and keep the files straight.',
+      pages:['exportpage','marketing','assets','jobsqueue','renderhistory'] }
   ];
   var RAIL = [
     { id:'dashboard', label:'Home',  icon:'M3 7.5L9 3l6 4.5V15H3V7.5Z' },

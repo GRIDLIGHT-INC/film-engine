@@ -1,102 +1,97 @@
 /**
- * The sidebar, ordered the way a film is actually made.
+ * The sidebar, ordered the way this director works.
  *
- * The app grew to 34 pages and grouped them by what they ARE — production,
- * elements, media, workflow — rather than by when a filmmaker needs them. So
- * Previs, a pre-production tool, sat below Export; and Storyboard sat three
- * groups from the Shot Board it feeds. The nav described the software's
- * contents instead of answering "what do I do next".
+ * This used to be DERIVED from PROJECT_PHASES — nine groups, matching the
+ * status machine a project advances through — on the reasoning that the menu
+ * and the phase a project reports itself in must not drift apart. That
+ * derivation is deliberately given up here, and the reason is worth recording
+ * rather than discovering later from the diff.
  *
- * The order is NOT invented here. routes/production-status.js already declares
- * it in PROJECT_PHASES, and the status machine advances a project through
- * exactly those nine. Deriving the sidebar from that constant means the menu
- * and the phase a project reports itself to be in cannot drift apart.
+ * The four groups asked for CUT ACROSS the phases: Consistency is
+ * pre-production and belongs under Plan; Milestones and Budget are production
+ * and belong under Plan; Assets is an export surface and belongs under Post
+ * beside the job queue. No merge of the nine produces these four. Keeping the
+ * derivation would have meant bending either the menu or the status machine to
+ * fit the other, and the menu is what a person uses every day.
  *
- * Served over GET /film/nav-flow and applied to the existing sidebar buttons by
- * the SPA, rather than being a second copy of the nav: every tooltip, icon and
- * handler already in the markup is preserved, and only the grouping and order
- * come from here.
+ * What is NOT given up is the invariant that was doing the real work: every
+ * page in the build sits in exactly one group, and no group names a page that
+ * does not exist. An orphaned page — still in the build, unreachable from the
+ * menu — looks exactly like a deleted feature until somebody asks where it
+ * went. `tests/nav-reorg.test.js` holds both.
+ *
+ * Served over GET /film/nav-flow and applied by MOVING the existing sidebar
+ * buttons, so every tooltip, icon and handler in the markup survives and only
+ * the grouping and order come from here.
  */
 
-const { PROJECT_PHASES } = require('../routes/production-status');
-
 /**
- * Pages that belong to no phase.
+ * Pages that belong to no group.
  *
- * A dashboard and a settings screen are needed in all nine, so forcing them
- * into one would put them in the wrong place eight times out of nine. They are
- * pinned above the phase groups instead.
+ * A home page and a settings screen are needed in all four, so filing them
+ * under one would put them in the wrong place three times out of four. The
+ * style book is the DIRECTOR's rather than a project's — it accumulates across
+ * films — so a library that outlives every project does not belong inside the
+ * workflow of one.
  */
-const ALWAYS_AVAILABLE = ['dashboard', 'settings', 'jobsqueue',
-    // The style book is the DIRECTOR's, not a project's — it accumulates
-    // across films. A library that outlives every project does not belong
-    // inside the workflow of one, so it is always available rather than filed
-    // under a production phase.
-    'stylebook',
-];
+const ALWAYS_AVAILABLE = ['dashboard', 'settings', 'stylebook'];
 
 /**
- * Phase -> the pages that serve it.
+ * Group -> the pages it holds, in the order they are worked in.
  *
- * `concept` and `complete` carry no pages: nothing in the app is only usable
- * before a script exists or only after delivery. They are left declared and
- * empty rather than deleted, so the map stays comparable to PROJECT_PHASES.
+ * Ordered as a film is made: write it, plan it, shoot it, finish it.
  */
 const NAV_FLOW = {
-    // Ordered the way a shoot actually runs, not the way the tables were
-    // written. The previous grouping put nine unrelated pages under
-    // "pre-production" — previs beside budget beside 3D — while "concept" held
-    // nothing at all, which is a bucket rather than a progression.
-    concept: { label: 'Concept', pages: ['moodboard'] },
-
-    script: { label: 'Script', pages: ['screenplay', 'scenes'] },
-
-    // Breaking a script down is its own act of work and was buried in the
-    // pre-production bucket.
-    'pre-production': {
-        label: 'Breakdown & Design',
-        pages: ['characters', 'locations', 'props', 'consistency', 'continuity', 'threed'],
+    write: {
+        label: 'Write & Design',
+        pages: ['screenplay', 'scenes', 'notes', 'moodboard',
+            'characters', 'locations', 'props', 'threed'],
     },
 
-    storyboard: { label: 'Board & Block', pages: ['storyboard', 'shotboard', 'previs'] },
+    plan: {
+        label: 'Plan',
+        pages: ['storyboard', 'previs', 'consistency', 'milestones', 'budget'],
+    },
 
-    // One page for the ten read-only surfaces built in phases 2 and 3. They
-    // are all project-level reads — run plan, sides, DOOD, elements, setups,
-    // staleness — and ten sidebar entries for ten panels is how a sidebar
-    // becomes unusable.
     production: {
-        label: 'Plan & Shoot',
-        pages: ['production', 'videoshots', 'music', 'pipeline', 'flows', 'budget', 'milestones'],
+        label: 'Production',
+        // musiccues sits beside music because it is where a cue's DIRECTION is
+        // written — the description that reaches the generator — and the two
+        // pages are one job. It was not in the requested list and dropping it
+        // would have removed the only surface where music direction can be
+        // written, which is a capability loss rather than a tidy-up.
+        pages: ['shotboard', 'videoshots', 'music', 'musiccues', 'playback',
+            'pipeline', 'flows'],
     },
 
-    'post-production': {
+    post: {
         label: 'Post',
-        pages: ['colorgrading', 'colorpipeline', 'musiccues', 'dubbing'],
+        pages: ['exportpage', 'marketing', 'assets', 'jobsqueue', 'renderhistory'],
     },
-
-    review: { label: 'Review', pages: ['playback', 'selects', 'notes', 'broadcastqc', 'renderhistory'] },
-
-    // Marketing is a DELIVERABLE — a poster and key art ship with the film —
-    // so it sits with the export surfaces rather than with look development,
-    // which is about how the film itself is shot.
-    export: { label: 'Deliver', pages: ['exportpage', 'assets', 'rights', 'provenance', 'marketing'] },
-
-    complete: { label: 'Complete', pages: [] },
 };
 
-/** Which phase owns this page, or null when it is always available. */
+/** The order the groups are shown in — declaration order, which is work order. */
+const GROUP_ORDER = ['write', 'plan', 'production', 'post'];
+
+/** Which group owns this page, or null when it is always available. */
 function phaseOf(page) {
-    for (const [id, phase] of Object.entries(NAV_FLOW)) {
-        if (phase.pages.includes(page)) return id;
+    for (const id of GROUP_ORDER) {
+        if (NAV_FLOW[id] && NAV_FLOW[id].pages.includes(page)) return id;
     }
     return null;
 }
 
-/** The phases that have anything in them, in production order. */
+/**
+ * The groups that have anything in them, in work order.
+ *
+ * Still called `orderedPhases` because the SPA and GET /film/nav-flow read that
+ * name and the shape is unchanged; renaming it would be a second edit in the
+ * page for no behavioural gain.
+ */
 function orderedPhases() {
-    return PROJECT_PHASES
+    return GROUP_ORDER
         .filter(id => NAV_FLOW[id] && NAV_FLOW[id].pages.length)
         .map(id => ({ id, label: NAV_FLOW[id].label, pages: NAV_FLOW[id].pages }));
 }
 
-module.exports = { NAV_FLOW, ALWAYS_AVAILABLE, phaseOf, orderedPhases, PROJECT_PHASES };
+module.exports = { NAV_FLOW, ALWAYS_AVAILABLE, GROUP_ORDER, phaseOf, orderedPhases };

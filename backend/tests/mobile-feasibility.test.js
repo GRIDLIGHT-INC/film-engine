@@ -58,7 +58,7 @@ test('the assessment exists and is an assessment, not a wish', () => {
 
 test('every page is classified, none left out', () => {
     /*
-     * 38 pages. A mobile plan that covers the interesting ones and quietly
+     * 29 panels (28 in the menu, plus the project picker). A mobile plan that covers the interesting ones and quietly
      * omits the rest is the half-done answer this standard exists to prevent —
      * and "which pages are worth a phone" is the whole design question, so the
      * omission would be the deliverable going missing.

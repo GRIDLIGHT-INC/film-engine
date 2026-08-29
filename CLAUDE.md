@@ -313,6 +313,7 @@ film-engine/
 │       ├── readiness-brief.test.js        # The readiness brief covers every capability and stage
 │       ├── previs-pick.test.js            # Project/unproject round trip, hit testing (Phase 6)
 │       ├── nav-flow.test.js               # Every page in exactly one production phase (Phase 6)
+│       ├── nav-reorg.test.js              # Four groups, nothing orphaned, nothing left behind
 │       ├── previs-camera.test.js         # Optics vs published lens charts (Phase 0)
 │       ├── previs-blocking.test.js       # All 18 moves sample, all framings solve (Phase 1)
 │       ├── previs-plan.test.js           # 3D previs plan conformance (18 moves, 18 shots, 12 ratios)
@@ -720,7 +721,7 @@ Above 700px not a single computed value changes: verified in a real browser at 1
 ### iOS Is the Same Page, Not a Second One
 *"I want a full replica of the app for mobile iOS ready to send for TestFlight."*
 
-**Full replica means the actual `src/index.html`, all 38 pages, inside a
+**Full replica means the actual `src/index.html`, all 28 pages, inside a
 WKWebView** — not a native re-implementation of them. The mobile assessment
 already argued the shape and it holds harder here: option C's real cost is never
 the framework, it is **a second surface**, and this codebase has paid for two
@@ -1880,6 +1881,21 @@ Five buttons — Home, Jobs, Notes, Guide, Setup — held a 64px column down the
 
 The **"Search anything"** pill went with it, because it never searched anything: its only behaviour was opening the glossary. Which is exactly the trap in removing it — the glossary's other link lives in the old sidebar, which is `display:none` in this layout, so deleting the pill left a modal in the build with no way to reach it. A removal is finished when everything that was reachable still is, so the glossary became the sixth rail button. `tests/nav-chrome.test.js` checks every rail button resolves to a page or an explicit handler, since a button wired to nothing looks identical to a working one until it is clicked.
 
+### Four Groups, and Nine Pages Gone
+The sidebar was **derived from `PROJECT_PHASES`** — nine groups, matching the status machine — so the menu and the phase a project reported itself in could not drift apart. That derivation is deliberately **given up**, and the reason is worth recording rather than discovering later from a diff: the four groups asked for **cut across the phases**. Consistency is pre-production and belongs under Plan; Milestones and Budget are production and belong under Plan; Assets is an export surface and belongs under Post beside the job queue. No merge of the nine produces these four, so keeping the derivation would have meant bending either the menu or the status machine to fit the other — and the menu is what a person uses every day.
+
+**Write & Design → Plan → Production → Post**, ordered as a film is made. `GROUP_ORDER` is the single statement of sequence, because object key order and an explicit list is two lists that can disagree depending on which the reader trusts.
+
+What is **not** given up is the invariant that was doing the work: every page in the build sits in **exactly one** group, and no group names a page that does not exist. An orphaned page — still in the build, unreachable from the menu — looks exactly like a deleted feature until somebody asks where it went, and `applyNavFlow`'s stray-catcher would quietly file it under *Other*.
+
+**Nine pages removed**, eight deleted and one moved: continuity, selects, dubbing, provenance, rights, delivery QC, colour grading and the colour pipeline are gone; **Plan & Shoot moved onto the home page**. Removal is checked as a **set over every surface a page occupies** — nav button, panel, loader, reload map, nav map, and any `navigateTo` pointing at it — because a page removed from four of five is still in the build: the button is gone and the panel is still rendered under *Other*, which is the stray-catcher doing exactly what it exists to do. 247 lines of orphaned loader went with them, swept iteratively, since removing one loader orphans the helpers only it called.
+
+**Every home panel carries its way in.** The instruction was *only the things that are clickable and bring me to the other section*, and it is the right rule: a read-only figure on a landing page is something to look at, while this list is meant to be the route to the work. That drops the conform panel — *Film master* had no `go` because conforming is an **action rather than a place**, and it is reached from Export where the other delivery actions are. The panels load **after** the rest of home and are not awaited by it: nine endpoints answering in series is slower than the one `/home` call, and blocking the greeting on them would make the whole page feel like the slowest report.
+
+**`musiccues` was in no requested group and was not on the removal list.** It is the only surface where a cue's *direction* is written — the description that actually reaches the generator — so dropping it would have been a capability loss disguised as a tidy-up. It sits beside Music & Sound, and the decision is stated rather than silent.
+
+**What was removed is the screen, not the data.** `routes/continuity.js`, `film_rights`, the provenance manifests and the broadcast QA gate are untouched and still reachable over HTTP and MCP. That leaves `continuity-ref` as a live import target with no page to import from, which `tests/media-imports.test.js` records as an exemption **by name with a reason** rather than dropping from its denominator — a gap named is work, a gap silently excluded is one nobody finds again, and a stale exemption fails the test.
+
 ### The Home Page Answers Four Questions
 The dashboard reported on the project — a quick-nav button row, a stat grid, a shot-status bar, a milestone list. That is a summary, and a summary leaves the reader to work out the next action and then go and find the page it lives on. The submitted design is six blocks that each answer something and carry the way in: **greeting** (who is here, which film, how big), **resume** (what you were doing), **needs you** (what is blocking it, each linked), **phases** (the whole film, six real fractions), **activity**, **running now**.
 
@@ -2568,6 +2584,7 @@ node --test backend/tests/readiness-brief.test.js
 node --test backend/tests/providers-anthropic.test.js
 node --test backend/tests/previs-pick.test.js
 node --test backend/tests/nav-flow.test.js
+node --test backend/tests/nav-reorg.test.js
 
 # Run integration tests (spawns server with temp DB)
 node --test backend/tests/integration.test.js
