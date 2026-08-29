@@ -225,6 +225,21 @@ function validateSceneCard(card) {
                 if (!dl.line || typeof dl.line !== 'string') {
                     errors.push(`dialogue[${i}].line is required`);
                 }
+                /*
+                 * How the line is SAID.
+                 *
+                 * A screenplay carries this as a parenthetical and the
+                 * breakdown drops it, so there was nowhere to record that a
+                 * line is whispered. It is free text rather than an enum
+                 * because a director writes what they mean; only the
+                 * directions lib/dialogue-delivery.js recognises change the
+                 * generation, and an unrecognised one is deliberately ignored
+                 * rather than guessed into an audio tag the model would SPEAK.
+                 */
+                if (dl.direction !== undefined && dl.direction !== null
+                    && typeof dl.direction !== 'string') {
+                    errors.push(`dialogue[${i}].direction must be a string`);
+                }
             });
         }
     }

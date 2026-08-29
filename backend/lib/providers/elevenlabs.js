@@ -86,6 +86,26 @@ function buildVoiceRequest(payload) {
     if (payload.speed && payload.speed !== 1) body.voice_settings.speed = payload.speed;
     if (payload.language && payload.language !== 'en') body.language_code = payload.language;
 
+    /*
+     * The expressiveness dial, and the line's place in the scene.
+     *
+     * `style` is ElevenLabs' own 0-1 exaggeration control and was never sent,
+     * so a payload could carry the writer's direction and change nothing about
+     * the delivery. `previous_text` / `next_text` are used for prosody and are
+     * NOT spoken: they let a line be delivered in the flow of the exchange
+     * rather than read in isolation, which on a sixty-eight line scene is the
+     * difference between a conversation and a list.
+     *
+     * All three are sent only when asked for, so a project that sets no
+     * delivery produces byte-identical requests to the ones it always did.
+     */
+    if (typeof payload.style === 'number') body.voice_settings.style = payload.style;
+    if (payload.use_speaker_boost !== undefined) {
+        body.voice_settings.use_speaker_boost = !!payload.use_speaker_boost;
+    }
+    if (payload.previous_text) body.previous_text = String(payload.previous_text);
+    if (payload.next_text) body.next_text = String(payload.next_text);
+
     return {
         url: `${baseUrl}/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`,
         body,

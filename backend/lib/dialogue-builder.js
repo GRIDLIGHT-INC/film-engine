@@ -26,6 +26,10 @@ function extractDialogue(sceneCard) {
             character: dl.character,
             line: dl.line,
             emotion: VALID_EMOTIONS.includes(dl.emotion) ? dl.emotion : 'neutral',
+            // The writer's own delivery note, carried whole. What it MEANS is
+            // decided by lib/dialogue-delivery.js, which refuses what it does
+            // not recognise rather than inventing a tag the model would speak.
+            direction: typeof dl.direction === 'string' ? dl.direction : null,
             index,
         }));
 }
@@ -43,7 +47,13 @@ function buildVoicePayload(dialogueLine, voiceProfile, character) {
         text: dialogueLine.line,
         model: 'qwen3-tts',
         language: 'en',
-        emotion: dialogueLine.emotion || 'neutral',
+        /*
+         * `emotion` is NOT sent — ElevenLabs has no such field, and it was set
+         * here for four phases and dropped one function short of the request.
+         * The direction now goes through applyDelivery below, which turns it
+         * into what the provider actually reads: an audio tag on a model that
+         * understands one, and the style and stability dials on every model.
+         */
         speed: 1.0,
         output_format: 'wav',
         sample_rate: 24000,
@@ -65,6 +75,33 @@ function buildVoicePayload(dialogueLine, voiceProfile, character) {
         if (voiceParams.stability) payload.stability = voiceParams.stability;
         if (voiceParams.similarity_boost) payload.similarity_boost = voiceParams.similarity_boost;
     }
+
+    /*
+     * The writer's own direction, carried to something that uses it.
+     *
+     * `(quietly)` is the delivery note in the screenplay and the parser already
+     * extracts it. Applied AFTER the voice profile, so a character's default
+     * settings are the baseline and the line's own direction overrides them —
+     * which is the right precedence: a cast voice is how they always sound, a
+     * parenthetical is how they say THIS line.
+     */
+    const { applyDelivery } = require('./dialogue-delivery');
+
+    /*
+     * The character's standing delivery, then the line's own.
+     *
+     * A cast voice is how somebody ALWAYS sounds — RAY is weary in every scene
+     * — and a parenthetical is how they say THIS line. So the profile's
+     * delivery is the baseline and the line's direction overrides it, which is
+     * the same precedence the camera facets follow: staged beats written beats
+     * the film's default.
+     */
+    if (voiceProfile) {
+        let vp = {};
+        try { vp = JSON.parse(voiceProfile.voice_params || '{}') || {}; } catch (_) { vp = {}; }
+        if (vp.delivery) Object.assign(payload, applyDelivery(payload, vp.delivery));
+    }
+    Object.assign(payload, applyDelivery(payload, dialogueLine.direction || dialogueLine.emotion));
 
     if (character && character.name) {
         payload.character_name = character.name;

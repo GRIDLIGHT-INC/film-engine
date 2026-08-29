@@ -202,13 +202,45 @@ function shotDuration(shot, media) {
      */
     const lines = (media && media.audio_lines) || [];
     const spoken = lines.reduce((total, l) => total + (Number(l.duration_ms) || 0), 0);
-    const withGaps = spoken > 0
-        ? spoken + Math.max(0, lines.length - 1) * LINE_GAP_MS + LINE_TAIL_MS
-        : 0;
+    /*
+     * The pauses are per line now, not a flat gap.
+     *
+     * A beat the writer marked is 1.4s and an interruption is none at all, so
+     * a fixed 350ms between every line either rushed the beats or padded the
+     * interruptions. The last line's pause is dropped: it would hold silence
+     * after the cut, which is the next shot's business.
+     */
+    const pauses = lines.slice(0, -1)
+        .reduce((total, l) => total + (Number(l.pause_after_ms) || LINE_GAP_MS), 0);
+    const withGaps = spoken > 0 ? spoken + pauses + LINE_TAIL_MS : 0;
 
     const ms = Number(shot && shot.duration_ms);
     const card = (Number.isFinite(ms) && ms > 0) ? Math.round(ms) : DEFAULT_SHOT_MS;
     return Math.max(card, Math.round(withGaps));
+}
+
+/**
+ * Put each line's pause on the audio it follows.
+ *
+ * Matched by INDEX, because that is what the filename encodes and what both
+ * lists are ordered by. A card whose dialogue has been rewritten since the
+ * audio was made simply falls back to the plain turn gap rather than pairing a
+ * pause with the wrong line.
+ */
+function attachPauses(shot, media) {
+    const lines = (media && media.audio_lines) || [];
+    if (!lines.length) return;
+
+    let card = {};
+    try { card = JSON.parse((shot && shot.scene_card_yaml) || '{}') || {}; } catch (_) { card = {}; }
+    const spoken = Array.isArray(card.dialogue) ? card.dialogue : [];
+
+    const { pauseAfter, PAUSE } = require('./dialogue-delivery');
+    for (const line of lines) {
+        const here = spoken[line.index];
+        const next = spoken[line.index + 1];
+        line.pause_after_ms = here ? pauseAfter(here, next) : PAUSE.turn;
+    }
 }
 
 /**
@@ -233,6 +265,16 @@ function buildTimeline(shots = [], assetsByShot = {}, opts = {}) {
     let cursor = 0;
     const entries = ordered.map((shot, index) => {
         const media = resolveShotMedia(assetsByShot[shot.id] || []);
+        /*
+         * How long to hold after each line.
+         *
+         * Generated lines butt against each other, and a scene played that way
+         * sounds like a list being read rather than two people talking. The
+         * pause comes from the CARD — who speaks next, whether the writer
+         * marked a beat, whether the line trails off or is interrupted — so it
+         * needs the dialogue text, which the assets do not carry.
+         */
+        attachPauses(shot, media);
         const duration = shotDuration(shot, media);
         const entry = {
             index,

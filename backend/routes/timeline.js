@@ -52,6 +52,11 @@ function loadTimeline(projectId) {
 
     const shots = db.prepare(`
         SELECT s.id, s.shot_code, s.scene_id, s.status, s.duration_ms, s.sort_order,
+               -- The card carries the dialogue TEXT, which is what decides how
+               -- long to hold after each line: who speaks next, whether the
+               -- writer marked a beat, whether the line trails off or is cut
+               -- into. Without it every pause falls back to the plain turn gap.
+               s.scene_card_yaml,
                sc.scene_number
         FROM film_shots s
         JOIN film_scenes sc ON s.scene_id = sc.id

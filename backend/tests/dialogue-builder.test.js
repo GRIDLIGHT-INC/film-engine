@@ -64,9 +64,19 @@ describe('dialogue-builder', () => {
             const line = { character: 'JOHN', line: 'Hello.', emotion: 'happy', index: 0 };
             const payload = buildVoicePayload(line, null, null);
             assert.equal(payload.text, 'Hello.');
-            assert.equal(payload.emotion, 'happy');
             assert.equal(payload.model, 'qwen3-tts');
             assert.equal(payload.output_format, 'wav');
+            /*
+             * `emotion` is gone, and it was never sent.
+             *
+             * This asserted payload.emotion === 'happy' for four phases. The
+             * field was set here and dropped one function short of the request,
+             * because ElevenLabs has no emotion field — so the test passed
+             * while the direction reached nothing. Direction now goes through
+             * lib/dialogue-delivery.js into things the provider reads.
+             */
+            assert.equal(payload.emotion, undefined,
+                'the dead emotion field is back; it is sent to no provider');
         });
 
         it('uses voice profile settings when available', () => {
@@ -112,5 +122,27 @@ describe('dialogue-builder', () => {
             const fast = estimateDialogueDuration('Hello world how are you', 2.0);
             assert.ok(fast < normal);
         });
+    });
+});
+
+describe('direction reaches the provider', () => {
+    it('a recognised direction moves the dials the provider reads', () => {
+        const { buildVoicePayload } = require('../lib/dialogue-builder');
+        const plain = buildVoicePayload({ character: 'JUNE', line: 'Say it.', index: 0 }, null, null);
+        const quiet = buildVoicePayload(
+            { character: 'JUNE', line: 'Say it.', direction: '(quietly)', index: 0 }, null, null);
+        assert.notEqual(quiet.stability, plain.stability,
+            'the direction changed nothing the provider reads');
+        assert.equal(typeof quiet.style, 'number', 'style is what ElevenLabs calls expressiveness');
+    });
+
+    it('a direction nobody mapped changes nothing at all', () => {
+        // An invented audio tag is SPOKEN by the model, so guessing is worse
+        // than ignoring — and the words must come through untouched.
+        const { buildVoicePayload } = require('../lib/dialogue-builder');
+        const p = buildVoicePayload(
+            { character: 'JUNE', line: 'Say it.', direction: '(thoughtfully)', index: 0 }, null, null);
+        assert.equal(p.text, 'Say it.');
+        assert.equal(p.delivery, undefined);
     });
 });

@@ -76,6 +76,17 @@ const STUB_KEYS = ['project_id', 'scene_id', 'shot_id', 'step'];
 
 // Required payload keys per capability, read off the builders and the routes
 // that consume them (film_video_jobs / film_music_jobs INSERTs pin most).
+/*
+ * `emotion` was required here and was sent to no provider.
+ *
+ * ElevenLabs has no emotion field, so buildVoicePayload set it for four phases
+ * and the adapter dropped it one function short of the request. This test
+ * required its PRESENCE, which is how a dead field survives a parity suite: the
+ * payload carried it, so the check passed, and nothing asked whether anything
+ * read it. Direction now travels as an audio tag, a style value and a
+ * stability value — things the provider actually reads — and the required set
+ * says so.
+ */
 const REQUIRED_KEYS = {
     image:   ['prompt', 'negative_prompt'],
     /*
@@ -88,7 +99,7 @@ const REQUIRED_KEYS = {
      * that fires every time is one people learn to scroll past.
      */
     video:   ['prompt', 'negative_prompt', 'width', 'height', 'num_frames', 'fps', 'camera_control'],
-    voice:   ['text', 'model', 'language', 'emotion', 'output_format', 'sample_rate'],
+    voice:   ['text', 'model', 'language', 'output_format', 'sample_rate'],
     lipsync: ['video_url', 'audio_url', 'model', 'quality', 'output_format'],
     music:   ['prompt', 'model', 'duration_s'],
     sfx:     ['type', 'prompt', 'duration_s', 'model', 'category'],

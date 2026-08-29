@@ -75,6 +75,22 @@ function takenVoices(projectId, exceptCharacterId) {
     return out;
 }
 
+/**
+ * A character's STANDING delivery, merged into the params they already carry.
+ *
+ * Merged rather than replaced: voice_params also holds stability, speed and
+ * similarity_boost, and rewriting the object to set one field would drop the
+ * rest — the same fault the provider-config save had when a blank select
+ * cleared a pinned provider.
+ */
+function mergeVoiceParams(existing, delivery) {
+    let params = {};
+    try { params = JSON.parse(existing || '{}') || {}; } catch (_) { params = {}; }
+    if (delivery === null || delivery === '') delete params.delivery;
+    else if (delivery !== undefined) params.delivery = String(delivery);
+    return JSON.stringify(params);
+}
+
 async function getCasting(req, res, characterId) {
     const ch = characterOr404(res, characterId);
     if (!ch) return;
@@ -108,6 +124,12 @@ async function getCasting(req, res, characterId) {
         voice_id: profile ? profile.voice_id : null,
         voice_name: profile ? profile.name : null,
         cast_note: profile ? profile.cast_note : null,
+        delivery: (() => {
+            if (!profile) return null;
+            try { return (JSON.parse(profile.voice_params || '{}') || {}).delivery || null; }
+            catch (_) { return null; }
+        })(),
+        deliveries: require('../lib/dialogue-delivery').DELIVERIES.map(d => ({ id: d.id, tag: d.tag })),
         ...(profile && profile.voice_id ? {} : {
             warning: 'Not cast. Every line will generate in the provider’s default voice, which '
                 + 'sounds like a decision rather than an omission.',
@@ -129,15 +151,20 @@ function setCasting(req, res, characterId) {
             && (body.cast_note === undefined || existing.cast_note === body.cast_note)) {
             return json(res, 200, { character_id: ch.id, voice_id: existing.voice_id, changed: false });
         }
-        db.prepare('UPDATE film_voice_profiles SET voice_id = ?, name = ?, cast_note = ? WHERE id = ?')
+        db.prepare('UPDATE film_voice_profiles SET voice_id = ?, name = ?, cast_note = ?, voice_params = ? WHERE id = ?')
             .run(body.voice_id, body.voice_name || existing.name, body.cast_note ?? existing.cast_note,
-                existing.id);
+                mergeVoiceParams(existing.voice_params, body.delivery), existing.id);
     } else {
         db.prepare(
             `INSERT INTO film_voice_profiles (id, project_id, character_id, name, voice_id, cast_note, language)
              VALUES (?, ?, ?, ?, ?, ?, 'en')`
         ).run(generateId(), ch.project_id, ch.id, body.voice_name || ch.name,
             body.voice_id, body.cast_note || null);
+        if (body.delivery !== undefined) {
+            const made = profileFor(characterId);
+            db.prepare('UPDATE film_voice_profiles SET voice_params = ? WHERE id = ?')
+                .run(mergeVoiceParams(null, body.delivery), made.id);
+        }
     }
     // The character row's pointer, so anything reading the character finds it.
     const p = profileFor(characterId);

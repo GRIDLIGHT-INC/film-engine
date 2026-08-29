@@ -95,6 +95,7 @@ film-engine/
 │   │   ├── screenplay-analysis.js # The rubric, the note schema; the model does the reading
 │   │   ├── subject-gallery.js     # Reference, concept, inspiration: only one reaches a prompt
 │   │   ├── voice-casting.js       # Cast a voice, hear a line, before anything is shot
+│   │   ├── dialogue-delivery.js   # How a line is SAID, and how long to hold after it
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -357,6 +358,7 @@ film-engine/
 │       ├── subject-gallery.test.js  # A sketch must never condition a frame
 │       ├── dialogue-audition.test.js # Hearing a line before anything is shot
 │       ├── dialogue-playback.test.js # Watching the scene AND hearing it
+│       ├── dialogue-delivery.test.js # How a line is said, and what makes it regenerate
 │       ├── character-sheet.test.js  # Two buttons on the card, and everything else has a home
 │       ├── character-sheet-authoring.test.js # A region with no way in is a label
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
@@ -2337,6 +2339,44 @@ Built to `design_handoff_character_card`: official views top-left, everything wr
 
 Generating views is **all four or one**: a pending plate's own click generates just that view, and the header button asks before spending. It stops on a refusal rather than asking three more times — a refusal repeated is a refusal paid for.
 
+### How a Line Is Said
+The screenplay carries the direction — `(quietly)`, `(laughing)` — the parser extracts it, and `buildVoicePayload` even put it on the payload as **`emotion`**. It was never sent: **ElevenLabs has no `emotion` field**, so the writer's own delivery note was extracted, carried, and dropped one function short of the request. `phase0-payload-parity` required its *presence*, which is how a dead field survives a parity suite — the payload carried it, so the check passed, and nothing asked whether anything read it.
+
+Three levers, and the first is dangerous. **Audio tags** (`[whispers] Say it.`) are honoured only by `eleven_v3`; on any other model they are not ignored, they are **spoken**, so `[thoughtfully] Hello` becomes the words "thoughtfully hello". A tag is therefore emitted only when the model understands one, and only from a declared vocabulary — a direction nobody mapped is **refused rather than guessed**, because the only way to discover an invented tag is to listen to a scene you have already paid for. **Style** (0–1 expressiveness) and **stability** work everywhere and were never sent and hardcoded respectively, so a non-v3 project still gets some of the direction.
+
+The model is upgraded **per line**, not by changing the default: a line with no direction produces exactly the request it always did.
+
+**`previous_text` / `next_text` cost nothing and help every line.** They are used for prosody and are not spoken. Without them each of sixty-eight lines is read in isolation, which is why a generated scene sounds like a list rather than two people talking.
+
+A character also carries a **standing delivery** — RAY is weary in every scene — merged into `voice_params` rather than replacing it, because that object also holds stability and speed and rewriting it to set one field would drop the rest. A parenthetical on a line **overrides** it: a cast voice is how somebody always sounds, a direction is how they say *this* line.
+
+### Nothing Regenerates That Did Not Change
+*"If I change the screenplay, or change the voice through cast, will it regenerate?"*
+
+It regenerated **everything, on every press**. `prompt_hash` was stored against each line and covered the **text alone**, so recasting a character — the change most likely to need a new recording — produced an identical hash and was invisible. Nothing read it in any case.
+
+The hash now covers **text, voice, delivery and model**: the four things that change what comes back. Measured on shot 1B (RAY, JUNE, RAY, JUNE): recasting RAY regenerated **his two lines and reused JUNE's two**. An unchanged shot regenerates nothing. `regenerate: true` forces a new take, because a director who wants a different reading of an unchanged line must not be told the line is already correct.
+
+The table read follows the same rule through its filename, which used to carry a **random suffix** — so nothing could ever find the previous one and a 68-line scene was bought again in full every run.
+
+### A Scene Should Sound Like People Talking
+Generated lines butt against each other, and played that way a scene is a list being read. `pauseAfter` gives each line the hold that follows it, from the card rather than a constant:
+
+| | |
+|---|---|
+| a new speaker answering | 700ms |
+| the same person carrying on | 300ms — they have not stopped speaking |
+| the writer marked `(a beat)` | +1400ms |
+| the line trails off `…` | +900ms |
+| a question | +250ms |
+| the line ends on an em-dash | **0** |
+
+The last is the one that matters most: an em-dash means the next speaker **cuts in**, and a polite gap there destroys the effect the writer wrote. An ellipsis **mid-line** is deliberately not a pause — the model already speaks that rhythm, and holding for it doubles the effect.
+
+Measured across The Glass Harbour's diner scene: 53 turn gaps, 6 continuations, 2 interruptions at zero, one question at 950ms and one same-speaker question at 550ms. The timeline holds each shot long enough for its own pauses, dropping the last line's — that silence belongs to the next shot.
+
+**It needed one more column.** `attachPauses` reads the dialogue TEXT to decide, and the timeline's shot query selected everything except `scene_card_yaml` — so every pause silently fell back to the plain turn gap, and all 63 came back identical.
+
 ### Watching the Scene and Hearing It
 
 **A shot holds for its dialogue.** The card's `duration_ms` is what a shot ASKS for, written before the lines existed, and it is 4000ms on every shot here. So a four-second slot carrying 24.6 seconds of dialogue played four seconds of it and cut away: measured across The Glass Harbour's diner scene, **26% of the dialogue was audible** — 44 seconds of 168. The same fault an uploaded clip had when it was held for the length its card asked for, one media type over.
@@ -2694,6 +2734,7 @@ node --test backend/tests/screenplay-analysis.test.js
 node --test backend/tests/subject-gallery.test.js
 node --test backend/tests/dialogue-audition.test.js
 node --test backend/tests/dialogue-playback.test.js
+node --test backend/tests/dialogue-delivery.test.js
 node --test backend/tests/character-sheet.test.js
 node --test backend/tests/character-sheet-authoring.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js

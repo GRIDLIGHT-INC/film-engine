@@ -24264,6 +24264,26 @@ ${fountainText.slice(0, 50000)}`;
          * field is missing the list is not narrowed — filtering on a guess is
          * worse — so the reason has to be visible, and the fix is one click.
          */
+        /*
+         * How this character always sounds.
+         *
+         * A cast voice is WHO they are; a delivery is HOW they speak. Set once
+         * here, it is the baseline for every line, and a parenthetical on a
+         * specific line overrides it — the same precedence the camera facets
+         * follow. Changing it regenerates only that character's lines, because
+         * the recording's hash covers the delivery.
+         */
+        const deliveryPicker = `
+            <div class="gal-bar" style="margin-bottom:10px;">
+                <label class="text-sm text-muted">Always sounds</label>
+                <select id="castDelivery" onchange="setStandingDelivery()">
+                    <option value="">— as written —</option>
+                    ${(current.deliveries || []).map(d =>
+                        `<option value="${esc(d.id)}" ${current.delivery === d.id ? 'selected' : ''}>${esc(d.id)} ${esc(d.tag)}</option>`).join('')}
+                </select>
+                <span class="text-muted text-sm">A parenthetical on a line still wins over this.</span>
+            </div>`;
+
         const missingNote = sg.missing.length
             ? `<div class="warning-banner" style="margin-bottom:10px;">
                  ${esc(sg.note)}
@@ -24276,7 +24296,7 @@ ${fountainText.slice(0, 50000)}`;
                  ${esc([sg.matched_on.gender, sg.matched_on.age && String(sg.matched_on.age).replace('_', ' ')]
                      .filter(Boolean).join(', '))}.</p>`;
 
-        body.innerHTML = missingNote + `
+        body.innerHTML = missingNote + deliveryPicker + `
             <p class="text-sm" style="margin:0 0 10px;">
                 ${current.cast
                     ? `Currently cast: <strong>${esc(current.voice_name || current.voice_id)}</strong>`
@@ -24300,6 +24320,25 @@ ${fountainText.slice(0, 50000)}`;
                         ${v.voice_id === CASTING.selected ? 'Cast' : 'Cast this'}
                     </button>
                 </div>`).join('')}`;
+    }
+
+    /** Set (or clear) how this character always sounds. */
+    async function setStandingDelivery() {
+        const value = document.getElementById('castDelivery').value;
+        const status = document.getElementById('castingStatus');
+        status.textContent = 'Saving…';
+        try {
+            const cur = await api(`/characters/${CASTING.characterId}/voice`);
+            if (!cur.voice_id) { status.textContent = 'Cast a voice first.'; return; }
+            await api(`/characters/${CASTING.characterId}/voice`, {
+                method: 'PUT',
+                body: JSON.stringify({ voice_id: cur.voice_id, voice_name: cur.voice_name,
+                    delivery: value || null }),
+            });
+            status.textContent = value
+                ? `Always ${value}. Their lines will regenerate next time you press Dialogue.`
+                : 'Delivery cleared.';
+        } catch (err) { status.textContent = err.message; }
     }
 
     async function pickVoice(voiceId, voiceName) {
@@ -33654,6 +33693,9 @@ ${fountainText.slice(0, 50000)}`;
             if (audio.src) audio.play().catch(() => {});
             pbTick();
         } else {
+            // Pausing during a hold must stop the hold too, or the next line
+            // starts by itself a second after you pressed pause.
+            if (pb.lineTimer) { clearTimeout(pb.lineTimer); pb.lineTimer = null; }
             audio.pause();
             video.pause();
             if (pb.raf) { cancelAnimationFrame(pb.raf); pb.raf = null; }
@@ -33683,12 +33725,28 @@ ${fountainText.slice(0, 50000)}`;
      */
     function pbPlayLine() {
         const audio = document.getElementById('pbAudio');
+        // A hold from the previous line must not fire into the new one.
+        if (pb.lineTimer) { clearTimeout(pb.lineTimer); pb.lineTimer = null; }
         const line = (pb.lines || [])[pb.lineIndex || 0];
         if (!line) { audio.removeAttribute('src'); return; }
         audio.src = mediaUrl(line.path);
         audio.onended = () => {
-            pb.lineIndex = (pb.lineIndex || 0) + 1;
-            if (pb.playing) pbPlayLine();
+            /*
+             * Hold before the next line.
+             *
+             * Generated lines butt against each other and a scene played that
+             * way sounds like a list being read. The wait comes from the
+             * timeline, which computed it from the card: a plain turn gap, a
+             * shorter one when the same person carries on, longer where the
+             * writer marked a beat or the line trails off — and NONE at all
+             * where a line is cut into, because the interruption is the point.
+             */
+            const wait = Number(line.pause_after_ms);
+            const hold = Number.isFinite(wait) ? wait : 700;
+            pb.lineTimer = setTimeout(() => {
+                pb.lineIndex = (pb.lineIndex || 0) + 1;
+                if (pb.playing) pbPlayLine();
+            }, hold);
         };
         if (pb.playing) audio.play().catch(() => {});
     }
