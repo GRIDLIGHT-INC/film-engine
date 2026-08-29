@@ -2571,6 +2571,27 @@ Prose that states what happens, in order, without dialogue or format — what th
 
 Drafting the screenplay from it happens **in the conversation**: Claude reads the treatment, writes the Fountain itself, and saves it with `script_write`. Nothing here generates a screenplay.
 
+### Reading a Reading
+*"Can we remove this weird text in the screenplay analysis and present the analysis better?"* — with a screenshot of `Read by round-trip test · draft v15 · 2026-08-29 12:07:03` above a heading saying **Map** and a block of raw JSON.
+
+The weird text was **mine**: a hand-written round-trip probe from the session that shipped the feature, verified against the live server and left in the director's project. Removed, and the reason it could only be removed by hand is the third fault below.
+
+Three faults, and none of them cosmetic.
+
+**The least important thing led.** Who typed it and when is provenance; it opened the panel as a raw `analyst` string and a raw SQLite timestamp. It sits at the bottom now and reads as English — *"Read today against draft v1 · Claude Opus 5"*.
+
+**A whole LAYER was rendered as debug output.** `LAYERS[0]` describes the map as *"characters, scenes, locations, chronology, goals, turning points, setups and payoffs — what is in the script, before any judgement about it"*, and the panel printed `JSON.stringify(map, null, 1)` into a `<pre>`. It renders as labelled rows of chips now, **from whatever the map holds** rather than from a fixed field list: that layer is described loosely on purpose, so a reading carrying something this page has never heard of must still show it or the page silently drops part of the report.
+
+**The thirteen dimensions were declared, exported, briefed — and recorded on nothing.** `DIMENSIONS` is the entire rubric and `NOTE_FIELDS` had no `dimension`, so a reading came back as one undifferentiated list and a writer working on dialogue could not find the dialogue notes. The same declared-and-unconsumed shape as `scope` on `PIPELINE_STEPS` and `voice_id` on a character.
+
+`dimension` is **optional and validated**: a reading stored before the field existed must not become invalid the day it arrives, and an *unknown* dimension is refused rather than filed nowhere — a note under a name nothing recognises renders nowhere, which is worse than one under *"Not filed"*. Untagged notes are **shown**, never dropped; and a reading with nothing tagged renders as a flat list rather than one heading announcing that nothing is filed.
+
+Groups run in the **rubric's own order** (premise → structure → … → format), not by how many notes each collected — that is roughly how a reader experiences a script, while sorting by count puts whatever the model happened to say most about at the top. The titles are **served with the reading** from the registry rather than mirrored into the SPA, because thirteen titles copied into a page go stale the first time one is reworded.
+
+**And nothing could delete a reading.** `DELETE /film/analysis/:id` has existed since the feature shipped with no control calling it — which is why a probe row could only be removed from the database by hand, and is exactly the state this was reported in.
+
+`tests/screenplay-analysis.test.js` **executes** the page's renderers rather than grepping for them: a grouping function that drops untagged notes and one that keeps them look identical in source, and so do a map that renders content and one that renders JSON.
+
 ### The Gutter, and Index Cards You Can Work In
 The screenplay page now carries a **gutter**: per scene, its eighths, its likely screen time (amber and marked `?` when confidence is low) and **the shot codes broken down from it**. Absolutely-positioned markers aligned to each scene heading's own `offsetTop`, rather than a column beside the page — the screenplay is one flowing contenteditable, so a column would have to re-derive its own line breaks, which is a second layout that drifts from the one on screen and drifts differently at every zoom level. The gutter is a **sibling** of the page, never a child: anything inside the contenteditable is content the editor will adopt, normalise and eventually sweep, which is exactly why the page-break indicators had to be taken out of it.
 

@@ -1505,6 +1505,53 @@
         .analysis-note .ev { color: var(--text-muted, #8a8a95); font-size: 12px; margin: 4px 0; }
         .analysis-note .q { font-style: italic; margin: 6px 0; }
         .analysis-note ul { margin: 6px 0 0 18px; font-size: 13px; }
+        .analysis-note .an-head { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
+        .analysis-note .an-head strong { min-width: 0; }
+        .an-badges { flex: 0 0 auto; white-space: nowrap; }
+        .an-badge {
+            display: inline-block; font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+            padding: 2px 6px; border-radius: 3px; margin-left: 6px;
+            border: 1px solid var(--gl-border, #2a2a30); color: var(--text-muted, #8a8a95);
+        }
+        .an-badge.an-high { color: #7fd18a; border-color: #2f5a37; }
+        .an-badge.an-low  { color: #d9a441; border-color: #5a4720; }
+        .an-badge.an-mech { color: #8ab6e8; border-color: #2c4560; }
+
+        /* Notes under the dimension they are about. */
+        .an-dim { margin: 14px 0 18px; }
+        .an-dim > h4 {
+            font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
+            color: var(--text-muted, #8a8a95); margin: 0 0 8px;
+            border-bottom: 1px solid var(--gl-border, #2a2a30); padding-bottom: 5px;
+        }
+        /* Beside its own title, not floated to the far edge of a 1200px panel
+           where it reads as a number belonging to nothing. */
+        .an-dim > h4 span { font-weight: 400; opacity: .7; margin-left: 8px; }
+
+        /* The map: what is in the script, before any judgement about it. */
+        .an-map { margin: 6px 0 18px; }
+        .an-map-row { display: flex; gap: 10px; align-items: baseline; padding: 5px 0;
+                      border-bottom: 1px solid var(--gl-border, #2a2a30); flex-wrap: wrap; min-width: 0; }
+        .an-map-key { flex: 0 0 130px; font-size: 12px; color: var(--text-muted, #8a8a95); }
+        .an-chip {
+            display: inline-block; font-size: 12px; padding: 2px 8px; margin: 2px 4px 2px 0;
+            border-radius: 10px; background: var(--gl-bg-elevated, #1c1c22);
+            border: 1px solid var(--gl-border, #2a2a30);
+        }
+
+        .an-summary { display: flex; gap: 18px; flex-wrap: wrap; align-items: baseline;
+                      margin: 4px 0 16px; font-size: 13px; }
+        /* The four layers need air between them; an h3 landing straight under
+           the previous list reads as part of it. */
+        #analysisBody h3 { margin: 26px 0 8px; }
+        #analysisBody h3:first-of-type { margin-top: 10px; }
+        .an-questions { margin: 6px 0 0 18px; }
+        .an-questions li { margin-bottom: 6px; font-style: italic; }
+        .an-provenance {
+            display: flex; gap: 12px; align-items: center; flex-wrap: wrap; min-width: 0;
+            margin-top: 22px; padding-top: 12px; border-top: 1px solid var(--gl-border, #2a2a30);
+            font-size: 12px; color: var(--text-muted, #8a8a95);
+        }
         .index-cards-view {
             display: none;
             padding: 12px;
@@ -19640,15 +19687,122 @@ THREE.GLTFLoader = GLTFLoader;
 
     /* ── analysis ───────────────────────────────────────────────────────── */
 
+    /*
+     * ── Reading a reading ───────────────────────────────────────────────────
+     *
+     * The panel opened with `Read by round-trip test · draft v15 · 2026-08-29
+     * 12:07:03` and then dumped the map as raw JSON under a heading that said
+     * "Map". Three faults, and none of them cosmetic:
+     *
+     *  - the least important thing led. Who typed it and when is provenance;
+     *    it belongs at the bottom, in English, not as a raw SQL timestamp.
+     *  - the MAP is not debug output. LAYERS calls it "what is in the script,
+     *    before any judgement about it" — characters, locations, turning
+     *    points — and it was being shown as `JSON.stringify(map, null, 1)`.
+     *  - the notes were one flat list. The thirteen dimensions are the whole
+     *    rubric and no note recorded which one it was about, so a writer
+     *    working on dialogue could not find the dialogue notes.
+     */
+
+    /** A confidence and a kind read better as marks than as a sentence. */
+    function analysisBadges(n) {
+        const conf = String(n.confidence || '').toLowerCase();
+        const bits = [];
+        if (conf) bits.push(`<span class="an-badge an-${esc(conf)}">${esc(conf)} confidence</span>`);
+        if (n.kind === 'mechanical') bits.push('<span class="an-badge an-mech">measured</span>');
+        return bits.join('');
+    }
+
     function analysisNoteHtml(n) {
         const strategies = Array.isArray(n.strategies) ? n.strategies : [];
         return `<div class="analysis-note ${n.kind === 'mechanical' ? 'mechanical' : ''}">
-            <div><strong>${esc(n.observation || '')}</strong></div>
-            <div class="ev">${esc(n.evidence || '')} · ${esc(n.confidence || '')} confidence · ${esc(n.kind || '')}</div>
-            <div>${esc(n.effect || '')}</div>
-            <div class="q">${esc(n.question || '')}</div>
+            <div class="an-head">
+                <strong>${esc(n.observation || '')}</strong>
+                <span class="an-badges">${analysisBadges(n)}</span>
+            </div>
+            ${n.evidence ? `<div class="ev">${esc(n.evidence)}</div>` : ''}
+            ${n.effect ? `<div>${esc(n.effect)}</div>` : ''}
+            ${n.question ? `<div class="q">${esc(n.question)}</div>` : ''}
             ${strategies.length ? `<ul>${strategies.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
         </div>`;
+    }
+
+    /**
+     * Notes under the dimension they are about.
+     *
+     * Ordered by the RUBRIC's own order, not by how many notes each dimension
+     * collected: the rubric runs premise → structure → … → format, which is
+     * roughly how a reader experiences a script, and sorting by count would
+     * put whatever the model happened to say most about at the top.
+     *
+     * A note with no dimension is shown, under "Not filed" — dropping it would
+     * silently lose a real observation, and every reading stored before the
+     * field existed has none.
+     */
+    function analysisByDimension(notes, dimensions) {
+        const list = Array.isArray(notes) ? notes : [];
+        if (!list.length) return '<p class="text-muted">None.</p>';
+        const order = (dimensions || []).map(d => d.id);
+        const titles = {};
+        (dimensions || []).forEach(d => { titles[d.id] = d.title; });
+
+        const groups = new Map();
+        for (const n of list) {
+            const key = n && n.dimension && titles[n.dimension] ? n.dimension : '__none__';
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(n);
+        }
+        const keys = [...order.filter(k => groups.has(k)), ...(groups.has('__none__') ? ['__none__'] : [])];
+        // Nothing tagged at all: one flat list reads better than a single
+        // "Not filed" heading over everything.
+        if (keys.length === 1 && keys[0] === '__none__') return list.map(analysisNoteHtml).join('');
+
+        return keys.map(k => `
+            <div class="an-dim">
+                <h4>${k === '__none__' ? 'Not filed' : esc(titles[k])}
+                    <span class="text-muted">${groups.get(k).length}</span></h4>
+                ${groups.get(k).map(analysisNoteHtml).join('')}
+            </div>`).join('');
+    }
+
+    /**
+     * The map, as something a person reads.
+     *
+     * Rendered from whatever the map HOLDS rather than from a fixed field list:
+     * LAYERS describes it loosely on purpose — characters, scenes, locations,
+     * chronology, goals, turning points, setups and payoffs — so a reading that
+     * carries something this page has never heard of must still show it, or the
+     * page silently drops part of the report.
+     */
+    function analysisMapHtml(map) {
+        const entries = Object.entries(map || {}).filter(([, v]) =>
+            v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length));
+        if (!entries.length) return '';
+        const label = k => k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+        return `<div class="an-map">${entries.map(([k, v]) => {
+            let shown;
+            if (Array.isArray(v)) {
+                shown = v.map(x => `<span class="an-chip">${esc(typeof x === 'string' ? x : JSON.stringify(x))}</span>`).join('');
+            } else if (v && typeof v === 'object') {
+                shown = `<span class="an-chip">${esc(JSON.stringify(v))}</span>`;
+            } else {
+                shown = `<span class="an-chip">${esc(String(v))}</span>`;
+            }
+            return `<div class="an-map-row"><span class="an-map-key">${esc(label(k))}</span>${shown}</div>`;
+        }).join('')}</div>`;
+    }
+
+    /** A stored timestamp, as a person would say it. */
+    function analysisWhen(iso) {
+        // Stored by SQLite as "YYYY-MM-DD HH:MM:SS" in UTC, which Safari will
+        // not parse without the T and the Z.
+        const t = Date.parse(String(iso || '').replace(' ', 'T') + (/[Zz]|[+-]\d{2}:?\d{2}$/.test(iso || '') ? '' : 'Z'));
+        if (!Number.isFinite(t)) return esc(String(iso || ''));
+        const days = Math.floor((Date.now() - t) / 86400000);
+        if (days <= 0) return 'today';
+        if (days === 1) return 'yesterday';
+        if (days < 30) return `${days} days ago`;
+        return new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
     async function loadAnalysis() {
@@ -19668,17 +19822,43 @@ THREE.GLTFLoader = GLTFLoader;
                 return;
             }
             const a = res.analysis;
-            const map = a.map || {};
+            const dims = res.dimensions || [];
+            const obs = a.observations || [];
+            const opps = a.opportunities || [];
+            const qs = a.questions || [];
+            const mapHtml = analysisMapHtml(a.map);
+
             body.innerHTML = `
                 ${res.of_current_draft ? '' : `<div class="warning-banner">${esc(res.warning)}</div>`}
-                <p class="text-muted text-sm">Read by ${esc(a.analyst || 'unknown')} · draft v${esc(String(a.script_version))} · ${esc(a.created_at)}</p>
-                ${Object.keys(map).length ? `<h3>Map</h3><pre class="text-sm">${esc(JSON.stringify(map, null, 1))}</pre>` : ''}
-                <h3>Observations (${(a.observations || []).length})</h3>
-                ${(a.observations || []).map(analysisNoteHtml).join('') || '<p class="text-muted">None.</p>'}
-                <h3>Questions</h3>
-                <ul>${(a.questions || []).map(q => `<li>${esc(typeof q === 'string' ? q : (q.question || ''))}</li>`).join('') || '<li class="text-muted">None.</li>'}</ul>
-                <h3>Revision opportunities (${(a.opportunities || []).length})</h3>
-                ${(a.opportunities || []).map(analysisNoteHtml).join('') || '<p class="text-muted">None.</p>'}`;
+
+                <div class="an-summary">
+                    <span><strong>${obs.length}</strong> observation${obs.length === 1 ? '' : 's'}</span>
+                    <span><strong>${qs.length}</strong> question${qs.length === 1 ? '' : 's'}</span>
+                    <span><strong>${opps.length}</strong> revision opportunit${opps.length === 1 ? 'y' : 'ies'}</span>
+                    <span class="text-muted">no overall score, deliberately &mdash; a number gets
+                        quoted without the reasoning that produced it</span>
+                </div>
+
+                ${mapHtml ? `<h3>What is in the script</h3>
+                    <p class="text-muted text-sm">Before any judgement about it.</p>${mapHtml}` : ''}
+
+                <h3>Observations</h3>
+                ${analysisByDimension(obs, dims)}
+
+                <h3>Development questions</h3>
+                ${qs.length
+                    ? `<ul class="an-questions">${qs.map(q =>
+                        `<li>${esc(typeof q === 'string' ? q : (q.question || ''))}</li>`).join('')}</ul>`
+                    : '<p class="text-muted">None.</p>'}
+
+                <h3>Revision opportunities</h3>
+                ${analysisByDimension(opps, dims)}
+
+                <div class="an-provenance">
+                    Read ${esc(analysisWhen(a.created_at))} against draft v${esc(String(a.script_version))}${
+                        a.analyst ? ` &middot; ${esc(a.analyst)}` : ''}
+                    <button class="btn btn-secondary btn-sm" onclick="deleteAnalysis('${esc(a.id)}')">Delete this reading</button>
+                </div>`;
         } catch (err) {
             // A renderer that paints a placeholder must have a path that
             // replaces it: a spinner that never resolves reads as the feature
@@ -19686,6 +19866,22 @@ THREE.GLTFLoader = GLTFLoader;
             body.innerHTML = `<div class="empty-state"><h3>Could not load the analysis</h3>
                 <p>${esc(err.message)}</p></div>`;
         }
+    }
+
+    /**
+     * Remove a reading.
+     *
+     * The route has existed since the feature shipped and nothing on the page
+     * called it — so a reading written by a probe, or one of a draft you have
+     * moved past, could only be removed from the database by hand.
+     */
+    async function deleteAnalysis(id) {
+        if (!confirm('Delete this reading?\n\nThe screenplay is untouched. Nothing else is removed.')) return;
+        try {
+            await api(`/analysis/${id}`, { method: 'DELETE' });
+            setStatus('Reading deleted');
+            loadAnalysis();
+        } catch (err) { setStatus('Error: ' + err.message); }
     }
 
     /* ── index cards you can actually work in ───────────────────────────── */

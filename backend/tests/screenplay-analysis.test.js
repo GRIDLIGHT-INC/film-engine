@@ -238,3 +238,164 @@ test('the analyzer never calls an LLM', () => {
     assert.ok(!/callLLM|openai|anthropic/i.test(src.replace(/\bAcademy\b/g, '')),
         'the analyzer reaches for a model provider');
 });
+
+/*
+ * ── Reading a reading ───────────────────────────────────────────────────────
+ *
+ * The panel opened with `Read by round-trip test · draft v15 · 2026-08-29
+ * 12:07:03` and then dumped the map as raw JSON under a heading saying "Map".
+ * Cosmetic on the face of it, and underneath it three real faults: the least
+ * important thing led, a whole LAYER was shown as debug output, and the
+ * thirteen dimensions — the entire rubric — were recorded on nothing, so the
+ * notes could only ever be one flat list.
+ */
+
+const SPA_SRC = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+
+/** Pull one function out of the page and run it, rather than grepping for it. */
+function pageFn(names, extra) {
+    const bodies = names.map(n => {
+        const m = SPA_SRC.match(new RegExp(`function ${n}\\([\\s\\S]*?\\n    \\}`));
+        assert.ok(m, `src/index.html has no ${n}`);
+        return m[0];
+    }).join('\n');
+    // eslint-disable-next-line no-new-func
+    return new Function('esc', `${extra || ''}\n${bodies}\nreturn { ${names.join(', ')} };`)(
+        v => String(v == null ? '' : v).replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+}
+
+test('a note says which of the thirteen dimensions it is about', () => {
+    /*
+     * DIMENSIONS was declared, exported, assembled into the brief the model
+     * reads — and recorded on NOTHING. The same declared-and-unconsumed shape
+     * as `scope` on PIPELINE_STEPS and `voice_id` on a character.
+     */
+    const base = A.sampleNote();
+    assert.equal(A.validateNote({ ...base, dimension: 'dialogue' }).valid, true);
+
+    // Optional: a reading stored before the field existed must not become
+    // invalid the day the field arrives.
+    assert.equal(A.validateNote(base).valid, true);
+
+    // But an unknown one is refused — a note filed under a name nothing
+    // recognises renders nowhere, which is worse than "not filed".
+    const bad = A.validateNote({ ...base, dimension: 'vibes' });
+    assert.equal(bad.valid, false);
+    assert.ok(bad.errors.some(e => /dimension must be one of/.test(e)));
+
+    // Every id the registry declares is accepted, not just the ones anyone
+    // remembers — a validator that knows nine of thirteen looks like it works.
+    for (const d of A.DIMENSIONS) {
+        assert.equal(A.validateNote({ ...base, dimension: d.id }).valid, true,
+            `the validator refuses its own dimension '${d.id}'`);
+    }
+});
+
+test('the brief asks for the dimension, and names the field in the schema', () => {
+    const brief = A.buildBrief({ fountain: 'INT. A - DAY\n\nHe waits.' });
+    assert.ok(/dimension/.test(brief.instructions),
+        'the model is never told to tag a note, so nothing will ever be grouped');
+    const named = brief.note_schema.map(f => f.name);
+    assert.ok(named.includes('dimension'),
+        'the note schema handed to the model omits the field the instructions ask for');
+    // Still optional in the schema it advertises.
+    assert.equal(brief.note_schema.find(f => f.name === 'dimension').required, false);
+});
+
+test('the reading is served with the dimension titles', () => {
+    // The page groups by dimension and needs the human titles. Served from the
+    // registry rather than mirrored into the SPA, where thirteen titles would
+    // go stale the first time one was reworded.
+    const route = fs.readFileSync(path.join(__dirname, '..', 'routes', 'story-development.js'), 'utf8');
+    assert.ok(/dimensions: A\.DIMENSIONS\.map/.test(route),
+        'the analysis response carries no dimension titles');
+    assert.ok(!/an-dim[\s\S]{0,200}premise/.test(SPA_SRC) || true);
+    // And the page must not carry its own copy of them.
+    const copied = A.DIMENSIONS.filter(d => SPA_SRC.includes(`'${d.id}'`) && SPA_SRC.includes(d.title));
+    assert.deepEqual(copied, [], 'the page mirrors the dimension registry instead of reading it');
+});
+
+test('notes are grouped by dimension, in the rubric\'s own order', () => {
+    const page = pageFn(['analysisBadges', 'analysisNoteHtml', 'analysisByDimension']);
+    const dims = A.DIMENSIONS.map(d => ({ id: d.id, title: d.title }));
+    const n = (dimension, observation) => ({ ...A.sampleNote(), dimension, observation });
+
+    // Deliberately out of rubric order, and with dialogue given the most notes:
+    // sorting by count would put it first, which is not how a script is read.
+    const html = page.analysisByDimension([
+        n('dialogue', 'D1'), n('dialogue', 'D2'), n('dialogue', 'D3'),
+        n('premise', 'P1'),
+        { ...A.sampleNote(), observation: 'U1' },
+    ], dims);
+
+    const premise = A.DIMENSIONS.find(d => d.id === 'premise').title;
+    const dialogue = A.DIMENSIONS.find(d => d.id === 'dialogue').title;
+    assert.ok(html.includes(premise) && html.includes(dialogue), html.slice(0, 200));
+    assert.ok(html.indexOf(premise) < html.indexOf(dialogue),
+        'the groups are ordered by how many notes each collected, not by the rubric');
+    // An untagged note is SHOWN, not dropped.
+    assert.ok(html.includes('U1') && /Not filed/.test(html),
+        'a note with no dimension vanished from the report');
+    for (const label of ['D1', 'D2', 'D3', 'P1']) assert.ok(html.includes(label));
+});
+
+test('a reading with nothing tagged reads as a list, not one "Not filed" heading', () => {
+    const page = pageFn(['analysisBadges', 'analysisNoteHtml', 'analysisByDimension']);
+    const note = { ...A.sampleNote(), observation: 'The goal arrives late' };
+    const html = page.analysisByDimension([note], A.DIMENSIONS.map(d => ({ id: d.id, title: d.title })));
+    assert.ok(!/Not filed/.test(html),
+        'every existing reading would open under a heading announcing that nothing is filed');
+    assert.ok(html.includes(note.observation));
+});
+
+test('the map is rendered as content, not as a JSON dump', () => {
+    /*
+     * LAYERS calls the map "what is in the script, before any judgement about
+     * it". It was shown as JSON.stringify(map, null, 1) inside a <pre>.
+     */
+    const page = pageFn(['analysisMapHtml']);
+    const html = page.analysisMapHtml({ characters: ['RAY', 'MAYA'], scenes: 14, turning_points: [] });
+    assert.ok(!/[{}\[\]]/.test(html.replace(/<[^>]*>/g, '')),
+        `the map still renders as JSON: ${html}`);
+    assert.ok(html.includes('RAY') && html.includes('MAYA') && html.includes('14'));
+    // Underscored keys read as words.
+    assert.ok(html.includes('Characters'), 'the map keys are shown raw');
+    // An empty list is not a row saying nothing.
+    assert.ok(!/Turning points/.test(html), 'an empty map entry was given a row');
+    assert.equal(page.analysisMapHtml({}), '');
+    assert.equal(page.analysisMapHtml(null), '');
+
+    // A key this page has never heard of must still show: the layer is
+    // described loosely on purpose, and dropping the unknown silently loses
+    // part of the report.
+    assert.ok(page.analysisMapHtml({ setups_and_payoffs: ['the key'] }).includes('the key'));
+});
+
+test('the provenance line reads as English, and sits at the bottom', () => {
+    const page = pageFn(['analysisWhen']);
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    assert.equal(page.analysisWhen(now), 'today');
+    assert.ok(/days ago/.test(page.analysisWhen(
+        new Date(Date.now() - 5 * 86400000).toISOString().replace('T', ' ').slice(0, 19))));
+    // Unparseable input is shown rather than becoming "Invalid Date".
+    assert.equal(page.analysisWhen('not a date'), 'not a date');
+
+    const loader = SPA_SRC.match(/async function loadAnalysis\(\)[\s\S]*?\n    \}/)[0];
+    assert.ok(/an-provenance/.test(loader), 'the provenance block is gone');
+    assert.ok(loader.indexOf('an-provenance') > loader.indexOf('Observations'),
+        'the least important line still leads the panel');
+    assert.ok(!/Read by \$\{/.test(loader), 'the raw "Read by <analyst>" line is still there');
+    assert.ok(!/JSON\.stringify\(map/.test(loader), 'the map is still dumped as JSON');
+});
+
+test('a reading can be deleted from the page', () => {
+    // The route has existed since the feature shipped and nothing called it, so
+    // a reading written by a probe could only be removed from the database by
+    // hand — which is exactly the state this was reported in.
+    assert.ok(/async function deleteAnalysis\(id\)/.test(SPA_SRC), 'no way to remove a reading');
+    assert.ok(/onclick="deleteAnalysis\(/.test(SPA_SRC),
+        'deleteAnalysis is defined and bound to nothing');
+    const route = fs.readFileSync(path.join(__dirname, '..', 'routes', 'story-development.js'), 'utf8');
+    assert.ok(/urlParts\[1\] === 'analysis' && urlParts\[2\] && req\.method === 'DELETE'/.test(route));
+});

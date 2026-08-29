@@ -220,6 +220,16 @@ function getAnalysis(req, res, projectId, query) {
     const stale = !!(script && analysis.script_version != null && script.version !== analysis.script_version);
     return json(res, 200, {
         project_id: projectId, exists: true, analysis,
+        /*
+         * The dimension titles, served with the reading.
+         *
+         * The page groups notes by dimension and needs the human titles to do
+         * it. Served from the registry rather than mirrored into the SPA: a
+         * second copy of thirteen titles is a second copy that goes stale the
+         * first time one is reworded, and there is nothing here the page needs
+         * before it has an analysis to render.
+         */
+        dimensions: A.DIMENSIONS.map(d => ({ id: d.id, title: d.title, question: d.central_question })),
         of_current_draft: !stale,
         ...(stale ? {
             warning: `This reading is of draft v${analysis.script_version}; the screenplay is now `

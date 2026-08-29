@@ -76,6 +76,26 @@ const NOTE_FIELDS = Object.freeze([
 /** Fields that must never appear: they would be the tool writing the script. */
 const FORBIDDEN_NOTE_FIELDS = Object.freeze(['rewrite', 'replacement', 'new_dialogue', 'draft']);
 
+/*
+ * WHICH of the thirteen dimensions a note is about.
+ *
+ * The dimensions are the whole rubric — they are declared here, exported,
+ * assembled into the brief the model reads, and were recorded on NOTHING. So a
+ * reading came back as one undifferentiated list, a page could not group it,
+ * and a writer had no way to ask "what did it say about my dialogue?". The same
+ * declared-and-unconsumed shape as `scope` on PIPELINE_STEPS and `voice_id` on
+ * a character.
+ *
+ * Optional rather than required: a reading stored before this existed carries
+ * none, and refusing those would make the field's arrival delete work. An
+ * UNKNOWN dimension is refused though — a note filed under a name nothing
+ * recognises is a note that renders nowhere, which is worse than one that
+ * renders under "unsorted".
+ */
+const OPTIONAL_NOTE_FIELDS = Object.freeze([
+    { name: 'dimension', what: 'Which of the thirteen dimensions this note is about. One of the ids in DIMENSIONS.' },
+]);
+
 /**
  * The thirteen dimensions.
  *
@@ -426,6 +446,10 @@ function validateNote(n) {
     if (n.kind !== undefined && !NOTE_KINDS.includes(n.kind)) {
         errors.push(`kind must be one of: ${NOTE_KINDS.join(', ')}`);
     }
+    if (n.dimension !== undefined && n.dimension !== null && n.dimension !== ''
+        && !DIMENSIONS.some(d => d.id === n.dimension)) {
+        errors.push(`dimension must be one of: ${DIMENSIONS.map(d => d.id).join(', ')}`);
+    }
     for (const forbidden of FORBIDDEN_NOTE_FIELDS) {
         if (n[forbidden] !== undefined) {
             errors.push(`'${forbidden}' is not accepted: a note offers strategies, never rewritten prose. `
@@ -489,7 +513,12 @@ should ask rather than correct.
 
 The mechanical findings below were computed from the text and are already
 reliable. Do not recount them — build on them, or ignore them if they are not
-worth a writer's attention.`;
+worth a writer's attention.
+
+TAG EVERY NOTE WITH ITS \`dimension\` — one of the thirteen ids below. It is how
+the report is read: a writer working on dialogue wants the dialogue notes
+together, not scattered through a list. An untagged note still stores, and is
+shown under "unsorted", which is a worse place to be read from.`;
 
 /**
  * Everything the model needs, and nothing it has to be told twice.
@@ -517,7 +546,9 @@ function buildBrief(input) {
             sources: d.sources,
         })),
         layers: LAYERS,
-        note_schema: NOTE_FIELDS,
+        // Required and optional together, so the model is told the dimension
+        // field exists rather than having to infer it from the instructions.
+        note_schema: [...NOTE_FIELDS, ...OPTIONAL_NOTE_FIELDS.map(f => ({ ...f, required: false }))],
         confidence_levels: CONFIDENCE,
         mechanical: runMechanical(fountain),
     };

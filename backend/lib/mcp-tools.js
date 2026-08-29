@@ -1024,7 +1024,7 @@ const PRODUCTION_TOOLS = [
     {
         name: 'analysis_write',
         handler: handleStoryDevelopment, method: 'POST',
-        description: 'Store a reading of the screenplay, as the four layers: map (what is in the script), observations (patterns, each with evidence), questions (that let the writer test their intent), opportunities (prioritised, with likely impact). Every observation and opportunity must carry all seven fields — observation, evidence, effect, question, strategies, confidence (high|medium|low), kind (mechanical|interpretive) — and is REFUSED without them, because a note with no evidence cannot be checked and one with no question is a verdict. An overall score is refused: a number gets quoted without the reasoning that produced it. A note carrying rewritten prose is refused. Read analysis_brief first.',
+        description: 'Store a reading of the screenplay, as the four layers: map (what is in the script), observations (patterns, each with evidence), questions (that let the writer test their intent), opportunities (prioritised, with likely impact). Every observation and opportunity must carry all seven fields — observation, evidence, effect, question, strategies, confidence (high|medium|low), kind (mechanical|interpretive) — and is REFUSED without them, because a note with no evidence cannot be checked and one with no question is a verdict. An overall score is refused: a number gets quoted without the reasoning that produced it. A note carrying rewritten prose is refused. Read analysis_brief first. TAG EVERY NOTE WITH ITS `dimension` \u2014 one of the thirteen ids in the brief (premise, structure, causality, character, conflict, scene_function, pacing, dialogue, visual, theme, tone, voice, format). It is how the report is READ: a writer working on dialogue wants the dialogue notes together, not scattered through a list. An untagged note still stores and is shown under "Not filed"; an unrecognised dimension is refused rather than filed nowhere.',
         path: a => `/film/projects/${a.project_id}/analysis`,
         body: a => ({
             analyst: a.analyst, map: a.map, observations: a.observations,
@@ -1034,9 +1034,9 @@ const PRODUCTION_TOOLS = [
             project_id: { type: 'string' },
             analyst: { type: 'string', description: 'Who read it — a model name, or a person.' },
             map: { type: 'object', description: 'Characters, scenes, locations, chronology, goals, turning points, setups and payoffs.' },
-            observations: { type: 'array', description: 'Notes. Each: observation, evidence, effect, question, strategies[], confidence, kind.' },
+            observations: { type: 'array', description: 'Notes. Each: observation, evidence, effect, question, strategies[], confidence, kind, and `dimension` \u2014 which of the thirteen the note is about.' },
             questions: { type: 'array', description: 'Development questions, as strings.' },
-            opportunities: { type: 'array', description: 'Prioritised revision notes, same seven fields as an observation.' },
+            opportunities: { type: 'array', description: 'Prioritised revision notes, same fields as an observation, `dimension` included.' },
         },
         required: ['project_id', 'map', 'observations', 'questions', 'opportunities'],
     },
