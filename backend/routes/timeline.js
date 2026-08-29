@@ -63,6 +63,10 @@ function loadTimeline(projectId) {
     // project gets interesting.
     const assets = db.prepare(`
         SELECT a.shot_id, a.asset_type, a.file_path, a.duration_ms, a.version,
+               -- file_name and created_at carry the dialogue: the line index is
+               -- in the name, and the newest row for a name is the recording
+               -- that actually exists on disk after a regeneration.
+               a.file_name, a.created_at,
                sh.current_frame_version
         FROM film_assets a
         JOIN film_shots sh ON sh.id = a.shot_id

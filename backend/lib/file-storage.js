@@ -229,8 +229,47 @@ function serveFile(res, projectId, subdir, filename, opts) {
         return;
     }
 
+    /*
+     * Length and ranges, because media elements need both.
+     *
+     * Piped with no Content-Length, Node falls back to chunked transfer — and a
+     * browser <audio> or <video> given a chunked response with no length cannot
+     * compute a duration and stalls at readyState 0. The file serves perfectly
+     * to curl the whole time, which is what made this look like a missing file
+     * rather than a missing header: playback showed a shot with dialogue
+     * attached and silence over it.
+     *
+     * Range support matters for the same reason: a media element asks for a
+     * byte range to seek, and a server that answers 200 with the whole file
+     * makes scrubbing re-download the lot.
+     */
+    const stat = fs.statSync(filePath);
+    const range = res.req && res.req.headers && res.req.headers.range;
+    const m = range && /^bytes=(\d*)-(\d*)$/.exec(String(range));
+
+    if (m) {
+        const start = m[1] ? parseInt(m[1], 10) : 0;
+        const end = m[2] ? parseInt(m[2], 10) : stat.size - 1;
+        if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= stat.size) {
+            res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` });
+            res.end();
+            return;
+        }
+        res.writeHead(206, {
+            'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+            'Content-Length': end - start + 1,
+            'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'public, max-age=3600',
+        });
+        fs.createReadStream(filePath, { start, end }).pipe(res);
+        return;
+    }
+
     res.writeHead(200, {
         'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+        'Content-Length': stat.size,
+        'Accept-Ranges': 'bytes',
         'Cache-Control': 'public, max-age=3600',
     });
     fs.createReadStream(filePath).pipe(res);

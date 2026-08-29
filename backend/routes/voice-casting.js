@@ -172,12 +172,23 @@ function projectCasting(req, res, projectId) {
 
     // Lines per character, so the uncast list is ordered by what it costs to
     // leave uncast rather than alphabetically.
+    /*
+     * Counted through the same cue collapse.
+     *
+     * RAY MERCER read as "0 cues" while thirty of his lines sat in the script
+     * under RAY — so the uncast list, which is ordered by what it costs to
+     * leave uncast, put the film's second lead last.
+     */
+    const cast = castByCue(projectId);
     const lines = {};
     for (const row of db.prepare(
         `SELECT e.text AS cue, COUNT(*) AS n FROM film_script_elements e
            WHERE e.script_id = (SELECT id FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1)
              AND e.element_type = 'character' GROUP BY e.text`).all(projectId)) {
-        lines[String(row.cue).toUpperCase().trim()] = row.n;
+        const cue = String(row.cue).replace(/\s*\(CONT'D\)\s*$/i, '').trim().toUpperCase();
+        const owner = cast[cue];
+        const key = owner ? String(owner.name).toUpperCase() : cue;
+        lines[key] = (lines[key] || 0) + row.n;
     }
 
     const withLines = rows.map(r => ({ ...r, line_count: lines[String(r.name).toUpperCase()] || 0 }));
@@ -191,6 +202,53 @@ function projectCasting(req, res, projectId) {
             .map(u => ({ ...u, line_count: lines[String(u.name).toUpperCase()] || 0 }))
             .sort((a, b) => b.line_count - a.line_count),
     });
+}
+
+/**
+ * The cue "RAY" and the character "RAY MERCER" are one person.
+ *
+ * A screenplay cues a character by whatever the writer types, and the entity is
+ * whatever the breakdown recorded — usually the fuller name from the action
+ * line that introduced them. Matching those exactly meant thirty of RAY's
+ * lines in The Glass Harbour resolved to no voice at all and would have been
+ * spoken in the provider's default, on a character that WAS cast. That is
+ * precisely the silent failure casting exists to prevent.
+ *
+ * The rule is not reinvented here: `canonicaliseCharacterNames` already
+ * collapses a first name onto the full name it prefixes, on a word boundary so
+ * RAY does not match RAYMOND, preferring whichever form has a character record.
+ * Two implementations of one rule is what this codebase keeps paying for.
+ */
+function castByCue(projectId) {
+    const { canonicaliseCharacterNames } = require('./scripts');
+    const rows = db.prepare(
+        `SELECT c.id, c.name, p.voice_id, p.name AS voice_name FROM film_characters c
+           LEFT JOIN film_voice_profiles p ON p.character_id = c.id
+          WHERE c.project_id = ?`).all(projectId);
+
+    const script = db.prepare(
+        'SELECT id FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1'
+    ).get(projectId);
+    const cues = script
+        ? db.prepare("SELECT DISTINCT text FROM film_script_elements WHERE script_id = ? AND element_type = 'character'")
+            .all(script.id).map(r => String(r.text || '').replace(/\s*\(CONT'D\)\s*$/i, '').trim())
+            .filter(Boolean)
+        : [];
+
+    const names = rows.map(r => r.name);
+    const canonical = canonicaliseCharacterNames([...names, ...cues], names);
+
+    // cue (upper) -> the character row it belongs to
+    const byName = {};
+    for (const r of rows) byName[String(r.name).toUpperCase()] = r;
+
+    const out = {};
+    for (const cue of [...cues, ...names]) {
+        const pick = canonical.get(cue) || cue;
+        const row = byName[String(pick).toUpperCase()];
+        if (row) out[cue.toUpperCase()] = row;
+    }
+    return out;
 }
 
 /* ── auditioning ───────────────────────────────────────────────────────── */
@@ -325,18 +383,19 @@ function getTableRead(req, res, sceneId) {
 
     // Which voice each line would be spoken in, so the read shows the casting
     // rather than making the director cross-reference it.
-    const cast = {};
-    for (const row of db.prepare(
-        `SELECT c.name, p.voice_id FROM film_characters c
-           LEFT JOIN film_voice_profiles p ON p.character_id = c.id WHERE c.project_id = ?`
-    ).all(found.scene.project_id)) {
-        cast[String(row.name).toUpperCase()] = row.voice_id;
-    }
+    const cast = castByCue(found.scene.project_id);
+    const voiceFor = cue => {
+        const row = cast[String(cue || '').toUpperCase()];
+        return row ? row.voice_id : null;
+    };
 
     const withVoices = lines.map(l => ({
         ...l,
-        voice_id: cast[String(l.character || '').toUpperCase()] || null,
-        cast: !!cast[String(l.character || '').toUpperCase()],
+        voice_id: voiceFor(l.character),
+        cast: !!voiceFor(l.character),
+        // Which character record the cue resolved to, so "RAY is uncast" and
+        // "RAY is RAY MERCER, who is cast" are distinguishable on the page.
+        character_id: (cast[String(l.character || '').toUpperCase()] || {}).id || null,
     }));
 
     return json(res, 200, {
@@ -364,13 +423,7 @@ async function runTableRead(req, res, sceneId) {
     const lines = VC.tableRead(found.elements);
     if (!lines.length) return json(res, 200, { scene_id: sceneId, total: 0, lines: [], note: 'No dialogue in this scene.' });
 
-    const cast = {};
-    for (const row of db.prepare(
-        `SELECT c.id, c.name, p.voice_id FROM film_characters c
-           LEFT JOIN film_voice_profiles p ON p.character_id = c.id WHERE c.project_id = ?`
-    ).all(found.scene.project_id)) {
-        cast[String(row.name).toUpperCase()] = row.voice_id;
-    }
+    const cast = castByCue(found.scene.project_id);
 
     let provider;
     try { provider = resolveGenerator('voice', {}); }
@@ -382,7 +435,7 @@ async function runTableRead(req, res, sceneId) {
 
     for (const line of lines) {
         if (refusal) { notAttempted.push(line.index); continue; }
-        const voice_id = cast[String(line.character || '').toUpperCase()] || null;
+        const voice_id = (cast[String(line.character || '').toUpperCase()] || {}).voice_id || null;
         const payload = VC.auditionPayload({
             text: line.line, voice_id,
             // A parenthetical is direction, and the provider takes it as

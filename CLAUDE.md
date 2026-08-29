@@ -356,6 +356,7 @@ film-engine/
 │       ├── screenplay-analysis.test.js # Thirteen dimensions, seven fields, and no server-side model
 │       ├── subject-gallery.test.js  # A sketch must never condition a frame
 │       ├── dialogue-audition.test.js # Hearing a line before anything is shot
+│       ├── dialogue-playback.test.js # Watching the scene AND hearing it
 │       ├── character-sheet.test.js  # Two buttons on the card, and everything else has a home
 │       ├── character-sheet-authoring.test.js # A region with no way in is a label
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
@@ -2336,6 +2337,21 @@ Built to `design_handoff_character_card`: official views top-left, everything wr
 
 Generating views is **all four or one**: a pending plate's own click generates just that view, and the header button asks before spending. It stops on a refusal rather than asking three more times — a refusal repeated is a refusal paid for.
 
+### Watching the Scene and Hearing It
+*"We should be able to read the dialogue along with the shots in playback, so we can see the scene play with dialogue."*
+
+`lib/timeline.js` has picked an audio asset per shot since it was written and **playback ignored it entirely** — so a director could watch the whole cut in silence with the dialogue sitting on disk. Wiring it found four more faults, none of which the API could see.
+
+**The cue and the character were two people.** `routes/voice.js` matched `c.name.toUpperCase() === line.character.toUpperCase()` in three places, so `RAY` never resolved to `RAY MERCER`: thirty of his lines got no profile, no `voice_id`, and the adapter fell back to its hardcoded default — a voice that is not even in this account's list, which came back as **`402: Free users cannot use library voices`**. A casting fault wearing a billing error, and a paid plan would have *hidden* it by letting the wrong voice through. The rule is not reinvented: `canonicaliseCharacterNames` already collapses a first name onto the full name it prefixes, on a word boundary so RAY does not match RAYMOND. The table read now uses it too — one question, one answer, or the take that ships is cast differently from the read that approved it.
+
+**`batchVoice` enumerated the work and performed none of it.** Same shape as the scene and project pipeline runners: a plausible 200, nothing generated, and the button reporting "0 lines". `generateVoiceForShotId` is now the one implementation both the single route and the batch call, and `plan_only` keeps the free listing that used to be all it did.
+
+**One asset per shot is right for a mix and wrong for dialogue.** A shot holds one file per LINE, so attaching one spoke the first line of a four-line exchange and fell silent. `audio_lines` carries them all, **deduplicated by filename with the newest row winning** — regenerating writes over the same per-line names while inserting a row each time, and one four-line shot had **seventeen rows for four files**. Ordered by the line index in the name, never `created_at`: that records when a line was *made*, so re-doing line 2 would move it to the end of the scene. Playback chains them on `ended` rather than against the clock, because a card's duration was written before the dialogue existed and timing against it talks over the next line.
+
+**And the file served perfectly to curl while no browser could play it.** `serveFile` piped with no `Content-Length`, so Node fell back to chunked — and a media element given a chunked response with no length cannot compute a duration and stalls at `readyState 0`. It now sends the length, advertises `Accept-Ranges`, answers a range with a real `206`, and refuses an unsatisfiable one with `416`. The test scopes its assertion to the **plain 200 branch**: the first version checked the whole function for the string, the range branch sets one too, and the mutation that deletes it passed.
+
+`mediaUrl` also mapped everything non-image to `/film/video/`, which is right for a clip and 404s for dialogue. The serving route is read from the file's own directory now — not guessed from the extension, because `.mp3` is served from two places: dialogue from `/film/audio` and a score from `/film/music`.
+
 ### Hearing the Dialogue Before Anything Is Shot
 *"Where do we generate the dialogue in any of the sections? If I want to do a test run and see how it feels… this should be part of the planning phase."*
 
@@ -2667,6 +2683,7 @@ node --test backend/tests/screenplay-timing.test.js
 node --test backend/tests/screenplay-analysis.test.js
 node --test backend/tests/subject-gallery.test.js
 node --test backend/tests/dialogue-audition.test.js
+node --test backend/tests/dialogue-playback.test.js
 node --test backend/tests/character-sheet.test.js
 node --test backend/tests/character-sheet-authoring.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js

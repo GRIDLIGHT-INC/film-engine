@@ -327,6 +327,47 @@ const adapter = {
 };
 
 /**
+ * Voices this account has been REFUSED, learned from the refusal.
+ *
+ * ElevenLabs returns `category: "premade"` for every voice in the list,
+ * including ones a free plan cannot use through the API — Laura generates and
+ * Chris comes back "Free users cannot use library voices via the API", and both
+ * are marked premade. The only fields that differ are the description, the
+ * fine-tuning state and where the preview is hosted, and none of those is a
+ * permission signal.
+ *
+ * So it is not guessed. The first refusal is recorded against the voice, and
+ * the catalogue marks it from then on — evidence rather than a field that does
+ * not predict the thing. Stored in the provider credential's own `meta`, which
+ * is where per-provider facts belong and needs no migration.
+ */
+function refusedVoices() {
+    try {
+        const cred = getCredential('elevenlabs') || {};
+        const meta = cred.meta || {};
+        return (meta.refused_voices && typeof meta.refused_voices === 'object')
+            ? meta.refused_voices : {};
+    } catch (_) { return {}; }
+}
+
+function recordVoiceRefusal(voiceId, reason) {
+    if (!voiceId) return;
+    try {
+        const { db } = require('../../db/database');
+        const row = db.prepare("SELECT meta FROM film_provider_credentials WHERE provider = 'elevenlabs'").get();
+        let meta = {};
+        try { meta = JSON.parse((row && row.meta) || '{}') || {}; } catch (_) { meta = {}; }
+        meta.refused_voices = meta.refused_voices || {};
+        meta.refused_voices[voiceId] = String(reason || 'refused').slice(0, 200);
+        db.prepare("UPDATE film_provider_credentials SET meta = ? WHERE provider = 'elevenlabs'")
+            .run(JSON.stringify(meta));
+    } catch (_) {
+        // Never fail a generation over bookkeeping: by the time this runs the
+        // request has already been made and the outcome is already known.
+    }
+}
+
+/**
  * What voices this account can use.
  *
  * A GET, not a generation: it costs nothing and returns the catalogue a
@@ -356,7 +397,16 @@ async function listVoices(opts) {
             return { ok: false, error: `elevenlabs ${res.status}`, voices: [] };
         }
         const body = await res.json();
-        return { ok: true, voices: Array.isArray(body.voices) ? body.voices : [] };
+        const refused = refusedVoices();
+        const voices = (Array.isArray(body.voices) ? body.voices : []).map(v => ({
+            ...v,
+            // Marked, never hidden: a voice this plan cannot use is still worth
+            // seeing, because upgrading is a real option and a silently missing
+            // voice reads as the catalogue being wrong.
+            usable: !refused[v.voice_id],
+            unusable_reason: refused[v.voice_id] || null,
+        }));
+        return { ok: true, voices };
     } catch (err) {
         clearTimeout(timer);
         return { ok: false, error: err.message, voices: [] };
@@ -366,6 +416,8 @@ async function listVoices(opts) {
 module.exports = {
     adapter,
     listVoices,
+    refusedVoices,
+    recordVoiceRefusal,
     buildVoiceRequest,
     buildSfxRequest,
     buildMusicRequest,

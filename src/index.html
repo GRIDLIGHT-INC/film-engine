@@ -5029,6 +5029,14 @@ table, .render-table { border-radius:12px; overflow:hidden; }
             <div id="playbackMain" class="hidden">
                 <div class="pb-stage">
                     <video id="pbVideo" class="pb-video" preload="metadata" playsinline></video>
+                    <!--
+                      The shot's dialogue.
+                      lib/timeline.js has picked audio_mix or audio_dialogue per
+                      shot since it was written and playback ignored it — so you
+                      could watch the cut and never hear the scene. Hidden: it is
+                      heard, not seen, and its transport is the timeline's.
+                    -->
+                    <audio id="pbAudio" preload="auto" style="display:none;"></audio>
                     <div id="pbStill" class="pb-still hidden"></div>
                     <div id="pbGap" class="pb-gap hidden">
                         <div>
@@ -5050,6 +5058,10 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                             <button class="btn btn-secondary btn-sm" onclick="pbTogglePlay()" id="pbPlayBtn">Play</button>
                             <button class="btn btn-secondary btn-sm" onclick="pbStep(-1)" title="Previous shot">&#9664;&#9664;</button>
                             <button class="btn btn-secondary btn-sm" onclick="pbStep(1)" title="Next shot">&#9654;&#9654;</button>
+                            <label class="text-sm" style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;cursor:pointer;"
+                                   title="Play each shot's dialogue as its shot comes up">
+                                <input type="checkbox" id="pbDialogue" checked onchange="pbDialogueToggled()"> Dialogue
+                            </label>
                         </div>
                         <div class="pb-timecode">
                             <span id="pbTimecode">00:00:00:00</span>
@@ -22761,7 +22773,19 @@ ${fountainText.slice(0, 50000)}`;
                      * breakdown, which is after the point where hearing it
                      * would change what you write.
                      */
-                    const readBtn = `<button class="btn btn-sm" onclick="event.stopPropagation(); runTableRead('${s.id}')" title="Hear this scene read aloud, in each character's cast voice — attached to no shot">&#127908; Table Read</button>`;
+                    /*
+                     * The button says whether it can work.
+                     *
+                     * It used to be offered on every scene, and on one with no
+                     * dialogue it wrote a line into the status bar at the foot
+                     * of the screen and did nothing else — indistinguishable
+                     * from a broken button, and reported as exactly that. The
+                     * count is the answer, so it is on the label.
+                     */
+                    const lineCount = s.dialogue_lines || 0;
+                    const readBtn = lineCount
+                        ? `<button class="btn btn-sm" onclick="event.stopPropagation(); runTableRead('${s.id}')" title="Hear these ${lineCount} line(s) read aloud in each character's cast voice — attached to no shot, and it spends">&#127908; Table Read &middot; ${lineCount}</button>`
+                        : `<button class="btn btn-sm" disabled style="opacity:.45;cursor:not-allowed;" title="This scene has no dialogue, so there is nothing to read aloud">&#127908; Table Read &middot; 0</button>`;
 
                     return `
                     <div class="scene-row" id="scene-${s.id}">
@@ -33446,6 +33470,31 @@ ${fountainText.slice(0, 50000)}`;
         still.classList.add('hidden');
         gap.classList.add('hidden');
 
+        /*
+         * The shot's dialogue, loaded with the shot.
+         *
+         * A still holds for its slot with no sound of its own, so without this
+         * you can watch the whole cut and never hear the scene — which is the
+         * thing a table read exists to answer and the reason playback exists at
+         * all. Muted when the shot carries video with its own track, or the
+         * dialogue plays twice over a lip-synced clip.
+         */
+        const audio = document.getElementById('pbAudio');
+        audio.pause();
+        /*
+         * EVERY line of the shot, in order.
+         *
+         * `entry.audio` is one asset, which is right for a finished mix and
+         * wrong for dialogue: a shot holds one file per line, so playing that
+         * one spoke the first line of a four-line exchange and fell silent —
+         * you could watch the whole scene and never hear it play.
+         */
+        pb.lines = (document.getElementById('pbDialogue').checked && entry.kind !== 'video')
+            ? (entry.audio_lines || (entry.audio ? [{ path: entry.audio.path }] : []))
+            : [];
+        pb.lineIndex = 0;
+        pbPlayLine();
+
         if (entry.kind === 'video' && entry.video) {
             video.classList.remove('hidden');
             video.src = mediaUrl(entry.video.path);
@@ -33482,6 +33531,23 @@ ${fountainText.slice(0, 50000)}`;
         const pid = state.currentProject && state.currentProject.id;
         const file = String(path).split('/').pop();
         if (!pid || !file) return path;
+        /*
+         * The serving route comes from the file's OWN directory.
+         *
+         * Everything non-image used to go to /film/video/, which is right for a
+         * clip and 404s for dialogue: audio is written to data/audio/<pid>/ and
+         * served at /film/audio/. The result was an <audio> element with a
+         * perfectly good src that never loaded — the same fault servedUrlFor
+         * had when it derived the subdirectory positionally.
+         *
+         * Read from the path rather than guessed from the extension, because
+         * .mp3 is served from two different places: dialogue from /film/audio
+         * and a score from /film/music.
+         */
+        const SERVED = ['audio', 'video', 'music', 'storyboards', 'refsheets', 'auditions', '3d'];
+        const parts = String(path).split('/');
+        const dir = parts.find(seg => SERVED.includes(seg));
+        if (dir) return `${API_BASE}/film/${dir}/${pid}/${file}`;
         if (/\.(png|jpg|jpeg|webp)$/i.test(file)) return `${API_BASE}/film/storyboards/${pid}/${file}`;
         return `${API_BASE}/film/video/${pid}/${file}`;
     }
@@ -33556,10 +33622,13 @@ ${fountainText.slice(0, 50000)}`;
         const video = document.getElementById('pbVideo');
         const entry = pbEntry();
 
+        const audio = document.getElementById('pbAudio');
         if (pb.playing) {
             if (entry && entry.kind === 'video') video.play().catch(() => {});
+            if (audio.src) audio.play().catch(() => {});
             pbTick();
         } else {
+            audio.pause();
             video.pause();
             if (pb.raf) { cancelAnimationFrame(pb.raf); pb.raf = null; }
         }
@@ -33571,6 +33640,44 @@ ${fountainText.slice(0, 50000)}`;
      * with no footage rather than stalling on it.
      */
     let pbLastFrame = 0;
+    /**
+     * Turning dialogue on or off applies to the shot you are watching.
+     *
+     * Waiting for the next shot means the switch appears not to work for up to
+     * a slot, which reads as a broken control rather than a deferred one.
+     */
+    /**
+     * Speak the shot's lines one after another.
+     *
+     * Chained on `ended` rather than scheduled against the clock: a line's real
+     * length is whatever the provider returned, and timing them from the shot
+     * duration would talk over the next line on any shot whose card duration
+     * disagrees with the recording — which is every shot, because the card
+     * duration was written before the dialogue existed.
+     */
+    function pbPlayLine() {
+        const audio = document.getElementById('pbAudio');
+        const line = (pb.lines || [])[pb.lineIndex || 0];
+        if (!line) { audio.removeAttribute('src'); return; }
+        audio.src = mediaUrl(line.path);
+        audio.onended = () => {
+            pb.lineIndex = (pb.lineIndex || 0) + 1;
+            if (pb.playing) pbPlayLine();
+        };
+        if (pb.playing) audio.play().catch(() => {});
+    }
+
+    function pbDialogueToggled() {
+        const audio = document.getElementById('pbAudio');
+        const entry = pbEntry();
+        const on = document.getElementById('pbDialogue').checked;
+        if (!on) { audio.pause(); audio.removeAttribute('src'); pb.lines = []; return; }
+        if (!entry || entry.kind === 'video') return;
+        pb.lines = entry.audio_lines || (entry.audio ? [{ path: entry.audio.path }] : []);
+        pb.lineIndex = 0;
+        pbPlayLine();
+    }
+
     function pbTick(ts) {
         if (!pb.playing) return;
         const entry = pbEntry();
@@ -33609,6 +33716,23 @@ ${fountainText.slice(0, 50000)}`;
         pbSeekAbsolute(ratio * pb.timeline.total_duration_ms);
     }
 
+    /** Keep the dialogue at the same point in the shot as the picture. */
+    /**
+     * Scrubbing restarts the shot's dialogue from its first line.
+     *
+     * Not seeked to the playhead: the lines are separate files chained on
+     * `ended`, so there is no single timeline position to seek within. Landing
+     * on the first line is honest — you are hearing the shot from the top —
+     * where seeking one file would leave the exchange out of order.
+     */
+    function pbSyncAudio() {
+        const audio = document.getElementById('pbAudio');
+        if (!(pb.lines || []).length) return;
+        pb.lineIndex = 0;
+        audio.pause();
+        pbPlayLine();
+    }
+
     function pbSeekAbsolute(absoluteMs) {
         if (!pb.timeline) return;
         const entry = pb.timeline.entries.find(e => absoluteMs >= e.start_ms && absoluteMs < e.end_ms)
@@ -33622,6 +33746,9 @@ ${fountainText.slice(0, 50000)}`;
         if (entry.kind === 'video' && video.readyState > 0) {
             video.currentTime = pb.localMs / 1000;
         }
+        // The dialogue follows the scrub. Without this, dragging the playhead
+        // leaves the line playing from wherever it happened to be.
+        pbSyncAudio();
         updatePlayhead();
     }
 

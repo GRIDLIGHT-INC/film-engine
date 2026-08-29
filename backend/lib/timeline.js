@@ -60,6 +60,37 @@ function pickAsset(assets, preference) {
 }
 
 /**
+ * The shot's dialogue, one entry per line, in the order it is spoken.
+ *
+ * The filename carries the line index — `{shot}_{character}_{n}.ext` — which is
+ * the only ordering that survives regeneration: created_at records when a line
+ * was made, so re-doing line 2 would move it to the end of the scene.
+ */
+function dialogueLines(assets = []) {
+    const seen = new Map();
+    for (const a of assets) {
+        if (a.asset_type !== 'audio_dialogue' || !a.file_name) continue;
+        const prev = seen.get(a.file_name);
+        // Newest row for a given file wins: the bytes were overwritten, so the
+        // older rows describe a recording that no longer exists.
+        if (!prev || String(a.created_at || '') > String(prev.created_at || '')) {
+            seen.set(a.file_name, a);
+        }
+    }
+    return [...seen.values()]
+        .map(a => {
+            const m = /_(\d+)\.[a-z0-9]+$/i.exec(a.file_name);
+            return {
+                path: a.file_path,
+                file_name: a.file_name,
+                index: m ? Number(m[1]) : 0,
+                duration_ms: Number(a.duration_ms) || 0,
+            };
+        })
+        .sort((a, b) => a.index - b.index);
+}
+
+/**
  * Resolve what is playable for one shot.
  * Returns { kind, video, still, audio, missing } where kind is
  * 'video' | 'still' | 'empty'.
@@ -83,6 +114,24 @@ function resolveShotMedia(assets = []) {
         } : null,
         still: still ? { type: still.asset_type, path: still.file_path } : null,
         audio: audio ? { type: audio.asset_type, path: audio.file_path } : null,
+        /*
+         * EVERY line of the shot, in order.
+         *
+         * `audio` is one asset, which is right for a finished mix and wrong for
+         * dialogue: a shot holds one file per line, so attaching one meant
+         * playback spoke the first line of a four-line exchange and fell silent
+         * — you could watch the scene and never hear it play.
+         *
+         * Deduplicated by FILE NAME, newest first. Regenerating a shot's
+         * dialogue writes over the same per-line filenames and inserts a new
+         * row each time, so one four-line shot had seventeen rows pointing at
+         * four files; without this it would speak every line four times.
+         *
+         * Ordered by the line index in the name (`1B_RAY_0.mp3`), because
+         * created_at only reflects the order they were generated in, and a
+         * regenerated single line would jump to the end of the scene.
+         */
+        audio_lines: dialogueLines(assets),
         // A shot with nothing at all is a hole in the cut. Surfacing it is the
         // point — a player that silently skips empties hides unfinished work.
         missing: kind === 'empty',

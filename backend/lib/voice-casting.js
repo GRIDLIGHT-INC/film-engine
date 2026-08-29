@@ -117,6 +117,10 @@ function normaliseVoice(v) {
         use_case: labels.use_case || labels['use case'] || null,
         preview_url: v.preview_url || null,
         category: v.category || null,
+        // Learned from a refusal, not read from `category` — every voice in the
+        // list reports "premade", including ones a free plan cannot use.
+        usable: v.usable !== false,
+        unusable_reason: v.unusable_reason || null,
     };
 }
 
@@ -194,6 +198,9 @@ function suggestVoices(character, catalogue, takenBy) {
         if (band && v.age === band) { score += 2; why.push(String(v.age).replace('_', ' ')); }
         const takenName = taken[v.voice_id] || null;
         if (takenName) score -= 3;
+        // A voice this plan has been refused ranks below everything: still
+        // listed, because upgrading is a real option, but never suggested.
+        if (v.usable === false) score -= 20;
         return { ...v, score, why, taken_by: takenName };
     });
 

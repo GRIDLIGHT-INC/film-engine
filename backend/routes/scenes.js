@@ -70,6 +70,37 @@ function listScenes(req, res, projectId) {
         scene.shot_count = countStmt.get(scene.id).count;
     }
 
+    /*
+     * How many spoken lines each scene holds.
+     *
+     * Because a control that cannot work should say so BEFORE it is pressed.
+     * The table-read button was offered on every scene, and on a scene with no
+     * dialogue it wrote one line into the status bar at the foot of the screen
+     * and did nothing else — indistinguishable from a broken button, and
+     * reported as exactly that.
+     *
+     * Counted in ONE pass over the script rather than per scene: only
+     * scene_heading rows carry a scene_number, so the lines belonging to a
+     * scene are the ones between its heading and the next.
+     */
+    const script = db.prepare(
+        'SELECT id FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1'
+    ).get(projectId);
+    const lines = {};
+    if (script) {
+        let current = null;
+        for (const el of db.prepare(
+            'SELECT element_type, scene_number FROM film_script_elements WHERE script_id = ? ORDER BY element_index'
+        ).all(script.id)) {
+            const type = String(el.element_type || '').replace(/_/g, '-');
+            if (type === 'scene-heading') { current = String(el.scene_number); lines[current] = lines[current] || 0; continue; }
+            if (type === 'dialogue' && current !== null) lines[current] = (lines[current] || 0) + 1;
+        }
+    }
+    for (const scene of rows) {
+        scene.dialogue_lines = lines[String(scene.scene_number)] || 0;
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ scenes: rows }));
 }
