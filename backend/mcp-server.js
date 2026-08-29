@@ -146,7 +146,16 @@ const METHODS = {
         return {
             protocolVersion: SUPPORTED_PROTOCOLS.includes(asked) ? asked : DEFAULT_PROTOCOL,
             capabilities: { tools: { listChanged: false } },
-            serverInfo: SERVER_INFO,
+            /*
+             * The build, not a constant nobody updates.
+             *
+             * A host fixes its tool list when it spawns this process, so the
+             * only record of WHICH build a connection is serving is what it
+             * says here. `0.1.0` told a reader nothing; `0.1.0+206tools.<when>`
+             * makes the age of a connection answerable without reading a
+             * process table.
+             */
+            serverInfo: require('./lib/mcp-build').serverInfo(SERVER_INFO),
             instructions: INSTRUCTIONS,
         };
     },
@@ -181,7 +190,20 @@ const METHODS = {
         // An unadvertised name is the caller's mistake about the protocol, not
         // a tool that ran badly, so it is a JSON-RPC error.
         if (result && result.unknownTool) {
-            throw Object.assign(new Error(result.error), { code: -32602 });
+            /*
+             * The one channel that reaches a stale connection.
+             *
+             * A host's tool list is fixed when this process spawns, so a tool
+             * shipped afterwards is invisible AND indistinguishable from one
+             * that was never built — a connected model checked the name,
+             * searched by keyword, re-queried, correctly found nothing, and
+             * offered to design a pair that already existed. Every step sound;
+             * the information unreachable. A diagnostic TOOL would not help:
+             * it would be missing from exactly the connections that need it.
+             */
+            let note = null;
+            try { note = require('./lib/mcp-build').stalenessNote(); } catch (_) { note = null; }
+            throw Object.assign(new Error(note ? `${result.error}. ${note}` : result.error), { code: -32602 });
         }
 
         const payload = toolResult(result);

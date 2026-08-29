@@ -8,6 +8,32 @@ family added, that test fails rather than this page quietly going stale.
 
 ---
 
+## If Claude says a tool does not exist
+
+**Restart Claude Desktop.** Quit it fully and reopen it.
+
+Claude Desktop starts the Film Engine MCP server once, when the app launches,
+and the list of tools that connection can see is fixed at that moment. A tool
+shipped afterwards is invisible to that conversation — and invisible in a way
+that looks exactly like it was never built. Asked to use `analysis_brief`, a
+connected model checked the name, searched the catalogue by keyword, re-queried
+the server, correctly found nothing, and offered to design the pair that already
+existed. Every step of that reasoning was right; the tool list it was reading
+was nineteen hours old.
+
+Nothing inside the tool list can warn you about this, because a stale connection
+serves a stale list — a diagnostic tool would be missing from exactly the
+connections that need it. Two things do reach it:
+
+- **`initialize`** reports the build, e.g. `0.1.0+206tools.2026-08-29T18:39:00Z`.
+  That timestamp is when the connection's server process started.
+- **Calling a tool this build does not have** returns an error that names the
+  tools on disk it is missing and tells you to reconnect.
+
+If a restart does not fix it, the tool genuinely is not built.
+
+---
+
 ## Do I have to name the tools?
 
 **No.** Say what you want in natural language and Claude picks the tool.

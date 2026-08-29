@@ -141,6 +141,7 @@ film-engine/
 │   │   ├── flow-node-types.js    # Runtime node-type registry: ports, kinds, arity (Phase 1)
 │   │   ├── flow-seed.js          # Built-in flow derived from PIPELINE_STEPS (Phase 1)
 │   │   ├── mcp-tools.js          # MCP tool surface, generated from the registries
+│   │   ├── mcp-build.js         # Which build a connection is actually serving
 │   │   ├── shot-motion.js       # A camera move, seen over the still you already have
 │   │   ├── previs-camera.js      # Previs optics: FOV, framing distance, DOF (Phase 0)
 │   │   ├── previs-blocking.js    # Previs blocking: rigs, movement paths, shot solving (Phase 1)
@@ -220,6 +221,7 @@ film-engine/
 │       ├── screenplay-drift.test.js    # A rewrite flags the shots written from the old draft
 │       ├── impact.test.js              # A changed frame warns that the footage built on it is behind
 │       ├── mcp-no-server-llm.test.js   # No MCP tool hands the reasoning back to a server-side LLM
+│       ├── mcp-staleness.test.js  # A connection that predates the capability it is asked for
 │       ├── scene-edit.test.js          # One scene changes; every other scene survives byte-identical
 │       ├── live-events.test.js         # Another process's write reaches the page; our own does not
 │       ├── story-bible.test.js         # A section revised flags only what was written from it
@@ -1781,6 +1783,21 @@ The board showed `establishing · 40mm anamorphic · push-in · blue-hour` and o
 
 Camera and lighting **merge** into what the card already holds rather than being rebuilt from the four visible fields — a card carries sensor, aperture and height the editor does not show, and rebuilding would drop whatever previs wrote the last time the shot was blocked. A value the card carries that the current list does not is kept and labelled, never silently reset.
 
+### A Connection That Predates the Capability
+*"Claude on trying to analyze the screenplay: Those two tools don't exist. I checked by name, searched the film-engine catalogue by keyword, and re-queried the server to be sure it wasn't a stale tool list — 289 tools, nothing added, no `analysis_*` of any kind."*
+
+Every step of that reasoning was sound and the conclusion was wrong. The tools existed, were served over the wire, and could be listed from a process spawned with **the same node binary the host uses** — 206 tools, `analysis_brief` and `analysis_write` among them. What the host was reading was a tool list fixed at **Fri 28 Aug 13:54**, and the tools shipped at **Sat 29 Aug 08:26**: nineteen hours older than the capability it was asked for.
+
+An agent host spawns `backend/mcp-server.js` once, at app start, and keeps that process. So `tools/list` is answered from a registry built when the process loaded, and a tool shipped afterwards is invisible — **indistinguishable from one that was never built**. The connected model even considered staleness and ruled it out, because re-querying the same stale process returns the same list.
+
+**Nothing in the tool list can warn about this**, and that is the whole design constraint: a stale process serves a stale list, so a diagnostic *tool* would be missing from exactly the connections that need it. Two channels do reach a stale process, and both are used. `initialize` now reports the build — `0.1.0+206tools.<when the process started>` instead of a constant nobody updates — so the age of a connection is answerable without reading a process table. And calling a name the build does not have returns an error that **names the tools on disk it is missing** and says to reconnect.
+
+`lib/mcp-build.js` does a real **diff**, not a timestamp comparison: it re-reads the registry from disk and compares the names a fresh process would serve against the ones this one is serving. *"Something changed"* would fire on every save and be ignored within a day; *"this connection does not have analysis_brief, analysis_write"* is a sentence someone can act on. Only the two modules that decide **which tools exist** are watched — route modules change behaviour, and including them would flag every backend edit.
+
+Two details are load-bearing. The check **restores the require cache exactly**, because a diagnostic that leaves the process in a different state than it found it is worse than no diagnostic. And an unreadable registry reports **cannot-tell**, not "everything is missing" — reading the live list as empty compares as *"this connection is missing all 206 tools"*, which is the same class of failure as the one being fixed: a confident wrong answer. That one was found by mutation, not by reading.
+
+The test also spawns the server **the way a host does** and asserts the tools a client receives are the tools the registry declares — the other half of the same failure, and one a registry test cannot see.
+
 ### Revising a Story From an Agent (98 tools)
 The MCP surface could generate a film and could not **change** one. `script_get` existed with no write, so a screenplay was readable and immutable; there was no breakdown tool, so even a screenplay edited by hand could not be re-derived into scenes and shots; and `shot_create`/`shot_delete` existed while the scene card — the thing every frame is generated from — had no update. An agent could build a production from scratch and then had to watch a human revise it.
 
@@ -2766,6 +2783,7 @@ node --test backend/tests/script-revision.test.js
 node --test backend/tests/screenplay-drift.test.js
 node --test backend/tests/impact.test.js
 node --test backend/tests/mcp-no-server-llm.test.js
+node --test backend/tests/mcp-staleness.test.js
 node --test backend/tests/scene-edit.test.js
 node --test backend/tests/live-events.test.js
 node --test backend/tests/story-bible.test.js
