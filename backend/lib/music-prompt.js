@@ -82,6 +82,36 @@ const TIME_AMBIENT_MODIFIER = {
  *        out, one is required lazily — so every existing caller measures the
  *        real length with no change at the call site, which is the point.
  */
+/**
+ * The prompt, within the ceiling, with the musical words kept.
+ *
+ * A music model is being asked what the cue SOUNDS like. Measured on The Glass
+ * Harbour, the assembled prompt came out over three thousand characters,
+ * because `film_scenes.description` there is the whole scene's action — camera
+ * moves, blocking, every beat — and the instruments and genre sat at the very
+ * end, where a truncating model drops them first.
+ *
+ * So the trim takes from the FRONT: the description is the longest part and the
+ * least musical, and cutting the instruments to keep a camera move would be the
+ * wrong trade every time. Cut at a sentence boundary where possible, so the
+ * model does not read half a thought.
+ */
+function fitMusicPrompt(parts) {
+    const { MUSIC_PROMPT_LIMIT, summarise } = require('./scene-score');
+    const list = parts.filter(Boolean);
+    const joined = list.join(', ');
+    if (joined.length <= MUSIC_PROMPT_LIMIT) return joined;
+
+    const [first, ...rest] = list;
+    const tail = rest.join(', ');
+    // Everything after the description is short and load-bearing; if the tail
+    // alone overruns there is nothing sensible left to cut, so it is returned
+    // whole rather than mangled.
+    const room = MUSIC_PROMPT_LIMIT - tail.length - 2;
+    if (room < 40) return tail;
+    return [summarise(first, room), tail].filter(Boolean).join(', ');
+}
+
 function buildMusicPrompt(musicCue, scene, project, opts) {
     const cue = musicCue || {};
     const mood = cue.mood || 'calm';
@@ -174,7 +204,7 @@ function buildMusicPrompt(musicCue, scene, project, opts) {
 
     return {
         type: 'score',
-        prompt: promptParts.join(', '),
+        prompt: fitMusicPrompt(promptParts),
         duration_s: durationS,
         duration_source: durationSource,
         ...(durationNote ? { duration_note: durationNote } : {}),

@@ -39,6 +39,7 @@ const { handleDashboard } = require('../routes/dashboard');
 const { handleStoryStructure } = require('../routes/story-structure');
 const { handleStoryDevelopment } = require('../routes/story-development');
 const { handleSubjectGallery } = require('../routes/subject-gallery');
+const { handleMusicGen } = require('../routes/music-gen');
 const { handleVoiceCasting } = require('../routes/voice-casting');
 const { handleScripts } = require('../routes/scripts');
 const { handleScenes } = require('../routes/scenes');
@@ -1584,6 +1585,13 @@ const PRODUCTION_TOOLS = [
             text: { type: 'string', description: 'Required for a text note.' },
         },
         required: ['shot_id', 'kind', 'points'],
+    },
+    {
+        name: 'music_brief',
+        handler: handleMusicGen, method: 'GET',
+        description: 'Everything the engine knows about a scene, for deciding what it should SOUND like: the heading, what happens, who is in it, how many lines of dialogue, how many shots, the film\u2019s genre and the musical clauses of its look — plus the real length of the cut and where that number came from. It returns NO conclusion: what a scene should sound like is a judgement, and you are the model here. Decide the mood, genre, instruments and a reference track, then store them with music_cue_create; a cue somebody wrote always beats the derivation. Watch the dialogue count — a wall-to-wall dialogue scene wants sparse underscore that never becomes melodic, because a melody there fights the words. SPENDS NOTHING.',
+        path: a => `/film/scenes/${a.scene_id}/music/brief`,
+        schema: { scene_id: { type: 'string' } }, required: ['scene_id'],
     },
     {
         name: 'music_cue_create',

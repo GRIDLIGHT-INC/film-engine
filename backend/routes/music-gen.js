@@ -78,6 +78,9 @@ function handleMusicGen(req, res, urlParts, query) {
         const sceneId = urlParts[2];
         if (!UUID_RE.test(sceneId)) return json(res, 400, { error: 'Invalid scene ID' });
 
+        // The brief is a SIBLING of generate, not a child of it: nested inside
+        // the POST branch a GET could never reach it.
+        if (urlParts[4] === 'brief' && req.method === 'GET') return musicBrief(req, res, sceneId);
         if (urlParts[4] === 'generate' && req.method === 'POST') {
             if (urlParts[5] === 'stream') return generateMusicStream(req, res, sceneId);
             return generateMusic(req, res, sceneId);
@@ -138,6 +141,136 @@ function handleMusicGen(req, res, urlParts, query) {
 
 // -- Generate Music Score for a Scene ------------------------------------
 
+/**
+ * Everything the engine knows about a scene, for a score.
+ *
+ * Gathered here rather than at each call site, because three of them build a
+ * music payload and only one of them getting the scene is how a batch comes
+ * back as wallpaper while a single generation sounds right.
+ */
+function sceneScoreContext(scene) {
+    const { sceneCutLength } = require('../lib/clip-coverage');
+    const shots = db.prepare('SELECT id, scene_card_yaml FROM film_shots WHERE scene_id = ?').all(scene.id);
+
+    let dialogueLines = 0;
+    const cast = new Set();
+    for (const shot of shots) {
+        let card = {};
+        try { card = JSON.parse(shot.scene_card_yaml || '{}') || {}; } catch (_) { card = {}; }
+        for (const d of (card.dialogue || [])) {
+            dialogueLines++;
+            if (d.character) cast.add(String(d.character).toUpperCase());
+        }
+        for (const c of (card.characters || [])) {
+            cast.add(String(typeof c === 'string' ? c : (c && c.name) || '').toUpperCase());
+        }
+    }
+    cast.delete('');
+
+    /*
+     * A dialogue-only scene has a length too.
+     *
+     * sceneCutLength reads measured CLIPS, so a scene with no footage returns
+     * null and the cue falls to thirty seconds. The Glass Harbour diner scene
+     * has no clips and 216 seconds of measured dialogue — scoring it at 30
+     * writes a cue for a scene that does not exist.
+     */
+    const dialogueMs = db.prepare(
+        `SELECT COALESCE(SUM(a.duration_ms), 0) AS ms FROM film_assets a
+           JOIN film_shots sh ON sh.id = a.shot_id
+          WHERE sh.scene_id = ? AND a.asset_type = 'audio_dialogue'`).get(scene.id).ms || 0;
+
+    return {
+        characters: [...cast],
+        dialogue_lines: dialogueLines,
+        shot_count: shots.length,
+        cut_ms: sceneCutLength(db, scene.id),
+        dialogue_ms: dialogueMs,
+    };
+}
+
+/**
+ * The cue this scene is scored from.
+ *
+ * A cue somebody WROTE always wins — it is the musical direction, and deriving
+ * over it would overrule the director. With no cue, the scene's own facts are
+ * used rather than the defaults, which is the whole fix: the old fallback was
+ * `mood: calm, genre: ambient` for every scene in every film.
+ */
+function cueForScene(scene, project, body) {
+    const { scoreBrief, cueFromBrief, cueSeconds } = require('../lib/scene-score');
+    const written = db.prepare(
+        'SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(scene.id);
+    const context = sceneScoreContext(scene);
+
+    const length = cueSeconds({
+        cue_ms: written && written.duration_ms,
+        cut_ms: context.cut_ms,
+        dialogue_ms: context.dialogue_ms,
+        explain: true,
+    });
+
+    if (written) {
+        return { cue: written, context, length, derived: false,
+            brief: scoreBrief(scene, context, project) };
+    }
+
+    const brief = scoreBrief(scene, context, project);
+    const derived = cueFromBrief(brief);
+    // A body may still steer it: mood and genre are judgements, and a caller
+    // saying "make it tense" must beat a derivation that had no opinion.
+    if (body && body.mood) derived.mood = body.mood;
+    if (body && body.genre) derived.genre = body.genre;
+    if (body && body.description) derived.description = body.description;
+    if (length.seconds) derived.duration_ms = length.seconds * 1000;
+
+    return { cue: derived, context, length, derived: true, brief };
+}
+
+/**
+ * What this scene is, for somebody deciding what it should sound like.
+ *
+ * FREE, and it returns no conclusion. What a scene should sound like is a
+ * judgement and the connected agent is the model here, so the engine assembles
+ * the facts and validates the answer rather than asking a second LLM what the
+ * music is. Write the answer back with music_cue_create.
+ */
+function musicBrief(req, res, sceneId) {
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!scene) return json(res, 404, { error: 'Scene not found' });
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
+
+    const scored = cueForScene(scene, project, null);
+    const { buildMusicPrompt } = require('../lib/music-prompt');
+    const wouldSend = buildMusicPrompt(scored.cue, scene, project);
+    if (scored.length.seconds) wouldSend.duration_s = scored.length.seconds;
+
+    return json(res, 200, {
+        free: true,
+        scene_id: sceneId,
+        scene: {
+            number: scene.scene_number,
+            heading: `${scene.int_ext || ''} ${scene.location || ''} - ${scene.time_of_day || ''}`.trim(),
+            description: scene.description || null,
+        },
+        facts: scored.brief.facts,
+        length: scored.length,
+        // What a cue somebody already wrote says, or null — so a model knows
+        // whether it is writing the direction or reading it.
+        existing_cue: scored.derived ? null : {
+            mood: scored.cue.mood, genre: scored.cue.genre,
+            description: scored.cue.description,
+            reference_track: scored.cue.reference_track || null,
+        },
+        derived_description: scored.brief.description,
+        would_send: { prompt: wouldSend.prompt, duration_s: wouldSend.duration_s },
+        guidance: 'Decide the mood, the genre, the instruments and a reference track, then store '
+            + 'them with music_cue_create. A cue you write always beats the derivation. Note the '
+            + 'dialogue count: a wall-to-wall dialogue scene wants sparse underscore that never '
+            + 'becomes melodic, because a melody there fights the words.',
+    });
+}
+
 async function generateMusic(req, res, sceneId) {
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
@@ -146,12 +279,21 @@ async function generateMusic(req, res, sceneId) {
     const musicProvider = resolveGenerator('music', spendContext({ id: scene.project_id }, null, scene));
 
     // Find music cues for this scene, or create from request body
-    let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(sceneId);
-    if (!musicCue && req.body) {
-        musicCue = { mood: req.body.mood, genre: req.body.genre, description: req.body.description };
-    }
+    const scored = cueForScene(scene, project, req.body);
+    let musicCue = scored.cue;
 
     const payload = buildMusicPrompt(musicCue, scene, project);
+    /*
+     * The length the SCENE is, not the length a default guessed.
+     *
+     * Named, because "216 seconds because that is how long the dialogue runs"
+     * and "30 seconds because nothing was measured" are different claims and a
+     * director planning against the second needs to know which they have.
+     */
+    if (scored && scored.length && scored.length.seconds) {
+        payload.duration_s = scored.length.seconds;
+        payload.duration_source = scored.length.source;
+    }
 
     const jobId = generateId();
     db.prepare(
@@ -217,8 +359,20 @@ async function generateMusicStream(req, res, sceneId) {
 
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
     const musicProvider = resolveGenerator('music', spendContext({ id: scene.project_id }, null, scene));
-    let musicCue = db.prepare('SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(sceneId);
+    const scored = cueForScene(scene, project, req.body);
+    let musicCue = scored.cue;
     const payload = buildMusicPrompt(musicCue, scene, project);
+    /*
+     * The length the SCENE is, not the length a default guessed.
+     *
+     * Named, because "216 seconds because that is how long the dialogue runs"
+     * and "30 seconds because nothing was measured" are different claims and a
+     * director planning against the second needs to know which they have.
+     */
+    if (scored && scored.length && scored.length.seconds) {
+        payload.duration_s = scored.length.seconds;
+        payload.duration_source = scored.length.source;
+    }
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',

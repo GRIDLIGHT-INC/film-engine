@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**204 tools, 51 families.** Everything the app can do, you can ask for in a
+**205 tools, 51 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -94,6 +94,14 @@ Rewritten dialogue is refused too, and that one is practical as well as
 creative — the Nicholl rules prohibit AI-written dialogue, characters and scene
 description, so a tool that quietly rewrites your work can disqualify the
 screenplay it was helping.
+
+**Scoring a scene** starts with `music_brief`, which is free: it hands you the
+heading, what happens, who is in it, how many lines of dialogue, how many shots,
+the film's look, and the real length of the cut — and returns no conclusion,
+because what a scene should sound like is your judgement. Store it with
+`music_cue_create`; a cue you write always beats the derivation. Watch the
+dialogue count: a wall-to-wall dialogue scene wants sparse underscore that never
+becomes melodic.
 
 **`script_timing` gives three numbers per scene and keeps them apart.** How much
 page it occupies (`4/8`, the way a stripboard writes it), how long it is likely

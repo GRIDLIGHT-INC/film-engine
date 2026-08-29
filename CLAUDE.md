@@ -96,6 +96,7 @@ film-engine/
 │   │   ├── subject-gallery.js     # Reference, concept, inspiration: only one reaches a prompt
 │   │   ├── voice-casting.js       # Cast a voice, hear a line, before anything is shot
 │   │   ├── dialogue-delivery.js   # How a line is SAID, and how long to hold after it
+│   │   ├── scene-score.js        # A score for THIS scene, from facts the engine already holds
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -359,6 +360,7 @@ film-engine/
 │       ├── dialogue-audition.test.js # Hearing a line before anything is shot
 │       ├── dialogue-playback.test.js # Watching the scene AND hearing it
 │       ├── dialogue-delivery.test.js # How a line is said, and what makes it regenerate
+│       ├── scene-score.test.js     # Every scene fact must change the cue it produces
 │       ├── character-sheet.test.js  # Two buttons on the card, and everything else has a home
 │       ├── character-sheet-authoring.test.js # A region with no way in is a label
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
@@ -2339,6 +2341,25 @@ Built to `design_handoff_character_card`: official views top-left, everything wr
 
 Generating views is **all four or one**: a pending plate's own click generates just that view, and the header button asks before spending. It stops on a refusal rather than asking three more times — a refusal repeated is a refusal paid for.
 
+### A Score for THIS Scene, Not for Any Scene
+*"Could we send enough details of the scene to generate a score? We have this tool but it doesn't seem to work."*
+
+It worked. It returned a file. The file was wallpaper. `buildMusicPrompt` read the cue and `project.genre` **and nothing else** — the `scene` it was handed was used solely to work out a duration — so a father meeting the daughter he left nine years ago produced *"calm ambient instrumental soundtrack, piano, acoustic guitar, ambient pad, Drama film score"*, which is what **every scene in every film** produced.
+
+`SCORE_INPUTS` declares the eight facts a score is built from, and every one is asserted **differentially**: change the fact, and what the provider receives must change. Asserting that a field is *read* would not have caught this — the scene was passed in and ignored for four phases.
+
+**One derivation is a craft judgement rather than a transcription.** Sixty-three lines of dialogue means the cue sits *under* two people talking, so it is scored as sparse underscore that never becomes melodic — a melody there fights the words, which is the commonest way a temp score ruins a scene. Energy drops as the dialogue count rises.
+
+**Nothing is invented.** A scene with no time and no place gets neither in its brief: a confident wrong cue is worse than a plain one, because it sounds deliberate. `mood`, `genre` and `instruments` are left NULL rather than guessed — those are the judgement the feature exists to hand to the model.
+
+**The length was 30 seconds for a 202-second scene.** `sceneCutLength` reads measured CLIPS, and a dialogue scene with no footage returns null and falls to a default. The Glass Harbour diner scene has no clips and 202 seconds of measured dialogue. `cueSeconds` walks cue → footage → dialogue → nothing, and **names which one answered**, because "202 seconds because that is how long the dialogue runs" and "30 because nothing was measured" are different claims.
+
+**A music prompt is not a screenplay.** The first derived prompt came out at over **three thousand characters**, because `film_scenes.description` there is the whole scene's action — camera moves, blocking, every beat — with the instruments and genre at the very end where a truncating model drops them first. `MUSIC_PROMPT_LIMIT` is 600 and is **ours**, stated as such: ElevenLabs documents no limit for `/music`. The trim takes from the **front**, at a sentence boundary — the description is the longest part and the least musical, and cutting the instruments to keep a camera move would be the wrong trade every time. The real scene now sends 588 characters that describe the diner, the underscore and the film's amber look.
+
+**The musical judgement is the model's.** `music_brief` hands over the facts, the real length and the prompt that would be sent, returns **no conclusion**, and spends nothing; `music_cue_create` stores what the model decided, and a cue somebody wrote always beats the derivation. The engine assembles and validates; it never asks a second LLM what the music should be.
+
+Verified end to end: a 202-second, 3.2MB score for the diner scene, generated in 19 seconds.
+
 ### How a Line Is Said
 The screenplay carries the direction — `(quietly)`, `(laughing)` — the parser extracts it, and `buildVoicePayload` even put it on the payload as **`emotion`**. It was never sent: **ElevenLabs has no `emotion` field**, so the writer's own delivery note was extracted, carried, and dropped one function short of the request. `phase0-payload-parity` required its *presence*, which is how a dead field survives a parity suite — the payload carried it, so the check passed, and nothing asked whether anything read it.
 
@@ -2735,6 +2756,7 @@ node --test backend/tests/subject-gallery.test.js
 node --test backend/tests/dialogue-audition.test.js
 node --test backend/tests/dialogue-playback.test.js
 node --test backend/tests/dialogue-delivery.test.js
+node --test backend/tests/scene-score.test.js
 node --test backend/tests/character-sheet.test.js
 node --test backend/tests/character-sheet-authoring.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js
