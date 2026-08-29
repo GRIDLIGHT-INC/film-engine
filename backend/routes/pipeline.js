@@ -285,6 +285,136 @@ async function executeStep(stepId, shot, scene, project) {
     }
 }
 
+/*
+ * A scene's score is not a property of one shot.
+ *
+ * Every step in PIPELINE_STEPS declares a `scope`, and this file used to
+ * contain no reading of it: the runners walked shots and ran the whole plan on
+ * each one, so `music` and `ambient` — both scene-scoped, both built from
+ * ctx.scene and byte-identical for every shot in it — were generated once per
+ * SHOT. Measured on a real 13-shot, 3-scene project: 13 music payloads and 13
+ * ambient payloads where 3 and 3 were the work. Nothing failed. You were billed
+ * 4.3x for those two steps and the surplus rows accumulated, because
+ * persistStepResult inserts rather than replaces.
+ *
+ * Derived from the registry rather than naming music and ambient here, so a
+ * tenth step declared scene-scoped later is covered with nothing to remember.
+ * That is the whole reason this defect existed: the field was declared, was
+ * consumed by preflight, media-kinds, the media importer and the MCP layer, and
+ * was never read by the thing it was written for.
+ */
+const SCENE_SCOPED = new Set(PIPELINE_STEPS.filter(s => s.scope === 'scene').map(s => s.id));
+
+/** The key a scene-scoped step is deduplicated on — the scene, not the shot. */
+function sceneStepKey(stepId, scene) {
+    return stepId + ':' + ((scene && scene.id) || 'no-scene');
+}
+
+/**
+ * Should this step run, given what a run has already done?
+ *
+ * Two rules, both from `scope`:
+ *
+ *  - On a run over several shots, a scene-scoped step executes ONCE per scene.
+ *  - On a single-shot run it does not execute at all by default. You asked for
+ *    this shot; the scene's score is not this shot's, and running five shots
+ *    one at a time would otherwise buy five scores exactly as the old bug did.
+ *    `include_scene_steps` opts in for the case where you do want the scene
+ *    finished alongside its shot.
+ *
+ * Skipping is REPORTED rather than silent. A step that quietly does nothing is
+ * indistinguishable from one that ran, which is how the original defect went
+ * unnoticed: the run said complete either way.
+ */
+function sceneScopeGate(stepId, scene, done, opts) {
+    if (!SCENE_SCOPED.has(stepId)) return { run: true };
+    const key = sceneStepKey(stepId, scene);
+    if (done.has(key)) {
+        return { run: false, reason: (opts && opts.shotRun && !(opts && opts.includeSceneSteps))
+            ? 'belongs to the scene, not this shot — pass include_scene_steps to generate it'
+            : 'already generated for this scene in this run' };
+    }
+    done.add(key);
+    return { run: true };
+}
+
+/**
+ * Run a step plan for ONE shot.
+ *
+ * Extracted because three runners needed it and two of them had their own copy
+ * of the loop while the third had none at all. A gate applied to two loops out
+ * of three is worse than no gate: the surface that skipped correctly would make
+ * the one that did not look like a data problem.
+ *
+ * `done` is shared across the shots of a run — that sharing IS the fix for
+ * scene scope. `hooks` carries the differences between a JSON response and an
+ * SSE stream, so neither runner owns sequencing.
+ */
+async function runShotPlan(plan, { shot, scene, project, done, opts, hooks }) {
+    const h = hooks || {};
+    const completed = [], failed = [], skipped = [];
+
+    for (let i = 0; i < plan.length; i++) {
+        const step = plan[i];
+
+        const stop = h.shouldStop && h.shouldStop();
+        if (stop) return { completed, failed, skipped, stopped: stop };
+
+        const gate = sceneScopeGate(step.id, scene, done, opts);
+        if (!gate.run) {
+            skipped.push({ step_id: step.id, reason: gate.reason });
+            if (h.onSkip) h.onSkip(step, gate.reason, i);
+            continue;
+        }
+
+        if (h.onStart) h.onStart(step, i);
+
+        let success = false;
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            const result = await executeStep(step.id, shot, scene, project);
+            if (result.ok) {
+                completed.push(step.id);
+                success = true;
+                if (h.onComplete) h.onComplete(step, i, result);
+                break;
+            }
+            if (attempt < MAX_RETRIES - 1) {
+                if (h.onRetry) h.onRetry(step, attempt);
+                await new Promise(r => setTimeout(r, retryDelay(attempt)));
+            } else if (h.onFailed) {
+                h.onFailed(step, i, result);
+            }
+        }
+
+        if (!success) {
+            failed.push(step.id);
+            /*
+             * A scene-scoped step that failed must be releasable, or one bad
+             * attempt on the first shot means the scene silently never gets its
+             * score: the key would stay claimed for the rest of the run.
+             */
+            if (SCENE_SCOPED.has(step.id)) done.delete(sceneStepKey(step.id, scene));
+        }
+
+        if (h.onProgress) h.onProgress(completed, failed, skipped, i, plan.length);
+    }
+
+    return { completed, failed, skipped, stopped: null };
+}
+
+/**
+ * The set a single-shot run starts with: every scene-scoped step already
+ * "claimed", so none of them fire. Opting in hands back an empty set, which is
+ * the same mechanism a scene run uses — one rule, not two.
+ */
+function shotRunDoneSet(scene, body) {
+    const done = new Set();
+    if (!(body && body.include_scene_steps)) {
+        for (const stepId of SCENE_SCOPED) done.add(sceneStepKey(stepId, scene));
+    }
+    return done;
+}
+
 // -- Run Shot Pipeline (sync) --------------------------------------------
 
 async function runShotPipeline(req, res, shotId) {
@@ -318,43 +448,42 @@ async function runShotPipeline(req, res, shotId) {
 
     activePipelines.set(runId, { status: 'running' });
 
-    const completedSteps = [];
-    const failedSteps = [];
+    const done = shotRunDoneSet(scene, req.body);
+    const outcome = await runShotPlan(plan, {
+        shot, scene, project, done,
+        opts: { shotRun: true, includeSceneSteps: !!(req.body && req.body.include_scene_steps) },
+        hooks: {
+            shouldStop: () => {
+                const st = activePipelines.get(runId);
+                if (!st || st.status === 'cancelled') return 'cancelled';
+                if (st.status === 'paused') return 'paused';
+                return null;
+            },
+            onStart: step => {
+                db.prepare('UPDATE film_pipeline_runs SET current_step = ? WHERE id = ?').run(step.id, runId);
+            },
+            onProgress: (completed, failed) => {
+                const pct = Math.round((completed.length / plan.length) * 100);
+                db.prepare(
+                    `UPDATE film_pipeline_runs SET steps_completed = ?, steps_failed = ?, steps_remaining = ?, progress_pct = ? WHERE id = ?`
+                ).run(JSON.stringify(completed), JSON.stringify(failed),
+                    JSON.stringify(plan.filter(s => !completed.includes(s.id) && !failed.includes(s.id)).map(s => s.id)),
+                    pct, runId);
+            },
+        },
+    });
 
-    for (const step of plan) {
-        const pipeState = activePipelines.get(runId);
-        if (!pipeState || pipeState.status === 'cancelled') {
-            db.prepare('UPDATE film_pipeline_runs SET status = ? WHERE id = ?').run('cancelled', runId);
-            break;
-        }
-        if (pipeState.status === 'paused') {
-            db.prepare('UPDATE film_pipeline_runs SET status = ? WHERE id = ?').run('paused', runId);
-            break;
-        }
+    const completedSteps = outcome.completed;
+    const failedSteps = outcome.failed;
 
-        db.prepare('UPDATE film_pipeline_runs SET current_step = ? WHERE id = ?').run(step.id, runId);
-
-        let success = false;
-        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-            const result = await executeStep(step.id, shot, scene, project);
-            if (result.ok) {
-                completedSteps.push(step.id);
-                success = true;
-                break;
-            }
-            if (attempt < MAX_RETRIES - 1) {
-                await new Promise(r => setTimeout(r, retryDelay(attempt)));
-            }
-        }
-
-        if (!success) failedSteps.push(step.id);
-
-        const pct = Math.round((completedSteps.length / plan.length) * 100);
-        db.prepare(
-            `UPDATE film_pipeline_runs SET steps_completed = ?, steps_failed = ?, steps_remaining = ?, progress_pct = ? WHERE id = ?`
-        ).run(JSON.stringify(completedSteps), JSON.stringify(failedSteps),
-            JSON.stringify(plan.filter(s => !completedSteps.includes(s.id) && !failedSteps.includes(s.id)).map(s => s.id)),
-            pct, runId);
+    if (outcome.stopped) {
+        db.prepare('UPDATE film_pipeline_runs SET status = ? WHERE id = ?').run(outcome.stopped, runId);
+        activePipelines.delete(runId);
+        return json(res, 200, {
+            run_id: runId, shot_id: shotId, status: outcome.stopped,
+            steps_completed: completedSteps, steps_failed: failedSteps,
+            steps_skipped: outcome.skipped, readiness,
+        });
     }
 
     const finalStatus = failedSteps.length > 0 ? 'completed_with_errors' : 'complete';
@@ -365,6 +494,9 @@ async function runShotPipeline(req, res, shotId) {
     json(res, 200, {
         run_id: runId, shot_id: shotId, status: finalStatus,
         steps_completed: completedSteps, steps_failed: failedSteps,
+        // Named, never silent: a scene-scoped step that did not run here is a
+        // decision, and one that looks like nothing happened is the defect.
+        steps_skipped: outcome.skipped,
         total_steps: plan.length, progress_pct: 100,
         readiness,
     });
@@ -419,49 +551,154 @@ async function runShotPipelineStream(req, res, shotId) {
     sendEvent({ type: 'status', phase: 'starting', run_id: runId, shot_id: shotId, total_steps: plan.length,
         steps: plan.map(s => ({ id: s.id, name: s.name })) });
 
-    const completedSteps = [];
+    const done = shotRunDoneSet(scene, req.body);
+    const outcome = await runShotPlan(plan, {
+        shot, scene, project, done,
+        opts: { shotRun: true, includeSceneSteps: !!(req.body && req.body.include_scene_steps) },
+        hooks: {
+            // A client hanging up is a cancellation: there is no one left to
+            // watch, and the steps cost money.
+            shouldStop: () => {
+                const st = activePipelines.get(runId);
+                if (clientGone || res.writableEnded) return 'cancelled';
+                if (!st || st.status === 'cancelled') return 'cancelled';
+                if (st.status === 'paused') return 'paused';
+                return null;
+            },
+            onStart: (step, i) => sendEvent({ type: 'step_start', step_id: step.id, step_name: step.name, step_index: i, total_steps: plan.length }),
+            onComplete: (step, i) => sendEvent({ type: 'step_complete', step_id: step.id, step_index: i, progress_pct: Math.round(((i + 1) / plan.length) * 100) }),
+            onRetry: (step, attempt) => sendEvent({ type: 'step_retry', step_id: step.id, attempt: attempt + 1 }),
+            onFailed: (step, i) => sendEvent({ type: 'step_failed', step_id: step.id, step_index: i }),
+            onSkip: (step, reason, i) => sendEvent({ type: 'step_skipped', step_id: step.id, step_index: i, reason }),
+        },
+    });
 
-    for (let i = 0; i < plan.length; i++) {
-        const step = plan[i];
-        const pipeState = activePipelines.get(runId);
-        // Treat a client disconnect like a cancellation so we stop firing GPU steps.
-        if (clientGone || res.writableEnded || !pipeState || pipeState.status === 'cancelled') {
-            if (!clientGone) sendEvent({ type: 'cancelled', run_id: runId });
+    const completedSteps = outcome.completed;
+
+    if (outcome.stopped) {
+        if (!clientGone) sendEvent({ type: outcome.stopped, run_id: runId });
+        db.prepare('UPDATE film_pipeline_runs SET status = ? WHERE id = ?').run(outcome.stopped, runId);
+        activePipelines.delete(runId);
+        if (!res.writableEnded) { try { res.end(); } catch (_) {} }
+        return;
+    }
+
+    // A run with failed steps is not 'complete'. The stream said it was, while
+    // the JSON runner beside it said completed_with_errors for the same work —
+    // two surfaces disagreeing about whether the film got made.
+    const streamStatus = outcome.failed.length > 0 ? 'completed_with_errors' : 'complete';
+    db.prepare('UPDATE film_pipeline_runs SET status = ?, completed_at = datetime(?) WHERE id = ?')
+        .run(streamStatus, new Date().toISOString(), runId);
+    activePipelines.delete(runId);
+
+    sendEvent({ type: 'result', run_id: runId, status: streamStatus, steps_completed: completedSteps,
+        steps_failed: outcome.failed, steps_skipped: outcome.skipped, total_steps: plan.length });
+    sendEvent({ type: 'done' });
+    res.end();
+}
+
+/*
+ * Scene and project runs used to insert a row, answer 202 "running", and
+ * execute nothing at all. The row stayed at 'running' for ever; every progress
+ * field stayed empty; no asset was produced. It is the same shape as the
+ * assembly step that once returned a hardcoded success — a surface that
+ * reports work it never did.
+ *
+ * Both now run here, and both run SEQUENTIALLY. Firing several generations at
+ * one provider concurrently is how a queue earns a 429, and the retry costs
+ * more than the wait — the same reasoning the compass sweep is built on.
+ *
+ * The `done` set is shared across every shot of the run, which is what makes a
+ * scene-scoped step happen once per scene rather than once per shot.
+ */
+async function executeShots({ runId, shots, project, body }) {
+    const done = new Set();
+    const sceneCache = new Map();
+    const completedSteps = [], failedSteps = [], skippedSteps = [];
+    let totalPlanned = 0;
+
+    for (const shot of shots) {
+        const state = activePipelines.get(runId);
+        if (!state || state.status === 'cancelled') {
             db.prepare('UPDATE film_pipeline_runs SET status = ? WHERE id = ?').run('cancelled', runId);
             activePipelines.delete(runId);
-            if (!res.writableEnded) { try { res.end(); } catch (_) {} }
+            return;
+        }
+        if (state.status === 'paused') {
+            db.prepare('UPDATE film_pipeline_runs SET status = ? WHERE id = ?').run('paused', runId);
             return;
         }
 
-        sendEvent({ type: 'step_start', step_id: step.id, step_name: step.name, step_index: i, total_steps: plan.length });
-
-        let success = false;
-        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-            const result = await executeStep(step.id, shot, scene, project);
-            if (result.ok) {
-                completedSteps.push(step.id);
-                success = true;
-                sendEvent({ type: 'step_complete', step_id: step.id, step_index: i, progress_pct: Math.round(((i + 1) / plan.length) * 100) });
-                break;
-            }
-            if (attempt < MAX_RETRIES - 1) {
-                sendEvent({ type: 'step_retry', step_id: step.id, attempt: attempt + 1 });
-                await new Promise(r => setTimeout(r, retryDelay(attempt)));
-            }
+        if (!sceneCache.has(shot.scene_id)) {
+            sceneCache.set(shot.scene_id, db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id));
         }
+        const scene = sceneCache.get(shot.scene_id);
+        if (!scene) continue;
 
-        if (!success) {
-            sendEvent({ type: 'step_failed', step_id: step.id, step_index: i });
+        let sceneCard = {};
+        try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+        const plan = buildStepPlan({ skip_steps: autoSkipSteps(sceneCard, body), ...(body || {}) });
+        totalPlanned += plan.length;
+
+        const outcome = await runShotPlan(plan, {
+            shot, scene, project, done,
+            // Not a shot run: this IS the scene, so scene-scoped steps belong
+            // to it — once, on whichever shot reaches them first.
+            opts: { shotRun: false },
+            hooks: {
+                shouldStop: () => {
+                    const st = activePipelines.get(runId);
+                    if (!st || st.status === 'cancelled') return 'cancelled';
+                    if (st.status === 'paused') return 'paused';
+                    return null;
+                },
+                onStart: step => {
+                    db.prepare('UPDATE film_pipeline_runs SET current_step = ? WHERE id = ?')
+                        .run(shot.shot_code + ':' + step.id, runId);
+                },
+            },
+        });
+
+        completedSteps.push(...outcome.completed.map(id => shot.shot_code + ':' + id));
+        failedSteps.push(...outcome.failed.map(id => shot.shot_code + ':' + id));
+        skippedSteps.push(...outcome.skipped.map(sk => shot.shot_code + ':' + sk.step_id));
+
+        db.prepare(
+            `UPDATE film_pipeline_runs SET steps_completed = ?, steps_failed = ?, total_steps = ?, progress_pct = ? WHERE id = ?`
+        ).run(JSON.stringify(completedSteps), JSON.stringify(failedSteps), totalPlanned,
+            Math.round((completedSteps.length / Math.max(totalPlanned, 1)) * 100), runId);
+
+        if (outcome.stopped) {
+            db.prepare('UPDATE film_pipeline_runs SET status = ? WHERE id = ?').run(outcome.stopped, runId);
+            activePipelines.delete(runId);
+            return;
         }
     }
 
-    db.prepare('UPDATE film_pipeline_runs SET status = ?, completed_at = datetime(?) WHERE id = ?')
-        .run('complete', new Date().toISOString(), runId);
+    const status = failedSteps.length > 0 ? 'completed_with_errors' : 'complete';
+    db.prepare('UPDATE film_pipeline_runs SET status = ?, progress_pct = 100, completed_at = datetime(?) WHERE id = ?')
+        .run(status, new Date().toISOString(), runId);
     activePipelines.delete(runId);
+}
 
-    sendEvent({ type: 'result', run_id: runId, steps_completed: completedSteps, total_steps: plan.length });
-    sendEvent({ type: 'done' });
-    res.end();
+/**
+ * Start a run after the response has gone.
+ *
+ * A rejection here must not take the process down — the caller has already been
+ * answered, so there is nobody left to tell except the run row, and a run that
+ * disappears is worse than one marked failed.
+ */
+function startInBackground(runId, work) {
+    activePipelines.set(runId, { status: 'running' });
+    setImmediate(() => {
+        work().catch(err => {
+            try {
+                db.prepare('UPDATE film_pipeline_runs SET status = ?, error_message = ? WHERE id = ?')
+                    .run('failed', String((err && err.message) || err), runId);
+            } catch (_) { /* the row is the only place left to report */ }
+            activePipelines.delete(runId);
+        });
+    });
 }
 
 // -- Run Scene Pipeline --------------------------------------------------
@@ -488,6 +725,8 @@ async function runScenePipeline(req, res, sceneId) {
          VALUES (?, ?, ?, 'scene', 'running', ?, 0)`
     ).run(runId, scene.project_id, sceneId, shots.length);
 
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
+
     json(res, 202, {
         run_id: runId, scene_id: sceneId, status: 'running',
         total_shots: shots.length,
@@ -495,6 +734,8 @@ async function runScenePipeline(req, res, sceneId) {
         readiness: sceneReadiness,
         hint: 'Scene pipeline is running. Check status at GET /film/pipeline/' + runId,
     });
+
+    startInBackground(runId, () => executeShots({ runId, shots, project, body: req.body }));
 }
 
 // -- Run Project Pipeline ------------------------------------------------
@@ -521,12 +762,21 @@ async function runProjectPipeline(req, res, projectId) {
          VALUES (?, ?, 'project', 'running', ?, 0)`
     ).run(runId, projectId, totalShots);
 
+    // In the film's own running order, so a paused or failed run has produced
+    // the FRONT of the picture rather than an arbitrary scatter of it.
+    const shots = db.prepare(
+        `SELECT sh.* FROM film_shots sh JOIN film_scenes sc ON sc.id = sh.scene_id
+         WHERE sc.project_id = ? ORDER BY sc.scene_number, sh.sort_order, sh.shot_code`
+    ).all(projectId);
+
     json(res, 202, {
         run_id: runId, project_id: projectId, status: 'running',
         total_scenes: scenes.length, total_shots: totalShots,
         readiness,
         hint: 'Project pipeline is running. Check status at GET /film/pipeline/' + runId,
     });
+
+    startInBackground(runId, () => executeShots({ runId, shots, project, body: req.body }));
 }
 
 // -- Pipeline Control ----------------------------------------------------

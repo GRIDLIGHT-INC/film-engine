@@ -293,6 +293,7 @@ film-engine/
 │       ├── provider-image-encoding.test.js # A bare base64 blob is not an image a provider accepts
 │       ├── music-prompt.test.js        # Music prompt unit tests
 │       ├── pipeline-engine.test.js     # Pipeline engine unit tests
+│       ├── pipeline-scope.test.js      # A scene's score is not a property of one shot
 │       ├── viseme-builder.test.js     # Viseme builder unit tests
 │       ├── video-stitcher.test.js     # Video stitcher unit tests
 │       ├── audio-mixer.test.js        # Audio mixer unit tests
@@ -2278,6 +2279,19 @@ Per-shot and per-project audio mixing: dialogue (0dB) + music (-8dB) + SFX (-4dB
 ### Smart Scheduling
 Optimizes pipeline execution by grouping steps by GPU model to minimize VRAM swapping. Model profiles track VRAM requirements and load times for 10 models. VRAM budget management (default 24GB) with residency suggestions (keep frequent models loaded, evict rare ones).
 
+### A Scene's Score Is Not a Property of One Shot
+Every entry in `PIPELINE_STEPS` declares a `scope`, and `routes/pipeline.js` contained **no reading of it**. The runners walked shots and ran the whole plan on each one, so `music` and `ambient` — both scene-scoped, both built from `ctx.scene` and byte-identical for every shot in it — were generated once **per shot**. Measured on a real 13-shot, 3-scene project: **13 music payloads and 13 ambient payloads** where 3 and 3 were the work. Nothing failed; the spend was 4.3× on those two steps and the surplus rows accumulated, because `persistStepResult` inserts rather than replaces.
+
+Declared, exported, consumed by preflight, `media-kinds`, the media importer and the MCP layer — and never read by the thing it was written for. `SCENE_SCOPED` is derived from the registry, so a tenth scene-scoped step is covered with nothing to remember.
+
+**Two rules, both from `scope`.** On a run over several shots a scene-scoped step executes **once per scene**, keyed by scene id. On a **single-shot** run it does not execute at all: you asked for this shot, and running five shots one at a time would otherwise buy five scores exactly as the bug did. `include_scene_steps` opts in. Skipping is **reported**, never silent — a step that quietly does nothing is indistinguishable from one that ran, which is precisely how this went unnoticed: the run said complete either way. A scene-scoped step that **fails** releases its key, or one bad attempt on the first shot means the scene silently never gets its score.
+
+**And the defect sat in a path that never ran.** `runScenePipeline` and `runProjectPipeline` inserted a run row, answered **202 "running"**, and executed nothing at all — the row stayed at `running` for ever, every progress field empty, no asset produced. Same shape as the assembly step that once returned a hardcoded success. Both execute now, **sequentially** (concurrent generations against one provider is how a queue earns a 429, and the retry costs more than the wait), over the project's own running order so a paused run has produced the front of the picture rather than a scatter of it.
+
+`runShotPlan` is the one loop. Three runners needed it: two had their own copy and the third had none, and a gate applied to two of three is worse than none — the surface that skipped correctly would make the one that did not look like a data problem. The SSE runner also reported `complete` unconditionally while the JSON runner beside it said `completed_with_errors` for the same work.
+
+`tests/pipeline-scope.test.js` counts the **assets** a run registers, because that is the only evidence that survives every way of getting this wrong: a source check for the word `scope` passes against a runner that reads it and ignores it, and counting gateway requests cannot separate music from ambient — the Gridlight adapter posts all three audio capabilities to `/music`. It resolves step → capability → asset type rather than indexing `ASSET_TYPE` by step id, which works for `music` and `ambient` and silently returns `undefined` for `keyframe` (the `image` capability) — a count of `undefined` is 0, which reads as "the step did not run" for a step that ran perfectly. Four mutations fail it: a gate that always allows, a shot run that claims nothing, a scene runner that executes nothing, and one that dedupes shot work too.
+
 ### QA & Quality Gates
 11 automated QA checks across shot/scene/project scopes with error/warning/info severity. Shot checks: keyframe, video, dialogue audio, lipsync, duration. Scene checks: music, ambient, shot completeness. Project checks: timeline, continuity, audio mix. Continuity checker validates lighting consistency and character presence across shots. Acceptance rubric: min 1024×576 resolution, 24fps, -24 to -14 LUFS, h264/h265 codec, 100% shot coverage.
 
@@ -2528,6 +2542,7 @@ node --test backend/tests/video-surfaces.test.js
 node --test backend/tests/provider-image-encoding.test.js
 node --test backend/tests/music-prompt.test.js
 node --test backend/tests/pipeline-engine.test.js
+node --test backend/tests/pipeline-scope.test.js
 node --test backend/tests/viseme-builder.test.js
 node --test backend/tests/video-stitcher.test.js
 node --test backend/tests/audio-mixer.test.js

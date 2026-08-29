@@ -104,7 +104,17 @@ describe('Pipeline end-to-end (scene → final, mock gateway)', () => {
     });
 
     it('runs every generation step against the mock gateway', async () => {
-        const res = await request(`/film/shots/${shotId}/pipeline/run`, { method: 'POST', body: {} });
+        /*
+         * include_scene_steps because this asserts that EVERY step can run, and
+         * `music` and `ambient` are scene-scoped: a single-shot run skips them
+         * by default now, since running five shots one at a time would
+         * otherwise buy five copies of one scene's score. The default is proven
+         * in pipeline-scope.test.js; what is proven here is that each step
+         * works, so the run has to ask for all of them.
+         */
+        const res = await request(`/film/shots/${shotId}/pipeline/run`, {
+            method: 'POST', body: { include_scene_steps: true },
+        });
         assert.equal(res.status, 200);
         const done = res.data.steps_completed;
         // Dialogue present → nothing auto-skipped: all 8 generation steps run.
