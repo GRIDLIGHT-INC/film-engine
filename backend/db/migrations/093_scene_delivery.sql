@@ -1,0 +1,12 @@
+-- How a scene is PLAYED, for every line in it that does not say otherwise.
+--
+-- buildVoicePayload took a line, a voice and a character and no scene at all,
+-- so "the details of the scene" reached nothing: a line in a tense scene was
+-- read exactly as neutrally as a line in a calm one unless the writer had put a
+-- parenthetical on it.
+--
+-- It sits BETWEEN the character and the line in precedence — more specific than
+-- how someone always sounds, less specific than how they say this one line.
+-- Empty means nothing is applied, so a project that never writes one builds the
+-- same requests it does today.
+ALTER TABLE film_scenes ADD COLUMN delivery_direction TEXT DEFAULT '';

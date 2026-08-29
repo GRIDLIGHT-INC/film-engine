@@ -509,6 +509,26 @@ function updateScene(req, res, sceneId) {
         return res.end(JSON.stringify({ error: 'Scene not found' }));
     }
 
+    /*
+     * How this scene is PLAYED.
+     *
+     * Handled before the fountain requirement, because it is a property of the
+     * scene rather than of its text — writing it must not require re-sending
+     * the whole screenplay, and a splice must not be the price of a note about
+     * performance.
+     */
+    if (req.body && req.body.delivery_direction !== undefined && req.body.fountain === undefined) {
+        db.prepare('UPDATE film_scenes SET delivery_direction = ? WHERE id = ?')
+            .run(String(req.body.delivery_direction || '').slice(0, 500), sceneId);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            ...db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId),
+            changed: true,
+            note: 'Applies to every line in this scene that carries no parenthetical of its own. '
+                + 'Lines already generated are unaffected until they are regenerated.',
+        }));
+    }
+
     const text = String((req.body && req.body.fountain) || '').trim();
     if (!text) {
         res.writeHead(400, { 'Content-Type': 'application/json' });

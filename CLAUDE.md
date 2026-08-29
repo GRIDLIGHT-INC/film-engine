@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (89 migrations)
+│   │   └── migrations/     # SQL migration files (92 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -109,6 +109,7 @@ film-engine/
 │   │   ├── media-imports.js       # Every external asset: plates, board images, footage and sound
 │   │   ├── media-kinds.js         # Where a generated media file goes, said once
 │   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending
+│   │   ├── sequence-frames.js   # A motion board: the chosen frames hold, ten review images say the rest
 │   │   ├── ffmpeg.js              # Finding an encoder, and joining clips into one file
 │   │   ├── clip-coverage.js       # One clip containing several shots, read by all five assemblies
 │   │   ├── running-order.js       # The order the film plays in, said once for all five assemblies
@@ -143,6 +144,8 @@ film-engine/
 │   │   ├── mcp-tools.js          # MCP tool surface, generated from the registries
 │   │   ├── mcp-build.js         # Which build a connection is actually serving
 │   │   ├── shot-motion.js       # A camera move, seen over the still you already have
+│   │   ├── previs-toolbar.js    # What all those buttons are, and which one keeps a move
+│   │   ├── subject-sheets.js    # A location and a prop are workspaces too
 │   │   ├── previs-camera.js      # Previs optics: FOV, framing distance, DOF (Phase 0)
 │   │   ├── previs-blocking.js    # Previs blocking: rigs, movement paths, shot solving (Phase 1)
 │   │   ├── previs-primitives.js  # Stage primitives: standing figure, box, sphere (Phase 5)
@@ -207,6 +210,8 @@ film-engine/
 │       ├── paid-image-controls.test.js # Every image AND video button: pick the generator, read the prompt, edit it
 │       ├── thumbnails.test.js         # Boards fetch thumbnails; bundles survive subdirectories
 │       ├── shot-motion.test.js       # The move plays over the frame, and says what showing it costs
+│       ├── director-controls.test.js # Redo the dialogue, direct the score, read the toolbar
+│       ├── subject-sheets.test.js  # Every region of a location and prop sheet is drawn and fillable
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop
 │       ├── decision-parity.test.js     # Every director decision, held to five links across both surfaces
@@ -262,6 +267,7 @@ film-engine/
 │       ├── media-imports.test.js        # Registry-derived persistent Storyboard, Previs image, and GLB import contract
 │       ├── plate-upload.test.js         # Every kind of reference can be uploaded, not only generated
 │       ├── video-sequence.test.js       # Keyframe ceilings per adapter; N shots plan N-1 segments in order
+│       ├── sequence-frames.test.js   # The motion board holds its anchors and bounds what it shows
 │       ├── clip-coverage.test.js        # One clip, several shots, honoured by every assembly surface
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
@@ -2588,6 +2594,23 @@ Prose that states what happens, in order, without dialogue or format — what th
 
 Drafting the screenplay from it happens **in the conversation**: Claude reads the treatment, writes the Fountain itself, and saves it with `script_write`. Nothing here generates a screenplay.
 
+### Four Things a Director Asked For
+*"Could we add a full regenerate dialogue button on playback… are we also sending the details of the scene so the emotions of the dialogue are accurate? Still don't have a way to add details to the music generator when we want (do not regenerate it again though). How does the camera movements saved in previs? What are all the buttons on the top right… Also, like we did for the character cards, we have the location and prop card HTML."*
+
+**The scene reached nothing.** `buildVoicePayload(line, voiceProfile, character)` took no scene at all, so "the details of the scene" was answered by the writer's parenthetical or by nothing — a line in a tense scene was read exactly as neutrally as a line in a calm one. `film_scenes.delivery_direction` sits **between** the character and the line: more specific than how somebody always sounds, less specific than how they say this one line. Empty applies nothing, so a project that never writes one builds byte-identical requests. Three sites built a voice payload independently and one `sceneContext()` now feeds all of them — a direction honoured by two of three means the same line is read differently depending on which button generated it.
+
+**`regenerate` had no control.** `routes/voice.js` has accepted it since the reuse-by-hash skip shipped, and nothing on any page sent it — so after a rewrite, a recast or a change of direction, pressing Generate reused the old file and looked like it did nothing. **Redo dialogue** is scoped to the scene on screen rather than the film, because a feature's dialogue regenerated from a transport button is a bill nobody meant to run, and it says outright that it buys a new take of every line including unchanged ones.
+
+**The music details were behind the wrong door.** They lived only in the cue form on the Music Cues page, reachable through a button called *+ Music Cue* — the wrong door for a scene that already has a score. The direction now sits on the scene, where the score is, and **generates nothing**: the next Regen picks it up, and so does the free brief.
+
+**Twelve buttons, three of them saying "save" about three different things** — the blocking, the scene card, and a PNG. Nothing said which one keeps a camera move, which is what was asked. `lib/previs-toolbar.js` is the answer and is **derived**: a control on the page that is not in it, or an entry with no control, fails. Grouped by the job — stage it, look at it, commit it, take something out — and one line under the bar says plainly that a camera move is kept by **Save blocking**, that **Apply to card** writes the angle onto the shot, and that **Save frame** and **Record move** write files and change nothing.
+
+**A location and a prop are workspaces too.** The character card became a sheet and these stayed a form in a modal — the same gap seen from two other subjects. `lib/subject-sheets.js` declares **10 location regions** and **9 prop regions** from the design handoffs, each with an `anchor` the renderer must contain, so a sheet cannot draw the plates and silently drop the continuity states. Migration 092 adds what a design department actually keeps: what a prop is made of, what state it is in for this scene, what it must never be, whether it has to *work* on camera. Read-only regions state what they are derived FROM — an omission that is stated is a decision.
+
+The cards drop to **two buttons** and everything else moves onto the sheet, held by `RELOCATED` to still having a home: removing a button is only a simplification if the thing it did is still reachable. The sheet's upload is the **same** `uploadControl` a card used, with the target written as a literal per kind — the media-import contract is derived by looking for that call, and a computed target is invisible to it.
+
+Three existing derived tests caught real regressions in one pass — `scene_update` advertising an argument its body builder never forwarded, both plate uploads losing their registered control, and two fields with no control and no stated reason. That is what those tests are for.
+
 ### Reading a Reading
 *"Can we remove this weird text in the screenplay analysis and present the analysis better?"* — with a screenshot of `Read by round-trip test · draft v15 · 2026-08-29 12:07:03` above a heading saying **Map** and a block of raw JSON.
 
@@ -2645,7 +2668,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (89 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (92 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -2769,6 +2792,8 @@ node --test backend/tests/dry-run.test.js
 node --test backend/tests/paid-image-controls.test.js
 node --test backend/tests/thumbnails.test.js
 node --test backend/tests/shot-motion.test.js
+node --test backend/tests/director-controls.test.js
+node --test backend/tests/subject-sheets.test.js
 node --test backend/tests/previs-storyboard.test.js
 node --test backend/tests/previs-loop.test.js
 node --test backend/tests/decision-parity.test.js
@@ -2813,6 +2838,7 @@ node --test backend/tests/anchor-plate-override.test.js
 node --test backend/tests/location-views.test.js
 node --test backend/tests/plate-upload.test.js
 node --test backend/tests/video-sequence.test.js
+node --test backend/tests/sequence-frames.test.js
 node --test backend/tests/clip-coverage.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/paid-preview.test.js

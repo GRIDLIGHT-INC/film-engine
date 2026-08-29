@@ -32,9 +32,11 @@ function seqConfig(projectId, req) {
 const { resolve } = require('../lib/providers');
 const { providerConfigFor } = require('../lib/provider-config');
 const { planSequence } = require('../lib/video-sequence');
+const { planSequenceFrames, inbetweenPrompt } = require('../lib/sequence-frames');
+const { parseResolution } = require('../lib/project-presets');
 const { importMedia } = require('../lib/media-imports');
 const { persistProviderMedia } = require('../lib/provider-media');
-const { getFileUrl } = require('../lib/file-storage');
+const { getFileUrl, serveFile } = require('../lib/file-storage');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -93,7 +95,7 @@ function shotsOf(row) {
         let card = {};
         try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
         const frame = db.prepare(
-            `SELECT file_path, version FROM film_assets
+            `SELECT id, file_path, file_name, version FROM film_assets
               WHERE shot_id = ? AND asset_type IN ('storyboard', 'keyframe')
               ORDER BY version DESC`).all(shot.id);
         const chosen = shot.current_frame_version
@@ -103,9 +105,272 @@ function shotsOf(row) {
             id: shot.id,
             shot_code: shot.shot_code,
             description: String(card.description || card.action || '').slice(0, 300),
+            direction: String(card.direction || '').slice(0, 1000),
+            camera: card.camera && typeof card.camera === 'object' ? card.camera : {},
             duration_ms: Number(shot.duration_ms) || Number(card.duration_ms) || 5000,
             keyframe: chosen ? chosen.file_path : null,
+            keyframe_asset_id: chosen ? chosen.id : null,
+            keyframe_file_name: chosen ? chosen.file_name : null,
         };
+    });
+}
+
+function motionBoardRows(sequenceId) {
+    return db.prepare(
+        `SELECT f.*, a.file_path, a.file_name, a.created_at AS asset_created_at,
+                sh.shot_code AS source_shot_code
+           FROM film_sequence_frames f
+           LEFT JOIN film_assets a ON a.id = f.asset_id
+           LEFT JOIN film_shots sh ON sh.id = f.source_shot_id
+          WHERE f.sequence_id = ? ORDER BY f.frame_index`
+    ).all(sequenceId);
+}
+
+/**
+ * Make the durable board agree with the sequence plan without overwriting a
+ * generated experiment that still describes the same sampled moment.
+ */
+function syncMotionBoard(row) {
+    const shots = shotsOf(row);
+    const plan = planSequenceFrames(shots);
+    if (plan.refused) return { ...plan, rows: [] };
+    const existing = new Map(motionBoardRows(row.id).map(f => [f.frame_index, f]));
+    const wantedIndexes = new Set(plan.frames.map(f => f.index));
+    const changedAnchor = plan.frames.some(frame => {
+        if (frame.kind !== 'anchor') return false;
+        const old = existing.get(frame.index);
+        const shot = shots.find(item => item.id === frame.source_shot_id);
+        return old && old.asset_id !== (shot && shot.keyframe_asset_id);
+    });
+
+    const write = db.transaction(() => {
+        for (const old of existing.values()) {
+            if (!wantedIndexes.has(old.frame_index)) {
+                db.prepare('DELETE FROM film_sequence_frames WHERE id = ?').run(old.id);
+            }
+        }
+        for (const frame of plan.frames) {
+            const old = existing.get(frame.index);
+            const anchorShot = frame.kind === 'anchor'
+                ? shots.find(s => s.id === frame.source_shot_id) : null;
+            const sameMoment = old
+                && old.kind === frame.kind
+                && old.source_shot_id === frame.source_shot_id
+                && old.from_shot_id === frame.from_shot_id
+                && old.to_shot_id === frame.to_shot_id
+                && (!anchorShot || old.asset_id === anchorShot.keyframe_asset_id)
+                && (frame.kind === 'anchor' || !changedAnchor)
+                && Math.abs(Number(old.time_ms) - frame.time_ms) < 2;
+            if (sameMoment) continue;
+
+            if (old) db.prepare('DELETE FROM film_sequence_frames WHERE id = ?').run(old.id);
+            db.prepare(
+                `INSERT INTO film_sequence_frames
+                    (id, sequence_id, frame_index, time_ms, kind, source_shot_id,
+                     from_shot_id, to_shot_id, asset_id, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ).run(generateId(), row.id, frame.index, frame.time_ms, frame.kind,
+                frame.source_shot_id, frame.from_shot_id, frame.to_shot_id,
+                anchorShot ? anchorShot.keyframe_asset_id : null,
+                anchorShot ? 'approved' : 'missing');
+        }
+    });
+    write();
+    return { ...plan, rows: motionBoardRows(row.id) };
+}
+
+function publicMotionFrame(row, projectId) {
+    let imageUrl = null;
+    if (row.file_name) {
+        imageUrl = row.kind === 'anchor'
+            ? getFileUrl('storyboards', projectId,
+                `${row.source_shot_code || String(row.file_name || '').replace(/\.png$/i, '')}.png`,
+                row.asset_created_at)
+            : getFileUrl('sequence-frames', projectId, row.file_name, row.asset_created_at);
+    }
+    return {
+        id: row.id,
+        index: row.frame_index,
+        time_ms: row.time_ms,
+        kind: row.kind,
+        source_shot_id: row.source_shot_id,
+        from_shot_id: row.from_shot_id,
+        to_shot_id: row.to_shot_id,
+        status: row.status,
+        direction: row.direction || '',
+        prompt: row.prompt || '',
+        error: row.error_message || null,
+        asset_id: row.asset_id || null,
+        image_url: imageUrl,
+    };
+}
+
+function motionBoardRoute(res, id) {
+    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
+    if (!row) return json(res, 404, { error: 'Sequence not found' });
+    const board = syncMotionBoard(row);
+    if (board.refused) return json(res, 409, board);
+    const ceiling = keyframeCeiling(row.project_id);
+    const approved = board.rows.filter(f => f.status === 'approved' && f.asset_id).length;
+    return json(res, 200, {
+        free: true,
+        sequence_id: id,
+        duration_ms: board.duration_ms,
+        frame_count: board.frame_count,
+        interval_ms: board.interval_ms,
+        capped: board.capped,
+        approved,
+        ready: approved === board.rows.length,
+        provider: ceiling.provider,
+        provider_max_images: ceiling.max,
+        provider_ready: !ceiling.unresolved && ceiling.max >= board.rows.length,
+        provider_warning: ceiling.unresolved || (ceiling.max < board.rows.length
+            ? `${ceiling.provider || 'The selected provider'} accepts ${ceiling.max} image(s), but this motion board contains ${board.rows.length}. Select Seedance or another multi-image provider.`
+            : null),
+        frames: board.rows.map(f => publicMotionFrame(f, row.project_id)),
+        note: 'Storyboard anchors are already approved. Generate, revise and approve every in-between before sending the complete board to video.',
+    });
+}
+
+function updateMotionFrame(req, res, sequenceId, frameIndex) {
+    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(sequenceId);
+    if (!row) return json(res, 404, { error: 'Sequence not found' });
+    const board = syncMotionBoard(row);
+    if (board.refused) return json(res, 409, board);
+    const frame = board.rows.find(f => f.frame_index === Number(frameIndex));
+    if (!frame) return json(res, 404, { error: 'Motion-board frame not found' });
+    const body = req.body || {};
+    const direction = body.direction !== undefined
+        ? String(body.direction || '').slice(0, 2000) : frame.direction;
+    let status = frame.status;
+    if (body.status !== undefined) {
+        if (!['draft', 'approved'].includes(body.status)) {
+            return json(res, 400, { error: 'status must be draft or approved' });
+        }
+        if (body.status === 'approved' && !frame.asset_id) {
+            return json(res, 409, { error: 'Generate this frame before approving it' });
+        }
+        status = body.status;
+    }
+    db.prepare(`UPDATE film_sequence_frames SET direction = ?, status = ?,
+                updated_at = datetime('now') WHERE id = ?`).run(direction, status, frame.id);
+    const fresh = motionBoardRows(sequenceId).find(f => f.id === frame.id);
+    return json(res, 200, { frame: publicMotionFrame(fresh, row.project_id) });
+}
+
+function frameFileName(sequenceId, index) {
+    return `motion_${String(sequenceId).slice(0, 8)}_${String(index).padStart(2, '0')}_${generateId().slice(0, 8)}.png`;
+}
+
+async function generateMotionFrames(req, res, sequenceId, frameIndex) {
+    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(sequenceId);
+    if (!row) return json(res, 404, { error: 'Sequence not found' });
+    const board = syncMotionBoard(row);
+    if (board.refused) return json(res, 409, board);
+    const shots = shotsOf(row);
+    const byId = new Map(shots.map(s => [s.id, s]));
+    const wanted = frameIndex === undefined
+        ? board.rows.filter(f => f.kind === 'inbetween' && ['missing', 'failed'].includes(f.status))
+        : board.rows.filter(f => f.kind === 'inbetween' && f.frame_index === Number(frameIndex));
+    if (frameIndex !== undefined && !wanted.length) {
+        return json(res, 400, { error: 'Only generated in-between frames can be regenerated' });
+    }
+    if (!wanted.length) return json(res, 200, { sequence_id: sequenceId, made: [], note: 'No missing frames.' });
+
+    const { generateImageWithFallback } = require('../lib/image-fallback');
+    const { toDataUri } = require('../lib/reference-images');
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(row.project_id);
+    const made = [];
+    let refusal = null;
+
+    for (const target of wanted) {
+        if (refusal) break;
+        const liveRows = motionBoardRows(sequenceId);
+        const from = byId.get(target.from_shot_id);
+        const to = byId.get(target.to_shot_id);
+        const segmentStart = liveRows.find(f => f.source_shot_id === target.from_shot_id);
+        const segmentEnd = liveRows.find(f => f.source_shot_id === target.to_shot_id);
+        const progress = segmentStart && segmentEnd && segmentEnd.frame_index !== segmentStart.frame_index
+            ? (target.frame_index - segmentStart.frame_index) / (segmentEnd.frame_index - segmentStart.frame_index)
+            : 0;
+        const direction = String((req.body && req.body.direction) || target.direction || '').slice(0, 2000);
+        const prompt = inbetweenPrompt({
+            sequenceDescription: row.description,
+            frame: { index: target.frame_index, time_ms: target.time_ms, progress, direction },
+            from, to,
+        });
+        const references = [from && from.keyframe, to && to.keyframe]
+            .filter((value, index, all) => value && all.indexOf(value) === index)
+            .slice(0, 2)
+            .map((filePath, i) => ({ uri: toDataUri(filePath), kind: 'anchor', role: i ? 'destination' : 'continuity' }))
+            .filter(r => r.uri);
+        const claim = db.prepare(`UPDATE film_sequence_frames SET status = 'generating', prompt = ?, direction = ?,
+                    error_message = NULL, updated_at = datetime('now')
+                    WHERE id = ? AND status != 'generating'`).run(prompt, direction, target.id);
+        if (!claim.changes) {
+            refusal = `Frame ${target.frame_index} is already generating.`;
+            break;
+        }
+
+        let result;
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            result = await generateImageWithFallback({
+                prompt,
+                reference_images: references,
+                ...(parseResolution(project && project.target_resolution) || { width: 1280, height: 720 }),
+            }, providerConfigFor(row.project_id), { timeout: 300000 });
+        } catch (err) {
+            refusal = err.message;
+            db.prepare(`UPDATE film_sequence_frames SET status = 'failed', error_message = ?,
+                        updated_at = datetime('now') WHERE id = ?`).run(refusal, target.id);
+            break;
+        }
+        if (!result || !result.ok) {
+            refusal = (result && result.error) || 'image generation failed';
+            db.prepare(`UPDATE film_sequence_frames SET status = 'failed', error_message = ?,
+                        updated_at = datetime('now') WHERE id = ?`).run(refusal, target.id);
+            break;
+        }
+
+        const fileName = frameFileName(sequenceId, target.frame_index);
+        let filePath;
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            filePath = await persistProviderMedia(row.project_id, 'sequence-frames', fileName,
+                result.data, { serveDir: 'images' });
+        } catch (err) {
+            refusal = err.message;
+            db.prepare(`UPDATE film_sequence_frames SET status = 'failed', error_message = ?,
+                        updated_at = datetime('now') WHERE id = ?`).run(refusal, target.id);
+            break;
+        }
+        const assetId = target.asset_id || generateId();
+        const metadata = JSON.stringify({ kind: 'sequence_inbetween', sequence_id: sequenceId,
+            frame_index: target.frame_index, time_ms: target.time_ms });
+        if (target.asset_id) {
+            db.prepare(`UPDATE film_assets SET file_path = ?, file_name = ?, format = 'png',
+                mime_type = 'image/png', metadata = ?, provider = ?, provider_model = ?,
+                provider_job_id = ?, created_at = datetime('now') WHERE id = ?`).run(
+                filePath, fileName, metadata, result.provider || null,
+                result.provider_model || null, result.provider_job_id || null, assetId);
+        } else db.prepare(`INSERT INTO film_assets
+            (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type,
+             version, metadata, provider, provider_model, provider_job_id)
+            VALUES (?, ?, ?, 'reference_image', ?, ?, 'png', 'image/png', 1, ?, ?, ?, ?)`).run(
+            assetId, row.project_id, target.from_shot_id, filePath, fileName,
+            metadata,
+            result.provider || null, result.provider_model || null, result.provider_job_id || null);
+        db.prepare(`UPDATE film_sequence_frames SET asset_id = ?, status = 'draft', error_message = NULL,
+                    updated_at = datetime('now') WHERE id = ?`).run(assetId, target.id);
+        made.push(publicMotionFrame(motionBoardRows(sequenceId).find(f => f.id === target.id), row.project_id));
+    }
+
+    return json(res, made.length || !refusal ? 200 : 502, {
+        sequence_id: sequenceId,
+        made,
+        ...(refusal ? { error: refusal,
+            not_attempted: wanted.slice(made.length + 1).map(f => f.frame_index) } : {}),
     });
 }
 
@@ -194,11 +459,21 @@ function planRoute(res, id) {
     const ceiling = keyframeCeiling(row.project_id);
     const runway = ceiling.provider === 'runway' ? require('../lib/providers/runway') : null;
     const model = runway ? (process.env.RUNWAY_VIDEO_MODEL || 'gen4.5') : null;
-    const plan = planSequence(shotsOf(row), {
+    const shotList = shotsOf(row);
+    const plan = planSequence(shotList, {
         maxKeyframes: ceiling.max, description: row.description,
         modelPolicy: runway && runway.RUNWAY_VIDEO_MODELS[model],
     });
-    const shotList = shotsOf(row);
+    const storedMotionRows = motionBoardRows(id);
+    const motionRows = storedMotionRows.length ? syncMotionBoard(row).rows : [];
+    const motionBoard = motionRows.length ? {
+        frame_count: motionRows.length,
+        approved_count: motionRows.filter(frame => frame.status === 'approved').length,
+        ready: motionRows.every(frame => frame.status === 'approved' && frame.asset_id),
+        duration_ms: motionRows[motionRows.length - 1].time_ms,
+        provider_ready: ceiling.max >= motionRows.length,
+        provider_max_images: ceiling.max,
+    } : null;
     let native = null;
     if (!plan.refused && runway && shotList.length >= 3 && shotList.length <= 5) {
         try {
@@ -212,6 +487,7 @@ function planRoute(res, id) {
     }
     return json(res, plan.refused ? 409 : 200, {
         sequence_id: id, provider: ceiling.provider,
+        motion_board: motionBoard,
         ...(ceiling.unresolved ? { provider_unresolved: ceiling.unresolved } : {}),
         ...plan,
         // The prompts and the frame COUNT travel; the frames themselves do not.
@@ -259,11 +535,101 @@ async function generateNativeSequence(req, res, id) {
     return json(res, 200, { sequence_id: id, asset_id: assetId, url: getFileUrl('video', row.project_id, fileName), mode: 'native_multi_shot' });
 }
 
+async function generateApprovedMotionBoard(req, res, row, boardRows, ceiling) {
+    const incomplete = boardRows.filter(f => f.status !== 'approved' || !f.file_path);
+    if (incomplete.length) {
+        return json(res, 409, {
+            error: 'MOTION_BOARD_NOT_APPROVED',
+            reason: `${incomplete.length} motion-board frame(s) still need generation or approval.`,
+            frames: incomplete.map(f => ({ index: f.frame_index, status: f.status })),
+        });
+    }
+    if (ceiling.max < boardRows.length) {
+        return json(res, 409, {
+            error: 'PROVIDER_IMAGE_LIMIT',
+            reason: `${ceiling.provider || 'The selected video provider'} accepts ${ceiling.max} image(s), but this approved motion board contains ${boardRows.length}. Nothing was sent or dropped.`,
+        });
+    }
+
+    const provider = resolve('video', seqConfig(row.project_id, req));
+    const { toDataUri } = require('../lib/reference-images');
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(row.project_id);
+    const shots = shotsOf(row);
+    const durationMs = Number(boardRows.at(-1).time_ms) || 1000;
+    const resolution = parseResolution(project && project.target_resolution) || { width: 1280, height: 720 };
+    const keyframes = boardRows.map((f, index) => ({
+        uri: toDataUri(f.file_path),
+        position: index === 0 ? 'first' : index === boardRows.length - 1 ? 'last' : index,
+    })).filter(k => k.uri);
+    if (keyframes.length !== boardRows.length) {
+        return json(res, 409, { error: 'One or more approved motion-board images cannot be read from disk.' });
+    }
+
+    const claim = db.prepare(`UPDATE film_sequences SET status = 'generating', updated_at = datetime('now')
+        WHERE id = ? AND status != 'generating'`).run(row.id);
+    if (!claim.changes) {
+        return json(res, 409, { error: 'SEQUENCE_ALREADY_GENERATING', reason: 'This sequence is already generating.' });
+    }
+    let result;
+    try {
+        result = await provider.generate('video', {
+            prompt: `${row.description || 'One continuous cinematic sequence.'} Follow the supplied images in chronological order as the visual path of the shot. Preserve identity, wardrobe, location, lighting, geography and screen direction between every image.`,
+            keyframes,
+            duration_s: Math.max(1, Math.round(durationMs / 1000)),
+            width: resolution.width,
+            height: resolution.height,
+            ...(project && project.target_fps ? { target_fps: project.target_fps } : {}),
+        }, { timeout: 900000 });
+    } catch (err) {
+        db.prepare("UPDATE film_sequences SET status = 'draft', updated_at = datetime('now') WHERE id = ?").run(row.id);
+        throw err;
+    }
+    if (!result || !result.ok) {
+        db.prepare("UPDATE film_sequences SET status = 'draft', updated_at = datetime('now') WHERE id = ?").run(row.id);
+        return json(res, 502, { error: (result && result.error) || 'video generation failed' });
+    }
+
+    const first = shots[0];
+    const last = shots[shots.length - 1];
+    const fileName = sequenceFileName(row.id, first.shot_code, `${last.shot_code}_motion`);
+    const saved = await persistProviderMedia(row.project_id, 'video', fileName, result.data,
+        { serveDir: 'videos' });
+    const assetId = generateId();
+    db.prepare(`INSERT INTO film_assets
+        (id, project_id, shot_id, asset_type, file_path, file_name, format, version,
+         metadata, provider, provider_model, provider_job_id)
+        VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 1, ?, ?, ?, ?)`).run(
+        assetId, row.project_id, first.id,
+        typeof saved === 'string' ? saved : (saved && saved.path) || '', fileName,
+        JSON.stringify({ sequence_id: row.id, kind: 'motion_board_sequence',
+            frame_ids: boardRows.map(f => f.id) }),
+        provider.id, result.provider_model || null, result.provider_job_id || null);
+    db.prepare("UPDATE film_sequences SET output_asset_id = ?, status = 'complete', updated_at = datetime('now') WHERE id = ?")
+        .run(assetId, row.id);
+    return json(res, 200, {
+        sequence_id: row.id,
+        mode: 'approved_motion_board',
+        reference_images: boardRows.length,
+        asset_id: assetId,
+        url: getFileUrl('video', row.project_id, fileName),
+    });
+}
+
 async function generateSequence(req, res, id) {
     const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
     if (!row) return json(res, 404, { error: 'Sequence not found' });
 
     const ceiling = keyframeCeiling(row.project_id, req);
+    const storedMotionRows = motionBoardRows(id);
+    const motionRows = storedMotionRows.length ? syncMotionBoard(row).rows : [];
+    if (motionRows.length) {
+        if (req.body && req.body.segment_index !== undefined) {
+            return json(res, 409, {
+                error: 'This sequence has a motion board and must be generated once from the complete approved frame set.',
+            });
+        }
+        return generateApprovedMotionBoard(req, res, row, motionRows, ceiling);
+    }
     const runway = ceiling.provider === 'runway' ? require('../lib/providers/runway') : null;
     const model = runway ? (process.env.RUNWAY_VIDEO_MODEL || 'gen4.5') : null;
     const plan = planSequence(shotsOf(row), { maxKeyframes: ceiling.max, description: row.description,
@@ -481,6 +847,9 @@ function importSequenceClip(req, res, id) {
 }
 
 async function handleSequences(req, res, urlParts) {
+    if (urlParts[1] === 'sequence-frames' && urlParts[2] && urlParts[3] && req.method === 'GET') {
+        return serveFile(res, urlParts[2], 'sequence-frames', urlParts[3]);
+    }
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'sequences') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (req.method === 'GET') return listSequences(res, urlParts[2]);
@@ -493,6 +862,19 @@ async function handleSequences(req, res, urlParts) {
         if (!UUID_RE.test(id)) return json(res, 400, { error: 'Invalid sequence ID' });
         const sub = urlParts[3];
         if (sub === 'plan' && req.method === 'GET') return planRoute(res, id);
+        if (sub === 'frames') {
+            if (!urlParts[4] && req.method === 'GET') return motionBoardRoute(res, id);
+            if (urlParts[4] === 'generate' && req.method === 'POST') {
+                return generateMotionFrames(req, res, id);
+            }
+            const frameIndex = urlParts[4];
+            if (/^\d+$/.test(String(frameIndex || ''))) {
+                if (!urlParts[5] && req.method === 'PUT') return updateMotionFrame(req, res, id, frameIndex);
+                if (urlParts[5] === 'generate' && req.method === 'POST') {
+                    return generateMotionFrames(req, res, id, frameIndex);
+                }
+            }
+        }
         if (sub === 'generate' && req.method === 'POST') return generateSequence(req, res, id);
         if (sub === 'generate-native' && req.method === 'POST') return generateNativeSequence(req, res, id);
         if (sub === 'import' && req.method === 'POST') return importSequenceClip(req, res, id);
@@ -518,4 +900,4 @@ async function handleSequences(req, res, urlParts) {
     return false;
 }
 
-module.exports = { handleSequences, shotsOf, sequenceFileName };
+module.exports = { handleSequences, shotsOf, sequenceFileName, syncMotionBoard, motionBoardRows };

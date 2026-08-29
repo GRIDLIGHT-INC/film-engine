@@ -528,7 +528,11 @@ const CAPABILITY_BUILDERS = {
                 ? voiceProfiles.find(vp => vp.character_id === character.id) || null
                 : null;
 
-            const payload = buildVoicePayload(line, voiceProfile, character);
+            // The scene's own direction, so the orchestrator and the flow
+            // canvas ask for the same performance the per-domain route does.
+            const payload = buildVoicePayload(line, voiceProfile, character, {
+                scene: { delivery: (ctx.scene && ctx.scene.delivery_direction) || '' },
+            });
             return cc ? applyConsistencyToVoicePayload(payload, cc, line.character) : payload;
         });
     },

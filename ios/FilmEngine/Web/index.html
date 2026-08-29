@@ -1396,6 +1396,33 @@
         .cs-spec .k { font-family:ui-monospace,Menlo,monospace; font-size:9.5px; letter-spacing:.16em;
             text-transform:uppercase; color:rgba(232,232,234,0.4); }
         .cs-spec .v { font-size:14px; color:#e8e8ea; margin-top:5px; }
+        /* The location and prop sheets. Two columns on a wide modal, one on a
+           phone — the regions are independent, so a narrow screen stacks them
+           rather than squeezing both. */
+        .ss-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+        @media (max-width: 900px) { .ss-grid { grid-template-columns: 1fr; } }
+        .ss-col { min-width: 0; }
+        .ss-region { margin-bottom: 20px; min-width: 0; }
+        .ss-region > h4 {
+            font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+            color: var(--text-muted, #8a8a95); margin: 0 0 3px;
+            border-bottom: 1px solid var(--gl-border, #2a2a30); padding-bottom: 5px;
+        }
+        .ss-what { font-size: 11px; color: var(--text-muted, #8a8a95); margin: 5px 0 8px; }
+        .ss-input {
+            width: 100%; background: var(--gl-bg-elevated, #16161c);
+            border: 1px solid var(--gl-border, #2a2a30); border-radius: 5px;
+            color: inherit; padding: 7px 9px; font: inherit; font-size: 13px; margin-bottom: 6px;
+        }
+        .ss-spec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+        .ss-spec-grid label { font-size: 11px; color: var(--text-muted, #8a8a95); }
+        .ss-compass { display: flex; gap: 6px; flex-wrap: wrap; }
+        .cs-pill.on { border-color: #2f5a37; color: #7fd18a; }
+        .ss-state {
+            display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; min-width: 0;
+            padding: 6px 0; border-bottom: 1px solid var(--gl-border, #2a2a30);
+        }
+        .cs-tile.ss-gone { opacity: .45; }
         .cs-swatches { display:flex; gap:8px; }
         .cs-swatch { flex:1; }
         .cs-swatch .chip { height:44px; border-radius:8px; border:1px solid rgba(255,255,255,0.09); }
@@ -4094,6 +4121,19 @@
         .nav-group-pinned { border-bottom:1px solid var(--border); padding-bottom:8px; margin-bottom:12px; }
 
         /* ── Previs stage ──────────────────────────────────────────── */
+        /* The toolbar, grouped by job. Twelve buttons on one row is unreadable;
+           four labelled groups is a row you can scan. Wraps rather than
+           overflowing — a control pushed past the edge is a control that does
+           not exist. */
+        .previs-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; min-width: 0; }
+        .previs-group {
+            display: inline-flex; gap: 5px; align-items: center; flex-wrap: wrap; min-width: 0;
+            padding: 4px 8px 4px 6px; border: 1px solid var(--gl-border, #2a2a30); border-radius: 7px;
+        }
+        .previs-group-label {
+            font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+            color: var(--text-muted, #8a8a95); margin-right: 2px;
+        }
         .previs-workspace { display:grid; grid-template-columns:1fr 1fr 300px; gap:12px; height:calc(100vh - 190px); min-height:460px; }
         .previs-pane { position:relative; background:#0b0d13; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
         .previs-pane canvas { display:block; width:100%; height:100%; cursor:grab; }
@@ -5158,6 +5198,8 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                                    title="Play each shot's camera move over its storyboard frame">
                                 <input type="checkbox" id="pbMotion" checked onchange="pbMotionToggled()"> Camera move
                             </label>
+                            <button class="btn btn-secondary btn-sm" onclick="pbRegenerateDialogue()"
+                                    title="Buy a fresh take of this scene's dialogue — after a rewrite, a recast, or a change of direction">Redo dialogue</button>
                             <label class="text-sm" id="pbScoreLabel" style="display:none;align-items:center;gap:6px;cursor:pointer;"
                                    title="Play each scene's score under its shots">
                                 <input type="checkbox" id="pbScore" checked onchange="pbBedsToggled()"> Score
@@ -5594,26 +5636,59 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         <div class="page" id="page-previs">
             <div class="flex-between mb-16">
                 <h2>Previs</h2>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <select id="previsShotSelect" style="min-width:220px;" onchange="previsOpenShot(this.value)"></select>
+                <!--
+                  TWELVE BUTTONS ON ONE ROW, three of them saying "save" about
+                  three different things: Save blocking keeps the camera, Apply
+                  to card writes it onto the shot, Save frame writes a PNG.
+                  Nothing said which one keeps a camera move, which is the
+                  question this was reported as.
+
+                  Grouped by THE JOB — stage it, look at it, commit it, take
+                  something out — and the registry that explains every button is
+                  lib/previs-toolbar.js, which the page is held to matching.
+                -->
+                <div class="previs-bar">
+                    <select id="previsShotSelect" style="min-width:200px;" onchange="previsOpenShot(this.value)"></select>
                     <span id="previsApprovalBadge" class="tag" style="display:none;"></span>
-                    <button class="btn btn-secondary" onclick="previsFromCard()" data-tooltip="Set the stage from what the scene card already says — framing, lens, movement" data-tooltip-pos="bottom">From card</button>
-                    <button class="btn btn-secondary" onclick="previsSolve()">Solve framing</button>
-                    <button class="btn btn-secondary" onclick="previsPreviewFrame()" data-tooltip="See the prompt this angle would generate. Costs nothing." data-tooltip-pos="bottom">Preview frame</button>
-                    <button class="btn btn-secondary" onclick="previsRecompose()" data-tooltip="Keep this shot's performance and framing, and put a different background behind it" data-tooltip-pos="bottom">New background&hellip;</button>
-                    <button id="previsApplyBtn" class="btn btn-secondary" onclick="previsApplyToCard()" data-tooltip="Write this angle back onto the scene card" data-tooltip-pos="bottom">Apply to card</button>
-                    <button class="btn btn-primary" onclick="previsRenderShot()" data-tooltip="Apply this blocking and regenerate the frame — costs credits" data-tooltip-pos="bottom">Render this angle</button>
-                    <button class="btn btn-secondary" onclick="previsApprove()" id="previsApproveBtn" data-tooltip="Sign off this angle. Restaging afterwards blocks generation until you re-approve." data-tooltip-pos="bottom">Approve</button>
-                    <button class="btn btn-secondary" onclick="previsPlay()" id="previsPlayBtn">Play move</button>
-                    <button class="btn btn-secondary" onclick="previsExportFrame()" id="previsFrameBtn">Save frame</button>
-                    <button class="btn btn-secondary" onclick="previsExportMove()" id="previsRecBtn">Record move</button>
-                    <label class="btn btn-secondary" style="cursor:pointer;">
-                        Import GLB
-                        <input data-import-target="three-d-model" data-import-surface="previs" type="file" accept=".glb,model/gltf-binary" style="display:none" onchange="importThreeDModel(event)">
-                    </label>
-                    <button class="btn btn-primary" onclick="previsSave()" id="previsSaveBtn">Save blocking</button>
+
+                    <span class="previs-group" data-group="stage">
+                        <span class="previs-group-label">Stage</span>
+                        <button class="btn btn-secondary btn-sm" onclick="previsFromCard()" data-tooltip="Set the stage from what the scene card already says — framing, lens, movement" data-tooltip-pos="bottom">From card</button>
+                        <button class="btn btn-secondary btn-sm" onclick="previsSolve()" data-tooltip="Turn a framing and a lens into a camera distance" data-tooltip-pos="bottom">Solve framing</button>
+                        <label class="btn btn-secondary btn-sm" style="cursor:pointer;" data-tooltip="Stand a model on the stage as a silhouette" data-tooltip-pos="bottom">
+                            Import GLB
+                            <input data-import-target="three-d-model" data-import-surface="previs" type="file" accept=".glb,model/gltf-binary" style="display:none" onchange="importThreeDModel(event)">
+                        </label>
+                    </span>
+
+                    <span class="previs-group" data-group="look">
+                        <span class="previs-group-label">Look</span>
+                        <button class="btn btn-secondary btn-sm" onclick="previsPlay()" id="previsPlayBtn" data-tooltip="Play the move on the stage. Writes nothing." data-tooltip-pos="bottom">Play move</button>
+                        <button class="btn btn-secondary btn-sm" onclick="previsPreviewFrame()" data-tooltip="The prompt this angle would generate, in full. Costs nothing." data-tooltip-pos="bottom">Preview prompt</button>
+                    </span>
+
+                    <span class="previs-group" data-group="commit">
+                        <span class="previs-group-label">Commit</span>
+                        <button class="btn btn-primary btn-sm" onclick="previsSave()" id="previsSaveBtn" data-tooltip="Keep this angle. THIS is where a camera move is saved." data-tooltip-pos="bottom">Save blocking</button>
+                        <button id="previsApplyBtn" class="btn btn-secondary btn-sm" onclick="previsApplyToCard()" data-tooltip="Write the angle onto the scene card, so generation and the board read it" data-tooltip-pos="bottom">Apply to card</button>
+                        <button class="btn btn-secondary btn-sm" onclick="previsApprove()" id="previsApproveBtn" data-tooltip="Sign off this angle. Restaging afterwards blocks generation until you re-approve." data-tooltip-pos="bottom">Approve</button>
+                        <button class="btn btn-primary btn-sm" onclick="previsRenderShot()" data-tooltip="Save, apply, and regenerate the frame — costs credits" data-tooltip-pos="bottom">Render this angle</button>
+                        <button class="btn btn-secondary btn-sm" onclick="previsRecompose()" data-tooltip="Keep this shot's performance and framing, and put a different place behind it — costs credits" data-tooltip-pos="bottom">New background&hellip;</button>
+                    </span>
+
+                    <span class="previs-group" data-group="export">
+                        <span class="previs-group-label">Export</span>
+                        <button class="btn btn-secondary btn-sm" onclick="previsExportFrame()" id="previsFrameBtn" data-tooltip="Write the camera view to disk as a PNG. A composition reference, never an init image." data-tooltip-pos="bottom">Save frame</button>
+                        <button class="btn btn-secondary btn-sm" onclick="previsExportMove()" id="previsRecBtn" data-tooltip="Record the grey-box stage playing the move. Not footage." data-tooltip-pos="bottom">Record move</button>
+                    </span>
                 </div>
             </div>
+
+            <p id="previsSaveHelp" class="text-sm text-muted" style="margin:0 0 8px;">
+                A camera move is kept by <strong>Save blocking</strong>.
+                <strong>Apply to card</strong> writes the angle onto the shot so generation uses it;
+                <strong>Save frame</strong> and <strong>Record move</strong> write files and change nothing.
+            </p>
 
             <div class="previs-workspace">
                 <div class="previs-pane" id="previsStagePane">
@@ -6299,6 +6374,30 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 </div>
             </div>
             <div class="cs-body" id="csBody"></div>
+        </div>
+    </div>
+
+    <!--
+      A LOCATION AND A PROP ARE WORKSPACES TOO.
+      The character card became a sheet and these stayed a form in a modal — the
+      same gap seen from two other subjects. Regions are declared in
+      lib/subject-sheets.js and the renderer is held to drawing every one, so a
+      sheet cannot show the plates and silently drop the continuity states.
+    -->
+    <div class="modal-overlay cs-overlay" id="subjectSheetModal">
+        <div class="modal cs-modal">
+            <div class="cs-head">
+                <div class="cs-head-left">
+                    <h2 id="ssName">SUBJECT</h2>
+                    <div class="cs-chips" id="ssChips"></div>
+                </div>
+                <div class="cs-head-right">
+                    <button class="btn btn-primary btn-sm" id="ssGenerateBtn" onclick="generateSheetPlate()">Generate plate</button>
+                    <button class="btn btn-sm" onclick="exportSubjectSheet()">Export sheet</button>
+                    <button class="modal-close" onclick="closeModal('subjectSheetModal')">&times;</button>
+                </div>
+            </div>
+            <div class="cs-body" id="ssBody"></div>
         </div>
     </div>
 
@@ -23936,6 +24035,437 @@ ${fountainText.slice(0, 50000)}`;
         await renderCharacterSheet();
     }
 
+    /*
+     * ── The location and prop sheets ────────────────────────────────────────
+     *
+     * Built from the region registries in lib/subject-sheets.js and held to
+     * drawing every one, so a sheet cannot render the plates and silently drop
+     * the continuity states — which looks finished in a screenshot.
+     *
+     * One shell, two renderers. The regions genuinely differ (a location has an
+     * orientation and an hour; a prop has materials and a state) and pretending
+     * otherwise would give both a compromise neither wanted — but the shell,
+     * the busy spinner, the field writer and the export are shared, because
+     * that is what came apart the last time a surface was built twice.
+     */
+    const SS = { kind: null, id: null, data: null, views: [] };
+
+    async function openSubjectSheet(kind, id) {
+        SS.kind = kind; SS.id = id; SS.data = null; SS.views = [];
+        document.getElementById('ssName').textContent = 'Loading…';
+        document.getElementById('ssChips').innerHTML = '';
+        document.getElementById('ssBody').innerHTML = '<div class="text-muted">Loading…</div>';
+        showModal('subjectSheetModal');
+        await renderSubjectSheet();
+    }
+
+    /** Any spinner on the sheet. Clears in a finally, or it lies about working. */
+    async function ssBusy(label, work) {
+        const bar = document.getElementById('ssChips');
+        const badge = document.createElement('span');
+        badge.className = 'cs-chip cs-busy';
+        badge.innerHTML = '<span class="cs-spinner"></span>' + esc(label || 'Working…');
+        if (bar) bar.appendChild(badge);
+        setStatus(label || 'Working…', true);
+        try { return await work(); } finally { badge.remove(); }
+    }
+
+    async function renderSubjectSheet() {
+        const body = document.getElementById('ssBody');
+        if (!body || !SS.id) return;
+        try {
+            const plural = SS.kind + 's';
+            const [subject, views] = await Promise.all([
+                api(`/${plural}/${SS.id}`),
+                api(`/${plural}/${SS.id}/plate/views`).catch(() => ({ views: [] })),
+            ]);
+            SS.data = subject[SS.kind] || subject;
+            SS.views = views.views || [];
+            document.getElementById('ssName').textContent = (SS.data.name || SS.kind).toUpperCase();
+            document.getElementById('ssGenerateBtn').textContent =
+                SS.kind === 'location' ? 'Generate plate' : 'Generate view';
+            body.innerHTML = SS.kind === 'location' ? renderLocationSheet() : renderPropSheet();
+        } catch (err) {
+            // A renderer that paints a placeholder must have a path that
+            // replaces it — a spinner that never resolves reads as the data
+            // being gone rather than as a display fault.
+            body.innerHTML = `<div class="empty-state"><h3>Could not open the sheet</h3>
+                <p>${esc(err.message)}</p></div>`;
+        }
+    }
+
+    /* ── shared pieces ─────────────────────────────────────────────────── */
+
+    function ssSection(anchorId, title, what, inner) {
+        return `<section class="ss-region" data-region="${anchorId}">
+            <h4>${esc(title)}</h4>
+            <p class="ss-what">${esc(what)}</p>
+            ${inner}
+        </section>`;
+    }
+
+    /** A field a director types straight into. Saved on blur, never on a timer. */
+    function ssField(field, value, opts) {
+        const o = opts || {};
+        const common = `data-field="${field}" onchange="saveSheetField('${field}', this.value, this)"`;
+        if (o.rows) {
+            return `<textarea class="ss-input" rows="${o.rows}" placeholder="${esc(o.placeholder || '')}" ${common}>${esc(value || '')}</textarea>`;
+        }
+        if (o.options) {
+            return `<select class="ss-input" ${common}>${
+                o.options.map(v => `<option value="${esc(v)}"${String(value || '') === v ? ' selected' : ''}>${esc(v || '—')}</option>`).join('')
+            }</select>`;
+        }
+        return `<input class="ss-input" type="${o.type || 'text'}"${o.step ? ` step="${o.step}"` : ''}
+            placeholder="${esc(o.placeholder || '')}" value="${esc(value == null ? '' : String(value))}" ${common}>`;
+    }
+
+    function ssPlates() {
+        const list = SS.views.length ? SS.views : [];
+        if (!list.length) {
+            return `<p class="text-muted">No plate yet. Generate one, or upload a picture you already have.</p>
+                ${ssPlateControls()}`;
+        }
+        return `<div class="cs-views">${list.map(v => {
+            const label = v.view === '__default__' || !v.view ? 'default' : v.view;
+            const url = v.image_url ? API_BASE + v.image_url : '';
+            return `<figure class="cs-tile${v.available === false ? ' ss-gone' : ''}">
+                ${url && v.available !== false
+                    ? `<img src="${esc(url)}" alt="${esc(label)}" onclick="openPlateViewer('${esc(url)}', ${jsAttr(label)})">`
+                    : `<div class="cs-drop">${v.available === false ? 'file missing' : 'not generated'}</div>`}
+                <figcaption>${esc(label)}</figcaption>
+            </figure>`;
+        }).join('')}</div>${ssPlateControls()}`;
+    }
+
+    function ssPlateControls() {
+        /*
+         * The target is written as a LITERAL per kind rather than computed.
+         *
+         * The media-import contract is derived from the registered targets and
+         * is checked by looking for the call — a computed target is invisible
+         * to it, and an import nothing checks is one that quietly stops
+         * working. Two lines rather than a ternary inside the call, for that.
+         */
+        const opts = { extra: {}, after: 'renderSubjectSheet',
+            title: 'Use a picture you already have — a photograph, a render, art you were handed' };
+        const upload = SS.kind === 'location'
+            ? uploadControl('location-plate', `/locations/${SS.id}/plate/import`, opts)
+            : uploadControl('prop-plate', `/props/${SS.id}/plate/import`, opts);
+        return `<div class="btn-row" style="margin-top:8px;">
+            <button class="btn btn-secondary btn-sm" onclick="${SS.kind === 'location'
+                ? `generateLocationPlateFor('${SS.id}')` : `generatePropPlateFor('${SS.id}')`}">Generate</button>
+            ${/*
+                The SAME upload control the cards used, not a second one — it
+                carries the registered import target that the media-import
+                contract is derived from, and a bespoke input beside it is how
+                one of the two stops being checked.
+              */ ''}
+            ${upload}
+            <button class="btn btn-secondary btn-sm" onclick="openSubjectGallery()">Gallery</button>
+        </div>`;
+    }
+
+    /* ── location ──────────────────────────────────────────────────────── */
+
+    function renderLocationSheet() {
+        const l = SS.data || {};
+        const compass = ['north', 'east', 'south', 'west'];
+        const have = new Set(SS.views.map(v => v.view));
+        return `
+        <div class="ss-grid">
+          <div class="ss-col">
+            ${ssSection('ls-plates', 'Master plates',
+                'Every shot in a scene set here is conditioned on one of these.', ssPlates())}
+
+            ${ssSection('ls-orientation', 'Orientation',
+                'Which way each plate looks. A convention, not a survey — the first plate is north and the rest are quarter turns from it.',
+                `<div class="ss-compass">${compass.map(c =>
+                    `<span class="cs-pill${have.has(c) ? ' on' : ''}">${c}${have.has(c) ? '' : ' —'}</span>`).join('')}
+                 </div>
+                 <button class="btn btn-secondary btn-sm" style="margin-top:8px;"
+                         onclick="generateLocationVariant('compass')">Sweep the compass</button>`)}
+
+            ${ssSection('ls-variants', 'Time of day',
+                'The same place at another hour, kept as its own plate rather than regraded afterwards.',
+                `<div class="btn-row">${['dusk', 'night', 'dawn'].map(t =>
+                    `<button class="btn btn-secondary btn-sm" onclick="generateLocationVariant('${t}')">${t}${
+                        have.has(t) ? ' ✓' : ''}</button>`).join('')}</div>`)}
+
+            ${ssSection('ls-references', 'Concept art & references',
+                'Explorations and gathered images. Only what is promoted to a reference ever conditions a frame.',
+                `<button class="btn btn-secondary btn-sm" onclick="openSubjectGallery()">Open gallery</button>`)}
+          </div>
+
+          <div class="ss-col">
+            ${ssSection('ls-description', 'The place',
+                'Reaches every frame shot here. This is the field that keeps two scenes in one location looking like one location.',
+                ssField('description', l.description, { rows: 5, placeholder: 'A 1941 diner, re-topped in \'52 and kept spotless…' })
+                + '<p class="ss-what">What kind of place it is, for the schedule and the call sheet.</p>'
+                + ssField('location_type', l.location_type, { options: ['', 'interior', 'exterior', 'practical', 'stage', 'backlot'] }))}
+
+            ${ssSection('ls-lighting', 'Lighting default',
+                'How it is lit unless a shot says otherwise.',
+                ssField('lighting_default', l.lighting_default, { placeholder: 'low sun through the plate glass' })
+                + ssField('time_of_day_default', l.time_of_day_default, { placeholder: 'late afternoon' }))}
+
+            ${ssSection('ls-atmosphere', 'Atmosphere',
+                'Weather, haze, season — the standing conditions of the place.',
+                ssField('atmosphere_notes', l.atmosphere_notes, { rows: 2, placeholder: 'salt haze off the harbour, warm inside' }))}
+
+            ${ssSection('ls-sound', 'Sound notes',
+                'How the place SOUNDS. This reaches the ambient bed generated for every scene here.',
+                ssField('sound_notes', l.sound_notes, { rows: 2, placeholder: 'traffic two streets over, a screen door, gulls' }))}
+
+            ${ssSection('ls-continuity', 'Continuity flags',
+                'What must stay true across every shot here, once something has been moved, broken or repainted.',
+                ssField('continuity_notes', l.continuity_notes, { rows: 3, placeholder: 'the third stool is missing from scene 9 onwards' }))}
+
+            ${ssSection('ls-scenes', 'Scenes here',
+                'Derived from the scene headings that name this location — nothing to fill in.',
+                `<p class="cs-prose">${Number(l.scene_count) || 0} scene(s).</p>`)}
+          </div>
+        </div>`;
+    }
+
+    /* ── prop ──────────────────────────────────────────────────────────── */
+
+    function renderPropSheet() {
+        const p = SS.data || {};
+        let states = [];
+        try { states = JSON.parse(p.continuity_states || '[]') || []; } catch (_) { states = []; }
+        const size = [p.height_m && `${p.height_m}m tall`, p.width_m && `${p.width_m}m wide`,
+            p.length_m && `${p.length_m}m deep`].filter(Boolean).join(' · ');
+        return `
+        <div class="ss-grid">
+          <div class="ss-col">
+            ${ssSection('ps-plates', 'Master views',
+                'Every frame this object appears in is conditioned on one of these.', ssPlates())}
+
+            ${ssSection('ps-references', 'Concept art & references',
+                'Explorations and gathered images. Only what is promoted to a reference ever conditions a frame.',
+                `<button class="btn btn-secondary btn-sm" onclick="openSubjectGallery()">Open gallery</button>`)}
+
+            ${ssSection('ps-states', 'Continuity states',
+                'Clean, chipped, burnt — the versions of the same object, and which scene each belongs to.',
+                `<div id="ssStates">${states.length
+                    ? states.map((st, i) => `<div class="ss-state">
+                        <strong>${esc(st.name)}</strong>
+                        ${st.scene ? `<span class="cs-pill">${esc(st.scene)}</span>` : ''}
+                        <span class="text-sm text-muted">${esc(st.what || '')}</span>
+                        <button class="btn btn-secondary btn-sm" onclick="removePropState(${i})">&times;</button>
+                      </div>`).join('')
+                    : '<p class="text-muted">One state — as built. Add another when it changes.</p>'}</div>
+                 <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addPropState()">Add state</button>`)}
+
+            ${ssSection('ps-appears', 'Appears in',
+                'Derived from the scene cards that name this prop — nothing to fill in.',
+                `<p class="cs-prose">${Number(p.shot_count) || 0} shot(s).</p>`)}
+          </div>
+
+          <div class="ss-col">
+            ${ssSection('ps-description', 'Object description',
+                'What it is, for a person. The field that reaches the prompt is below it.',
+                ssField('description', p.description, { rows: 3, placeholder: 'A tabletop jukebox selector, one per booth.' })
+                + '<p class="ss-what">Visual prompt — this is what reaches the image model and what the plate is generated from.</p>'
+                + ssField('visual_prompt', p.visual_prompt, { rows: 3, placeholder: 'polished chrome housing, amber acrylic page window…' }))}
+
+            ${ssSection('ps-materials', 'Materials & finish',
+                'What it is made of and how it catches light. Reaches the plate prompt.',
+                ssField('materials', p.materials, { rows: 2, placeholder: 'polished chrome, amber acrylic, bakelite trim' }))}
+
+            ${ssSection('ps-spec', 'Spec',
+                'Period, category, how many there are, and whether it has to work on camera.',
+                `<div class="ss-spec-grid">
+                    <label>Period ${ssField('period', p.period, { placeholder: '1952' })}</label>
+                    <label>Category ${ssField('category', p.category, { options: (window.__propCategories || ['', p.category || '']) })}</label>
+                    <label>Quantity ${ssField('quantity', p.quantity == null ? 1 : p.quantity, { type: 'number' })}</label>
+                    <label>Practical ${ssField('practical', p.practical ? 'yes' : 'no', { options: ['no', 'yes'] })}</label>
+                 </div>`)}
+
+            ${ssSection('ps-scale', 'Scale',
+                'How big it is. Without this an image model reproduces whatever it was shown, at any size — a 30cm sprinkler came back the size of a car.',
+                `<div class="ss-spec-grid">
+                    <label>Height (m) ${ssField('height_m', p.height_m, { type: 'number', step: '0.01' })}</label>
+                    <label>Width (m) ${ssField('width_m', p.width_m, { type: 'number', step: '0.01' })}</label>
+                    <label>Length (m) ${ssField('length_m', p.length_m, { type: 'number', step: '0.01' })}</label>
+                 </div>${size ? `<p class="cs-prose">${esc(size)}</p>` : ''}`)}
+
+            ${ssSection('ps-constraints', 'Constraints',
+                'What it must never be or do. Read by a person, and by the prompt.',
+                ssField('constraints', p.constraints, { rows: 2, placeholder: 'never lit from behind; the glass is never cracked before scene 11' })
+                + '<p class="ss-what">Production notes — for a person. These reach NO prompt, which is '
+                + 'worth saying: a box beside the visual prompt that looks like it conditions a frame '
+                + 'and does not is worse than one that is absent.</p>'
+                + ssField('notes', p.notes, { rows: 2, placeholder: 'two built, one held back for the break' }))}
+          </div>
+        </div>`;
+    }
+
+    /* ── the ways in ───────────────────────────────────────────────────── */
+
+    /**
+     * Write one field.
+     *
+     * Merged by the route, so typing in one box cannot clear another — the
+     * lesson the scene card and the provider config both paid for.
+     */
+    async function saveSheetField(field, value, el) {
+        if (!SS.id) return;
+        let v = value;
+        if (field === 'practical') v = value === 'yes';
+        if (['quantity', 'height_m', 'width_m', 'length_m'].includes(field)) {
+            if (String(value).trim() === '') return;      // blank means unsaid, not zero
+            v = Number(value);
+        }
+        try {
+            await api(`/${SS.kind}s/${SS.id}`, { method: 'PUT', body: JSON.stringify({ [field]: v }) });
+            SS.data[field] = v;
+            if (el) el.style.borderColor = 'var(--gl-success, #166534)';
+            setStatus('Saved');
+        } catch (err) {
+            if (el) el.style.borderColor = 'var(--gl-danger, #7f1d1d)';
+            setStatus('Error: ' + err.message);
+        }
+    }
+
+    async function addPropState() {
+        const name = prompt('State name — clean, chipped, burnt?');
+        if (!name || !name.trim()) return;
+        const what = prompt('What is different about it?') || '';
+        const scene = prompt('Which scene does it start in? (optional)') || '';
+        let states = [];
+        try { states = JSON.parse(SS.data.continuity_states || '[]') || []; } catch (_) { states = []; }
+        states.push({ name: name.trim(), what: what.trim(), scene: scene.trim() });
+        await savePropStates(states);
+    }
+
+    async function removePropState(i) {
+        let states = [];
+        try { states = JSON.parse(SS.data.continuity_states || '[]') || []; } catch (_) { states = []; }
+        states.splice(i, 1);
+        await savePropStates(states);
+    }
+
+    async function savePropStates(states) {
+        try {
+            await api(`/props/${SS.id}`, { method: 'PUT', body: JSON.stringify({ continuity_states: states }) });
+            SS.data.continuity_states = JSON.stringify(states);
+            await renderSubjectSheet();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /** The plate for whichever subject the sheet is open on. */
+    function generateSheetPlate() {
+        if (SS.kind === 'location') return generateLocationPlateFor(SS.id);
+        return generatePropPlateFor(SS.id);
+    }
+
+    async function generateLocationPlateFor(id) {
+        if (!confirm('Generate the plate for this location?\n\nThis costs credits. Every shot in a scene '
+            + 'set here is conditioned on it, so it is worth getting the description right first.')) return;
+        await ssBusy('Generating plate…', async () => {
+            try {
+                await api(`/locations/${id}/plate/generate`, { method: 'POST', body: '{}' });
+                await renderSubjectSheet();
+                if (typeof loadLocations === 'function') loadLocations();
+            } catch (err) { setStatus('Error: ' + err.message); }
+        });
+    }
+
+    async function generatePropPlateFor(id) {
+        if (!confirm('Generate the plate for this prop?\n\nThis costs credits. Every frame it appears in '
+            + 'is conditioned on it.')) return;
+        await ssBusy('Generating plate…', async () => {
+            try {
+                await api(`/props/${id}/plate/generate`, { method: 'POST', body: '{}' });
+                await renderSubjectSheet();
+                if (typeof loadProps === 'function') loadProps();
+            } catch (err) { setStatus('Error: ' + err.message); }
+        });
+    }
+
+    /**
+     * Another view of the same place.
+     *
+     * A compass sweep and a time-of-day variant are the same operation with a
+     * different view name — the location already stores views per name, and a
+     * second mechanism for "the same place, different conditions" is how one of
+     * them ends up not reaching gatherShotReferences.
+     */
+    async function generateLocationVariant(view) {
+        if (view === 'compass') {
+            let plan = null;
+            try { plan = await api(`/locations/${SS.id}/plate/compass/plan`); } catch (_) { plan = null; }
+            const cost = plan && plan.sides ? `${plan.sides.length} side(s)` : 'the missing sides';
+            if (!confirm(`Sweep the compass for this location?\n\nGenerates ${cost}. Each is anchored on the `
+                + 'plate you already have, so they are four sides of one place rather than four places.')) return;
+            return ssBusy('Sweeping…', async () => {
+                try {
+                    const res = await api(`/locations/${SS.id}/plate/compass`, { method: 'POST', body: '{}' });
+                    if (res.skipped && res.skipped.length) setStatus('Not attempted: ' + res.skipped.join(', '));
+                    await renderSubjectSheet();
+                } catch (err) { setStatus('Error: ' + err.message); }
+            });
+        }
+        if (!confirm(`Generate this location at ${view}?\n\nThis costs credits. It is kept as its own view, `
+            + 'so a shot can ask for it by name rather than being regraded afterwards.')) return;
+        await ssBusy(`Generating ${view}…`, async () => {
+            try {
+                await api(`/locations/${SS.id}/plate/generate`, {
+                    method: 'POST', body: JSON.stringify({ view, time_of_day: view }),
+                });
+                await renderSubjectSheet();
+            } catch (err) { setStatus('Error: ' + err.message); }
+        });
+    }
+
+    /**
+     * The gallery for whichever subject is open.
+     *
+     * Branched to literals rather than passing SS.kind through: the gallery
+     * contract is checked by looking for the call per kind, and a computed
+     * argument is invisible to it — a workspace nothing checks is one that
+     * quietly loses its promote rule for one subject and not the others.
+     */
+    function openSubjectGallery() {
+        if (!SS.id) return;
+        const name = (SS.data && SS.data.name) || SS.kind;
+        if (SS.kind === 'location') return openGallery('location', SS.id, name);
+        return openGallery('prop', SS.id, name);
+    }
+
+    /**
+     * The sheet as a printable document.
+     *
+     * Its own page rather than printing the app: the dark UI wastes a cartridge
+     * and reads badly, which is why the screenplay export already does this.
+     */
+    function exportSubjectSheet() {
+        if (!SS.data) return;
+        const body = document.getElementById('ssBody');
+        const w = window.open('', '_blank');
+        if (!w) return setStatus('Allow pop-ups to export the sheet.');
+        w.document.write(`<!doctype html><html><head><meta charset="utf-8">
+            <title>${esc(SS.data.name || SS.kind)}</title>
+            <style>
+              @page { size: A4; margin: 16mm; }
+              body { font-family: Georgia, 'Times New Roman', serif; color: #111; }
+              h1 { font-size: 20pt; margin: 0 0 4mm; letter-spacing: .02em; }
+              h4 { font-size: 9pt; letter-spacing: .08em; text-transform: uppercase;
+                   color: #555; margin: 6mm 0 2mm; border-bottom: .3pt solid #bbb; padding-bottom: 1mm; }
+              .ss-what { font-size: 8pt; color: #666; margin: 0 0 2mm; }
+              img { max-width: 46mm; margin: 0 2mm 2mm 0; }
+              .ss-grid { column-count: 2; column-gap: 10mm; }
+              .ss-input, button, .btn-row, label > input, label > select { display: none !important; }
+              .ss-region { break-inside: avoid; }
+            </style></head><body>
+            <h1>${esc(SS.data.name || '')}</h1>${body.innerHTML}</body></html>`);
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 400);
+    }
+
     async function renderCharacterSheet() {
         const body = document.getElementById('csBody');
         try {
@@ -25356,7 +25886,7 @@ ${fountainText.slice(0, 50000)}`;
                 el.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#128205;</div><h3>No locations</h3><p>Add filming locations.</p></div>`;
             } else {
                 el.innerHTML = state.locations.map(l => `
-                    <div class="entity-card" style="cursor:pointer;" onclick="inspectEntity('location', '${l.id}')" title="Open details and the full-size plate">
+                    <div class="entity-card" style="cursor:pointer;" onclick="openSubjectSheet('location', '${l.id}')" title="Open the location sheet">
                         ${l.reference_image_url
                             ? '<img src="' + API_BASE + l.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;cursor:zoom-in;" title="Click to see the plate full size"'
                                 + ' onclick="event.stopPropagation(); openPlateViewer(\'' + API_BASE + l.reference_image_url + '\', ' + jsAttr(l.name) + ')"'
@@ -25375,9 +25905,12 @@ ${fountainText.slice(0, 50000)}`;
                             ${l.time_of_day_default ? '<span class="tag">' + esc(l.time_of_day_default) + '</span>' : ''}
                         </div>
                         <div class="card-actions">
-                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generateLocationImage('${l.id}')" title="Generate reference image">${l.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
-                            ${uploadControl('location-plate', `/locations/${l.id}/plate/import`, { extra: {}, after: 'loadLocations', title: 'Use a picture you already have — a photograph, a Midjourney export, art you were handed' })}
-                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openGallery('location', '${l.id}', ${jsAttr(l.name)})">Gallery</button>
+                            <!--
+                              Two buttons. Everything else moved onto the sheet,
+                              where there is room to work — see RELOCATED in
+                              lib/subject-sheets.js, which holds each moved
+                              action to still having a home.
+                            -->
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editLocation('${l.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteLocation('${l.id}')">Delete</button>
                         </div>
@@ -25482,7 +26015,7 @@ ${fountainText.slice(0, 50000)}`;
                 el.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="icon">&#127917;</div><h3>No props</h3><p>Add props used in your production.</p></div>`;
             } else {
                 el.innerHTML = filtered.map(p => `
-                    <div class="entity-card" style="cursor:pointer;" onclick="inspectEntity('prop', '${p.id}')" title="Open details and the full-size plate">
+                    <div class="entity-card" style="cursor:pointer;" onclick="openSubjectSheet('prop', '${p.id}')" title="Open the prop sheet">
                         ${p.reference_image_url
                             ? '<img src="' + API_BASE + p.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;cursor:zoom-in;" title="Click to see the plate full size"'
                                 + ' onclick="event.stopPropagation(); openPlateViewer(\'' + API_BASE + p.reference_image_url + '\', ' + jsAttr(p.name) + ')"'
@@ -25497,9 +26030,7 @@ ${fountainText.slice(0, 50000)}`;
                         </div>
                         <p>${esc(p.description || 'No description')}</p>
                         <div class="card-actions">
-                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generatePropImage('${p.id}')" title="Generate reference image">${p.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
-                            ${uploadControl('prop-plate', `/props/${p.id}/plate/import`, { extra: {}, after: 'loadProps', title: 'Use a picture you already have — a photograph, a Midjourney export, art you were handed' })}
-                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openGallery('prop', '${p.id}', ${jsAttr(p.name)})">Gallery</button>
+                            <!-- Two buttons; the rest is on the sheet. -->
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editProp('${p.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteProp('${p.id}')">Delete</button>
                         </div>
@@ -29288,6 +29819,8 @@ ${fountainText.slice(0, 50000)}`;
                 ${unframed.length ? `<p class="text-sm" style="margin:8px 0 0;color:var(--gl-warning,#f59e0b);">
                     ${esc(unframed.join(', '))} ${unframed.length === 1 ? 'has' : 'have'} no keyframe — generate ${unframed.length === 1 ? 'it' : 'them'} before this can run.</p>` : ''}
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                    <button class="btn btn-primary btn-sm" onclick="openMotionBoard('${q.id}')"
+                            title="Generate and approve timed in-between frames before video">Motion board</button>
                     <button class="btn btn-secondary btn-sm" onclick="previewSequence('${q.id}')"
                             title="See exactly what would be sent, and how many generations it costs — free">Preview &amp; cost</button>
                     <button class="btn btn-primary btn-sm" onclick="generateSequence('${q.id}', this)">Generate</button>
@@ -29303,8 +29836,159 @@ ${fountainText.slice(0, 50000)}`;
                             title="Join this sequence's clips into one file — free, nothing is generated">Join into one file</button>
                     <button class="btn btn-secondary btn-sm" onclick="deleteSequence('${q.id}')">Delete</button>
                 </div>
+                <div id="motionBoard-${q.id}" style="display:none;margin-top:12px;"></div>
             </div>`;
         }).join('');
+    }
+
+    // ── Motion board: timed, reviewable in-betweens before video ─────────
+
+    async function openMotionBoard(id) {
+        const host = document.getElementById(`motionBoard-${id}`);
+        if (!host) return;
+        host.style.display = 'block';
+        host.innerHTML = '<p class="text-sm text-muted">Planning timed frames…</p>';
+        try {
+            const board = await api(`/sequences/${id}/frames`);
+            renderMotionBoard(id, board);
+        } catch (err) {
+            host.innerHTML = `<div class="warning-banner">${esc(err.message)}</div>`;
+        }
+    }
+
+    function renderMotionBoard(id, board) {
+        const host = document.getElementById(`motionBoard-${id}`);
+        if (!host) return;
+        const frames = board.frames || [];
+        const interval = Number(board.interval_ms || 0) / 1000;
+        host.innerHTML = `
+            <div style="border-top:1px solid var(--gl-border-subtle);padding-top:12px;">
+                <div class="flex-between" style="gap:12px;align-items:flex-start;">
+                    <div>
+                        <strong>Motion board</strong>
+                        <div class="text-sm text-muted">${frames.length} images across ${(Number(board.duration_ms || 0)/1000).toFixed(1)}s
+                            · sampled every ${interval.toFixed(2)}s · ${board.approved || 0}/${frames.length} approved</div>
+                    </div>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+                        <button class="btn btn-secondary btn-sm" onclick="generateMissingMotionFrames('${id}', this)">Generate missing</button>
+                        <button class="btn btn-secondary btn-sm" onclick="approveAllMotionFrames('${id}', this)">Approve drafts</button>
+                        <button class="btn btn-primary btn-sm" onclick="generateMotionBoardVideo('${id}', this)"
+                                ${board.ready && board.provider_ready ? '' : 'disabled'}>Generate video from ${frames.length} images</button>
+                    </div>
+                </div>
+                ${board.capped ? '<div class="warning-banner" style="margin-top:8px;">The sequence is longer than the ten-image review ceiling, so frames are spaced farther than one second apart.</div>' : ''}
+                ${board.provider_warning ? `<div class="warning-banner" style="margin-top:8px;">${esc(board.provider_warning)}</div>` : ''}
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:12px;">
+                    ${frames.map(f => motionFrameCard(id, f)).join('')}
+                </div>
+            </div>`;
+    }
+
+    function motionFrameCard(sequenceId, frame) {
+        const ready = !!frame.image_url;
+        const anchor = frame.kind === 'anchor';
+        const badgeColor = frame.status === 'approved' ? 'var(--gl-success,#166534)'
+            : frame.status === 'failed' ? 'var(--gl-danger,#7f1d1d)'
+            : 'var(--gl-bg-elevated,#27272a)';
+        return `<div style="border:1px solid var(--gl-border-subtle);border-radius:7px;overflow:hidden;background:var(--gl-bg-surface);">
+            <div style="aspect-ratio:16/9;background:#090a0e;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+                ${ready ? `<img src="${esc(API_BASE + frame.image_url)}" style="width:100%;height:100%;object-fit:cover;">`
+                    : '<span class="text-sm text-muted">in-between not generated</span>'}
+            </div>
+            <div style="padding:7px;">
+                <div class="flex-between"><strong style="font-size:11px;">${(Number(frame.time_ms)/1000).toFixed(1)}s</strong>
+                    <span class="tag" style="font-size:9px;background:${badgeColor};">${anchor ? 'storyboard anchor' : esc(frame.status)}</span></div>
+                ${anchor ? '<p class="text-sm text-muted" style="margin:6px 0 0;">Locked from the selected board.</p>' : `
+                    <textarea id="motionDir-${sequenceId}-${frame.index}" rows="2" maxlength="2000"
+                              placeholder="Correction for this moment…" style="width:100%;font-size:10px;margin-top:6px;">${esc(frame.direction || '')}</textarea>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;">
+                        <button class="btn btn-secondary btn-sm" onclick="regenerateMotionFrame('${sequenceId}', ${frame.index}, this)">${ready ? 'Regenerate' : 'Generate'}</button>
+                        ${ready ? `<button class="btn btn-sm ${frame.status === 'approved' ? 'btn-secondary' : 'btn-primary'}"
+                            onclick="setMotionFrameApproval('${sequenceId}', ${frame.index}, ${frame.status === 'approved' ? 'false' : 'true'})">
+                            ${frame.status === 'approved' ? 'Reopen' : 'Approve'}</button>` : ''}
+                    </div>`}
+                ${frame.error ? `<p class="text-sm" style="color:var(--gl-danger,#ef4444);margin:5px 0 0;">${esc(frame.error)}</p>` : ''}
+            </div>
+        </div>`;
+    }
+
+    async function generateMissingMotionFrames(id, btn) {
+        const board = await api(`/sequences/${id}/frames`);
+        const missing = (board.frames || []).filter(f => f.kind === 'inbetween' && ['missing', 'failed'].includes(f.status));
+        if (!missing.length) return setStatus('No missing in-between frames.');
+        if (!confirm(`Generate ${missing.length} in-between image${missing.length === 1 ? '' : 's'}?\n\nThis spends one image generation per frame. Storyboard anchors are reused for free.`)) return;
+        if (btn) btn.disabled = true;
+        setStatus(`Generating ${missing.length} in-between frame(s)…`, true);
+        try {
+            const result = await api(`/sequences/${id}/frames/generate`, { method: 'POST', body: '{}' });
+            setStatus(result.error ? `${result.made.length} made, then: ${result.error}` : `${result.made.length} in-between frame(s) ready to review.`);
+        } catch (err) { setStatus('Motion board failed: ' + err.message); }
+        if (btn) btn.disabled = false;
+        openMotionBoard(id);
+    }
+
+    async function regenerateMotionFrame(id, index, btn) {
+        const input = document.getElementById(`motionDir-${id}-${index}`);
+        const direction = input ? input.value.trim() : '';
+        if (!confirm(`Generate the frame at this moment?\n\n${direction || 'No additional correction.'}\n\nThis spends one image generation.`)) return;
+        if (btn) btn.disabled = true;
+        setStatus('Generating the in-between…', true);
+        try {
+            await api(`/sequences/${id}/frames/${index}/generate`, {
+                method: 'POST', body: JSON.stringify({ direction }),
+            });
+            setStatus('In-between ready to review.');
+        } catch (err) { setStatus('In-between failed: ' + err.message); }
+        if (btn) btn.disabled = false;
+        openMotionBoard(id);
+    }
+
+    async function setMotionFrameApproval(id, index, approved) {
+        const input = document.getElementById(`motionDir-${id}-${index}`);
+        try {
+            await api(`/sequences/${id}/frames/${index}`, {
+                method: 'PUT', body: JSON.stringify({
+                    status: approved ? 'approved' : 'draft',
+                    direction: input ? input.value.trim() : '',
+                }),
+            });
+            openMotionBoard(id);
+        } catch (err) { setStatus('Could not update frame: ' + err.message); }
+    }
+
+    async function approveAllMotionFrames(id, btn) {
+        const board = await api(`/sequences/${id}/frames`);
+        const drafts = (board.frames || []).filter(f => f.kind === 'inbetween' && f.image_url && f.status === 'draft');
+        if (!drafts.length) return setStatus('No draft frames to approve.');
+        if (!confirm(`Approve all ${drafts.length} draft in-between frames?\n\nReview the images first; approval makes them eligible for video generation.`)) return;
+        if (btn) btn.disabled = true;
+        try {
+            for (const frame of drafts) {
+                await api(`/sequences/${id}/frames/${frame.index}`, {
+                    method: 'PUT', body: JSON.stringify({ status: 'approved' }),
+                });
+            }
+            setStatus(`${drafts.length} frame(s) approved.`);
+        } catch (err) { setStatus('Approval stopped: ' + err.message); }
+        if (btn) btn.disabled = false;
+        openMotionBoard(id);
+    }
+
+    async function generateMotionBoardVideo(id, btn) {
+        let board;
+        try { board = await api(`/sequences/${id}/frames`); }
+        catch (err) { return setStatus('Could not check motion board: ' + err.message); }
+        if (!board.ready) return alert('Approve every generated in-between first.');
+        if (!board.provider_ready) return alert(board.provider_warning || 'The selected provider cannot accept this complete image set.');
+        if (!confirm(`Generate ${(board.duration_ms/1000).toFixed(1)}s of video from all ${board.frame_count} approved images?\n\nProvider: ${board.provider}. The images are sent in chronological order; none will be dropped.`)) return;
+        if (btn) btn.disabled = true;
+        setStatus(`Generating video from ${board.frame_count} approved frames…`, true);
+        try {
+            const result = await api(`/sequences/${id}/generate`, { method: 'POST', body: '{}' });
+            setStatus(`Sequence generated from ${result.reference_images || board.frame_count} images.`);
+            loadVideoShots();
+        } catch (err) { setStatus('Sequence generation failed: ' + err.message); }
+        if (btn) btn.disabled = false;
     }
 
     /**
@@ -29318,6 +30002,12 @@ ${fountainText.slice(0, 50000)}`;
         try {
             const plan = await api(`/sequences/${id}/plan`);
             if (plan.refused) return alert('This sequence cannot run yet.\n\n' + plan.reason);
+            if (plan.motion_board) {
+                const board = plan.motion_board;
+                return alert(`Motion board: ${board.approved_count}/${board.frame_count} frames approved · ${(board.duration_ms / 1000).toFixed(1)}s.\n\n`
+                    + (board.ready ? 'The complete chronological frame set is ready for video generation.' : 'Open Motion board to generate, correct, and approve every frame first.')
+                    + (!board.provider_ready ? `\n\n${plan.provider} accepts at most ${board.provider_max_images} reference images; choose a provider that accepts all ${board.frame_count}.` : ''));
+            }
             const lines = (plan.segments || []).map((s, i) =>
                 `${i + 1}. ${s.from} → ${s.to}  · ${s.duration_s}s · ${s.estimated_credits || '?'} credits · ${s.keyframes} frame${s.keyframes === 1 ? '' : 's'}\n   ${s.prompt}`);
             const total = (plan.segments || []).reduce((n, s) => n + (Number(s.estimated_credits) || 0), 0);
@@ -29335,6 +30025,7 @@ ${fountainText.slice(0, 50000)}`;
         try { plan = await api(`/sequences/${id}/plan`); }
         catch (err) { return alert('Could not read the plan: ' + err.message); }
         if (plan.refused) return alert(plan.reason);
+        if (plan.motion_board) return alert('This sequence has a motion board. Generate it once from the complete approved frame set instead of buying individual legs.');
         const index = (plan.segments || []).findIndex(s => !s.complete);
         if (index < 0) return alert('Every leg already has a clip. Review them or regenerate the full sequence deliberately.');
         const leg = plan.segments[index];
@@ -29375,6 +30066,11 @@ ${fountainText.slice(0, 50000)}`;
         if (plan.refused) {
             if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
             return alert('This sequence cannot run yet.\n\n' + plan.reason);
+        }
+        if (plan.motion_board) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
+            if (!plan.motion_board.ready) return alert(`Approve every motion-board frame first (${plan.motion_board.approved_count}/${plan.motion_board.frame_count} approved).`);
+            return generateMotionBoardVideo(id, btn);
         }
         if (!confirm(`Generate ${plan.generations} clip${plan.generations === 1 ? '' : 's'}?\n\n`
             + 'This costs credits. Press "Preview & cost" first to read exactly what will be sent.'
@@ -29538,10 +30234,14 @@ ${fountainText.slice(0, 50000)}`;
             ]);
             // What a director has already said about how each scene sounds.
             const ambientCues = {};
+            const scoreCues = {};
             (cueData.music_cues || []).forEach(c => {
-                if (c.cue_type === 'ambient' && c.scene_id && !ambientCues[c.scene_id]) ambientCues[c.scene_id] = c;
+                if (!c.scene_id) return;
+                if (c.cue_type === 'ambient') { if (!ambientCues[c.scene_id]) ambientCues[c.scene_id] = c; }
+                else if (c.cue_type === 'score' && !scoreCues[c.scene_id]) scoreCues[c.scene_id] = c;
             });
             window.__ambientCues = ambientCues;
+            window.__scoreCues = scoreCues;
             const scenes = sceneData.scenes || [];
             // Latest job per (scene, gen_type).
             const jobKey = {};
@@ -29611,10 +30311,31 @@ ${fountainText.slice(0, 50000)}`;
                       it is durable and reaches the batch as well as the button.
                     -->
                     <div style="margin-top:6px;">
+                        <!--
+                          The direction, where the score IS.
+                          The cue form lives on the Music Cues page behind
+                          "+ Music Cue", so a director looking at a scene that
+                          already has a score had no way to say anything about
+                          it without generating something. Saving here writes
+                          the cue and generates NOTHING — the next Regen picks
+                          it up.
+                        -->
+                        <input type="text" id="score_${sc.id}" class="text-sm" style="width:100%;"
+                               placeholder="Score direction: holds under the dialogue, lifts when she stands"
+                               value="${esc((scoreCues[sc.id] || {}).description || '')}"
+                               onchange="saveScoreDirection('${sc.id}', this.value, this)">
+                    </div>
+                    <div style="margin-top:6px;">
                         <input type="text" id="amb_${sc.id}" class="text-sm" style="width:100%;"
                                placeholder="Ambient direction: the fridge compressor cuts out halfway through"
                                value="${esc((ambientCues[sc.id] || {}).description || '')}"
                                onchange="saveAmbientDirection('${sc.id}', this.value, this)">
+                    </div>
+                    <div style="margin-top:6px;">
+                        <input type="text" id="delivery_${sc.id}" data-field="delivery_direction" class="text-sm" style="width:100%;"
+                               placeholder="Delivery direction: tense, hushed, talking over each other"
+                               value="${esc(sc.delivery_direction || '')}"
+                               onchange="saveSceneDelivery('${sc.id}', this.value, this)">
                     </div>
                 </div>`).join('');
 
@@ -29658,6 +30379,64 @@ ${fountainText.slice(0, 50000)}`;
             }
             if (el) el.style.borderColor = 'var(--gl-success, #166534)';
             setStatus('Ambient direction saved');
+        } catch (err) {
+            if (el) el.style.borderColor = 'var(--gl-danger, #7f1d1d)';
+            setStatus('Error: ' + err.message);
+        }
+    }
+
+    /**
+     * Say something about a scene's score, without buying it again.
+     *
+     * "Still don't have a way to add details to the music generator when we
+     * want (do not regenerate it again though)" — the details lived only in the
+     * cue form on another page, reachable through a button called "+ Music
+     * Cue", which is the wrong door for a scene that already has a score.
+     *
+     * Writes the cue and generates NOTHING. The next Regen picks it up, and so
+     * does the free brief, so a director can read what it will send before
+     * spending.
+     */
+    async function saveScoreDirection(sceneId, text, el) {
+        if (!state.currentProject) return;
+        const existing = (window.__scoreCues || {})[sceneId];
+        try {
+            if (existing) {
+                await api('/music-cues/' + existing.id, {
+                    method: 'PUT', body: JSON.stringify({ description: text }),
+                });
+                existing.description = text;
+            } else {
+                const made = await api('/projects/' + state.currentProject.id + '/music-cues', {
+                    method: 'POST',
+                    body: JSON.stringify({ scene_id: sceneId, cue_type: 'score', title: 'Score', description: text }),
+                });
+                (window.__scoreCues = window.__scoreCues || {})[sceneId] = made;
+            }
+            if (el) el.style.borderColor = 'var(--gl-success, #166534)';
+            setStatus('Score direction saved — nothing generated. Press Regen when you want to hear it.');
+        } catch (err) {
+            if (el) el.style.borderColor = 'var(--gl-danger, #7f1d1d)';
+            setStatus('Error: ' + err.message);
+        }
+    }
+
+    /**
+     * How this scene is PLAYED.
+     *
+     * Sits between the character's standing delivery and the line's own
+     * parenthetical: more specific than how somebody always sounds, less
+     * specific than how they say this one line. Existing takes are untouched
+     * until they are regenerated — which is what Redo dialogue in Playback is
+     * for.
+     */
+    async function saveSceneDelivery(sceneId, text, el) {
+        try {
+            await api('/scenes/' + sceneId, {
+                method: 'PUT', body: JSON.stringify({ delivery_direction: text }),
+            });
+            if (el) el.style.borderColor = 'var(--gl-success, #166534)';
+            setStatus('Delivery direction saved. Lines already spoken keep their take until you redo them.');
         } catch (err) {
             if (el) el.style.borderColor = 'var(--gl-danger, #7f1d1d)';
             setStatus('Error: ' + err.message);
@@ -34287,6 +35066,51 @@ ${fountainText.slice(0, 50000)}`;
         }
         out.textContent = bits.length ? bits.join(' · ') + (short ? ' · ' + short : '') : '';
         out.style.color = short ? 'var(--gl-warning, #d9a441)' : '';
+    }
+
+    /**
+     * Buy a fresh take of this scene's dialogue.
+     *
+     * routes/voice.js has accepted `regenerate` since the reuse-by-hash skip
+     * shipped, and nothing on any page sent it — so a director who rewrote a
+     * line, recast a voice or changed the scene's direction had no way to buy
+     * the new take from where they were listening to the old one. Without the
+     * flag the hash matches and the old file is reused, which reads as the
+     * button doing nothing.
+     *
+     * Scoped to the SCENE on screen rather than the film: regenerating a
+     * feature's dialogue from a transport button is a bill nobody meant to run.
+     */
+    async function pbRegenerateDialogue() {
+        const entry = pbEntry();
+        if (!entry || !entry.scene_id) return setStatus('Pick a shot in a scene first.');
+
+        const shots = (pb.timeline.entries || []).filter(e => e.scene_id === entry.scene_id);
+        const lines = shots.reduce((n, e) => n + ((e.audio_lines || []).length || 0), 0);
+        if (!confirm(`Redo the dialogue for this scene?\n\n`
+            + `${shots.length} shot(s) in scene ${entry.scene_number || ''}`
+            + (lines ? `, ${lines} line(s) currently spoken` : '')
+            + `.\n\nThis buys a NEW take of every line, including lines that have not changed — `
+            + 'that is the point of the button, and it is what it costs. It picks up a rewrite, a '
+            + 'recast, and the scene’s delivery direction.')) return;
+
+        let made = 0;
+        for (let i = 0; i < shots.length; i++) {
+            const sh = shots[i];
+            setStatus(`Redoing dialogue: ${sh.shot_code} (${i + 1} of ${shots.length})…`, true);
+            try {
+                const res = await api(`/shots/${sh.shot_id}/voice/generate`, {
+                    method: 'POST', body: JSON.stringify({ regenerate: true }),
+                });
+                made += (res.audio_files || []).filter(f => f.status === 'complete').length;
+            } catch (err) {
+                // Stop on a refusal rather than asking for every remaining shot.
+                setStatus(`Stopped at ${sh.shot_code}: ${err.message}`);
+                return;
+            }
+        }
+        setStatus(`${made} line(s) regenerated. Reloading the cut…`);
+        await loadPlayback();
     }
 
     function pbBedsToggled() {

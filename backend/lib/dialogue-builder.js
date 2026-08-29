@@ -42,7 +42,18 @@ function extractDialogue(sceneCard) {
  * @param {object|null} character - film_characters row
  * @returns {object} Payload for POST /voice
  */
-function buildVoicePayload(dialogueLine, voiceProfile, character) {
+/**
+ * @param {object} dialogueLine   the line, and its own parenthetical
+ * @param {object} voiceProfile   who it is cast as
+ * @param {object} character      the standing delivery for that person
+ * @param {{scene?: {delivery?: string}}} [context]
+ *        THE SCENE'S OWN DIRECTION — how this scene is played, for every line
+ *        in it that does not say otherwise. This function took no scene at all,
+ *        so "the details of the scene" reached nothing and a line in a tense
+ *        scene was read exactly as neutrally as a line in a calm one unless the
+ *        writer had put a parenthetical on it.
+ */
+function buildVoicePayload(dialogueLine, voiceProfile, character, context) {
     const payload = {
         text: dialogueLine.line,
         model: 'qwen3-tts',
@@ -100,6 +111,27 @@ function buildVoicePayload(dialogueLine, voiceProfile, character) {
         let vp = {};
         try { vp = JSON.parse(voiceProfile.voice_params || '{}') || {}; } catch (_) { vp = {}; }
         if (vp.delivery) Object.assign(payload, applyDelivery(payload, vp.delivery));
+    }
+    // The character's standing delivery, from the character row rather than
+    // only the voice profile — a character can be cast before a profile exists.
+    if (character && character.delivery) {
+        Object.assign(payload, applyDelivery(payload, character.delivery));
+    }
+    /*
+     * THEN THE SCENE, then the line.
+     *
+     * A cast voice is how somebody always sounds; a scene direction is how this
+     * scene is played; a parenthetical is how they say THIS line. Each beats
+     * the one behind it — the same precedence the camera facets follow, and the
+     * reason the scene sits between them rather than at either end: it is more
+     * specific than a person and less specific than a line.
+     *
+     * An empty direction applies nothing, so a project that has never written
+     * one builds byte-identical payloads.
+     */
+    const sceneDirection = context && context.scene && context.scene.delivery;
+    if (sceneDirection && String(sceneDirection).trim()) {
+        Object.assign(payload, applyDelivery(payload, sceneDirection));
     }
     Object.assign(payload, applyDelivery(payload, dialogueLine.direction || dialogueLine.emotion));
 

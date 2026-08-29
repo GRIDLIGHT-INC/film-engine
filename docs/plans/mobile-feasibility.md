@@ -25,7 +25,7 @@ What changed, and the measurements that replaced the ones above:
 | Phase track on a phone | unreachable | **moved** into the drawer, one node |
 | API base | literal `http://localhost:3100` | follows `location.hostname` |
 | Page server | `127.0.0.1`, no opt-out | `FILM_ENGINE_HOST`, **default still loopback** |
-| Shell-aware media queries | 0 of 6 | **1 of 11 media queries** — the phone breakpoint |
+| Shell-aware media queries | 0 of 6 | **1 of 12 media queries** — the phone breakpoint |
 
 Verified in a real browser at both widths: at 1920px the panel is still 232px, `.main`
 still starts at 262px and the burger is hidden — **not one computed value above 700px
@@ -68,7 +68,7 @@ something. That is the single most useful thing to copy.
 | SPA size | **2.01 MB** | one file, `build.target: single-html` |
 | Non-print media queries | **7** | six incidental + the phone breakpoint Option B added; see below |
 
-**The responsive layout did not exist.** There were 11 media queries that are not `print`, and it
+**The responsive layout did not exist.** There were 12 media queries that are not `print`, and it
 is easy to read that as "already responsive". Not one of them touches the **app shell**. They
 govern:
 
@@ -79,7 +79,7 @@ govern:
 
 The sidebar is `position: fixed` at **260px**, `body` is `overflow: hidden`, and no breakpoint
 changes either. At 390px the sidebar alone takes two thirds of the screen and the body cannot
-scroll. So the honest statement as assessed was: **11 media queries existed and zero of them made the
+scroll. So the honest statement as assessed was: **12 media queries existed and zero of them made the
 application usable on a phone.** A test asserts that none touches the shell, so if that changes
 this assessment has to be revisited rather than quietly going stale.
 

@@ -857,7 +857,12 @@ function updateLocation(req, res, locId) {
     const textFields = {
         name: 300, description: 5000, reference_prompt: 2000,
         lighting_default: 50, time_of_day_default: 50,
-        atmosphere_notes: 2000, sound_notes: 2000
+        atmosphere_notes: 2000, sound_notes: 2000,
+        // What must stay true across every shot here, once something has been
+        // moved, broken or repainted. The sheet's own region — see
+        // lib/subject-sheets.js.
+        continuity_notes: 2000,
+        location_type: 100,
     };
 
     for (const [field, maxLen] of Object.entries(textFields)) {
@@ -1129,7 +1134,43 @@ function updateProp(req, res, propId) {
         values.push(n);
     }
 
-    for (const [field, maxLen] of Object.entries({ name: 200, description: 2000, visual_prompt: 2000, category: 50, notes: 2000 })) {
+    // Whether it has to WORK on camera. A practical is built differently and
+    // is a production constraint, not a note; stored as 0/1 because SQLite has
+    // no boolean and a string "false" is truthy everywhere that reads it.
+    if (body.practical !== undefined) {
+        fields.push('practical = ?');
+        values.push(body.practical ? 1 : 0);
+    }
+    if (body.quantity !== undefined) {
+        const n = Math.round(Number(body.quantity));
+        if (!Number.isFinite(n) || n < 0) return badReq(res, 'quantity must be a whole number');
+        fields.push('quantity = ?');
+        values.push(n);
+    }
+    /*
+     * Clean, chipped, burnt — the versions of one object.
+     *
+     * Refused rather than repaired: a state with no name is a row a director
+     * cannot refer to afterwards, and storing it bent means the sheet lists
+     * something nobody can identify.
+     */
+    if (body.continuity_states !== undefined) {
+        const raw = Array.isArray(body.continuity_states) ? body.continuity_states : [];
+        const clean = raw.map(st => ({
+            name: String((st && st.name) || '').slice(0, 120),
+            what: String((st && st.what) || '').slice(0, 500),
+            scene: String((st && st.scene) || '').slice(0, 120),
+        }));
+        if (clean.some(st => !st.name)) return badReq(res, 'every continuity state needs a name');
+        fields.push('continuity_states = ?');
+        values.push(JSON.stringify(clean));
+    }
+
+    for (const [field, maxLen] of Object.entries({
+        name: 200, description: 2000, visual_prompt: 2000, category: 50, notes: 2000,
+        // The sheet's own fields — see lib/subject-sheets.js.
+        materials: 1000, period: 120, constraints: 1000,
+    })) {
         if (body[field] !== undefined) {
             fields.push(`${field} = ?`);
             values.push(String(body[field]).slice(0, maxLen));

@@ -84,6 +84,10 @@ const NAMED_DIFFERENTLY = {
     'projects.js updateProject': {
         annotation_feedback: { control: 'annotFeedbackToggle', why: 'a toggle on the storyboard, not in settings' },
     },
+    'locations.js updateProp': {
+        continuity_states: { control: 'addPropState',
+            why: 'a repeating list, not one input — the prop sheet\'s states region adds and removes them' },
+    },
 };
 
 const NOT_BUILT = {
@@ -149,6 +153,17 @@ function updateHandlers() {
 function hasControl(field) {
     if (SPA.includes(`data-field="${field}"`)) return true;
 
+    /*
+     * A control BUILT at runtime.
+     *
+     * The location and prop sheets emit `data-field="${field}"` from a helper,
+     * so the attribute name appears nowhere in the source and a text search
+     * reports a working editor as missing — the same reason
+     * plate-upload.test.js executes uploadControl rather than grepping for an
+     * attribute that is produced rather than written.
+     */
+    if (new RegExp(`ssField\\('${field}'`).test(SPA)) return true;
+
     const camel = field.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
     if (new RegExp(`id="[A-Za-z]*${camel[0].toUpperCase()}${camel.slice(1)}"`).test(SPA)) return true;
 
@@ -184,25 +199,68 @@ test('the entity a director edits most has every field the route accepts', () =>
      * having a notes control when the control belongs to continuity — and a
      * mutation deleting the prop one passed happily.
      */
+    /*
+     * A subject may be edited in more than one place, and both count.
+     *
+     * The location and prop SHEETS are where a director now works — the modal
+     * is the quick create/edit and the sheet is the workspace, exactly as the
+     * character card and the character sheet already divide it. Scoping to the
+     * modal alone would report a field as unreachable when it is on the sheet;
+     * scoping to the whole page would report the PROP modal as having a notes
+     * control when the control belongs to continuity. So each entity names the
+     * regions it may be edited in, and a field must appear in one of them.
+     */
     const wanted = {
-        'characters.js updateCharacter': 'characterModal',
-        'locations.js updateLocation': 'locationModal',
-        'locations.js updateProp': 'propModal',
+        'characters.js updateCharacter': ['characterModal'],
+        'locations.js updateLocation': ['locationModal', { fn: 'renderLocationSheet', span: 12000 }],
+        'locations.js updateProp': ['propModal', { fn: 'renderPropSheet', span: 12000 }],
     };
     const handlers = updateHandlers();
 
-    for (const [key, modalId] of Object.entries(wanted)) {
+    for (const [key, places] of Object.entries(wanted)) {
         const h = handlers.find(x => x.key === key);
         assert.ok(h, `${key} is gone — the denominator cannot be derived`);
 
-        const markup = modalMarkup(modalId);
-        assert.ok(markup, `${modalId} is not in the page at all`);
+        const present = new Set();
+        const where = [];
+        for (const place of places) {
+            let markup;
+            if (typeof place === 'string') {
+                markup = modalMarkup(place);
+                assert.ok(markup, `${place} is not in the page at all`);
+                where.push(place);
+            } else {
+                const at = SPA.indexOf(`function ${place.fn}(`);
+                assert.notStrictEqual(at, -1, `${place.fn} is not in the page at all`);
+                markup = SPA.slice(at, at + place.span);
+                where.push(place.fn);
+            }
+            for (const m of markup.matchAll(/data-field="([a-z_0-9]+)"/g)) present.add(m[1]);
+            /*
+             * A sheet builds its controls at RUNTIME, so `data-field="${field}"`
+             * is what the source contains and the attribute name appears
+             * nowhere in it. Read the call sites instead — the same reason
+             * plate-upload.test.js executes uploadControl rather than grepping
+             * for an attribute that is produced, not written.
+             */
+            for (const m of markup.matchAll(/ssField\('([a-z_0-9]+)'/g)) present.add(m[1]);
+        }
 
-        const present = new Set([...markup.matchAll(/data-field="([a-z_0-9]+)"/g)].map(m => m[1]));
-        const missing = h.fields.filter(f => !present.has(f));
+        // A control named differently is still a control — the same allowance
+        // the audit below makes, and for the same reason: a repeating list is
+        // not one input, and refusing to say so would push a real editor into
+        // the not-built list.
+        const aliased = NAMED_DIFFERENTLY[key] || {};
+        const missing = h.fields.filter(f => !present.has(f) && !aliased[f]);
         assert.deepStrictEqual(missing, [],
-            `${key}: accepted by the route and stored, with no control in ${modalId} — `
+            `${key}: accepted by the route and stored, with no control in ${where.join(' or ')} — `
             + 'only an agent or curl can set them');
+        for (const [field, spec] of Object.entries(aliased)) {
+            assert.ok(h.fields.includes(field),
+                `${key} claims ${field} is named differently and the route no longer takes it`);
+            assert.ok(SPA.includes(spec.control),
+                `${key}/${field} claims the control is ${spec.control}, which is not on the page`);
+        }
     }
 });
 

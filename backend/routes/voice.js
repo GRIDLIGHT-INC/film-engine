@@ -16,6 +16,19 @@ const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir, serveFile } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const { extractDialogue, buildVoicePayload, dialogueFilename } = require('../lib/dialogue-builder');
+
+/**
+ * How this scene is played, for every line that does not say otherwise.
+ *
+ * One reading, used by every path that builds a voice payload — three of them
+ * built one independently, and a direction honoured by two is worse than none:
+ * the same line would be read differently depending on which button generated
+ * it, and only whoever used the third path would ever find out.
+ */
+function sceneContext(scene) {
+    return { scene: { delivery: (scene && scene.delivery_direction) || '' } };
+}
+
 const { resolve } = require('../lib/providers');
 const { providerConfigFor, spendContext } = require('../lib/provider-config');
 const { buildShotReferencePayload, applyConsistencyToVoicePayload, recordConsistencyCheck } = require('../lib/consistency-context');
@@ -195,7 +208,7 @@ async function generateVoiceForShotId(shotId, req_body) {
         const character = characterForCue(characters, line.character);
         const voiceProfile = character ? voiceProfiles.find(vp => vp.character_id === character.id) : null;
         let payload = applyConsistencyToVoicePayload(
-            buildVoicePayload(line, voiceProfile, character),
+            buildVoicePayload(line, voiceProfile, character, sceneContext(scene)),
             consistencyContext,
             line.character
         );
@@ -225,7 +238,7 @@ async function generateVoiceForShotId(shotId, req_body) {
          */
         if (line.direction && deliveryFor(line.direction) && !TAG_MODELS.includes(payload.model)) {
             payload.model = TAG_MODELS[0];
-            payload = buildVoicePayload({ ...line }, { ...(voiceProfile || {}), tts_model: TAG_MODELS[0] }, character);
+            payload = buildVoicePayload({ ...line }, { ...(voiceProfile || {}), tts_model: TAG_MODELS[0] }, character, sceneContext(scene));
             payload = withContext(payload, {
                 previous: prev ? prev.line : null,
                 next: next ? next.line : null,
@@ -431,7 +444,7 @@ async function generateVoiceStream(req, res, shotId) {
         const character = characterForCue(characters, line.character);
         const voiceProfile = character ? voiceProfiles.find(vp => vp.character_id === character.id) : null;
         const payload = applyConsistencyToVoicePayload(
-            buildVoicePayload(line, voiceProfile, character),
+            buildVoicePayload(line, voiceProfile, character, sceneContext(scene)),
             consistencyContext,
             line.character
         );
@@ -530,7 +543,7 @@ async function batchVoiceStream(req, res, projectId) {
                 project
             );
             const payload = applyConsistencyToVoicePayload(
-                buildVoicePayload(line, voiceProfile, character),
+                buildVoicePayload(line, voiceProfile, character, sceneContext(scene)),
                 consistencyContext,
                 line.character
             );

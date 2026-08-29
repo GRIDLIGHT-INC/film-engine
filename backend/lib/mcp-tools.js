@@ -803,10 +803,17 @@ const PRODUCTION_TOOLS = [
         handler: handleScenes, method: 'PUT',
         description: 'Rewrite ONE scene in the screenplay, leaving every other scene byte-identical. Send the complete replacement scene starting with its own heading (INT./EXT. LOCATION - TIME). This is the surgical edit: it splices into the Fountain and saves a new version, so scene ids and the shots hanging off them survive, and no other scene is marked as behind. Prefer this over script_write whenever you are changing one scene — a whole-document rewrite makes you reproduce every other scene faithfully, and one stray reflow marks work as needing redoing that does not. Shots are NOT re-derived: fix them with shot_update, or delete and recreate them with shot_create.',
         path: a => `/film/scenes/${a.scene_id}`,
-        body: a => ({ fountain: a.fountain }),
+        // Only what was sent: `fountain: undefined` alongside a delivery
+        // direction would splice an empty scene, and an advertised argument no
+        // builder forwards is one a model sets and nothing reads.
+        body: a => ({
+            ...(a.fountain !== undefined ? { fountain: a.fountain } : {}),
+            ...(a.delivery_direction !== undefined ? { delivery_direction: a.delivery_direction } : {}),
+        }),
         schema: {
             scene_id: { type: 'string' },
             fountain: { type: 'string', description: 'The complete scene in Fountain, heading first, action and dialogue beneath.' },
+            delivery_direction: { type: 'string', description: 'How this SCENE is played \u2014 "tense, hushed", "shouting over each other". Applies to every line in it that carries no parenthetical of its own, and is beaten by one that does. Sent alone (without `fountain`) it changes only this, and splices nothing.' },
         },
         required: ['scene_id', 'fountain'],
     },
@@ -1997,6 +2004,18 @@ const PRODUCTION_TOOLS = [
             description: { type: 'string' },
             category: { type: 'string', enum: PROP_CATEGORIES },
             name: { type: 'string' },
+            notes: { type: 'string', description: 'Production-facing. Reaches no prompt.' },
+            materials: { type: 'string', description: 'What it is made of and how it catches light — "polished chrome, amber acrylic". Reaches the plate prompt.' },
+            period: { type: 'string', description: 'When it is from. A 1952 selector and a 1998 one are different objects.' },
+            quantity: { type: 'number', description: 'How many exist.' },
+            practical: { type: 'boolean', description: 'Whether it has to WORK on camera — a practical is built differently and is a real production constraint.' },
+            constraints: { type: 'string', description: 'What it must never be or do.' },
+            continuity_states: {
+                type: 'array',
+                description: 'Clean, chipped, burnt — the versions of one object. Each needs a name; `what` describes the state and `scene` says where it belongs. A state with no name is refused.',
+                items: { type: 'object', properties: {
+                    name: { type: 'string' }, what: { type: 'string' }, scene: { type: 'string' } } },
+            },
         },
             required: ['prop_id'],
     },
@@ -2074,7 +2093,12 @@ const PRODUCTION_TOOLS = [
             bible_section: { type: 'string', description: 'The story bible section these words were written from.' },
             location_id: { type: 'string' },
             description: { type: 'string', description: 'What this place looks like, in prompt terms.' },
-            lighting_default: { type: 'string' },
+            lighting_default: { type: 'string', description: 'How it is lit unless a shot says otherwise.' },
+            time_of_day_default: { type: 'string', description: 'The hour it is shot at unless a scene says otherwise.' },
+            atmosphere_notes: { type: 'string', description: 'Weather, haze, season — the standing conditions of the place.' },
+            sound_notes: { type: 'string', description: 'How the place SOUNDS. Reaches the ambient bed generated for every scene here.' },
+            location_type: { type: 'string', description: 'Interior, exterior, practical, stage.' },
+            continuity_notes: { type: 'string', description: 'What must stay true across every shot here, once something has been moved, broken or repainted.' },
         },
             required: ['location_id'],
     },
