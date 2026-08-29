@@ -255,6 +255,7 @@ film-engine/
 │       ├── staleness-accept.test.js     # A warning you cannot act on is one you learn to ignore
 │       ├── dev-server.test.js           # An edit you cannot see is an edit that did not happen
 │       ├── mobile-shell.test.js         # The shell on a 390px screen, computed rather than grepped
+│       ├── ios-app.test.js              # The iOS wrapper ships the real page, and can reach a Mac
 │       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
@@ -714,6 +715,61 @@ The assessment (`docs/plans/mobile-feasibility.md`) measured six media queries, 
 The shell offsets are **derived** from the CSS — every declaration positioning something by `var(--fe-panel)` or `var(--fe-rail)` — so a fourth one added later is in the denominator with nothing to remember. `.fe-panel` itself is exempt **by name with a reason** (it is `position:fixed`, so its own width never pushes the page), and the test asserts the exemption set is exactly that one and that the panel is still out of flow.
 
 Above 700px not a single computed value changes: verified in a real browser at 1920px (panel 232, `.main` at 262, status bar at 262, burger hidden, track in the top bar).
+
+### iOS Is the Same Page, Not a Second One
+*"I want a full replica of the app for mobile iOS ready to send for TestFlight."*
+
+**Full replica means the actual `src/index.html`, all 38 pages, inside a
+WKWebView** — not a native re-implementation of them. The mobile assessment
+already argued the shape and it holds harder here: option C's real cost is never
+the framework, it is **a second surface**, and this codebase has paid for two
+surfaces disagreeing three times in one week — the plate pointer, the frame
+pointer, `effectiveCamera`. One surface cannot drift from itself. The phone shell
+was built for exactly this and is already measured at 362px of page on a 390px
+screen.
+
+**What is native is what a browser cannot do.** Three things, each with a reason:
+
+`file://` was the obvious way to load a bundled page and is **wrong**: WKWebView
+gives it an opaque origin with **no localStorage**, and the SPA keeps the project
+selection, the API address and every editor preference there — it would come up
+blank on every launch and read as data loss. A `WKURLSchemeHandler` on
+`film-engine://` serves the same bytes from the bundle with a real origin.
+
+`DEFAULT_API_BASE` follows `location.hostname`, which is correct for a laptop and
+for a phone on the LAN and **meaningless for a custom scheme** — `film-engine://app`
+would derive a base pointing at nothing. `defaultApiBase()` returns `''` for a
+non-`http(s)` origin, and the shell injects `film_api_url` at
+`.atDocumentStart` so the explicit override that already existed is the one that
+wins. It is the same rule as the browser, with the one case a browser never has.
+
+The engine runs on a Mac over plain HTTP on a LAN address, which iOS blocks. The
+app declares `NSAllowsLocalNetworking` — deliberately not
+`NSAllowsArbitraryLoads`, which would permit any cleartext host — plus
+`NSLocalNetworkUsageDescription`, without which iOS 14+ silently drops LAN
+traffic and the failure surfaces as a connection error rather than a permission
+prompt.
+
+**The setup screen is native because a blank page is not an error message.** The
+app has to be told where the engine is, so it normalises what a person actually
+types (`192.168.4.40`, with or without a scheme or port), probes `/api/health`,
+and says *reachable* or *why not* — the same reasoning that replaced
+*"Backend offline"* with something a director can act on.
+
+**The bundled page is a copy, and a copy is the risk.** `ios/FilmEngine/Web/index.html`
+is `src/index.html`; `tests/ios-app.test.js` fails if they differ by one byte,
+because a drifted copy is precisely the second surface this design exists to
+avoid. The test also derives the page list from the SPA's own `data-page`
+attributes rather than counting to 38, and checks the bundle carries every one.
+
+**TestFlight needs one thing this repo cannot supply.** The project builds and
+runs — verified on an iPhone 16 Pro simulator against the live API, showing all
+three real projects — and every setting an upload requires is set. Archiving
+fails with *"No Accounts: Add a new account in Accounts settings"*: Xcode holds
+no signed-in Apple ID, which needs a password and 2FA. `ios/README.md` carries
+the three steps and the exact commands. Stated rather than worked around, because
+a wrapper that cannot be signed is not shippable and pretending otherwise is
+discovered at upload.
 
 ### The Frame You Are Shooting From
 Board generation never looked at another frame. A keyframe was conditioned on character plates, a location plate and a mood-board image — every one a picture of something *in the abstract* — so 1B rebuilt the street from scratch and put the well, the cart and the light somewhere else than 1A had. The only shot-to-shot chaining that existed was `POST /shots/:id/post/color-match`, on the finished **clip**, long after the frames were paid for.
@@ -2410,6 +2466,7 @@ node --test backend/tests/resolution-trickle.test.js
 node --test backend/tests/staleness-accept.test.js
 node --test backend/tests/dev-server.test.js
 node --test backend/tests/mobile-shell.test.js
+node --test backend/tests/ios-app.test.js
 node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js

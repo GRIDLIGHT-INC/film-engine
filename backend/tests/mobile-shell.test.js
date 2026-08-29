@@ -273,14 +273,30 @@ test('the API base follows the host the page was served from', () => {
     // the phone from 192.168.x.x calling http://localhost:3100 reaches the
     // PHONE, fails, and surfaces as "Backend offline" — indistinguishable
     // from a dead server.
-    const line = HTML.match(/const DEFAULT_API_BASE\s*=\s*([^;]+);/);
-    assert.ok(line, 'DEFAULT_API_BASE not found');
-    const evalWith = hostname => Function('location',
-        '"use strict";return (' + line[1] + ')')({ hostname, protocol: 'http:' });
+    // Extracted as a FUNCTION rather than by evaluating the assignment's
+    // right-hand side: the expression was inlined once and is now named, and a
+    // test that can only read one of those two shapes reports a working page as
+    // broken the moment somebody tidies it. The behaviour is what is pinned.
+    const start = HTML.search(/function\s+defaultApiBase\s*\(/);
+    assert.ok(start > -1, 'defaultApiBase() not found');
+    let depth = 0, i = HTML.indexOf('{', start), end = i;
+    for (; i < HTML.length; i++) {
+        if (HTML[i] === '{') depth++;
+        else if (HTML[i] === '}') { depth--; if (!depth) { end = i + 1; break; } }
+    }
+    const fn = Function('"use strict";' + HTML.slice(start, end) + ';return defaultApiBase;')();
+    const evalWith = hostname => fn({ hostname, protocol: 'http:' });
     assert.strictEqual(evalWith('localhost'), 'http://localhost:3100',
         'the laptop must keep working exactly as before');
     assert.strictEqual(evalWith('192.168.1.42'), 'http://192.168.1.42:3100',
         'a phone must call the machine that served it the page');
+    // Native shells load the page over a custom scheme with no host worth
+    // calling; they inject film_api_url instead, so guessing a base from
+    // film-engine://app would be a request to nothing.
+    assert.strictEqual(fn({ hostname: 'app', protocol: 'film-engine:' }), '',
+        'a non-http origin has no host to derive an API base from');
+    assert.ok(/const DEFAULT_API_BASE\s*=\s*defaultApiBase\(/.test(HTML),
+        'DEFAULT_API_BASE must come from that function, not a second copy of the rule');
     assert.ok(/localStorage\.getItem\('film_api_url'\)\s*\|\|/.test(HTML),
         'the explicit override must still win over the default');
 });

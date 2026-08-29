@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleDisplayName</key><string>Film Engine</string>
+    <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+    <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>LSRequiresIPhoneOS</key><true/>
+    <key>UILaunchScreen</key>
+    <dict>
+        <key>UIColorName</key><string></string>
+    </dict>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <!--
+        The engine runs on a Mac on the same network, over plain HTTP on a LAN
+        address. iOS blocks that by default, so the app would show nothing and
+        be unable to say why. NSAllowsLocalNetworking permits exactly the local
+        network and nothing else — deliberately NOT NSAllowsArbitraryLoads,
+        which would switch the protection off for the whole internet.
+    -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key><true/>
+    </dict>
+
+    <!-- iOS 14+ refuses to touch the LAN at all without a stated reason. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Film Engine connects to the Mac on your network that is running your projects, so this app can read your screenplay, storyboard and footage.</string>
+
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Save a frame or a clip from your film to your photo library.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Choose a photograph to use as a reference plate for a character, location or prop.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Photograph a location or a prop to use as a reference plate.</string>
+    <key>ITSAppUsesNonExemptEncryption</key><false/>
+</dict>
+</plist>
