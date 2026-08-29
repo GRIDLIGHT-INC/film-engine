@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const { db, generateId } = require('../db/database');
 const G = require('../lib/subject-gallery');
+const CSHEET = require('../lib/character-sheet');
 const { generatePlate, buildPlatePrompt, plateImageSize } = require('../lib/reference-plates');
 
 /**
@@ -227,6 +228,7 @@ async function explore(req, res, kind, subjectId) {
     const count = Math.max(1, Math.min(Number(body.count) || 3, 6));
     const view = body.view || '';
     const instruction = String(body.instruction || '').trim();
+    const category = body.category || null;
 
     const config = providerConfigOf(project);
     let provider;
@@ -246,7 +248,15 @@ async function explore(req, res, kind, subjectId) {
             prompt: instruction ? `${base}\n\nDirection for this look: ${instruction}` : base,
         });
         if (result.ok) {
-            made.push({ asset_id: result.asset_id, image_url: result.image_url, role: 'concept' });
+            if (category) {
+                const row = db.prepare('SELECT metadata FROM film_assets WHERE id = ?').get(result.asset_id);
+                let meta = {};
+                try { meta = JSON.parse(row.metadata || '{}') || {}; } catch (_) { meta = {}; }
+                db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?')
+                    .run(JSON.stringify(CSHEET.categoryMetadata(category, meta)), result.asset_id);
+            }
+            made.push({ asset_id: result.asset_id, image_url: result.image_url, role: 'concept',
+                category });
         } else {
             refusal = result.error || 'generation failed';
             notAttempted.push(i + 1);
@@ -317,10 +327,10 @@ function addInspiration(req, res, kind, subjectId) {
     ).run(assetId, subject.project_id, subject.id, filePath || '', fileName || '',
         fileName ? path.extname(fileName).slice(1) : 'link',
         fileName ? (IMAGE_MIME[path.extname(fileName).slice(1)] || 'image/png') : 'text/uri-list',
-        JSON.stringify(G.inspirationMetadata({
+        JSON.stringify(CSHEET.categoryMetadata(body.category, G.inspirationMetadata({
             note, ...(sourceUrl ? { source_url: sourceUrl } : {}),
             ...(body.view ? { view: String(body.view) } : {}),
-        })));
+        }))));
 
     return json(res, 201, {
         asset_id: assetId, role: 'inspiration',
@@ -365,6 +375,16 @@ function setRole(req, res, assetId) {
     const found = subjectOfAsset(assetId);
     if (!found) return json(res, 404, { error: 'Image not found, or not attached to a subject' });
     const body = req.body || {};
+    // A category may travel with a role change, so filing and promoting is one
+    // call rather than two writes a caller can half-complete.
+    if (body.category) {
+        const row = db.prepare('SELECT metadata FROM film_assets WHERE id = ?').get(assetId);
+        let meta = {};
+        try { meta = JSON.parse(row.metadata || '{}') || {}; } catch (_) { meta = {}; }
+        db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?')
+            .run(JSON.stringify(CSHEET.categoryMetadata(body.category, meta)), assetId);
+    }
+
     const role = String(body.role || '');
     if (!G.ROLE_IDS.includes(role)) {
         return json(res, 400, { error: `role must be one of: ${G.ROLE_IDS.join(', ')}` });
@@ -457,6 +477,41 @@ function removeImage(req, res, assetId) {
     });
 }
 
+/* ── the palette ───────────────────────────────────────────────────────── */
+
+/**
+ * A character's locked palette.
+ *
+ * On the CHARACTER rather than on a costume: it holds across every costume they
+ * wear and every frame they appear in, and the costume table the sheet used to
+ * point at has no UI and zero rows — so "set one on a costume" was advice about
+ * a surface that does not exist.
+ */
+function getPalette(req, res, characterId) {
+    const ch = db.prepare('SELECT id, name, palette_json FROM film_characters WHERE id = ?').get(characterId);
+    if (!ch) return json(res, 404, { error: 'Character not found' });
+    let list = [];
+    try { list = JSON.parse(ch.palette_json || '[]'); } catch (_) { list = []; }
+    return json(res, 200, { character_id: ch.id, palette: CSHEET.normalisePalette(list) });
+}
+
+function putPalette(req, res, characterId) {
+    const ch = db.prepare('SELECT id FROM film_characters WHERE id = ?').get(characterId);
+    if (!ch) return json(res, 404, { error: 'Character not found' });
+    const asked = ((req.body || {}).palette) || [];
+    const palette = CSHEET.normalisePalette(asked);
+    const dropped = asked.length - palette.length;
+    db.prepare('UPDATE film_characters SET palette_json = ? WHERE id = ?')
+        .run(JSON.stringify(palette), characterId);
+    return json(res, 200, {
+        character_id: characterId, palette,
+        // Named rather than silently discarded: a swatch that vanishes on save
+        // looks like the save failed.
+        ...(dropped > 0 ? { dropped,
+            note: `${dropped} value(s) were not a #rrggbb colour and were not stored.` } : {}),
+    });
+}
+
 /* ── routing ───────────────────────────────────────────────────────────── */
 
 async function handleSubjectGallery(req, res, urlParts, query) {
@@ -478,6 +533,12 @@ async function handleSubjectGallery(req, res, urlParts, query) {
         if (section === 'inspiration' && req.method === 'POST') {
             return addInspiration(req, res, kind, id);
         }
+    }
+
+    if (kind === 'character' && urlParts[2] && urlParts[3] === 'palette') {
+        if (req.method === 'GET') return getPalette(req, res, urlParts[2]);
+        if (req.method === 'PUT') return putPalette(req, res, urlParts[2]);
+        return json(res, 405, { error: 'Method not allowed' });
     }
 
     if (urlParts[1] === 'gallery' && urlParts[2]) {

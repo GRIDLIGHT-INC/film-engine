@@ -1334,6 +1334,19 @@
         .cs-head-right { flex:none; display:flex; gap:10px; align-items:center; }
         /* Chips must never wrap mid-label; the ROW wraps as whole chips. */
         .cs-chips { display:flex; gap:8px; flex-wrap:wrap; }
+        @keyframes cs-spin { to { transform: rotate(360deg); } }
+        .cs-spinner {
+            display:inline-block; width:10px; height:10px; margin-right:7px;
+            vertical-align:-1px; border-radius:50%;
+            border:2px solid rgba(255,255,255,0.2); border-top-color:#9fdce8;
+            animation: cs-spin .7s linear infinite;
+        }
+        .cs-chip.cs-busy { border-color:rgba(90,200,220,0.35); color:#9fdce8; }
+        .cs-add {
+            display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:10px;
+        }
+        .cs-add input[type=text] { flex:1; min-width:140px; }
+        .cs-add input[type=color] { width:40px; height:30px; padding:0; border-radius:6px; }
         .cs-chip {
             white-space:nowrap; flex:none; padding:5px 10px; border-radius:6px;
             font-family:ui-monospace,Menlo,monospace; font-size:10.5px; letter-spacing:.12em;
@@ -6240,7 +6253,23 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                     <div class="form-group"><label>Age Range</label><input type="text" data-field="age_range" placeholder="20s, 30-40"></div>
-                    <div class="form-group"><label>Gender</label><input type="text" data-field="gender" placeholder="Male, Female, etc."></div>
+                    <div class="form-group"><label>Gender</label>
+                        <!--
+                          A picker, not a text box.
+                          It was free text, which is why voiceGender() has to
+                          match with a regex: "F", "woman" and "female" were
+                          three values for one thing, and anything it did not
+                          recognise silently disabled gender-matched voice
+                          suggestions. These are the values the caster reads,
+                          and lib/character-sheet.js GENDERS is held to that.
+                        -->
+                        <select data-field="gender">
+                            <option value="">&mdash; not recorded &mdash;</option>
+                            <option value="female">Female</option>
+                            <option value="male">Male</option>
+                            <option value="non-binary">Non-binary</option>
+                            <option value="neutral">Neutral / not applicable</option>
+                        </select></div>
                 </div>
                 <!--
                   These four are stored by film_characters and accepted by
@@ -23539,7 +23568,36 @@ ${fountainText.slice(0, 50000)}`;
     ];
     const CS_LEGACY = { side: 'side-left', 'three-quarter': 'front', 'back-three-quarter': 'back' };
 
-    let SHEET = { id: null, character: null, gallery: [], costumes: [], filter: 'all' };
+    let SHEET = { id: null, character: null, gallery: [], costumes: [],
+        filter: 'all', palette: [] };
+
+    /**
+     * Run something that spends, with a spinner on the button.
+     *
+     * A generation takes up to a minute, and without this the page looks
+     * exactly as it did before the click — which reads as the button not
+     * working and invites a second press on a paid action. The board learned
+     * this once; the sheet had none of it.
+     *
+     * `finally` is the load-bearing part: a spinner that keeps turning after a
+     * failure is worse than none, because it says work is still happening when
+     * nothing is.
+     */
+    async function csBusy(label, work) {
+        const bar = document.getElementById('csChips');
+        const badge = document.createElement('span');
+        badge.className = 'cs-chip cs-busy';
+        badge.innerHTML = '<span class="cs-spinner"></span>' + esc(label || 'Working…');
+        if (bar) bar.appendChild(badge);
+        setStatus(label || 'Working…', true);
+        try {
+            return await work();
+        } finally {
+            badge.remove();
+            setStatus('');
+        }
+    }
+
 
     async function openCharacterSheet(id) {
         SHEET = { id, character: null, gallery: [], costumes: [], filter: 'all' };
@@ -23553,14 +23611,14 @@ ${fountainText.slice(0, 50000)}`;
     async function renderCharacterSheet() {
         const body = document.getElementById('csBody');
         try {
-            const [ch, gal, cos] = await Promise.all([
+            const [ch, gal, pal] = await Promise.all([
                 api(`/characters/${SHEET.id}`),
                 api(`/characters/${SHEET.id}/gallery`).catch(() => ({ items: [] })),
-                api(`/characters/${SHEET.id}/costumes`).catch(() => ({ costumes: [] })),
+                api(`/characters/${SHEET.id}/palette`).catch(() => ({ palette: [] })),
             ]);
             SHEET.character = ch.character || ch;
             SHEET.gallery = gal.items || [];
-            SHEET.costumes = cos.costumes || cos || [];
+            SHEET.palette = pal.palette || [];
         } catch (err) {
             // A renderer that paints a placeholder must have a path that
             // replaces it, or a failure reads as the character being gone.
@@ -23676,25 +23734,45 @@ ${fountainText.slice(0, 50000)}`;
             <div class="cs-wardrobe">
               <div class="cs-label"><span>Wardrobe &amp; props</span><span class="rule"></span>
                 <span class="note">continuity checklist</span></div>
-              ${SHEET.costumes.length
-                  ? `<div class="cs-ward">${SHEET.costumes.map(w => `
-                        <div class="item">
-                          <div class="thumb"></div>
-                          <div style="min-width:0;">
-                            <div style="font-size:13px;color:#e8e8ea;">${esc(w.name || 'Costume')}</div>
-                            <div class="text-sm text-muted">${esc(w.description || '')}</div>
-                          </div>
-                        </div>`).join('')}</div>`
-                  : '<p class="text-sm text-muted">No wardrobe recorded yet.</p>'}
+              ${(() => {
+                  // Wardrobe items ARE gallery pictures filed under `costume`,
+                  // with the title as the note — one storage path and one
+                  // upload flow, and the same picture the reference band shows.
+                  const ward = SHEET.gallery.filter(i =>
+                      (i.metadata && i.metadata.ref_category) === 'costume');
+                  return ward.length
+                      ? `<div class="cs-ward">${ward.map(w => `
+                            <div class="item">
+                              ${w.image_url
+                                  ? `<img class="thumb" src="${esc(csImg(w.image_url))}" alt=""
+                                       onclick="openPlateViewer(${jsAttr(csImg(w.image_url))}, ${jsAttr(w.note || 'Wardrobe')})">`
+                                  : '<div class="thumb"></div>'}
+                              <div style="min-width:0;">
+                                <div style="font-size:13px;color:#e8e8ea;">${esc(w.note || 'Wardrobe')}</div>
+                                <div class="text-sm text-muted">${esc(w.role)}</div>
+                              </div>
+                            </div>`).join('')}</div>`
+                      : '<p class="text-sm text-muted">No wardrobe recorded yet.</p>';
+              })()}
+              <div class="cs-add">
+                <button class="btn btn-sm" onclick="addWardrobeItem()">+ Upload item</button>
+                <button class="btn btn-sm" onclick="generateWardrobeItem()">Generate item</button>
+              </div>
             </div>
 
             <div class="cs-palette">
               <div class="cs-label"><span>Palette</span><span class="rule"></span></div>
               ${palette.length
-                  ? `<div class="cs-swatches">${palette.map(p => `
-                        <div class="cs-swatch"><div class="chip" style="background:${esc(p.hex)};"></div>
+                  ? `<div class="cs-swatches">${palette.map((p, i) => `
+                        <div class="cs-swatch" onclick="removePaletteSwatch(${i})"
+                             title="Click to remove" style="cursor:pointer;">
+                        <div class="chip" style="background:${esc(p.hex)};"></div>
                         <div class="cap">${esc(p.name || p.hex)}</div></div>`).join('')}</div>`
-                  : '<p class="text-sm text-muted">No palette locked. Set one on a costume to hold the colours across every frame.</p>'}
+                  : '<p class="text-sm text-muted">No palette locked yet.</p>'}
+              <div class="cs-add">
+                <button class="btn btn-sm" onclick="addPaletteSwatch()">+ Colour</button>
+                <button class="btn btn-sm" onclick="paletteFromImage()">From a picture</button>
+              </div>
             </div>
           </div>
         </div>
@@ -23719,8 +23797,11 @@ ${fountainText.slice(0, 50000)}`;
                 ${i.image_url ? `<img src="${esc(csImg(i.image_url))}" alt="">` : ''}
                 <span class="tl">${esc((i.metadata && i.metadata.ref_category) || i.role)}${i.note ? ' · ' + esc(i.note) : ''}</span>
               </div>`).join('')}
-            <div class="cs-tile cs-drop" onclick="openGallery('character', '${c.id}', ${jsAttr(c.name)})">
-              <div style="font-size:18px;">+</div><div>ADD REFERENCE</div>
+            <div class="cs-tile cs-drop" onclick="addSheetReference()" title="A picture you already have">
+              <div style="font-size:18px;">+</div><div>UPLOAD</div>
+            </div>
+            <div class="cs-tile cs-drop" onclick="generateSheetReference()" title="Generate one from a prompt — spends">
+              <div style="font-size:18px;">✦</div><div>GENERATE</div>
             </div>
           </div>
         </div>`;
@@ -23728,18 +23809,248 @@ ${fountainText.slice(0, 50000)}`;
 
     function csFilter(id) { SHEET.filter = id; renderCharacterSheet(); }
 
-    /** The locked palette, from whichever costume carries one. */
-    function csPalette() {
-        for (const w of SHEET.costumes) {
-            let p = w.color_palette;
-            if (!p) continue;
-            if (typeof p === 'string') { try { p = JSON.parse(p); } catch (_) { continue; } }
-            if (Array.isArray(p) && p.length) {
-                return p.map(x => typeof x === 'string' ? { hex: x, name: x } : x);
-            }
-        }
-        return [];
+    /* ── putting things INTO the sheet ─────────────────────────────────────
+     *
+     * Three regions were read-only dead ends: the reference band could only be
+     * filled from another modal, wardrobe said "no wardrobe recorded yet" with
+     * no way to record any, and the palette pointed at a table with no UI. A
+     * region that shows an empty state and offers no way out of it is a label.
+     */
+
+    /** Read a local file as a data URI. One reader for every upload here. */
+    function csReadFile(accept) {
+        return new Promise(resolve => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = accept || 'image/png,image/jpeg,image/webp';
+            input.onchange = () => {
+                const file = input.files && input.files[0];
+                if (!file) { resolve(null); return; }
+                const reader = new FileReader();
+                reader.onload = () => resolve({ data: reader.result, name: file.name });
+                reader.onerror = () => resolve(null);
+                reader.readAsDataURL(file);
+            };
+            input.click();
+        });
     }
+
+    function csCategoryPrompt(label) {
+        const ids = CS_CATEGORIES.map(c => c.id);
+        const answer = prompt(`${label}\n\nCategory — ${ids.join(', ')}:`, 'sketch');
+        if (answer === null) return undefined;              // cancelled
+        const v = String(answer).trim().toLowerCase();
+        return ids.includes(v) ? v : 'sketch';
+    }
+
+    /** A picture you already have, filed under a category. */
+    async function addSheetReference() {
+        const category = csCategoryPrompt('Add a reference you already have.');
+        if (category === undefined) return;
+        const file = await csReadFile();
+        if (!file) return;
+        const note = prompt('What is it? (optional)') || '';
+        try {
+            await api(`/characters/${SHEET.id}/inspiration`, {
+                method: 'POST',
+                body: JSON.stringify({ data: file.data, note, category }),
+            });
+            setStatus('Reference added.');
+            await renderCharacterSheet();
+        } catch (err) { setStatus('Could not add it: ' + err.message); }
+    }
+
+    /** A reference generated from a prompt, filed under a category. */
+    async function generateSheetReference() {
+        const category = csCategoryPrompt('Generate a reference.');
+        if (category === undefined) return;
+        const instruction = prompt(`What should it show?\n\ne.g. "three-quarter face study, hard side light"`);
+        if (!instruction) return;
+
+        let pv;
+        try {
+            pv = await api(`/characters/${SHEET.id}/explore/preview?count=1`
+                + `&instruction=${encodeURIComponent(instruction)}`);
+        } catch (err) { setStatus('Preview failed: ' + err.message); return; }
+        if (pv.error) { setStatus(pv.error); return; }
+        if (!confirm(`Generate one ${category} reference?\n\nProvider: ${pv.provider}\n`
+            + `Size: ${pv.size ? pv.size.width + 'x' + pv.size.height : 'provider default'}\n\n`
+            + 'It is filed as a CONCEPT: nothing is conditioned on it until you promote it.')) return;
+
+        await csBusy('Generating reference…', async () => {
+            try {
+                await api(`/characters/${SHEET.id}/explore`, {
+                    method: 'POST',
+                    body: JSON.stringify({ count: 1, instruction, category }),
+                });
+                await renderCharacterSheet();
+                setStatus('Reference generated.');
+            } catch (err) { setStatus('Generate failed: ' + err.message); }
+        });
+    }
+
+    /**
+     * A wardrobe or prop item: a title and a picture.
+     *
+     * Stored as a gallery item filed under `costume` with the title as its
+     * note, rather than in film_costumes — one storage path, one upload flow,
+     * and the thumbnail is the same picture the reference band can show.
+     */
+    async function addWardrobeItem() {
+        const title = prompt('Wardrobe or prop — what is it?\n\ne.g. "Rust cardigan / worn open, mid-hip"');
+        if (!title) return;
+        const file = await csReadFile();
+        if (!file) return;
+        try {
+            await api(`/characters/${SHEET.id}/inspiration`, {
+                method: 'POST',
+                body: JSON.stringify({ data: file.data, note: title, category: 'costume' }),
+            });
+            setStatus('Wardrobe item added.');
+            await renderCharacterSheet();
+        } catch (err) { setStatus('Could not add it: ' + err.message); }
+    }
+
+    /** The same item, generated from its own description. */
+    async function generateWardrobeItem() {
+        const title = prompt('Wardrobe or prop — what is it?\n\ne.g. "Rust cardigan / worn open, mid-hip"');
+        if (!title) return;
+        if (!confirm(`Generate a picture of "${title}"?\n\nThis SPENDS one image generation, and is `
+            + 'filed under costume as a concept.')) return;
+
+        await csBusy('Generating wardrobe…', async () => {
+            try {
+                await api(`/characters/${SHEET.id}/explore`, {
+                    method: 'POST',
+                    body: JSON.stringify({ count: 1, instruction: title, category: 'costume' }),
+                });
+                await renderCharacterSheet();
+                setStatus('Wardrobe item generated.');
+            } catch (err) { setStatus('Generate failed: ' + err.message); }
+        });
+    }
+
+    /* ── the palette ───────────────────────────────────────────────────── */
+
+    async function csSavePalette(palette) {
+        const res = await api(`/characters/${SHEET.id}/palette`, {
+            method: 'PUT', body: JSON.stringify({ palette }),
+        });
+        SHEET.palette = res.palette || [];
+        if (res.note) setStatus(res.note);
+        await renderCharacterSheet();
+    }
+
+    /** A colour typed in, with a name. */
+    async function addPaletteSwatch() {
+        const hex = prompt('Colour — #rrggbb', '#c4643a');
+        if (!hex) return;
+        const name = prompt('What is it? (optional)', '') || '';
+        try {
+            await csSavePalette([...(SHEET.palette || []), { hex, name }]);
+        } catch (err) { setStatus('Could not save the palette: ' + err.message); }
+    }
+
+    async function removePaletteSwatch(index) {
+        const next = (SHEET.palette || []).filter((_, i) => i !== index);
+        try { await csSavePalette(next); }
+        catch (err) { setStatus('Could not save the palette: ' + err.message); }
+    }
+
+    /**
+     * Colours lifted from a picture already in the sheet.
+     *
+     * Sampled from the actual pixels on a canvas — a palette guessed from a
+     * filename or a prompt would be a claim about the film that nothing
+     * supports. Quantised coarsely and counted, so the answer is the colours
+     * that COVER the image rather than the most saturated stray pixel.
+     */
+    async function paletteFromImage() {
+        const usable = (SHEET.gallery || []).filter(i => i.image_url && !i.source_url);
+        if (!usable.length) {
+            setStatus('No picture in the sheet to sample — add a reference first.');
+            return;
+        }
+        const which = usable.length === 1 ? usable[0] : usable[Math.max(0, Number(
+            prompt('Sample which picture?\n\n' + usable.map((i, n) =>
+                `${n + 1}. ${(i.metadata && i.metadata.ref_category) || i.role}`
+                + (i.note ? ' — ' + i.note : '')).join('\n'), '1')) - 1)] || usable[0];
+
+        await csBusy('Sampling colours…', () => new Promise(resolve => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = async () => {
+                try {
+                    const c = document.createElement('canvas');
+                    const w = c.width = 80, h = c.height = Math.max(1, Math.round(80 * img.height / img.width));
+                    const ctx = c.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    const px = ctx.getImageData(0, 0, w, h).data;
+                    /*
+                     * Coverage, but NOT the backdrop.
+                     *
+                     * Straight "most common colour" on a character plate
+                     * returns five greys: a plate is shot on a seamless
+                     * backdrop, so the thing that covers the image is the thing
+                     * nobody wants in the palette. Near-neutral bins are set
+                     * aside and only used if the picture has nothing else —
+                     * a monochrome reference is a legitimate palette, and
+                     * returning empty would look broken.
+                     */
+                    const bins = {}, neutral = {};
+                    for (let i = 0; i < px.length; i += 4) {
+                        if (px[i + 3] < 128) continue;
+                        const r = px[i], g = px[i + 1], b = px[i + 2];
+                        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                        const key = [r, g, b].map(v => Math.round(v / 24) * 24).join(',');
+                        // Chroma, not HSL saturation: a dark rust and a pale
+                        // linen are both wanted, and lightness must not decide.
+                        const target = (max - min) < 26 ? neutral : bins;
+                        target[key] = (target[key] || 0) + 1;
+                    }
+                    const pick = Object.keys(bins).length >= 3 ? bins : neutral;
+                    const top = Object.entries(pick).sort((a, b) => b[1] - a[1]).slice(0, 5)
+                        .map(([k]) => {
+                            const [r, g, b] = k.split(',').map(Number);
+                            return { hex: '#' + [r, g, b].map(v =>
+                                Math.min(255, v).toString(16).padStart(2, '0')).join(''), name: '' };
+                        });
+                    /*
+                     * APPENDED, never replaced.
+                     *
+                     * Sampling is a suggestion; the swatches somebody typed are
+                     * decisions. Overwriting them means one click destroys the
+                     * palette they built, with no undo. Duplicates are dropped
+                     * so sampling twice does not fill the row with one colour.
+                     */
+                    const have = new Set((SHEET.palette || []).map(x => x.hex));
+                    const added = top.filter(x => !have.has(x.hex));
+                    await csSavePalette([...(SHEET.palette || []), ...added]);
+                    setStatus(added.length
+                        ? `${added.length} colour(s) added from the picture.`
+                        : 'Nothing new — those colours are already in the palette.');
+                } catch (err) {
+                    // A cross-origin image taints the canvas and getImageData
+                    // throws. Said plainly rather than surfacing a SecurityError.
+                    setStatus('That picture cannot be sampled (it is served from another origin).');
+                }
+                resolve();
+            };
+            img.onerror = () => { setStatus('Could not load that picture.'); resolve(); };
+            img.src = csImg(which.image_url);
+        }));
+    }
+
+
+
+    /**
+     * The locked palette.
+     *
+     * On the CHARACTER. It used to read film_costumes.color_palette — a real
+     * column on a table with no UI and zero rows, so the empty state advised a
+     * surface that does not exist.
+     */
+    function csPalette() { return SHEET.palette || []; }
 
     /**
      * Generate the official views — all four, or one.
@@ -23759,7 +24070,7 @@ ${fountainText.slice(0, 50000)}`;
             + 'They are generated from the appearance text and whatever references are promoted '
             + 'in the gallery, and each replaces the current plate for its view.')) return;
 
-        setStatus(`Generating ${wanted.length} view(s)…`);
+        await csBusy(`Generating ${wanted.length} view(s)…`, async () => {
         let made = 0;
         for (const v of wanted) {
             try {
@@ -23776,6 +24087,7 @@ ${fountainText.slice(0, 50000)}`;
             }
         }
         if (made === wanted.length) setStatus(`${made} view(s) generated.`);
+        });
         await renderCharacterSheet();
         loadCharacters();
     }
@@ -23794,14 +24106,19 @@ ${fountainText.slice(0, 50000)}`;
         const spec = [['Age', c.age_range], ['Gender', c.gender],
             ['Height', c.height_m ? c.height_m + ' m' : null], ['Build', c.build],
             ['Hair', c.hair], ['Distinguishing', c.distinguishing]].filter(r => r[1]);
-        const refs = SHEET.gallery.filter(i => !i.sendable && i.image_url);
+        const ward = SHEET.gallery.filter(i => (i.metadata && i.metadata.ref_category) === 'costume');
+        const palette = SHEET.palette || [];
+        // Wardrobe has its own section, so it is not repeated in the contact
+        // strip: the same picture twice on one page reads as a mistake.
+        const refs = SHEET.gallery.filter(i => !i.sendable && i.image_url
+            && (i.metadata && i.metadata.ref_category) !== 'costume');
 
         const win = window.open('', '_blank');
         if (!win) { setStatus('Allow pop-ups to export the sheet'); return; }
         win.document.write(`<!doctype html><html><head><meta charset="utf-8">
         <title>${esc(c.name || 'Character')} — character sheet</title>
         <style>
-          @page { size: A4 portrait; margin: 14mm; }
+          @page { size: A4 portrait; margin: 20mm 18mm; }
           * { box-sizing: border-box; }
           body { font: 12px/1.55 Georgia, 'Times New Roman', serif; color:#111; background:#fff; margin:0; }
           h1 { font: 600 30px/1.1 Helvetica, Arial, sans-serif; letter-spacing:.14em;
@@ -23823,6 +24140,17 @@ ${fountainText.slice(0, 50000)}`;
               text-transform:uppercase; color:#888; }
           .spec .v { font-size:13px; margin-top:3px; }
           .prose { max-width:74ch; }
+          .pal { display:flex; gap:10px; }
+          .pal .sw { width:56px; height:40px; border:1px solid #bbb; border-radius:3px; }
+          .pal .cap { font:9px ui-monospace,Menlo,monospace; color:#666; margin-top:4px;
+              text-transform:uppercase; letter-spacing:.1em; }
+          .pal .hex { color:#999; }
+          .ward { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+          .ward figure { margin:0; }
+          .ward img, .ward .blank { width:100%; aspect-ratio:3/4; object-fit:cover;
+              border:1px solid #ccc; display:block; }
+          .ward .blank { border-style:dashed; }
+          .ward figcaption { font:9.5px ui-monospace,Menlo,monospace; color:#555; margin-top:4px; }
           .refs { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
           .refs img { width:100%; aspect-ratio:4/3; object-fit:cover; border:1px solid #ddd; }
           .foot { margin-top:26px; padding-top:8px; border-top:1px solid #ddd;
@@ -23842,8 +24170,13 @@ ${fountainText.slice(0, 50000)}`;
             `<div><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>` : ''}
         <h2>Appearance — prompt source</h2><div class="prose">${esc(c.appearance_prompt || '—')}</div>
         ${c.description ? `<h2>Description</h2><div class="prose">${esc(c.description)}</div>` : ''}
-        ${SHEET.costumes.length ? `<h2>Wardrobe &amp; props</h2><ul>${SHEET.costumes.map(w =>
-            `<li><strong>${esc(w.name || '')}</strong>${w.description ? ' — ' + esc(w.description) : ''}</li>`).join('')}</ul>` : ''}
+        ${c.personality_notes ? `<h2>Personality</h2><div class="prose">${esc(c.personality_notes)}</div>` : ''}
+        ${palette.length ? `<h2>Palette</h2><div class="pal">${palette.map(p =>
+            `<div><div class="sw" style="background:${esc(p.hex)}"></div>
+             <div class="cap">${esc(p.name || '')}<br><span class="hex">${esc(p.hex)}</span></div></div>`).join('')}</div>` : ''}
+        ${ward.length ? `<h2>Wardrobe &amp; props</h2><div class="ward">${ward.map(w =>
+            `<figure>${w.image_url ? `<img src="${esc(csImg(w.image_url))}">` : '<div class="blank"></div>'}
+             <figcaption>${esc(w.note || 'Item')}</figcaption></figure>`).join('')}</div>` : ''}
         ${refs.length ? `<h2>Concept art &amp; references</h2><div class="refs">${refs.slice(0, 15).map(r =>
             `<img src="${esc(csImg(r.image_url))}">`).join('')}</div>` : ''}
         <div class="foot">Film Engine · character sheet · ${esc(new Date().toISOString().slice(0, 10))}</div>

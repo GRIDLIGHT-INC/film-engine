@@ -133,8 +133,79 @@ const RELOCATED_ACTIONS = Object.freeze([
     { label: 'Upload', fn: 'uploadControl' },
 ]);
 
+/**
+ * Every way something gets INTO the sheet.
+ *
+ * Three regions were read-only dead ends: the reference band could only be
+ * filled from another modal, wardrobe said "no wardrobe recorded yet" with no
+ * way to record any, and the palette pointed at a table with no UI. A region
+ * that shows an empty state and offers no way out of it is a label, not a
+ * feature.
+ *
+ * `source` is how the picture or the value arrives, and `spends` decides
+ * whether a spinner and a confirmation are required — declared rather than
+ * inferred from the function name, which is how one of them ends up spending
+ * silently.
+ */
+const AUTHORING = Object.freeze([
+    { id: 'ref-upload', region: 'references', source: 'upload', spends: false,
+      fn: 'addSheetReference', what: 'A picture you already have, filed under a category.' },
+    { id: 'ref-generate', region: 'references', source: 'generate', spends: true,
+      fn: 'generateSheetReference', what: 'A reference generated from a prompt, filed under a category.' },
+    { id: 'wardrobe-upload', region: 'wardrobe', source: 'upload', spends: false,
+      fn: 'addWardrobeItem', what: 'A wardrobe or prop item: a title and a picture you have.' },
+    { id: 'wardrobe-generate', region: 'wardrobe', source: 'generate', spends: true,
+      fn: 'generateWardrobeItem', what: 'A wardrobe or prop item generated from its own description.' },
+    { id: 'palette-manual', region: 'palette', source: 'manual', spends: false,
+      fn: 'addPaletteSwatch', what: 'A colour typed in, with a name.' },
+    { id: 'palette-from-image', region: 'palette', source: 'upload', spends: false,
+      fn: 'paletteFromImage', what: 'Colours sampled from a picture already in the sheet.' },
+]);
+
+/**
+ * The gender vocabulary the caster actually reads.
+ *
+ * It was free text, which is why `voiceGender()` has to match with a regex:
+ * "F", "woman" and "female" were three values for one thing, and anything it
+ * did not recognise silently disabled gender-matched voice suggestions. These
+ * are the values, and every one of them must be readable by the caster — the
+ * test asserts exactly that, so adding an option here that casting cannot use
+ * fails rather than shipping.
+ */
+const GENDERS = Object.freeze([
+    { id: 'female', label: 'Female' },
+    { id: 'male', label: 'Male' },
+    { id: 'non-binary', label: 'Non-binary' },
+    { id: 'neutral', label: 'Neutral / not applicable' },
+]);
+
+/**
+ * A palette swatch, or null.
+ *
+ * Hex only, expanded from shorthand so a stored value is always comparable and
+ * always renderable. A CSS colour NAME is refused: the browser understands
+ * `red`, and the print document, an export and anything that later computes a
+ * contrast do not all agree about what it means.
+ */
+function normaliseSwatch(swatch) {
+    if (!swatch || typeof swatch !== 'object') return null;
+    let hex = String(swatch.hex || '').trim().toLowerCase();
+    if (!hex.startsWith('#')) return null;
+    if (/^#[0-9a-f]{3}$/.test(hex)) {
+        hex = '#' + hex.slice(1).split('').map(c => c + c).join('');
+    }
+    if (!/^#[0-9a-f]{6}$/.test(hex)) return null;
+    return { hex, name: String(swatch.name || '').trim() || hex };
+}
+
+/** A whole palette, dropping anything that is not a colour. */
+function normalisePalette(list) {
+    return (Array.isArray(list) ? list : []).map(normaliseSwatch).filter(Boolean).slice(0, 8);
+}
+
 module.exports = {
     OFFICIAL_VIEWS, OFFICIAL_VIEW_IDS, LEGACY_VIEWS, canonicalView, viewPlan,
     REFERENCE_CATEGORIES, CATEGORY_IDS, categoryMetadata, categoryOf,
     SHEET_REGIONS, RELOCATED_ACTIONS,
+    AUTHORING, GENDERS, normaliseSwatch, normalisePalette,
 };

@@ -490,7 +490,7 @@ const server = http.createServer(async (req, res) => {
         // would otherwise swallow the sub-paths. That trap has now bitten five
         // times in this file.
         if (['characters', 'locations', 'props'].includes(parts[1]) && parts[2]
-            && ['gallery', 'explore', 'inspiration'].includes(parts[3])) {
+            && ['gallery', 'explore', 'inspiration', 'palette'].includes(parts[3])) {
             return await handleSubjectGallery(req, res, parts, query);
         }
         if (parts[1] === 'gallery' && parts[2]) {

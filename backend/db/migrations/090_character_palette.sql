@@ -1,0 +1,11 @@
+-- The palette belongs to the character.
+--
+-- The sheet pointed at film_costumes.color_palette, which is a real column on a
+-- table with no UI and zero rows — so "set one on a costume" was advice about a
+-- surface that does not exist. A locked palette is a fact about the character:
+-- it holds across every costume they wear and every frame they appear in.
+--
+-- JSON rather than a table: it is an ordered list of four or five swatches read
+-- and written whole, never queried by colour, and a table would buy joins for
+-- nothing.
+ALTER TABLE film_characters ADD COLUMN palette_json TEXT;

@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (87 migrations)
+│   │   └── migrations/     # SQL migration files (88 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -357,6 +357,7 @@ film-engine/
 │       ├── subject-gallery.test.js  # A sketch must never condition a frame
 │       ├── dialogue-audition.test.js # Hearing a line before anything is shot
 │       ├── character-sheet.test.js  # Two buttons on the card, and everything else has a home
+│       ├── character-sheet-authoring.test.js # A region with no way in is a label
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
 │       ├── screenplay-furniture.test.js # The editor's own furniture is not content
 │       ├── screenplay-mutators.test.js # Every way a screenplay is written leaves the editor sound
@@ -2321,6 +2322,16 @@ Built to `design_handoff_character_card`: official views top-left, everything wr
 
 **Wardrobe and palette were already modelled and had no surface.** `film_costumes` has carried `character_id`, `color_palette` and `reference_images` since phase 2 with zero rows, no UI and no MCP tools — the same declared-and-unreachable shape as the voice column. The sheet reads them, and says what to do when they are empty rather than rendering a blank region.
 
+**A region with no way in is a label, not a feature.** Three of the six were read-only dead ends: the reference band could only be filled from another modal, wardrobe said *"no wardrobe recorded yet"* with no way to record any, and the palette said *"set one on a costume"* — pointing at `film_costumes`, a real table with no UI and zero rows. `AUTHORING` declares the six ways in (upload / generate / manual, per region) and the test requires each to exist AND be bound to a control.
+
+**Wardrobe items are gallery pictures filed under `costume`**, with the title as the note — one storage path, one upload flow, and the thumbnail is the same picture the reference band can show. A second table for the same thing is how one of them acquires a fix the other does not.
+
+**The palette moved to the character** (migration 090, `palette_json`): it holds across every costume they wear and every frame they appear in. Swatches are `#rrggbb` only — a CSS colour NAME is refused, because the browser understands `red` and a print document, an export and a contrast calculation do not all agree what it means. Shorthand expands on the way in, and a value that is not a colour is **named as dropped** rather than silently discarded, since a swatch vanishing on save looks like the save failed. Lifting a palette from a picture samples the actual pixels on a canvas, quantised and counted so the answer is the colours that *cover* the image rather than the most saturated stray pixel — and a cross-origin image that taints the canvas says so plainly instead of surfacing a `SecurityError`.
+
+**Gender is a picker now.** It was already on the card, in the form and in the sheet spec — as free text, which is why `voiceGender()` matches with a regex: `F`, `woman` and `female` were three values for one thing, and anything it did not recognise silently disabled gender-matched voice suggestions. The test asserts every option offered on the form is one the caster can actually read.
+
+**Everything that spends shows a spinner.** A generation takes up to a minute, and without one the page looks exactly as it did before the click — which reads as the button not working and invites a second press on a paid action. `csBusy` clears in a `finally`: a spinner still turning after a failure is worse than none, because it says work is happening when nothing is.
+
 **The export builds its own print document.** Printing the app's dark UI wastes a cartridge and reads badly, which is why the screenplay export already does the same: A4, serif body, the four plates across the top, the spec as a hairline grid, and the references as a contact strip.
 
 Generating views is **all four or one**: a pending plate's own click generates just that view, and the header button asks before spending. It stops on a refusal rather than asking three more times — a refusal repeated is a refusal paid for.
@@ -2440,7 +2451,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (87 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (88 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -2657,6 +2668,7 @@ node --test backend/tests/screenplay-analysis.test.js
 node --test backend/tests/subject-gallery.test.js
 node --test backend/tests/dialogue-audition.test.js
 node --test backend/tests/character-sheet.test.js
+node --test backend/tests/character-sheet-authoring.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js
 node --test backend/tests/screenplay-furniture.test.js
 node --test backend/tests/screenplay-mutators.test.js
