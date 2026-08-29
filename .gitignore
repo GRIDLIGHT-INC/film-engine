@@ -2,3 +2,7 @@
 node_modules/
 data/
 .neoncore/attachments/
+
+# Xcode per-user UI state — window positions, not source
+xcuserdata/
+*.xcuserstate
