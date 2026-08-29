@@ -64,6 +64,89 @@ test('every region is rendered by the sheet', () => {
     }
 });
 
+test('every region is FED, not just drawn', () => {
+    /*
+     * The check this shipped without. Four regions rendered perfectly and were
+     * fed by nothing — the prop plates, the prop's shot count, the location's
+     * scene count, and the category picker — because the sheet was written
+     * against the fields the LIST endpoint serves and opened against the single
+     * GET. Each read the field it declares here, and each field must actually
+     * arrive.
+     */
+    const { db } = require('../db/database');
+    require('../db/schema').ensureSchema();
+    const { handleLocations } = require('../routes/locations');
+
+    const PROJECT = 'bd000000-0000-4000-8000-0000000000b1';
+    db.prepare(`INSERT OR IGNORE INTO film_projects (id, title, created_at, updated_at)
+                VALUES (?, 'p', datetime('now'), datetime('now'))`).run(PROJECT);
+
+    const call = (method, urlParts, body) => new Promise(resolve => {
+        const res = {
+            writeHead(status) { this._s = status; },
+            end(payload) { resolve({ status: this._s, body: payload ? JSON.parse(payload) : null }); },
+        };
+        handleLocations({ method, body }, res, urlParts, {});
+    });
+
+    return (async () => {
+        for (const s of SUBJECTS) {
+            const plural = `${s.kind}s`;
+            const made = await call('POST', ['film', 'projects', PROJECT, plural],
+                { name: `probe ${s.kind} ${Date.now()}` });
+            assert.ok(made.status === 201 || made.status === 200, JSON.stringify(made.body));
+            const id = made.body.id;
+
+            const one = await call('GET', ['film', plural, id]);
+            const views = await call('GET', ['film', plural, id, 'plate', 'views']);
+            assert.equal(views.status, 200,
+                `${s.kind}: the sheet asks for plate/views and the route answers ${views.status}`);
+            assert.ok(Array.isArray(views.body.views),
+                `${s.kind}: plate/views answers a different shape than the sheet reads — `
+                + 'which renders as "no plate yet" for a subject that has one');
+
+            const served = { ...(one.body || {}), views: views.body.views };
+            const starved = [];
+            for (const r of s.regions()) {
+                for (const field of (r.reads || [])) {
+                    if (!(field in served)) starved.push(`${r.id}.${field}`);
+                }
+            }
+            assert.deepEqual(starved, [],
+                `${s.kind}: regions displaying fields the API never serves: ${starved.join(', ')}`);
+        }
+    })();
+});
+
+test('every region declares what it displays', () => {
+    // A region with no `reads` is one the check above cannot police.
+    for (const s of SUBJECTS) {
+        for (const r of s.regions()) {
+            assert.ok(Array.isArray(r.reads),
+                `${s.kind}/${r.id}: does not say which payload fields it shows`);
+            /*
+             * An empty list is invisible to the fed check — it passes by
+             * declaring nothing. So a region that shows no payload field must
+             * say WHY, on the exempt-by-name-with-a-reason rule: an omission
+             * that is stated is a decision, one that is silent is a bug.
+             */
+            assert.ok(r.reads.length || (r.shows_nothing && r.shows_nothing.length > 15),
+                `${s.kind}/${r.id}: declares no fields and gives no reason — `
+                + 'an empty `reads` opts the region out of every check silently');
+        }
+    }
+});
+
+test('the prop category picker offers what the database accepts', () => {
+    // It fell back to ['', whatever this prop already is] — one option, so the
+    // category could not be changed at all. The same "a picker must not offer
+    // what the database refuses" rule, failing by offering almost nothing.
+    assert.ok(/api\('\/card-vocabulary'\)/.test(SRC),
+        'the sheet never asks for the vocabulary, so the picker is empty');
+    assert.ok(/window\.__propCategories = \['', \.\.\.vocab\.prop_categories\]/.test(SRC),
+        'the vocabulary is fetched and never used');
+});
+
 test('every region has a way IN, not just a label', () => {
     /*
      * The character sheet shipped with three read-only dead ends — a reference

@@ -241,17 +241,28 @@ async function sweepCompassViews(req, res, locationId) {
  * left blank: it is the one every existing project has, and an unlabelled row
  * in a dropdown reads as a bug.
  */
-function listPlateViews(res, locationId) {
-    const loc = db.prepare('SELECT id, project_id, name FROM film_locations WHERE id = ?').get(locationId);
+/**
+ * The plates a subject has, and which one a shot can choose.
+ *
+ * Answers the SAME shape for a prop as for a location. A prop has one plate
+ * today and no compass, which is why this was location-only — but "what
+ * pictures does this subject have" is one question, and answering it in two
+ * shapes meant the prop sheet asked for `views`, received something else, and
+ * reported "No plate yet" for a prop that plainly had one.
+ */
+function listPlateViews(res, subjectId, kind) {
+    const table = kind === 'prop' ? 'film_props' : 'film_locations';
+    const column = kind === 'prop' ? 'prop_id' : 'location_id';
+    const loc = db.prepare(`SELECT id, project_id, name FROM ${table} WHERE id = ?`).get(subjectId);
     if (!loc) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: 'Location not found' }));
+        return res.end(JSON.stringify({ error: `${kind === 'prop' ? 'Prop' : 'Location'} not found` }));
     }
     const rows = db.prepare(
         `SELECT id, file_name, file_path, metadata, created_at FROM film_assets
-          WHERE project_id = ? AND location_id = ?
+          WHERE project_id = ? AND ${column} = ?
             AND asset_type IN ('reference_image', 'character_sheet')
-       ORDER BY created_at ASC`).all(loc.project_id, locationId);
+       ORDER BY created_at ASC`).all(loc.project_id, subjectId);
 
     const views = rows.map(r => {
         let meta = {};
@@ -296,13 +307,21 @@ function listPlateViews(res, locationId) {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
-        location_id: locationId,
+        kind: kind || 'location',
+        // The old key, kept: existing readers ask for location_id.
+        ...(kind === 'prop' ? { prop_id: subjectId } : { location_id: subjectId }),
+        subject_id: subjectId,
         location: loc.name,
+        name: loc.name,
         views,
-        note: views.length > 1
-            ? 'A shot picks the view it is pointed at. Anything else falls back to the default plate.'
-            : 'One view so far. A shot looking the other way is handed this one, which is a picture '
-              + 'of what is behind its camera — generate the view it needs.',
+        note: kind === 'prop'
+            ? (views.length
+                ? 'The plate every frame this object appears in is conditioned on.'
+                : 'No plate yet. Every frame it appears in will invent one.')
+            : (views.length > 1
+                ? 'A shot picks the view it is pointed at. Anything else falls back to the default plate.'
+                : 'One view so far. A shot looking the other way is handed this one, which is a picture '
+                  + 'of what is behind its camera — generate the view it needs.'),
     }));
 }
 
@@ -630,7 +649,7 @@ function handleLocations(req, res, urlParts, query) {
         // A picture made outside Film Engine, landing where a generated one would.
         if (urlParts[4] === 'import' && req.method === 'POST') return importSubjectPlateRoute(req, res, 'location', locId);
         // /film/locations/:id/plate/views — what a shot can choose between.
-        if (urlParts[4] === 'views' && !urlParts[5] && req.method === 'GET') return listPlateViews(res, locId);
+        if (urlParts[4] === 'views' && !urlParts[5] && req.method === 'GET') return listPlateViews(res, locId, 'location');
         // Remove one view. The set could only grow, so a bad side was permanent.
         if (urlParts[4] === 'views' && urlParts[5] && req.method === 'DELETE') {
             return deletePlateView(res, locId, decodeURIComponent(urlParts[5]));
@@ -647,6 +666,8 @@ function handleLocations(req, res, urlParts, query) {
         if (urlParts[4] === 'plate-preview' && req.method === 'GET') return previewSubjectPlate(req, res, 'prop', propId, 'generate', query);
         if (urlParts[4] === 'refine-preview' && req.method === 'GET') return previewSubjectPlate(req, res, 'prop', propId, 'refine', query);
         if (!UUID_RE.test(propId)) return badReq(res, 'Invalid prop ID');
+        // The same question a location answers, in the same shape.
+        if (urlParts[4] === 'views' && !urlParts[5] && req.method === 'GET') return listPlateViews(res, propId, 'prop');
         if (urlParts[4] === 'import' && req.method === 'POST') return importSubjectPlateRoute(req, res, 'prop', propId);
         if (urlParts[4] === 'generate' && req.method === 'POST') return generateSubjectPlate(req, res, 'prop', propId);
         // Keep the picture, change one thing.
@@ -770,6 +791,15 @@ function getLocation(req, res, locId) {
     loc.scenes = db.prepare(
         "SELECT id, scene_number, int_ext, time_of_day, status FROM film_scenes WHERE project_id = ? AND location = ? ORDER BY scene_number"
     ).all(loc.project_id, loc.name);
+    /*
+     * The count the sheet SHOWS.
+     *
+     * The list endpoint serves scene_count and the single GET did not, so a
+     * region built against the list rendered "0 scene(s)" for a location with
+     * fourteen. A number nothing feeds is worse than no number: it reads as a
+     * fact about the film.
+     */
+    loc.scene_count = loc.scenes.length;
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(loc));
@@ -1056,6 +1086,28 @@ function getProp(req, res, propId) {
         FROM film_scene_props sp JOIN film_scenes s ON sp.scene_id = s.id
         WHERE sp.prop_id = ? ORDER BY s.scene_number
     `).all(propId);
+
+    /*
+     * Which shots actually NAME this prop.
+     *
+     * Not film_scene_props, which is empty on every real project — the card's
+     * own props array is what gatherShotReferences matches on, and it is the
+     * only list that decides whether this plate reaches a frame. Counting the
+     * join table instead reported "0 shot(s)" for a prop in eleven of them.
+     */
+    prop.shots = [];
+    try {
+        const { matchProps } = require('../lib/shot-references');
+        const shots = db.prepare(`
+            SELECT sh.id, sh.shot_code, sh.scene_card_yaml FROM film_shots sh
+            JOIN film_scenes sc ON sc.id = sh.scene_id WHERE sc.project_id = ?`).all(prop.project_id);
+        for (const sh of shots) {
+            let card = {};
+            try { card = JSON.parse(sh.scene_card_yaml || '{}') || {}; } catch (_) { card = {}; }
+            if (matchProps(card, [prop]).length) prop.shots.push(sh.shot_code);
+        }
+    } catch (_) { prop.shots = []; }
+    prop.shot_count = prop.shots.length;
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(prop));

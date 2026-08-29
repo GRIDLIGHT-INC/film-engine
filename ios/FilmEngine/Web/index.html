@@ -4037,6 +4037,17 @@
         }
         .pb-gap-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 
+        /* Everything left of this changes what you HEAR; everything right of it
+           changes what EXISTS. The redo shipped in the middle of the switches
+           in the same grey and was asked about by the person who asked for it. */
+        .pb-sep {
+            width: 1px; height: 18px; margin: 0 4px;
+            background: var(--gl-border, #2a2a30); display: inline-block;
+        }
+        .btn-warning {
+            border-color: #5a4720; color: #d9a441;
+        }
+        .btn-warning:hover { background: rgba(217, 164, 65, 0.10); }
         .pb-scrub-wrap { margin-top: 12px; }
         .pb-scrub {
             position: relative; height: 30px; cursor: pointer;
@@ -5198,8 +5209,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                                    title="Play each shot's camera move over its storyboard frame">
                                 <input type="checkbox" id="pbMotion" checked onchange="pbMotionToggled()"> Camera move
                             </label>
-                            <button class="btn btn-secondary btn-sm" onclick="pbRegenerateDialogue()"
-                                    title="Buy a fresh take of this scene's dialogue — after a rewrite, a recast, or a change of direction">Redo dialogue</button>
                             <label class="text-sm" id="pbScoreLabel" style="display:none;align-items:center;gap:6px;cursor:pointer;"
                                    title="Play each scene's score under its shots">
                                 <input type="checkbox" id="pbScore" checked onchange="pbBedsToggled()"> Score
@@ -5208,6 +5217,20 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                                    title="Play each scene's ambient bed under its shots">
                                 <input type="checkbox" id="pbAmbient2" checked onchange="pbBedsToggled()"> Ambient
                             </label>
+                            <!--
+                              THE ONE CONTROL HERE THAT SPENDS MONEY.
+                              It shipped between the Camera move and Score
+                              checkboxes, in the same grey as them — a paid
+                              action reading as another view toggle, in a row of
+                              six. Asked "where is the redo dialogue" by the
+                              person who asked for it, which is the only test of
+                              a placement that matters. Separated from the
+                              switches, and marked: everything to the left
+                              changes what you HEAR, this changes what EXISTS.
+                            -->
+                            <span class="pb-sep" aria-hidden="true"></span>
+                            <button class="btn btn-warning btn-sm" onclick="pbRegenerateDialogue()"
+                                    title="Buy a fresh take of this scene's dialogue — after a rewrite, a recast, or a change of delivery direction. Costs credits.">&#127908; Redo dialogue</button>
                             <span id="pbMoveLabel" class="text-sm text-muted"></span>
                             <span id="pbBedLabel" class="text-sm text-muted"></span>
                         </div>
@@ -24075,10 +24098,23 @@ ${fountainText.slice(0, 50000)}`;
         if (!body || !SS.id) return;
         try {
             const plural = SS.kind + 's';
-            const [subject, views] = await Promise.all([
+            const [subject, views, vocab] = await Promise.all([
                 api(`/${plural}/${SS.id}`),
                 api(`/${plural}/${SS.id}/plate/views`).catch(() => ({ views: [] })),
+                /*
+                 * The categories the DATABASE will accept.
+                 *
+                 * The picker fell back to ['', whatever this prop already is],
+                 * so it offered one option and a director could not change the
+                 * category at all — the same "a picker must not offer what the
+                 * database refuses" rule, failing from the other side by
+                 * offering almost nothing. Served from the CHECK's own list.
+                 */
+                SS.kind === 'prop'
+                    ? api('/card-vocabulary').catch(() => ({ prop_categories: [] }))
+                    : Promise.resolve(null),
             ]);
+            if (vocab && vocab.prop_categories) window.__propCategories = ['', ...vocab.prop_categories];
             SS.data = subject[SS.kind] || subject;
             SS.views = views.views || [];
             document.getElementById('ssName').textContent = (SS.data.name || SS.kind).toUpperCase();
@@ -24223,7 +24259,10 @@ ${fountainText.slice(0, 50000)}`;
 
             ${ssSection('ls-scenes', 'Scenes here',
                 'Derived from the scene headings that name this location — nothing to fill in.',
-                `<p class="cs-prose">${Number(l.scene_count) || 0} scene(s).</p>`)}
+                `<p class="cs-prose">${Number(l.scene_count) || 0} scene(s)${
+                    (l.scenes || []).length
+                        ? ': ' + (l.scenes || []).map(x => esc(String(x.scene_number))).join(', ')
+                        : ''}.</p>`)}
           </div>
         </div>`;
     }
@@ -24260,7 +24299,10 @@ ${fountainText.slice(0, 50000)}`;
 
             ${ssSection('ps-appears', 'Appears in',
                 'Derived from the scene cards that name this prop — nothing to fill in.',
-                `<p class="cs-prose">${Number(p.shot_count) || 0} shot(s).</p>`)}
+                `<p class="cs-prose">${Number(p.shot_count) || 0} shot(s)${
+                    (p.shots || []).length ? ': ' + (p.shots || []).map(x => esc(x)).join(', ') : ''}.</p>
+                 <p class="ss-what">From the scene cards that NAME this prop — the same list that
+                 decides whether its plate reaches a frame.</p>`)}
           </div>
 
           <div class="ss-col">
@@ -29819,8 +29861,6 @@ ${fountainText.slice(0, 50000)}`;
                 ${unframed.length ? `<p class="text-sm" style="margin:8px 0 0;color:var(--gl-warning,#f59e0b);">
                     ${esc(unframed.join(', '))} ${unframed.length === 1 ? 'has' : 'have'} no keyframe — generate ${unframed.length === 1 ? 'it' : 'them'} before this can run.</p>` : ''}
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
-                    <button class="btn btn-primary btn-sm" onclick="openMotionBoard('${q.id}')"
-                            title="Generate and approve timed in-between frames before video">Motion board</button>
                     <button class="btn btn-secondary btn-sm" onclick="previewSequence('${q.id}')"
                             title="See exactly what would be sent, and how many generations it costs — free">Preview &amp; cost</button>
                     <button class="btn btn-primary btn-sm" onclick="generateSequence('${q.id}', this)">Generate</button>
@@ -29836,159 +29876,8 @@ ${fountainText.slice(0, 50000)}`;
                             title="Join this sequence's clips into one file — free, nothing is generated">Join into one file</button>
                     <button class="btn btn-secondary btn-sm" onclick="deleteSequence('${q.id}')">Delete</button>
                 </div>
-                <div id="motionBoard-${q.id}" style="display:none;margin-top:12px;"></div>
             </div>`;
         }).join('');
-    }
-
-    // ── Motion board: timed, reviewable in-betweens before video ─────────
-
-    async function openMotionBoard(id) {
-        const host = document.getElementById(`motionBoard-${id}`);
-        if (!host) return;
-        host.style.display = 'block';
-        host.innerHTML = '<p class="text-sm text-muted">Planning timed frames…</p>';
-        try {
-            const board = await api(`/sequences/${id}/frames`);
-            renderMotionBoard(id, board);
-        } catch (err) {
-            host.innerHTML = `<div class="warning-banner">${esc(err.message)}</div>`;
-        }
-    }
-
-    function renderMotionBoard(id, board) {
-        const host = document.getElementById(`motionBoard-${id}`);
-        if (!host) return;
-        const frames = board.frames || [];
-        const interval = Number(board.interval_ms || 0) / 1000;
-        host.innerHTML = `
-            <div style="border-top:1px solid var(--gl-border-subtle);padding-top:12px;">
-                <div class="flex-between" style="gap:12px;align-items:flex-start;">
-                    <div>
-                        <strong>Motion board</strong>
-                        <div class="text-sm text-muted">${frames.length} images across ${(Number(board.duration_ms || 0)/1000).toFixed(1)}s
-                            · sampled every ${interval.toFixed(2)}s · ${board.approved || 0}/${frames.length} approved</div>
-                    </div>
-                    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
-                        <button class="btn btn-secondary btn-sm" onclick="generateMissingMotionFrames('${id}', this)">Generate missing</button>
-                        <button class="btn btn-secondary btn-sm" onclick="approveAllMotionFrames('${id}', this)">Approve drafts</button>
-                        <button class="btn btn-primary btn-sm" onclick="generateMotionBoardVideo('${id}', this)"
-                                ${board.ready && board.provider_ready ? '' : 'disabled'}>Generate video from ${frames.length} images</button>
-                    </div>
-                </div>
-                ${board.capped ? '<div class="warning-banner" style="margin-top:8px;">The sequence is longer than the ten-image review ceiling, so frames are spaced farther than one second apart.</div>' : ''}
-                ${board.provider_warning ? `<div class="warning-banner" style="margin-top:8px;">${esc(board.provider_warning)}</div>` : ''}
-                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:12px;">
-                    ${frames.map(f => motionFrameCard(id, f)).join('')}
-                </div>
-            </div>`;
-    }
-
-    function motionFrameCard(sequenceId, frame) {
-        const ready = !!frame.image_url;
-        const anchor = frame.kind === 'anchor';
-        const badgeColor = frame.status === 'approved' ? 'var(--gl-success,#166534)'
-            : frame.status === 'failed' ? 'var(--gl-danger,#7f1d1d)'
-            : 'var(--gl-bg-elevated,#27272a)';
-        return `<div style="border:1px solid var(--gl-border-subtle);border-radius:7px;overflow:hidden;background:var(--gl-bg-surface);">
-            <div style="aspect-ratio:16/9;background:#090a0e;display:flex;align-items:center;justify-content:center;overflow:hidden;">
-                ${ready ? `<img src="${esc(API_BASE + frame.image_url)}" style="width:100%;height:100%;object-fit:cover;">`
-                    : '<span class="text-sm text-muted">in-between not generated</span>'}
-            </div>
-            <div style="padding:7px;">
-                <div class="flex-between"><strong style="font-size:11px;">${(Number(frame.time_ms)/1000).toFixed(1)}s</strong>
-                    <span class="tag" style="font-size:9px;background:${badgeColor};">${anchor ? 'storyboard anchor' : esc(frame.status)}</span></div>
-                ${anchor ? '<p class="text-sm text-muted" style="margin:6px 0 0;">Locked from the selected board.</p>' : `
-                    <textarea id="motionDir-${sequenceId}-${frame.index}" rows="2" maxlength="2000"
-                              placeholder="Correction for this moment…" style="width:100%;font-size:10px;margin-top:6px;">${esc(frame.direction || '')}</textarea>
-                    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;">
-                        <button class="btn btn-secondary btn-sm" onclick="regenerateMotionFrame('${sequenceId}', ${frame.index}, this)">${ready ? 'Regenerate' : 'Generate'}</button>
-                        ${ready ? `<button class="btn btn-sm ${frame.status === 'approved' ? 'btn-secondary' : 'btn-primary'}"
-                            onclick="setMotionFrameApproval('${sequenceId}', ${frame.index}, ${frame.status === 'approved' ? 'false' : 'true'})">
-                            ${frame.status === 'approved' ? 'Reopen' : 'Approve'}</button>` : ''}
-                    </div>`}
-                ${frame.error ? `<p class="text-sm" style="color:var(--gl-danger,#ef4444);margin:5px 0 0;">${esc(frame.error)}</p>` : ''}
-            </div>
-        </div>`;
-    }
-
-    async function generateMissingMotionFrames(id, btn) {
-        const board = await api(`/sequences/${id}/frames`);
-        const missing = (board.frames || []).filter(f => f.kind === 'inbetween' && ['missing', 'failed'].includes(f.status));
-        if (!missing.length) return setStatus('No missing in-between frames.');
-        if (!confirm(`Generate ${missing.length} in-between image${missing.length === 1 ? '' : 's'}?\n\nThis spends one image generation per frame. Storyboard anchors are reused for free.`)) return;
-        if (btn) btn.disabled = true;
-        setStatus(`Generating ${missing.length} in-between frame(s)…`, true);
-        try {
-            const result = await api(`/sequences/${id}/frames/generate`, { method: 'POST', body: '{}' });
-            setStatus(result.error ? `${result.made.length} made, then: ${result.error}` : `${result.made.length} in-between frame(s) ready to review.`);
-        } catch (err) { setStatus('Motion board failed: ' + err.message); }
-        if (btn) btn.disabled = false;
-        openMotionBoard(id);
-    }
-
-    async function regenerateMotionFrame(id, index, btn) {
-        const input = document.getElementById(`motionDir-${id}-${index}`);
-        const direction = input ? input.value.trim() : '';
-        if (!confirm(`Generate the frame at this moment?\n\n${direction || 'No additional correction.'}\n\nThis spends one image generation.`)) return;
-        if (btn) btn.disabled = true;
-        setStatus('Generating the in-between…', true);
-        try {
-            await api(`/sequences/${id}/frames/${index}/generate`, {
-                method: 'POST', body: JSON.stringify({ direction }),
-            });
-            setStatus('In-between ready to review.');
-        } catch (err) { setStatus('In-between failed: ' + err.message); }
-        if (btn) btn.disabled = false;
-        openMotionBoard(id);
-    }
-
-    async function setMotionFrameApproval(id, index, approved) {
-        const input = document.getElementById(`motionDir-${id}-${index}`);
-        try {
-            await api(`/sequences/${id}/frames/${index}`, {
-                method: 'PUT', body: JSON.stringify({
-                    status: approved ? 'approved' : 'draft',
-                    direction: input ? input.value.trim() : '',
-                }),
-            });
-            openMotionBoard(id);
-        } catch (err) { setStatus('Could not update frame: ' + err.message); }
-    }
-
-    async function approveAllMotionFrames(id, btn) {
-        const board = await api(`/sequences/${id}/frames`);
-        const drafts = (board.frames || []).filter(f => f.kind === 'inbetween' && f.image_url && f.status === 'draft');
-        if (!drafts.length) return setStatus('No draft frames to approve.');
-        if (!confirm(`Approve all ${drafts.length} draft in-between frames?\n\nReview the images first; approval makes them eligible for video generation.`)) return;
-        if (btn) btn.disabled = true;
-        try {
-            for (const frame of drafts) {
-                await api(`/sequences/${id}/frames/${frame.index}`, {
-                    method: 'PUT', body: JSON.stringify({ status: 'approved' }),
-                });
-            }
-            setStatus(`${drafts.length} frame(s) approved.`);
-        } catch (err) { setStatus('Approval stopped: ' + err.message); }
-        if (btn) btn.disabled = false;
-        openMotionBoard(id);
-    }
-
-    async function generateMotionBoardVideo(id, btn) {
-        let board;
-        try { board = await api(`/sequences/${id}/frames`); }
-        catch (err) { return setStatus('Could not check motion board: ' + err.message); }
-        if (!board.ready) return alert('Approve every generated in-between first.');
-        if (!board.provider_ready) return alert(board.provider_warning || 'The selected provider cannot accept this complete image set.');
-        if (!confirm(`Generate ${(board.duration_ms/1000).toFixed(1)}s of video from all ${board.frame_count} approved images?\n\nProvider: ${board.provider}. The images are sent in chronological order; none will be dropped.`)) return;
-        if (btn) btn.disabled = true;
-        setStatus(`Generating video from ${board.frame_count} approved frames…`, true);
-        try {
-            const result = await api(`/sequences/${id}/generate`, { method: 'POST', body: '{}' });
-            setStatus(`Sequence generated from ${result.reference_images || board.frame_count} images.`);
-            loadVideoShots();
-        } catch (err) { setStatus('Sequence generation failed: ' + err.message); }
-        if (btn) btn.disabled = false;
     }
 
     /**
@@ -30002,12 +29891,6 @@ ${fountainText.slice(0, 50000)}`;
         try {
             const plan = await api(`/sequences/${id}/plan`);
             if (plan.refused) return alert('This sequence cannot run yet.\n\n' + plan.reason);
-            if (plan.motion_board) {
-                const board = plan.motion_board;
-                return alert(`Motion board: ${board.approved_count}/${board.frame_count} frames approved · ${(board.duration_ms / 1000).toFixed(1)}s.\n\n`
-                    + (board.ready ? 'The complete chronological frame set is ready for video generation.' : 'Open Motion board to generate, correct, and approve every frame first.')
-                    + (!board.provider_ready ? `\n\n${plan.provider} accepts at most ${board.provider_max_images} reference images; choose a provider that accepts all ${board.frame_count}.` : ''));
-            }
             const lines = (plan.segments || []).map((s, i) =>
                 `${i + 1}. ${s.from} → ${s.to}  · ${s.duration_s}s · ${s.estimated_credits || '?'} credits · ${s.keyframes} frame${s.keyframes === 1 ? '' : 's'}\n   ${s.prompt}`);
             const total = (plan.segments || []).reduce((n, s) => n + (Number(s.estimated_credits) || 0), 0);
@@ -30025,7 +29908,6 @@ ${fountainText.slice(0, 50000)}`;
         try { plan = await api(`/sequences/${id}/plan`); }
         catch (err) { return alert('Could not read the plan: ' + err.message); }
         if (plan.refused) return alert(plan.reason);
-        if (plan.motion_board) return alert('This sequence has a motion board. Generate it once from the complete approved frame set instead of buying individual legs.');
         const index = (plan.segments || []).findIndex(s => !s.complete);
         if (index < 0) return alert('Every leg already has a clip. Review them or regenerate the full sequence deliberately.');
         const leg = plan.segments[index];
@@ -30066,11 +29948,6 @@ ${fountainText.slice(0, 50000)}`;
         if (plan.refused) {
             if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
             return alert('This sequence cannot run yet.\n\n' + plan.reason);
-        }
-        if (plan.motion_board) {
-            if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
-            if (!plan.motion_board.ready) return alert(`Approve every motion-board frame first (${plan.motion_board.approved_count}/${plan.motion_board.frame_count} approved).`);
-            return generateMotionBoardVideo(id, btn);
         }
         if (!confirm(`Generate ${plan.generations} clip${plan.generations === 1 ? '' : 's'}?\n\n`
             + 'This costs credits. Press "Preview & cost" first to read exactly what will be sent.'
