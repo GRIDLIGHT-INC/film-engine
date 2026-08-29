@@ -94,6 +94,20 @@ describe('every scope dialogue exists at can be heard', () => {
             assert.ok(scope.tool, `${scope.id}: declares no MCP tool`);
             assert.ok(names.has(scope.tool),
                 `${scope.id}: names tool '${scope.tool}', which does not exist`);
+            /*
+             * A scope may be MCP-only, but it has to SAY SO with a reason.
+             *
+             * The table read lost its button because the scene row now
+             * generates the shots' own dialogue, which Playback speaks — two
+             * paid paths for the same lines is paying twice. A gap that states
+             * itself is a decision; one that is silently dropped from the
+             * denominator is how a capability disappears unnoticed.
+             */
+            if (scope.ui === null) {
+                assert.ok(scope.why_no_ui && scope.why_no_ui.length > 20,
+                    `${scope.id}: has no UI and no reason for it`);
+                continue;
+            }
             assert.ok(scope.ui, `${scope.id}: declares no UI control`);
             /*
              * BOUND TO SOMETHING CLICKABLE, not merely defined.

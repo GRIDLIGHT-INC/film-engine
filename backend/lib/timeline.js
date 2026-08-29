@@ -19,6 +19,17 @@ const STILL_PREFERENCE = ['storyboard', 'keyframe', 'thumbnail'];
 // Audio that plays under a shot, best first. A finished mix beats stems.
 const AUDIO_PREFERENCE = ['audio_mix', 'audio_dialogue'];
 
+/**
+ * The beat between two spoken lines, and the tail after the last one.
+ *
+ * Two people do not speak over each other, and a scene that cuts on the final
+ * syllable feels clipped. Small enough that it does not invent a pause the
+ * director did not write, and honest about being a playback convenience rather
+ * than a claim about the finished edit.
+ */
+const LINE_GAP_MS = 350;
+const LINE_TAIL_MS = 500;
+
 const DEFAULT_FPS = 24;
 const DEFAULT_SHOT_MS = 4000;
 
@@ -173,9 +184,31 @@ function shotDuration(shot, media) {
      */
     const measured = Number(media && media.video && media.video.duration_ms);
     if (Number.isFinite(measured) && measured > 0) return Math.round(measured);
+
+    /*
+     * A still-only shot with DIALOGUE holds for the dialogue.
+     *
+     * The card's duration was written before the lines were spoken, and it is
+     * usually four seconds. Shot 1B of The Glass Harbour is a four-second card
+     * carrying a four-line exchange that measures 5.04 seconds — so playback
+     * cut away mid-sentence and moved on, which is the same fault an uploaded
+     * clip had when it was held for the length its card asked for.
+     *
+     * The measured audio is the fact; the card is the intention. A small gap
+     * between lines because two people do not speak over each other, and the
+     * card still wins where it is LONGER — a director who wants to hold on a
+     * face after the last line has said so, and shortening the shot to the
+     * dialogue would overrule them.
+     */
+    const lines = (media && media.audio_lines) || [];
+    const spoken = lines.reduce((total, l) => total + (Number(l.duration_ms) || 0), 0);
+    const withGaps = spoken > 0
+        ? spoken + Math.max(0, lines.length - 1) * LINE_GAP_MS + LINE_TAIL_MS
+        : 0;
+
     const ms = Number(shot && shot.duration_ms);
-    if (Number.isFinite(ms) && ms > 0) return Math.round(ms);
-    return DEFAULT_SHOT_MS;
+    const card = (Number.isFinite(ms) && ms > 0) ? Math.round(ms) : DEFAULT_SHOT_MS;
+    return Math.max(card, Math.round(withGaps));
 }
 
 /**

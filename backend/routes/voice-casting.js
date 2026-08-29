@@ -14,6 +14,7 @@
  * picked up by the pipeline and ship a reading the director was only trying.
  */
 
+const crypto = require('crypto');
 const { db, generateId } = require('../db/database');
 const VC = require('../lib/voice-casting');
 const { resolveGenerator } = require('../lib/providers');
@@ -432,10 +433,40 @@ async function runTableRead(req, res, sceneId) {
     const out = [];
     const notAttempted = [];
     let refusal = null;
+    let reused = 0;
+
+    /*
+     * A line already spoken is not bought again.
+     *
+     * Reported as "nothing happened but my credits went down": re-running a
+     * sixty-eight line read regenerated all sixty-eight, at a credit each,
+     * because the filename carried a RANDOM suffix and nothing could ever find
+     * the previous one.
+     *
+     * The name now carries the scene, the line index, and a hash of the TEXT
+     * and the VOICE — so an unchanged line in an unchanged voice is reused, and
+     * a rewritten line or a recast character generates. Same reasoning as the
+     * artefact fingerprint: what it was made from decides whether it is current.
+     */
+    const lineKey = (line, voice) => crypto.createHash('sha1')
+        .update(`${line.line}|${line.direction || ''}|${voice || 'default'}`)
+        .digest('hex').slice(0, 10);
 
     for (const line of lines) {
         if (refusal) { notAttempted.push(line.index); continue; }
         const voice_id = (cast[String(line.character || '').toUpperCase()] || {}).voice_id || null;
+
+        const key = lineKey(line, voice_id);
+        const existingName = `read_${sceneId}_${line.index}_${key}.mp3`;
+        let existingPath = null;
+        try { existingPath = getFilePath('auditions', found.scene.project_id, existingName); } catch (_) {}
+        if (!(req.body && req.body.regenerate === true) && existingPath && fs.existsSync(existingPath)) {
+            reused++;
+            out.push({ ...line, voice_id, cast: !!voice_id, reused: true,
+                audio_url: getFileUrl('auditions', found.scene.project_id, existingName) });
+            continue;
+        }
+
         const payload = VC.auditionPayload({
             text: line.line, voice_id,
             // A parenthetical is direction, and the provider takes it as
@@ -445,8 +476,9 @@ async function runTableRead(req, res, sceneId) {
         const result = await provider.generate('voice', payload);
         if (!result || !result.ok) { refusal = (result && result.error) || 'failed'; notAttempted.push(line.index); continue; }
 
-        const ext = (result.format === 'wav' || result.format === 'pcm') ? 'wav' : 'mp3';
-        const fileName = `read_${sceneId}_${line.index}_${generateId().slice(0, 6)}.${ext}`;
+        // Deterministic, so the NEXT run can find it. A random suffix made
+        // every line unfindable and therefore bought again.
+        const fileName = `read_${sceneId}_${line.index}_${key}.mp3`;
         const data = result.data || result.buffer || result.audio;
         try {
             saveFile('auditions', found.scene.project_id, fileName,
@@ -461,6 +493,10 @@ async function runTableRead(req, res, sceneId) {
         scene_id: sceneId,
         requested: lines.length,
         made: out.length,
+        generated: out.length - reused,
+        reused,
+        ...(reused ? { note_reused: `${reused} line(s) were already spoken in this voice and were `
+            + 'reused rather than bought again. Pass regenerate to force them.' } : {}),
         lines: out,
         ...(refusal ? { error: refusal, not_attempted: notAttempted,
             note: 'The provider refused, so the remaining lines were not attempted rather than '

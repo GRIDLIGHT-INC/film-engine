@@ -23,7 +23,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
-const { resolveShotMedia } = require('../lib/timeline');
+const { resolveShotMedia, buildTimeline } = require('../lib/timeline');
 const SPA = fs.readFileSync(path.join(__dirname, '../../src/index.html'), 'utf8');
 
 const asset = (over) => ({
@@ -121,4 +121,83 @@ test('served media carries a length and accepts ranges', () => {
     assert.ok(/206/.test(body) && /Content-Range/.test(body),
         'a range request is answered with the whole file, so scrubbing re-downloads it');
     assert.ok(/416/.test(body), 'an unsatisfiable range is not refused');
+});
+
+/* ── a shot holds for its dialogue ─────────────────────────────────────── */
+
+test('a still shot holds for its dialogue, not for the card', () => {
+    /*
+     * The card's duration was written before the lines existed and is usually
+     * four seconds. Shot 1B of The Glass Harbour is a 4000ms card carrying a
+     * four-line exchange that measures 5040ms — so playback cut away
+     * mid-sentence and moved on, which is the same fault an uploaded clip had
+     * when it was held for the length its card asked for.
+     */
+    const shot = { id: 's1', shot_code: '1B', duration_ms: 4000 };
+    const assets = [
+        { asset_type: 'storyboard', file_path: '/a/1B.png' },
+        asset({ file_name: '1B_RAY_0.mp3', duration_ms: 1070 }),
+        asset({ file_name: '1B_JUNE_1.mp3', duration_ms: 1250 }),
+        asset({ file_name: '1B_RAY_2.mp3', duration_ms: 1280 }),
+        asset({ file_name: '1B_JUNE_3.mp3', duration_ms: 1440 }),
+    ];
+    const tl = buildTimeline([shot], { s1: assets });
+    const entry = tl.entries[0];
+    const spoken = 1070 + 1250 + 1280 + 1440;
+    assert.ok(entry.duration_ms >= spoken,
+        `the shot holds ${entry.duration_ms}ms for ${spoken}ms of dialogue — it cuts off a line`);
+    assert.ok(entry.duration_ms > 4000, 'the card duration won over the measured dialogue');
+});
+
+test('a longer card still wins — holding on a face is a decision', () => {
+    // Shortening a shot to its dialogue would overrule a director who
+    // deliberately holds after the last line.
+    const shot = { id: 's1', shot_code: '1B', duration_ms: 30000 };
+    const tl = buildTimeline([shot], { s1: [
+        { asset_type: 'storyboard', file_path: '/a/1B.png' },
+        asset({ file_name: '1B_RAY_0.mp3', duration_ms: 1000 }),
+    ] });
+    assert.equal(tl.entries[0].duration_ms, 30000);
+});
+
+test('a shot with no dialogue is unchanged', () => {
+    // The byte-identical guarantee for every project that has generated none.
+    const shot = { id: 's1', shot_code: '1A', duration_ms: 4000 };
+    const tl = buildTimeline([shot], { s1: [{ asset_type: 'storyboard', file_path: '/a/1A.png' }] });
+    assert.equal(tl.entries[0].duration_ms, 4000);
+});
+
+test('a measured clip still beats both', () => {
+    // Video is the strongest fact: it IS the shot, dialogue and all.
+    const shot = { id: 's1', shot_code: '1B', duration_ms: 4000 };
+    const tl = buildTimeline([shot], { s1: [
+        { asset_type: 'video_raw', file_path: '/a/1B.mp4', duration_ms: 9000 },
+        asset({ file_name: '1B_RAY_0.mp3', duration_ms: 20000 }),
+    ] });
+    assert.equal(tl.entries[0].duration_ms, 9000,
+        'a measured clip must win: the clip already contains its own dialogue');
+});
+
+test('playback never generates — it only reads', () => {
+    /*
+     * Asked directly: "confirm it is not re-generating the sound files every
+     * time we play". Derived from the source rather than asserted, because the
+     * answer has to stay true as playback grows.
+     */
+    const names = ['loadShotIntoStage', 'pbPlayLine', 'pbTogglePlay', 'pbTick',
+        'pbSeekAbsolute', 'pbSyncAudio', 'pbDialogueToggled', 'loadPlayback'];
+    for (const name of names) {
+        const i = SPA.indexOf(`function ${name}(`);
+        if (i < 0) continue;
+        let depth = 0, j = SPA.indexOf('{', i), end = j;
+        for (; j < SPA.length; j++) {
+            if (SPA[j] === '{') depth++;
+            else if (SPA[j] === '}') { depth--; if (!depth) { end = j; break; } }
+        }
+        const body = SPA.slice(i, end).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+        assert.ok(!/method:\s*'POST'/.test(body),
+            `${name}() posts — playing a scene must never buy the audio again`);
+        assert.ok(!/\/generate/.test(body),
+            `${name}() calls a generate endpoint`);
+    }
 });

@@ -2338,6 +2338,16 @@ Built to `design_handoff_character_card`: official views top-left, everything wr
 Generating views is **all four or one**: a pending plate's own click generates just that view, and the header button asks before spending. It stops on a refusal rather than asking three more times — a refusal repeated is a refusal paid for.
 
 ### Watching the Scene and Hearing It
+
+**A shot holds for its dialogue.** The card's `duration_ms` is what a shot ASKS for, written before the lines existed, and it is 4000ms on every shot here. So a four-second slot carrying 24.6 seconds of dialogue played four seconds of it and cut away: measured across The Glass Harbour's diner scene, **26% of the dialogue was audible** — 44 seconds of 168. The same fault an uploaded clip had when it was held for the length its card asked for, one media type over.
+
+The measured audio is the fact, so a still-only shot now holds for `max(card, spoken + gaps)`. A **longer card still wins**, because a director holding on a face after the last line has said so and shortening to the dialogue would overrule them. A measured **clip** beats both: it already contains its own dialogue. A shot with no dialogue is byte-identical, which is what makes this safe for every project that has generated none.
+
+**Durations were all zero.** `routes/voice.js` only set `duration_ms` when the provider returned an object, and ElevenLabs returns raw bytes — so every dialogue asset stored 0 and the sum was always 0. Measured from the file with the same `measureDurationMs` the media importer uses, because a second duration probe is how one of them acquires the stderr fix and the other keeps reporting zero.
+
+**Playback never generates.** Asked directly, and derived from the source rather than asserted: no playback function posts or calls a generate endpoint. Audio is made once and read thereafter. The table read reuses too — its filename now carries a hash of the line's TEXT and VOICE, so an unchanged line is found and reused while a rewrite or a recast generates. It used to carry a random suffix, so nothing could ever find the previous one and a 68-line scene was bought again in full every run.
+
+**The scene page no longer offers a table read.** It produced a separate set of audition files attached to no shot, so a director who then generated the shots' dialogue paid twice for the same lines and threw one set away. The row now generates the take the film actually uses — shot by shot from the client, so the count moves rather than one request running silently for a minute. The route and the MCP tool stay: reading a scene aloud before it is broken down is a real thing to want, and `why_no_ui` records the decision.
 *"We should be able to read the dialogue along with the shots in playback, so we can see the scene play with dialogue."*
 
 `lib/timeline.js` has picked an audio asset per shot since it was written and **playback ignored it entirely** — so a director could watch the whole cut in silence with the dialogue sitting on disk. Wiring it found four more faults, none of which the API could see.

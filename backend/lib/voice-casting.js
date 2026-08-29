@@ -69,7 +69,23 @@ const DIALOGUE_SCOPES = Object.freeze([
         when: 'Before the breakdown — how does the scene play out loud?',
         route: 'POST /film/scenes/:id/table-read',
         tool: 'table_read',
-        ui: 'runTableRead(',
+        /*
+         * NO UI, deliberately, and the reason is worth keeping.
+         *
+         * The scene page used to carry a Table Read button. It produced a
+         * SEPARATE set of audition files attached to no shot — so a director
+         * who then generated the shots' dialogue paid twice for the same lines
+         * and threw one set away. The scene row now generates the take the film
+         * actually uses, and Playback speaks it as each shot comes up, which is
+         * where hearing a scene belongs.
+         *
+         * The route and the tool stay: reading a scene aloud before it has been
+         * broken down into shots is a real thing to want, and an agent can
+         * still do it. It simply is not a second paid button next to the first.
+         */
+        ui: null,
+        why_no_ui: 'Replaced in the UI by generating the shots\' own dialogue, which Playback '
+            + 'speaks — two paid paths for the same lines is paying twice.',
         spends: true,
         before_breakdown: true,
     },

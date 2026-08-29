@@ -22774,18 +22774,24 @@ ${fountainText.slice(0, 50000)}`;
                      * would change what you write.
                      */
                     /*
-                     * The button says whether it can work.
+                     * Generate the scene's dialogue — the take the film uses.
                      *
-                     * It used to be offered on every scene, and on one with no
-                     * dialogue it wrote a line into the status bar at the foot
-                     * of the screen and did nothing else — indistinguishable
-                     * from a broken button, and reported as exactly that. The
-                     * count is the answer, so it is on the label.
+                     * This used to run a TABLE READ, which produced a separate
+                     * set of audition files attached to no shot. Two paid paths
+                     * making the same lines is a duplication somebody pays for
+                     * twice, and the audition set is thrown away: the dialogue
+                     * that matters is the one on the shots, because that is
+                     * what playback, lip-sync and the mix all read.
+                     *
+                     * The count is on the label because a button that cannot
+                     * work should say so before it is pressed — a scene with no
+                     * dialogue used to write one line into the status bar at
+                     * the foot of the screen and look broken.
                      */
                     const lineCount = s.dialogue_lines || 0;
                     const readBtn = lineCount
-                        ? `<button class="btn btn-sm" onclick="event.stopPropagation(); runTableRead('${s.id}')" title="Hear these ${lineCount} line(s) read aloud in each character's cast voice — attached to no shot, and it spends">&#127908; Table Read &middot; ${lineCount}</button>`
-                        : `<button class="btn btn-sm" disabled style="opacity:.45;cursor:not-allowed;" title="This scene has no dialogue, so there is nothing to read aloud">&#127908; Table Read &middot; 0</button>`;
+                        ? `<button class="btn btn-sm" onclick="event.stopPropagation(); generateSceneDialogue('${s.id}', ${lineCount})" title="Generate the dialogue for this scene's shots, then hear it in Playback. Spends one generation per line; lines already spoken are reused.">&#127908; Dialogue &middot; ${lineCount}</button>`
+                        : `<button class="btn btn-sm" disabled style="opacity:.45;cursor:not-allowed;" title="This scene has no dialogue">&#127908; Dialogue &middot; 0</button>`;
 
                     return `
                     <div class="scene-row" id="scene-${s.id}">
@@ -24362,46 +24368,66 @@ ${fountainText.slice(0, 50000)}`;
      * The question the shot-scoped route could not answer: how does this scene
      * PLAY. Free to read, paid to hear, and attached to no shot either way.
      */
-    async function runTableRead(sceneId) {
-        setStatus('Reading the scene…');
-        let read;
-        try { read = await api(`/scenes/${sceneId}/table-read`); }
-        catch (err) { setStatus('Table read: ' + err.message); return; }
+    /**
+     * Generate the dialogue for one scene's shots.
+     *
+     * The take the FILM uses: registered against each shot, and therefore what
+     * playback, lip-sync and the mix all read. The old table read produced a
+     * parallel set of audition files attached to nothing, which meant paying
+     * twice for the same lines and throwing one set away.
+     */
+    async function generateSceneDialogue(sceneId, lineCount) {
+        const est = Math.max(5, Math.round((lineCount || 1) * 1.1));
+        if (!confirm(`Generate the dialogue for this scene?\n\n`
+            + `${lineCount} line(s), about ${est < 60 ? est + ' seconds' : Math.round(est / 60) + ' minute(s)'}.\n\n`
+            + 'Each line is registered against its shot — this is the take the film uses, and '
+            + 'Playback will speak it as each shot comes up.\n\n'
+            + 'Lines already generated in the same voice are reused, not bought again.')) return;
 
-        if (!read.total) { setStatus('This scene has no dialogue.'); return; }
+        const shots = (state.shots || []).filter(sh => sh.scene_id === sceneId);
+        let list = shots;
+        if (!list.length) {
+            try {
+                const data = await api(`/projects/${state.currentProject.id}/shotlist`);
+                state.shots = data.shots || [];
+                list = state.shots.filter(sh => sh.scene_id === sceneId);
+            } catch (err) { setStatus('Could not read the shot list: ' + err.message); return; }
+        }
+        if (!list.length) {
+            setStatus('This scene has no shots yet — break it down first, then generate the dialogue.');
+            return;
+        }
 
-        const uncast = read.uncast && read.uncast.length
-            ? `\n\nNot cast: ${read.uncast.join(', ')} — their lines will use the provider default voice.`
-            : '';
-        if (!confirm(`Hear ${read.total} line(s) from ${read.heading || 'this scene'}?`
-            + `${uncast}\n\nThis spends, and attaches to no shot.\n\n`
-            + read.lines.slice(0, 6).map(l => `${l.character}: ${l.line}`).join('\n')
-            + (read.total > 6 ? `\n… and ${read.total - 6} more` : ''))) { setStatus(''); return; }
-
-        setStatus(`Generating ${read.total} line(s)…`);
-        try {
-            const res = await api(`/scenes/${sceneId}/table-read`, { method: 'POST', body: '{}' });
-            setStatus(res.error
-                ? `${res.made} of ${res.requested} — then: ${res.error}`
-                : `Table read: ${res.made} line(s).`);
-            showTableRead(res);
-        } catch (err) { setStatus('Table read failed: ' + err.message); }
+        /*
+         * Shot by shot from the CLIENT, so progress is real.
+         *
+         * The batch route does the same work in one request, and a
+         * sixty-eight line scene then runs for over a minute with the page
+         * looking untouched — reported as "nothing happened but my credits went
+         * down". One request per shot means the count moves.
+         */
+        let made = 0, failed = 0;
+        for (let i = 0; i < list.length; i++) {
+            const sh = list[i];
+            setStatus(`Dialogue: shot ${sh.shot_code} (${i + 1} of ${list.length})…`, true);
+            try {
+                const res = await api(`/shots/${sh.id}/voice/generate`, { method: 'POST', body: '{}' });
+                const files = res.audio_files || [];
+                made += files.filter(f => f.status === 'complete').length;
+                const bad = files.filter(f => f.status !== 'complete');
+                failed += bad.length;
+                if (bad.length && bad[0].hint) setStatus(bad[0].hint);
+            } catch (err) {
+                // Stop on a refusal rather than asking for every remaining shot.
+                setStatus(`Stopped at ${sh.shot_code}: ${err.message}`);
+                return;
+            }
+        }
+        setStatus(`${made} line(s) generated${failed ? `, ${failed} failed` : ''}. `
+            + 'Open Playback to hear the scene.');
     }
 
-    function showTableRead(res) {
-        CASTING = { characterId: null, name: '', voices: [], selected: null };
-        document.getElementById('castingTitle').textContent = 'Table read';
-        document.getElementById('castingStatus').textContent =
-            `${res.made} line(s)${res.error ? ' — stopped early' : ''}`;
-        document.getElementById('castingBody').innerHTML = (res.lines || []).map(l => `
-            <div class="voice-row ${l.cast ? 'is-cast' : ''}">
-                <span class="vname">${esc(l.character || '—')}</span>
-                <span class="vlabels">${l.direction ? `<em>${esc(l.direction)}</em> ` : ''}${esc(l.line)}</span>
-                <audio controls preload="none" src="${esc(API_BASE + l.audio_url)}"></audio>
-            </div>`).join('');
-        showModal('castingModal');
-    }
-
+    /** What the read is doing, while it does it. */
     /* ── the takes that ship ────────────────────────────────────────────── */
 
     /**

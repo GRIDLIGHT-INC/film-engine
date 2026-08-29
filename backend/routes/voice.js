@@ -223,6 +223,30 @@ async function generateVoiceForShotId(shotId) {
                 continue;
             }
 
+            /*
+             * MEASURE the line, because the card's duration is a guess.
+             *
+             * ElevenLabs returns raw bytes, so `result.data.duration_ms` is
+             * never set and every dialogue asset was stored as 0 — which meant
+             * playback held each shot for the duration written on its card,
+             * cut away mid-sentence, and moved on. A four-second card carrying
+             * a four-line exchange lost most of it.
+             *
+             * Measured from the file with the same helper the media importer
+             * uses: a second duration probe is how one of them acquires the
+             * stderr fix and the other keeps reporting zero.
+             */
+            if (!durationMs && filePath) {
+                try {
+                    const { measureDurationMs } = require('../lib/media-imports');
+                    durationMs = measureDurationMs(
+                        typeof filePath === 'string' ? filePath : (filePath && filePath.path) || '');
+                } catch (_) {
+                    // A line with no measured length is still a line: it falls
+                    // back to the card, exactly as before.
+                }
+            }
+
             const assetId = generateId();
             db.prepare(
                 `INSERT INTO film_assets (
