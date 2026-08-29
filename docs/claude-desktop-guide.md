@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**191 tools, 47 families.** Everything the app can do, you can ask for in a
+**197 tools, 48 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -158,6 +158,22 @@ A plate is a reference photograph of one subject. Generating one does **not**
 lock it — `consistency_lock` is the commitment generation conditions on.
 
 **Costs money.**
+
+**A subject is a workspace, not a form.** `gallery_get` shows every picture of a
+character, location or prop with what it *is*: **reference** (the approved
+plate — the only thing that conditions a frame), **concept** (an exploration,
+kept and comparable), **inspiration** (gathered rather than made).
+
+`gallery_explore` generates several looks at once as concepts — *"try MAYA
+older and scarred"* — and the approved plate is untouched until you
+`gallery_promote` one. `gallery_explore_preview` shows what it would send and
+whether the provider will even honour the resolution, and costs nothing.
+
+`gallery_inspire` keeps a still or a link with the subject. It reaches **no**
+prompt: it is usually somebody else's image, and sending it to a provider is a
+different act from looking at it — promoting one has to be asked for explicitly.
+`gallery_remove` takes a picture out; the bytes move to a `deleted/` folder
+rather than being destroyed, because a generated plate cost money.
 
 ### 4. Shots
 

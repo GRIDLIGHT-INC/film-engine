@@ -38,6 +38,7 @@ const { handleMarketing } = require('../routes/marketing');
 const { handleDashboard } = require('../routes/dashboard');
 const { handleStoryStructure } = require('../routes/story-structure');
 const { handleStoryDevelopment } = require('../routes/story-development');
+const { handleSubjectGallery } = require('../routes/subject-gallery');
 const { handleScripts } = require('../routes/scripts');
 const { handleScenes } = require('../routes/scenes');
 const { handleShots } = require('../routes/shots');
@@ -843,6 +844,92 @@ const PRODUCTION_TOOLS = [
      * model cannot act on. So the engine hands over a brief and stores the
      * conclusion. tests/mcp-no-server-llm.test.js enforces it.
      */
+    /*
+     * The subject workspace.
+     *
+     * Every picture of a character, location or prop used to be a candidate
+     * reference — there was nowhere to keep an image that INFORMS the work
+     * without BEING it. These carry a role, and only an approved reference is
+     * ever sent to a provider.
+     */
+    {
+        name: 'gallery_get',
+        handler: handleSubjectGallery, method: 'GET',
+        description: 'Every picture of one character, location or prop, grouped by role. reference = the approved plate, and the ONLY thing that conditions a frame (one per view). concept = an exploration, kept and comparable, reaching no prompt until promoted. inspiration = gathered rather than made — a film still, a photograph, the real location — excluded from generation because sending somebody else\u2019s image to a provider is a different act from looking at it. SPENDS NOTHING.',
+        path: a => `/film/${a.kind}s/${a.subject_id}/gallery`,
+        schema: {
+            kind: { type: 'string', description: 'character | location | prop' },
+            subject_id: { type: 'string' },
+        },
+        required: ['kind', 'subject_id'],
+    },
+    {
+        name: 'gallery_explore_preview',
+        handler: handleSubjectGallery, method: 'GET',
+        description: 'What an exploration would send, and at what size, before anything is spent. Reports the resolved provider and whether it will honour the requested resolution at all. SPENDS NOTHING.',
+        path: a => `/film/${a.kind}s/${a.subject_id}/explore/preview?count=${a.count || 3}`
+            + (a.view ? `&view=${encodeURIComponent(a.view)}` : '')
+            + (a.instruction ? `&instruction=${encodeURIComponent(a.instruction)}` : ''),
+        schema: {
+            kind: { type: 'string', description: 'character | location | prop' },
+            subject_id: { type: 'string' },
+            count: { type: 'number', description: '1-6. Default 3.' },
+            view: { type: 'string', description: 'For a character: front, side, back. For a location: a named view.' },
+            instruction: { type: 'string', description: 'The look to try — "older, scarred", "at night, wet". Added to the subject\u2019s own prompt rather than replacing it.' },
+        },
+        required: ['kind', 'subject_id'],
+    },
+    {
+        name: 'gallery_explore',
+        handler: handleSubjectGallery, method: 'POST',
+        description: 'SPENDS MONEY. Generate several looks for one subject, kept side by side as CONCEPTS. The approved plate is untouched: explorations are written to their own filenames and reach no prompt until one is promoted with gallery_promote. Generated sequentially — several image calls at one provider is how a queue earns a 429 — and a provider that starts refusing stops the run rather than being asked again, with the looks not attempted named. Preview it free with gallery_explore_preview first.',
+        path: a => `/film/${a.kind}s/${a.subject_id}/explore`,
+        body: a => ({ count: a.count, view: a.view, instruction: a.instruction }),
+        schema: {
+            kind: { type: 'string', description: 'character | location | prop' },
+            subject_id: { type: 'string' },
+            count: { type: 'number', description: '1-6. Default 3.' },
+            view: { type: 'string' },
+            instruction: { type: 'string', description: 'The look to try.' },
+        },
+        required: ['kind', 'subject_id'],
+    },
+    {
+        name: 'gallery_inspire',
+        handler: handleSubjectGallery, method: 'POST',
+        description: 'Keep an image with a subject as INSPIRATION — a film still, a photograph, a painting, the real location. Either a data URI (PNG, JPEG or WebP) or an http(s) link; a link is stored as a link and given no file, because inventing a path makes the serving route 404 on something that was never a file. Recorded with rights unknown and license_source external, and it reaches NO prompt: it informs the artist, not the model. Promoting one to a reference is possible and has to be stated.',
+        path: a => `/film/${a.kind}s/${a.subject_id}/inspiration`,
+        body: a => ({ data: a.data, source_url: a.source_url, note: a.note, view: a.view }),
+        schema: {
+            kind: { type: 'string', description: 'character | location | prop' },
+            subject_id: { type: 'string' },
+            data: { type: 'string', description: 'data:image/png;base64,... — for a file you hold.' },
+            source_url: { type: 'string', description: 'An http(s) link — for something online.' },
+            note: { type: 'string', description: 'What you are taking from it: "the wing silhouette", "this grade".' },
+            view: { type: 'string' },
+        },
+        required: ['kind', 'subject_id'],
+    },
+    {
+        name: 'gallery_promote',
+        handler: handleSubjectGallery, method: 'PUT',
+        description: 'Set what a picture IS. role=reference makes it the approved plate for its view — what every frame of this subject is generated from — and demotes whatever held that view back to a concept rather than deleting it, because the picture it replaced cost money and may be the one you come back to. role=concept puts it back in the sketchbook, and says so if that leaves the subject with NO reference, since every frame would then invent it. Promoting an inspiration needs allow_inspiration: true.',
+        path: a => `/film/gallery/${a.asset_id}/role`,
+        body: a => ({ role: a.role, allow_inspiration: a.allow_inspiration }),
+        schema: {
+            asset_id: { type: 'string' },
+            role: { type: 'string', description: 'reference | concept | inspiration' },
+            allow_inspiration: { type: 'boolean', description: 'Required to promote a gathered image to a conditioning reference.' },
+        },
+        required: ['asset_id', 'role'],
+    },
+    {
+        name: 'gallery_remove',
+        handler: handleSubjectGallery, method: 'DELETE',
+        description: 'Remove one picture from a subject. The row goes; the bytes move to a deleted/ folder rather than being unlinked, because a generated plate cost money. Warns if it was the last approved reference.',
+        path: a => `/film/gallery/${a.asset_id}`,
+        schema: { asset_id: { type: 'string' } }, required: ['asset_id'],
+    },
     {
         name: 'analysis_brief',
         handler: handleStoryDevelopment, method: 'GET',

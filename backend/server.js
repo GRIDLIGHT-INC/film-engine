@@ -71,6 +71,7 @@ const { handleProjects, handleProjectSettingsPreset } = require('./routes/projec
 const { handleScripts, handleComments } = require('./routes/scripts');
 const { handleStoryStructure } = require('./routes/story-structure');
 const { handleStoryDevelopment } = require('./routes/story-development');
+const { handleSubjectGallery } = require('./routes/subject-gallery');
 const { handleAgentPresence } = require('./routes/agent-presence');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
@@ -469,6 +470,18 @@ const server = http.createServer(async (req, res) => {
         // otherwise fall through to a project lookup.
         if (parts[1] === 'agent' && !parts[2]) {
             return handleAgentPresence(req, res, parts, query);
+        }
+
+        // Route: the subject workspace — gallery, explore, inspiration, promote.
+        // ABOVE the generic /characters/:id and /locations/:id handlers, which
+        // would otherwise swallow the sub-paths. That trap has now bitten five
+        // times in this file.
+        if (['characters', 'locations', 'props'].includes(parts[1]) && parts[2]
+            && ['gallery', 'explore', 'inspiration'].includes(parts[3])) {
+            return await handleSubjectGallery(req, res, parts, query);
+        }
+        if (parts[1] === 'gallery' && parts[2]) {
+            return await handleSubjectGallery(req, res, parts, query);
         }
 
         // Route: the writing tools — treatment, analysis, timing.

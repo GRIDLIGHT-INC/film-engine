@@ -1308,6 +1308,32 @@
         }
 
         /* FILM-127: Index Cards View */
+        .modal-wide .modal, .modal.modal-wide { max-width: 1040px; width: 94vw; }
+        .gal-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+        .gal-bar .input { flex:1; min-width:220px; }
+        .gal-bar select { width:auto; min-width:64px; flex:0 0 auto; }
+        .gal-group { margin-bottom: 22px; }
+        .gal-group h4 { margin: 0 0 2px; }
+        .gal-group .gal-why { color: var(--text-muted,#8a8a95); font-size:12px; margin:0 0 10px; }
+        .gal-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
+        .gal-card {
+            border:1px solid var(--border,#2a2a30); border-radius:6px; overflow:hidden;
+            background: var(--bg-secondary,#16161a); min-width:0;
+        }
+        .gal-card.is-reference { border-color:#4caf50; }
+        .gal-card img { width:100%; height:150px; object-fit:cover; display:block; cursor:zoom-in; }
+        .gal-card .gal-meta { padding:8px 10px; font-size:12px; }
+        .gal-card .gal-actions {
+            display:flex; flex-wrap:wrap; gap:6px; padding:0 10px 10px; min-width:0;
+        }
+        .gal-badge {
+            display:inline-block; padding:1px 7px; border-radius:9px; font-size:11px;
+            background:#2a2a30; color:#c8c8d0;
+        }
+        .gal-badge.reference { background:#1f4620; color:#8fd694; }
+        .gal-badge.inspiration { background:#3a2f14; color:#e0c07a; }
+        .gal-link { display:block; padding:26px 10px; text-align:center; color:#6aa9ff;
+            word-break:break-all; font-size:12px; }
         .index-cards-toolbar {
             display: flex; align-items: center; gap: 10px;
             flex-wrap: wrap; margin-bottom: 12px;
@@ -5989,6 +6015,40 @@ table, .render-table { border-radius:12px; overflow:hidden; }
     </div>
 
     <!-- Create Character -->
+    <!--
+      The subject workspace.
+      ONE modal for characters, locations and props: the three differ only in
+      which foreign key holds them, and three near-identical panels is how one
+      of them ends up with the promote rule and the others do not.
+    -->
+    <div class="modal-overlay" id="galleryModal">
+        <div class="modal modal-wide">
+            <div class="modal-header">
+                <h3 id="galleryTitle">Gallery</h3>
+                <button class="modal-close" onclick="closeModal('galleryModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="gal-bar">
+                    <input type="text" id="galInstruction" class="input"
+                           placeholder="A look to try — &ldquo;older, scarred&rdquo;, &ldquo;at night, wet&rdquo;">
+                    <select id="galCount">
+                        <option value="1">1</option><option value="2">2</option>
+                        <option value="3" selected>3</option><option value="4">4</option>
+                        <option value="5">5</option><option value="6">6</option>
+                    </select>
+                    <button class="btn btn-primary btn-sm" onclick="exploreSubject()">Explore</button>
+                    <button class="btn btn-sm" onclick="addInspirationPrompt()">+ Inspiration</button>
+                    <span id="galStatus" class="text-muted text-sm"></span>
+                </div>
+                <p class="text-muted text-sm" style="margin:0 0 12px;">
+                    Exploring is generated as <strong>concepts</strong> &mdash; kept side by side, and
+                    reaching no prompt until you make one the reference. The approved plate is untouched.
+                </p>
+                <div id="galleryBody"></div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="characterModal">
         <div class="modal">
             <div class="modal-header"><h3 id="characterModalTitle">New Character</h3><button class="modal-close" onclick="closeModal('characterModal')">&times;</button></div>
@@ -23141,6 +23201,7 @@ ${fountainText.slice(0, 50000)}`;
                             -->
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); showCharacterViews('${c.id}')" title="Front, side and back — and which one conditions every frame">Views</button>
                             ${uploadControl('character-plate', `/characters/${c.id}/refsheet/import`, { extra: { view: 'front' }, after: 'loadCharacters', title: 'Use a picture you already have — a photograph, a Midjourney export, art you were handed' })}
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openGallery('character', '${c.id}', ${jsAttr(c.name)})">Gallery</button>
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editCharacter('${c.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteCharacter('${c.id}')">Delete</button>
                         </div>
@@ -23245,6 +23306,189 @@ ${fountainText.slice(0, 50000)}`;
     // FILM-122: Track original name for rename confirmation
     let editingCharacterOriginalName = '';
     let editingLocationOriginalName = '';
+
+    /* ── the subject workspace ─────────────────────────────────────────────
+     *
+     * One implementation for characters, locations and props. The three differ
+     * only in which foreign key holds them, and three near-identical panels is
+     * how one of them ends up with the promote rule and the others do not —
+     * the fault lib/reference-plates.js was created to close for generation.
+     */
+    let GAL = { kind: null, id: null, name: '' };
+
+    async function openGallery(kind, subjectId, name) {
+        GAL = { kind, id: subjectId, name: name || '' };
+        document.getElementById('galleryTitle').textContent = `${name || kind} — gallery`;
+        document.getElementById('galInstruction').value = '';
+        document.getElementById('galStatus').textContent = '';
+        showModal('galleryModal');
+        await loadGallery();
+    }
+
+    async function loadGallery() {
+        const body = document.getElementById('galleryBody');
+        body.innerHTML = '<div class="text-muted">Loading…</div>';
+        let data;
+        try {
+            data = await api(`/${GAL.kind}s/${GAL.id}/gallery`);
+        } catch (err) {
+            // A renderer that paints a placeholder must have a path that
+            // replaces it, or a failure reads as the pictures not existing.
+            body.innerHTML = `<div class="empty-state"><h3>Could not load the gallery</h3>
+                <p>${esc(err.message)}</p></div>`;
+            return;
+        }
+
+        body.innerHTML = data.roles.map(role => {
+            const items = data.by_role[role.id] || [];
+            return `<div class="gal-group">
+                <h4>${esc(role.title)} <span class="text-muted text-sm">(${items.length})</span></h4>
+                <p class="gal-why">${esc(role.what)} ${esc(role.why)}</p>
+                ${items.length
+                    ? `<div class="gal-grid">${items.map(galCardHtml).join('')}</div>`
+                    : `<p class="text-muted text-sm">${role.id === 'reference'
+                        ? 'No approved reference. Every frame this subject appears in will invent it.'
+                        : 'Nothing here yet.'}</p>`}
+            </div>`;
+        }).join('');
+    }
+
+    function galCardHtml(item) {
+        const isRef = item.role === 'reference';
+        /*
+         * A served path is relative to the API, not to this page.
+         *
+         * The page is served from one port and the API from another, so a bare
+         * `/film/refsheets/…` in an <img src> resolves against the PAGE and
+         * 404s — a broken image icon where the approved plate should be, which
+         * reads as the plate being lost. An absolute inspiration link is left
+         * alone: it already names its own host.
+         */
+        const src = item.image_url && !/^https?:/i.test(item.image_url)
+            ? API_BASE + item.image_url
+            : item.image_url;
+        // A link-only inspiration has no file to show; saying so beats a broken
+        // image, which reads as the app losing the picture.
+        const picture = item.image_url
+            ? (/^https?:/.test(item.source_url || '')
+                ? `<a class="gal-link" href="${esc(src)}" target="_blank" rel="noopener">${esc(src)}</a>`
+                : `<img src="${esc(src)}" alt="" onclick="openPlateViewer(${jsAttr(src)}, ${jsAttr(GAL.name + (item.view ? ' — ' + item.view : ''))})">`)
+            : '<div class="gal-link">no image</div>';
+
+        return `<div class="gal-card ${isRef ? 'is-reference' : ''}">
+            ${picture}
+            <div class="gal-meta">
+                <span class="gal-badge ${esc(item.role)}">${esc(item.role)}</span>
+                ${item.view ? ` <span class="text-muted">${esc(item.view)}</span>` : ''}
+                ${item.note ? `<div class="text-muted" style="margin-top:4px;">${esc(item.note)}</div>` : ''}
+            </div>
+            <div class="gal-actions">
+                ${isRef
+                    ? `<button class="btn btn-sm" onclick="setGalleryRole('${item.id}','concept')">Unset</button>`
+                    : `<button class="btn btn-sm btn-primary" onclick="setGalleryRole('${item.id}','reference')">Make reference</button>`}
+                <button class="btn btn-sm btn-danger" onclick="removeGalleryImage('${item.id}')">Delete</button>
+            </div>
+        </div>`;
+    }
+
+    async function setGalleryRole(assetId, role) {
+        const status = document.getElementById('galStatus');
+        status.textContent = 'Saving…';
+        try {
+            const res = await api(`/gallery/${assetId}/role`, {
+                method: 'PUT', body: JSON.stringify({ role }),
+            });
+            status.textContent = res.changed ? (res.note || 'Saved') : (res.note || 'No change');
+            if (res.warning) status.textContent = res.warning;
+            await loadGallery();
+        } catch (err) {
+            /*
+             * Promoting an inspiration is REFUSED rather than done quietly, and
+             * the refusal is the place to offer the override — meeting a 409
+             * with no way past is how a rule stops being read.
+             */
+            if (/inspiration/i.test(err.message)) {
+                if (confirm(err.message + '\n\nMake it the reference anyway?')) {
+                    await api(`/gallery/${assetId}/role`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ role: 'reference', allow_inspiration: true }),
+                    });
+                    await loadGallery();
+                    status.textContent = 'Promoted.';
+                    return;
+                }
+                status.textContent = 'Left as inspiration.';
+                return;
+            }
+            status.textContent = err.message;
+        }
+    }
+
+    async function removeGalleryImage(assetId) {
+        if (!confirm('Delete this picture?\n\nThe file is moved to a deleted/ folder rather than '
+            + 'destroyed — a generated plate cost money.')) return;
+        try {
+            const res = await api(`/gallery/${assetId}`, { method: 'DELETE' });
+            document.getElementById('galStatus').textContent = res.warning || 'Deleted.';
+            await loadGallery();
+        } catch (err) {
+            document.getElementById('galStatus').textContent = err.message;
+        }
+    }
+
+    async function exploreSubject() {
+        const count = Number(document.getElementById('galCount').value) || 3;
+        const instruction = document.getElementById('galInstruction').value.trim();
+        const status = document.getElementById('galStatus');
+
+        // Nothing spends without showing what it will send. The preview is
+        // free, so the gate costs nothing to pass and everything to skip.
+        status.textContent = 'Checking…';
+        let pv;
+        try {
+            pv = await api(`/${GAL.kind}s/${GAL.id}/explore/preview?count=${count}`
+                + (instruction ? `&instruction=${encodeURIComponent(instruction)}` : ''));
+        } catch (err) { status.textContent = 'Preview failed: ' + err.message; return; }
+        if (pv.error) { status.textContent = pv.error; return; }
+
+        const size = pv.size ? `${pv.size.width}x${pv.size.height}` : 'provider default';
+        const ignored = pv.size && pv.size.honoured === false
+            ? '\n\nNOTE: this provider ignores a requested resolution and chooses its own.' : '';
+        if (!confirm(
+            `Generate ${count} concept${count === 1 ? '' : 's'} for ${GAL.name}?\n\n`
+            + `Provider: ${pv.provider}\nSize: ${size}${ignored}\n\n`
+            + `These are kept as CONCEPTS. The approved plate is untouched and nothing is\n`
+            + `conditioned on them until you make one the reference.\n\n`
+            + `Prompt:\n${pv.prompt.slice(0, 700)}${pv.prompt.length > 700 ? '…' : ''}`)) {
+            status.textContent = '';
+            return;
+        }
+
+        status.textContent = `Generating ${count}…`;
+        try {
+            const res = await api(`/${GAL.kind}s/${GAL.id}/explore`, {
+                method: 'POST', body: JSON.stringify({ count, instruction }),
+            });
+            status.textContent = res.error
+                ? `${res.made} made, then: ${res.error}`
+                : `${res.made} concept(s) generated.`;
+            await loadGallery();
+        } catch (err) { status.textContent = 'Explore failed: ' + err.message; }
+    }
+
+    function addInspirationPrompt() {
+        const url = prompt('Paste an image link (http/https) — a still, a photograph, a reference:');
+        if (!url) return;
+        const note = prompt('What are you taking from it? (optional)') || '';
+        api(`/${GAL.kind}s/${GAL.id}/inspiration`, {
+            method: 'POST', body: JSON.stringify({ source_url: url, note }),
+        }).then(async () => {
+            document.getElementById('galStatus').textContent = 'Gathered as inspiration.';
+            await loadGallery();
+        }).catch(err => {
+            document.getElementById('galStatus').textContent = err.message;
+        });
+    }
 
     function editCharacter(id) {
         const c = state.characters.find(x => x.id === id);
@@ -23640,6 +23884,7 @@ ${fountainText.slice(0, 50000)}`;
                         <div class="card-actions">
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generateLocationImage('${l.id}')" title="Generate reference image">${l.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
                             ${uploadControl('location-plate', `/locations/${l.id}/plate/import`, { extra: {}, after: 'loadLocations', title: 'Use a picture you already have — a photograph, a Midjourney export, art you were handed' })}
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openGallery('location', '${l.id}', ${jsAttr(l.name)})">Gallery</button>
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editLocation('${l.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteLocation('${l.id}')">Delete</button>
                         </div>
@@ -23761,6 +24006,7 @@ ${fountainText.slice(0, 50000)}`;
                         <div class="card-actions">
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generatePropImage('${p.id}')" title="Generate reference image">${p.reference_image_url ? 'Regen Image' : 'Generate Image'}</button>
                             ${uploadControl('prop-plate', `/props/${p.id}/plate/import`, { extra: {}, after: 'loadProps', title: 'Use a picture you already have — a photograph, a Midjourney export, art you were handed' })}
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openGallery('prop', '${p.id}', ${jsAttr(p.name)})">Gallery</button>
                             <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editProp('${p.id}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteProp('${p.id}')">Delete</button>
                         </div>

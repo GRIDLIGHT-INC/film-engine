@@ -16,10 +16,18 @@
  * The check is set-based over every *.test.js rather than pinned to the one file
  * that broke, because the next test to require the database will reintroduce it.
  *
- * Known limit: this catches a DIRECT require of db/database or db/schema, which
- * is the form that has actually occurred. A file that pulls the database in
- * transitively (requiring a lib that requires it) is not detected statically —
- * the "leaves the real database untouched" case below is the empirical backstop.
+ * The ordering check below was not enough, and the gap cost a real database.
+ * subject-gallery.test.js set FILM_DATA_DIR inside a before() hook and required
+ * db/database on the next line — textually in the right order, so this guard
+ * passed — while an EARLIER describe block had already required a lib that
+ * pulls the database in transitively. The real database opened at that first
+ * import, and the suite wrote 26 projects and 222 assets into the working film
+ * library.
+ *
+ * Transitive requires cannot be resolved statically, so the rule is stronger
+ * and simpler instead: a file that isolates must isolate BEFORE ITS FIRST
+ * REQUIRE OF ANYTHING. You cannot know what a lib pulls in, so the only safe
+ * moment is before the first one.
  */
 
 const test = require('node:test');
@@ -62,6 +70,61 @@ test('every test file that requires the database isolates FILM_DATA_DIR first', 
     }
 
     assert.deepStrictEqual(offenders, [], `test files that would open the real database:\n  ${offenders.join('\n  ')}`);
+});
+
+test('isolation is established before the first require of anything', () => {
+    /*
+     * Not merely before requiring db/database — before ANY require.
+     *
+     * A lib that reaches the database transitively opens it at that moment, and
+     * no static check can enumerate which libs those are. Setting the variable
+     * first costs nothing and closes the whole class; setting it later is safe
+     * only by luck about somebody else's import graph.
+     */
+    const offenders = [];
+    for (const file of testFiles()) {
+        if (file === path.basename(__filename)) continue;
+        const src = fs.readFileSync(path.join(TESTS_DIR, file), 'utf8');
+        const env = src.search(ENV_SET);
+        if (env === -1) continue;              // spawns a server, or needs no database
+
+        /*
+         * The first require of a LOCAL module — `./` or `../`.
+         *
+         * node:test, assert, fs, path and os cannot open a database, and
+         * flagging the forty files that require them before isolating would
+         * make this check cry wolf until somebody switched it off, taking the
+         * one real case with it. A local module is the one that might pull the
+         * database in transitively, and it is the only kind that matters here.
+         *
+         * Comments are stripped first, so the explanation of this very rule
+         * does not count as a require.
+         */
+        const code = src.replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length))
+            .replace(/\/\/.*$/gm, m => ' '.repeat(m.length));
+        /*
+         * TOP-LEVEL local requires only.
+         *
+         * A require inside a function body does not run at import time, so it
+         * cannot open anything before isolation is established —
+         * decision-parity.test.js loads its contract lazily inside
+         * loadContract(), and flagging that would be a false alarm on a file
+         * that is correct. Anchored to a top-level `const … = require('../…')`,
+         * which is how every one of these files actually imports, and which a
+         * body-indented require cannot match.
+         */
+        const firstRequire = code.search(/^const\s[^\n]*?require\(\s*['"]\.\.?\//m);
+        if (firstRequire === -1) continue;
+
+        if (env > firstRequire) {
+            const line = src.slice(0, env).split('\n').length;
+            const reqLine = src.slice(0, firstRequire).split('\n').length;
+            offenders.push(`${file}: sets FILM_DATA_DIR at line ${line}, after the first LOCAL require `
+                + `at line ${reqLine} — a lib required in between may already have opened the real database`);
+        }
+    }
+    assert.deepStrictEqual(offenders, [],
+        `isolation set too late:\n  ${offenders.join('\n  ')}`);
 });
 
 test('no test file hard-codes the default data directory', () => {

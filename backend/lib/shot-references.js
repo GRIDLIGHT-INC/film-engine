@@ -25,6 +25,7 @@
  */
 
 const { orderByViewSql, headlinePlate } = require('./plate-views');
+const { sendableSql, sendableOnly } = require('./subject-gallery');
 const { selectReferences } = require('./reference-images');
 
 /**
@@ -86,6 +87,7 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
             `SELECT file_path, file_name FROM film_assets
              WHERE project_id = ? AND character_id = ?
                AND asset_type IN ('character_sheet', 'reference_image')
+               AND ${sendableSql()}
              ORDER BY ${orderByViewSql()}, version DESC, created_at DESC LIMIT 1`
         ).get(projectId, ch.id);
         if (plate) candidates.push({ name: ch.name, kind: 'character', file_path: plate.file_path });
@@ -123,6 +125,7 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
             `SELECT file_path, file_name, metadata FROM film_assets
              WHERE project_id = ? AND location_id = ?
                AND asset_type IN ('reference_image', 'character_sheet')
+               AND ${sendableSql()}
              ORDER BY version DESC, created_at DESC`
         ).all(projectId, matchedLocation.id);
         /*
@@ -171,6 +174,7 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
         const plate = database().prepare(
             `SELECT file_path FROM film_assets
              WHERE project_id = ? AND prop_id = ? AND asset_type IN ('reference_image', 'character_sheet')
+               AND ${sendableSql()}
              ORDER BY version DESC, created_at DESC LIMIT 1`
         ).get(projectId, prop.id);
         if (plate) candidates.push({ name: prop.name, kind: 'prop', file_path: plate.file_path });
@@ -317,7 +321,8 @@ function platedSubjects(db, projectId) {
             `SELECT t.id, t.name,
                     (SELECT COUNT(*) FROM film_assets a
                       WHERE a.project_id = ? AND a.${column} = t.id
-                        AND a.asset_type IN ${PLATE_TYPES}) n
+                        AND a.asset_type IN ${PLATE_TYPES}
+                        AND ${sendableSql('a')}) n
                FROM ${table} t WHERE t.project_id = ?`).all(projectId, projectId);
         return rows.map(r => ({ id: r.id, name: r.name, has_plate: r.n > 0 }));
     };

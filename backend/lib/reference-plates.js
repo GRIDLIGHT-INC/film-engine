@@ -613,7 +613,18 @@ function plateFileName(kind, subjectName, view) {
  */
 async function generatePlate({ projectId, kind, subject, stylePreset, provider, aspectRatio,
     project, timeout, db,
-    view, anchorPath, promptOverride: promptEdit, tierOverride }) {
+    view, anchorPath, promptOverride: promptEdit, tierOverride,
+    /*
+     * Exploring rather than plating.
+     *
+     * The same prompt building, the same style, the same references and the
+     * same fallback chain — only the destination and the role change. A second
+     * generator for explorations is how one of them would acquire the medium
+     * fix or the look-board attachment and the other would not, which is the
+     * exact trap `reference-plates.js` was created to close for locations and
+     * props.
+     */
+    explore, exploreToken }) {
     const spec = PLATE_KINDS[kind];
     if (!spec) return { ok: false, error: `unknown plate kind '${kind}'` };
     if (!subject || !subject.id) return { ok: false, error: `${kind} not found` };
@@ -793,7 +804,18 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
     if (!result.ok) return { ok: false, error: result.error, style_applied: styleApplied, ...provenance };
 
     ensureDir(projectId, spec.subdir);
-    const fileName = plateFileName(kind, subject.name, view);
+    const { explorationFileName, explorationMetadata } = require('./subject-gallery');
+    /*
+     * An exploration NEVER takes the plate's filename.
+     *
+     * A plate is written to a per-view name and overwrites, so an exploration
+     * sharing it would replace the approved picture on disk the moment it was
+     * generated — the image every frame of this subject is conditioned on,
+     * gone, with nothing said.
+     */
+    const fileName = explore
+        ? explorationFileName(kind, subject.name, view, exploreToken)
+        : plateFileName(kind, subject.name, view);
 
     let filePath;
     try {
@@ -811,9 +833,13 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
      * would mean generating a second view of a location destroys the first,
      * which is the whole reason a location could only ever have one.
      */
-    db.prepare(`DELETE FROM film_assets
-                WHERE project_id = ? AND ${spec.fkColumn} = ? AND asset_type = ? AND file_name = ?`)
-        .run(projectId, subject.id, spec.assetType, fileName);
+    // An exploration replaces nothing: keeping every attempt is the point of
+    // exploring, and the whole reason its filename is unique.
+    if (!explore) {
+        db.prepare(`DELETE FROM film_assets
+                    WHERE project_id = ? AND ${spec.fkColumn} = ? AND asset_type = ? AND file_name = ?`)
+            .run(projectId, subject.id, spec.assetType, fileName);
+    }
 
     const assetId = generateId();
     db.prepare(
@@ -823,10 +849,15 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
     ).run(assetId, projectId, subject.id, spec.assetType,
         typeof filePath === 'string' ? filePath : (filePath && filePath.path) || '',
         fileName,
-        JSON.stringify({ kind: `${kind}_plate`, style_applied: styleApplied,
-            // Which view of the subject this is. Absent means the original,
-            // view-less plate, which is what every existing project has.
-            ...(view ? { view: String(view).trim() } : {}) }),
+        JSON.stringify(explore
+            // Born a concept. Inert until somebody promotes it, or every
+            // exploration would immediately condition the next frame.
+            ? explorationMetadata({ kind, style_applied: styleApplied,
+                ...(view ? { view: String(view).trim() } : {}) })
+            : { kind: `${kind}_plate`, style_applied: styleApplied,
+                // Which view of the subject this is. Absent means the original,
+                // view-less plate, which is what every existing project has.
+                ...(view ? { view: String(view).trim() } : {}) }),
         result.provider || provider.id || null,
         result.provider_model || null);
 

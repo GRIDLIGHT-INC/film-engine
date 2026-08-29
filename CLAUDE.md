@@ -75,6 +75,7 @@ film-engine/
 │   │   ├── events.js           # SSE: tell the page when another process wrote to the database
 │   │   ├── story-structure.js  # Beat sheets, holes, and house rules on the writing
 │   │   ├── story-development.js # Treatment, screenplay analysis, and what a scene costs in time
+│   │   ├── subject-gallery.js  # A character, location or prop as a workspace, not a form
 │   │   ├── agent-presence.js   # Which path an AI request takes, and why
 │   │   ├── story-bible.js      # What things ARE, and which entity was written from which section
 │   │   ├── media-import.js     # Footage and sound made outside Film Engine: one route, all seven kinds
@@ -91,6 +92,7 @@ film-engine/
 │   │   ├── screenplay-blocks.js   # An empty block is 32px of nothing, except where the caret is
 │   │   ├── screenplay-timing.js   # Eighths, screen time and shooting effort are three numbers
 │   │   ├── screenplay-analysis.js # The rubric, the note schema; the model does the reading
+│   │   ├── subject-gallery.js     # Reference, concept, inspiration: only one reaches a prompt
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
 │   │   ├── reference-images.js    # Tagged reference plates: data URIs, tags, ≤3 selection
@@ -349,6 +351,7 @@ film-engine/
 │       ├── screenplay-pagination.test.js # No page ends between a cue and its dialogue
 │       ├── screenplay-timing.test.js # Eighths, screen time and shoot effort, kept apart
 │       ├── screenplay-analysis.test.js # Thirteen dimensions, seven fields, and no server-side model
+│       ├── subject-gallery.test.js  # A sketch must never condition a frame
 │       ├── screenplay-empty-blocks.test.js # The extra space while typing, and why it healed itself
 │       ├── screenplay-furniture.test.js # The editor's own furniture is not content
 │       ├── screenplay-mutators.test.js # Every way a screenplay is written leaves the editor sound
@@ -2300,6 +2303,21 @@ Per-shot and per-project audio mixing: dialogue (0dB) + music (-8dB) + SFX (-4dB
 ### Smart Scheduling
 Optimizes pipeline execution by grouping steps by GPU model to minimize VRAM swapping. Model profiles track VRAM requirements and load times for 10 models. VRAM budget management (default 24GB) with residency suggestions (keep frequent models loaded, evict rare ones).
 
+### A Subject Needs a Sketchbook, Not Just a Plate
+Every stored image of a character, location or prop **was** a candidate reference: `gatherShotReferences` selected on asset type and `headlinePlate` picked one. There was nowhere to put an image that **informs** the work without **being** it — the film still you are chasing, a photograph of the real street, four versions of a face you are choosing between. So an artist had one slot per view and every exploration overwrote the approved plate.
+
+Three roles, in order of commitment: **reference** (approved — the only thing that conditions a frame, one per view, which is what `headlinePlate` already assumes), **concept** (an exploration, kept and comparable, reaching no prompt until promoted), **inspiration** (gathered rather than made). The inspiration case is not a ranking, it is a **different act**: a gathered image is usually somebody else's frame, and looking at it is not the same as sending it to a provider as conditioning input — so it is excluded outright and promoting one has to be stated.
+
+**THE invariant: adding a gallery must not silently start conditioning shots on sketches.** Every row that exists today IS a plate, so an unlabelled image reads as `reference` — the opposite direction from `input_fingerprint`, where NULL means "outside the workflow", because here the existing rows are very much inside it. A **declared but unrecognised** role is a third case and is returned verbatim rather than folded into the default: absent means "written before roles existed", while declared-but-unknown means somebody wrote an intent this version does not understand, and reading that as *approved for sending* is the wrong direction.
+
+**The rule exists twice — in JS and in SQL — and the two are held to each other.** `roleOf` decides in JavaScript; `sendableSql` filters in SQLite so the plate queries keep their `LIMIT 1` and their view ordering. Two implementations of one rule is precisely what this codebase keeps paying for, so the test runs both against the same rows, including the ones that break a naive version: absent metadata, metadata that is not JSON at all, and an undeclared role. It found a real divergence — JS was trusting an unknown role into the send list and SQL was not — and SQL was right. `json_valid` guards the extract, and that guard is load-bearing: `json_extract` **throws** on malformed JSON, and a throw there would take down the query that decides what a paid generation is conditioned on.
+
+**An exploration never takes the plate's filename.** A plate is written to a per-view name and overwrites, so an exploration sharing it would replace the approved picture on disk the moment it was generated — the image every frame of that subject is conditioned on, gone, with nothing said. Explorations also carry a token so they do not overwrite *each other*, or "try three looks" keeps one. They go through `generatePlate` in explore mode rather than a second generator, so they inherit the style, the look-board image, the size rules and the provider fallback chain — the trap `reference-plates.js` was created to close for locations and props. A **character** has no `PLATE_KINDS` entry, because its plate is a turnaround built by its own prompt builder, so `generateExploration` resolves that in one place rather than at each call site.
+
+Promotion **demotes rather than deletes** whatever held that view: the picture it replaced cost money and may be the one you come back to. Only the same view is demoted, or promoting a side plate would strip the front one. Demoting the last reference is **allowed and said**, because a subject with no plate has every frame invent it, and that is invisible until the next generation comes back with a stranger in it.
+
+Served at `GET /film/{characters,locations,props}/:id/gallery`, `POST …/explore` (free preview at `…/explore/preview`), `POST …/inspiration`, `PUT /film/gallery/:id/role`, `DELETE /film/gallery/:id`, on a **Gallery** button on all three entity cards, and as six tools (**197 tools**).
+
 ### Three Numbers About a Scene, and They Are Not Each Other
 A production measures a scene three ways and this engine had none of them: **page eighths** (how much printed page it occupies — objective), **screen time** (how long it plays — an estimate), and **shooting effort** (how hard it is to film — independent of both).
 
@@ -2581,6 +2599,7 @@ node --test backend/tests/screenplay-polish.test.js
 node --test backend/tests/screenplay-pagination.test.js
 node --test backend/tests/screenplay-timing.test.js
 node --test backend/tests/screenplay-analysis.test.js
+node --test backend/tests/subject-gallery.test.js
 node --test backend/tests/screenplay-empty-blocks.test.js
 node --test backend/tests/screenplay-furniture.test.js
 node --test backend/tests/screenplay-mutators.test.js
