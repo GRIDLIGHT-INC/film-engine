@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (92 migrations)
+│   │   └── migrations/     # SQL migration files (94 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -109,7 +109,8 @@ film-engine/
 │   │   ├── media-imports.js       # Every external asset: plates, board images, footage and sound
 │   │   ├── media-kinds.js         # Where a generated media file goes, said once
 │   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending
-│   │   ├── sequence-frames.js   # A motion board: the chosen frames hold, ten review images say the rest
+│   │   ├── inbetweens.js        # A shot as a strip of stations, not a still
+│   │   ├── inbetween-run.js     # Walking a strip: each station refined from the one before it
 │   │   ├── ffmpeg.js              # Finding an encoder, and joining clips into one file
 │   │   ├── clip-coverage.js       # One clip containing several shots, read by all five assemblies
 │   │   ├── running-order.js       # The order the film plays in, said once for all five assemblies
@@ -268,7 +269,9 @@ film-engine/
 │       ├── media-imports.test.js        # Registry-derived persistent Storyboard, Previs image, and GLB import contract
 │       ├── plate-upload.test.js         # Every kind of reference can be uploaded, not only generated
 │       ├── video-sequence.test.js       # Keyframe ceilings per adapter; N shots plan N-1 segments in order
-│       ├── sequence-frames.test.js   # The motion board holds its anchors and bounds what it shows
+│       ├── inbetweens.test.js        # What a shot's stations are, derived from its own blocking
+│       ├── inbetween-plan.test.js    # The strip, planned for free, capped by the model's own contract
+│       ├── inbetween-run.test.js     # The chain, the refusal, the correction and the approval
 │       ├── clip-coverage.test.js        # One clip, several shots, honoured by every assembly surface
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
@@ -972,6 +975,25 @@ That matters more than convenience, because of what this pipeline is. **The conn
 `storyboard_upload` goes through the same route a person's upload does, so it inherits everything that route already guarantees: the frame it replaces is **archived as a recoverable version**, and a **locked board refuses it** with the same `BOARD_LOCKED` and the same explicit override. An agent path that skipped the lock would be a hole in the lock rather than a convenience.
 
 The test derives from `MEDIA_IMPORTS` and requires a **named** covering tool per target, failing on an unknown rather than assuming coverage — that assumption is precisely how three of them stayed unreachable while the surface looked complete.
+
+### A Shot as a Strip of Stations, Not a Still
+`lib/video-sequence.js` already travels between pictures a director approved — but the unit is the SHOT. A five-second push-in reaches the provider as **one picture and a sentence**, so seconds two, three and four are the model's opinion, and the model's opinion is what drifts.
+
+**There is no second pipeline here, and that is the design.** `planSequence(shots, opts)` operates on an *ordered list* and does not know its entries are shots, so feeding it a denser list makes `buildSegment`, the segment loop and `sequence_stitch` work unchanged. And the in-between poses are not invented: `lib/shot-motion.js` already samples the camera across a shot from the film's own optics, so a station is **a fact about the blocking rather than a guess about the action**.
+
+**The chain is the feature.** Each station is generated from the station *before* it through the existing refine path — picture in, no scene card, one instruction. Generating each independently from the shot's keyframe would be N rolls of the dice off one picture, which reinvents exactly the drift a strip exists to remove. That makes the walk **serial by construction**, which is a real cost and the right one.
+
+**Station 0 is never generated.** It is the frame that was approved, and a frame made from itself could only reproduce itself — the rule `lib/shot-anchor.js` already states. A station also never lands on `{code}.png`: it is written as `{code}.s{n}.png`, because writing the shot's own filename would destroy the approved keyframe the strip was refined from.
+
+**No new table.** A station is a storyboard frame like any other and lives in `film_assets`, which gives it the `shot_frames` archive for free: a bad in-between is a re-roll you keep rather than one you lose. Migration 096 indexes it by sequence, shot and station, because the strip is read on every plan, run and approval and each asks the same two questions.
+
+**Everything is capped by the model's own contract, never a literal.** Seedance 2.5 documents 30 images and they are **free** while the video is billed per second; Hailuo 3 takes 9 at 2 credits each. So the same strip plans differently per model, a thinned strip **says it was thinned and what it wanted**, and `'inbetween'` is added to `ROLES` and ranked **between `keyframe` and `character`** — a face is noticed before a grade across a whole film, but within one clip the frame a second away is what holds the shot together. `hailuo3` and `KEYFRAME_ONLY` are deliberately left alone: over-sending is a provider rejection that costs a generation.
+
+**A refusal stops the walk and names what was not attempted**, on the rule `generateSequence` already sets — a provider that has started refusing will refuse the next one, and a partial strip reported as a success is how a sequence gets joined through moments nobody has seen. **Correcting station 2 of 5 redoes 2, 3 and 4**, because a chain re-inherits from the frame that changed and leaving the rest would leave a strip whose second half descends from a picture that no longer exists.
+
+**And the strip that shot is the strip that was signed off.** `sequence_inbetweens_approve` fingerprints the *ordered* stations and their instructions — ordered because a strip is a sequence and not a set — and video generation refuses **409 STALE_APPROVAL** when it has changed, passable with `ignore_approval` exactly as the budget and lock gates are. Approving a strip with ungenerated stations is refused: signing off pictures nobody has seen is not an approval. A sequence with **no** approval is unaffected, which is what every sequence that exists today is.
+
+The whole thing is **opt-in**: without `expand=inbetweens` the plan is byte-identical to what it always was, and a shot whose move will not READ contributes exactly one station and costs nothing.
 
 ### Nothing Is Cut From a Motion Prompt While It Still Fits
 *"Film Engine sends each shot's action field to Runway as the primary motion instruction, capped at roughly 500 characters. Why are we capping the main motion instructions?"*
@@ -2688,7 +2710,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (92 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (94 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -2859,7 +2881,9 @@ node --test backend/tests/anchor-plate-override.test.js
 node --test backend/tests/location-views.test.js
 node --test backend/tests/plate-upload.test.js
 node --test backend/tests/video-sequence.test.js
-node --test backend/tests/sequence-frames.test.js
+node --test backend/tests/inbetweens.test.js
+node --test backend/tests/inbetween-plan.test.js
+node --test backend/tests/inbetween-run.test.js
 node --test backend/tests/clip-coverage.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/paid-preview.test.js

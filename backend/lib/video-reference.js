@@ -19,6 +19,7 @@
 /** What a reference can be FOR. Ordered by how much a viewer notices it. */
 const ROLES = Object.freeze([
     'keyframe',    // the board — what the shot looks like at frame 0
+    'inbetween',   // a station of this shot's own strip, a second either side
     'character',   // who is in it
     'creature',    // what else is alive in it
     'prop',        // objects that must match
@@ -30,8 +31,8 @@ const ROLES = Object.freeze([
 
 /** Roles that arrive as a still, a clip, or a sound. */
 const SOURCE_OF_ROLE = Object.freeze({
-    keyframe: 'image', character: 'image', creature: 'image', prop: 'image',
-    location: 'image', style: 'image', motion: 'video', audio: 'audio',
+    keyframe: 'image', inbetween: 'image', character: 'image', creature: 'image',
+    prop: 'image', location: 'image', style: 'image', motion: 'video', audio: 'audio',
 });
 
 /**
@@ -43,8 +44,15 @@ const SOURCE_OF_ROLE = Object.freeze({
  * shot.
  */
 const ROLE_RANK = Object.freeze({
-    keyframe: 0, character: 1, creature: 2, location: 3, prop: 4,
-    style: 5, motion: 6, audio: 7,
+    /*
+     * An in-between sits between the keyframe and identity, and the reason is
+     * the scope of each: a face is noticed before a grade across a whole film,
+     * but WITHIN one clip the frame a second away is what holds the shot
+     * together. A character plate is a picture of someone in the abstract; a
+     * station is this shot, one second earlier.
+     */
+    keyframe: 0, inbetween: 1, character: 2, creature: 3, location: 4, prop: 5,
+    style: 6, motion: 7, audio: 8,
 });
 
 /**
@@ -70,7 +78,10 @@ const CONTRACTS = Object.freeze({
             + 'at 2 credits per image a full role package costs about 18 credits',
     }),
     seedance2_5: Object.freeze({
-        roles: Object.freeze(['keyframe', 'character', 'creature', 'prop', 'location', 'style', 'motion', 'audio']),
+        // The only model that documents room for a strip: 30 images, free.
+        // hailuo3 charges 2 credits an image and takes 9 of them, so a
+        // per-second strip would be most of its budget and a rejection past it.
+        roles: Object.freeze(['keyframe', 'inbetween', 'character', 'creature', 'prop', 'location', 'style', 'motion', 'audio']),
         maxImages: 30, maxVideos: 10, maxAudio: 10,
         why: 'Runway documents Seedance 2.5 at up to 30 images, 10 videos and 10 audio; '
             + 'the images are free and the VIDEO is billed per second, so a clip is a cost decision',

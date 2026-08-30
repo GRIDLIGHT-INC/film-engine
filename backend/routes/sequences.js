@@ -15,6 +15,11 @@
 
 const { db, generateId } = require('../db/database');
 const { imageOverride } = require('../lib/generation-override');
+// The strip: what a shot's stations are, and what a model documents room for.
+const { expandShots } = require('../lib/inbetweens');
+const { contractFor } = require('../lib/video-reference');
+const { loadShotMotion } = require('../lib/shot-motion');
+const { runStrip, stripFingerprint, approvalState } = require('../lib/inbetween-run');
 
 /**
  * The config a sequence generation should resolve against.
@@ -32,11 +37,9 @@ function seqConfig(projectId, req) {
 const { resolve } = require('../lib/providers');
 const { providerConfigFor } = require('../lib/provider-config');
 const { planSequence } = require('../lib/video-sequence');
-const { planSequenceFrames, inbetweenPrompt } = require('../lib/sequence-frames');
-const { parseResolution } = require('../lib/project-presets');
 const { importMedia } = require('../lib/media-imports');
 const { persistProviderMedia } = require('../lib/provider-media');
-const { getFileUrl, serveFile } = require('../lib/file-storage');
+const { getFileUrl } = require('../lib/file-storage');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -95,7 +98,7 @@ function shotsOf(row) {
         let card = {};
         try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { card = {}; }
         const frame = db.prepare(
-            `SELECT id, file_path, file_name, version FROM film_assets
+            `SELECT file_path, version FROM film_assets
               WHERE shot_id = ? AND asset_type IN ('storyboard', 'keyframe')
               ORDER BY version DESC`).all(shot.id);
         const chosen = shot.current_frame_version
@@ -105,272 +108,9 @@ function shotsOf(row) {
             id: shot.id,
             shot_code: shot.shot_code,
             description: String(card.description || card.action || '').slice(0, 300),
-            direction: String(card.direction || '').slice(0, 1000),
-            camera: card.camera && typeof card.camera === 'object' ? card.camera : {},
             duration_ms: Number(shot.duration_ms) || Number(card.duration_ms) || 5000,
             keyframe: chosen ? chosen.file_path : null,
-            keyframe_asset_id: chosen ? chosen.id : null,
-            keyframe_file_name: chosen ? chosen.file_name : null,
         };
-    });
-}
-
-function motionBoardRows(sequenceId) {
-    return db.prepare(
-        `SELECT f.*, a.file_path, a.file_name, a.created_at AS asset_created_at,
-                sh.shot_code AS source_shot_code
-           FROM film_sequence_frames f
-           LEFT JOIN film_assets a ON a.id = f.asset_id
-           LEFT JOIN film_shots sh ON sh.id = f.source_shot_id
-          WHERE f.sequence_id = ? ORDER BY f.frame_index`
-    ).all(sequenceId);
-}
-
-/**
- * Make the durable board agree with the sequence plan without overwriting a
- * generated experiment that still describes the same sampled moment.
- */
-function syncMotionBoard(row) {
-    const shots = shotsOf(row);
-    const plan = planSequenceFrames(shots);
-    if (plan.refused) return { ...plan, rows: [] };
-    const existing = new Map(motionBoardRows(row.id).map(f => [f.frame_index, f]));
-    const wantedIndexes = new Set(plan.frames.map(f => f.index));
-    const changedAnchor = plan.frames.some(frame => {
-        if (frame.kind !== 'anchor') return false;
-        const old = existing.get(frame.index);
-        const shot = shots.find(item => item.id === frame.source_shot_id);
-        return old && old.asset_id !== (shot && shot.keyframe_asset_id);
-    });
-
-    const write = db.transaction(() => {
-        for (const old of existing.values()) {
-            if (!wantedIndexes.has(old.frame_index)) {
-                db.prepare('DELETE FROM film_sequence_frames WHERE id = ?').run(old.id);
-            }
-        }
-        for (const frame of plan.frames) {
-            const old = existing.get(frame.index);
-            const anchorShot = frame.kind === 'anchor'
-                ? shots.find(s => s.id === frame.source_shot_id) : null;
-            const sameMoment = old
-                && old.kind === frame.kind
-                && old.source_shot_id === frame.source_shot_id
-                && old.from_shot_id === frame.from_shot_id
-                && old.to_shot_id === frame.to_shot_id
-                && (!anchorShot || old.asset_id === anchorShot.keyframe_asset_id)
-                && (frame.kind === 'anchor' || !changedAnchor)
-                && Math.abs(Number(old.time_ms) - frame.time_ms) < 2;
-            if (sameMoment) continue;
-
-            if (old) db.prepare('DELETE FROM film_sequence_frames WHERE id = ?').run(old.id);
-            db.prepare(
-                `INSERT INTO film_sequence_frames
-                    (id, sequence_id, frame_index, time_ms, kind, source_shot_id,
-                     from_shot_id, to_shot_id, asset_id, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-            ).run(generateId(), row.id, frame.index, frame.time_ms, frame.kind,
-                frame.source_shot_id, frame.from_shot_id, frame.to_shot_id,
-                anchorShot ? anchorShot.keyframe_asset_id : null,
-                anchorShot ? 'approved' : 'missing');
-        }
-    });
-    write();
-    return { ...plan, rows: motionBoardRows(row.id) };
-}
-
-function publicMotionFrame(row, projectId) {
-    let imageUrl = null;
-    if (row.file_name) {
-        imageUrl = row.kind === 'anchor'
-            ? getFileUrl('storyboards', projectId,
-                `${row.source_shot_code || String(row.file_name || '').replace(/\.png$/i, '')}.png`,
-                row.asset_created_at)
-            : getFileUrl('sequence-frames', projectId, row.file_name, row.asset_created_at);
-    }
-    return {
-        id: row.id,
-        index: row.frame_index,
-        time_ms: row.time_ms,
-        kind: row.kind,
-        source_shot_id: row.source_shot_id,
-        from_shot_id: row.from_shot_id,
-        to_shot_id: row.to_shot_id,
-        status: row.status,
-        direction: row.direction || '',
-        prompt: row.prompt || '',
-        error: row.error_message || null,
-        asset_id: row.asset_id || null,
-        image_url: imageUrl,
-    };
-}
-
-function motionBoardRoute(res, id) {
-    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
-    if (!row) return json(res, 404, { error: 'Sequence not found' });
-    const board = syncMotionBoard(row);
-    if (board.refused) return json(res, 409, board);
-    const ceiling = keyframeCeiling(row.project_id);
-    const approved = board.rows.filter(f => f.status === 'approved' && f.asset_id).length;
-    return json(res, 200, {
-        free: true,
-        sequence_id: id,
-        duration_ms: board.duration_ms,
-        frame_count: board.frame_count,
-        interval_ms: board.interval_ms,
-        capped: board.capped,
-        approved,
-        ready: approved === board.rows.length,
-        provider: ceiling.provider,
-        provider_max_images: ceiling.max,
-        provider_ready: !ceiling.unresolved && ceiling.max >= board.rows.length,
-        provider_warning: ceiling.unresolved || (ceiling.max < board.rows.length
-            ? `${ceiling.provider || 'The selected provider'} accepts ${ceiling.max} image(s), but this motion board contains ${board.rows.length}. Select Seedance or another multi-image provider.`
-            : null),
-        frames: board.rows.map(f => publicMotionFrame(f, row.project_id)),
-        note: 'Storyboard anchors are already approved. Generate, revise and approve every in-between before sending the complete board to video.',
-    });
-}
-
-function updateMotionFrame(req, res, sequenceId, frameIndex) {
-    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(sequenceId);
-    if (!row) return json(res, 404, { error: 'Sequence not found' });
-    const board = syncMotionBoard(row);
-    if (board.refused) return json(res, 409, board);
-    const frame = board.rows.find(f => f.frame_index === Number(frameIndex));
-    if (!frame) return json(res, 404, { error: 'Motion-board frame not found' });
-    const body = req.body || {};
-    const direction = body.direction !== undefined
-        ? String(body.direction || '').slice(0, 2000) : frame.direction;
-    let status = frame.status;
-    if (body.status !== undefined) {
-        if (!['draft', 'approved'].includes(body.status)) {
-            return json(res, 400, { error: 'status must be draft or approved' });
-        }
-        if (body.status === 'approved' && !frame.asset_id) {
-            return json(res, 409, { error: 'Generate this frame before approving it' });
-        }
-        status = body.status;
-    }
-    db.prepare(`UPDATE film_sequence_frames SET direction = ?, status = ?,
-                updated_at = datetime('now') WHERE id = ?`).run(direction, status, frame.id);
-    const fresh = motionBoardRows(sequenceId).find(f => f.id === frame.id);
-    return json(res, 200, { frame: publicMotionFrame(fresh, row.project_id) });
-}
-
-function frameFileName(sequenceId, index) {
-    return `motion_${String(sequenceId).slice(0, 8)}_${String(index).padStart(2, '0')}_${generateId().slice(0, 8)}.png`;
-}
-
-async function generateMotionFrames(req, res, sequenceId, frameIndex) {
-    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(sequenceId);
-    if (!row) return json(res, 404, { error: 'Sequence not found' });
-    const board = syncMotionBoard(row);
-    if (board.refused) return json(res, 409, board);
-    const shots = shotsOf(row);
-    const byId = new Map(shots.map(s => [s.id, s]));
-    const wanted = frameIndex === undefined
-        ? board.rows.filter(f => f.kind === 'inbetween' && ['missing', 'failed'].includes(f.status))
-        : board.rows.filter(f => f.kind === 'inbetween' && f.frame_index === Number(frameIndex));
-    if (frameIndex !== undefined && !wanted.length) {
-        return json(res, 400, { error: 'Only generated in-between frames can be regenerated' });
-    }
-    if (!wanted.length) return json(res, 200, { sequence_id: sequenceId, made: [], note: 'No missing frames.' });
-
-    const { generateImageWithFallback } = require('../lib/image-fallback');
-    const { toDataUri } = require('../lib/reference-images');
-    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(row.project_id);
-    const made = [];
-    let refusal = null;
-
-    for (const target of wanted) {
-        if (refusal) break;
-        const liveRows = motionBoardRows(sequenceId);
-        const from = byId.get(target.from_shot_id);
-        const to = byId.get(target.to_shot_id);
-        const segmentStart = liveRows.find(f => f.source_shot_id === target.from_shot_id);
-        const segmentEnd = liveRows.find(f => f.source_shot_id === target.to_shot_id);
-        const progress = segmentStart && segmentEnd && segmentEnd.frame_index !== segmentStart.frame_index
-            ? (target.frame_index - segmentStart.frame_index) / (segmentEnd.frame_index - segmentStart.frame_index)
-            : 0;
-        const direction = String((req.body && req.body.direction) || target.direction || '').slice(0, 2000);
-        const prompt = inbetweenPrompt({
-            sequenceDescription: row.description,
-            frame: { index: target.frame_index, time_ms: target.time_ms, progress, direction },
-            from, to,
-        });
-        const references = [from && from.keyframe, to && to.keyframe]
-            .filter((value, index, all) => value && all.indexOf(value) === index)
-            .slice(0, 2)
-            .map((filePath, i) => ({ uri: toDataUri(filePath), kind: 'anchor', role: i ? 'destination' : 'continuity' }))
-            .filter(r => r.uri);
-        const claim = db.prepare(`UPDATE film_sequence_frames SET status = 'generating', prompt = ?, direction = ?,
-                    error_message = NULL, updated_at = datetime('now')
-                    WHERE id = ? AND status != 'generating'`).run(prompt, direction, target.id);
-        if (!claim.changes) {
-            refusal = `Frame ${target.frame_index} is already generating.`;
-            break;
-        }
-
-        let result;
-        try {
-            // eslint-disable-next-line no-await-in-loop
-            result = await generateImageWithFallback({
-                prompt,
-                reference_images: references,
-                ...(parseResolution(project && project.target_resolution) || { width: 1280, height: 720 }),
-            }, providerConfigFor(row.project_id), { timeout: 300000 });
-        } catch (err) {
-            refusal = err.message;
-            db.prepare(`UPDATE film_sequence_frames SET status = 'failed', error_message = ?,
-                        updated_at = datetime('now') WHERE id = ?`).run(refusal, target.id);
-            break;
-        }
-        if (!result || !result.ok) {
-            refusal = (result && result.error) || 'image generation failed';
-            db.prepare(`UPDATE film_sequence_frames SET status = 'failed', error_message = ?,
-                        updated_at = datetime('now') WHERE id = ?`).run(refusal, target.id);
-            break;
-        }
-
-        const fileName = frameFileName(sequenceId, target.frame_index);
-        let filePath;
-        try {
-            // eslint-disable-next-line no-await-in-loop
-            filePath = await persistProviderMedia(row.project_id, 'sequence-frames', fileName,
-                result.data, { serveDir: 'images' });
-        } catch (err) {
-            refusal = err.message;
-            db.prepare(`UPDATE film_sequence_frames SET status = 'failed', error_message = ?,
-                        updated_at = datetime('now') WHERE id = ?`).run(refusal, target.id);
-            break;
-        }
-        const assetId = target.asset_id || generateId();
-        const metadata = JSON.stringify({ kind: 'sequence_inbetween', sequence_id: sequenceId,
-            frame_index: target.frame_index, time_ms: target.time_ms });
-        if (target.asset_id) {
-            db.prepare(`UPDATE film_assets SET file_path = ?, file_name = ?, format = 'png',
-                mime_type = 'image/png', metadata = ?, provider = ?, provider_model = ?,
-                provider_job_id = ?, created_at = datetime('now') WHERE id = ?`).run(
-                filePath, fileName, metadata, result.provider || null,
-                result.provider_model || null, result.provider_job_id || null, assetId);
-        } else db.prepare(`INSERT INTO film_assets
-            (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type,
-             version, metadata, provider, provider_model, provider_job_id)
-            VALUES (?, ?, ?, 'reference_image', ?, ?, 'png', 'image/png', 1, ?, ?, ?, ?)`).run(
-            assetId, row.project_id, target.from_shot_id, filePath, fileName,
-            metadata,
-            result.provider || null, result.provider_model || null, result.provider_job_id || null);
-        db.prepare(`UPDATE film_sequence_frames SET asset_id = ?, status = 'draft', error_message = NULL,
-                    updated_at = datetime('now') WHERE id = ?`).run(assetId, target.id);
-        made.push(publicMotionFrame(motionBoardRows(sequenceId).find(f => f.id === target.id), row.project_id));
-    }
-
-    return json(res, made.length || !refusal ? 200 : 502, {
-        sequence_id: sequenceId,
-        made,
-        ...(refusal ? { error: refusal,
-            not_attempted: wanted.slice(made.length + 1).map(f => f.frame_index) } : {}),
     });
 }
 
@@ -452,28 +192,324 @@ function updateSequence(req, res, id) {
     return json(res, 200, { sequence: db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id) });
 }
 
+/*
+ * -- The strip ---------------------------------------------------------------
+ *
+ * A shot reaches a provider as ONE picture and a sentence, so on a five-second
+ * push-in seconds two, three and four are the model's opinion, and the model's
+ * opinion is what drifts. A strip is a station per second, derived from the
+ * shot's own camera blocking, reviewable and fixable before any video is bought.
+ *
+ * There is no second pipeline here. planSequence operates on an ORDERED LIST
+ * and does not know its entries are shots, so a denser list flows through
+ * buildSegment, the segment loop and the stitch unchanged.
+ */
+
+/** The station cap this project's model documents room for. Never a literal. */
+function stationCeiling(projectId, req) {
+    const ceiling = keyframeCeiling(projectId, req);
+    let model = null;
+    if (ceiling.provider === 'runway') {
+        model = process.env.RUNWAY_VIDEO_MODEL || 'gen4.5';
+    }
+    const contract = contractFor(model);
+    return { max: contract.maxImages, model, contract, why: contract.why };
+}
+
+/** Every station of this sequence that has already been generated. */
+function stationAssets(projectId, sequenceId) {
+    const rows = db.prepare(`
+        SELECT id, file_path, metadata FROM film_assets
+         WHERE project_id = ?
+           AND json_extract(metadata, '$.sequence_id') = ?
+           AND json_extract(metadata, '$.station_index') IS NOT NULL
+      ORDER BY json_extract(metadata, '$.shot_id'),
+               json_extract(metadata, '$.station_index'),
+               created_at DESC`).all(projectId, sequenceId);
+    const byShot = {};
+    for (const r of rows) {
+        let meta = {};
+        try { meta = JSON.parse(r.metadata || '{}'); } catch (_) { meta = {}; }
+        const shotId = meta.shot_id;
+        const idx = Number(meta.station_index);
+        if (!shotId || !Number.isFinite(idx)) continue;
+        byShot[shotId] = byShot[shotId] || {};
+        // Newest first, so the most recent generation of a station wins.
+        if (!byShot[shotId][idx]) {
+            byShot[shotId][idx] = { asset_id: r.id, image_path: r.file_path, instruction: meta.instruction || null };
+        }
+    }
+    return byShot;
+}
+
+/**
+ * The strip for a sequence, with what already exists filled in.
+ *
+ * One reader, used by the plan, the run, the edit and the approval, so those
+ * four cannot come to different answers about how many stations a shot has.
+ */
+function stripFor(row, opts) {
+    const o = opts || {};
+    const shots = shotsOf(row);
+    const ceiling = stationCeiling(row.project_id, o.req);
+    const expanded = expandShots(shots, shot => {
+        try { return loadShotMotion(shot.id); } catch (_) { return null; }
+    }, { cadenceSeconds: o.cadenceSeconds, maxStations: ceiling.max });
+
+    const have = stationAssets(row.project_id, row.id);
+    // Station 0 is the shot's own approved frame; the rest are filled from what
+    // has been generated, so an ungenerated station stays honestly empty.
+    expanded.stations.forEach(st => {
+        if (st.station.index === 0) return;
+        const made = (have[st.shot_id] || {})[st.station.index];
+        if (made) { st.keyframe = made.image_path; st.asset_id = made.asset_id; }
+    });
+    return { shots, ceiling, expanded, have };
+}
+
+/** Flatten a strip into the ordered station list an approval fingerprints. */
+function stationList(expanded) {
+    return expanded.stations.map(st => ({
+        shot_id: st.shot_id,
+        index: st.station.index,
+        asset_id: st.asset_id || null,
+        instruction: st.station.instruction || null,
+    }));
+}
+
+/*
+ * -- Generating the strip ---------------------------------------------------
+ */
+
+/** Where a station's picture lives. Never the shot's own frame. */
+function stationPath(projectId, shotCode, index) {
+    const path_ = require('path');
+    const { ensureStoryboardDir } = require('./storyboard');
+    return path_.join(ensureStoryboardDir(projectId), `${shotCode}.s${index}.png`);
+}
+
+/**
+ * Walk the strips and buy the pictures.
+ *
+ * Serial by construction: each station is refined from the one before it, so
+ * there is nothing to parallelise without breaking the chain that is the whole
+ * point. Stops at the first refusal and names what it did not attempt.
+ */
+async function runInbetweens(req, res, id, opts) {
+    const o = opts || {};
+    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
+    if (!row) return json(res, 404, { error: 'Sequence not found' });
+
+    const body = (req && req.body) || {};
+    const strip = stripFor(row, { cadenceSeconds: Number(body.cadence_s) || undefined, req });
+    const { generateRefinedFrame, registerStoryboardAsset } = require('./storyboard');
+    const fs_ = require('fs');
+
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(row.project_id);
+    const shotsById = new Map(strip.shots.map(sh => [sh.id, sh]));
+
+    const results = [];
+    for (const stripPlan of strip.expanded.strips) {
+        const shot = shotsById.get(stripPlan.shot_id);
+        if (!shot) continue;
+        if (!shot.keyframe) {
+            /*
+             * Refused by name, never skipped. A strip built around a shot with
+             * no approved frame joins through a moment nobody has seen, which
+             * looks exactly like a success.
+             */
+            results.push({ shot_id: shot.id, shot_code: shot.shot_code, refused: true,
+                reason: 'This shot has no generated frame — a strip starts from the picture you approved.' });
+            continue;
+        }
+        const dbShot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shot.id);
+        const out = await runStrip(stripPlan, {
+            keyframePath: shot.keyframe,
+            existing: strip.have[shot.id] || {},
+            fromIndex: (o.shotId === shot.id && Number.isFinite(o.fromIndex)) ? o.fromIndex : undefined,
+            refine: async ({ instruction, reference, station }) => {
+                const { buffer, provider, model } = await generateRefinedFrame({
+                    project, shot: dbShot, reference: { uri: null, path: reference, name: shot.shot_code },
+                    instruction,
+                });
+                const file = stationPath(project.id, shot.shot_code, station.index);
+                fs_.writeFileSync(file, buffer);
+                const asset = registerStoryboardAsset(project.id, shot.id, file,
+                    `${shot.shot_code}.s${station.index}.png`, {
+                        provider, provider_model: model,
+                        instruction,
+                        // What this picture IS: a station of this sequence's
+                        // strip, at this moment, refined from the one before it.
+                        sequence_id: id,
+                        shot_id: shot.id,
+                        station_index: station.index,
+                        t: station.t,
+                        at_ms: station.at_ms,
+                        refined_from: station.refined_from,
+                        transform: station.transform,
+                    });
+                return { asset_id: asset.id, image_path: file };
+            },
+        });
+        results.push({ shot_id: shot.id, shot_code: shot.shot_code, ...out });
+        if (out.stopped_at !== null) break;   // one refusal is the whole run's answer
+    }
+
+    // The strip as it now stands, so an approval can be taken against it.
+    const after = stripFor(row, { cadenceSeconds: Number(body.cadence_s) || undefined, req });
+    const stations = stationList(after.expanded);
+    const stopped = results.find(r => r.stopped_at !== null && r.stopped_at !== undefined);
+    return json(res, stopped ? 409 : 200, {
+        sequence_id: id,
+        strips: results,
+        ...(stopped ? {
+            stopped: true,
+            hint: 'A provider that has started refusing will refuse the next one too. '
+                + 'Nothing after the named station was attempted, and nothing was charged for it.',
+        } : {}),
+        fingerprint: stripFingerprint(stations),
+        approval: approvalState(row.strip_fingerprint || null, stations),
+    });
+}
+
+/**
+ * The strip as it stands. Free.
+ *
+ * An agent that can remove a station and cannot list them is one that deletes
+ * by guessing — the same gap plate_view_delete shipped with once. This is also
+ * how a director reads the strip before correcting it, which is the whole
+ * point of having one.
+ */
+function listStations(res, id, query) {
+    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
+    if (!row) return json(res, 404, { error: 'Sequence not found' });
+    const q = query || {};
+    const strip = stripFor(row, { cadenceSeconds: Number(q.cadence_s) || undefined });
+    const stations = stationList(strip.expanded);
+    return json(res, 200, {
+        sequence_id: id,
+        cadence_s: (strip.expanded.strips[0] || {}).cadence_s || null,
+        station_cap: strip.ceiling.max,
+        strips: strip.expanded.strips.map(st => ({
+            shot_id: st.shot_id, shot_code: st.shot_code,
+            count: st.count, generations: st.generations,
+            ...(st.thinned ? { thinned: true, wanted: st.wanted } : {}),
+            ...(st.reason ? { reason: st.reason } : {}),
+            stations: st.stations.map(station => {
+                const made = (strip.have[st.shot_id] || {})[station.index];
+                return {
+                    index: station.index, at_ms: station.at_ms, t: station.t,
+                    instruction: station.instruction,
+                    // Station 0 is the approved frame, not something generated
+                    // here — said outright so nobody tries to redo it.
+                    approved_keyframe: station.index === 0,
+                    generated: station.index === 0 ? true : !!made,
+                    asset_id: made ? made.asset_id : null,
+                };
+            }),
+        })),
+        images_needed: strip.expanded.images_needed,
+        fingerprint: stripFingerprint(stations),
+        approval: approvalState(row.strip_fingerprint || null, stations),
+    });
+}
+
+/** Change one station's instruction, and redo it and everything after it. */
+async function updateStation(req, res, id, shotId, index) {
+    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
+    if (!row) return json(res, 404, { error: 'Sequence not found' });
+    const at = Number(index);
+    if (!Number.isFinite(at) || at < 1) {
+        return json(res, 400, { error: 'Station 0 is the approved frame and is not a station you can rewrite.' });
+    }
+    /*
+     * A chain re-inherits from the frame that changed, so everything after this
+     * station has to follow. Leaving them would leave a strip whose second half
+     * descends from a picture that no longer exists.
+     */
+    return runInbetweens(req, res, id, { shotId, fromIndex: at });
+}
+
+/** Drop a station. The neighbours become adjacent and the strip is one shorter. */
+function deleteStation(res, id, shotId, index) {
+    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
+    if (!row) return json(res, 404, { error: 'Sequence not found' });
+    const at = Number(index);
+    if (!Number.isFinite(at) || at < 1) {
+        return json(res, 400, { error: 'Station 0 is the approved frame; deleting it would delete the shot\'s keyframe.' });
+    }
+    const found = db.prepare(`SELECT id FROM film_assets
+         WHERE project_id = ? AND json_extract(metadata, '$.sequence_id') = ?
+           AND json_extract(metadata, '$.shot_id') = ?
+           AND json_extract(metadata, '$.station_index') = ?`)
+        .all(row.project_id, id, shotId, at);
+    if (!found.length) return json(res, 404, { error: 'No such station' });
+    for (const a of found) db.prepare('DELETE FROM film_assets WHERE id = ?').run(a.id);
+    /*
+     * The approval cannot survive the strip changing under it — that is the
+     * entire contract. Cleared here rather than left to be caught later,
+     * because an approval that no longer describes anything is worse than none.
+     */
+    db.prepare("UPDATE film_sequences SET strip_fingerprint = '', strip_approved_at = NULL WHERE id = ?").run(id);
+    return json(res, 200, {
+        deleted: found.map(a => a.id), shot_id: shotId, station_index: at,
+        note: 'The neighbours are now adjacent, so the strip is one segment shorter. '
+            + 'Any approval was cleared: it described a strip that no longer exists.',
+    });
+}
+
+/** Sign off the strip, so what shot is provably what was approved. */
+function approveStrip(req, res, id) {
+    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
+    if (!row) return json(res, 404, { error: 'Sequence not found' });
+    const strip = stripFor(row, { req });
+    const stations = stationList(strip.expanded);
+    const ungenerated = stations.filter(st => st.index > 0 && !st.asset_id);
+    if (ungenerated.length) {
+        return json(res, 409, {
+            error: 'STRIP_INCOMPLETE',
+            message: `${ungenerated.length} station(s) have not been generated. `
+                + 'Approving a strip that does not exist yet would sign off pictures nobody has seen.',
+            missing: ungenerated.map(st => `${st.shot_id}#${st.index}`),
+        });
+    }
+    const fingerprint = stripFingerprint(stations);
+    db.prepare("UPDATE film_sequences SET strip_fingerprint = ?, strip_approved_at = datetime('now') WHERE id = ?")
+        .run(fingerprint, id);
+    return json(res, 200, {
+        sequence_id: id, approved: true, fingerprint, stations: stations.length,
+        note: 'Video generation on this sequence will refuse if the strip changes, so the strip '
+            + 'that shot is the strip you signed off.',
+    });
+}
+
 /** What this would send, and what it would cost. Free. */
-function planRoute(res, id) {
+function planRoute(res, id, query) {
     const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
     if (!row) return json(res, 404, { error: 'Sequence not found' });
     const ceiling = keyframeCeiling(row.project_id);
+    const q = query || {};
+    /*
+     * The strip is opt-in, and that is the safety.
+     *
+     * Without `expand` this route builds byte-identical to what it always has:
+     * every sequence that exists keeps planning the way it did, and the denser
+     * list only ever arrives because someone asked for it.
+     */
+    const wantsStrip = String(q.expand || '') === 'inbetweens';
+    const shape = String(q.shape || 'legs') === 'bundle' ? 'bundle' : 'legs';
     const runway = ceiling.provider === 'runway' ? require('../lib/providers/runway') : null;
     const model = runway ? (process.env.RUNWAY_VIDEO_MODEL || 'gen4.5') : null;
-    const shotList = shotsOf(row);
-    const plan = planSequence(shotList, {
+    let strip = null;
+    if (wantsStrip) {
+        strip = stripFor(row, { cadenceSeconds: Number(q.cadence_s) || undefined });
+    }
+    const planInput = strip ? strip.expanded.stations : shotsOf(row);
+    const plan = planSequence(planInput, {
         maxKeyframes: ceiling.max, description: row.description,
         modelPolicy: runway && runway.RUNWAY_VIDEO_MODELS[model],
     });
-    const storedMotionRows = motionBoardRows(id);
-    const motionRows = storedMotionRows.length ? syncMotionBoard(row).rows : [];
-    const motionBoard = motionRows.length ? {
-        frame_count: motionRows.length,
-        approved_count: motionRows.filter(frame => frame.status === 'approved').length,
-        ready: motionRows.every(frame => frame.status === 'approved' && frame.asset_id),
-        duration_ms: motionRows[motionRows.length - 1].time_ms,
-        provider_ready: ceiling.max >= motionRows.length,
-        provider_max_images: ceiling.max,
-    } : null;
+    const shotList = shotsOf(row);
     let native = null;
     if (!plan.refused && runway && shotList.length >= 3 && shotList.length <= 5) {
         try {
@@ -487,7 +523,6 @@ function planRoute(res, id) {
     }
     return json(res, plan.refused ? 409 : 200, {
         sequence_id: id, provider: ceiling.provider,
-        motion_board: motionBoard,
         ...(ceiling.unresolved ? { provider_unresolved: ceiling.unresolved } : {}),
         ...plan,
         // The prompts and the frame COUNT travel; the frames themselves do not.
@@ -503,6 +538,33 @@ function planRoute(res, id) {
         })),
         generations: (plan.segments || []).length,
         native_multi_shot: native,
+        ...(strip ? {
+            shape,
+            /*
+             * The counts travel; the station IMAGES do not. A plan is read in a
+             * browser, and thirty base64 stills is megabytes spent showing
+             * something the page already has thumbnails of -- the same reason
+             * segments carry `keyframes: n` rather than the frames.
+             */
+            strips: strip.expanded.strips.map(st => ({
+                shot_id: st.shot_id, shot_code: st.shot_code,
+                count: st.count, generations: st.generations,
+                cadence_s: st.cadence_s,
+                ...(st.thinned ? { thinned: true, wanted: st.wanted } : {}),
+                ...(st.reason ? { reason: st.reason } : {}),
+                generated: Object.keys((strip.have[st.shot_id] || {})).length,
+            })),
+            images_needed: strip.expanded.images_needed,
+            /*
+             * Free on the model that documents room for them, and that is the
+             * whole reason this targets Seedance: 30 images at no cost against
+             * video billed per second.
+             */
+            images_estimated_credits: strip.ceiling.contract.imageCredits
+                ? strip.expanded.images_needed * strip.ceiling.contract.imageCredits : 0,
+            station_cap: strip.ceiling.max,
+            station_cap_why: strip.ceiling.why,
+        } : {}),
     });
 }
 
@@ -535,104 +597,46 @@ async function generateNativeSequence(req, res, id) {
     return json(res, 200, { sequence_id: id, asset_id: assetId, url: getFileUrl('video', row.project_id, fileName), mode: 'native_multi_shot' });
 }
 
-async function generateApprovedMotionBoard(req, res, row, boardRows, ceiling) {
-    const incomplete = boardRows.filter(f => f.status !== 'approved' || !f.file_path);
-    if (incomplete.length) {
-        return json(res, 409, {
-            error: 'MOTION_BOARD_NOT_APPROVED',
-            reason: `${incomplete.length} motion-board frame(s) still need generation or approval.`,
-            frames: incomplete.map(f => ({ index: f.frame_index, status: f.status })),
-        });
-    }
-    if (ceiling.max < boardRows.length) {
-        return json(res, 409, {
-            error: 'PROVIDER_IMAGE_LIMIT',
-            reason: `${ceiling.provider || 'The selected video provider'} accepts ${ceiling.max} image(s), but this approved motion board contains ${boardRows.length}. Nothing was sent or dropped.`,
-        });
-    }
-
-    const provider = resolve('video', seqConfig(row.project_id, req));
-    const { toDataUri } = require('../lib/reference-images');
-    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(row.project_id);
-    const shots = shotsOf(row);
-    const durationMs = Number(boardRows.at(-1).time_ms) || 1000;
-    const resolution = parseResolution(project && project.target_resolution) || { width: 1280, height: 720 };
-    const keyframes = boardRows.map((f, index) => ({
-        uri: toDataUri(f.file_path),
-        position: index === 0 ? 'first' : index === boardRows.length - 1 ? 'last' : index,
-    })).filter(k => k.uri);
-    if (keyframes.length !== boardRows.length) {
-        return json(res, 409, { error: 'One or more approved motion-board images cannot be read from disk.' });
-    }
-
-    const claim = db.prepare(`UPDATE film_sequences SET status = 'generating', updated_at = datetime('now')
-        WHERE id = ? AND status != 'generating'`).run(row.id);
-    if (!claim.changes) {
-        return json(res, 409, { error: 'SEQUENCE_ALREADY_GENERATING', reason: 'This sequence is already generating.' });
-    }
-    let result;
-    try {
-        result = await provider.generate('video', {
-            prompt: `${row.description || 'One continuous cinematic sequence.'} Follow the supplied images in chronological order as the visual path of the shot. Preserve identity, wardrobe, location, lighting, geography and screen direction between every image.`,
-            keyframes,
-            duration_s: Math.max(1, Math.round(durationMs / 1000)),
-            width: resolution.width,
-            height: resolution.height,
-            ...(project && project.target_fps ? { target_fps: project.target_fps } : {}),
-        }, { timeout: 900000 });
-    } catch (err) {
-        db.prepare("UPDATE film_sequences SET status = 'draft', updated_at = datetime('now') WHERE id = ?").run(row.id);
-        throw err;
-    }
-    if (!result || !result.ok) {
-        db.prepare("UPDATE film_sequences SET status = 'draft', updated_at = datetime('now') WHERE id = ?").run(row.id);
-        return json(res, 502, { error: (result && result.error) || 'video generation failed' });
-    }
-
-    const first = shots[0];
-    const last = shots[shots.length - 1];
-    const fileName = sequenceFileName(row.id, first.shot_code, `${last.shot_code}_motion`);
-    const saved = await persistProviderMedia(row.project_id, 'video', fileName, result.data,
-        { serveDir: 'videos' });
-    const assetId = generateId();
-    db.prepare(`INSERT INTO film_assets
-        (id, project_id, shot_id, asset_type, file_path, file_name, format, version,
-         metadata, provider, provider_model, provider_job_id)
-        VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 1, ?, ?, ?, ?)`).run(
-        assetId, row.project_id, first.id,
-        typeof saved === 'string' ? saved : (saved && saved.path) || '', fileName,
-        JSON.stringify({ sequence_id: row.id, kind: 'motion_board_sequence',
-            frame_ids: boardRows.map(f => f.id) }),
-        provider.id, result.provider_model || null, result.provider_job_id || null);
-    db.prepare("UPDATE film_sequences SET output_asset_id = ?, status = 'complete', updated_at = datetime('now') WHERE id = ?")
-        .run(assetId, row.id);
-    return json(res, 200, {
-        sequence_id: row.id,
-        mode: 'approved_motion_board',
-        reference_images: boardRows.length,
-        asset_id: assetId,
-        url: getFileUrl('video', row.project_id, fileName),
-    });
-}
-
 async function generateSequence(req, res, id) {
     const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
     if (!row) return json(res, 404, { error: 'Sequence not found' });
 
     const ceiling = keyframeCeiling(row.project_id, req);
-    const storedMotionRows = motionBoardRows(id);
-    const motionRows = storedMotionRows.length ? syncMotionBoard(row).rows : [];
-    if (motionRows.length) {
-        if (req.body && req.body.segment_index !== undefined) {
-            return json(res, 409, {
-                error: 'This sequence has a motion board and must be generated once from the complete approved frame set.',
-            });
-        }
-        return generateApprovedMotionBoard(req, res, row, motionRows, ceiling);
-    }
     const runway = ceiling.provider === 'runway' ? require('../lib/providers/runway') : null;
     const model = runway ? (process.env.RUNWAY_VIDEO_MODEL || 'gen4.5') : null;
-    const plan = planSequence(shotsOf(row), { maxKeyframes: ceiling.max, description: row.description,
+
+    const body_ = req.body || {};
+    const wantsStrip_ = String(body_.expand || '') === 'inbetweens' || !!row.strip_fingerprint;
+    const shape_ = String(body_.shape || 'legs') === 'bundle' ? 'bundle' : 'legs';
+    const strip_ = wantsStrip_
+        ? stripFor(row, { cadenceSeconds: Number(body_.cadence_s) || undefined, req })
+        : null;
+
+    /*
+     * THE STRIP THAT SHOT IS THE STRIP THAT WAS SIGNED OFF.
+     *
+     * The same contract previs_approve carries: an approval means nothing if
+     * the thing it described can change underneath it. A sequence with no
+     * approval is unaffected, which is what every sequence that exists today
+     * is — treating an absent fingerprint as stale would refuse all of them on
+     * the day this ships.
+     */
+    if (strip_ && row.strip_fingerprint && !body_.ignore_approval) {
+        const state = approvalState(row.strip_fingerprint, stationList(strip_.expanded));
+        if (state.stale) {
+            return json(res, 409, {
+                error: 'STALE_APPROVAL',
+                message: 'This sequence\'s in-between strip was approved and has changed since. '
+                    + 'Generating now would shoot a strip nobody signed off.',
+                approved_fingerprint: state.approved_fingerprint,
+                current_fingerprint: state.current,
+                hint: 'Re-approve the strip, or send ignore_approval to generate from it as it stands.',
+            });
+        }
+    }
+
+    const planInput_ = (strip_ && shape_ === 'legs') ? strip_.expanded.stations : shotsOf(row);
+    const plan = planSequence(planInput_, { maxKeyframes: ceiling.max, description: row.description,
         modelPolicy: runway && runway.RUNWAY_VIDEO_MODELS[model] });
     if (plan.refused) return json(res, 409, { sequence_id: id, ...plan });
 
@@ -846,10 +850,15 @@ function importSequenceClip(req, res, id) {
     }
 }
 
-async function handleSequences(req, res, urlParts) {
-    if (urlParts[1] === 'sequence-frames' && urlParts[2] && urlParts[3] && req.method === 'GET') {
-        return serveFile(res, urlParts[2], 'sequence-frames', urlParts[3]);
-    }
+/*
+ * `query` is a parameter now.
+ *
+ * The plan and the station list read `?expand`, `?cadence_s` and `?shape` from
+ * it, and reaching for an undefined binding is a 500 that reads as "query is
+ * not defined" — which is what the integration suite caught within a minute of
+ * the strip being wired in.
+ */
+async function handleSequences(req, res, urlParts, query) {
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'sequences') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (req.method === 'GET') return listSequences(res, urlParts[2]);
@@ -861,25 +870,24 @@ async function handleSequences(req, res, urlParts) {
         const id = urlParts[2];
         if (!UUID_RE.test(id)) return json(res, 400, { error: 'Invalid sequence ID' });
         const sub = urlParts[3];
-        if (sub === 'plan' && req.method === 'GET') return planRoute(res, id);
-        if (sub === 'frames') {
-            if (!urlParts[4] && req.method === 'GET') return motionBoardRoute(res, id);
-            if (urlParts[4] === 'generate' && req.method === 'POST') {
-                return generateMotionFrames(req, res, id);
-            }
-            const frameIndex = urlParts[4];
-            if (/^\d+$/.test(String(frameIndex || ''))) {
-                if (!urlParts[5] && req.method === 'PUT') return updateMotionFrame(req, res, id, frameIndex);
-                if (urlParts[5] === 'generate' && req.method === 'POST') {
-                    return generateMotionFrames(req, res, id, frameIndex);
-                }
-            }
-        }
+        if (sub === 'plan' && req.method === 'GET') return planRoute(res, id, query);
         if (sub === 'generate' && req.method === 'POST') return generateSequence(req, res, id);
         if (sub === 'generate-native' && req.method === 'POST') return generateNativeSequence(req, res, id);
         if (sub === 'import' && req.method === 'POST') return importSequenceClip(req, res, id);
         // Free: joins clips already paid for into one file.
         if (sub === 'stitch' && req.method === 'POST') return stitchSequence(req, res, id);
+        // The strip: generate it, correct one station, sign it off.
+        if (sub === 'inbetweens') {
+            if (urlParts[4] === 'approve' && req.method === 'POST') return approveStrip(req, res, id);
+            if (!urlParts[4] && req.method === 'POST') return runInbetweens(req, res, id, {});
+            return json(res, 405, { error: 'Method not allowed' });
+        }
+        if (sub === 'stations' && !urlParts[4] && req.method === 'GET') return listStations(res, id, query);
+        if (sub === 'stations' && urlParts[4] && urlParts[5] !== undefined) {
+            if (req.method === 'PUT') return updateStation(req, res, id, urlParts[4], urlParts[5]);
+            if (req.method === 'DELETE') return deleteStation(res, id, urlParts[4], urlParts[5]);
+            return json(res, 405, { error: 'Method not allowed' });
+        }
         if (!sub) {
             if (req.method === 'GET') {
                 const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
@@ -900,4 +908,4 @@ async function handleSequences(req, res, urlParts) {
     return false;
 }
 
-module.exports = { handleSequences, shotsOf, sequenceFileName, syncMotionBoard, motionBoardRows };
+module.exports = { handleSequences, shotsOf, sequenceFileName };

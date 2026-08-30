@@ -539,6 +539,111 @@ const PRODUCTION_TOOLS = [
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
+        name: 'sequence_plan_inbetweens',
+        handler: handleSequences, method: 'GET',
+        path: a => `/film/sequences/${a.sequence_id}/plan?expand=inbetweens`
+            + (a.cadence_s ? `&cadence_s=${a.cadence_s}` : '')
+            + (a.shape ? `&shape=${a.shape}` : ''),
+        description:
+            'The sequence as a STRIP OF STATIONS \u2014 a frame per second of film, derived from each '
+            + 'shot\u2019s own camera blocking. FREE, and read it before spending: a five-second push-in '
+            + 'otherwise reaches the provider as ONE picture and a sentence, so seconds two, three and '
+            + 'four are the model\u2019s opinion, and the model\u2019s opinion is what drifts. '
+            + 'Reports `strips` (per shot: how many stations, how many need generating, whether the '
+            + 'strip was thinned to fit the model\u2019s image ceiling and what it wanted), '
+            + '`images_needed` and `images_estimated_credits`. A shot whose move will not READ '
+            + 'contributes exactly one station and costs nothing. The station cap comes from the '
+            + 'model\u2019s own contract \u2014 Seedance 2.5 documents 30 free images, Hailuo 3 takes 9 '
+            + 'at 2 credits each. `shape=legs` (default) plans N-1 short generations to stitch; '
+            + '`shape=bundle` sends the strip as references in one longer generation, Seedance only.',
+        schema: {
+            sequence_id: { type: 'string' },
+            cadence_s: { type: 'number', description: 'Seconds between stations. Default 1.' },
+            shape: { type: 'string', enum: ['legs', 'bundle'] },
+        },
+        required: ['sequence_id'],
+    },
+    {
+        name: 'sequence_inbetweens',
+        handler: handleSequences, method: 'POST',
+        path: a => `/film/sequences/${a.sequence_id}/inbetweens`,
+        body: a => ({ cadence_s: a.cadence_s }),
+        description:
+            'GENERATE the strip. COSTS CREDITS \u2014 one image per station after the first. Each station '
+            + 'is refined FROM THE ONE BEFORE IT, which is the whole source of continuity: generating '
+            + 'each independently from the shot\u2019s keyframe would be N rolls of the dice and would '
+            + 'reinvent the drift a strip exists to remove. Serial by construction, and it stops at the '
+            + 'first provider refusal and NAMES what it did not attempt rather than buying the same '
+            + 'failure N times. Station 0 is never generated \u2014 it is the frame you approved, and a '
+            + 'frame made from itself can only reproduce itself. Re-running skips stations that already '
+            + 'exist. Read sequence_plan_inbetweens first: it is free and reports the cost.',
+        schema: {
+            sequence_id: { type: 'string' },
+            cadence_s: { type: 'number', description: 'Seconds between stations. Default 1.' },
+        },
+        required: ['sequence_id'],
+    },
+    {
+        name: 'sequence_station_update',
+        handler: handleSequences, method: 'PUT',
+        path: a => `/film/sequences/${a.sequence_id}/stations/${a.shot_id}/${a.station_index}`,
+        body: a => ({ instruction: a.instruction }),
+        description:
+            'Redo one station and EVERYTHING AFTER IT. COSTS CREDITS. A chain re-inherits from the frame '
+            + 'that changed, so leaving the later stations would leave a strip whose second half '
+            + 'descends from a picture that no longer exists. Stations before the one named are '
+            + 'untouched. Station 0 is refused: it is the approved keyframe, not a station.',
+        schema: {
+            sequence_id: { type: 'string' }, shot_id: { type: 'string' },
+            station_index: { type: 'number', description: '1 or higher. 0 is the approved frame.' },
+            instruction: { type: 'string', description: 'What this station does differently from the one before it.' },
+        },
+        required: ['sequence_id', 'shot_id', 'station_index'],
+    },
+    {
+        name: 'sequence_station_list',
+        handler: handleSequences, method: 'GET',
+        path: a => `/film/sequences/${a.sequence_id}/stations`
+            + (a.cadence_s ? `?cadence_s=${a.cadence_s}` : ''),
+        description:
+            'The strip as it stands: every station of every shot, with the moment it sits at, the '
+            + 'instruction that separates it from the one before, and whether it has been generated. '
+            + 'FREE. Read this before correcting or deleting a station \u2014 an agent that can remove '
+            + 'one and cannot list them is one that deletes by guessing. Also reports the strip '
+            + 'fingerprint and whether it is still the one that was approved.',
+        schema: {
+            sequence_id: { type: 'string' },
+            cadence_s: { type: 'number', description: 'Seconds between stations. Default 1.' },
+        },
+        required: ['sequence_id'],
+    },
+    {
+        name: 'sequence_station_delete',
+        handler: handleSequences, method: 'DELETE',
+        path: a => `/film/sequences/${a.sequence_id}/stations/${a.shot_id}/${a.station_index}`,
+        description:
+            'Drop one station. Its neighbours become adjacent, so the strip is one segment shorter. '
+            + 'Any approval is CLEARED, because it described a strip that no longer exists.',
+        schema: {
+            sequence_id: { type: 'string' }, shot_id: { type: 'string' },
+            station_index: { type: 'number' },
+        },
+        required: ['sequence_id', 'shot_id', 'station_index'],
+    },
+    {
+        name: 'sequence_inbetweens_approve',
+        handler: handleSequences, method: 'POST',
+        path: a => `/film/sequences/${a.sequence_id}/inbetweens/approve`,
+        description:
+            'Sign off the strip. FREE. Fingerprints the ordered stations and their instructions, and '
+            + 'video generation on this sequence then REFUSES 409 STALE_APPROVAL if the strip has '
+            + 'changed since \u2014 the same contract previs_approve carries, and the reason a director '
+            + 'can trust that the strip that shot is the strip they signed off. Refuses a strip with '
+            + 'ungenerated stations: approving pictures nobody has seen is not an approval. '
+            + '`ignore_approval` on sequence_generate is the deliberate way past.',
+        schema: { sequence_id: { type: 'string' } }, required: ['sequence_id'],
+    },
+    {
         name: 'sequence_plan',
         handler: handleSequences, method: 'GET',
         path: a => `/film/sequences/${a.sequence_id}/plan`,

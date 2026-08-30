@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**206 tools, 51 families.** Everything the app can do, you can ask for in a
+**212 tools, 51 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -306,7 +306,24 @@ background travels with it. Free.
 `node_gen_ambient` · `node_gen_lipsync` · `node_gen_post` · `node_gen_image` ·
 `node_gen_llm` · `node_gen_model3d` · `media_upload` · `media_kinds` ·
 `sequence_create` · `sequence_list` · `sequence_plan` · `sequence_generate` ·
+`sequence_plan_inbetweens` · `sequence_inbetweens` · `sequence_station_list` ·
+`sequence_station_update` · `sequence_station_delete` · `sequence_inbetweens_approve` ·
 `sequence_generate_native` · `sequence_update` · `sequence_stitch` · `sequence_delete` · `video_preview`
+
+**The in-between strip.** A shot reaches a video model as ONE picture and a
+sentence, so on a five-second push-in seconds two, three and four are the
+model's opinion — and the model's opinion is what drifts. `sequence_plan_inbetweens`
+is free and shows the shot as a station per second, derived from its own camera
+blocking: how many stations, how many need generating, and what that costs.
+`sequence_inbetweens` generates them, each refined **from the one before it** —
+independently generated stations would be N rolls of the dice and would
+reinvent the drift the strip removes. `sequence_station_list` reads the strip,
+`sequence_station_update` redoes one station **and everything after it** (a
+chain re-inherits from the frame that changed), and `sequence_inbetweens_approve`
+signs it off so video generation refuses if the strip changes afterwards.
+
+A shot whose move will not READ contributes exactly one station and costs
+nothing, which is today's behaviour unchanged.
 
 Video, voice, music, SFX and ambient audio — each runs one generation in
 isolation. **All cost money.**

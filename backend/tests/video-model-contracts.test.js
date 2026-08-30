@@ -246,3 +246,86 @@ test('a generation attempt records what the router will need', () => {
         'attempt_number', 'accepted', 'rejection_reason', 'validation_score'])
         assert.match(sql, new RegExp(`\\b${col}\\b`), `the attempts table has no ${col}`);
 });
+
+/*
+ * ── W5 — the in-between role ────────────────────────────────────────────────
+ *
+ * A strip can reach a provider two ways: as LEGS (N stations → N-1 short
+ * first/last generations, stitched — any adapter with maxKeyframes >= 2), or as
+ * a BUNDLE (one longer generation with the strip attached as references —
+ * Seedance only, where images are free and the video is billed per second).
+ *
+ * Both are viable and they are not the same slot: keyframes are POSITIONAL
+ * (first/last) and reference images are not. Conflating them is how a strip
+ * gets sent to an adapter that will reject it.
+ */
+
+test('W5 · an in-between outranks identity inside its own clip', () => {
+    const V = require('../lib/video-reference');
+    assert.ok(V.ROLE_RANK.inbetween !== undefined, 'there is no inbetween role');
+    assert.ok(V.ROLE_RANK.inbetween > V.ROLE_RANK.keyframe,
+        'an in-between outranks the keyframe it was refined from');
+    assert.ok(V.ROLE_RANK.inbetween < V.ROLE_RANK.character,
+        'identity outranks a temporal neighbour — a face is noticed before a grade, '
+        + 'but WITHIN one clip the frame a second away is what holds it together');
+    assert.ok(V.ROLES.some(r => (r.id || r) === 'inbetween'), 'the role is ranked and not declared');
+});
+
+test('W5 · only the model that documents the images takes them', () => {
+    /*
+     * Set-based over every contract: over-sending is a provider rejection that
+     * costs a generation, so a model that does not document the slot must not
+     * be handed it.
+     */
+    const V = require('../lib/video-reference');
+    assert.ok(V.CONTRACTS.seedance2_5.roles.includes('inbetween'),
+        'the one model with 30 free images does not take the strip');
+    for (const [model, c] of Object.entries(V.CONTRACTS)) {
+        if (model === 'seedance2_5') continue;
+        assert.ok(!c.roles.includes('inbetween'),
+            `${model} was given the in-between slot without documenting it`);
+    }
+    assert.ok(!V.KEYFRAME_ONLY.roles.includes('inbetween'),
+        'the keyframe-only default was widened — gen4.5 stays keyframe-only deliberately');
+});
+
+test('W5 · an in-between is dropped by name where it is not taken', () => {
+    const V = require('../lib/video-reference');
+    const strip = Array.from({ length: 4 }, (_, i) => ({
+        role: 'inbetween', kind: 'image', uri: `data:image/png;base64,s${i}`, name: `station ${i}`,
+    }));
+    const refs = [{ role: 'keyframe', kind: 'image', uri: 'data:image/png;base64,k', name: '1A' }, ...strip];
+
+    const kept = V.selectReferences(refs, V.CONTRACTS.seedance2_5);
+    assert.equal(kept.selected.filter(r => r.role === 'inbetween').length, 4,
+        'seedance dropped the strip it documents room for');
+
+    const dropped = V.selectReferences(refs, V.CONTRACTS.hailuo3);
+    assert.equal(dropped.selected.filter(r => r.role === 'inbetween').length, 0);
+    assert.equal(dropped.dropped.filter(r => r.role === 'inbetween').length, 4,
+        'the strip vanished instead of being reported as dropped');
+    for (const d of dropped.dropped.filter(r => r.role === 'inbetween')) {
+        assert.ok(d.reason && d.reason.length > 8, 'a dropped in-between does not say why');
+    }
+});
+
+test('W5 · the 31st image is dropped by name, never silently', () => {
+    const V = require('../lib/video-reference');
+    const many = Array.from({ length: 34 }, (_, i) => ({
+        role: 'inbetween', kind: 'image', uri: `data:image/png;base64,s${i}`, name: `station ${i}`,
+    }));
+    const out = V.selectReferences(many, V.CONTRACTS.seedance2_5);
+    assert.equal(out.selected.length, V.CONTRACTS.seedance2_5.maxImages);
+    assert.equal(out.dropped.length, 34 - V.CONTRACTS.seedance2_5.maxImages);
+    for (const d of out.dropped) assert.ok(d.name, 'an over-budget image was dropped without a name');
+});
+
+test('W5 · the two shapes are offered, and legs is the default', () => {
+    // legs works on any adapter with two keyframes; bundle is Seedance only.
+    // Defaulting to the one that works everywhere is what makes the flag safe.
+    const fs2 = require('fs');
+    const src = fs2.readFileSync(require('path').join(__dirname, '..', 'routes', 'sequences.js'), 'utf8');
+    assert.ok(/shape/.test(src), 'a strip cannot be asked for as legs or as a bundle');
+    assert.ok(/'legs'/.test(src) && /'bundle'/.test(src), 'the two shapes are not named');
+    assert.ok(/shape.*legs|legs.*default/i.test(src), 'legs is not the default');
+});

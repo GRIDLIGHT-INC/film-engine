@@ -2757,6 +2757,33 @@ async function recomposeShot(req, res, shotId) {
  * still reachable rather than being something you have to regenerate your way
  * back to.
  */
+/**
+ * ONE refine request, for the button and for a strip station.
+ *
+ * What is SENT is the shared part and must not be written twice: the picture,
+ * one instruction, and the negative that refuses a different composition -- no
+ * scene card and no style preset, because the picture already carries them and
+ * repeating them in words pulls the result back toward a fresh generation.
+ *
+ * Where it LANDS is deliberately not shared. The refine button replaces the
+ * shot's live frame and archives what it replaced; a strip station is its own
+ * picture at its own moment and must never touch `{code}.png`, or generating a
+ * strip would destroy the approved keyframe it was refined from.
+ */
+async function generateRefinedFrame({ project, shot, reference, instruction, anchorRef }) {
+    const built = buildRefinePayload(instruction, !!anchorRef);
+    const payload = {
+        prompt: built.prompt,
+        negative_prompt: built.negative_prompt,
+        reference_images: anchorRef ? [reference, anchorRef] : [reference],
+        aspect_ratio: project.aspect_ratio,
+    };
+    const { buffer, provider, model } = await callImageGen(
+        payload.prompt, payload.negative_prompt, undefined, payload,
+        spendContext(project, shot, null, null));
+    return { buffer, provider, model, prompt: payload.prompt };
+}
+
 async function refineShot(req, res, shotId) {
     const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) return json(res, 404, { error: 'Shot not found' });
@@ -3315,5 +3342,8 @@ function selectReferenceImage(sceneCard, matchedChars, matchedLocation, projectI
 
 module.exports = {
     buildRecomposePayload, handleStoryboard, matchProps,
+    // The shared refine request, so a strip station and the refine button
+    // cannot come to ask for different things.
+    generateRefinedFrame, registerStoryboardAsset, ensureStoryboardDir, storyboardImagePath,
     // The board's own shot query, so its order is checkable.
     getStoryboardShots: loadProjectShots };

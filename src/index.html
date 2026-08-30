@@ -30390,6 +30390,8 @@ ${fountainText.slice(0, 50000)}`;
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
                     <button class="btn btn-secondary btn-sm" onclick="previewSequence('${q.id}')"
                             title="See exactly what would be sent, and how many generations it costs — free">Preview &amp; cost</button>
+                    <button class="btn btn-secondary btn-sm" onclick="stripSequence('${q.id}', this)"
+                            title="A station a second instead of one picture per shot — planned for free before anything is bought">In-between strip</button>
                     <button class="btn btn-primary btn-sm" onclick="generateSequence('${q.id}', this)">Generate</button>
                     <button class="btn btn-secondary btn-sm" onclick="generateNextSequenceLeg('${q.id}', this)"
                             title="Buy only the next segment, review it, then continue">Generate next leg</button>
@@ -30405,6 +30407,77 @@ ${fountainText.slice(0, 50000)}`;
                 </div>
             </div>`;
         }).join('');
+    }
+
+    /**
+     * The strip: a station a second, planned FREE before anything is bought.
+     *
+     * A shot reaches a video model as one picture and a sentence, so on a
+     * five-second push-in the seconds between the ends are the model's
+     * invention. This shows what the strip would be — how many stations per
+     * shot, what each one is asked to change, and what it costs — and only then
+     * offers to buy it. The free read leads for the same reason it leads on
+     * every other paid control here: the check that matters is the one you
+     * cannot skip by accident.
+     *
+     * Correcting a single station is deliberately not on this card. It is one
+     * station of one shot and belongs beside that frame, not in a list of
+     * sequences; it is reachable today through `sequence_station_update` and
+     * `PUT /sequences/:id/stations/:shot/:index`. Named rather than dropped.
+     */
+    async function stripSequence(id, btn) {
+        const busy = btn && btn.textContent;
+        if (btn) { btn.disabled = true; btn.textContent = 'Reading…'; }
+        let plan;
+        try { plan = await api(`/sequences/${id}/plan?expand=inbetweens&cadence_s=1`); }
+        catch (err) { alert('Could not read the strip: ' + err.message); return; }
+        finally { if (btn) { btn.disabled = false; btn.textContent = busy; } }
+
+        if (plan.refused) return alert('This sequence cannot run yet.\n\n' + plan.reason);
+
+        const strips = plan.strips || [];
+        const lines = strips.map(st => {
+            const thin = st.thinned ? ` (wanted ${st.wanted}, capped)` : '';
+            return `  ${st.shot_code || st.shot_id}: ${st.count} station${st.count === 1 ? '' : 's'}`
+                + `, ${st.generations} to generate${thin}`;
+        }).join('\n');
+        const cap = plan.station_cap ? `\n\nThe cap is ${plan.station_cap} stations a shot — the model's own contract, not a setting.` : '';
+        const cost = plan.images_estimated_credits != null
+            ? `\n\n${plan.images_needed} image${plan.images_needed === 1 ? '' : 's'} to generate`
+              + `, about ${plan.images_estimated_credits} credits.`
+            : '';
+
+        if (!confirm(`In-between strip — a station a second\n\n${lines}${cap}${cost}`
+            + '\n\nStation 0 of each shot is the frame you already approved and is not regenerated.'
+            + ' Each station after it is refined from the one before, so the strip cannot drift apart'
+            + ' the way independent rolls do.\n\nGenerate the strip now?')) return;
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+        let out;
+        try { out = await api(`/sequences/${id}/inbetweens`, { method: 'POST', body: JSON.stringify({ cadence_s: 1 }) }); }
+        catch (err) { alert('The strip stopped: ' + err.message); return; }
+        finally { if (btn) { btn.disabled = false; btn.textContent = busy; } loadSequences(); }
+
+        // A partial strip reported as a success is how a sequence gets joined
+        // through moments nobody has seen, so what was NOT attempted is named.
+        const made = (out.generated || []).length;
+        let msg = `${made} station${made === 1 ? '' : 's'} generated.`;
+        if (out.skipped && out.skipped.length) msg += ` ${out.skipped.length} already existed and were not bought again.`;
+        if (out.stopped_at != null) {
+            msg += `\n\nStopped at station ${out.stopped_at}: ${out.error || 'the provider refused'}.`;
+            if (out.not_attempted && out.not_attempted.length) {
+                msg += `\nNot attempted: ${out.not_attempted.join(', ')}.`;
+            }
+            return alert(msg);
+        }
+        if (confirm(msg + '\n\nSign the strip off? Video generation then refuses a strip that has changed'
+            + ' since — which is what makes an approval worth having.')) {
+            try {
+                const ok = await api(`/sequences/${id}/inbetweens/approve`, { method: 'POST', body: '{}' });
+                alert(`Approved — ${ok.stations} stations.`);
+            } catch (err) { alert('Could not approve: ' + err.message); }
+            loadSequences();
+        }
     }
 
     /**
