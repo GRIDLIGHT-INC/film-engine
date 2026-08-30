@@ -53,14 +53,24 @@ const REMOVED = {
     production:    'folded into the home page',
 };
 
-/** The menu, exactly as asked for: four labels, in this order, these pages. */
+/**
+ * The menu, exactly as asked for: four labels, in this order, these pages.
+ *
+ * `titles` and `subtitles` were NOT in the original request and are added
+ * deliberately: their routes shipped with the delivery work and neither had a
+ * page, so a credit's role, a card's hold and a cue's language could only be
+ * written by curl. Adding a page to this list is a decision, which is why the
+ * list is written down rather than derived from the menu it checks — a derived
+ * one would agree with any page anybody added.
+ */
 const WANTED = [
     ['Write & Design', ['screenplay', 'scenes', 'notes', 'moodboard',
         'characters', 'locations', 'props', 'threed']],
     ['Plan',           ['storyboard', 'previs', 'consistency', 'milestones', 'budget']],
     ['Production',     ['shotboard', 'videoshots', 'music', 'musiccues', 'playback',
         'pipeline', 'flows']],
-    ['Post',           ['exportpage', 'marketing', 'assets', 'jobsqueue', 'renderhistory']],
+    ['Post',           ['exportpage', 'titles', 'subtitles', 'marketing', 'assets',
+        'jobsqueue', 'renderhistory']],
 ];
 
 /**

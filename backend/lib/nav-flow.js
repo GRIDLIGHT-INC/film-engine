@@ -66,7 +66,12 @@ const NAV_FLOW = {
 
     post: {
         label: 'Post',
-        pages: ['exportpage', 'marketing', 'assets', 'jobsqueue', 'renderhistory'],
+        // `titles` and `subtitles` are delivery surfaces: what the film says
+        // over its own head and at its end, and what it says for anyone who
+        // cannot hear it. Both routes shipped with the delivery work and
+        // neither had a page, so every field they accept could only be written
+        // by curl or by an agent.
+        pages: ['exportpage', 'titles', 'subtitles', 'marketing', 'assets', 'jobsqueue', 'renderhistory'],
     },
 };
 

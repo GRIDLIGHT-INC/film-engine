@@ -735,6 +735,60 @@ Closing the style book's 21 unproven cases found **six real defects**, and eleve
 
 `tests/style-book-gaps.test.js` is set-based over the registries that fail **partially**: the four `NEVER_WRITES` fields (a rule catching three is indistinguishable from one that works), the three length-limited fields, and the seven row lookups in the router (a 404 on six teaches a caller to trust the seventh).
 
+### If the App Stores It, a Person Can Type It — the Rest of the List
+
+The standing `NOT_BUILT` list in `tests/manual-edit.test.js` named eight route
+handlers whose fields had no control. Working it found that four of them were
+not missing controls at all — the screens they belong to never opened.
+
+**Three modals were shown with a class the stylesheet ignores.**
+`.modal-overlay` is `display:none` and exactly one class turns it back on:
+`open`. The screenplay's **Title Page** dialog, the screenplay importer and the
+live-action cost editor all added `active`, so none of them ever appeared.
+Nothing threw and nothing was logged; the button did nothing, which reads as a
+dead feature. This file has claimed for months that *"the toolbar's Title Page
+button was always the real way to edit it"* — it did not open. It is also why
+nobody noticed the cost form was missing its travel allowance and prep days:
+**the form they belong to never opened.** `showModalHtml()` is one helper, so a
+caller that cannot choose the class cannot get it wrong.
+
+**Nine page loaders were called and never defined**, left by the nine-page
+removal. Eight were unreachable and merely dead — three of those still had a
+Save button in an orphaned modal, which is the same bug pointed the other way.
+**The ninth was live**: `saveLocation` calls it on the SUCCESS path, so renaming
+a location that appears in the screenplay saved correctly, updated the
+screenplay correctly, and then threw `loadScreenplay is not defined` into the
+surrounding catch — reporting a successful write as `Error: …`.
+
+**Seven of the eight gaps are now built.** Music-cue rights was the one that
+mattered: `PUT /music-cues/:id/rights` had existed since the rights work with no
+control for **any** of its six fields, so who owns a piece of music and until
+when could only be recorded by curl — and delivery is the wrong moment to find
+that out. `titles` (credits and title cards) and `subtitles` are two new pages
+in **Post**; both routes shipped with the delivery work and neither had a page.
+Vocabularies are **served** — `sections`, `card_types`, the licence statuses —
+on the `card-vocabulary` rule: the route refuses a value it does not know, so a
+page holding its own copy offers options that are rejected on save, and the
+refusal reads as saving being broken.
+
+**Three entries were CORRECTED rather than removed**, and all three were wrong
+in the direction that made the app look more finished than it is: credits and
+subtitles claimed a list *"renders"* when no such page existed, and the Rights
+register claimed to offer four fields when its page was among the nine deleted.
+The rights entry stays as the one open gap: rebuilding that page would undo a
+removal that was asked for.
+
+`tests/page-handlers.test.js` is the standing check, derived from the page
+rather than from a list — the list is exactly what nobody updates. It holds four
+rules: no handler calls a loader nothing defines, no `onclick` names a function
+nothing defines, every modal is shown with the class its own CSS displays, and
+every page in the menu has a loader. That last one immediately caught
+`jobsqueue`, which was filled by its own nav button and by nothing else — so
+arriving from the home page's run report landed on a panel nobody filled. The
+vendored 3D library is excluded **by region**, not by name: including it produced
+233 false positives, and a check that cries wolf 233 times is one nobody runs
+twice.
+
 ### The App Shell on a Phone
 *"like neoncore (codebase) would it be possible to create a mobile version that allows us to work on a film engine project"*
 

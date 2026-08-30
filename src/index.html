@@ -4631,6 +4631,12 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <span class="nav-icon">&#9654;</span> Playback
                 </button>
                 <!-- ==== CLAUDE:END ==== -->
+                <button class="nav-item" data-page="titles" onclick="navigateTo('titles')" data-tooltip="Credits and title cards — what the film says over its own head and at its end" data-tooltip-pos="right">
+                    <span class="nav-icon">&#127915;</span> Titles &amp; Credits
+                </button>
+                <button class="nav-item" data-page="subtitles" onclick="navigateTo('subtitles')" data-tooltip="Subtitle cues, per language — and the SRT or VTT they export to" data-tooltip-pos="right">
+                    <span class="nav-icon">&#128172;</span> Subtitles
+                </button>
                 <button class="nav-item" data-page="marketing" onclick="navigateTo('marketing')" data-tooltip="Posters, key art and social cards — upload your own or generate them" data-tooltip-pos="right">
                     <span class="nav-icon">&#127917;</span> Marketing
                 </button>
@@ -5482,6 +5488,45 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 
         <!-- ── ACTS (FILM-146) ─────────────────────────────────── -->
         <!-- ── MARKETING ──────────────────────────────────────── -->
+        <div class="page" id="page-titles">
+            <div class="flex-between mb-16">
+                <h2>Titles &amp; Credits</h2>
+                <div>
+                    <button class="btn btn-secondary" onclick="openTitleCard()">+ Title card</button>
+                    <button class="btn btn-primary" onclick="openCredit()">+ Credit</button>
+                </div>
+            </div>
+            <p class="text-sm text-muted mb-8">
+                What the film says over its own head and at its end. Both have had routes since the
+                delivery work and neither had a page, so every field could only be written by curl or
+                by an agent. Nothing here generates anything &mdash; it is written, ordered, and
+                carried into the export.
+            </p>
+            <h3 class="mb-8">Title cards</h3>
+            <div id="titleCardList" class="mb-16"></div>
+            <h3 class="mb-8">Credits</h3>
+            <div id="creditList"></div>
+        </div>
+
+        <div class="page" id="page-subtitles">
+            <div class="flex-between mb-16">
+                <h2>Subtitles</h2>
+                <div>
+                    <select id="subtitleLang" onchange="loadSubtitles()" style="width:auto;display:inline-block;min-width:140px;margin-right:8px;"></select>
+                    <button class="btn btn-secondary" onclick="exportSubtitles('srt')">Export SRT</button>
+                    <button class="btn btn-secondary" onclick="exportSubtitles('vtt')">Export VTT</button>
+                    <button class="btn btn-primary" onclick="openSubtitle()">+ Cue</button>
+                </div>
+            </div>
+            <p class="text-sm text-muted mb-8">
+                One row per cue, in time order. A cue carries its language, who is speaking, where on
+                screen it sits and how it is styled &mdash; all of which the route has always accepted
+                and none of which could be typed. Times are in seconds here and stored in
+                milliseconds.
+            </p>
+            <div id="subtitleList"></div>
+        </div>
+
         <div class="page" id="page-marketing">
             <div class="flex-between mb-16">
                 <h2>Marketing</h2>
@@ -16666,6 +16711,16 @@ THREE.GLTFLoader = GLTFLoader;
             stylebook: loadStyleBook,
             previs: loadPrevisPage,
             settings: loadSettings,
+            /*
+             * Registered here rather than only on its own nav button, which is
+             * how it was wired: `onclick="navigateTo('jobsqueue'); loadJobsQueuePage()"`
+             * fills the page when you click the button and NOT when you arrive
+             * from the home page's run report or from either "Open job queue"
+             * link — which land on a panel nobody filled.
+             */
+            jobsqueue: loadJobsQueuePage,
+            titles: loadTitles,
+            subtitles: loadSubtitles,
             marketing: loadMarketing,
             consistency: loadConsistency,
             budget: () => { loadSpend(); loadBudget(); },
@@ -28081,6 +28136,379 @@ ${fountainText.slice(0, 50000)}`;
     const MARKETING_TYPE_ICON = { poster: '&#127917;', key_art: '&#127912;', banner: '&#128444;',
         social_card: '&#128241;', still: '&#128247;', thumbnail: '&#128443;', logo: '&#10024;' };
 
+    // ══════════════════════════════════════════════════════════════
+    // TITLES, CREDITS AND SUBTITLES
+    //
+    // Three delivery surfaces whose routes shipped with the delivery work and
+    // whose pages never did, so every field they accept -- a credit's role and
+    // character name, a card's type and hold, a cue's language, speaker,
+    // position and style -- could only be written by curl or by an agent.
+    //
+    // Vocabularies are SERVED, never typed here: `sections` and `card_types`
+    // come back with the list, on the same rule as the card vocabulary and the
+    // licence statuses. A page holding its own copy offers values the route
+    // refuses the first time somebody adds one, and the refusal reads as saving
+    // being broken.
+    // ══════════════════════════════════════════════════════════════
+    let TITLE_VOCAB = { sections: [], card_types: [] };
+
+    async function loadTitles() {
+        if (!state.currentProject) return;
+        const pid = state.currentProject.id;
+        try {
+            const [credits, cards] = await Promise.all([
+                api(`/projects/${pid}/credits`),
+                api(`/projects/${pid}/title-cards`),
+            ]);
+            TITLE_VOCAB = { sections: credits.sections || [], card_types: cards.card_types || [] };
+            renderTitleCards(cards.title_cards || []);
+            renderCredits(credits.credits || []);
+        } catch (err) {
+            document.getElementById('creditList').innerHTML =
+                `<p class="text-sm text-muted">Could not read the titles: ${esc(err.message)}</p>`;
+        }
+    }
+
+    function renderTitleCards(cards) {
+        const host = document.getElementById('titleCardList');
+        if (!cards.length) {
+            host.innerHTML = '<p class="text-sm text-muted">No title cards. A main title and an end title are '
+                + 'the two most films have.</p>';
+            return;
+        }
+        host.innerHTML = cards.map(c => `
+            <div class="card" style="margin-bottom:8px;">
+                <div class="flex-between" style="gap:8px;flex-wrap:wrap;min-width:0;">
+                    <div style="min-width:0;">
+                        <strong>${esc(c.text || 'Untitled card')}</strong>
+                        ${c.subtext ? `<div class="text-sm text-muted">${esc(c.subtext)}</div>` : ''}
+                        <div class="tag-row" style="margin-top:4px;">
+                            <span class="badge">${esc((c.card_type || 'card').replace(/_/g, ' '))}</span>
+                            <span class="tag">${((c.duration_ms || 0) / 1000).toFixed(1)}s</span>
+                            ${c.position_in_timeline ? `<span class="tag">${esc(c.position_in_timeline)}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="openTitleCard('${c.id}')">Edit</button>
+                        <button class="btn btn-secondary btn-sm" onclick="deleteTitleCard('${c.id}')">Delete</button>
+                    </div>
+                </div>
+            </div>`).join('');
+    }
+
+    function renderCredits(credits) {
+        const host = document.getElementById('creditList');
+        if (!credits.length) {
+            host.innerHTML = '<p class="text-sm text-muted">No credits yet.</p>';
+            return;
+        }
+        // Grouped by section in the served order, so the page reads the way the
+        // roll does rather than alphabetically.
+        const order = TITLE_VOCAB.sections.length ? TITLE_VOCAB.sections
+            : [...new Set(credits.map(c => c.section))];
+        host.innerHTML = order.filter(sec => credits.some(c => c.section === sec)).map(sec => `
+            <h4 style="margin:12px 0 6px;text-transform:capitalize;">${esc(sec.replace(/_/g, ' '))}</h4>
+            ${credits.filter(c => c.section === sec).map(c => `
+                <div class="card" style="margin-bottom:6px;">
+                    <div class="flex-between" style="gap:8px;flex-wrap:wrap;min-width:0;">
+                        <div style="min-width:0;">
+                            <strong>${esc(c.name || '')}</strong>
+                            ${c.role ? `<span class="text-sm text-muted"> &mdash; ${esc(c.role)}</span>` : ''}
+                            ${c.character_name ? `<div class="text-sm text-muted">as ${esc(c.character_name)}</div>` : ''}
+                        </div>
+                        <div class="card-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="openCredit('${c.id}')">Edit</button>
+                            <button class="btn btn-secondary btn-sm" onclick="deleteCredit('${c.id}')">Delete</button>
+                        </div>
+                    </div>
+                </div>`).join('')}`).join('');
+    }
+
+    /** Options from the SERVED vocabulary, with the current value selected. */
+    function vocabOptions(list, current, blank) {
+        return (blank ? `<option value="">${esc(blank)}</option>` : '')
+            + (list || []).map(v => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>`
+                + `${esc(String(v).replace(/_/g, ' '))}</option>`).join('');
+    }
+
+    function openCredit(id) {
+        const c = id ? (state.creditRows || []).find(x => x.id === id) || {} : {};
+        showModalHtml('creditModal', `
+            <div class="modal-header">
+                <h3>${id ? 'Edit credit' : 'New credit'}</h3>
+                <button class="modal-close" onclick="closeModal('creditModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group"><label>Name</label>
+                    <input type="text" id="creditName" data-field="name" maxlength="200" value="${esc(c.name || '')}"
+                           placeholder="The person or company"></div>
+                <div class="form-group"><label>Section</label>
+                    <select id="creditSection" data-field="section">${vocabOptions(TITLE_VOCAB.sections, c.section || 'crew')}</select></div>
+                <div class="form-group"><label>Role</label>
+                    <input type="text" id="creditRole" data-field="role" maxlength="200" value="${esc(c.role || '')}"
+                           placeholder="e.g. Director of Photography"></div>
+                <div class="form-group"><label>Character</label>
+                    <input type="text" id="creditCharacter" data-field="character_name" maxlength="200"
+                           value="${esc(c.character_name || '')}" placeholder="For a cast credit — who they played">
+                    <span class="text-sm text-muted">Cast only. A crew credit leaves this blank.</span></div>
+                <div class="form-group"><label>Style</label>
+                    <input type="text" id="creditStyle" data-field="style" maxlength="500" value="${esc(c.style || '')}"
+                           placeholder="How it is set — read by the export, not by a generator"></div>
+                <div class="form-group"><label>Order within the section</label>
+                    <input type="number" id="creditOrder" data-field="sort_order" min="0" value="${c.sort_order || 0}"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('creditModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveCredit(${id ? `'${id}'` : 'null'})">Save</button>
+            </div>`);
+    }
+
+    async function saveCredit(id) {
+        const v = i => (document.getElementById(i) || {}).value;
+        const body = {
+            name: v('creditName'), section: v('creditSection'), role: v('creditRole'),
+            character_name: v('creditCharacter'), style: v('creditStyle'),
+            sort_order: Number(v('creditOrder')) || 0,
+        };
+        if (!body.name) return setStatus('A credit needs a name');
+        try {
+            await api(id ? `/credits/${id}` : `/projects/${state.currentProject.id}/credits`,
+                { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+            closeModal('creditModal');
+            setStatus(id ? 'Credit updated' : 'Credit added');
+            loadTitles();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteCredit(id) {
+        if (!confirm('Remove this credit?')) return;
+        try { await api(`/credits/${id}`, { method: 'DELETE' }); loadTitles(); setStatus('Credit removed'); }
+        catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function openTitleCard(id) {
+        const c = id ? (state.titleCardRows || []).find(x => x.id === id) || {} : {};
+        showModalHtml('titleCardModal', `
+            <div class="modal-header">
+                <h3>${id ? 'Edit title card' : 'New title card'}</h3>
+                <button class="modal-close" onclick="closeModal('titleCardModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group"><label>Text</label>
+                    <input type="text" id="cardText" data-field="text" maxlength="500" value="${esc(c.text || '')}"
+                           placeholder="What the card says"></div>
+                <div class="form-group"><label>Subtext</label>
+                    <input type="text" id="cardSubtext" data-field="subtext" maxlength="500" value="${esc(c.subtext || '')}"
+                           placeholder="A second line, smaller"></div>
+                <div class="form-group"><label>Type</label>
+                    <select id="cardType" data-field="card_type">${vocabOptions(TITLE_VOCAB.card_types, c.card_type || 'card')}</select></div>
+                <div class="form-group"><label>Hold (seconds)</label>
+                    <input type="number" id="cardDuration" data-field="duration_ms" min="0" step="0.1"
+                           value="${((c.duration_ms || 3000) / 1000).toFixed(1)}">
+                    <span class="text-sm text-muted">Stored in milliseconds; typed in seconds, which is how a card is read.</span></div>
+                <div class="form-group"><label>Where it sits</label>
+                    <input type="text" id="cardPosition" data-field="position_in_timeline" maxlength="100"
+                           value="${esc(c.position_in_timeline || '')}" placeholder="e.g. before scene 1, or after the last shot"></div>
+                <div class="form-group"><label>Style</label>
+                    <input type="text" id="cardStyle" data-field="style" maxlength="500" value="${esc(c.style || '')}"></div>
+                <div class="form-group"><label>Order</label>
+                    <input type="number" id="cardOrder" data-field="sort_order" min="0" value="${c.sort_order || 0}"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('titleCardModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveTitleCard(${id ? `'${id}'` : 'null'})">Save</button>
+            </div>`);
+    }
+
+    async function saveTitleCard(id) {
+        const v = i => (document.getElementById(i) || {}).value;
+        const body = {
+            text: v('cardText'), subtext: v('cardSubtext'), card_type: v('cardType'),
+            duration_ms: Math.round((Number(v('cardDuration')) || 0) * 1000),
+            position_in_timeline: v('cardPosition'), style: v('cardStyle'),
+            sort_order: Number(v('cardOrder')) || 0,
+        };
+        if (!body.text) return setStatus('A title card needs its text');
+        try {
+            await api(id ? `/title-cards/${id}` : `/projects/${state.currentProject.id}/title-cards`,
+                { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+            closeModal('titleCardModal');
+            setStatus(id ? 'Title card updated' : 'Title card added');
+            loadTitles();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteTitleCard(id) {
+        if (!confirm('Remove this title card?')) return;
+        try { await api(`/title-cards/${id}`, { method: 'DELETE' }); loadTitles(); setStatus('Title card removed'); }
+        catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ── Subtitles ───────────────────────────────────────────────────────────
+    async function loadSubtitles() {
+        if (!state.currentProject) return;
+        const pid = state.currentProject.id;
+        const picker = document.getElementById('subtitleLang');
+        try {
+            const langs = await api(`/projects/${pid}/languages`).catch(() => null)
+                || await api(`/projects/${pid}/subtitles/languages`);
+            const list = langs.languages || [];
+            const chosen = picker.value || list[0] || 'en';
+            /*
+             * The language a project already has, plus the one being viewed.
+             * Rebuilt only when the set changed, or re-rendering resets the
+             * picker mid-selection.
+             */
+            const want = [...new Set([...list, chosen])];
+            if (picker.dataset.langs !== want.join(',')) {
+                picker.innerHTML = want.map(l =>
+                    `<option value="${esc(l)}"${l === chosen ? ' selected' : ''}>${esc(l)}</option>`).join('');
+                picker.dataset.langs = want.join(',');
+            }
+            const data = await api(`/projects/${pid}/subtitles?language=${encodeURIComponent(chosen)}`);
+            state.subtitleRows = data.subtitles || [];
+            /*
+             * The shot list, for the cue's own shot. A caption belongs to the
+             * shot it plays over, and the route has always taken a shot_id —
+             * without a picker the field could only be set by curl, which is
+             * the gap this whole page exists to close.
+             */
+            if (!SUB_SHOTS.length) {
+                try {
+                    const sl = await api(`/projects/${pid}/shotlist`);
+                    SUB_SHOTS = sl.shots || [];
+                } catch (_) { SUB_SHOTS = []; }
+            }
+            renderSubtitles(state.subtitleRows);
+        } catch (err) {
+            document.getElementById('subtitleList').innerHTML =
+                `<p class="text-sm text-muted">Could not read the subtitles: ${esc(err.message)}</p>`;
+        }
+    }
+
+    let SUB_SHOTS = [];
+
+    const subTime = ms => {
+        const t = Math.max(0, Number(ms) || 0) / 1000;
+        return `${Math.floor(t / 60)}:${String((t % 60).toFixed(1)).padStart(4, '0')}`;
+    };
+
+    function renderSubtitles(rows) {
+        const host = document.getElementById('subtitleList');
+        if (!rows.length) {
+            host.innerHTML = '<p class="text-sm text-muted">No cues in this language yet.</p>';
+            return;
+        }
+        host.innerHTML = rows.map(r => `
+            <div class="card" style="margin-bottom:6px;">
+                <div class="flex-between" style="gap:8px;flex-wrap:wrap;min-width:0;">
+                    <div style="min-width:0;">
+                        <div class="text-sm text-muted">${subTime(r.start_ms)} &rarr; ${subTime(r.end_ms)}</div>
+                        <strong>${esc(r.text || '')}</strong>
+                        <div class="tag-row" style="margin-top:4px;">
+                            ${r.speaker ? `<span class="tag">${esc(r.speaker)}</span>` : ''}
+                            <span class="tag">${esc(r.position || 'bottom')}</span>
+                            ${r.is_cc ? '<span class="badge">CC</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="openSubtitle('${r.id}')">Edit</button>
+                        <button class="btn btn-secondary btn-sm" onclick="deleteSubtitle('${r.id}')">Delete</button>
+                    </div>
+                </div>
+            </div>`).join('');
+    }
+
+    function openSubtitle(id) {
+        const r = id ? (state.subtitleRows || []).find(x => x.id === id) || {} : {};
+        const lang = (document.getElementById('subtitleLang') || {}).value || 'en';
+        showModalHtml('subtitleModal', `
+            <div class="modal-header">
+                <h3>${id ? 'Edit cue' : 'New cue'}</h3>
+                <button class="modal-close" onclick="closeModal('subtitleModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group"><label>Text</label>
+                    <textarea id="subText" data-field="text" rows="2" maxlength="1000">${esc(r.text || '')}</textarea></div>
+                <div class="form-group"><label>Start (seconds)</label>
+                    <input type="number" id="subStart" data-field="start_ms" min="0" step="0.01"
+                           value="${((r.start_ms || 0) / 1000).toFixed(2)}"></div>
+                <div class="form-group"><label>End (seconds)</label>
+                    <input type="number" id="subEnd" data-field="end_ms" min="0" step="0.01"
+                           value="${((r.end_ms || 0) / 1000).toFixed(2)}"></div>
+                <div class="form-group"><label>Language</label>
+                    <input type="text" id="subLang" data-field="language" maxlength="10" value="${esc(r.language || lang)}"
+                           placeholder="e.g. en, fr, pt-BR"></div>
+                <div class="form-group"><label>Speaker</label>
+                    <input type="text" id="subSpeaker" data-field="speaker" maxlength="100" value="${esc(r.speaker || '')}"
+                           placeholder="Who is talking — shown in closed captions"></div>
+                <div class="form-group"><label>Position</label>
+                    <select id="subPosition" data-field="position">
+                        ${['bottom', 'top', 'middle'].map(v =>
+                            `<option value="${v}"${(r.position || 'bottom') === v ? ' selected' : ''}>${v}</option>`).join('')}
+                    </select>
+                    <span class="text-sm text-muted">Where on screen it sits. Top is for a cue that would cover a face.</span></div>
+                <div class="form-group"><label>Shot</label>
+                    <select id="subShot" data-field="shot_id">
+                        <option value="">Not tied to a shot</option>
+                        ${SUB_SHOTS.map(sh => `<option value="${esc(sh.id)}"${sh.id === r.shot_id ? ' selected' : ''}>`
+                            + `${esc(sh.shot_code || sh.id)}</option>`).join('')}
+                    </select>
+                    <span class="text-sm text-muted">Optional. Tying a cue to its shot is what lets a
+                        re-cut carry the caption with the picture instead of leaving it at a timecode.</span></div>
+                <div class="form-group"><label>Style</label>
+                    <input type="text" id="subStyle" data-field="style" maxlength="500" value="${esc(r.style || '')}"></div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="subCC" data-field="is_cc" ${r.is_cc ? 'checked' : ''}>
+                        Closed caption</label>
+                    <span class="text-sm text-muted">A caption describes sound as well as speech; a subtitle carries the words only.</span></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('subtitleModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveSubtitle(${id ? `'${id}'` : 'null'})">Save</button>
+            </div>`);
+    }
+
+    async function saveSubtitle(id) {
+        const v = i => (document.getElementById(i) || {}).value;
+        const body = {
+            text: v('subText'),
+            start_ms: Math.round((Number(v('subStart')) || 0) * 1000),
+            end_ms: Math.round((Number(v('subEnd')) || 0) * 1000),
+            language: v('subLang') || 'en',
+            speaker: v('subSpeaker'),
+            position: v('subPosition'),
+            style: v('subStyle'),
+            shot_id: v('subShot') || null,
+            is_cc: !!(document.getElementById('subCC') || {}).checked,
+        };
+        if (!body.text) return setStatus('A cue needs its text');
+        // Refused here rather than at the route, because a zero-length cue is
+        // invisible in playback and looks like the save failed.
+        if (body.end_ms <= body.start_ms) return setStatus('A cue has to end after it starts');
+        try {
+            await api(id ? `/subtitles/${id}` : `/projects/${state.currentProject.id}/subtitles`,
+                { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+            closeModal('subtitleModal');
+            setStatus(id ? 'Cue updated' : 'Cue added');
+            loadSubtitles();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteSubtitle(id) {
+        if (!confirm('Remove this cue?')) return;
+        try { await api(`/subtitles/${id}`, { method: 'DELETE' }); loadSubtitles(); setStatus('Cue removed'); }
+        catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function exportSubtitles(fmt) {
+        const lang = (document.getElementById('subtitleLang') || {}).value || 'en';
+        // Opened rather than fetched: the route answers with a file, and the
+        // artifact sandbox aside, a browser download is what a person wants here.
+        window.open(`${API_BASE}/projects/${state.currentProject.id}/subtitles/export/${fmt}`
+            + `?language=${encodeURIComponent(lang)}`, '_blank');
+    }
+
     /** Where a marketing picture is served from — the same place plates live. */
     function marketingImgSrc(a) {
         const name = String(a.image_path || '').split('/').pop();
@@ -36253,7 +36681,7 @@ ${fountainText.slice(0, 50000)}`;
     { id:'production', label:'Production',     blurb:'Run the pipeline: picture, voice, score.',
       pages:['shotboard','videoshots','music','musiccues','playback','pipeline','flows'] },
     { id:'post',       label:'Post',           blurb:'Export it, and keep the files straight.',
-      pages:['exportpage','marketing','assets','jobsqueue','renderhistory'] }
+      pages:['exportpage','titles','subtitles','marketing','assets','jobsqueue','renderhistory'] }
   ];
   var RAIL = [
     { id:'dashboard', label:'Home',  icon:'M3 7.5L9 3l6 4.5V15H3V7.5Z' },

@@ -261,3 +261,89 @@ test('the cue rights editor sends every field the route accepts, from the served
             `the rights editor hardcodes the licence status "${v}" instead of rendering the served vocabulary`);
     }
 });
+
+test('the delivery pages reach every field their routes accept', () => {
+    /*
+     * Credits, title cards and subtitles all shipped their routes with the
+     * delivery work and none of them shipped a page, so a credit's role, a
+     * card's hold and a cue's language could only be written by curl or by an
+     * agent. Derived from the routes, so a field added later is covered.
+     *
+     * Checked three ways per surface, because each fails differently: the page
+     * exists, the editor sends the field, and the vocabulary is served rather
+     * than typed into the page.
+     */
+    const page = ownScript();
+    const surfaces = [
+        { route: 'credits.js', fn: 'createCredit', saver: 'saveCredit', nav: 'titles' },
+        { route: 'credits.js', fn: 'createTitleCard', saver: 'saveTitleCard', nav: 'titles' },
+        { route: 'subtitles.js', fn: 'createSubtitle', saver: 'saveSubtitle', nav: 'subtitles' },
+    ];
+
+    for (const sf of surfaces) {
+        assert.ok(new RegExp(`data-page="${sf.nav}"`).test(PAGE), `no nav button for ${sf.nav}`);
+        assert.ok(new RegExp(`id="page-${sf.nav}"`).test(PAGE), `no page markup for ${sf.nav}`);
+
+        const src = fs.readFileSync(path.join(__dirname, '..', 'routes', sf.route), 'utf8');
+        const at = src.indexOf(`function ${sf.fn}`);
+        assert.ok(at > -1, `${sf.fn} is gone from ${sf.route}`);
+        const routeBody = src.slice(at, src.indexOf('\nfunction ', at + 10));
+        const fields = [...new Set([...routeBody.matchAll(/body\.([a-z_]+)/g)].map(m => m[1]))]
+            .filter(f => f !== 'project_id');
+        assert.ok(fields.length >= 5, `${sf.fn}: only ${fields.length} fields found — the scan is not reading the route`);
+
+        const sAt = page.indexOf(`async function ${sf.saver}`);
+        assert.ok(sAt > -1, `${sf.saver} does not exist — the page cannot save this`);
+        const saver = page.slice(sAt, page.indexOf('\n    async function ', sAt + 10));
+        for (const f of fields) {
+            assert.ok(new RegExp(`${f}\\s*:`).test(saver),
+                `${sf.saver} never sends ${f} — the route accepts it and nothing on the page can set it`);
+        }
+    }
+
+    /*
+     * The vocabularies, served rather than retyped. `sections` and `card_types`
+     * are validated on the way in, so a page holding its own copy offers values
+     * the route silently coerces or refuses.
+     */
+    const credits = fs.readFileSync(path.join(__dirname, '..', 'routes', 'credits.js'), 'utf8');
+    /*
+     * Bound to the LIST handlers the page actually calls. credits.js answers
+     * with a credit list from two places, so a file-wide check passes while the
+     * one the editor reads serves nothing.
+     */
+    for (const [fn, key, constant] of [['listCredits', 'sections', 'VALID_SECTIONS'],
+                                       ['listTitleCards', 'card_types', 'VALID_CARD_TYPES']]) {
+        const at = credits.indexOf(`function ${fn}`);
+        assert.ok(at > -1, `${fn} is gone from credits.js`);
+        const body = credits.slice(at, credits.indexOf('\nfunction ', at + 10));
+        assert.ok(new RegExp(`${key}:\\s*${constant}`).test(body),
+            `${fn} does not serve its vocabulary, so the editor has nothing to build its options from`);
+    }
+    assert.ok(/vocabOptions\(TITLE_VOCAB\.sections/.test(page),
+        'the credit editor does not build its sections from the served vocabulary');
+    assert.ok(/vocabOptions\(TITLE_VOCAB\.card_types/.test(page),
+        'the title-card editor does not build its types from the served vocabulary');
+});
+
+test('every page in the menu has a loader', () => {
+    /*
+     * A page can have a nav button, page markup and a place in both copies of
+     * the grouping, and still open EMPTY because nothing is registered to fill
+     * it — which reads as a broken feature rather than a missing wire, since
+     * the button works and the panel appears.
+     *
+     * Derived from the server's own map, so a page added later is covered.
+     */
+    const { NAV_FLOW, ALWAYS_AVAILABLE } = require('../lib/nav-flow');
+    const src = ownScript();
+    const at = src.indexOf('const PAGE_LOAD');
+    const mapAt = at > -1 ? at : src.search(/\b\w+\s*=\s*\{[^}]*dashboard:\s*load/);
+    assert.ok(mapAt > -1, 'the page-loader map cannot be found — this check is looking at the wrong thing');
+    const map = src.slice(mapAt, src.indexOf('};', mapAt));
+
+    const pages = [...Object.values(NAV_FLOW).flatMap(g => g.pages), ...ALWAYS_AVAILABLE];
+    const noLoader = pages.filter(pg => !new RegExp(`\\b${pg}\\s*:`).test(map));
+    assert.deepEqual(noLoader, [],
+        `these pages are in the menu with nothing registered to fill them, so they open empty: ${noLoader.join(', ')}`);
+});

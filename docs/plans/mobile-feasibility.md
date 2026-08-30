@@ -97,7 +97,7 @@ the LAN is a decision for whoever owns the network, not a side effect of a feasi
 
 ---
 
-## 3. Which of the 29 pages is phone work?
+## 3. Which of the 31 pages is phone work?
 
 The design question, and the answer is not "all of them". Classified by what the page asks a
 person to *do*:
@@ -109,10 +109,11 @@ this frame right, is that plate the character, what is running, add a note, capt
 while it is in your head. The style book in particular is a phone feature that happens to live
 on a desktop — you think of an angle away from the desk.
 
-**Read-only on a phone, edited elsewhere (9).**
+**Read-only on a phone, edited elsewhere (11).**
 `scenes`, `milestones`, `budget`, `assets`, `renderhistory`, `provenance`, `rights`,
-`musiccues`, `production`. Useful to check, painful to edit with a thumb, and nothing is lost by
-making them read-only.
+`musiccues`, `production`, `titles`, `subtitles`. Useful to check, painful to edit with a thumb,
+and nothing is lost by making them read-only. `titles` and `subtitles` are the clearest case of
+that shape: a credit roll and a cue list are read to check a spelling, and typed with a keyboard.
 
 **Desktop only, and that is correct (18).**
 `screenplay` (a full-page editor with pagination), `previs` (a 3D stage with six-axis drag),

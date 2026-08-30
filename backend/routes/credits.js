@@ -85,7 +85,7 @@ function listCredits(req, res, projectId, query) {
 
     const rows = db.prepare(sql).all(...params);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ credits: rows, count: rows.length }));
+    res.end(JSON.stringify({ credits: rows, count: rows.length, sections: VALID_SECTIONS }));
 }
 
 function createCredit(req, res, projectId) {
@@ -209,7 +209,7 @@ function reorderCredits(req, res, projectId) {
 
     const rows = db.prepare('SELECT * FROM film_credits WHERE project_id = ? ORDER BY section, sort_order').all(projectId);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ credits: rows, count: rows.length }));
+    res.end(JSON.stringify({ credits: rows, count: rows.length, sections: VALID_SECTIONS }));
 }
 
 // --- Title Cards ---
@@ -217,7 +217,7 @@ function reorderCredits(req, res, projectId) {
 function listTitleCards(req, res, projectId) {
     const rows = db.prepare('SELECT * FROM film_title_cards WHERE project_id = ? ORDER BY sort_order').all(projectId);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ title_cards: rows, count: rows.length }));
+    res.end(JSON.stringify({ title_cards: rows, count: rows.length, card_types: VALID_CARD_TYPES }));
 }
 
 function createTitleCard(req, res, projectId) {
