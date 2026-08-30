@@ -62,6 +62,8 @@ const DRAFT_FLOORS = {
     seedance2_5:    { width: 1280, height: 720,
         why: 'reached through RUNWAY, Seedance documents 1280:720 as its smallest — the 480p tier is on the MuAPI adapter, which is a different provider choice' },
     hailuo3:       { width: 1280, height: 720, why: 'Hailuo 3 documents 720P as its smallest' },
+    'gridlight-video': { width: 1280, height: 720, why: 'a swappable local agent — what it runs '
+        + 'is unknowable from here, so the conservative floor every adapter documents is used' },
 };
 
 const DEFAULT_FLOOR = { width: 1280, height: 720, why: 'no floor is declared for this model, so the '

@@ -295,6 +295,35 @@ function filmOpticsFor(project) {
     } catch (_) { return {}; }
 }
 
+/**
+ * The model a project's footage will actually be generated with.
+ *
+ * THE MISSING LINK in the draft path. `draftFrameFor` is keyed by model, and a
+ * video payload carries `model` only when a caller passes `opts.model` -- so
+ * the lookup was handed `undefined` on every ordinary generation, missed the
+ * floor for the resolved provider entirely and fell to DEFAULT_FLOOR. On a
+ * Seedance project that meant drafting reported itself active while the request
+ * went to the 720p endpoint at twice the draft rate, silently.
+ *
+ * Resolved from the ADAPTER rather than mapped provider-to-model here: a table
+ * in this file would be a second statement of which model a provider runs, and
+ * the two would disagree the first time a default changed. Follows
+ * imagePromptLimit exactly -- lazy require to avoid a cycle, guarded, and
+ * undefined on failure, because a draft floor that cannot be resolved must
+ * never take down a generation.
+ */
+function videoDraftModel(project) {
+    try {
+        const { resolveGenerator } = require('./providers');
+        let config = {};
+        try { config = JSON.parse((project && project.provider_config) || '{}'); } catch (_) { config = {}; }
+        const adapter = resolveGenerator('video', config);
+        return (adapter && adapter.defaultModel) || undefined;
+    } catch (_) {
+        return undefined;
+    }
+}
+
 function imagePromptLimit(project) {
     try {
         const { resolveGenerator } = require('./providers');
@@ -549,7 +578,14 @@ const CAPABILITY_BUILDERS = {
             const stated = String((ctx.sceneCard && ctx.sceneCard.aspect_ratio)
                 || ctx.project.aspect_ratio || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/);
             const ratioHint = stated ? Number(stated[1]) / Number(stated[2]) : null;
-            const draft = draftFrameFor(built.model || overrides.model, {
+            /*
+             * The model, in precedence order: what this generation explicitly
+             * asked for, then what the project's own resolved provider runs.
+             * Without the last term the floor for the resolved provider is
+             * never consulted at all.
+             */
+            const draftModel = built.model || overrides.model || videoDraftModel(ctx.project);
+            const draft = draftFrameFor(draftModel, {
                 width: built.width, height: built.height,
             }, ratioHint);
             built.width = draft.width;

@@ -171,6 +171,16 @@ const gridlightAdapter = {
     supportsNegativePrompt: 'native',
     supportsSeed: true,
     capabilities: Object.keys(ENDPOINTS),
+
+    /*
+     * Named so the draft path can find a floor for it.
+     *
+     * A swappable local agent: what it actually runs is unknowable from here,
+     * so it is held at the conservative floor rather than assumed to reach a
+     * tier it may not have -- over-asking is a rejection that costs a
+     * generation, the same asymmetry promptLimit and maxReferenceImages follow.
+     */
+    defaultModel: 'gridlight-video',
     // Gridlight receives the capability payload verbatim, including
     // reference_images and ip_adapter_image, so references survive the hop.
     /*

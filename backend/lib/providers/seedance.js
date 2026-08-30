@@ -420,6 +420,21 @@ const seedanceAdapter = {
     requiresKey: true,
     capabilities: ['video', 'post'],
 
+    /*
+     * The model this adapter generates with, named so the DRAFT path can find
+     * its floor.
+     *
+     * `draftFrameFor` is keyed by model, and a video payload carries a model
+     * only when a caller passes one -- so without this the lookup received
+     * `undefined`, missed the 480p entry and fell to the conservative 720p
+     * default. Drafting reported itself active and the clip was billed at twice
+     * the draft rate, silently.
+     *
+     * 2.5 explicitly: `seedance2` (2.0) is a different product at different
+     * rates that documents no 480p tier at all.
+     */
+    defaultModel: 'seedance-2.5',
+
     // Thirty. This is the reason it is here: Runway takes two.
     maxKeyframes: MAX_KEYFRAMES,
     keyframeNote: 'The seedance-2.5-omni-reference endpoint accepts up to 30 reference images '

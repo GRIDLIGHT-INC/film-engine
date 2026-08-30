@@ -334,6 +334,7 @@ film-engine/
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── video-model-contracts.test.js # Rates, reference contracts, tiers, and the picture an agent can see
 │       ├── seedance-post.test.js       # The 4K finishing pass: a provider for post at all
+│       ├── seedance-tiers.test.js      # 480p draft and 4K finish, traced to a real Seedance 2.5 URL
 │       ├── video-surfaces.test.js      # A capability with no control does not exist
 │       ├── provider-image-encoding.test.js # A bare base64 blob is not an image a provider accepts
 │       ├── music-prompt.test.js        # Music prompt unit tests
@@ -3326,6 +3327,7 @@ node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/video-model-contracts.test.js
 node --test backend/tests/seedance-post.test.js
+node --test backend/tests/seedance-tiers.test.js
 node --test backend/tests/video-surfaces.test.js
 node --test backend/tests/provider-image-encoding.test.js
 node --test backend/tests/music-prompt.test.js

@@ -739,6 +739,9 @@ const adapter = {
     supportsNegativePrompt: 'folded',
     supportsSeed: false,
     capabilities: ['video', 'image'],
+    // Named so the draft path can find this model's floor; Runway documents
+    // 1280:720 as gen4.5's smallest ratio, so a Runway draft is 720p.
+    defaultModel: DEFAULT_VIDEO_MODEL,
     // gen4_image takes up to three { uri, tag } references and lets the prompt
     // name them, which is what makes @tags meaningful here.
     supportsReferenceImages: true,
