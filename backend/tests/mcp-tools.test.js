@@ -336,6 +336,12 @@ const CREATE_DELETE_PAIRS = [
     // A deliverable is a planned file; one an agent can add and not remove makes
     // a mis-scoped placement permanent, and the set is what decides which shots
     // get shot twice.
+    // A brand kit is a library entry an agent can add; one it cannot remove
+    // makes a mis-typed kit permanent across every future spot for that client.
+    { create: 'brand_create', remove: 'brand_delete' },
+    // A claim is evidence somebody signed. An agent that can record one and not
+    // remove it turns a first draft into a standing legal assertion.
+    { create: 'claim_create', remove: 'claim_delete' },
     { create: 'deliverable_create', remove: 'deliverable_delete' },
     { create: 'character_create',  remove: 'character_delete' },
     { create: 'location_create',   remove: 'location_delete' },

@@ -179,11 +179,23 @@ function deriveProjectSwitches() {
         let a;
         while ((a = re.exec(s))) known.add(a[1]);
     }
+    /*
+     * Matched as a COLUMN, not as a word.
+     *
+     * A bare `\bclient\b` finds `gridlight-client` in an import and the English
+     * word "client" in a comment, and then reports `film_projects:client` as a
+     * director decision the contract has failed to account for. A column is
+     * read as `project.x`, `row.x`, `.x` off some record, or named in SQL — and
+     * nothing else counts, because everything else is prose.
+     */
     const used = new Set();
     for (const f of files) {
         const src = readCode(f);
         for (const col of known) {
-            if (new RegExp(`\\b${col}\\b`).test(src)) used.add(col);
+            const asProperty = new RegExp(`\\.\\s*${col}\\b`);
+            const inSql = new RegExp(`(SELECT|,|\\s)\\s*${col}\\s*(,|\\s+FROM|=)`, 'i');
+            const asKey = new RegExp(`(^|[^\\w.])${col}\\s*:`, 'm');
+            if (asProperty.test(src) || inSql.test(src) || asKey.test(src)) used.add(col);
         }
     }
     // Locks and pointers are project state, not per-shot creative decisions.

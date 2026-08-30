@@ -248,6 +248,38 @@ function updateProject(req, res, id) {
         fields.push('style_preset = ?');
         values.push(String(body.style_preset).trim().slice(0, 2000));
     }
+    /*
+     * Commercial mode. A spot is a job for a CLIENT on a CAMPAIGN, with a brand
+     * kit that outlives it and a runtime it is bought at — and every one of
+     * those is expensive to discover late, which is why they belong on the
+     * project rather than being inferred.
+     *
+     * `target_duration_ms` of 0 is "no target", which is every film ever made
+     * in this tool and must stay the behaviour of a project that never sets one.
+     * `brand_id` of '' unlinks; the two states are genuinely different.
+     */
+    if (body.client !== undefined) {
+        fields.push('client = ?');
+        values.push(String(body.client).trim().slice(0, 200));
+    }
+    if (body.campaign !== undefined) {
+        fields.push('campaign = ?');
+        values.push(String(body.campaign).trim().slice(0, 200));
+    }
+    if (body.brand_id !== undefined) {
+        fields.push('brand_id = ?');
+        values.push(String(body.brand_id || '').trim());
+    }
+    if (body.target_duration_ms !== undefined) {
+        const ms = Number(body.target_duration_ms);
+        if (!Number.isFinite(ms) || ms < 0) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'target_duration_ms must be a non-negative number of milliseconds (0 = no target)' }));
+        }
+        fields.push('target_duration_ms = ?');
+        values.push(Math.round(ms));
+    }
+
     // PAR-026: does markup on a frame reach the next prompt, or only inform a
     // human? Per project, and off unless someone says otherwise — see
     // migration 072 and lib/annotation-prompt.js.

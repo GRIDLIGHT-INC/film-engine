@@ -133,10 +133,32 @@ function buildRunPlan(projectId, options) {
     let switches = 0;
     for (let i = 1; i < sequence.length; i++) if (sequence[i] !== sequence[i - 1]) switches++;
 
+    /*
+     * COMPLIANCE REFUSES BEFORE SPEND, never after.
+     *
+     * An automated pipeline can put "clinically proven" into a paid
+     * advertisement in seconds, and after generation the money is gone and the
+     * frames exist. So the gate lives here, in the FREE plan, beside the budget
+     * refusal and for the same reason: a ceiling you discover on the ledger is
+     * not a ceiling.
+     *
+     * ERRORS block; warnings do not. A warning that stops a run makes the check
+     * something people switch off, and the real one goes with it.
+     *
+     * Passable with `ignore_compliance`, on the precedent every other gate here
+     * follows -- a refusal you cannot get past is a reason never to record a
+     * brand at all. And it never throws: this runs inside the surface that
+     * exists to stop money being spent.
+     */
+    const compliance = complianceFor(projectId);
+    const blockedByCompliance = !opts.ignore_compliance && compliance.blocks;
+
     return {
         project_id: projectId,
         order,
         order_rationale: PLAN_ORDERS[order],
+        compliance: compliance.findings,
+        blocked_by_compliance: blockedByCompliance,
         strips,
         total_items: wanted.length,
         projected_cost: projected,
@@ -144,12 +166,42 @@ function buildRunPlan(projectId, options) {
         budget,
         // Refused BEFORE anything generates, which is the whole point of
         // projecting cost rather than discovering it on the ledger.
-        refused: !opts.ignore_budget && budget.wouldExceed,
+        refused: (!opts.ignore_budget && budget.wouldExceed) || blockedByCompliance,
         // Said out loud: work skipped is money saved, and a plan that hides it
         // looks more expensive than it is.
         skipped,
         alternates: Object.keys(PLAN_ORDERS).filter(o => o !== order),
     };
+}
+
+/**
+ * The compliance findings for a project, gathered without ever throwing.
+ *
+ * A project with no brand and no claims -- every film in this tool -- produces
+ * no errors and does not block. A gate that fires on those is one switched off
+ * the day it ships, taking the real case with it.
+ */
+function complianceFor(projectId) {
+    try {
+        const { findingsFor, blocks } = require('./compliance');
+        const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
+        if (!project) return { findings: [], blocks: false };
+        const brand = project.brand_id
+            ? db.prepare('SELECT * FROM film_brands WHERE id = ?').get(project.brand_id) : null;
+        const script = db.prepare(
+            'SELECT content FROM film_scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1')
+            .get(projectId);
+        const findings = findingsFor({
+            script: (script && script.content) || '',
+            brand,
+            claims: db.prepare('SELECT * FROM film_claims WHERE project_id = ?').all(projectId),
+            rights: db.prepare('SELECT * FROM film_rights WHERE project_id = ?').all(projectId),
+            deliverables: db.prepare('SELECT * FROM film_deliverables WHERE project_id = ?').all(projectId),
+        });
+        return { findings, blocks: blocks(findings) };
+    } catch (_) {
+        return { findings: [], blocks: false };
+    }
 }
 
 /** One strip per step, in the topological order PIPELINE_STEPS already declares. */
@@ -179,4 +231,5 @@ function stripsByShot(wanted, shots) {
     return out;
 }
 
-module.exports = { buildRunPlan, PLAN_ORDERS, GENERATIVE_STEPS, STEP_CAPABILITY };
+module.exports = {
+    complianceFor, buildRunPlan, PLAN_ORDERS, GENERATIVE_STEPS, STEP_CAPABILITY };

@@ -61,6 +61,7 @@ const { handleThreeD } = require('../routes/threed');
 const { handleProductionReports } = require('../routes/production-reports');
 const { handleNLEExport } = require('../routes/nle-export');
 const { handleDeliverables } = require('../routes/deliverables');
+const { handleBrands } = require('../routes/brands');
 const { handleBudget } = require('../routes/budget');
 const { handleConsistency } = require('../routes/consistency');
 const { handleStoryBible } = require('../routes/story-bible');
@@ -810,6 +811,10 @@ const PRODUCTION_TOOLS = [
             return rest;
         },
         schema: {
+            client: { type: 'string', description: 'Commercial mode: who the spot is for. Groups spend by client in spend_report.' },
+            campaign: { type: 'string', description: 'Commercial mode: which campaign this spot belongs to.' },
+            brand_id: { type: 'string', description: 'A film_brands row. The kit outlives the project; \'\' unlinks.' },
+            target_duration_ms: { type: 'number', description: 'The runtime this spot is BOUGHT at, exactly. A conform that misses it by more than a frame REFUSES rather than trimming. 0 means no target, which is every film.' },
             project_id: { type: 'string' },
             style_preset: { type: 'string', description: 'The visual look applied to every prompt.' },
             aspect_ratio: { type: 'string', description: 'Delivery frame, e.g. "2.39:1", "16:9".' },
@@ -1979,6 +1984,109 @@ const PRODUCTION_TOOLS = [
         handler: handleProductionReports, method: 'GET',
         description: 'Every element grouped by type (characters, locations, props) with the scene count for each. `undescribed` is the actionable line: an element with no description reaches generation as a bare name, and every frame then invents its own version of it.',
         path: a => `/film/projects/${a.project_id}/elements-list`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'brand_list',
+        handler: handleBrands, method: 'GET',
+        description: 'Every brand kit, with the field registry that says what each field REACHES \u2014 a prompt, a compliance check, the Premiere handoff, or a person. A brand OUTLIVES a project, like the style book: one client buys many spots. Only tone and palette reach a generation; the CTA, the legal line and the fonts are words and type placed in Premiere, because asking a diffusion model for legible text bakes a smudge into a frame you paid for.',
+        path: () => '/film/brands',
+        schema: {}, required: [],
+    },
+    {
+        name: 'brand_get',
+        handler: handleBrands, method: 'GET',
+        description: 'One brand kit and the field registry.',
+        path: a => `/film/brands/${a.brand_id}`,
+        schema: { brand_id: { type: 'string' } }, required: ['brand_id'],
+    },
+    {
+        name: 'brand_create',
+        handler: handleBrands, method: 'POST',
+        description: 'Create a brand kit. Palette entries must be #rrggbb \u2014 a CSS colour NAME is understood by a browser and not agreed on by a print document, an export and a contrast calculation. cta_url must be http(s), because it is rendered as a link.',
+        path: () => '/film/brands',
+        body: a => ({ ...a }),
+        schema: {
+            name: { type: 'string' },
+            tone: { type: 'string', description: 'How the film should FEEL. The one brand field that is a look rather than a word, and it reaches the prompt.' },
+            palette: { type: 'string', description: 'JSON array of #rrggbb strings.' },
+            fonts: { type: 'string', description: 'JSON array of {role, family, weight}. Set in Premiere, never generated.' },
+            cta: { type: 'string' }, cta_url: { type: 'string' },
+            legal_line: { type: 'string' },
+            banned_phrases: { type: 'string', description: 'JSON array of phrases refused in the copy before anything generates.' },
+            logo_asset_id: { type: 'string' }, logo_clear_space: { type: 'string' },
+            approval_contact: { type: 'string' }, notes: { type: 'string' },
+        },
+        required: ['name'],
+    },
+    {
+        name: 'brand_update',
+        handler: handleBrands, method: 'PUT',
+        description: 'Change a brand kit. MERGES \u2014 a kit is a whole document, and a replace would drop what it was not asked about.',
+        path: a => `/film/brands/${a.brand_id}`,
+        body: a => { const b = { ...a }; delete b.brand_id; return b; },
+        schema: {
+            brand_id: { type: 'string' },
+            name: { type: 'string' }, tone: { type: 'string' }, palette: { type: 'string' },
+            fonts: { type: 'string' }, cta: { type: 'string' }, cta_url: { type: 'string' },
+            legal_line: { type: 'string' }, banned_phrases: { type: 'string' },
+            logo_asset_id: { type: 'string' }, logo_clear_space: { type: 'string' },
+            approval_contact: { type: 'string' }, notes: { type: 'string' },
+        },
+        required: ['brand_id'],
+    },
+    {
+        name: 'brand_delete',
+        handler: handleBrands, method: 'DELETE',
+        description: 'Delete a brand kit. It is shared across every project that points at it; those keep their pointer and lose the kit, and the count of them is reported.',
+        path: a => `/film/brands/${a.brand_id}`,
+        schema: { brand_id: { type: 'string' } }, required: ['brand_id'],
+    },
+    {
+        name: 'claim_list',
+        handler: handleBrands, method: 'GET',
+        description: 'Every claim recorded for this project and its substantiation. An objective claim in a paid advertisement has to be substantiated \u2014 FTC, the Competition Act, the CAP Code and the ACCC all require it \u2014 and an automated pipeline can put one on screen in seconds, which is why the evidence is a ROW SOMEBODY SIGNED rather than a memory.',
+        path: a => `/film/projects/${a.project_id}/claims`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'claim_create',
+        handler: handleBrands, method: 'POST',
+        description: 'Record a claim and its evidence. Status starts unsubstantiated: a row that EXISTS does not clear the compliance gate, only a SUBSTANTIATED one does, because a record is not evidence.',
+        path: a => `/film/projects/${a.project_id}/claims`,
+        body: a => ({ claim: a.claim, substantiation: a.substantiation, status: a.status, approved_by: a.approved_by }),
+        schema: {
+            project_id: { type: 'string' }, claim: { type: 'string' },
+            substantiation: { type: 'string' },
+            status: { type: 'string', description: 'unsubstantiated, substantiated or withdrawn.' },
+            approved_by: { type: 'string' },
+        },
+        required: ['project_id', 'claim'],
+    },
+    {
+        name: 'claim_update',
+        handler: handleBrands, method: 'PUT',
+        description: 'Change a claim or mark it substantiated. Marking it substantiated is what clears the gate, so it is a deliberate act with a name against it.',
+        path: a => `/film/claims/${a.claim_id}`,
+        body: a => { const b = { ...a }; delete b.claim_id; return b; },
+        schema: {
+            claim_id: { type: 'string' }, claim: { type: 'string' },
+            substantiation: { type: 'string' }, status: { type: 'string' }, approved_by: { type: 'string' },
+        },
+        required: ['claim_id'],
+    },
+    {
+        name: 'claim_delete',
+        handler: handleBrands, method: 'DELETE',
+        description: 'Remove a claim row. The COPY is untouched \u2014 deleting the evidence does not delete the claim from the script, so the compliance gate will flag that line again on the next run. Withdraw it instead if the claim itself is being dropped.',
+        path: a => `/film/claims/${a.claim_id}`,
+        schema: { claim_id: { type: 'string' } }, required: ['claim_id'],
+    },
+    {
+        name: 'compliance_check',
+        handler: handleBrands, method: 'GET',
+        description: 'FREE. What is wrong with this spot BEFORE anything generates: a phrase the brand forbids, an objective claim with no substantiated row, a generated performer presented as a real customer, an uncleared or expired right. ERRORS block a run and warnings do not \u2014 a warning that stops a run makes the check something people switch off. Read this before run_plan: after generation the money is gone and the frames exist.',
+        path: a => `/film/projects/${a.project_id}/compliance`,
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {

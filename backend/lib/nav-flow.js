@@ -34,7 +34,12 @@
  * films — so a library that outlives every project does not belong inside the
  * workflow of one.
  */
-const ALWAYS_AVAILABLE = ['dashboard', 'settings', 'stylebook'];
+/*
+ * `brand` sits here for the reason the style book does: a brand kit accumulates
+ * across films. One client buys many spots, and a kit scoped to a project is
+ * one that is re-uploaded every time that client comes back.
+ */
+const ALWAYS_AVAILABLE = ['dashboard', 'settings', 'stylebook', 'brand'];
 
 /**
  * Group -> the pages it holds, in the order they are worked in.

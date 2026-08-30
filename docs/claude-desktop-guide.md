@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**220 tools, 53 families.** Everything the app can do, you can ask for in a
+**230 tools, 56 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -352,7 +352,21 @@ leg at a time. `sequence_generate_native` is a different Runway operation: one
 `node_in_prompt` · `node_in_asset` · `node_in_scene` · `node_in_subject` ·
 `node_in_stock` · `run_plan` · `run_report` · `export_preflight` · `export_package` ·
 `deliverable_list` · `deliverable_plan` · `deliverable_create` · `deliverable_update` ·
-`deliverable_delete` · `deliverable_check`
+`deliverable_delete` · `deliverable_check` · `brand_list` · `brand_get` ·
+`brand_create` · `brand_update` · `brand_delete` · `claim_list` · `claim_create` ·
+`claim_update` · `claim_delete` · `compliance_check`
+
+**Before you spend on a spot, read `compliance_check`.** It is free, and it is
+where an automated pipeline gets a client sued: it catches a phrase the brand
+forbids, an objective claim with no substantiated row, a generated performer
+presented as a real customer, and a right that is uncleared or expired. Errors
+block `run_plan`; warnings do not. Only a **substantiated** claim row clears a
+claim — a row that merely exists is a record, not evidence.
+
+A brand kit outlives a project. Only its **tone** and **palette** reach a
+generation; the CTA, the legal line and the fonts are words and type placed in
+Premiere, because asking a diffusion model for legible text bakes a smudge into
+a frame you paid for.
 
 **A commercial is a fan-out, not a short film.** A film has one shape; a spot
 resolves to fourteen to twenty-two files. `deliverable_plan` applies a package

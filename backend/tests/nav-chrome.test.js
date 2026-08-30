@@ -33,6 +33,15 @@ test('the rail buttons are in the top bar, not the body', () => {
     assert.ok(!/document\.body\.appendChild\(rail\)/.test(html));
 });
 
+/** The rail array, whole, however many entries it grows to carry. */
+function railSource(html) {
+    const at = html.indexOf('var RAIL = [');
+    assert.ok(at > 0, 'the rail is gone');
+    const end = html.indexOf('];', at);
+    assert.ok(end > at, 'the rail array does not close');
+    return html.slice(at, end);
+}
+
 test('the search that was not a search is gone', () => {
     // The element and its styles, not the comment explaining why they went.
     assert.ok(!/class="fe-search"|\.fe-search/.test(html), 'the pill or its styles survive');
@@ -42,14 +51,26 @@ test('the search that was not a search is gone', () => {
 test('everything the removed pill reached is still reachable', () => {
     // Its only behaviour was opening the glossary, and the sidebar link to the
     // glossary is display:none in this layout.
-    const rail = html.slice(html.indexOf('var RAIL = ['), html.indexOf('var RAIL = [') + 1400);
+    /*
+     * Bounded by the ARRAY, not by a character count. A fixed 1400-character
+     * window stopped containing the glossary the moment a brand entry was added
+     * above it — reading here as the glossary having lost its only entrance,
+     * which is the opposite of what happened.
+     */
+    const rail = railSource(html);
     assert.match(rail, /id:'glossary'/, 'the glossary has no entrance left');
     assert.match(html, /r\.id === 'glossary'/, 'the glossary button is wired to nothing');
 });
 
 test('every rail button reaches something', () => {
     // A button wired to nothing looks identical to a working one until clicked.
-    const rail = html.slice(html.indexOf('var RAIL = ['), html.indexOf('var RAIL = [') + 1400);
+    /*
+     * Bounded by the ARRAY, not by a character count. A fixed 1400-character
+     * window stopped containing the glossary the moment a brand entry was added
+     * above it — reading here as the glossary having lost its only entrance,
+     * which is the opposite of what happened.
+     */
+    const rail = railSource(html);
     const ids = [...rail.matchAll(/id:'([a-z]+)'/g)].map(m => m[1]);
     assert.ok(ids.length >= 5, `only ${ids.length} rail buttons found`);
     for (const id of ids) {

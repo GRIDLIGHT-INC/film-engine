@@ -4631,6 +4631,9 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <span class="nav-icon">&#9654;</span> Playback
                 </button>
                 <!-- ==== CLAUDE:END ==== -->
+                <button class="nav-item" data-page="brand" onclick="navigateTo('brand')" data-tooltip="Brand kits — they outlive a project, like the style book" data-tooltip-pos="right">
+                    <span class="nav-icon">&#127991;</span> Brand
+                </button>
                 <button class="nav-item" data-page="deliverables" onclick="navigateTo('deliverables')" data-tooltip="One row per file that leaves the job — and which ratios must be shot, not cropped" data-tooltip-pos="right">
                     <span class="nav-icon">&#128230;</span> Deliverables
                 </button>
@@ -5524,6 +5527,21 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 
         <!-- ── ACTS (FILM-146) ─────────────────────────────────── -->
         <!-- ── MARKETING ──────────────────────────────────────── -->
+        <div class="page" id="page-brand">
+            <div class="flex-between mb-16">
+                <h2>Brand</h2>
+                <button class="btn btn-primary" onclick="openBrand()">+ Brand</button>
+            </div>
+            <p class="text-sm text-muted mb-8">
+                A brand kit <strong>outlives a project</strong>, like the style book: one client buys
+                many spots, and a kit that dies with the job is one you re-upload every time they come
+                back. Each field says what it reaches &mdash; a prompt, a compliance check, the
+                Premiere handoff, or a person &mdash; because a field that looks like it conditions
+                the frame and does not is worse than one that is absent.
+            </p>
+            <div id="brandList"></div>
+        </div>
+
         <div class="page" id="page-deliverables">
             <div class="flex-between mb-16">
                 <h2>Deliverables</h2>
@@ -6253,6 +6271,42 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                   the field that once put a flayed quadruped in an establishing
                   shot whose card reads "Empty, ordinary, still."
                 -->
+                <!--
+                    Commercial mode. A spot is a job for a client on a campaign,
+                    and both group the spend: spend_report rolls up by client,
+                    which is contribution margin per creative. Blank on a film,
+                    which is what every project here is until somebody says
+                    otherwise.
+                -->
+                <div class="form-group">
+                    <label>Client</label>
+                    <input type="text" id="settingsClient" data-field="client" maxlength="200"
+                           placeholder="Who the spot is for — blank for a film">
+                </div>
+                <div class="form-group">
+                    <label>Campaign</label>
+                    <input type="text" id="settingsCampaign" data-field="campaign" maxlength="200"
+                           placeholder="Which campaign this spot belongs to">
+                </div>
+                <div class="form-group">
+                    <label>Spot runtime (seconds)</label>
+                    <input type="number" id="settingsTargetDuration" data-field="target_duration_ms"
+                           min="0" step="0.1" placeholder="0 — no target">
+                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                        The length this spot is <strong>bought</strong> at. A conform that misses it by
+                        more than a frame <strong>refuses</strong> rather than trimming &mdash; a :30 that
+                        arrives at 31.4s is rejected by the station, and one at 29.6s has paid for airtime
+                        it did not use. Leave it at 0 for a film, which runs as long as it runs.
+                    </p>
+                </div>
+                <div class="form-group">
+                    <label>Brand kit</label>
+                    <select id="settingsBrand" data-field="brand_id"></select>
+                    <p class="text-sm text-muted" style="margin-top:6px;">
+                        Kits live in <strong>Brand</strong> and outlive this project.
+                    </p>
+                </div>
+
                 <div class="form-group">
                     <label>Style preset &mdash; the look every frame is generated in</label>
                     <textarea id="settingsStylePreset" data-field="style_preset" rows="3"
@@ -16796,6 +16850,7 @@ THREE.GLTFLoader = GLTFLoader;
              * link — which land on a panel nobody filled.
              */
             jobsqueue: loadJobsQueuePage,
+            brand: loadBrands,
             deliverables: loadDeliverables,
             rights: loadRights,
             titles: loadTitles,
@@ -27302,6 +27357,19 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
+
+    /** The brand kits this install has, so a spot can be attached to one. */
+    async function loadSettingsBrands() {
+        const sel = document.getElementById('settingsBrand');
+        if (!sel) return;
+        let data;
+        try { data = await api('/brands'); } catch (_) { return; }
+        const current = (state.currentProject && state.currentProject.brand_id) || '';
+        sel.innerHTML = '<option value="">No brand — this is a film</option>'
+            + (data.brands || []).map(b =>
+                `<option value="${esc(b.id)}"${b.id === current ? ' selected' : ''}>${esc(b.name)}</option>`).join('');
+    }
+
     async function loadRenderHistory() {
         const shotId = document.getElementById('renderShotSelect').value;
         if (!shotId) return;
@@ -27341,6 +27409,13 @@ ${fountainText.slice(0, 50000)}`;
             document.getElementById('settingsStyleWarning').innerHTML = '';
             document.getElementById('settingsGenre').value = state.currentProject.genre || '';
             document.getElementById('settingsStatus').value = state.currentProject.status || 'concept';
+            // Commercial mode. Blank on a film, which is every project here
+            // until somebody says otherwise.
+            document.getElementById('settingsClient').value = state.currentProject.client || '';
+            document.getElementById('settingsCampaign').value = state.currentProject.campaign || '';
+            document.getElementById('settingsTargetDuration').value =
+                state.currentProject.target_duration_ms ? (state.currentProject.target_duration_ms / 1000) : '';
+            loadSettingsBrands();
         } else {
             pc.classList.add('hidden');
         }
@@ -27779,6 +27854,12 @@ ${fountainText.slice(0, 50000)}`;
             genre: document.getElementById('settingsGenre').value.trim(),
             status: document.getElementById('settingsStatus').value,
             style_preset: document.getElementById('settingsStylePreset').value.trim(),
+            client: document.getElementById('settingsClient').value.trim(),
+            campaign: document.getElementById('settingsCampaign').value.trim(),
+            // Typed in seconds and stored in milliseconds, which is how a
+            // runtime is read and how everything else here measures.
+            target_duration_ms: Math.round((Number(document.getElementById('settingsTargetDuration').value) || 0) * 1000),
+            brand_id: document.getElementById('settingsBrand').value,
         };
         try {
             const p = await api('/projects/' + state.currentProject.id, { method: 'PUT', body: JSON.stringify(data) });
@@ -28244,6 +28325,149 @@ ${fountainText.slice(0, 50000)}`;
     /** The served URL for a continuity photograph, keyed to the asset that holds it. */
     const MARKETING_TYPE_ICON = { poster: '&#127917;', key_art: '&#127912;', banner: '&#128444;',
         social_card: '&#128241;', still: '&#128247;', thumbnail: '&#128443;', logo: '&#10024;' };
+
+    // ══════════════════════════════════════════════════════════════
+    // BRAND
+    //
+    // The form is BUILT FROM the served field registry rather than typed here,
+    // so a field added to the kit gets a control without a second edit — and
+    // each field states what it reaches, which is the difference between a
+    // brand kit and a form nobody consults.
+    // ══════════════════════════════════════════════════════════════
+    let BRAND_FIELDS_SERVED = [];
+
+    async function loadBrands() {
+        const host = document.getElementById('brandList');
+        if (!host) return;
+        let data;
+        try { data = await api('/brands'); }
+        catch (err) { host.innerHTML = `<p class="text-sm text-muted">Could not read the brands: ${esc(err.message)}</p>`; return; }
+        BRAND_FIELDS_SERVED = data.fields || [];
+        state.brandRows = data.brands || [];
+
+        if (!state.brandRows.length) {
+            host.innerHTML = '<p class="text-sm text-muted">No brand kits yet. One kit per client, '
+                + 'reused across every spot you make for them.</p>';
+            return;
+        }
+        host.innerHTML = state.brandRows.map(b => {
+            let palette = [];
+            try { palette = JSON.parse(b.palette || '[]'); } catch (_) { palette = []; }
+            return `<div class="card" style="margin-bottom:8px;">
+                <div class="flex-between" style="gap:8px;flex-wrap:wrap;min-width:0;">
+                    <div style="min-width:0;">
+                        <strong>${esc(b.name || 'Untitled brand')}</strong>
+                        ${b.tone ? `<div class="text-sm text-muted">${esc(b.tone)}</div>` : ''}
+                        <div class="tag-row" style="margin-top:6px;align-items:center;">
+                            ${palette.filter(c => /^#[0-9a-f]{6}$/i.test(c)).map(c =>
+                                `<span title="${esc(c)}" style="display:inline-block;width:18px;height:18px;
+                                       border-radius:3px;background:${esc(c)};border:1px solid rgba(255,255,255,0.2);"></span>`).join('')}
+                            ${b.cta ? `<span class="tag">${esc(b.cta)}</span>` : ''}
+                            ${b.legal_line ? '<span class="tag">legal line</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="openBrand('${b.id}')">Edit</button>
+                        <button class="btn btn-secondary btn-sm" onclick="deleteBrand('${b.id}')">Delete</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    /** What a field reaches, said on the field itself. */
+    const BRAND_REACH_NOTE = {
+        prompt: 'Reaches the generation prompt.',
+        compliance: 'Checked before anything generates.',
+        handoff: 'Travels into the Premiere package for the editor.',
+        person: 'Production paperwork — read by a person, never sent anywhere.',
+    };
+
+    const BRAND_JSON_FIELDS = ['palette', 'fonts', 'banned_phrases'];
+
+    function openBrand(id) {
+        const b = id ? (state.brandRows || []).find(x => x.id === id) || {} : {};
+        const fields = BRAND_FIELDS_SERVED.length ? BRAND_FIELDS_SERVED : [{ id: 'name', label: 'Name', reaches: 'handoff', why: '' }];
+        const row = f => {
+            const val = b[f.id] || '';
+            const note = `<span class="text-sm text-muted">${esc(BRAND_REACH_NOTE[f.reaches] || '')} ${esc(f.why || '')}</span>`;
+            if (BRAND_JSON_FIELDS.includes(f.id)) {
+                let list = [];
+                try { list = JSON.parse(val || '[]'); } catch (_) { list = []; }
+                const text = f.id === 'fonts'
+                    ? list.map(x => `${x.role || ''}|${x.family || ''}|${x.weight || ''}`).join('\n')
+                    : list.join('\n');
+                return `<div class="form-group"><label>${esc(f.label)}</label>
+                    <textarea id="brand_${f.id}" data-field="${f.id}" rows="3"
+                              placeholder="${f.id === 'fonts' ? 'role|family|weight, one per line' : 'one per line'}">${esc(text)}</textarea>
+                    ${note}</div>`;
+            }
+            if (f.id === 'notes' || f.id === 'legal_line' || f.id === 'tone') {
+                return `<div class="form-group"><label>${esc(f.label)}</label>
+                    <textarea id="brand_${f.id}" data-field="${f.id}" rows="2" maxlength="4000">${esc(val)}</textarea>
+                    ${note}</div>`;
+            }
+            return `<div class="form-group"><label>${esc(f.label)}</label>
+                <input type="text" id="brand_${f.id}" data-field="${f.id}" maxlength="1000" value="${esc(val)}">
+                ${note}</div>`;
+        };
+        showModalHtml('brandModal', `
+            <div class="modal-header">
+                <h3>${id ? 'Edit brand' : 'New brand'}</h3>
+                <button class="modal-close" onclick="closeModal('brandModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-sm text-muted" style="margin-top:0;">
+                    Only the tone and the palette reach a generation. The CTA, the legal line and the
+                    fonts are words and type that go on screen in Premiere &mdash; asking a diffusion
+                    model to render legible text bakes a smudge into a frame you paid for.</p>
+                ${fields.map(row).join('')}
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('brandModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveBrand(${id ? `'${id}'` : 'null'})">Save</button>
+            </div>`);
+    }
+
+    async function saveBrand(id) {
+        const body = {};
+        for (const f of BRAND_FIELDS_SERVED) {
+            const el = document.getElementById(`brand_${f.id}`);
+            if (!el) continue;
+            const raw = el.value;
+            if (BRAND_JSON_FIELDS.includes(f.id)) {
+                const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+                body[f.id] = JSON.stringify(f.id === 'fonts'
+                    ? lines.map(l => {
+                        const [role, family, weight] = l.split('|').map(x => (x || '').trim());
+                        return { role, family, weight };
+                    })
+                    : lines);
+            } else {
+                body[f.id] = raw;
+            }
+        }
+        if (!String(body.name || '').trim()) return setStatus('A brand kit needs a name');
+        try {
+            await api(id ? `/brands/${id}` : '/brands',
+                { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+            closeModal('brandModal');
+            setStatus(id ? 'Brand updated' : 'Brand added');
+            loadBrands();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteBrand(id) {
+        if (!confirm('Delete this brand kit?\n\nIt is shared across every project that uses it — '
+            + 'projects pointing at it keep their pointer and simply lose the kit.')) return;
+        try {
+            const out = await api(`/brands/${id}`, { method: 'DELETE' });
+            setStatus(out.projects_referencing
+                ? `Brand deleted — ${out.projects_referencing} project(s) referenced it`
+                : 'Brand deleted');
+            loadBrands();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
 
     // ══════════════════════════════════════════════════════════════
     // DELIVERABLES
@@ -37338,6 +37562,9 @@ ${fountainText.slice(0, 50000)}`;
     // film's — so it sits with the other always-available entries rather than
     // in the project sidebar, which is organised by production phase.
     { id:'stylebook', label:'Style', icon:'M3 3.6h5.2a2 2 0 012 2V15a1.8 1.8 0 00-1.8-1.4H3V3.6Zm12 0H9.8a2 2 0 00-2 2V15a1.8 1.8 0 011.8-1.4H15V3.6Z' },
+    // The brand library, beside it and for the same reason: a kit accumulates
+    // across films rather than belonging to one.
+    { id:'brand',     label:'Brand', icon:'M3 3h8l4 4v8H3V3Zm8 0v4h4' },
     // The glossary had exactly one way in: the "Search anything" pill, which
     // was not a search — it opened this. Removing the pill without replacing
     // the entrance would have left the glossary in the build and unreachable,

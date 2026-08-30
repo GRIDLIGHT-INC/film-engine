@@ -84,6 +84,7 @@ const { handleProductionReports } = require('./routes/production-reports');
 const { handleMoodBoard } = require('./routes/mood-board');
 const { handleStyleBook } = require('./routes/style-book');
 const { handleDeliverables } = require('./routes/deliverables');
+const { handleBrands } = require('./routes/brands');
 const { handleMediaImport } = require('./routes/media-import');
 const { handleSequences } = require('./routes/sequences');
 const { handleAnnotations } = require('./routes/annotations');
@@ -404,6 +405,19 @@ const server = http.createServer(async (req, res) => {
         if ((parts[1] === 'projects' && parts[2] && parts[3] === 'mood-board')
             || (parts[1] === 'mood-board' && parts[2])) {
             return await handleMoodBoard(req, res, parts, query);
+        }
+
+        /*
+         * Route: the brand library and the claims register. Brands are matched
+         * before /film/projects/:id for the same reason the style book is: the
+         * library is not scoped to a project, and the claim sub-paths would
+         * otherwise be swallowed by the project router.
+         */
+        if (parts[1] === 'brands'
+            || (parts[1] === 'claims' && parts[2])
+            || (parts[1] === 'projects' && parts[2]
+                && (parts[3] === 'claims' || parts[3] === 'compliance'))) {
+            return handleBrands(req, res, parts, query);
         }
 
         /*

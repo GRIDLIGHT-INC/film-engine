@@ -49,6 +49,8 @@ const QA_CHECKS = [
      * runtime target -- so a film is never failed for being the length it is.
      */
     { id: 'spot_duration_exact', scope: 'project', severity: SEVERITY.error, label: 'Cut hits the bought runtime exactly' },
+    { id: 'spot_native_vertical', scope: 'project', severity: SEVERITY.error, label: 'Every native ratio has a shot shot at it' },
+    { id: 'spot_rights_cleared', scope: 'project', severity: SEVERITY.error, label: 'No blocking compliance finding' },
 ];
 
 /**
@@ -218,6 +220,51 @@ function runProjectQA(projectId, db) {
      * examined at all rather than passed: a green tick against a rule that was
      * never applied is worse than silence.
      */
+    /*
+     * The two spot checks that are not about length. Both run only when the
+     * project has said it is a commercial -- a deliverable set, or a brand --
+     * because a film has neither and must not be failed for it.
+     */
+    const deliverables = db.prepare('SELECT * FROM film_deliverables WHERE project_id = ?').all(projectId);
+    if (deliverables.length) {
+        const { nativeRatiosFor } = require('./deliverables');
+        const native = nativeRatiosFor(deliverables);
+        const flagged = db.prepare(`
+            SELECT DISTINCT sh.aspect_ratio FROM film_shots sh
+              JOIN film_scenes s ON sh.scene_id = s.id
+             WHERE s.project_id = ? AND sh.aspect_ratio != ''`).all(projectId).map(r => r.aspect_ratio);
+        const unshot = native.filter(r => !flagged.includes(r));
+        checks.push({
+            id: 'spot_native_vertical',
+            passed: unshot.length === 0,
+            severity: SEVERITY.error,
+            message: unshot.length
+                ? `No shot is flagged for ${unshot.join(', ')}, so every one of those placements will `
+                  + 'be a crop of the master. A 9:16 crop keeps 32% of the width.'
+                : `Every native ratio (${native.join(', ') || 'none required'}) has a shot flagged for it`,
+        });
+    }
+
+    /*
+     * The compliance gate, reported as a QA check so it appears where a
+     * director already looks for what is wrong. It is the SAME findings the run
+     * plan refuses on, read through the same function: two answers to "is this
+     * clear" is how a QA page comes to disagree with a refusal.
+     */
+    if (deliverables.length || project.brand_id) {
+        const { complianceFor } = require('./run-plan');
+        const c = complianceFor(projectId);
+        const errs = c.findings.filter(f => f.severity === 'error');
+        checks.push({
+            id: 'spot_rights_cleared',
+            passed: errs.length === 0,
+            severity: SEVERITY.error,
+            message: errs.length
+                ? `${errs.length} blocking finding(s): ${errs.map(f => f.message).join(' ')}`.slice(0, 500)
+                : 'No blocking compliance findings',
+        });
+    }
+
     const spotTarget = Number(project.target_duration_ms) || 0;
     if (spotTarget > 0) {
         const { planConform } = require('./conform');

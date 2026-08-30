@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (95 migrations)
+│   │   └── migrations/     # SQL migration files (96 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -82,6 +82,7 @@ film-engine/
 │   │   ├── media-import.js     # Footage and sound made outside Film Engine: one route, all seven kinds
 │   │   ├── sequences.js        # Several shots, one continuous move: plan free, generate, or upload
 │   │   ├── deliverables.js     # The output list, and which ratios must be shot rather than cropped
+│   │   ├── brands.js           # The brand library, the claims register, and the free compliance report
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
@@ -177,6 +178,9 @@ film-engine/
 │   │   ├── conform.js             # Shots → one film: pure plan, probed executors
 │   │   ├── export-package.js     # The XML plus the media it names, and what is wrong before you hand it over
 │   │   ├── deliverables.js       # A commercial is a fan-out: one row per file that leaves the job
+│   │   ├── brand-kit.js         # A brand outlives a project; every field says what it reaches
+│   │   ├── compliance.js        # Checks that must run BEFORE spend, never after
+│   │   ├── spot-package.js      # The Premiere handoff, planned but not written
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
@@ -281,6 +285,9 @@ film-engine/
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
 │       ├── deliverables.test.js        # Fourteen to twenty-two files, planned before anything is boarded
 │       ├── shot-aspect.test.js         # A vertical hero shot is generated vertical, or it is lost
+│       ├── brand-kit.test.js           # A kit that reaches the frame, not a form nobody consults
+│       ├── compliance.test.js          # An unsubstantiated claim cannot start a run
+│       ├── spot-package.test.js        # A handoff whose every path stays inside it
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
 │       ├── aspect-consistency.test.js   # The board and the footage are the same shape
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
@@ -741,6 +748,81 @@ Closing the style book's 21 unproven cases found **six real defects**, and eleve
 **And the QA specification was wrong twice, in the same direction — asserting a plausible behaviour against a deliberate one.** It expected over-long fields to be **truncated**; `validateEntry` refuses, and refusing is right, because trimming a name discards words the director typed and shows them something they did not write. It expected a project delete to **remove** that project's entries; the FK is `ON DELETE SET NULL` on purpose, so an entry is **promoted to the library** — an angle recorded while a film was open must outlive that film, which is the `film_refsheet_jobs` trap of migration 067 not being repeated. The code was right both times and the specification was corrected.
 
 `tests/style-book-gaps.test.js` is set-based over the registries that fail **partially**: the four `NEVER_WRITES` fields (a rule catching three is indistinguishable from one that works), the three length-limited fields, and the seven row lookups in the router (a 404 on six teaches a caller to trust the seventh).
+
+### Commercial Mode — a Spot Is a Fan-Out, Not a Short Film
+
+`docs/plans/commercial-mode-implementation.md`, built in its five milestones. A
+film has ONE shape and this engine was built around that: one aspect ratio, one
+resolution, one delivery preset. A commercial resolves to **fourteen to
+twenty-two files**.
+
+**M1 found a live defect where a tidy-up was expected.** `const FPS = 24` was
+the default of every conversion helper — but the real fault is a level down:
+**NTSC rates are nominal** everywhere timecode exists. 29.97 is a timebase of 30
+with an ntsc flag, and drop-frame drops *numbers*, not frames, so a :30 spot is
+**900 frames**. Multiplying 30.000s by 29.97 gives 899.1 → 899. Both generators
+already wrote `timebase = Math.round(fps)` with `ntsc TRUE` and then computed
+durations against 29.97, so a :30 exported one frame short. It shows at
+**exactly** thirty seconds — :15 and :06 round back — which is the commonest
+spot length there is, and a station rejects a short :30. A rate is now
+**required**: there is no rate that is right for an unstated one, and 24 is right
+for precisely the medium a commercial is not.
+
+**The deliverable set is decided before anything is boarded**, and that ordering
+is the point: it is what says which shots must be SHOT vertical rather than
+cropped later. A 9:16 centre crop of a 16:9 frame keeps **32%** of its width;
+4:5 keeps 45%; 1:1 keeps 56%. Auto Reframe follows a subject inside the pixels it
+has — it cannot invent the two-thirds that were never generated. `native` is the
+load-bearing field, and **1:1 is the deliberate exception** because 56% is a
+usable crop of a centred composition.
+
+**A shot's own ratio is a COLUMN**, because it is a decision about how the shot
+is *shot* rather than something the writing says. `buildVideoFrame(project,
+override)` is the one place the shape is decided, exported so the image payload
+and the video payload cannot compute it differently — the board/footage
+mismatch this engine already fixed once at project level and would otherwise
+have reintroduced per shot. A shot override is not a crop of the delivery frame,
+it is a **separate deliverable**, so it keeps the raster's SHORT edge and lands
+exactly on what the profiles ask for: 1080×1920, 1080×1350, 1080×1080. Fitting
+it inside the landscape frame would generate 608×1080 — a vertical picture at a
+third of the resolution it is delivered at.
+
+**The runtime is a target, not an outcome.** A film runs as long as it runs; a
+commercial is BOUGHT by the second. `planConform` **refuses** rather than
+trimming — the doctrine it already follows for a missing shot — and names the
+overage. A target of 0 is "no target", which is every film ever made here, and
+the QA check is not merely passed for one, it is **not run**: a green tick
+against a rule that was never applied is worse than silence.
+
+**Compliance refuses before spend, never after.** An automated pipeline can put
+"clinically proven" into a paid advertisement in seconds, and afterwards the
+money is gone and the frames exist — so the gate lives in the FREE run plan
+beside the budget refusal, for the same reason. **Errors block; warnings do
+not**: a warning that stops a run makes the check something people switch off,
+and the real one goes with it. Only a **substantiated** claim row clears a
+claim; a row that merely exists is a record, not evidence. Claim patterns are
+whole phrases with a named prose-noun exception list, because `the best` fires
+on *"she is the best friend he has"* — and a detector that flags a screenplay
+line gets switched off within a day.
+
+**A brand outlives a project**, like the style book: one client buys many spots.
+No `project_id`, and it survives a project delete — the `film_refsheet_jobs`
+trap of migration 067 not being repeated, now held by its own test. Every field
+declares what it **reaches** — prompt, compliance, handoff, or person — and the
+test holds each declaration to being true, because a brand kit is exactly the
+shape of thing that becomes a form nobody consults. Only **tone and palette**
+reach a generation: a CTA, a legal line and a font are words and type placed in
+Premiere, and asking a diffusion model for legible text bakes a smudge into a
+frame that cost money.
+
+Two fixed-window test slices broke on contact with this work and were bounded by
+their own structure instead — a 4000-character window over the storyboard tile
+that stopped containing `description`, and a 1400-character window over the rail
+that stopped containing the glossary. Both read as the feature having lost
+something, which is the opposite of what happened. And the decision-parity
+detector matched `film_projects:client` because a bare `\bclient\b` finds
+`gridlight-client` in an import: a column is read as a property or in SQL, and
+everything else is prose.
 
 ### An Export You Can Hand to Somebody Else
 
@@ -2847,7 +2929,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (95 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (96 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -3027,6 +3109,9 @@ node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js
 node --test backend/tests/deliverables.test.js
 node --test backend/tests/shot-aspect.test.js
+node --test backend/tests/brand-kit.test.js
+node --test backend/tests/compliance.test.js
+node --test backend/tests/spot-package.test.js
 node --test backend/tests/paid-preview.test.js
 node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js
