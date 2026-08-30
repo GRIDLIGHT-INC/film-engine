@@ -41,12 +41,23 @@ const SPA_PAGES = new Set(
  * seeing first, so they belong on the page you land on rather than behind a
  * menu item you have to know to click.
  */
+/*
+ * `rights` was removed here as "delivery paperwork" and has been REBUILT, which
+ * is a reversal worth stating rather than a quiet edit.
+ *
+ * The page went and the route, `film_rights` and the MCP tools did not — which
+ * is the stated rule for all nine ("what was removed is the screen, not the
+ * data"). For eight of them that is fine. For this one it left thirteen fields
+ * reachable by curl and by nothing else, and left an orphaned handler calling a
+ * `loadRightsPage()` that no longer existed. A register nobody can write to is
+ * not paperwork you have decided to skip; it is paperwork you will discover
+ * missing at delivery.
+ */
 const REMOVED = {
     continuity:    'a reference board nothing reads at generation time',
     selects:       'circle-takes, with nothing generating multiple takes to circle',
     dubbing:       'localisation, not part of making the film',
     provenance:    'delivery paperwork',
-    rights:        'delivery paperwork',
     broadcastqc:   'delivery paperwork',
     colorgrading:  'grading happens in the NLE',
     colorpipeline: 'ACES chains describe a step AI generation does not have',
@@ -69,7 +80,7 @@ const WANTED = [
     ['Plan',           ['storyboard', 'previs', 'consistency', 'milestones', 'budget']],
     ['Production',     ['shotboard', 'videoshots', 'music', 'musiccues', 'playback',
         'pipeline', 'flows']],
-    ['Post',           ['exportpage', 'titles', 'subtitles', 'marketing', 'assets',
+    ['Post',           ['exportpage', 'titles', 'subtitles', 'rights', 'marketing', 'assets',
         'jobsqueue', 'renderhistory']],
 ];
 

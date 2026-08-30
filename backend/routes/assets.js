@@ -429,6 +429,18 @@ function listRights(req, res, projectId, query) {
         total: rights.length,
         by_status,
         needs_attention: rights.filter(row => row.status !== 'cleared'),
+        /*
+         * The validator's own vocabulary, served rather than retyped — the same
+         * rule the card vocabulary and the licence statuses follow. createRight
+         * silently COERCES an unknown value to a default rather than refusing,
+         * so a page holding its own copy stores something the author did not
+         * choose and says nothing about it.
+         */
+        vocabulary: {
+            rights_type: VALID_RIGHT_TYPES,
+            status: VALID_RIGHT_STATUSES,
+            entity_type: VALID_RIGHT_ENTITY_TYPES,
+        },
         rights,
     });
 }

@@ -735,6 +735,42 @@ Closing the style book's 21 unproven cases found **six real defects**, and eleve
 
 `tests/style-book-gaps.test.js` is set-based over the registries that fail **partially**: the four `NEVER_WRITES` fields (a rule catching three is indistinguishable from one that works), the three length-limited fields, and the seven row lookups in the router (a 404 on six teaches a caller to trust the seventh).
 
+### The Register That Was Removed, and the Station Nobody Could Correct
+
+Two of the remaining gaps closed, and one of them is a reversal worth stating.
+
+**`rights` was removed as "delivery paperwork" and is rebuilt.** The rule for
+all nine removed pages is *what was removed is the screen, not the data* — the
+route, `film_rights` and the MCP tools stayed. For eight of them that is fine.
+For this one it left **thirteen fields reachable by curl and by nothing else**,
+and left an orphaned handler calling a `loadRightsPage()` that no longer
+existed. A register nobody can write to is not paperwork you decided to skip; it
+is paperwork you discover missing at delivery. It is **recorded, never
+enforced**: nothing on it blocks a generation or an export, because a gate on
+rights is switched off the first time it stops a director mid-shot, and the
+record goes with it. `nav-reorg`'s REMOVED list carries the reversal and its
+reason rather than quietly losing the entry.
+
+**Correcting one station of a strip had no control.** `PUT
+/sequences/:id/stations/:shot/:index` shipped with the in-between work and was
+agent-only, so a wrong in-between could only be fixed from a conversation. The
+consequence is stated **where the choice is made**: correcting station 2 of 5
+re-runs 2, 3 and 4, because a chain re-inherits from the frame that changed —
+discovering that on the bill is the failure the surface exists to prevent.
+
+`NOT_BUILT` is now **empty and kept**, which is a stronger claim than deleting
+it: the audit fails an entry that no longer describes reality, so an empty
+object asserts on every run that every field a route accepts can be typed by a
+person.
+
+**And the dangling-onclick check reported its own stripper as the bug.**
+Explaining in a comment that `loadRightsPage()` no longer exists made the loader
+check report the comment; stripping comments with the obvious block-comment
+regex then ate the declaration of `importStoryboardImage`, because a `/*` inside
+a string opens a comment that runs to the next `*/`. The stripper is line-based
+now — every comment in this page is a whole-line one, so no line carrying code
+is ever touched.
+
 ### If the App Stores It, a Person Can Type It — the Rest of the List
 
 The standing `NOT_BUILT` list in `tests/manual-edit.test.js` named eight route

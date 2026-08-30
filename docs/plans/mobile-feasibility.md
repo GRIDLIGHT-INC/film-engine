@@ -97,7 +97,7 @@ the LAN is a decision for whoever owns the network, not a side effect of a feasi
 
 ---
 
-## 3. Which of the 31 pages is phone work?
+## 3. Which of the 32 pages is phone work?
 
 The design question, and the answer is not "all of them". Classified by what the page asks a
 person to *do*:

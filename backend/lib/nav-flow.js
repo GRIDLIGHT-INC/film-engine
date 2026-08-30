@@ -71,7 +71,8 @@ const NAV_FLOW = {
         // cannot hear it. Both routes shipped with the delivery work and
         // neither had a page, so every field they accept could only be written
         // by curl or by an agent.
-        pages: ['exportpage', 'titles', 'subtitles', 'marketing', 'assets', 'jobsqueue', 'renderhistory'],
+        pages: ['exportpage', 'titles', 'subtitles', 'rights', 'marketing', 'assets',
+            'jobsqueue', 'renderhistory'],
     },
 };
 

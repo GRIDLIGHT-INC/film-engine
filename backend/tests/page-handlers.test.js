@@ -51,7 +51,46 @@ function ownScript() {
      */
     assert.ok(mine.length < blocks.length, 'the vendored library was not excluded — the exclusion is stale');
     assert.ok(mine.length > 0, 'every script block was read as vendored — nothing of the page is being checked');
-    return mine.join('\n');
+    /*
+     * Comments are stripped, because a MENTION is not a call. Explaining in a
+     * comment that `loadRightsPage()` no longer exists made this check report
+     * the comment as the bug it was describing — and attribute it to whichever
+     * function happened to be declared above it.
+     */
+    return stripComments(mine.join('\n'));
+}
+
+/**
+ * Comments removed, because a MENTION is not a call: explaining in a comment
+ * that `loadRightsPage()` no longer exists made this check report the comment
+ * as the bug it was describing.
+ *
+ * Deliberately LINE-BASED and conservative. A general block-comment regex is
+ * the classic way to eat real code — a `/*` inside a string or a regex literal
+ * opens a comment that runs to the next `*\/` and swallows whatever is between,
+ * which is exactly what happened here: it removed the declaration of
+ * `importStoryboardImage` and the check then reported its own stripper as a
+ * dangling button. Every comment in this page is a whole-line one, so only
+ * whole-line comments are removed and no line carrying code is ever touched.
+ */
+function stripComments(src) {
+    const out = [];
+    let inBlock = false;
+    for (const line of src.split('\n')) {
+        const t = line.trim();
+        if (inBlock) {
+            if (t.endsWith('*/') || t === '*/') inBlock = false;
+            continue;
+        }
+        if (t.startsWith('/*')) {
+            if (!t.includes('*/')) inBlock = true;
+            continue;
+        }
+        if (t.startsWith('*') && !t.startsWith('*=')) continue;   // a block comment's body
+        if (t.startsWith('//')) continue;
+        out.push(line);
+    }
+    return out.join('\n');
 }
 
 /** Functions the page declares, at any nesting. */
@@ -278,6 +317,7 @@ test('the delivery pages reach every field their routes accept', () => {
         { route: 'credits.js', fn: 'createCredit', saver: 'saveCredit', nav: 'titles' },
         { route: 'credits.js', fn: 'createTitleCard', saver: 'saveTitleCard', nav: 'titles' },
         { route: 'subtitles.js', fn: 'createSubtitle', saver: 'saveSubtitle', nav: 'subtitles' },
+        { route: 'assets.js', fn: 'createRight', saver: 'saveRight', nav: 'rights' },
     ];
 
     for (const sf of surfaces) {
@@ -324,6 +364,50 @@ test('the delivery pages reach every field their routes accept', () => {
         'the credit editor does not build its sections from the served vocabulary');
     assert.ok(/vocabOptions\(TITLE_VOCAB\.card_types/.test(page),
         'the title-card editor does not build its types from the served vocabulary');
+
+    /*
+     * Rights the same way, and it matters more here: createRight silently
+     * COERCES an unknown rights_type or status to a default rather than
+     * refusing, so a page holding its own copy stores something the author did
+     * not choose and reports success.
+     */
+    const assets = fs.readFileSync(path.join(__dirname, '..', 'routes', 'assets.js'), 'utf8');
+    for (const [key, constant] of [['rights_type', 'VALID_RIGHT_TYPES'],
+                                   ['status', 'VALID_RIGHT_STATUSES'],
+                                   ['entity_type', 'VALID_RIGHT_ENTITY_TYPES']]) {
+        assert.ok(new RegExp(`${key}:\\s*${constant}`).test(assets),
+            `the rights register does not serve its ${key} vocabulary`);
+        assert.ok(new RegExp(`vocabOptions\\(RIGHTS_VOCAB\\.${key}`).test(page),
+            `the rights editor does not build ${key} from the served vocabulary`);
+    }
+});
+
+test('a station of a strip can be corrected from the page', () => {
+    /*
+     * `PUT /film/sequences/:id/stations/:shot/:index` shipped with the strip
+     * and had no control, so a wrong in-between could only be corrected from an
+     * agent. Bound to something clickable, because a handler called from
+     * nowhere looks identical to a working page until somebody clicks.
+     *
+     * And the CONSEQUENCE has to be stated where the choice is made: correcting
+     * station 2 of 5 re-runs 2, 3 and 4, because a chain re-inherits from the
+     * frame that changed. Discovering that on the bill is the failure this
+     * whole surface exists to prevent.
+     */
+    const page = ownScript();
+    assert.ok(/async function correctStation\s*\(/.test(page), 'nothing on the page corrects a station');
+    assert.ok(/onclick="correctStation\(/.test(PAGE), 'correctStation is defined and nothing calls it');
+    assert.ok(/onclick="openStrip\(/.test(PAGE), 'there is no way to read the strip station by station');
+
+    const at = page.indexOf('async function correctStation');
+    const body = page.slice(at, page.indexOf('\n    async function ', at + 10));
+    assert.ok(/stations\/\$\{shotId\}\/\$\{index\}/.test(body),
+        'the correction does not reach the per-station route');
+    assert.ok(/method: 'PUT'/.test(body), 'the correction is not a PUT');
+    assert.ok(/after/.test(body) && /re-runs/.test(body),
+        'the page does not say that correcting a station re-runs the ones after it');
+    assert.ok(/not_attempted/.test(body),
+        'a correction that stops early does not say what it never attempted');
 });
 
 test('every page in the menu has a loader', () => {

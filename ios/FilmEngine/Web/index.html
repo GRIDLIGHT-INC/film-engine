@@ -4631,6 +4631,9 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <span class="nav-icon">&#9654;</span> Playback
                 </button>
                 <!-- ==== CLAUDE:END ==== -->
+                <button class="nav-item" data-page="rights" onclick="navigateTo('rights')" data-tooltip="Who cleared what — likeness, voice, music and model licences, per project" data-tooltip-pos="right">
+                    <span class="nav-icon">&#128220;</span> Rights
+                </button>
                 <button class="nav-item" data-page="titles" onclick="navigateTo('titles')" data-tooltip="Credits and title cards — what the film says over its own head and at its end" data-tooltip-pos="right">
                     <span class="nav-icon">&#127915;</span> Titles &amp; Credits
                 </button>
@@ -5488,6 +5491,26 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 
         <!-- ── ACTS (FILM-146) ─────────────────────────────────── -->
         <!-- ── MARKETING ──────────────────────────────────────── -->
+        <div class="page" id="page-rights">
+            <div class="flex-between mb-16">
+                <h2>Rights</h2>
+                <div>
+                    <select id="rightsFilter" onchange="loadRights()" style="width:auto;display:inline-block;min-width:150px;margin-right:8px;">
+                        <option value="">All statuses</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="openRight()">+ Record</button>
+                </div>
+            </div>
+            <p class="text-sm text-muted mb-8">
+                What has been cleared, by whom, where and until when. Recorded, never enforced:
+                nothing here blocks a generation or an export. It is what a delivery has to be able
+                to answer, and the moment to write it down is while you know the answer rather than
+                at delivery.
+            </p>
+            <div id="rightsSummary" class="mb-8"></div>
+            <div id="rightsList"></div>
+        </div>
+
         <div class="page" id="page-titles">
             <div class="flex-between mb-16">
                 <h2>Titles &amp; Credits</h2>
@@ -16719,6 +16742,7 @@ THREE.GLTFLoader = GLTFLoader;
              * link — which land on a panel nobody filled.
              */
             jobsqueue: loadJobsQueuePage,
+            rights: loadRights,
             titles: loadTitles,
             subtitles: loadSubtitles,
             marketing: loadMarketing,
@@ -28137,6 +28161,158 @@ ${fountainText.slice(0, 50000)}`;
         social_card: '&#128241;', still: '&#128247;', thumbnail: '&#128443;', logo: '&#10024;' };
 
     // ══════════════════════════════════════════════════════════════
+    // RIGHTS
+    //
+    // The register the nine-page removal took out. It is rebuilt because the
+    // route, film_rights and the MCP tools were never removed with it, so every
+    // one of its thirteen fields was reachable by curl and by nothing else --
+    // and its orphaned handler was left calling a loadRightsPage() that has not
+    // existed since.
+    //
+    // Recorded, never enforced. Nothing here blocks a generation or an export:
+    // a gate on rights would be switched off the first time it stopped a
+    // director mid-shot, and then the record would go with it.
+    // ══════════════════════════════════════════════════════════════
+    let RIGHTS_VOCAB = null;
+
+    async function loadRights() {
+        if (!state.currentProject) return;
+        const host = document.getElementById('rightsList');
+        let data;
+        try { data = await api(`/projects/${state.currentProject.id}/rights`); }
+        catch (err) { host.innerHTML = `<p class="text-sm text-muted">Could not read the register: ${esc(err.message)}</p>`; return; }
+        RIGHTS_VOCAB = data.vocabulary || null;
+        state.rightsRows = data.rights || [];
+
+        const filter = document.getElementById('rightsFilter');
+        if (RIGHTS_VOCAB && filter.options.length <= 1) {
+            filter.innerHTML = '<option value="">All statuses</option>'
+                + RIGHTS_VOCAB.status.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+        }
+        const want = filter.value;
+        const rows = want ? state.rightsRows.filter(r => r.status === want) : state.rightsRows;
+
+        const counts = data.by_status || {};
+        document.getElementById('rightsSummary').innerHTML = Object.keys(counts).length
+            ? `<div class="tag-row">${Object.entries(counts).map(([k, n]) =>
+                `<span class="tag"${k === 'cleared' ? ' style="border-color:var(--gl-success);color:var(--gl-success);"' : ''}>`
+                + `${esc(k)}: ${n}</span>`).join('')}</div>`
+            : '';
+
+        if (!rows.length) {
+            host.innerHTML = '<p class="text-sm text-muted">Nothing recorded'
+                + (want ? ' with that status.' : ' yet.') + '</p>';
+            return;
+        }
+        host.innerHTML = rows.map(r => {
+            const good = r.status === 'cleared';
+            const bad = r.status === 'expired' || r.status === 'blocked';
+            const colour = good ? 'var(--gl-success)' : bad ? 'var(--gl-danger,#ef4444)' : 'var(--gl-warning,#f59e0b)';
+            return `<div class="card" style="margin-bottom:6px;">
+                <div class="flex-between" style="gap:8px;flex-wrap:wrap;min-width:0;">
+                    <div style="min-width:0;">
+                        <strong>${esc(r.subject || '')}</strong>
+                        <div class="text-sm text-muted">${esc((r.rights_type || '').replace(/_/g, ' '))}
+                            ${r.owner ? '&middot; ' + esc(r.owner) : ''}
+                            ${r.territory ? '&middot; ' + esc(r.territory) : ''}
+                            ${r.expires_on ? '&middot; until ' + esc(String(r.expires_on).slice(0, 10)) : ''}</div>
+                        <div class="tag-row" style="margin-top:4px;">
+                            <span class="tag" style="border-color:${colour};color:${colour};">${esc(r.status || 'unknown')}</span>
+                            <span class="tag">${esc(r.entity_type || 'asset')}</span>
+                            ${r.restrictions ? '<span class="tag">restricted</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="openRight('${r.id}')">Edit</button>
+                        <button class="btn btn-secondary btn-sm" onclick="deleteRight('${r.id}')">Delete</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function openRight(id) {
+        if (!RIGHTS_VOCAB) return setStatus('This server serves no rights vocabulary — it may predate it.');
+        const r = id ? (state.rightsRows || []).find(x => x.id === id) || {} : {};
+        showModalHtml('rightModal', `
+            <div class="modal-header">
+                <h3>${id ? 'Edit record' : 'New rights record'}</h3>
+                <button class="modal-close" onclick="closeModal('rightModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group"><label>Subject</label>
+                    <input type="text" id="rightSubject" data-field="subject" maxlength="500" value="${esc(r.subject || '')}"
+                           placeholder="What this record is about — a person, a track, a model">
+                    <span class="text-sm text-muted">Required.</span></div>
+                <div class="form-group"><label>Type</label>
+                    <select id="rightType" data-field="rights_type">${vocabOptions(RIGHTS_VOCAB.rights_type, r.rights_type || 'commercial_use')}</select></div>
+                <div class="form-group"><label>Status</label>
+                    <select id="rightStatus" data-field="status">${vocabOptions(RIGHTS_VOCAB.status, r.status || 'unknown')}</select></div>
+                <div class="form-group"><label>What it attaches to</label>
+                    <select id="rightEntityType" data-field="entity_type">${vocabOptions(RIGHTS_VOCAB.entity_type, r.entity_type || 'asset')}</select></div>
+                <div class="form-group"><label>Its id</label>
+                    <input type="text" id="rightEntityId" data-field="entity_id" maxlength="100" value="${esc(r.entity_id || '')}"
+                           placeholder="Optional — the character, asset or cue this is about"></div>
+                <div class="form-group"><label>Owner</label>
+                    <input type="text" id="rightOwner" data-field="owner" maxlength="500" value="${esc(r.owner || '')}"
+                           placeholder="Who holds the right"></div>
+                <div class="form-group"><label>Source</label>
+                    <input type="text" id="rightSource" data-field="source" maxlength="500" value="${esc(r.source || '')}"
+                           placeholder="Where it came from"></div>
+                <div class="form-group"><label>Licence URL</label>
+                    <input type="text" id="rightUrl" data-field="license_url" maxlength="1000" value="${esc(r.license_url || '')}"
+                           placeholder="https://…"></div>
+                <div class="form-group"><label>Consent reference</label>
+                    <input type="text" id="rightConsent" data-field="consent_reference" maxlength="500"
+                           value="${esc(r.consent_reference || '')}"
+                           placeholder="The signed release, by its own reference">
+                    <span class="text-sm text-muted">For a likeness or a voice: what you would produce if asked.</span></div>
+                <div class="form-group"><label>Territory</label>
+                    <input type="text" id="rightTerritory" data-field="territory" maxlength="200" value="${esc(r.territory || '')}"
+                           placeholder="e.g. worldwide, or UK &amp; Ireland"></div>
+                <div class="form-group"><label>Expires</label>
+                    <input type="date" id="rightExpires" data-field="expires_on"
+                           value="${esc(String(r.expires_on || '').slice(0, 10))}">
+                    <span class="text-sm text-muted">Blank means it does not expire.</span></div>
+                <div class="form-group"><label>Restrictions</label>
+                    <textarea id="rightRestrictions" data-field="restrictions" rows="2" maxlength="2000">${esc(r.restrictions || '')}</textarea>
+                    <span class="text-sm text-muted">What you may NOT do with it. Read by a person, not by the engine.</span></div>
+                <div class="form-group"><label>Notes</label>
+                    <textarea id="rightNotes" data-field="notes" rows="2" maxlength="2000">${esc(r.notes || '')}</textarea></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('rightModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveRight(${id ? `'${id}'` : 'null'})">Save</button>
+            </div>`);
+    }
+
+    async function saveRight(id) {
+        const v = i => (document.getElementById(i) || {}).value;
+        const body = {
+            subject: v('rightSubject'), rights_type: v('rightType'), status: v('rightStatus'),
+            entity_type: v('rightEntityType'), entity_id: v('rightEntityId'),
+            owner: v('rightOwner'), source: v('rightSource'), license_url: v('rightUrl'),
+            consent_reference: v('rightConsent'), territory: v('rightTerritory'),
+            expires_on: v('rightExpires'), restrictions: v('rightRestrictions'), notes: v('rightNotes'),
+        };
+        if (!body.subject.trim()) return setStatus('A rights record needs a subject');
+        try {
+            await api(id ? `/rights/${id}` : `/projects/${state.currentProject.id}/rights`,
+                { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+            closeModal('rightModal');
+            setStatus(id ? 'Record updated' : 'Record added');
+            loadRights();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteRight(id) {
+        if (!confirm('Remove this rights record?\n\nThe clearance it documents is not affected — this '
+            + 'only removes the note that you had it.')) return;
+        try { await api(`/rights/${id}`, { method: 'DELETE' }); loadRights(); setStatus('Record removed'); }
+        catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // TITLES, CREDITS AND SUBTITLES
     //
     // Three delivery surfaces whose routes shipped with the delivery work and
@@ -30927,6 +31103,8 @@ ${fountainText.slice(0, 50000)}`;
                             title="See exactly what would be sent, and how many generations it costs — free">Preview &amp; cost</button>
                     <button class="btn btn-secondary btn-sm" onclick="stripSequence('${q.id}', this)"
                             title="A station a second instead of one picture per shot — planned for free before anything is bought">In-between strip</button>
+                    <button class="btn btn-secondary btn-sm" onclick="openStrip('${q.id}')"
+                            title="Read the strip station by station, and correct one — free">Stations</button>
                     <button class="btn btn-primary btn-sm" onclick="generateSequence('${q.id}', this)">Generate</button>
                     <button class="btn btn-secondary btn-sm" onclick="generateNextSequenceLeg('${q.id}', this)"
                             title="Buy only the next segment, review it, then continue">Generate next leg</button>
@@ -31013,6 +31191,105 @@ ${fountainText.slice(0, 50000)}`;
             } catch (err) { alert('Could not approve: ' + err.message); }
             loadSequences();
         }
+    }
+
+    /**
+     * The strip, station by station — and correcting one.
+     *
+     * `PUT /film/sequences/:id/stations/:shot/:index` has existed since the
+     * strip shipped and had no control, so a wrong in-between could only be
+     * corrected from an agent. It is deliberately not on the sequence card: it
+     * is one station of one shot, and it belongs beside that station.
+     *
+     * Correcting station 2 of 5 RE-RUNS 2, 3 and 4, because a chain re-inherits
+     * from the frame that changed. That is stated in the confirmation rather
+     * than discovered on the bill.
+     */
+    async function openStrip(id) {
+        let data;
+        try { data = await api(`/sequences/${id}/stations?cadence_s=1`); }
+        catch (err) { return alert('Could not read the strip: ' + err.message); }
+
+        const ap = data.approval || {};
+        const badge = !ap.approved ? '<span class="tag">not signed off</span>'
+            : ap.stale ? '<span class="tag" style="border-color:var(--gl-warning,#f59e0b);color:var(--gl-warning,#f59e0b);">approved · changed since</span>'
+            : '<span class="tag" style="border-color:var(--gl-success);color:var(--gl-success);">approved</span>';
+
+        const strips = (data.strips || []).map(st => `
+            <h4 style="margin:12px 0 6px;">${esc(st.shot_code || st.shot_id)}
+                <span class="text-sm text-muted">${st.count} station${st.count === 1 ? '' : 's'}</span>
+                ${st.reason ? `<span class="text-sm text-muted"> — ${esc(st.reason)}</span>` : ''}
+                ${st.thinned ? `<span class="tag">thinned from ${st.wanted}</span>` : ''}</h4>
+            ${st.stations.map(station => `
+                <div class="card" style="margin-bottom:6px;">
+                    <div class="flex-between" style="gap:8px;flex-wrap:wrap;min-width:0;">
+                        <div style="min-width:0;">
+                            <div class="text-sm text-muted">
+                                station ${station.index} &middot; ${(station.at_ms / 1000).toFixed(1)}s
+                                ${station.approved_keyframe ? '&middot; the frame you approved'
+                                  : station.generated ? '&middot; generated' : '&middot; not generated yet'}
+                            </div>
+                            <div>${esc(station.instruction || '—')}</div>
+                        </div>
+                        ${station.approved_keyframe ? '' : `
+                        <div class="card-actions">
+                            <button class="btn btn-secondary btn-sm"
+                                    onclick="correctStation('${id}', '${st.shot_id}', ${station.index}, ${st.count})">Correct</button>
+                        </div>`}
+                    </div>
+                </div>`).join('')}`).join('');
+
+        showModalHtml('stripModal', `
+            <div class="modal-header">
+                <h3>Strip &mdash; ${esc(data.sequence_id ? '' : '')}stations ${badge}</h3>
+                <button class="modal-close" onclick="closeModal('stripModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-sm text-muted" style="margin-top:0;">
+                    Station 0 of each shot is the frame you already approved and is never
+                    regenerated. Every station after it is refined from the one before, which is
+                    what stops the strip drifting apart &mdash; and is why correcting one re-runs
+                    the ones after it.</p>
+                ${strips || '<p class="text-sm text-muted">This sequence has no strip.</p>'}
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('stripModal')">Close</button>
+                <button class="btn btn-primary" onclick="approveStrip('${id}')">Sign the strip off</button>
+            </div>`);
+    }
+
+    async function correctStation(id, shotId, index, count) {
+        const after = Math.max(0, (count - 1) - index);
+        const instruction = prompt(
+            `What should station ${index} do differently?\n\n`
+            + `This re-runs station ${index}`
+            + (after ? ` and the ${after} after it` : '')
+            + ' — a chain re-inherits from the frame that changed, so leaving them would leave a '
+            + 'strip whose second half descends from a picture that no longer exists.');
+        if (instruction === null) return;
+        if (!instruction.trim()) return setStatus('An empty instruction would change nothing');
+        try {
+            const out = await api(`/sequences/${id}/stations/${shotId}/${index}`,
+                { method: 'PUT', body: JSON.stringify({ instruction: instruction.trim() }) });
+            const made = (out.generated || []).length;
+            let msg = `${made} station${made === 1 ? '' : 's'} regenerated.`;
+            if (out.stopped_at != null) {
+                msg += `\n\nStopped at station ${out.stopped_at}: ${out.error || 'the provider refused'}.`;
+                if (out.not_attempted && out.not_attempted.length) msg += `\nNot attempted: ${out.not_attempted.join(', ')}.`;
+            }
+            alert(msg);
+            openStrip(id);
+        } catch (err) { alert('Could not correct that station: ' + err.message); }
+    }
+
+    async function approveStrip(id) {
+        if (!confirm('Sign this strip off?\n\nVideo generation then refuses a strip that has changed '
+            + 'since — which is what makes an approval worth having.')) return;
+        try {
+            const ok = await api(`/sequences/${id}/inbetweens/approve`, { method: 'POST', body: '{}' });
+            alert(`Approved — ${ok.stations} stations.`);
+            openStrip(id);
+        } catch (err) { alert('Could not approve: ' + err.message); }
     }
 
     /**
@@ -36681,7 +36958,7 @@ ${fountainText.slice(0, 50000)}`;
     { id:'production', label:'Production',     blurb:'Run the pipeline: picture, voice, score.',
       pages:['shotboard','videoshots','music','musiccues','playback','pipeline','flows'] },
     { id:'post',       label:'Post',           blurb:'Export it, and keep the files straight.',
-      pages:['exportpage','titles','subtitles','marketing','assets','jobsqueue','renderhistory'] }
+      pages:['exportpage','titles','subtitles','rights','marketing','assets','jobsqueue','renderhistory'] }
   ];
   var RAIL = [
     { id:'dashboard', label:'Home',  icon:'M3 7.5L9 3l6 4.5V15H3V7.5Z' },

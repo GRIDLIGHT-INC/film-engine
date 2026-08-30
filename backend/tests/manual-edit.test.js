@@ -108,12 +108,13 @@ const NAMED_DIFFERENTLY = {
     },
 };
 
-const NOT_BUILT = {
-    'assets.js updateRight': 'The Rights register PAGE was one of the nine removed, so it offers '
-        + 'nothing at all — not subject, entity type, type or status either, which this entry used to '
-        + 'claim. Its handler was left calling an undefined loadRightsPage() and has now been removed '
-        + 'with the other orphans; the route and film_rights are untouched and reachable over HTTP.',
-};
+/*
+ * Empty, and kept rather than deleted: this is where a gap goes when one is
+ * found, and the test above fails an entry that no longer describes reality —
+ * so an empty object is a claim that every field a route accepts can be typed
+ * by a person, checked on every run.
+ */
+const NOT_BUILT = {};
 
 /** Every update handler in every route, with the text fields it accepts. */
 function updateHandlers() {
