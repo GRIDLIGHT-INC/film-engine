@@ -334,6 +334,14 @@ function getMusicRightsSummary(req, res, projectId) {
         total_license_cost: totalCost,
         needs_attention: needsAttention,
         cues,
+        /*
+         * The validator's OWN vocabulary, served rather than left for a page to
+         * retype — the rule `GET /film/card-vocabulary` already sets. An editor
+         * built from a typed-out list works exactly once: until somebody adds a
+         * status, at which point the page offers values the route refuses and
+         * the refusal reads as a bug in saving.
+         */
+        vocabulary: { license_status: VALID_LICENSE_STATUSES, license_type: VALID_LICENSE_TYPES },
     }));
 }
 

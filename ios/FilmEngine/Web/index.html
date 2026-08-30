@@ -6965,35 +6965,6 @@ table, .render-table { border-radius:12px; overflow:hidden; }
     </div>
 
     <!-- Create Color Preset -->
-    <div class="modal-overlay" id="colorPresetModal">
-        <div class="modal">
-            <div class="modal-header"><h3>New Color Preset</h3><button class="modal-close" onclick="closeModal('colorPresetModal')">&times;</button></div>
-            <div class="modal-body">
-                <div class="form-group"><label>Name</label><input type="text" data-field="name" placeholder="Preset name"></div>
-                <div class="form-group"><label>Description</label><textarea data-field="description" rows="2" placeholder="Describe the look..."></textarea></div>
-                <div class="form-group"><label>Type</label>
-                    <select data-field="preset_type">
-                        <option value="color_grade">Color Grade</option>
-                        <option value="lut">LUT</option>
-                        <option value="film_grain">Film Grain</option>
-                        <option value="look">Look</option>
-                        <option value="composite">Composite</option>
-                    </select>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                    <div class="form-group"><label>Temperature <span id="tempVal">0</span></label><input type="range" data-field="temperature" min="-100" max="100" value="0" oninput="document.getElementById('tempVal').textContent=this.value"></div>
-                    <div class="form-group"><label>Tint <span id="tintVal">0</span></label><input type="range" data-field="tint" min="-100" max="100" value="0" oninput="document.getElementById('tintVal').textContent=this.value"></div>
-                    <div class="form-group"><label>Contrast <span id="contrastVal">0</span></label><input type="range" data-field="contrast" min="-100" max="100" value="0" oninput="document.getElementById('contrastVal').textContent=this.value"></div>
-                    <div class="form-group"><label>Saturation <span id="satVal">0</span></label><input type="range" data-field="saturation" min="-100" max="100" value="0" oninput="document.getElementById('satVal').textContent=this.value"></div>
-                    <div class="form-group"><label>Grain Intensity <span id="grainVal">0</span></label><input type="range" data-field="grain_intensity" min="0" max="100" value="0" oninput="document.getElementById('grainVal').textContent=this.value"></div>
-                </div>
-                <div class="btn-row">
-                    <button class="btn btn-primary" onclick="createColorPreset()">Create</button>
-                    <button class="btn btn-secondary" onclick="closeModal('colorPresetModal')">Cancel</button>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- Create Milestone -->
     <div class="modal-overlay" id="milestoneModal">
@@ -7414,38 +7385,27 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
         </div>
 
-        <div class="modal-overlay" id="continuityModal">
-        <div class="modal">
-            <div class="modal-header"><h3>New Continuity Reference</h3><button class="modal-close" onclick="closeModal('continuityModal')">&times;</button></div>
-            <div class="modal-body">
-                <div class="form-group"><label>Reference Type</label>
-                    <select data-field="ref_type">
-                        <option value="visual">Visual</option>
-                        <option value="wardrobe">Wardrobe</option>
-                        <option value="prop">Prop</option>
-                        <option value="lighting">Lighting</option>
-                        <option value="color">Color</option>
-                        <option value="framing">Framing</option>
-                    </select>
-                </div>
-                <div class="form-group"><label>Title</label><input type="text" data-field="title" placeholder="Reference title"></div>
-                <div class="form-group"><label>Description</label><textarea data-field="description" rows="3" placeholder="Detailed description of the continuity reference..."></textarea></div>
-                <div class="form-group"><label>Scene ID (optional)</label><input type="text" data-field="scene_id" placeholder="Link to a scene"></div>
-                <div class="form-group"><label>Tags</label><input type="text" data-field="tags" placeholder="Comma-separated tags"></div>
-                <div class="btn-row">
-                    <button class="btn btn-primary" onclick="saveContinuityRef()">Save</button>
-                    <button class="btn btn-secondary" onclick="closeModal('continuityModal')">Cancel</button>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- Budget Limit Modal (FILM-164) -->
     <div class="modal-overlay" id="budgetLimitModal">
         <div class="modal">
             <div class="modal-header"><h3>Set Budget Limit</h3><button class="modal-close" onclick="closeModal('budgetLimitModal')">&times;</button></div>
             <div class="modal-body">
-                <div class="form-group"><label>Budget Limit ($)</label><input type="number" data-field="budget_limit" min="0" step="0.01" placeholder="0.00"></div>
+                <div class="form-group"><label>Budget Limit</label><input type="number" data-field="budget_limit" min="0" step="0.01" placeholder="0.00"></div>
+                <div class="form-group">
+                    <label>Currency</label>
+                    <select data-field="budget_currency">
+                        <option value="">Leave as it is</option>
+                        <option value="USD">USD — US dollar</option>
+                        <option value="EUR">EUR — euro</option>
+                        <option value="GBP">GBP — pound sterling</option>
+                        <option value="CAD">CAD — Canadian dollar</option>
+                        <option value="AUD">AUD — Australian dollar</option>
+                        <option value="JPY">JPY — yen</option>
+                    </select>
+                    <span class="text-sm text-muted">The provider rate book is priced in USD, so a limit set in another
+                        currency is compared against converted spend — it does not re-price what generation costs.</span>
+                </div>
                 <div class="btn-row">
                     <button class="btn btn-primary" onclick="saveBudgetLimit()">Save</button>
                     <button class="btn btn-secondary" onclick="closeModal('budgetLimitModal')">Cancel</button>
@@ -20601,7 +20561,10 @@ THREE.GLTFLoader = GLTFLoader;
         document.getElementById('titlePageDraftDate').value = currentTitlePage.draft_date || '';
         document.getElementById('titlePageContact').value = currentTitlePage.contact || '';
 
-        modal.classList.add('active');
+        // `open` is the only class .modal-overlay is displayed by; built with
+        // `active` this dialog never appeared, so the toolbar's Title Page
+        // button — the documented way to edit it — silently did nothing.
+        modal.classList.add('open');
     }
 
     function parseTitlePageFromEditor(editor) {
@@ -21172,7 +21135,7 @@ THREE.GLTFLoader = GLTFLoader;
     // FILM-131: Import Script Functions
     function openImportModal() {
         resetImportModal();
-        document.getElementById('importScriptModal').classList.add('active');
+        document.getElementById('importScriptModal').classList.add('open');
     }
 
     function resetImportModal() {
@@ -26532,8 +26495,11 @@ ${fountainText.slice(0, 50000)}`;
                 const su = result.screenplay_update;
                 if (su.updated) {
                     setStatus(`Location saved. Screenplay updated: ${su.occurrences} occurrence(s) renamed (v${su.new_version})`);
-                    // Reload screenplay to show changes
-                    loadScreenplay();
+                    // Reload the screenplay so the rename is visible. Named
+                    // loadScreenplayPage: the old call was `loadScreenplay`,
+                    // which nothing defines, so a save that WORKED reported
+                    // "Error: loadScreenplay is not defined" from the catch.
+                    loadScreenplayPage();
                 } else {
                     setStatus(`Location saved. Screenplay: ${su.reason || 'no changes needed'}`);
                 }
@@ -26778,10 +26744,128 @@ ${fountainText.slice(0, 50000)}`;
                                 ${c.mood ? '<span class="tag">' + esc(c.mood) + '</span>' : ''}
                                 ${c.genre ? '<span class="tag">' + esc(c.genre) + '</span>' : ''}
                                 ${c.tempo_bpm ? '<span class="tag">' + c.tempo_bpm + ' BPM</span>' : ''}
+                                ${cueRightsTag(c)}
+                            </div>
+                            <div class="card-actions" style="margin-top:8px;">
+                                <button class="btn btn-secondary btn-sm" onclick="openCueRights('${c.id}')"
+                                        title="Who owns this music, on what licence, where, until when">Rights</button>
                             </div>
                         </div>
                     </div>`).join('');
             }
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /*
+     * ── Rights on a cue ─────────────────────────────────────────────────────
+     *
+     * `PUT /film/music-cues/:id/rights` has existed since the rights work and
+     * the Music Cues page rendered no control for ANY of its six fields, so who
+     * owns a piece of music, on what licence, in which territory and until when
+     * could only be recorded by curl or by an agent. Delivery is the wrong
+     * moment to discover that nobody wrote it down.
+     *
+     * The vocabulary is SERVED, never typed here: the route validates
+     * license_status and license_type against its own lists and refuses
+     * anything else, so a page holding a second copy offers values that are
+     * rejected the first time somebody adds a status.
+     */
+    let CUE_RIGHTS_VOCAB = null;
+
+    /** A cue's rights state, as one readable tag. Unknown is worth showing. */
+    function cueRightsTag(cue) {
+        const status = cue.license_status || 'unknown';
+        const colour = status === 'licensed' || status === 'public_domain' || status === 'original'
+            ? 'var(--gl-success)'
+            : status === 'expired' || status === 'rejected' ? 'var(--gl-danger,#ef4444)' : 'var(--gl-warning,#f59e0b)';
+        return `<span class="tag" style="border-color:${colour};color:${colour};"
+                      title="Licence status — a cue nobody has cleared cannot ship">${esc(status.replace('_', ' '))}</span>`;
+    }
+
+    async function openCueRights(cueId) {
+        const cue = (state.musicCues || []).find(c => c.id === cueId);
+        if (!cue) return setStatus('That cue is no longer on this project');
+        if (!CUE_RIGHTS_VOCAB) {
+            try {
+                const data = await api(`/projects/${state.currentProject.id}/music-rights`);
+                CUE_RIGHTS_VOCAB = data.vocabulary || null;
+            } catch (err) { return setStatus('Could not read the rights vocabulary: ' + err.message); }
+        }
+        if (!CUE_RIGHTS_VOCAB) return setStatus('This server serves no rights vocabulary — it may predate it.');
+
+        const opts = (list, current) => list.map(v =>
+            `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v.replace(/_/g, ' '))}</option>`).join('');
+
+        showModalHtml('cueRightsModal', `
+            <div class="modal-header">
+                <h3>Rights &mdash; ${esc(cue.title || 'Untitled cue')}</h3>
+                <button class="modal-close" onclick="closeModal('cueRightsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-sm text-muted" style="margin-top:0;">
+                    Recorded, not enforced: nothing here blocks a generation or an export. It is what a
+                    delivery needs to be able to answer, and the moment to write it down is now rather
+                    than at delivery.</p>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="cueRightsStatus" data-field="license_status">${opts(CUE_RIGHTS_VOCAB.license_status, cue.license_status || 'unknown')}</select>
+                </div>
+                <div class="form-group">
+                    <label>Licence type</label>
+                    <select id="cueRightsType" data-field="license_type">
+                        <option value="">Not stated</option>
+                        ${opts(CUE_RIGHTS_VOCAB.license_type, cue.license_type || '')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Holder</label>
+                    <input type="text" id="cueRightsHolder" data-field="license_holder" maxlength="500"
+                           value="${esc(cue.license_holder || '')}" placeholder="Who owns it — the label, the composer, you">
+                </div>
+                <div class="form-group">
+                    <label>Territory</label>
+                    <input type="text" id="cueRightsTerritory" data-field="license_territory" maxlength="200"
+                           value="${esc(cue.license_territory || '')}" placeholder="e.g. worldwide, or UK &amp; Ireland">
+                </div>
+                <div class="form-group">
+                    <label>Cost</label>
+                    <input type="number" id="cueRightsCost" data-field="license_cost" min="0" step="0.01"
+                           value="${cue.license_cost || 0}">
+                </div>
+                <div class="form-group">
+                    <label>Expires</label>
+                    <input type="date" id="cueRightsExpiry" data-field="license_expiry"
+                           value="${esc((cue.license_expiry || '').slice(0, 10))}">
+                    <span class="text-sm text-muted">Blank means it does not expire.</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('cueRightsModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveCueRights('${cue.id}')">Save rights</button>
+            </div>`);
+    }
+
+    async function saveCueRights(cueId) {
+        const val = id => (document.getElementById(id) || {}).value;
+        /*
+         * Every field is sent, including the blank ones. The route reads
+         * `!== undefined`, so omitting a field leaves the stored value alone —
+         * which would make CLEARING a holder or a territory impossible, and a
+         * field you cannot empty is one that goes stale and stays wrong.
+         */
+        const body = {
+            license_status: val('cueRightsStatus'),
+            license_type: val('cueRightsType'),
+            license_holder: val('cueRightsHolder'),
+            license_territory: val('cueRightsTerritory'),
+            license_cost: Number(val('cueRightsCost')) || 0,
+            license_expiry: val('cueRightsExpiry'),
+        };
+        try {
+            await api(`/music-cues/${cueId}/rights`, { method: 'PUT', body: JSON.stringify(body) });
+            closeModal('cueRightsModal');
+            setStatus('Rights saved');
+            loadMusicCues();
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -26874,18 +26958,6 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // COLOR GRADING
     // ══════════════════════════════════════════════════════════════
-    async function createColorPreset() {
-        if (!state.currentProject) return;
-        const data = getModalData('colorPresetModal');
-        if (!data.name) return;
-        try {
-            await api('/projects/' + state.currentProject.id + '/color-presets', { method: 'POST', body: JSON.stringify(data) });
-            closeModal('colorPresetModal');
-            clearModal('colorPresetModal');
-            loadColorPresets();
-            setStatus('Preset created');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
 
     // ══════════════════════════════════════════════════════════════
     // MILESTONES
@@ -28114,16 +28186,6 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
-    async function saveContinuityRef() {
-        if (!state.currentProject) return;
-        const data = getModalData('continuityModal');
-        try {
-            await api('/projects/' + state.currentProject.id + '/continuity', { method: 'POST', body: JSON.stringify(data) });
-            closeModal('continuityModal');
-            loadContinuity();
-            setStatus('Continuity reference saved');
-        } catch (err) { setStatus('Error: ' + err.message); }
-    }
 
     // ══════════════════════════════════════════════════════════════
     // AI SPEND — what this pipeline actually costs
@@ -28717,7 +28779,16 @@ ${fountainText.slice(0, 50000)}`;
         if (!state.currentProject) return;
         const data = getModalData('budgetLimitModal');
         try {
-            await api('/projects/' + state.currentProject.id + '/budget/limit', { method: 'PUT', body: JSON.stringify({ budget_total: parseFloat(data.budget_limit) || 0 }) });
+            /*
+             * An unset currency is omitted rather than sent empty. The route
+             * takes both, and "" would be stored as a currency of nothing —
+             * the same two-states-spelled-alike bug that once dropped a
+             * project's image and video provider on every save.
+             */
+            const limitBody = { budget_total: parseFloat(data.budget_limit) || 0 };
+            if (data.budget_currency) limitBody.budget_currency = data.budget_currency;
+            await api('/projects/' + state.currentProject.id + '/budget/limit',
+                { method: 'PUT', body: JSON.stringify(limitBody) });
             closeModal('budgetLimitModal');
             loadBudget();
             setStatus('Budget limit updated');
@@ -28943,6 +29014,12 @@ ${fountainText.slice(0, 50000)}`;
                         <label>Actor Name (optional)</label>
                         <input type="text" id="costInputActorName" data-field="actor_name" placeholder="e.g., Tom Hanks">
                     </div>
+                    <div class="form-group">
+                        <label>Travel Allowance ($)</label>
+                        <input type="number" id="costInputTravel" data-field="travel_allowance" min="0" step="50"
+                               placeholder="e.g., 1200">
+                        <span class="text-sm text-muted">Flights, hotel and per diem for the whole engagement — not per day.</span>
+                    </div>
                 ` : `
                     <div class="form-group">
                         <label>Location Type</label>
@@ -28962,6 +29039,11 @@ ${fountainText.slice(0, 50000)}`;
                     <div class="form-group">
                         <label>Shoot Days</label>
                         <input type="number" id="costInputShootDays" data-field="shoot_days" min="1" placeholder="e.g., 3">
+                    </div>
+                    <div class="form-group">
+                        <label>Prep Days</label>
+                        <input type="number" id="costInputPrepDays" data-field="prep_days" min="0" placeholder="e.g., 1">
+                        <span class="text-sm text-muted">Days held before the shoot — dressing, rigging, a tech scout. Billed at the same daily rate.</span>
                     </div>
                     <div class="form-group">
                         <label>Permits Cost ($)</label>
@@ -28986,7 +29068,9 @@ ${fountainText.slice(0, 50000)}`;
         } else {
             modal.querySelector('.modal').innerHTML = html;
         }
-        modal.classList.add('active');
+        // Same fault: this form never appeared at all, which is why nobody
+        // noticed it was missing its travel allowance and prep days.
+        modal.classList.add('open');
     }
 
     async function saveCostInput(entityType, entityId) {
@@ -29148,6 +29232,29 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    /**
+     * Build (or refill) a modal from HTML and show it.
+     *
+     * One helper rather than the create-or-reuse block copied per caller: three
+     * modals were shown by adding a class the stylesheet does not display, so
+     * they never appeared and their buttons read as dead. A caller that cannot
+     * choose the class cannot get that wrong.
+     */
+    function showModalHtml(id, html) {
+        let modal = document.getElementById(id);
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = id;
+            modal.className = 'modal-overlay';
+            modal.innerHTML = '<div class="modal">' + html + '</div>';
+            document.body.appendChild(modal);
+        } else {
+            modal.querySelector('.modal').innerHTML = html;
+        }
+        modal.classList.add('open');
+        return modal;
+    }
 
     // Close on Escape
     document.addEventListener('keydown', e => {
@@ -35845,125 +35952,11 @@ ${fountainText.slice(0, 50000)}`;
     // ── Gap 5 + 7d: selects and prompt diff ──
     const sel = { data: null, shotId: null, takes: [] };
 
-    function renderSelShotList() {
-        const el = document.getElementById('selShotList');
-        if (!el || !sel.data) return;
-        const rows = [
-            ...sel.data.selects.map(s => ({
-                shot_id: s.shot_id, shot_code: s.shot_code,
-                label: `v${s.version} circled`, state: 'ok',
-            })),
-            ...sel.data.shots_without_select.map(s => ({
-                shot_id: s.shot_id, shot_code: s.shot_code,
-                label: s.reason === 'no_takes' ? 'no takes' : `${s.take_count} takes, none circled`,
-                state: s.reason,
-            })),
-        ];
-        el.innerHTML = rows.map(r => `
-            <div class="sel-shot-item ${r.shot_id === sel.shotId ? 'active' : ''}"
-                 onclick="selOpenShot('${r.shot_id}', ${JSON.stringify(r.shot_code)})">
-                <span>${esc(r.shot_code || '(untitled)')}</span>
-                <span class="text-muted">${esc(r.label)}</span>
-            </div>
-        `).join('');
-    }
 
-    async function selOpenShot(shotId, shotCode) {
-        sel.shotId = shotId;
-        document.getElementById('selCurrentShot').textContent = shotCode || '—';
-        renderSelShotList();
-        try {
-            const data = await api(`/shots/${shotId}/takes`);
-            sel.takes = data.takes || [];
-            renderTakeList();
-            renderDiffPickers();
-        } catch (err) {
-            document.getElementById('selTakeList').innerHTML =
-                `<div class="glossary-empty">Error: ${esc(err.message)}</div>`;
-        }
-    }
 
-    function renderTakeList() {
-        const el = document.getElementById('selTakeList');
-        if (!el) return;
-        if (!sel.takes.length) {
-            el.innerHTML = '<div class="glossary-empty">No takes yet. Generate a render for this shot.</div>';
-            return;
-        }
-        el.innerHTML = sel.takes.map(t => `
-            <div class="sel-take-item ${t.is_select ? 'is-select' : ''}">
-                <div>
-                    <strong>Take ${t.version}</strong>
-                    ${t.is_select ? ' <span class="badge completed">circled</span>' : ''}
-                    <div class="sel-take-meta">
-                        seed ${esc(String(t.seed ?? '—'))} · ${esc(t.model_id || 'unknown model')}
-                        ${t.select_note ? ' · ' + esc(t.select_note) : ''}
-                    </div>
-                    <div class="sel-take-meta">${esc((t.prompt || '').slice(0, 90))}</div>
-                </div>
-                <button class="btn btn-sm sel-circle-btn ${t.is_select ? 'btn-secondary' : 'btn-primary'}"
-                        onclick="selToggle('${t.id}', ${t.is_select ? 'true' : 'false'})">
-                    ${t.is_select ? 'Uncircle' : 'Circle'}
-                </button>
-            </div>
-        `).join('');
-    }
 
-    async function selToggle(versionId, isSelected) {
-        try {
-            await api(`/versions/${versionId}/select`, {
-                method: isSelected ? 'DELETE' : 'POST',
-                body: isSelected ? undefined : JSON.stringify({ note: '' }),
-            });
-            await selOpenShot(sel.shotId, document.getElementById('selCurrentShot').textContent);
-            await loadSelects();
-        } catch (err) {
-            alert('Could not update take: ' + err.message);
-        }
-    }
 
-    function renderDiffPickers() {
-        const withLedger = sel.takes.filter(t => t.render_ledger_id);
-        const options = withLedger
-            .map(t => `<option value="${t.render_ledger_id}">Take ${t.version}</option>`)
-            .join('');
-        const a = document.getElementById('selDiffA');
-        const b = document.getElementById('selDiffB');
-        a.innerHTML = options;
-        b.innerHTML = options;
-        // Default to comparing the two most recent takes, which is the common case.
-        if (withLedger.length > 1) { a.selectedIndex = 1; b.selectedIndex = 0; }
-        document.getElementById('selDiffResult').innerHTML = withLedger.length > 1
-            ? ''
-            : '<div class="text-sm text-muted">Need at least two takes to compare.</div>';
-    }
 
-    async function selRunDiff() {
-        const a = document.getElementById('selDiffA').value;
-        const b = document.getElementById('selDiffB').value;
-        const out = document.getElementById('selDiffResult');
-        if (!a || !b) { out.innerHTML = '<div class="text-sm text-muted">Pick two takes.</div>'; return; }
-        if (a === b) { out.innerHTML = '<div class="text-sm text-muted">Those are the same take.</div>'; return; }
-
-        try {
-            const d = await api(`/shots/${sel.shotId}/prompt-diff?a=${a}&b=${b}`);
-            const tokens = d.prompt.ops.map(op =>
-                op.op === 'equal'
-                    ? esc(op.token)
-                    : `<span class="diff-token ${op.op === 'add' ? 'add' : 'remove'}">${esc(op.token)}</span>`
-            ).join(' ');
-            const params = d.params.length
-                ? '<div class="diff-params">' + d.params.map(p =>
-                    `<div><strong>${esc(p.field)}</strong>: ${esc(String(p.before))} → ${esc(String(p.after))}</div>`
-                  ).join('') + '</div>'
-                : '';
-            out.innerHTML = `<div class="diff-summary"><strong>${esc(d.summary)}</strong>`
-                + ` <span class="text-muted">(${Math.round(d.prompt.similarity * 100)}% similar)</span></div>`
-                + `<div class="text-sm">${tokens}</div>${params}`;
-        } catch (err) {
-            out.innerHTML = `<div class="text-sm">Error: ${esc(err.message)}</div>`;
-        }
-    }
     // ==== CLAUDE:END ====
 
     // ══════════════════════════════════════════════════════════════
@@ -36210,86 +36203,15 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
-    async function exportProvenanceSidecar() {
-        const pid = requireCurrentProjectForOps();
-        if (!pid) return;
-        try {
-            const data = await api(`/projects/${pid}/provenance/export`, { method: 'POST', body: '{}' });
-            setStatus(`Provenance sidecar exported: ${data.sidecar_path}`);
-            loadProvenancePage();
-        } catch (err) {
-            setStatus(err.message);
-        }
-    }
 
-    async function createRightsRecord() {
-        const pid = requireCurrentProjectForOps();
-        if (!pid) return;
-        const subject = document.getElementById('rightsSubject').value.trim();
-        if (!subject) return setStatus('Rights subject is required');
-        await api(`/projects/${pid}/rights`, {
-            method: 'POST',
-            body: JSON.stringify({
-                subject,
-                entity_type: document.getElementById('rightsEntityType').value,
-                rights_type: document.getElementById('rightsType').value,
-                status: document.getElementById('rightsStatus').value,
-            }),
-        });
-        document.getElementById('rightsSubject').value = '';
-        loadRightsPage();
-    }
 
     function parseTripletInput(id, fallback) {
         const parts = document.getElementById(id).value.split(',').map(v => Number(v.trim()));
         return parts.length === 3 && parts.every(Number.isFinite) ? parts : fallback;
     }
 
-    async function saveColorPipeline() {
-        const pid = requireCurrentProjectForOps();
-        if (!pid) return;
-        await api(`/projects/${pid}/post/color-pipeline`, {
-            method: 'PUT',
-            body: JSON.stringify({
-                aces_version: document.getElementById('colorAcesVersion').value,
-                working_space: document.getElementById('colorWorkingSpace').value,
-                input_transform: document.getElementById('colorInputTransform').value,
-                output_transform: document.getElementById('colorOutputTransform').value,
-                target_color_space: document.getElementById('colorTargetSpace').value,
-                target_nits: Number(document.getElementById('colorTargetNits').value) || 100,
-                cdl_slope: parseTripletInput('colorCdlSlope', [1, 1, 1]),
-                cdl_offset: parseTripletInput('colorCdlOffset', [0, 0, 0]),
-                cdl_power: parseTripletInput('colorCdlPower', [1, 1, 1]),
-                cdl_saturation: Number(document.getElementById('colorCdlSaturation').value) || 1,
-                notes: document.getElementById('colorNotes').value,
-            }),
-        });
-        setStatus('Color pipeline saved');
-        loadColorPipelinePage();
-    }
 
-    async function createDubbingPackage() {
-        const pid = requireCurrentProjectForOps();
-        if (!pid) return;
-        const target = document.getElementById('dubbingTargetLang').value.trim();
-        if (!target) return setStatus('Target language is required');
-        await api(`/projects/${pid}/subtitles/dubbing`, {
-            method: 'POST',
-            body: JSON.stringify({
-                source_language: document.getElementById('dubbingSourceLang').value || 'en',
-                target_language: target,
-                voice_strategy: document.getElementById('dubbingStrategy').value,
-            }),
-        });
-        loadDubbingPage();
-    }
 
-    async function runBroadcastQC() {
-        const pid = requireCurrentProjectForOps();
-        if (!pid) return;
-        await api(`/projects/${pid}/qa/broadcast`, { method: 'POST', body: JSON.stringify({ target_spec: 'streaming_rec709' }) });
-        loadBroadcastQCPage();
-    }
     // ==== CODEX:END ====
 
     // ══════════════════════════════════════════════════════════════

@@ -109,20 +109,18 @@ const NAMED_DIFFERENTLY = {
 };
 
 const NOT_BUILT = {
-    'assets.js updateMusicRights': 'The Music Cues page renders no controls at all, so the whole '
-        + 'PUT /music-cues/:id/rights surface (holder, type, status, territory, cost, expiry) is '
-        + 'unreachable from the app. Needs a rights editor on the cue.',
     'credits.js updateTitleCard': 'There is no title-cards page in the SPA at all — the string '
         + '"title-card" appears zero times. Needs a page before its fields can have controls.',
-    'credits.js updateCredit': 'The credits list renders but has no per-entry editor for '
-        + 'character_name, role and style.',
-    'subtitles.js updateSubtitle': 'Subtitle cues render read-only; language, speaker, style and '
-        + 'position have no controls.',
-    'assets.js updateRight': 'The Rights register offers subject, entity type, type and status — '
-        + 'not owner, territory, restrictions, license_url or consent_reference.',
-    'budget-estimate.js setCharacterCost': 'Live-action estimate: travel_allowance has no control.',
-    'budget-estimate.js setLocationCost': 'Live-action estimate: prep_days has no control.',
-    'budget.js setBudgetLimit': 'budget_currency has no control — the limit is always set in whatever currency the project already had.',
+    'credits.js updateCredit': 'There is no credits page in the SPA — the list does not render at '
+        + 'all, so name, section, character_name, role and style have nowhere to be typed. The earlier '
+        + 'wording here claimed the list rendered, which made the gap look smaller than it is.',
+    'subtitles.js updateSubtitle': 'There is no subtitles page — cues do not render at all, read-only '
+        + 'or otherwise. text, language, speaker, style, position and the timings have no controls. The '
+        + 'earlier wording claimed they rendered read-only, which they do not.',
+    'assets.js updateRight': 'The Rights register PAGE was one of the nine removed, so it offers '
+        + 'nothing at all — not subject, entity type, type or status either, which this entry used to '
+        + 'claim. Its handler was left calling an undefined loadRightsPage() and has now been removed '
+        + 'with the other orphans; the route and film_rights are untouched and reachable over HTTP.',
 };
 
 /** Every update handler in every route, with the text fields it accepts. */

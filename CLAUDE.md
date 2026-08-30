@@ -280,6 +280,7 @@ film-engine/
 │       ├── staleness-accept.test.js     # A warning you cannot act on is one you learn to ignore
 │       ├── dev-server.test.js           # An edit you cannot see is an edit that did not happen
 │       ├── mobile-shell.test.js         # The shell on a 390px screen, computed rather than grepped
+│       ├── page-handlers.test.js       # A button wired to nothing, and a modal shown with a class the CSS ignores
 │       ├── ios-app.test.js              # The iOS wrapper ships the real page, and can reach a Mac
 │       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
@@ -2892,6 +2893,7 @@ node --test backend/tests/resolution-trickle.test.js
 node --test backend/tests/staleness-accept.test.js
 node --test backend/tests/dev-server.test.js
 node --test backend/tests/mobile-shell.test.js
+node --test backend/tests/page-handlers.test.js
 node --test backend/tests/ios-app.test.js
 node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
