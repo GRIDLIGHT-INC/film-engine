@@ -481,3 +481,168 @@ test('the location sheet leads with ONE hero plate, not a row of equals', () => 
     assert.ok(/\.ls-plates-rest[^}]*repeat\(3/.test(SRC),
         'the remaining location plates are not laid out three-up as the design asks');
 });
+
+/**
+ * The plate, as the design draws it
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * Reported three times, and each earlier fix changed the plate's SHAPE while
+ * leaving the two things that actually read as unfinished:
+ *
+ *   1. The sheet body sits FLUSH to the modal frame. All three designs put a
+ *      ~30px gutter on their column blocks; `.ss-grid` had none at all, so
+ *      "MASTER PLATES" began 2px from the modal edge and the right column ran
+ *      into the other one. The character sheet does not have this bug because
+ *      it never used `.ss-grid` — it has its own `.cs-col-l` with padding,
+ *      which is precisely why the fault was invisible on the one sheet anyone
+ *      compared against.
+ *
+ *   2. The label and the `generate →` affordance sit OUTSIDE the tile — the
+ *      label in a `<figcaption>` beneath it, and `generate →` centred in the
+ *      middle of the empty box. The design puts both INSIDE, absolutely
+ *      positioned: the label top-left, `generate →` bottom-left. That is what
+ *      makes a plate read as a numbered slot on a contact sheet rather than a
+ *      captioned photograph, and it is why the sheets were reported as "not
+ *      the same quality as the character sheets".
+ *
+ * Derived from the handoffs rather than from my reading of the screenshots: the
+ * design states each offset literally, so a design that moves takes this test
+ * with it.
+ */
+
+/** Every sheet whose plates the design draws, with the page rule that draws them. */
+const PLATE_SHEETS = [
+    { kind: 'character', design: 'Character Card.dc.html', cls: 'cs-tile' },
+    { kind: 'location',  design: 'Location Card.dc.html',  cls: 'ls-plate' },
+    { kind: 'prop',      design: 'Prop Card.dc.html',      cls: 'ps-plate' },
+];
+
+test('every sheet body carries the gutter its design draws, none sits flush to the frame', () => {
+    /*
+     * Derived: the design's own column blocks. Reading the smallest horizontal
+     * padding any of them uses keeps this honest if the design tightens up —
+     * what it cannot do is silently permit zero, which is the reported state.
+     */
+    for (const sheet of PLATE_SHEETS) {
+        const design = fs.readFileSync(path.join(HANDOFF, sheet.design), 'utf8');
+        const gutters = [...design.matchAll(/padding:\s*\d+px\s+(\d+)px/g)].map(m => Number(m[1]));
+        const wanted = Math.min(...gutters.filter(n => n >= 20));
+        assert.ok(wanted >= 20,
+            `${sheet.kind}: this test's reading is stale — the design no longer puts a gutter on `
+            + 'its column blocks');
+    }
+
+    /*
+     * The rule that lays out a subject sheet's two columns. The character sheet
+     * uses .cs-col-l/.cs-col-r and already has this; the location and prop
+     * sheets share .ss-grid and had nothing.
+     */
+    const grid = SRC.match(/\.ss-grid\s*\{([^}]*)\}/);
+    assert.ok(grid, '.ss-grid is gone — this test cannot see how the sheets are laid out');
+    const pad = grid[1].match(/padding:\s*([^;]+)/);
+    assert.ok(pad,
+        '.ss-grid has NO padding, so the location and prop sheets render flush to the modal '
+        + 'frame — "MASTER PLATES" begins against the edge and the right column runs into it. '
+        + 'The design puts a ~30px gutter on every column block.');
+    const sides = pad[1].trim().split(/\s+/).map(v => parseInt(v, 10));
+    // top right bottom [left] — the horizontal gutter is the second value.
+    const horizontal = sides.length > 1 ? sides[1] : sides[0];
+    assert.ok(horizontal >= 20,
+        `.ss-grid's horizontal gutter is ${horizontal}px — the design draws ~30px, and anything `
+        + 'this tight still reads as flush to the frame');
+});
+
+test('a plate carries its number and its generate affordance INSIDE the tile', () => {
+    /*
+     * Set-based over all three sheets, because this failed PARTIALLY: the
+     * character tile has had `.tl { position:absolute; bottom:6px; left:8px }`
+     * since it was written, so a check against the character sheet alone
+     * passes in exactly the state being reported.
+     */
+    for (const sheet of PLATE_SHEETS) {
+        const design = fs.readFileSync(path.join(HANDOFF, sheet.design), 'utf8');
+
+        // The design's own evidence that a label is placed inside the tile.
+        assert.ok(/position:\s*absolute;\s*top:\s*\d+px;\s*left:\s*\d+px/.test(design)
+               || /position:\s*absolute;\s*bottom:\s*\d+px;\s*left:\s*\d+px/.test(design),
+            `${sheet.kind}: this test's reading is stale — the design no longer positions plate `
+            + 'labels inside the tile');
+
+        // The page must place a label inside THIS sheet's plate, not beneath it.
+        const inside = new RegExp(`\\.${sheet.cls}\\s+\\.(?:tl|ss-num|ss-gen)\\b[^}]*position\\s*:\\s*absolute`);
+        assert.ok(inside.test(SRC),
+            `${sheet.kind}: .${sheet.cls} has no absolutely-positioned label inside it, so the `
+            + 'plate number renders in a caption underneath and `generate →` floats in the middle '
+            + 'of the box. The design puts the number top-left and `generate →` bottom-left, '
+            + 'inside the tile.');
+    }
+});
+
+test('the generate affordance is bottom-left, not centred in the middle of the plate', () => {
+    /*
+     * The reported symptom, specifically: on both sheets `generate →` rendered
+     * centred at the top of the tile because the empty slot was a flex box with
+     * `align-items:center; justify-content:center`. The design puts it at
+     * `bottom: 8px; left: 9px`.
+     */
+    const design = fs.readFileSync(path.join(HANDOFF, 'Location Card.dc.html'), 'utf8');
+    assert.ok(/generate/.test(design) && /bottom:\s*\d+px;\s*left:\s*\d+px/.test(design),
+        "this test's reading is stale: the design no longer anchors `generate →` bottom-left");
+
+    const rule = SRC.match(/\.ss-gen\s*\{([^}]*)\}/);
+    assert.ok(rule,
+        'there is no .ss-gen rule — `generate →` is still centred inside the empty plate rather '
+        + 'than anchored bottom-left where the design draws it');
+    assert.ok(/position\s*:\s*absolute/.test(rule[1]) && /bottom\s*:/.test(rule[1])
+           && /left\s*:/.test(rule[1]),
+        '.ss-gen does not anchor to the bottom-left of the tile');
+    assert.ok(!/justify-content\s*:\s*center/.test(rule[1]),
+        '.ss-gen is still centring itself — that is the state that was reported');
+});
+
+test('the plate renderer emits the in-tile label and affordance, not just a CSS rule for them', () => {
+    /*
+     * The CSS rule existing says nothing about whether anything wears the
+     * class. Caught by mutation: renaming `ss-num` inside ssTile left every
+     * rule-shaped assertion green while the page went back to rendering the
+     * label in a caption underneath — the exact reported state, with a test
+     * suite reporting it fixed.
+     *
+     * Bound to ssTile's own body rather than searched page-wide, because
+     * `ss-num` appearing anywhere in a 2MB file is not evidence that the plate
+     * uses it.
+     */
+    const fn = SRC.match(/function ssTile\s*\([^)]*\)\s*\{([\s\S]*?)\n    \}/);
+    assert.ok(fn, 'ssTile is gone — this test cannot see how a plate is drawn');
+    const body = fn[1];
+
+    assert.ok(/class="ss-num"/.test(body),
+        'ssTile does not emit the ss-num label, so the plate number renders beneath the tile in '
+        + 'a caption rather than over the picture where the design puts it');
+    assert.ok(/class="ss-gen"/.test(body),
+        'ssTile does not emit the ss-gen affordance — `generate →` is back in the middle of the '
+        + 'empty box instead of bottom-left');
+
+    /*
+     * Both belong INSIDE the tile div, not after it.
+     *
+     * Bounded by the tile's OWN closing tag, found as the last `</div>` before
+     * the caption — the first one belongs to the empty-slot div nested inside,
+     * so a slice to it is too short and reports a correct renderer as broken.
+     */
+    const tileOpen = body.indexOf('class="${cls}"');
+    const capAt = body.indexOf('${caption ?');
+    assert.ok(tileOpen > -1 && capAt > tileOpen, 'ssTile no longer draws a tile div and a caption');
+    const tileRegion = body.slice(tileOpen, capAt);
+    const tileClose = tileRegion.lastIndexOf('</div>');
+    assert.ok(tileClose > -1, 'the tile div is never closed');
+    const insideTile = tileRegion.slice(0, tileClose);
+    assert.ok(/class="ss-num"/.test(insideTile) && /class="ss-gen"/.test(insideTile),
+        'the label and the generate affordance are emitted OUTSIDE the tile div — absolute '
+        + 'positioning then anchors them to the figure, not to the picture');
+
+    // And the empty slot must not re-centre its contents.
+    assert.ok(!/ss-empty[^`]*justify-content:\s*center/.test(body),
+        'the empty plate still centres its contents, which is what put `generate →` in the '
+        + 'middle of the box');
+});

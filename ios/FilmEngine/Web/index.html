@@ -1431,7 +1431,11 @@
         /* The location and prop sheets. Two columns on a wide modal, one on a
            phone — the regions are independent, so a narrow screen stacks them
            rather than squeezing both. */
-        .ss-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+        .ss-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: start;
+            /* The gutter every design draws on its column blocks (26px 32px 32px).
+               Without it the sheet renders flush to the modal frame: "MASTER PLATES"
+               begins 2px from the edge and the right column runs into the other side. */
+            padding: 26px 32px 32px; }
         @media (max-width: 900px) { .ss-grid { grid-template-columns: 1fr; } }
         .ss-col { min-width: 0; }
         .ss-region { margin-bottom: 20px; min-width: 0; }
@@ -1457,6 +1461,25 @@
         /* Numbered plate slots. An empty one offers to fill itself. */
         .ss-slot figcaption { display: flex; flex-direction: column; gap: 2px; }
         .ss-view-angle { font-size: 10px; color: var(--text-muted, #8a8a95); }
+        /* A plate's number and its generate affordance live INSIDE the tile.
+           Rendered beneath it in a <figcaption>, a plate reads as a captioned
+           photograph; the design draws a numbered slot on a contact sheet, with
+           the label top-left over the picture and `generate ->` bottom-left. */
+        .ls-plate .ss-num, .ps-plate .ss-num, .cs-tile .ss-num {
+            position: absolute; top: 10px; left: 11px; right: 11px; z-index: 2;
+            font-family: ui-monospace, Menlo, monospace; font-size: 10px;
+            letter-spacing: .14em; text-transform: uppercase;
+            color: rgba(232,232,234,0.78); text-shadow: 0 1px 4px rgba(0,0,0,.9);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            pointer-events: none;
+        }
+        .ss-gen {
+            position: absolute; bottom: 8px; left: 9px; z-index: 2;
+            font-family: ui-monospace, Menlo, monospace; font-size: 9.5px;
+            color: oklch(0.82 0.09 75); cursor: pointer; letter-spacing: .04em;
+        }
+        .ss-gen:hover { color: oklch(0.90 0.12 75); }
+        .ss-slot-caption { font-size: 10px; color: var(--text-muted, #8a8a95); margin-top: 5px; }
         .cs-drop.ss-empty { cursor: pointer; font-size: 11px; letter-spacing: .06em; }
         .cs-drop.ss-empty:hover { color: #8ab6e8; border-color: #2c4560; }
         .ss-plate-meta {
@@ -24822,13 +24845,26 @@ ${fountainText.slice(0, 50000)}`;
     function ssTile(v, label, caption, shape) {
         const url = v && v.available && v.image_url ? API_BASE + v.image_url : '';
         const cls = shape || 'cs-tile';
+        /*
+         * The number and the affordance are drawn INSIDE the tile, over the
+         * picture -- the label top-left, `generate ->` bottom-left -- because
+         * that is what the design draws and what the character sheet has always
+         * done. Rendered beneath in a <figcaption>, with `generate ->` centred
+         * in the empty box, a plate reads as a captioned photograph and the
+         * sheet reads as unfinished, which is how it was reported three times.
+         *
+         * The caption (what the view IS) stays below: it is prose about the
+         * plate rather than a marker on it, and laid over the picture it would
+         * compete with the number.
+         */
         return `<figure class="ss-slot" style="margin:0;">
             <div class="${cls}">
             ${url ? `<img src="${esc(url)}" alt="${esc(label)}" onclick="openPlateViewer('${esc(url)}', ${jsAttr(label)})">`
-                  : `<div class="cs-drop ss-empty" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;"
-                          onclick="generateSheetView(${jsAttr((v && v.view) || label)})">generate &rarr;</div>`}
+                  : `<div class="cs-drop ss-empty" style="width:100%;height:100%;"></div>`}
+            <span class="ss-num">${esc(label)}</span>
+            ${url ? '' : `<span class="ss-gen" onclick="generateSheetView(${jsAttr((v && v.view) || label)})">generate &rarr;</span>`}
             </div>
-            <figcaption>${esc(label)}${caption ? `<span class="ss-view-angle">${esc(caption)}</span>` : ''}</figcaption>
+            ${caption ? `<figcaption class="ss-slot-caption"><span class="ss-view-angle">${esc(caption)}</span></figcaption>` : ''}
         </figure>`;
     }
 

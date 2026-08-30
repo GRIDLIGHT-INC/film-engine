@@ -182,6 +182,34 @@ const RATE_BOOK = {
         note: 'Per second of output: 480p $0.17, 720p $0.34, 1080p $0.85, 4K $1.70. A 10s 1080p clip is $8.50. Reached through MuAPI rather than ByteDance Ark directly.',
     },
 
+    /*
+     * The finishing pass, priced from the SAME table as the footage.
+     *
+     * An upscale is the `video-edit` workflow at a larger tier, so it is billed
+     * per second at that tier's rate exactly as a generation is -- there is no
+     * separate post rate card, and inventing one is how the draft saving and
+     * the finishing cost come to disagree about what Seedance charges.
+     *
+     * Defaulted at the 4K rate because that is what the finishing pass is FOR.
+     * Anything cheaper as the default would under-report the one line a
+     * director most needs to see before committing to it: finishing 30 seconds
+     * at 4K is $51.
+     */
+    'seedance:post': {
+        unit: 'second', native_unit: 'second', native_per_unit: 1,
+        usd_per_native: 1.70,
+        models: {
+            'seedance-2.5-video-edit-480p':  { usd_per_native: 0.17 },
+            'seedance-2.5-video-edit':       { usd_per_native: 0.34 },   // 720p, unsuffixed
+            'seedance-2.5-video-edit-1080p': { usd_per_native: 0.85 },
+            'seedance-2.5-video-edit-4k':    { usd_per_native: 1.70 },
+        },
+        source: 'https://muapi.ai/',
+        checked: '2026-08-25',
+        note: 'The upscale is the video-edit workflow at a larger tier, billed per second at that '
+            + "tier's rate. Defaulted at 4K ($1.70/s), which is what a finishing pass is for.",
+    },
+
     'openai:image': {
         unit: 'image', native_unit: 'image', native_per_unit: 1,
         usd_per_native: 0.042,

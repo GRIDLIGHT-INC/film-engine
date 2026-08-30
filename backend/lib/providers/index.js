@@ -115,6 +115,18 @@ const PREFERRED_WHEN_CONFIGURED = {
     // pictures"; Seedance's omni-reference workflow takes thirty. Runway stays
     // registered and any project that pinned it is unaffected.
     video: ['seedance', 'runway'],
+    /*
+     * The finishing pass. Footage is generated at Seedance's 480p tier to keep
+     * exploring a shot affordable, and the pass that takes the finished cut
+     * back up to delivery size is the same provider's video-edit workflow at a
+     * larger tier -- so the draft and the finish are priced from one rate card
+     * and cannot disagree about what a second costs.
+     *
+     * Before this, `post` fell to Gridlight, which does not implement
+     * /postprocess: the cheap half of the plan worked and the half that
+     * produces the deliverable did not exist.
+     */
+    post: 'seedance',
     music: 'elevenlabs',
     voice: 'elevenlabs',
     sfx: 'elevenlabs',

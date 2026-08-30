@@ -165,6 +165,86 @@ function buildVideoRequest(payload) {
  * What this provider will ACTUALLY do with the request — the free preview that
  * every paid video action shows before spending. Same contract as Runway's.
  */
+/**
+ * The finishing pass: 480p footage taken back up to delivery size.
+ *
+ * Footage is generated at the draft tier so exploring a shot is affordable --
+ * $0.17/s against $0.85 at 1080p means three attempts cost less than one at
+ * delivery size. That plan only works if something can finish the cut, and
+ * `post` was served by Gridlight alone, which does not implement
+ * /postprocess. So the cheap half worked and the half that produces the
+ * deliverable did not exist.
+ *
+ * This is the `video-edit` workflow at the `4k` tier: the finished clip goes
+ * in, a larger one comes out, priced from the SAME rate card the draft floor is
+ * read from -- one table, so the saving and the finishing cost cannot disagree
+ * about what Seedance offers.
+ *
+ * ONLY `upscale`. The other three post sub-types are refused BY NAME rather
+ * than quietly handled, because Seedance exposes no grade, no face restoration
+ * and no compositing -- and an adapter that returns an upscaled file when asked
+ * to grade reports success for work it never did.
+ */
+const POST_SERVED = Object.freeze({
+    upscale: true,
+    face_restore: false,   // Seedance exposes no face-restoration workflow
+    color_grade: false,    // Seedance exposes no grade workflow
+    composite: false,      // compositing is an editorial act, not a generation
+});
+
+function buildPostRequest(payload) {
+    const p = payload || {};
+    const type = String(p.type || p.job_type || 'upscale').trim();
+
+    if (!POST_SERVED[type]) {
+        throw new Error(`seedance: ${type} is not served here -- Seedance offers a video-edit `
+            + 'workflow at a larger tier, which is an upscale; it exposes no grade, no face '
+            + 'restoration and no compositing. Do this one in the NLE.');
+    }
+
+    const source = p.source_video || p.video_url || p.input_video || p.init_video;
+    if (!source) {
+        /*
+         * Refused, never sent. Without a clip the video-edit workflow has
+         * nothing to edit and would generate something NEW from the prompt --
+         * a paid request returning a clip that is not the film, presented as
+         * the finished shot.
+         */
+        throw new Error('seedance: an upscale needs the finished clip (source_video) -- with no '
+            + 'source video there is nothing to finish, and the workflow would generate a new one');
+    }
+
+    /*
+     * 4K by default because that is what the finishing pass is FOR, and
+     * overridable because a 1080p delivery billed at the 4K rate is money spent
+     * on pixels nobody ships. Same precedence the draft path uses: what the
+     * caller asked for wins.
+     */
+    const asked = String(p.resolution || p.quality || '').trim().toLowerCase();
+    const resolution = RESOLUTIONS[asked] ? asked : '4k';
+
+    let duration = Number(p.duration_s !== undefined ? p.duration_s : (p.duration_ms || 0) / 1000);
+    if (!Number.isFinite(duration) || duration <= 0) duration = 5;
+    const clamped = Math.min(MAX_DURATION, Math.max(MIN_DURATION, Math.round(duration)));
+
+    const body = {
+        prompt: String(p.prompt || '').trim(),
+        video_url: source,
+        duration: clamped,
+    };
+    if (p.aspect_ratio || p.target_resolution) body.aspect_ratio = aspectFor(p);
+
+    return {
+        url: `${BASE_URL}/seedance-2.5-video-edit${RESOLUTIONS[resolution].suffix}`,
+        body,
+        images: [],
+        workflow: 'video-edit',
+        resolution,
+        usd_per_second: RESOLUTIONS[resolution].usdPerSecond,
+        estimated_usd: Number((RESOLUTIONS[resolution].usdPerSecond * clamped).toFixed(2)),
+    };
+}
+
 function describeVideoRequest(payload) {
     const p = payload || {};
     const built = buildVideoRequest(p);
@@ -236,15 +316,30 @@ async function awaitResult(requestId, apiKey, deadline) {
 }
 
 async function generate(capability, payload, opts) {
-    if (capability !== 'video') {
+    if (capability !== 'video' && capability !== 'post') {
         return { ok: false, status: 400, error: `seedance: ${capability} is not served here` };
     }
+
+    /*
+     * The post builder REFUSES three of the four sub-types, and that refusal is
+     * the answer -- so it runs before the credential check. Telling someone
+     * their key is missing when the real problem is that Seedance cannot grade
+     * sends them to look in the wrong place.
+     */
+    let req;
+    if (capability === 'post') {
+        try { req = buildPostRequest(payload); }
+        catch (err) { return { ok: false, status: 400, error: err.message }; }
+    }
+
     const { apiKey } = getCredential('seedance');
     if (!apiKey) return { ok: false, status: 401, error: 'seedance: no API key configured' };
 
-    const req = buildVideoRequest(payload);
-    if (!req.body.prompt && !req.images.length) {
-        return { ok: false, status: 400, error: 'seedance: nothing to generate from' };
+    if (!req) {
+        req = buildVideoRequest(payload);
+        if (!req.body.prompt && !req.images.length) {
+            return { ok: false, status: 400, error: 'seedance: nothing to generate from' };
+        }
     }
 
     let res;
@@ -284,7 +379,28 @@ async function generate(capability, payload, opts) {
  * reports as a 720p one.
  */
 function meterSeedance(capability, payload, result) {
-    if (capability !== 'video') return null;
+    if (capability !== 'video' && capability !== 'post') return null;
+
+    /*
+     * An upscale is billed per second at its tier's rate exactly as a
+     * generation is -- same table, same unit. Metered through the POST builder
+     * though, because the two resolve their tier differently: footage defaults
+     * to the draft floor and a finish defaults to 4K, so metering an upscale
+     * through the video builder would report a $51 finish as an $8 one.
+     */
+    if (capability === 'post') {
+        let built;
+        try { built = buildPostRequest(payload || {}); }
+        catch (err) { return null; }   // refused before anything was spent
+        const secs = (result && Number(result.duration_s)) || built.body.duration;
+        const suffix = built.resolution === '720p' ? '' : `-${built.resolution}`;
+        return {
+            unit: 'second',
+            quantity: Math.max(1, secs),
+            model: `seedance-2.5-video-edit${suffix}`,
+        };
+    }
+
     const built = buildVideoRequest(payload || {});
     const seconds = (result && Number(result.duration_s)) || built.duration_s;
     const res = (result && result.usage && result.usage.resolution) || built.resolution;
@@ -302,7 +418,7 @@ const seedanceAdapter = {
     kind: 'generator',
     label: 'Seedance 2.5 (ByteDance)',
     requiresKey: true,
-    capabilities: ['video'],
+    capabilities: ['video', 'post'],
 
     // Thirty. This is the reason it is here: Runway takes two.
     maxKeyframes: MAX_KEYFRAMES,
@@ -333,4 +449,5 @@ const seedanceAdapter = {
     },
 };
 
-module.exports = { adapter: seedanceAdapter, seedanceAdapter, buildVideoRequest, describeVideoRequest, RESOLUTIONS, WORKFLOWS, generate };
+module.exports = { adapter: seedanceAdapter, seedanceAdapter, buildVideoRequest,
+    buildPostRequest, POST_SERVED, describeVideoRequest, RESOLUTIONS, WORKFLOWS, generate };
