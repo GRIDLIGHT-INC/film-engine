@@ -294,6 +294,7 @@ film-engine/
 │       ├── draft-video.test.js        # The smallest raster a model will actually accept
 │       ├── prompt-visibility.test.js   # Every prompt, before every spend
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
+│       ├── generation-controls.test.js # Provider, model, tier and size, on the dialog that spends
 │       ├── aspect-consistency.test.js   # The board and the footage are the same shape
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
 │       ├── staleness-accept.test.js     # A warning you cannot act on is one you learn to ignore
@@ -3254,6 +3255,7 @@ node --test backend/tests/staleness-cost.test.js
 node --test backend/tests/draft-video.test.js
 node --test backend/tests/prompt-visibility.test.js
 node --test backend/tests/paid-preview.test.js
+node --test backend/tests/generation-controls.test.js
 node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js
 node --test backend/tests/staleness-accept.test.js

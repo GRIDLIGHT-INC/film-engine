@@ -34912,30 +34912,98 @@ ${fountainText.slice(0, 50000)}`;
      * editable prompt; they do not lose the facts.
      */
     async function confirmExtras(prompt, ceiling, capability) {
-        const gen = await generatorPicker(capability || 'image');
-        let tiers = [];
-        try { tiers = (await api(`/projects/${state.currentProject.id}/providers`)).image_tiers || []; }
-        catch (_) { tiers = []; }
+        const cap = capability || 'image';
         CONFIRM_GEN_PROMPT = prompt || '';
         CONFIRM_GEN_EDITED = false;
         CONFIRM_GEN_QUALITY = null;
         CONFIRM_GEN_PROVIDER = null;
+        CONFIRM_GEN_MODEL = null;
+        CONFIRM_GEN_SIZE = null;
+        CONFIRM_GEN_CAP = cap;
+
+        /*
+         * Every dial SERVED, for the capability actually being generated.
+         *
+         * This used to fetch `.image_tiers` whatever was running, so a video or
+         * music confirmation offered image tiers or nothing -- and VIDEO_TIERS
+         * existed in the engine and reached no surface at all. It also called
+         * `generatorPicker(o.capability)` where `o` is not a parameter of this
+         * function, which threw a ReferenceError and took the refine and
+         * recompose confirmations down with it.
+         */
+        let opts = null;
+        try {
+            const cat = await api(`/projects/${state.currentProject.id}/providers`);
+            opts = (cat.generation || {})[cap] || null;
+        } catch (_) { opts = null; }
+        CONFIRM_GEN_OPTS = opts;
+
         const n = Number(ceiling) || 0;
+        const box = (title, inner, note, noteId) => `
+          <div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
+            <div class="text-sm" style="opacity:.7;margin-bottom:6px;">${esc(title)}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">${inner}</div>
+            ${note ? `<div class="text-sm" style="opacity:.6;margin-top:6px;"${
+                noteId ? ` id="${noteId}"` : ''}>${esc(note)}</div>` : ''}
+          </div>`;
+
+        /*
+         * An uncredentialed generator is SHOWN AND DISABLED, never hidden.
+         * Hiding it answers "which of these should I use" while withholding
+         * "and this one is half the price if you sign up" -- the rule the
+         * generator comparison already follows.
+         */
+        const providers = (opts && opts.providers) || [];
+        const providerBox = providers.length < 2 ? '' : box('Generator for this one',
+            `<button type="button" class="btn btn-sm" data-gen="" onclick="pickGenerator('')"
+                     style="flex:1;min-width:110px;">Project default</button>`
+            + providers.map(p => `<button type="button" class="btn btn-secondary btn-sm"
+                    data-gen="${esc(p.id)}" onclick="pickGenerator('${esc(p.id)}')"
+                    ${p.configured ? '' : 'disabled'} style="flex:1;min-width:110px;"
+                    title="${p.configured ? '' : 'No API key stored for this generator'}">
+                    ${esc(p.label || p.id)}${p.configured ? '' : ' · no key'}</button>`).join(''),
+            'This generation only. Nothing is pinned to the project.', 'confirmGenProviderNote');
+
+        const tiers = (opts && opts.tiers) || null;
+        const tierBox = tiers && tiers.length ? box('Quality for this one',
+            tiers.map(t => `<button type="button" class="btn btn-secondary btn-sm"
+                    data-tier="${esc(t.id)}" onclick="pickGenQuality('${esc(t.id)}')"
+                    style="flex:1;min-width:118px;" title="${esc(t.purpose || '')}">
+                    ${esc(t.label || t.id)}</button>`).join(''),
+            "Using this project's setting. Pick one to change it for this generation only.",
+            'confirmGenQualityNote')
+            : (opts && opts.tiers_note
+                ? `<div class="text-sm text-muted" style="margin:8px 0;">${esc(opts.tiers_note)}</div>` : '');
+
+        /*
+         * Size, for the capabilities that have a raster. A director trying one
+         * hero frame at 2K should not have to change a project setting and
+         * change it back afterwards.
+         */
+        const sizes = (opts && opts.sizes) || null;
+        const sizeBox = sizes && sizes.length ? box('Size for this one',
+            `<button type="button" class="btn btn-sm" data-size="" onclick="pickGenSize('')"
+                     style="flex:1;min-width:110px;">Project default</button>`
+            + sizes.map(z => `<button type="button" class="btn btn-secondary btn-sm"
+                    data-size="${esc(z.id)}" onclick="pickGenSize('${esc(z.id)}')"
+                    style="flex:1;min-width:110px;">${esc(z.label || z.id)}</button>`).join(''),
+            'The provider may serve the nearest size it offers, or ignore it entirely — the '
+            + 'Compare Generators table says which do.', 'confirmGenSizeNote')
+            : (opts && opts.sizes_note
+                ? `<div class="text-sm text-muted" style="margin:8px 0;">${esc(opts.sizes_note)}</div>` : '');
+
+        /*
+         * The model slot is filled by pickGenerator, because a model only means
+         * anything relative to a provider -- "Nano Banana Pro" is a Google
+         * model and offering it beside Runway would be a choice the resolver
+         * refuses. Empty until a generator is picked, which is also why it is a
+         * container rather than markup rendered here.
+         */
         return `
-          ${gen}
-          ${await generatorPicker(o.capability || 'image')}
-          ${tiers.length ? `<div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
-              <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Quality for this one</div>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                ${tiers.map(t => `<button type="button" class="btn btn-secondary btn-sm" data-tier="${esc(t.id)}"
-                    onclick="pickGenQuality('${esc(t.id)}')" ${t.available ? '' : 'disabled'}
-                    style="flex:1;min-width:118px;">${esc(t.label)}${
-                    t.usd_per_image != null ? ` &middot; $${t.usd_per_image.toFixed(3)}` : ''}</button>`).join('')}
-              </div>
-              <div class="text-sm" style="opacity:.6;margin-top:6px;" id="confirmGenQualityNote">
-                Using this project's setting. Pick one to change it for this generation only.
-              </div>
-            </div>` : ''}
+          ${providerBox}
+          <div id="confirmGenModelBox"></div>
+          ${tierBox}
+          ${sizeBox}
           <div class="form-group">
             <label>The prompt
               <span class="text-sm text-muted" id="confirmGenChars">${(prompt || '').length}${n ? ` of ${n}` : ''}</span>
@@ -34950,11 +35018,26 @@ ${fountainText.slice(0, 50000)}`;
           </div>`;
     }
 
+    function pickGenSize(id) {
+        CONFIRM_GEN_SIZE = id || null;
+        document.querySelectorAll('#confirmGenModal [data-size]').forEach(b => {
+            b.classList.toggle('btn-secondary', b.dataset.size !== (id || ''));
+        });
+        const note = document.getElementById('confirmGenSizeNote');
+        if (note) {
+            note.textContent = id
+                ? `This generation is asked for at ${id}. Nothing is pinned to the project.`
+                : 'Using the project default size. Nothing is pinned to the project.';
+        }
+    }
+
     /** What the director chose in the confirmation just closed. */
     function confirmChoices() {
         return {
             ...(CONFIRM_GEN_PROVIDER ? { provider: CONFIRM_GEN_PROVIDER } : {}),
             ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
+            ...(CONFIRM_GEN_MODEL ? { model: CONFIRM_GEN_MODEL } : {}),
+            ...(CONFIRM_GEN_SIZE ? { size: CONFIRM_GEN_SIZE } : {}),
             ...(CONFIRM_GEN_EDITED && confirmGenEditedPrompt()
                 ? { prompt_override: confirmGenEditedPrompt() } : {}),
         };
@@ -35518,8 +35601,46 @@ ${fountainText.slice(0, 50000)}`;
           </div>`;
     }
 
+    /** The models the chosen generator actually offers, by name a director uses. */
+    function paintGenModels(providerId) {
+        const box = document.getElementById('confirmGenModelBox');
+        if (!box) return;
+        CONFIRM_GEN_MODEL = null;
+        const p = ((CONFIRM_GEN_OPTS && CONFIRM_GEN_OPTS.providers) || [])
+            .find(x => x.id === providerId);
+        const models = (p && p.models) || [];
+        if (!providerId || models.length < 2) { box.innerHTML = ''; return; }
+        box.innerHTML = `
+          <div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
+            <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Model on ${esc(p.label || p.id)}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button type="button" class="btn btn-sm" data-genmodel="" onclick="pickGenModel('')"
+                      style="flex:1;min-width:110px;">Their default</button>
+              ${models.map(m => `<button type="button" class="btn btn-secondary btn-sm"
+                    data-genmodel="${esc(m.id)}" onclick="pickGenModel('${esc(m.id)}')"
+                    style="flex:1;min-width:130px;"
+                    title="${esc(m.sizes ? 'sizes: ' + m.sizes.join(', ') : '')}">
+                    ${esc(m.label || m.id)}${m.sizes ? `<span class="text-sm" style="opacity:.6;"> · ${
+                        esc(m.sizes[m.sizes.length - 1])}</span>` : ''}</button>`).join('')}
+            </div>
+            <div class="text-sm" style="opacity:.6;margin-top:6px;" id="confirmGenModelNote">
+              This generation only.
+            </div>
+          </div>`;
+    }
+
+    function pickGenModel(id) {
+        CONFIRM_GEN_MODEL = id || null;
+        document.querySelectorAll('#confirmGenModal [data-genmodel]').forEach(b => {
+            b.classList.toggle('btn-secondary', b.dataset.genmodel !== (id || ''));
+        });
+        const note = document.getElementById('confirmGenModelNote');
+        if (note) note.textContent = id ? `Using ${id} for this generation only.` : 'This generation only.';
+    }
+
     function pickGenerator(id) {
         CONFIRM_GEN_PROVIDER = id || null;
+        paintGenModels(id || '');
         document.querySelectorAll('#confirmGenModal [data-gen]').forEach(b => {
             b.classList.toggle('btn-secondary', b.dataset.gen !== (id || ''));
         });
@@ -35693,6 +35814,8 @@ ${fountainText.slice(0, 50000)}`;
         return o.send({
             ...(CONFIRM_GEN_PROVIDER ? { provider: CONFIRM_GEN_PROVIDER } : {}),
             ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
+            ...(CONFIRM_GEN_MODEL ? { model: CONFIRM_GEN_MODEL } : {}),
+            ...(CONFIRM_GEN_SIZE ? { size: CONFIRM_GEN_SIZE } : {}),
             ...(CONFIRM_GEN_EDITED && confirmGenEditedPrompt()
                 ? { prompt_override: confirmGenEditedPrompt() } : {}),
         });
@@ -35883,6 +36006,10 @@ ${fountainText.slice(0, 50000)}`;
 
     let CONFIRM_GEN_QUALITY = null;
     let CONFIRM_GEN_PROVIDER = null;
+    let CONFIRM_GEN_MODEL = null;
+    let CONFIRM_GEN_SIZE = null;
+    let CONFIRM_GEN_CAP = 'image';
+    let CONFIRM_GEN_OPTS = null;
     let CONFIRM_GEN_PROMPT = null;      // the text as it was offered
     let CONFIRM_GEN_EDITED = false;
 

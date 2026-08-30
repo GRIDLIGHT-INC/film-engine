@@ -41,6 +41,21 @@ function resultJobId(result) {
     return (result && result.provider_job_id) || '';
 }
 
+
+/**
+ * What a director chose for THIS cue, as a provider-config overlay.
+ *
+ * Music, ambient and SFX read NO override at all: their confirmations showed a
+ * prompt and offered no choice of generator whatever, while the image and
+ * video paths had both. `spendContext` has always taken an overrides argument
+ * -- nothing here ever passed one.
+ */
+function cueOverride(req, capability) {
+    const { generationOverride } = require('../lib/generation-override');
+    const src = { ...((req && req.query) || {}), ...((req && req.body) || {}) };
+    return generationOverride(capability, src);
+}
+
 function resolveGenerator(capability, projectConfig) {
     const adapter = resolve(capability, projectConfig);
     if (adapter && typeof adapter.generate === 'function') return adapter;
@@ -375,7 +390,7 @@ async function generateMusic(req, res, sceneId) {
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
-    const musicProvider = resolveGenerator('music', spendContext({ id: scene.project_id }, null, scene));
+    const musicProvider = resolveGenerator('music', spendContext({ id: scene.project_id }, null, scene, cueOverride(req, 'music')));
 
     // Find music cues for this scene, or create from request body
     const scored = cueForScene(scene, project, req.body);
@@ -450,7 +465,7 @@ async function generateMusicStream(req, res, sceneId) {
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
-    const musicProvider = resolveGenerator('music', spendContext({ id: scene.project_id }, null, scene));
+    const musicProvider = resolveGenerator('music', spendContext({ id: scene.project_id }, null, scene, cueOverride(req, 'music')));
     const scored = cueForScene(scene, project, req.body);
     let musicCue = scored.cue;
     // The same builder the free brief showed — the measured length, and the
@@ -537,7 +552,7 @@ async function generateSFX(req, res, shotId) {
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
-    const sfxProvider = resolveGenerator('sfx', spendContext({ id: scene.project_id }, shot, scene));
+    const sfxProvider = resolveGenerator('sfx', spendContext({ id: scene.project_id }, shot, scene, cueOverride(req, 'sfx')));
 
     let sceneCard = {};
     try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
@@ -695,7 +710,7 @@ async function generateAmbient(req, res, sceneId) {
     const location = scene.location_id
         ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id)
         : null;
-    const ambientProvider = resolveGenerator('ambient', spendContext({ id: scene.project_id }, null, scene));
+    const ambientProvider = resolveGenerator('ambient', spendContext({ id: scene.project_id }, null, scene, cueOverride(req, 'ambient')));
 
     const ambient = ambientOptions(scene, req.body);
     const payload = buildAmbientPrompt(scene, location, ambient);

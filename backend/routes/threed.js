@@ -316,7 +316,7 @@ async function generateModel(req, res, kind, subjectId, stream) {
         });
     }
     return runGenerateSync(res, THREED_ENDPOINTS.generate, payload, {
-        projectId, subject, kind, format, jobId, subjectId, metaKind: 'model_3d',
+        projectId, subject, kind, format, jobId, subjectId, metaKind: 'model_3d', req,
     });
 }
 
@@ -376,7 +376,7 @@ async function generateFromImage(req, res, kind, subjectId, stream) {
         });
     }
     return runGenerateSync(res, THREED_ENDPOINTS.fromImage, payload, {
-        projectId, subject, kind, format, jobId, subjectId, metaKind: 'model_3d',
+        projectId, subject, kind, format, jobId, subjectId, metaKind: 'model_3d', req,
     });
 }
 
@@ -397,11 +397,22 @@ async function generateFromImage(req, res, kind, subjectId, stream) {
  * refused for having no prompt. Resolving without translating would trade one
  * confusing error for another.
  */
-function threedProviderFor(projectId) {
+function threedProviderFor(projectId, req) {
     try {
         const { resolveGenerator } = require('../lib/providers');
         const { providerConfigFor } = require('../lib/provider-config');
-        return resolveGenerator('model3d', providerConfigFor(projectId));
+        /*
+         * What a director chose for THIS mesh.
+         *
+         * 3D read no override at all: its confirmation showed a prompt and
+         * offered no choice of generator, while the image and video paths had
+         * both. `req` is optional so every existing caller is unaffected.
+         */
+        const { generationOverride } = require('../lib/generation-override');
+        const src = { ...((req && req.query) || {}), ...((req && req.body) || {}) };
+        const chosen = generationOverride('model3d', src);
+        const config = providerConfigFor(projectId);
+        return resolveGenerator('model3d', chosen ? { ...config, ...chosen } : config);
     } catch (_) { return null; }
 }
 
@@ -441,8 +452,8 @@ function threedPayloadFor(adapter, endpoint, payload) {
  * run it, and an adapter that cannot serve an operation should not take the
  * feature down with it.
  */
-async function callThreeD(endpoint, payload, projectId) {
-    const adapter = threedProviderFor(projectId);
+async function callThreeD(endpoint, payload, projectId, req) {
+    const adapter = threedProviderFor(projectId, req);
     const id = adapter && (adapter.id || adapter.provider);
     if (adapter && id !== 'gridlight' && typeof adapter.generate === 'function') {
         const result = await adapter.generate('model3d', threedPayloadFor(adapter, endpoint, payload));
@@ -458,7 +469,7 @@ async function callThreeD(endpoint, payload, projectId) {
 
 async function runGenerateSync(res, endpoint, payload, ctx) {
     try {
-        const result = await callThreeD(endpoint, payload, ctx.projectId);
+        const result = await callThreeD(endpoint, payload, ctx.projectId, ctx.req);
         if (!result.ok) {
             db.prepare('UPDATE film_3d_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, ctx.jobId);
             if (result.status === 503) return json(res, 503, serviceUnavailableError(endpoint, '3d'));
@@ -578,7 +589,7 @@ async function meshOp(req, res, assetId, op) {
     ).run(jobId, asset.project_id, asset.character_id, meta.subject_kind || 'character', genType, assetId, payload.model, format, JSON.stringify(payload));
 
     try {
-        const result = await callThreeD(endpoint, payload, asset.project_id);
+        const result = await callThreeD(endpoint, payload, asset.project_id, req);
         if (!result.ok) {
             db.prepare('UPDATE film_3d_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
             if (result.status === 503) return json(res, 503, serviceUnavailableError(endpoint, '3d'));
@@ -679,7 +690,7 @@ async function batchModelsStream(req, res, projectId) {
         );
 
         try {
-            const result = await callThreeD(THREED_ENDPOINTS.generate, payload, projectId);
+            const result = await callThreeD(THREED_ENDPOINTS.generate, payload, projectId, req);
             if (!result.ok) throw new Error(result.error);
 
             const reg = await registerModel(projectId, subject, s.kind, format, result.data, jobId, 'model_3d');

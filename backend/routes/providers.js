@@ -206,10 +206,30 @@ function getProjectProviders(res, projectId) {
      * a menu that hid that would be promising a model it cannot run.
      */
     const { tierMenu, DEFAULT_TIER } = require('../lib/quality-tiers');
+    /*
+     * What a pre-spend dialog may offer, PER CAPABILITY.
+     *
+     * `image_tiers` was the only menu served, and the confirmation fetched it
+     * whatever was being generated -- so a video or music confirmation showed
+     * image tiers, or nothing at all. VIDEO_TIERS existed in lib/video-tiers.js
+     * and reached no surface.
+     *
+     * Served rather than typed into the page, on the card-vocabulary rule: a
+     * page holding its own list offers choices the resolver refuses, and the
+     * refusal reads as the generation being broken.
+     */
+    const { generationOptions } = require('../lib/generation-override');
+    const generation = {};
+    for (const cap of CAPABILITIES) {
+        const opts = generationOptions(cap);
+        if (opts) generation[cap] = opts;
+    }
+
     return json(res, 200, {
         project_id: projectId, capabilities: CAPABILITIES, config, effective,
         image_quality: config.image_quality || DEFAULT_TIER,
         image_tiers: tierMenu(config),
+        generation,
     });
 }
 
