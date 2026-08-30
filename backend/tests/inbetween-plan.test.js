@@ -245,8 +245,11 @@ test('W1 · the strip is reachable from the page, not only from an agent', () =>
     assert.ok(planAt > -1, 'the control never reads the free plan');
     assert.ok(spendAt > -1, 'the control never generates');
     assert.ok(planAt < spendAt, 'the strip is generated before its free preview is read');
-    assert.ok(/confirm\(/.test(fn.slice(0, spendAt)),
-        'the strip spends without a confirmation naming what it buys');
+    // The SHARED gate. This required a literal `confirm(`, which enshrined the
+    // bare browser confirm as the bar -- a sentence and a count, with nothing
+    // to read and no generator, quality or size to choose.
+    assert.ok(/confirmPaidImage\s*\(/.test(fn.slice(0, spendAt)),
+        'the strip spends without the shared confirmation naming what it buys');
 
     // And what was NOT attempted is named: a partial strip reported as success
     // is how a sequence gets joined through moments nobody has seen.

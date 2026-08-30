@@ -110,7 +110,9 @@ test('A5 · playback can regenerate a scene\'s dialogue, and says what that cost
     assert.ok(fn, 'pbRegenerateDialogue is not an async function that can be read');
     assert.ok(/regenerate:\s*true/.test(fn[0]),
         'the button does not force regeneration, so an unchanged line is reused and nothing happens');
-    assert.ok(/confirm\(/.test(fn[0]), 'a paid action must say what it costs before it spends');
+    assert.ok(/confirmPaidImage\s*\(/.test(fn[0]),
+        'a paid action must go through the shared confirmation, which shows the lines it will '
+        + 'speak and lets the voice provider and model be chosen');
 });
 
 /* ── B. Music details, without buying the cue again ─────────────────────── */

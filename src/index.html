@@ -14958,24 +14958,32 @@ THREE.GLTFLoader = GLTFLoader;
      * Save, apply, regenerate, reload — in that order, because regenerating
      * before applying would generate from the previous angle.
      */
+    /**
+     * Render the staged angle: apply it to the card, then generate the frame.
+     *
+     * In that order -- regenerating before applying would generate from the
+     * previous angle. The prompt is free to look at, which is what keeps
+     * exploring from being a budget decision.
+     */
     async function previsRenderShot() {
         if (!PREVIS.shotId) return previsStatus('Pick a shot first.');
-        if (!confirm('This Previs intent is staged and not yet applied.\n\n'
-            + 'Apply it to the scene card and generate the frame? This replaces the existing keyframe and costs credits.')) return;
-
-        setStatus('Rendering this angle...', true);
-        try {
-            await api(`/shots/${PREVIS.shotId}/previs`, { method: 'PUT', body: JSON.stringify(previsReadInspector()) });
-            await api(`/shots/${PREVIS.shotId}/previs/apply`, { method: 'POST', body: JSON.stringify({}) });
-            await api(`/shots/${PREVIS.shotId}/storyboard/regenerate`, { method: 'POST' });
-            setStatus('Frame regenerated from this blocking.');
-            // Reload so the pane shows what was just made rather than what it
-            // replaced — otherwise the answer to "how would this look" is the
-            // old picture.
-            await previsOpenShot(PREVIS.shotId);
-        } catch (err) {
-            setStatus('Could not render this angle: ' + err.message);
-        }
+        return confirmPaidImage({
+            title: 'Render this angle',
+            capability: 'image',
+            previewUrl: '/shots/' + PREVIS.shotId + '/preview',
+            note: 'This applies the staged blocking to the scene card and replaces the existing keyframe.',
+            send: async choices => {
+                setStatus('Rendering this angle...', true);
+                try {
+                    await api('/shots/' + PREVIS.shotId + '/previs/apply', { method: 'POST', body: '{}' });
+                    await api('/shots/' + PREVIS.shotId + '/storyboard/regenerate', {
+                        method: 'POST', body: JSON.stringify(choices || {}),
+                    });
+                    setStatus('Angle rendered.');
+                    if (typeof loadPrevisPage === 'function') loadPrevisPage();
+                } catch (err) { setStatus('Could not render: ' + err.message); }
+            },
+        });
     }
 
     function previsRenderAddButtons() {
@@ -24135,78 +24143,42 @@ ${fountainText.slice(0, 50000)}`;
      * The cost leads the confirmation, because this is the one control on the
      * page that spends more than one generation in a press.
      */
+    /**
+     * Sweep the compass: the sides this location is missing.
+     *
+     * Through the shared gate, so the generator, model, quality and size are a
+     * choice. The plan is FREE and is what prices the sweep, so the number in
+     * the confirmation is the number that will be charged.
+     */
+    const SWEEP_NOTE = 'Each side is anchored on the plate you already have, so they are four '
+        + 'sides of one place rather than four places. The prompt is per side and is shown when '
+        + 'each is generated; the choices here apply to the whole sweep.';
+
     async function sweepLocationCompass(locationId, btn) {
-        let plan;
-        try { plan = await api(`/locations/${locationId}/plate/compass/plan`); }
-        catch (_) { plan = null; }
-
-        const due = plan && Array.isArray(plan.generate) ? plan.generate.map(v => v.name) : null;
-        if (plan && plan.refused) {
-            return alert('This location has no plate yet.\n\n' + plan.reason
-                + '\n\nGenerate its reference plate first, then press this again.');
-        }
-        if (due && !due.length) {
-            return alert('All four sides are already photographed. '
-                + 'To re-shoot them, delete the ones you want replaced first.');
-        }
-        const names = due ? due.join(', ') : 'east, south and west';
-        const count = due ? due.length : 3;
-        /*
-         * Name what is being SKIPPED and why.
-         *
-         * "Photograph all four sides" that quietly buys two of them reads as the
-         * button half-working. A side already on disk is skipped so it is not
-         * paid for twice — which is only obvious if the dialog says so, and only
-         * actionable now that a view can be deleted.
-         */
-        const held = (plan && plan.skipped || []).map(v => v.name);
-        if (!confirm(`Photograph ${names}?\n\n`
-            + `${count} image${count === 1 ? '' : 's'} will be generated — this costs credits.\n\n`
-            + 'Each side is a quarter turn from the plate you already have. North is that existing '
-            + 'plate and is never regenerated.'
-            /*
-             * EVERY side's prompt. A sweep sends a different one per side —
-             * that is what makes them different sides — so showing the first
-             * and implying the rest would understate what is being bought.
-             */
-            + ((plan && plan.generate || []).some(v => v.prompt)
-                ? '\n\n' + plan.generate.map(v =>
-                    `${v.name}:\n${String(v.prompt || '').slice(0, 320)}`).join('\n\n')
-                : '')
-            + (held.length
-                ? `\n\nAlready photographed, so not bought again: ${held.join(', ')}. `
-                  + 'Delete a side with the × on it to have this re-shoot it.'
-                : ''))) return;
-
-        const label = btn && btn.innerHTML;
-        if (btn) { btn.disabled = true; btn.textContent = 'Photographing…'; }
-        setStatus('Photographing the other sides — this takes a minute…', true);
-        try {
-            const r = await api(`/locations/${locationId}/plate/compass`,
-                { method: 'POST', body: JSON.stringify({}) });
-            const made = (r.generated || []).filter(g => g.ok).map(g => g.view);
-            const failed = (r.generated || []).filter(g => !g.ok);
-            /*
-             * A partial sweep is REPORTED as partial. Saying "done" after two of
-             * three succeeded is how a director shoots a reverse angle against a
-             * side that was never generated and blames the model.
-             */
-            if (failed.length) {
-                const stopped = (r.not_attempted || []).length
-                    ? ` ${r.not_attempted.join(' and ')} not attempted — a provider that has started `
-                      + 'refusing will refuse those too.'
-                    : '';
-                setStatus(`${made.length ? made.join(', ') + ' photographed. ' : ''}`
-                    + `${failed[0].view} failed: ${failed[0].error || 'the provider refused it'}.${stopped}`);
-            } else {
-                setStatus(`${made.join(', ')} photographed. A shot picks its side in the scene card.`);
-            }
-        } catch (err) {
-            setStatus('Could not photograph the other sides: ' + err.message);
-        } finally {
-            if (btn) { btn.disabled = false; btn.innerHTML = label; }
-        }
-        renderLocationViews(locationId);
+        return confirmPaidImage({
+            title: 'Sweep the compass',
+            capability: 'image',
+            previewUrl: `/locations/${locationId}/plate/compass/plan`,
+            note: SWEEP_NOTE,
+            editable: false,
+            notEditableWhy: 'Each side is generated from its own prompt, shown as it runs.',
+            send: async choices => {
+                setStatus('Photographing the other sides…', true);
+                if (btn) btn.disabled = true;
+                try {
+                    const r = await api(`/locations/${locationId}/plate/compass`, {
+                        method: 'POST', body: JSON.stringify(choices || {}),
+                    });
+                    const made = (r && r.generated) || [];
+                    const missed = (r && r.not_attempted) || [];
+                    setStatus(missed.length
+                        ? `${made.length} side(s) made; not attempted: ${missed.join(', ')}`
+                        : `${made.length} side(s) generated.`);
+                    if (typeof loadLocations === 'function') loadLocations();
+                } catch (err) { setStatus('Could not sweep: ' + err.message); }
+                finally { if (btn) btn.disabled = false; }
+            },
+        });
     }
 
     /**
@@ -24278,21 +24250,22 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     /** Ask for a camera position and photograph it, anchored on what exists. */
-    async function addLocationView(locationId) {
+    /**
+     * Photograph this location from a new position.
+     *
+     * The view is asked for first because it IS the subject of the prompt, and
+     * then the shared gate shows what that prompt became — with the provider,
+     * model, quality and size for this one generation. It was a bare prompt()
+     * followed by an immediate POST, so a director never saw what was sent.
+     */
+    async function addLocationView(locationId, onDone) {
         const view = prompt('Describe where the camera stands, the way you would tell a photographer.\n\n'
             + 'For example: from the far kerb, looking back across the bulb');
         if (!view || !view.trim()) return;
-        setStatus(`Photographing ${view.trim()}…`, true);
-        try {
-            const r = await api(`/locations/${locationId}/plate/generate`, {
-                method: 'POST', body: JSON.stringify({ view: view.trim() }),
+        return regeneratePlate('location', locationId, view.trim(),
+            typeof onDone === 'function' ? onDone : () => {
+                if (typeof loadLocations === 'function') loadLocations();
             });
-            setStatus(r.error ? ('Could not photograph it: ' + r.error)
-                : `New view added: ${view.trim()}. Every shot pointed this way can use it now.`);
-        } catch (err) {
-            setStatus('Could not photograph it: ' + err.message);
-        }
-        renderLocationViews(locationId);
     }
 
     /** Keep the image, record it as current for the inputs it now sits beside. */
@@ -24305,7 +24278,7 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     /** The other remedy, named so the cost is visible before it is chosen. */
-    async function regeneratePlate(kind, subjectId, view) {
+    async function regeneratePlate(kind, subjectId, view, onDone) {
         const base = kind === 'character' ? `/characters/${subjectId}/refsheet`
             : kind === 'prop' ? `/props/${subjectId}/plate`
             : `/locations/${subjectId}/plate`;
@@ -24323,6 +24296,13 @@ ${fountainText.slice(0, 50000)}`;
                     await api(`${base}/generate`, { method: 'POST',
                         body: JSON.stringify({ ...choices, ...(view ? { view } : {}) }) });
                     setStatus('Plate generated.');
+                    /*
+                     * The caller's own refresh, when it has one. A subject
+                     * sheet has to repaint its own plates; the entity lists
+                     * repaint theirs. Delegating here rather than duplicating
+                     * the dialog is what closed four ungated buttons at once.
+                     */
+                    if (typeof onDone === 'function') { onDone(); return; }
                     if (kind === 'character') loadCharacters();
                     else if (kind === 'prop') loadProps();
                     else loadLocations();
@@ -25308,18 +25288,20 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     /** Generate one named view — a planned slot, or an official prop view. */
-    function generateSheetView(view) {
-        if (SS.kind === 'location') return generateLocationVariant(view);
-        if (!confirm(`Generate the ${view} view of this prop?\n\nThis costs credits. Every frame it `
-            + 'appears in is conditioned on one of these.')) return;
-        return ssBusy(`Generating ${view}…`, async () => {
-            try {
-                await api(`/props/${SS.id}/plate/generate`, {
-                    method: 'POST', body: JSON.stringify({ view }),
-                });
-                await renderSubjectSheet();
-            } catch (err) { setStatus('Error: ' + err.message); }
-        });
+    /**
+     * Generate one view from a subject sheet.
+     *
+     * DELEGATES to regeneratePlate, which already carries the free preview, the
+     * editable prompt and the provider/model/quality/size controls. This used
+     * to send a bare confirm() and then POST to `/props/${SS.id}/plate/generate`
+     * for anything that was not a location -- so pressing Generate on a
+     * CHARACTER sheet posted a character's id to the props endpoint, and
+     * nothing happened. Reported as exactly that: "no prompt was shown,
+     * nothing, not even a spinner".
+     */
+    async function generateSheetView(view) {
+        if (!SS.id || !SS.kind) return;
+        return regeneratePlate(SS.kind, SS.id, view, () => renderSubjectSheet());
     }
 
     /**
@@ -25380,26 +25362,18 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     async function generateLocationPlateFor(id) {
-        if (!confirm('Generate the plate for this location?\n\nThis costs credits. Every shot in a scene '
-            + 'set here is conditioned on it, so it is worth getting the description right first.')) return;
-        await ssBusy('Generating plate…', async () => {
-            try {
-                await api(`/locations/${id}/plate/generate`, { method: 'POST', body: '{}' });
-                await renderSubjectSheet();
-                if (typeof loadLocations === 'function') loadLocations();
-            } catch (err) { setStatus('Error: ' + err.message); }
+        // Delegated: one gate, one preview, one set of controls.
+        return regeneratePlate('location', id, null, () => {
+            renderSubjectSheet();
+            if (typeof loadLocations === 'function') loadLocations();
         });
     }
 
     async function generatePropPlateFor(id) {
-        if (!confirm('Generate the plate for this prop?\n\nThis costs credits. Every frame it appears in '
-            + 'is conditioned on it.')) return;
-        await ssBusy('Generating plate…', async () => {
-            try {
-                await api(`/props/${id}/plate/generate`, { method: 'POST', body: '{}' });
-                await renderSubjectSheet();
-                if (typeof loadProps === 'function') loadProps();
-            } catch (err) { setStatus('Error: ' + err.message); }
+        // Delegated: one gate, one preview, one set of controls.
+        return regeneratePlate('prop', id, null, () => {
+            renderSubjectSheet();
+            if (typeof loadProps === 'function') loadProps();
         });
     }
 
@@ -25411,31 +25385,10 @@ ${fountainText.slice(0, 50000)}`;
      * second mechanism for "the same place, different conditions" is how one of
      * them ends up not reaching gatherShotReferences.
      */
+    /** From a subject sheet: sweep the compass, or photograph one named view. */
     async function generateLocationVariant(view) {
-        if (view === 'compass') {
-            let plan = null;
-            try { plan = await api(`/locations/${SS.id}/plate/compass/plan`); } catch (_) { plan = null; }
-            const cost = plan && plan.sides ? `${plan.sides.length} side(s)` : 'the missing sides';
-            if (!confirm(`Sweep the compass for this location?\n\nGenerates ${cost}. Each is anchored on the `
-                + 'plate you already have, so they are four sides of one place rather than four places.')) return;
-            return ssBusy('Sweeping…', async () => {
-                try {
-                    const res = await api(`/locations/${SS.id}/plate/compass`, { method: 'POST', body: '{}' });
-                    if (res.skipped && res.skipped.length) setStatus('Not attempted: ' + res.skipped.join(', '));
-                    await renderSubjectSheet();
-                } catch (err) { setStatus('Error: ' + err.message); }
-            });
-        }
-        if (!confirm(`Generate this location at ${view}?\n\nThis costs credits. It is kept as its own view, `
-            + 'so a shot can ask for it by name rather than being regraded afterwards.')) return;
-        await ssBusy(`Generating ${view}…`, async () => {
-            try {
-                await api(`/locations/${SS.id}/plate/generate`, {
-                    method: 'POST', body: JSON.stringify({ view, time_of_day: view }),
-                });
-                await renderSubjectSheet();
-            } catch (err) { setStatus('Error: ' + err.message); }
-        });
+        if (view === 'compass') return sweepLocationCompass(SS.id);
+        return regeneratePlate('location', SS.id, view, () => renderSubjectSheet());
     }
 
     /**
@@ -25737,31 +25690,27 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     /** A reference generated from a prompt, filed under a category. */
+    /** One reference study, filed under a category. */
     async function generateSheetReference() {
         const category = csCategoryPrompt('Generate a reference.');
         if (category === undefined) return;
-        const instruction = prompt(`What should it show?\n\ne.g. "three-quarter face study, hard side light"`);
+        const instruction = prompt('What should it show?\n\ne.g. "three-quarter face study, hard side light"');
         if (!instruction) return;
-
-        let pv;
-        try {
-            pv = await api(`/characters/${SHEET.id}/explore/preview?count=1`
-                + `&instruction=${encodeURIComponent(instruction)}`);
-        } catch (err) { setStatus('Preview failed: ' + err.message); return; }
-        if (pv.error) { setStatus(pv.error); return; }
-        if (!confirm(`Generate one ${category} reference?\n\nProvider: ${pv.provider}\n`
-            + `Size: ${pv.size ? pv.size.width + 'x' + pv.size.height : 'provider default'}\n\n`
-            + 'It is filed as a CONCEPT: nothing is conditioned on it until you promote it.')) return;
-
-        await csBusy('Generating reference…', async () => {
-            try {
-                await api(`/characters/${SHEET.id}/explore`, {
-                    method: 'POST',
-                    body: JSON.stringify({ count: 1, instruction, category }),
-                });
-                await renderCharacterSheet();
-                setStatus('Reference generated.');
-            } catch (err) { setStatus('Generate failed: ' + err.message); }
+        return confirmPaidImage({
+            title: 'Generate a reference',
+            capability: 'image',
+            previewUrl: `/characters/${SHEET.id}/explore/preview?count=1`
+                + `&instruction=${encodeURIComponent(instruction)}`,
+            note: 'Filed as a concept. It conditions nothing until it is promoted to a reference.',
+            send: async choices => csBusy('Generating reference…', async () => {
+                try {
+                    await api(`/characters/${SHEET.id}/explore`, {
+                        method: 'POST',
+                        body: JSON.stringify({ ...choices, count: 1, instruction, category }),
+                    });
+                    if (typeof openCharacterSheet === 'function') await openCharacterSheet(SHEET.id);
+                } catch (err) { setStatus('Error: ' + err.message); }
+            }),
         });
     }
 
@@ -25788,21 +25737,26 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     /** The same item, generated from its own description. */
+    /** A wardrobe or prop study, filed under costume. */
     async function generateWardrobeItem() {
         const title = prompt('Wardrobe or prop — what is it?\n\ne.g. "Rust cardigan / worn open, mid-hip"');
         if (!title) return;
-        if (!confirm(`Generate a picture of "${title}"?\n\nThis SPENDS one image generation, and is `
-            + 'filed under costume as a concept.')) return;
-
-        await csBusy('Generating wardrobe…', async () => {
-            try {
-                await api(`/characters/${SHEET.id}/explore`, {
-                    method: 'POST',
-                    body: JSON.stringify({ count: 1, instruction: title, category: 'costume' }),
-                });
-                await renderCharacterSheet();
-                setStatus('Wardrobe item generated.');
-            } catch (err) { setStatus('Generate failed: ' + err.message); }
+        return confirmPaidImage({
+            title: `Generate "${title}"`,
+            capability: 'image',
+            previewUrl: `/characters/${SHEET.id}/explore/preview?count=1`
+                + `&instruction=${encodeURIComponent(title)}`,
+            note: 'Filed under costume as a concept.',
+            send: async choices => csBusy('Generating wardrobe…', async () => {
+                try {
+                    await api(`/characters/${SHEET.id}/explore`, {
+                        method: 'POST',
+                        body: JSON.stringify({ ...choices, count: 1, instruction: title,
+                            category: 'costume', note: title }),
+                    });
+                    if (typeof openCharacterSheet === 'function') await openCharacterSheet(SHEET.id);
+                } catch (err) { setStatus('Error: ' + err.message); }
+            }),
         });
     }
 
@@ -25935,37 +25889,54 @@ ${fountainText.slice(0, 50000)}`;
      * generates only that one, which is what the pending plate's own click
      * does; with no argument it asks whether to do all four.
      */
+    /**
+     * Generate the official views — all four, or one.
+     *
+     * Each view goes through the SHARED confirmation, so the prompt is shown
+     * and editable and the provider, model, quality and size can be chosen. It
+     * used to be a bare confirm() naming a count, which told a director how
+     * many images they were buying and nothing about what any of them would be.
+     *
+     * A sweep confirms ONCE and then runs, because four dialogs to buy a
+     * turnaround is a worse experience than one; the choices made in that one
+     * apply to every view in the sweep, which is what a turnaround wants
+     * anyway — four views generated on different models is four different
+     * people.
+     */
     async function generateOfficialViews(view) {
         if (!SHEET.id) return;
         const c = SHEET.character || {};
         const wanted = view ? [view] : CS_VIEWS.map(v => v.id);
         const label = view ? (CS_VIEWS.find(v => v.id === view) || {}).label || view : 'all four views';
 
-        if (!confirm(`Generate ${label} for ${c.name || 'this character'}?\n\n`
-            + `This SPENDS: ${wanted.length} image generation(s).\n\n`
-            + 'They are generated from the appearance text and whatever references are promoted '
-            + 'in the gallery, and each replaces the current plate for its view.')) return;
-
-        await csBusy(`Generating ${wanted.length} view(s)…`, async () => {
-        let made = 0;
-        for (const v of wanted) {
-            try {
-                await api(`/characters/${SHEET.id}/refsheet/generate`, {
-                    method: 'POST', body: JSON.stringify({ views: [v] }),
-                });
-                made++;
-                setStatus(`Generated ${made} of ${wanted.length}…`);
-            } catch (err) {
-                // Stop on a refusal rather than asking four more times: a
-                // refusal repeated is a refusal paid for.
-                setStatus(`${made} of ${wanted.length} — then: ${err.message}`);
-                break;
-            }
-        }
-        if (made === wanted.length) setStatus(`${made} view(s) generated.`);
+        return confirmPaidImage({
+            title: `Generate ${label}`,
+            capability: 'image',
+            previewUrl: `/characters/${SHEET.id}/refsheet/preview${
+                view ? `?view=${encodeURIComponent(view)}` : ''}`,
+            note: `${wanted.length} image generation${wanted.length === 1 ? '' : 's'} for ${
+                c.name || 'this character'}. Each replaces the current plate for its view, and `
+                + 'every frame this character appears in is conditioned on one of them.',
+            send: async choices => csBusy(`Generating ${wanted.length} view(s)…`, async () => {
+                let made = 0;
+                for (const v of wanted) {
+                    try {
+                        await api(`/characters/${SHEET.id}/refsheet/generate`, {
+                            method: 'POST', body: JSON.stringify({ ...choices, views: [v] }),
+                        });
+                        made++;
+                        setStatus(`Generated ${made} of ${wanted.length}…`);
+                    } catch (err) {
+                        // Stop on a refusal rather than asking again: a refusal
+                        // repeated is a refusal paid for.
+                        setStatus(`${made} of ${wanted.length} — then: ${err.message}`);
+                        break;
+                    }
+                }
+                if (made === wanted.length) setStatus(`${made} view(s) generated.`);
+                if (typeof openCharacterSheet === 'function') await openCharacterSheet(SHEET.id);
+            }),
         });
-        await renderCharacterSheet();
-        loadCharacters();
     }
 
     /**
@@ -26261,55 +26232,39 @@ ${fountainText.slice(0, 50000)}`;
      * parallel set of audition files attached to nothing, which meant paying
      * twice for the same lines and throwing one set away.
      */
+    /** Every shot in a scene, confirmed once and then run shot by shot. */
     async function generateSceneDialogue(sceneId, lineCount) {
-        const est = Math.max(5, Math.round((lineCount || 1) * 1.1));
-        if (!confirm(`Generate the dialogue for this scene?\n\n`
-            + `${lineCount} line(s), about ${est < 60 ? est + ' seconds' : Math.round(est / 60) + ' minute(s)'}.\n\n`
-            + 'Each line is registered against its shot — this is the take the film uses, and '
-            + 'Playback will speak it as each shot comes up.\n\n'
-            + 'Lines already generated in the same voice are reused, not bought again.')) return;
-
-        const shots = (state.shots || []).filter(sh => sh.scene_id === sceneId);
-        let list = shots;
-        if (!list.length) {
-            try {
-                const data = await api(`/projects/${state.currentProject.id}/shotlist`);
-                state.shots = data.shots || [];
-                list = state.shots.filter(sh => sh.scene_id === sceneId);
-            } catch (err) { setStatus('Could not read the shot list: ' + err.message); return; }
-        }
-        if (!list.length) {
-            setStatus('This scene has no shots yet — break it down first, then generate the dialogue.');
-            return;
-        }
-
-        /*
-         * Shot by shot from the CLIENT, so progress is real.
-         *
-         * The batch route does the same work in one request, and a
-         * sixty-eight line scene then runs for over a minute with the page
-         * looking untouched — reported as "nothing happened but my credits went
-         * down". One request per shot means the count moves.
-         */
-        let made = 0, failed = 0;
-        for (let i = 0; i < list.length; i++) {
-            const sh = list[i];
-            setStatus(`Dialogue: shot ${sh.shot_code} (${i + 1} of ${list.length})…`, true);
-            try {
-                const res = await api(`/shots/${sh.id}/voice/generate`, { method: 'POST', body: '{}' });
-                const files = res.audio_files || [];
-                made += files.filter(f => f.status === 'complete').length;
-                const bad = files.filter(f => f.status !== 'complete');
-                failed += bad.length;
-                if (bad.length && bad[0].hint) setStatus(bad[0].hint);
-            } catch (err) {
-                // Stop on a refusal rather than asking for every remaining shot.
-                setStatus(`Stopped at ${sh.shot_code}: ${err.message}`);
-                return;
-            }
-        }
-        setStatus(`${made} line(s) generated${failed ? `, ${failed} failed` : ''}. `
-            + 'Open Playback to hear the scene.');
+        const shots = (SCENE_SHOTS && SCENE_SHOTS[sceneId]) || [];
+        const first = shots[0];
+        return confirmPaidImage({
+            title: 'Generate the dialogue for this scene',
+            capability: 'voice',
+            previewUrl: first ? `/shots/${first.id}/voice/preview` : null,
+            note: `${lineCount} line(s) across ${shots.length || 'the'} shot(s). The prompt shown `
+                + 'is the first shot\'s; each shot is generated from its own lines, and the '
+                + 'choices here apply to all of them.',
+            editable: false,
+            notEditableWhy: 'Each shot has its own lines — edit them on the shot card.',
+            send: async choices => {
+                let made = 0;
+                for (const sh of shots) {
+                    setStatus(`Generating ${sh.shot_code || ''}… (${made} of ${shots.length})`, true);
+                    try {
+                        await api(`/shots/${sh.id}/voice/generate`, {
+                            method: 'POST', body: JSON.stringify(choices || {}),
+                        });
+                        made++;
+                    } catch (err) {
+                        // A provider that has started refusing will refuse the
+                        // next one; stop rather than buying the same failure.
+                        setStatus(`${made} of ${shots.length} — then: ${err.message}`);
+                        return;
+                    }
+                }
+                setStatus(`Dialogue generated for ${made} shot(s).`);
+                if (typeof loadScenes === 'function') loadScenes();
+            },
+        });
     }
 
     /** What the read is doing, while it does it. */
@@ -26323,16 +26278,25 @@ ${fountainText.slice(0, 50000)}`;
      * THIS one registers against the shot and is what lip-sync and the mix
      * consume, so the confirmation says which it is.
      */
+    /** The take the film uses. Through the one gate, like everything that spends. */
     async function generateVoiceForShot(shotId, shotCode) {
-        if (!confirm(`Generate the dialogue for ${shotCode || 'this shot'}?\n\n`
-            + 'This SPENDS, and unlike an audition it is registered against the shot — it is the '
-            + 'take that lip-sync and the mix will use.')) return;
-        setStatus('Generating dialogue…');
-        try {
-            const res = await api(`/shots/${shotId}/voice/generate`, { method: 'POST', body: '{}' });
-            setStatus(res.error ? ('Dialogue: ' + res.error)
-                : `Dialogue generated for ${shotCode || 'shot'}.`);
-        } catch (err) { setStatus('Dialogue failed: ' + err.message); }
+        return confirmPaidImage({
+            title: `Generate the dialogue for ${shotCode || 'this shot'}`,
+            capability: 'voice',
+            previewUrl: `/shots/${shotId}/voice/preview`,
+            note: 'Unlike an audition this is registered against the shot — it is the take that '
+                + 'lip-sync and the mix will use.',
+            send: async choices => {
+                setStatus('Generating dialogue…', true);
+                try {
+                    await api(`/shots/${shotId}/voice/generate`, {
+                        method: 'POST', body: JSON.stringify(choices || {}),
+                    });
+                    setStatus('Dialogue generated.');
+                    if (typeof loadScenes === 'function') loadScenes();
+                } catch (err) { setStatus('Could not generate: ' + err.message); }
+            },
+        });
     }
 
     async function generateAllVoices() {
@@ -26477,44 +26441,31 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
+    /** Explore a subject: N concepts, through the one gate. */
     async function exploreSubject() {
         const count = Number(document.getElementById('galCount').value) || 3;
-        const instruction = document.getElementById('galInstruction').value.trim();
-        const status = document.getElementById('galStatus');
-
-        // Nothing spends without showing what it will send. The preview is
-        // free, so the gate costs nothing to pass and everything to skip.
-        status.textContent = 'Checking…';
-        let pv;
-        try {
-            pv = await api(`/${GAL.kind}s/${GAL.id}/explore/preview?count=${count}`
-                + (instruction ? `&instruction=${encodeURIComponent(instruction)}` : ''));
-        } catch (err) { status.textContent = 'Preview failed: ' + err.message; return; }
-        if (pv.error) { status.textContent = pv.error; return; }
-
-        const size = pv.size ? `${pv.size.width}x${pv.size.height}` : 'provider default';
-        const ignored = pv.size && pv.size.honoured === false
-            ? '\n\nNOTE: this provider ignores a requested resolution and chooses its own.' : '';
-        if (!confirm(
-            `Generate ${count} concept${count === 1 ? '' : 's'} for ${GAL.name}?\n\n`
-            + `Provider: ${pv.provider}\nSize: ${size}${ignored}\n\n`
-            + `These are kept as CONCEPTS. The approved plate is untouched and nothing is\n`
-            + `conditioned on them until you make one the reference.\n\n`
-            + `Prompt:\n${pv.prompt.slice(0, 700)}${pv.prompt.length > 700 ? '…' : ''}`)) {
-            status.textContent = '';
-            return;
-        }
-
-        status.textContent = `Generating ${count}…`;
-        try {
-            const res = await api(`/${GAL.kind}s/${GAL.id}/explore`, {
-                method: 'POST', body: JSON.stringify({ count, instruction }),
-            });
-            status.textContent = res.error
-                ? `${res.made} made, then: ${res.error}`
-                : `${res.made} concept(s) generated.`;
-            await loadGallery();
-        } catch (err) { status.textContent = 'Explore failed: ' + err.message; }
+        const instruction = (document.getElementById('galInstruction').value || '').trim();
+        const q = `count=${count}&instruction=${encodeURIComponent(instruction)}`;
+        return confirmPaidImage({
+            title: `Explore ${count} concept${count === 1 ? '' : 's'}`,
+            capability: 'image',
+            previewUrl: `/${GAL.kind}s/${GAL.id}/explore/preview?${q}`,
+            note: 'Concepts are kept beside the subject and condition nothing until one is '
+                + 'promoted to a reference.',
+            send: async choices => {
+                const status = document.getElementById('galStatus');
+                if (status) status.textContent = 'Generating…';
+                setStatus('Generating concepts…', true);
+                try {
+                    await api(`/${GAL.kind}s/${GAL.id}/explore`, {
+                        method: 'POST', body: JSON.stringify({ ...choices, count, instruction }),
+                    });
+                    if (status) status.textContent = '';
+                    setStatus('Concepts generated.');
+                    await loadGallery();
+                } catch (err) { if (status) status.textContent = 'Error: ' + err.message; }
+            },
+        });
     }
 
     function addInspirationPrompt() {
@@ -31585,17 +31536,28 @@ ${fountainText.slice(0, 50000)}`;
         });
     }
 
+    /** Rigging is a paid provider operation, so it is confirmed like one. */
     async function rigModel(assetId, btn) {
-        if (btn) { btn.disabled = true; btn.textContent = 'Rigging...'; }
-        setStatus('Rigging model...');
-        try {
-            await api('/models/' + assetId + '/rig', { method: 'POST', body: JSON.stringify({}) });
-            setStatus('Model rigged');
-            loadThreeD();
-        } catch (err) {
-            setStatus('Error: ' + err.message);
-            if (btn) { btn.disabled = false; btn.textContent = 'Rig'; }
-        }
+        return confirmPaidImage({
+            title: 'Rig this model',
+            capability: 'model3d',
+            previewUrl: `/models/${assetId}/rig/preview`,
+            note: 'Rigging runs on the 3D provider and costs credits.',
+            editable: false,
+            notEditableWhy: 'Rigging takes the mesh, not a prompt.',
+            send: async choices => {
+                if (btn) { btn.disabled = true; btn.textContent = 'Rigging…'; }
+                setStatus('Rigging model…', true);
+                try {
+                    await api('/models/' + assetId + '/rig', {
+                        method: 'POST', body: JSON.stringify(choices || {}),
+                    });
+                    setStatus('Model rigged.');
+                    loadThreeD();
+                } catch (err) { setStatus('Error: ' + err.message); }
+                finally { if (btn) { btn.disabled = false; btn.textContent = 'Rig'; } }
+            },
+        });
     }
 
     /**
@@ -31973,59 +31935,43 @@ ${fountainText.slice(0, 50000)}`;
      * sequences; it is reachable today through `sequence_station_update` and
      * `PUT /sequences/:id/stations/:shot/:index`. Named rather than dropped.
      */
-    async function stripSequence(id, btn) {
-        const busy = btn && btn.textContent;
-        if (btn) { btn.disabled = true; btn.textContent = 'Reading…'; }
-        let plan;
-        try { plan = await api(`/sequences/${id}/plan?expand=inbetweens&cadence_s=1`); }
-        catch (err) { alert('Could not read the strip: ' + err.message); return; }
-        finally { if (btn) { btn.disabled = false; btn.textContent = busy; } }
-
-        if (plan.refused) return alert('This sequence cannot run yet.\n\n' + plan.reason);
-
-        const strips = plan.strips || [];
-        const lines = strips.map(st => {
-            const thin = st.thinned ? ` (wanted ${st.wanted}, capped)` : '';
-            return `  ${st.shot_code || st.shot_id}: ${st.count} station${st.count === 1 ? '' : 's'}`
-                + `, ${st.generations} to generate${thin}`;
-        }).join('\n');
-        const cap = plan.station_cap ? `\n\nThe cap is ${plan.station_cap} stations a shot — the model's own contract, not a setting.` : '';
-        const cost = plan.images_estimated_credits != null
-            ? `\n\n${plan.images_needed} image${plan.images_needed === 1 ? '' : 's'} to generate`
-              + `, about ${plan.images_estimated_credits} credits.`
-            : '';
-
-        if (!confirm(`In-between strip — a station a second\n\n${lines}${cap}${cost}`
-            + '\n\nStation 0 of each shot is the frame you already approved and is not regenerated.'
-            + ' Each station after it is refined from the one before, so the strip cannot drift apart'
-            + ' the way independent rolls do.\n\nGenerate the strip now?')) return;
-
-        if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
-        let out;
-        try { out = await api(`/sequences/${id}/inbetweens`, { method: 'POST', body: JSON.stringify({ cadence_s: 1 }) }); }
-        catch (err) { alert('The strip stopped: ' + err.message); return; }
-        finally { if (btn) { btn.disabled = false; btn.textContent = busy; } loadSequences(); }
-
-        // A partial strip reported as a success is how a sequence gets joined
-        // through moments nobody has seen, so what was NOT attempted is named.
-        const made = (out.generated || []).length;
-        let msg = `${made} station${made === 1 ? '' : 's'} generated.`;
-        if (out.skipped && out.skipped.length) msg += ` ${out.skipped.length} already existed and were not bought again.`;
-        if (out.stopped_at != null) {
-            msg += `\n\nStopped at station ${out.stopped_at}: ${out.error || 'the provider refused'}.`;
-            if (out.not_attempted && out.not_attempted.length) {
-                msg += `\nNot attempted: ${out.not_attempted.join(', ')}.`;
-            }
-            return alert(msg);
-        }
-        if (confirm(msg + '\n\nSign the strip off? Video generation then refuses a strip that has changed'
-            + ' since — which is what makes an approval worth having.')) {
-            try {
-                const ok = await api(`/sequences/${id}/inbetweens/approve`, { method: 'POST', body: '{}' });
-                alert(`Approved — ${ok.stations} stations.`);
-            } catch (err) { alert('Could not approve: ' + err.message); }
-            loadSequences();
-        }
+    /** Paid: confirmed through the one gate, priced by the free plan. */
+    /**
+     * Generate the in-between strip: the stations between the approved frames.
+     *
+     * Through the one gate, priced by the FREE plan -- and the plan is read
+     * with `expand=inbetweens`, or it prices the segments rather than the
+     * strip, which is a different and much smaller number.
+     */
+    async function stripSequence(id) {
+        return confirmPaidImage({
+            title: 'Generate the in-between strip',
+            capability: 'video',
+            previewUrl: '/sequences/' + id + '/plan?expand=inbetweens',
+            note: 'Each station is refined from the one before it, so the walk is serial and a '
+                + 'refusal stops it.',
+            editable: false,
+            notEditableWhy: 'Each station has its own one-sentence instruction, shown as it runs.',
+            send: async choices => {
+                setStatus('Walking the strip...', true);
+                try {
+                    const out = await api(`/sequences/${id}/inbetweens`, { method: 'POST', body: JSON.stringify(choices || {}) });
+                    /*
+                     * A partial strip reported as a success is how a sequence
+                     * gets joined through moments nobody has seen -- so what was
+                     * NOT attempted is named rather than counted.
+                     */
+                    if (out.stopped_at != null) {
+                        const na = (out.not_attempted || []).join(', ');
+                        setStatus(`Stopped at station ${out.stopped_at}: ${out.error || 'refused'}`
+                            + (na ? ` — not attempted: ${na}` : ''));
+                    } else {
+                        setStatus(`${(out.generated || []).length} station(s) generated.`);
+                    }
+                    if (typeof loadSequences === 'function') loadSequences();
+                } catch (err) { setStatus('Could not generate: ' + err.message); }
+            },
+        });
     }
 
     /**
@@ -32150,103 +32096,70 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { alert('Could not read the plan: ' + err.message); }
     }
 
-    async function generateNextSequenceLeg(id, btn) {
-        let plan;
-        try { plan = await api(`/sequences/${id}/plan`); }
-        catch (err) { return alert('Could not read the plan: ' + err.message); }
-        if (plan.refused) return alert(plan.reason);
-        const index = (plan.segments || []).findIndex(s => !s.complete);
-        if (index < 0) return alert('Every leg already has a clip. Review them or regenerate the full sequence deliberately.');
-        const leg = plan.segments[index];
-        if (!confirm(`Generate only ${leg.from} → ${leg.to}?\n\n${leg.duration_s}s · ${leg.estimated_credits || '?'} credits. Review it before buying the next leg.`)) return;
-        if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
-        try {
-            const res = await api(`/sequences/${id}/generate`, { method: 'POST', body: JSON.stringify({ segment_index: index }) });
-            const made = (res.segments || []).filter(x => x.ok);
-            setStatus(made.length ? `${leg.from}→${leg.to} generated. Review it before continuing.` : 'The sequence leg failed.');
-            loadVideoShots(); loadSequences();
-        } catch (err) { alert('Sequence leg failed: ' + err.message); }
-        finally { if (btn) { btn.disabled = false; btn.textContent = 'Generate next leg'; } }
+    /** Paid: confirmed through the one gate, priced by the free plan. */
+    async function generateNextSequenceLeg(id) {
+        return confirmPaidImage({
+            title: 'Generate the next leg',
+            capability: 'video',
+            previewUrl: '/sequences/' + id + '/plan',
+            note: 'One segment at a time, so an unfinished sequence can be bought a leg at a time.',
+            editable: false,
+            notEditableWhy: 'Each segment is built from its own shots; edit those on the board.',
+            send: async choices => {
+                setStatus('Generating...', true);
+                try {
+                    await api('/sequences/' + id + '/generate', {
+                        method: 'POST', body: JSON.stringify(choices || {}),
+                    });
+                    setStatus('Done.');
+                    if (typeof loadSequences === 'function') loadSequences();
+                } catch (err) { setStatus('Could not generate: ' + err.message); }
+            },
+        });
     }
 
-    async function generateNativeMultiShot(id, btn) {
-        let plan;
-        try { plan = await api(`/sequences/${id}/plan`); }
-        catch (err) { return alert('Could not read the plan: ' + err.message); }
-        const native = plan.native_multi_shot;
-        if (!native || !native.available) return alert((native && native.reason) || 'Native multi-shot is unavailable.');
-        if (!confirm(`Generate one Runway multi-shot clip with editorial cuts?\n\n${native.duration_s}s · ${native.estimated_credits} credits (~$${Number(native.estimated_usd).toFixed(2)}).\n\nThis is less deterministic than generating each approved shot separately.`)) return;
-        if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
-        try { await api(`/sequences/${id}/generate-native`, { method: 'POST', body: '{}' }); loadVideoShots(); loadSequences(); }
-        catch (err) { alert('Native multi-shot failed: ' + err.message); }
-        finally { if (btn) { btn.disabled = false; btn.textContent = 'Runway multi-shot cuts'; } }
+    /** Paid: confirmed through the one gate, priced by the free plan. */
+    async function generateNativeMultiShot(id) {
+        return confirmPaidImage({
+            title: 'Generate as one native multi-shot',
+            capability: 'video',
+            previewUrl: '/sequences/' + id + '/plan',
+            note: 'Runway\'s multi-shot recipe: real editorial cuts in one generation, and deliberately less deterministic than rendering each shot.',
+            editable: false,
+            notEditableWhy: 'Each segment is built from its own shots; edit those on the board.',
+            send: async choices => {
+                setStatus('Generating...', true);
+                try {
+                    await api('/sequences/' + id + '/generate-native', {
+                        method: 'POST', body: JSON.stringify(choices || {}),
+                    });
+                    setStatus('Done.');
+                    if (typeof loadSequences === 'function') loadSequences();
+                } catch (err) { setStatus('Could not generate: ' + err.message); }
+            },
+        });
     }
 
-    async function generateSequence(id, btn) {
-        let plan;
-        if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
-        try { plan = await api(`/sequences/${id}/plan`); }
-        catch (err) {
-            // A gate whose purpose is inspection before spending must not permit
-            // the spend when the inspection fails.
-            if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
-            return alert('Could not check the sequence before generating: ' + err.message);
-        }
-        if (plan.refused) {
-            if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
-            return alert('This sequence cannot run yet.\n\n' + plan.reason);
-        }
-        /*
-         * Every segment's prompt, in the confirmation itself.
-         *
-         * "Press Preview & cost first" is an instruction people skip, and the
-         * prompts are what is being approved. A sequence sends one PER SEGMENT,
-         * each naming the shot it travels from and to, so showing the first and
-         * implying the rest would understate what is bought.
-         */
-        const segs = plan.segments || [];
-        const prompts = segs.map((seg, i) =>
-            `${i + 1}. ${seg.from || '?'} \u2192 ${seg.to || '?'}`
-            + `${seg.duration_s ? ' (' + seg.duration_s + 's)' : ''}\n`
-            + `${String(seg.prompt || '(no prompt)').slice(0, 400)}`).join('\n\n');
-
-        if (!confirm(`Generate ${plan.generations} clip${plan.generations === 1 ? '' : 's'}?\n\n`
-            + (prompts ? `${prompts}\n\n` : '')
-            + (plan.degraded ? `${plan.degraded_reason}\n\n` : '')
-            + 'This costs credits.')) {
-            if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
-            return;
-        }
-        if (btn) btn.textContent = 'Generating…';
-        setStatus('Generating the sequence — this takes a few minutes…', true);
-        try {
-            const res = await api(`/sequences/${id}/generate`, { method: 'POST', body: JSON.stringify({}) });
-            const made = (res.segments || []).filter(x => x.ok);
-            const failed = (res.segments || []).filter(x => !x.ok);
-            // A partial run reported as success is how an edit gets cut against
-            // a clip that was never made.
-            setStatus(failed.length
-                ? `${made.length} clip(s) made. ${failed[0].from}→${failed[0].to} failed: ${failed[0].error}.`
-                  + ((res.not_attempted || []).length ? ` Not attempted: ${res.not_attempted.join(', ')}.` : '')
-                : `${made.length} clip(s) generated.${res.note ? ' ' + res.note : ''}`);
-            /*
-             * Offered, not automatic. Joining is free and fast, but it is a
-             * separate decision: a director often wants to look at the segments
-             * before committing to an order, and doing it for them would make
-             * the segments feel like a by-product rather than the work.
-             */
-            if (!failed.length && made.length > 1
-                && confirm(`${made.length} clips generated.\n\nJoin them into one file now? `
-                    + 'This is free — nothing is generated.')) {
-                await stitchSequence(id, null);
-            }
-            loadSequences();
-            if (typeof loadVideoShots === 'function') loadVideoShots();
-        } catch (err) {
-            setStatus('Sequence generation failed: ' + err.message);
-        } finally {
-            if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
-        }
+    /** Paid: confirmed through the one gate, priced by the free plan. */
+    async function generateSequence(id) {
+        return confirmPaidImage({
+            title: 'Generate this sequence',
+            capability: 'video',
+            previewUrl: '/sequences/' + id + '/plan',
+            note: 'Each segment travels between two frames you have already approved.',
+            editable: false,
+            notEditableWhy: 'Each segment is built from its own shots; edit those on the board.',
+            send: async choices => {
+                setStatus('Generating...', true);
+                try {
+                    await api('/sequences/' + id + '/generate', {
+                        method: 'POST', body: JSON.stringify(choices || {}),
+                    });
+                    setStatus('Done.');
+                    if (typeof loadSequences === 'function') loadSequences();
+                } catch (err) { setStatus('Could not generate: ' + err.message); }
+            },
+        });
     }
 
     /**
@@ -33040,32 +32953,15 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     /** Picking "new view" asks for it and generates immediately. */
+    /** Picking "a new view…" in a location dropdown photographs one. */
     async function locationViewChanged(prefix, locationId) {
         const sel = document.getElementById(prefix + 'LocationView');
         if (!sel || sel.value !== '__new__') return;
         sel.value = '';
-
-        const view = prompt(
-            'Photograph this location from a new position.\n\n'
-            + 'Say where the camera is and what it looks at, the way you would brief a location '
-            + 'scout:\n\n'
-            + '  from the far kerb, looking back across the bulb\n'
-            + '  from MAYA\u2019s driveway, looking at the houses opposite\n\n'
-            + 'It is generated from the view you already have, so the houses, materials and light '
-            + 'match. Costs one image.');
-        if (!view || !view.trim()) return;
-
-        setStatus(`Photographing ${view.trim()}\u2026`, true);
-        try {
-            const r = await api(`/locations/${locationId}/plate/generate`, {
-                method: 'POST', body: JSON.stringify({ view: view.trim() }),
-            });
-            setStatus(r.error ? ('Could not photograph it: ' + r.error)
-                : `New view added: ${view.trim()}. Every shot pointed this way can use it now.`);
-            await fillLocationViews(prefix, locationId, view.trim());
-        } catch (err) {
-            setStatus('Could not photograph it: ' + err.message);
-        }
+        return addLocationView(locationId, () => {
+            if (typeof loadLocations === 'function') loadLocations();
+            if (typeof renderSubjectSheet === 'function' && SS && SS.id === locationId) renderSubjectSheet();
+        });
     }
 
     /*
@@ -35753,9 +35649,17 @@ ${fountainText.slice(0, 50000)}`;
             return;
         }
 
-        let tiers = [];
-        try { tiers = (await api(`/projects/${state.currentProject.id}/providers`)).image_tiers || []; }
-        catch (_) { tiers = []; }
+        /*
+         * The dials, for the capability actually being generated.
+         *
+         * This fetched `image_tiers` whatever was running, so a music or 3D
+         * confirmation offered image quality tiers or nothing. `confirmExtras`
+         * builds provider, model, quality and size from what the server serves
+         * for this capability -- one builder, so the generic dialog and the
+         * rich path-specific ones cannot come to offer different things.
+         */
+        const dials = await confirmExtras(d.prompt || '', Number(d.ceiling) || 0,
+            o.capability || 'image');
 
         const prompt = d.prompt || '';
         const ceiling = Number(d.ceiling) || 0;
@@ -35774,38 +35678,18 @@ ${fountainText.slice(0, 50000)}`;
 
           ${o.videoTiers ? `<div id="confirmVideoTierRow">${videoTierRow(d)}</div>` : ''}
 
-          ${tiers.length ? `<div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
-              <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Generator for this one</div>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                ${tiers.map(t => `<button type="button" class="btn btn-secondary btn-sm" data-tier="${esc(t.id)}"
-                    onclick="pickGenQuality('${esc(t.id)}')" ${t.available ? '' : 'disabled'}
-                    style="flex:1;min-width:118px;">${esc(t.label)}${
-                    t.usd_per_image != null ? ` &middot; $${t.usd_per_image.toFixed(3)}` : ''}</button>`).join('')}
-              </div>
-              <div class="text-sm" style="opacity:.6;margin-top:6px;" id="confirmGenQualityNote">
-                Using this project's setting. Pick one to change it for this generation only.
-              </div>
-            </div>` : ''}
-
-          <div class="form-group">
-            <label>The prompt
-              <span class="text-sm text-muted" id="confirmGenChars">
-                ${prompt.length}${ceiling ? ` of ${ceiling}` : ' characters'}
-              </span>
-            </label>
-            ${o.editable === false
-                ? `<pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;max-height:260px;overflow:auto;
-                        margin:0;padding:8px;border-radius:6px;background:rgba(148,163,184,.10);">${esc(prompt)}</pre>
-                   <div class="text-sm text-muted" style="margin-top:4px;">${esc(o.notEditableWhy || '')}</div>`
-                : `<textarea id="confirmGenPrompt" rows="9" spellcheck="false"
-                      oninput="confirmGenPromptEdited(${ceiling})"
-                      style="width:100%;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5;
-                             padding:8px;border-radius:6px;">${esc(prompt)}</textarea>
-                   <div class="text-sm text-muted" style="margin-top:4px;" id="confirmGenPromptNote">
-                     Edit it and the edited text is what gets sent, exactly as written &mdash; the
-                     engine will not add references or the style preset on top of it.
-                   </div>`}
-          </div>`;
+          ${o.editable === false
+              ? `<div class="form-group">
+                   <label>The prompt
+                     <span class="text-sm text-muted">${(d.prompt || '').length}${
+                        Number(d.ceiling) ? ` of ${Number(d.ceiling)}` : ' characters'}</span>
+                   </label>
+                   <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;max-height:260px;overflow:auto;
+                        margin:0;padding:8px;border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.prompt || '')}</pre>
+                   <div class="text-sm text-muted" style="margin-top:4px;">${esc(o.notEditableWhy || '')}</div>
+                 </div>`
+              : dials}
+        `;
 
         confirmGenArm(true);
         const ok = await decision;
@@ -37514,36 +37398,39 @@ ${fountainText.slice(0, 50000)}`;
      * Scoped to the SCENE on screen rather than the film: regenerating a
      * feature's dialogue from a transport button is a bill nobody meant to run.
      */
+    /** Redo a scene's dialogue from the Playback transport. */
     async function pbRegenerateDialogue() {
         const entry = pbEntry();
         if (!entry || !entry.scene_id) return setStatus('Pick a shot in a scene first.');
-
         const shots = (pb.timeline.entries || []).filter(e => e.scene_id === entry.scene_id);
-        const lines = shots.reduce((n, e) => n + ((e.audio_lines || []).length || 0), 0);
-        if (!confirm(`Redo the dialogue for this scene?\n\n`
-            + `${shots.length} shot(s) in scene ${entry.scene_number || ''}`
-            + (lines ? `, ${lines} line(s) currently spoken` : '')
-            + `.\n\nThis buys a NEW take of every line, including lines that have not changed — `
-            + 'that is the point of the button, and it is what it costs. It picks up a rewrite, a '
-            + 'recast, and the scene’s delivery direction.')) return;
-
-        let made = 0;
-        for (let i = 0; i < shots.length; i++) {
-            const sh = shots[i];
-            setStatus(`Redoing dialogue: ${sh.shot_code} (${i + 1} of ${shots.length})…`, true);
-            try {
-                const res = await api(`/shots/${sh.shot_id}/voice/generate`, {
-                    method: 'POST', body: JSON.stringify({ regenerate: true }),
-                });
-                made += (res.audio_files || []).filter(f => f.status === 'complete').length;
-            } catch (err) {
-                // Stop on a refusal rather than asking for every remaining shot.
-                setStatus(`Stopped at ${sh.shot_code}: ${err.message}`);
-                return;
-            }
-        }
-        setStatus(`${made} line(s) regenerated. Reloading the cut…`);
-        await loadPlayback();
+        if (!shots.length) return setStatus('No shots in this scene.');
+        return confirmPaidImage({
+            title: 'Redo the dialogue for this scene',
+            capability: 'voice',
+            previewUrl: `/shots/${shots[0].shot_id}/voice/preview`,
+            note: `${shots.length} shot(s). This buys a NEW take of every line, including ones `
+                + 'that have not changed.',
+            editable: false,
+            notEditableWhy: 'Each shot has its own lines — edit them on the shot card.',
+            send: async choices => {
+                let made = 0;
+                for (const sh of shots) {
+                    setStatus(`Redoing ${sh.shot_code || ''}…`, true);
+                    try {
+                        await api(`/shots/${sh.shot_id}/voice/generate`, {
+                            method: 'POST',
+                            body: JSON.stringify({ ...(choices || {}), regenerate: true }),
+                        });
+                        made++;
+                    } catch (err) {
+                        setStatus(`${made} of ${shots.length} — then: ${err.message}`);
+                        return;
+                    }
+                }
+                setStatus(`Dialogue redone for ${made} shot(s).`);
+                if (typeof loadPlayback === 'function') loadPlayback();
+            },
+        });
     }
 
     function pbBedsToggled() {

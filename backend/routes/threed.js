@@ -175,6 +175,27 @@ function handleThreeD(req, res, urlParts, query) {
         const assetId = urlParts[2];
         if (!UUID_RE.test(assetId)) return json(res, 400, { error: 'Invalid asset ID' });
         const op = urlParts[3];
+        /*
+         * The FREE preview for a mesh operation.
+         *
+         * The shared confirmation disarms when its own preview fails -- a gate
+         * that permits a spend after a failed inspection is worse than none --
+         * so an operation offered in the dialog must have one of these or it
+         * becomes unusable.
+         */
+        if (req.method === 'GET' && urlParts[4] === 'preview') {
+            const row = db.prepare('SELECT * FROM film_assets WHERE id = ?').get(assetId);
+            if (!row) return json(res, 404, { error: 'Model not found' });
+            const adapter = threedProviderFor(row.project_id, req);
+            return json(res, 200, {
+                asset_id: assetId,
+                prompt: `${op} the mesh "${row.file_name || assetId}"`,
+                operation: op,
+                provider: (adapter && (adapter.id || adapter.provider)) || 'unresolved',
+                notes: [`This runs ${op} on the 3D provider and costs credits. It takes the mesh `
+                    + 'rather than a prompt, so there is nothing to edit.'],
+            });
+        }
         if (req.method === 'POST' && op === 'rig') return meshOp(req, res, assetId, 'rig');
         if (req.method === 'POST' && op === 'retexture') return meshOp(req, res, assetId, 'retexture');
         if (req.method === 'POST' && op === 'animate') return meshOp(req, res, assetId, 'animate');

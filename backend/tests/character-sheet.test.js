@@ -177,8 +177,11 @@ test('the two header actions exist and are bound', () => {
 
 test('generating views asks which, and costs are stated before spending', () => {
     const body = bodyOf('generateOfficialViews');
-    assert.ok(/confirm\(|showModal\(/.test(body),
-        'the generate button spends with no confirmation');
+    // The SHARED gate, not any dialog: a bare confirm() shows a count and
+    // offers no prompt, no generator, no quality and no size.
+    assert.ok(/confirmPaidImage\s*\(/.test(body),
+        'the generate button spends without the shared confirmation, so the prompt cannot be '
+        + 'read or edited and the generator cannot be chosen');
     // All four, or a named one — the design asks for both.
     assert.ok(/OFFICIAL_VIEWS|all/i.test(body), 'there is no "generate all" path');
 });

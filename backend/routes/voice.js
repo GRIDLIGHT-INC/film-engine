@@ -140,6 +140,7 @@ function handleVoice(req, res, urlParts, query) {
         if (!UUID_RE.test(shotId)) return json(res, 400, { error: 'Invalid shot ID' });
 
         const sub = urlParts[4];
+        if (sub === 'preview' && req.method === 'GET') return previewVoice(req, res, shotId, query);
         if (sub === 'generate' && req.method === 'POST') {
             if (urlParts[5] === 'stream') return generateVoiceStream(req, res, shotId);
             return generateVoice(req, res, shotId);
@@ -393,6 +394,68 @@ async function generateVoiceForShotId(shotId, req_body) {
 }
 
 /** The route: the same work, wrapped in a response. */
+
+/**
+ * What a voice generation would send, for FREE.
+ *
+ * Every other paid path had a preview and voice had none, so the three dialogue
+ * buttons could only show a bare confirm() naming a count. For dialogue "the
+ * prompt" is the LINES, who says them, in which voice, and how -- so that is
+ * what this reports, in the shape the shared confirmation already renders
+ * (`prompt`, `provider`, `model`, `notes`).
+ *
+ * Generates nothing and costs nothing: it reads rows and runs the same
+ * builders the paid path runs.
+ */
+function previewVoice(req, res, shotId, query) {
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    if (!scene) return json(res, 404, { error: 'Scene not found' });
+
+    let sceneCard = {};
+    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+    const lines = extractDialogue(sceneCard);
+
+    const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(scene.project_id);
+    const voiceProfiles = db.prepare(
+        'SELECT * FROM film_voice_profiles WHERE character_id IN (SELECT id FROM film_characters WHERE project_id = ?)'
+    ).all(scene.project_id);
+
+    const { generationOverride } = require('../lib/generation-override');
+    const chosen = generationOverride('voice', { ...(query || {}) });
+    const config = spendContext({ id: scene.project_id }, shot, scene, chosen);
+    const adapter = resolve('voice', config);
+
+    const notes = [];
+    const uncast = [];
+    const rendered = lines.map(line => {
+        const character = characterForCue(characters, line.character);
+        const vp = character ? voiceProfiles.find(x => x.character_id === character.id) : null;
+        if (!vp || !vp.voice_id) uncast.push(line.character);
+        const how = line.direction ? ` (${line.direction})` : '';
+        return `${line.character}${how}\n  ${line.line}`;
+    });
+
+    if (!lines.length) notes.push('This shot has no dialogue — nothing would be generated.');
+    if (uncast.length) {
+        notes.push(`Not cast, so these would use the provider default voice: ${
+            [...new Set(uncast)].join(', ')}. Cast them on the character sheet first.`);
+    }
+
+    const chars = lines.reduce((n, l) => n + String(l.line || '').length, 0);
+    return json(res, 200, {
+        shot_id: shotId,
+        shot_code: shot.shot_code,
+        prompt: rendered.join('\n\n'),
+        line_count: lines.length,
+        billed_characters: chars,
+        provider: (adapter && adapter.id) || 'unresolved',
+        model: (chosen && chosen.voice_model) || null,
+        notes,
+    });
+}
+
 async function generateVoice(req, res, shotId) {
     const out = await generateVoiceForShotId(shotId, req.body);
     if (out.error) return json(res, out.error === 'Shot not found' || out.error === 'Scene not found' ? 404 : 502, out);

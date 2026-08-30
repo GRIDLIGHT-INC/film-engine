@@ -364,15 +364,30 @@ describe('the workspace', () => {
     });
 
     it('nothing spends without showing what it will send', () => {
+        /*
+         * Updated when the standard moved. This required a literal `confirm(`,
+         * which enshrined the BARE browser confirm as the bar -- a sentence and
+         * a count, with no prompt to read, nothing to edit, and no way to pick
+         * the generator, model, quality or size. Explore now goes through the
+         * one shared gate like every other paid button, which is strictly
+         * stronger, and a test demanding the weaker thing would have to be
+         * broken to get there.
+         */
         const i = SPA.indexOf('async function exploreSubject(');
+        assert.ok(i > -1, 'exploreSubject is gone');
         const body = SPA.slice(i, i + 3000);
+
+        assert.ok(/confirmPaidImage\s*\(/.test(body),
+            'Explore spends without the shared confirmation, so the prompt cannot be read or '
+            + 'edited and the generator cannot be chosen');
         assert.ok(/explore\/preview/.test(body),
-            'Explore spends without calling the free preview first');
-        assert.ok(/confirm\(/.test(body), 'Explore spends with no confirmation');
-        const previewAt = body.indexOf('explore/preview');
-        const confirmAt = body.indexOf('confirm(');
+            'Explore does not hand the gate its FREE preview, so the dialog has nothing to show');
+
+        // The paid call belongs INSIDE send, after the decision.
+        const sendAt = body.indexOf('send:');
         const spendAt = body.indexOf("method: 'POST'");
-        assert.ok(previewAt < confirmAt && confirmAt < spendAt,
-            'the preview and the confirmation must both come BEFORE the paid call');
+        assert.ok(sendAt > -1 && spendAt > sendAt,
+            'the paid POST is not inside the gate\'s send callback, so it runs regardless of '
+            + 'what the director decides');
     });
 });
