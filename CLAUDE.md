@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (96 migrations)
+│   │   └── migrations/     # SQL migration files (97 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -752,6 +752,54 @@ Closing the style book's 21 unproven cases found **six real defects**, and eleve
 **And the QA specification was wrong twice, in the same direction — asserting a plausible behaviour against a deliberate one.** It expected over-long fields to be **truncated**; `validateEntry` refuses, and refusing is right, because trimming a name discards words the director typed and shows them something they did not write. It expected a project delete to **remove** that project's entries; the FK is `ON DELETE SET NULL` on purpose, so an entry is **promoted to the library** — an angle recorded while a film was open must outlive that film, which is the `film_refsheet_jobs` trap of migration 067 not being repeated. The code was right both times and the specification was corrected.
 
 `tests/style-book-gaps.test.js` is set-based over the registries that fail **partially**: the four `NEVER_WRITES` fields (a rule catching three is indistinguishable from one that works), the three length-limited fields, and the seven row lookups in the router (a 404 on six teaches a caller to trust the seventh).
+
+### Draft While Working, Finish at the End
+
+*"When we create video clips while we're working we'll always do 480P to save,
+then add an upscale to 4K pass at the end."*
+
+The intent is right — most generated clips are thrown away, so paying delivery
+rates for them is the largest avoidable cost here — and **480p is a provider
+choice, not a setting**, which took two corrections to get straight.
+
+Runway's `image_to_video` takes a **ratio string**, so the size IS the ratio,
+and the smallest gen4.5/gen4_turbo ratio is `1280:720`. There is no 480p. I then
+wrote a floor table claiming `854:480` for Seedance, and the test caught it
+against Runway's own documented ratio list. The second correction went the other
+way: I had recorded that Seedance's 480p tier was "not wired here" — and
+`lib/providers/seedance.js` **already existed**, reaching ByteDance through
+MuAPI, documenting 480p at **$0.17/s against $0.85 at 1080p** and taking
+`resolution` as an explicit keyword. A claim derived from one provider's model
+list, about a different provider.
+
+So the floor is per MODEL, from each adapter's own table. On Runway the floor is
+720p and the saving is the model (`gen4_turbo`, 5 credits/second); on Seedance it
+is 480p and the saving is fivefold — **$25.50 against $127.50** for thirty
+five-second shots. `video_draft` defaults ON, which is safe rather than
+presumptuous: Runway already returned 720p-class footage whatever the project
+asked for, so draft mode there makes the REQUEST honest rather than changing the
+result.
+
+Three things the tests forced out, each a case that would have shipped:
+
+**A draft is never larger than what it drafts for.** A 9:16 shot in a project
+whose delivery raster is landscape fits to 608×1080, and a 720p floor applied to
+that shape gives 720×1280 — bigger. Drafting would have cost more than
+delivering, visible only on the bill.
+
+**Two projects of one shape must draft identically.** A fitted raster is rounded
+to even at its own scale, so a 4K and an HD project both set to 2.39:1 arrive as
+3840×1606 and 1920×804 — ratios differing in the fourth decimal, and draft frames
+2px apart. The draft follows the **stated aspect**, not the fitted raster.
+
+**A 480p draft cannot reach 4K in one pass.** 480×4 is 1920 against 2160, and
+Real-ESRGAN takes whole factors. Reporting that as finished would deliver 1920p
+against a 4K spec and look successful. It is named instead, with both remedies —
+a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
+
+And the finishing pass now derives its factor from the **delivery size**. It was
+`scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
+960×540 — not a deliverable, and indistinguishable from a successful post pass.
 
 ### A Report Nobody Waits Six Seconds For
 
@@ -2976,7 +3024,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (96 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (97 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status

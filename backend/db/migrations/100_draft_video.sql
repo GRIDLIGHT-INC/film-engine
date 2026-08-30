@@ -1,0 +1,15 @@
+-- Draft while working, finish at the end.
+--
+-- Most generated clips are thrown away: a director tries an angle, watches it,
+-- and generates again. Paying delivery rates for those is the single largest
+-- avoidable cost in the pipeline -- on Seedance, 480p is $0.17/s against $0.85
+-- at 1080p, five times cheaper for footage that exists to answer a question.
+--
+-- DEFAULT 1 (on), and that is safe rather than presumptuous: on Runway, whose
+-- smallest documented ratio is 1280:720, draft mode asks for exactly what the
+-- engine already sent, so every existing project generates identically. It only
+-- changes anything on a provider that documents something cheaper.
+--
+-- The finishing pass upscales to the project's own delivery size, never a
+-- hardcoded 4K -- that would take a 1080p deliverable past its own spec.
+ALTER TABLE film_projects ADD COLUMN video_draft INTEGER NOT NULL DEFAULT 1;

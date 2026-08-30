@@ -522,6 +522,44 @@ const CAPABILITY_BUILDERS = {
          */
         if (picked.selected.length > 1) built.video_references = picked.selected;
         if (picked.dropped.length) built.references_dropped = picked.dropped;
+
+        /*
+         * DRAFT WHILE WORKING, FINISH AT THE END.
+         *
+         * Most generated clips are thrown away — an angle is tried, watched and
+         * generated again — so paying delivery rates for them is the largest
+         * avoidable cost here. On Seedance a draft second is $0.17 against
+         * $0.85 at 1080p.
+         *
+         * Asked for as the smallest raster THE RESOLVED MODEL DOCUMENTS, and
+         * the `resolution` KEYWORD only where the adapter reads one: Seedance
+         * builds the model into its URL, so a keyword it does not know is a 404
+         * rather than a field quietly ignored, and Runway takes no such field
+         * at all. On Runway the floor is 720p, which is exactly what this
+         * engine already sent — so a Runway project generates identically and
+         * `video_draft` defaulting to on is safe rather than presumptuous.
+         *
+         * The shot keeps the SHAPE it will be finished in. A vertical shot
+         * drafted landscape is a different shot, not a cheap one.
+         */
+        if (ctx.project.video_draft === undefined || ctx.project.video_draft) {
+            const { draftFrameFor } = require('./draft-video');
+            // The stated aspect, so two projects with the same shape and
+            // different delivery rasters draft to the SAME frame.
+            const stated = String((ctx.sceneCard && ctx.sceneCard.aspect_ratio)
+                || ctx.project.aspect_ratio || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/);
+            const ratioHint = stated ? Number(stated[1]) / Number(stated[2]) : null;
+            const draft = draftFrameFor(built.model || overrides.model, {
+                width: built.width, height: built.height,
+            }, ratioHint);
+            built.width = draft.width;
+            built.height = draft.height;
+            if (draft.resolution) built.resolution = draft.resolution;
+            // Said on the payload, so every preview and the ledger can report
+            // it: a clip that is 480p because it is a draft and one that is
+            // 480p because somebody set it are different facts.
+            built.draft = { active: true, note: draft.note, why: draft.why };
+        }
         return built;
     },
 
@@ -606,10 +644,33 @@ const CAPABILITY_BUILDERS = {
         };
 
         if (jobType === 'upscale') {
+            /*
+             * THE FACTOR IS DERIVED FROM THE DELIVERY SIZE, not a constant.
+             *
+             * It was `scale_factor: 2` regardless of what was being scaled, so
+             * a 480p draft finished at 960x540 — not a deliverable, and it
+             * looks like a successful post pass. This is the finishing half of
+             * "draft while working, finish at the end": most clips are thrown
+             * away, so they are generated cheap, and the ones that survive are
+             * brought up to what the project is actually delivered at.
+             *
+             * An explicit scale_factor still wins, and a project with no
+             * delivery size falls back to 2x rather than inventing a target —
+             * which is what every project did before this existed.
+             */
+            const { upscaleTargetFor, upscaleFactorFor } = require('./draft-video');
+            const source = (ctx.videoAsset && ctx.videoAsset.width && ctx.videoAsset.height)
+                ? { width: ctx.videoAsset.width, height: ctx.videoAsset.height }
+                : null;
+            const plan = upscaleFactorFor(source, upscaleTargetFor(ctx.project));
             return {
                 ...base, type: 'upscale',
                 model: overrides.model || 'realesrgan-video',
-                scale_factor: overrides.scale_factor || 2,
+                scale_factor: overrides.scale_factor || (plan.needed ? plan.factor : 2),
+                // Carried so a preview and the ledger can say what this pass
+                // will actually reach — and, when one pass cannot get there,
+                // that it will not.
+                upscale_plan: plan,
             };
         }
         if (jobType === 'face_restore') {

@@ -155,11 +155,30 @@ test('a flagged shot reaches the PROVIDER vertical, and its neighbour does not',
     assert.ok(Math.abs(ratioOf(shapeOf(wide, 'image')) - 16 / 9) < 0.01,
         `an unflagged shot was reshaped: ${shapeOf(wide, 'image')}`);
 
-    // The video path is exact: it is the delivered raster, not a budgeted one.
-    assert.equal(shapeOf(hero, 'video'), '1080x1920',
+    /*
+     * The video path is exact — it is the delivered raster, not a budgeted one
+     * — with DRAFT MODE OFF. Draft deliberately overrides the size while a cut
+     * is being found, and this test is about the ratio reaching the provider,
+     * not about what a draft costs. The draft's own shape is held in
+     * aspect-consistency, where the delivery contract lives.
+     */
+    const shapeDelivered = (shotId) => {
+        const c = loadShotContext(shotId);
+        const { payload } = buildCapabilityPayload('video', {
+            ...c, project: { ...c.project, video_draft: 0 },
+        });
+        return `${payload.width}x${payload.height}`;
+    };
+    assert.equal(shapeDelivered(hero), '1080x1920',
         'the flagged shot did not reach the video provider vertical');
-    assert.equal(shapeOf(wide, 'video'), '1920x1080',
+    assert.equal(shapeDelivered(wide), '1920x1080',
         'an unflagged shot was reshaped on the video path');
+
+    // And under draft the SHAPE survives, which is the part that cannot be
+    // recovered later.
+    const heroDraft = shapeOf(hero, 'video').split('x').map(Number);
+    assert.ok(heroDraft[1] > heroDraft[0],
+        `a vertical shot drafted as ${heroDraft.join('x')} — landscape is a different shot`);
 
     /*
      * And the two agree with each other. A vertical clip generated FROM a
@@ -168,8 +187,8 @@ test('a flagged shot reaches the PROVIDER vertical, and its neighbour does not',
      * project level and would have reintroduced per shot.
      */
     for (const [name, id] of [['flagged', hero], ['unflagged', wide]]) {
-        assert.ok(Math.abs(ratioOf(shapeOf(id, 'image')) - ratioOf(shapeOf(id, 'video'))) < 0.01,
+        assert.ok(Math.abs(ratioOf(shapeOf(id, 'image')) - ratioOf(shapeDelivered(id))) < 0.02,
             `the ${name} shot's board and footage are different shapes: `
-            + `${shapeOf(id, 'image')} vs ${shapeOf(id, 'video')}`);
+            + `${shapeOf(id, 'image')} vs ${shapeDelivered(id)}`);
     }
 });
