@@ -245,3 +245,58 @@ test('an export with no deliverables is byte-identical to what it always was', (
             'passing an empty deliverable set changed the export');
     }
 });
+
+test('a project says whether it is a film or a spot, and the choice is made at creation', () => {
+    /*
+     * Reported as "where and when do I select a commercial project vs a regular
+     * film project, so it shows the appropriate items?" — and the honest answer
+     * was that there was nowhere: the fields existed and only Settings and an
+     * agent could set them.
+     *
+     * The type is DERIVED, not stored. A project is a spot when it carries the
+     * facts that make it one — a client, a bought runtime, a brand, a
+     * deliverable set — because those are what change behaviour. A `type`
+     * column would be a second source of truth that could disagree with the
+     * fields the engine actually reads.
+     *
+     * And the pages are NOT hidden for a film: a film becomes a spot the day a
+     * client asks for one, and a menu that hides the way in makes that a
+     * support question. What was missing was knowing which you are in.
+     */
+    const fs_ = require('fs');
+    const page = fs_.readFileSync(require('path').join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+
+    // The choice, at creation, before anything else is typed.
+    assert.ok(/id="newProjectType"/.test(page), 'the New Project modal offers no Film/Spot choice');
+    const modal = page.slice(page.indexOf('id="newProjectModal"'), page.indexOf('id="newProjectModal"') + 6000);
+    assert.ok(modal.indexOf('newProjectType') < modal.indexOf('data-field="title"'),
+        'the type is asked for after the title — it sets the frame rate, the runtime and the '
+        + 'deliverables, so it is the first question, not a detail');
+
+    // A spot's own facts, and the deliverable set, in the same action.
+    for (const control of ['newProjectClient', 'newProjectCampaign', 'newProjectBrand',
+        'newProjectLength', 'newProjectPackage']) {
+        assert.ok(new RegExp(`id="${control}"`).test(page), `the spot form has no ${control}`);
+    }
+
+    // Creating a spot must actually write those, not just collect them.
+    const create = page.slice(page.indexOf('async function createProject()'));
+    const body = create.slice(0, create.indexOf('\n    /**', 10));
+    assert.ok(/target_duration_ms/.test(body), 'the chosen length never reaches the project');
+    assert.ok(/deliverables\/plan/.test(body), 'the chosen package never becomes deliverables');
+    assert.ok(/client:/.test(body) && /campaign:/.test(body), 'the client and campaign are not saved');
+
+    /*
+     * A failure applying the package must NOT undo the project. The project
+     * exists and is usable; losing it because a preset could not be applied is
+     * the worse outcome by a wide margin.
+     */
+    assert.ok(/Project created, but/.test(body),
+        'a failure while setting up the spot is not reported as partial — it either silently '
+        + 'succeeds or takes the project with it');
+
+    // And the mode is visible afterwards, derived from the facts.
+    assert.ok(/function paintProjectType/.test(page), 'nothing says which mode a project is in');
+    assert.ok(/p\.client \|\| p\.campaign \|\| p\.brand_id \|\| Number\(p\.target_duration_ms\)/.test(page),
+        'the type is not derived from the fields that actually change behaviour');
+});

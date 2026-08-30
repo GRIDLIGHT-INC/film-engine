@@ -4566,6 +4566,14 @@ table, .render-table { border-radius:12px; overflow:hidden; }
             <div class="sidebar-project-name">
                 <span class="status-dot" id="navStatusDot"></span>
                 <span id="navProjectName">Project</span>
+                <!--
+                    Which mode this project is in, where the project's name
+                    already is. The pages are NOT hidden for a film: a film can
+                    become a spot the day a client asks for one, and a menu that
+                    hides the way in makes that a support question. What was
+                    missing was simply knowing.
+                -->
+                <span id="navProjectType" class="tag" style="display:none;margin-left:6px;"></span>
             </div>
             <div class="sidebar-content">
                 <div class="nav-section">Production</div>
@@ -6619,9 +6627,51 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         <div class="modal">
             <div class="modal-header"><h3>New Project</h3><button class="modal-close" onclick="closeModal('newProjectModal')">&times;</button></div>
             <div class="modal-body">
+                <!--
+                    Film or Spot, and it is the highest-leverage choice in the
+                    modal: it sets the frame rate, the runtime target and the
+                    deliverable set in ONE action, and every one of those is
+                    expensive to discover late. A spot generated at 24fps for a
+                    29.97 CTV buy cannot be fixed in the grade, and a vertical
+                    placement decided after the board is a crop that keeps a
+                    third of the frame.
+                -->
+                <div class="form-group">
+                    <label>What is this?</label>
+                    <select id="newProjectType" onchange="onProjectTypeChange()">
+                        <option value="film">Film &mdash; runs as long as it runs</option>
+                        <option value="spot">Commercial &mdash; bought by the second, delivered in many shapes</option>
+                    </select>
+                </div>
                 <div class="form-group"><label>Title</label><input type="text" data-field="title" placeholder="My Film"></div>
                 <div class="form-group"><label>Logline</label><textarea data-field="logline" rows="2" placeholder="A brief summary..."></textarea></div>
-                <div class="form-group"><label>Genre</label><input type="text" data-field="genre" placeholder="Drama, Sci-Fi, Thriller"></div>
+                <div class="form-group" data-when="film"><label>Genre</label><input type="text" data-field="genre" placeholder="Drama, Sci-Fi, Thriller"></div>
+
+                <!-- Only for a spot. A film has no client and no bought runtime. -->
+                <div class="form-group" data-when="spot" style="display:none;"><label>Client</label>
+                    <input type="text" id="newProjectClient" placeholder="Who the spot is for"></div>
+                <div class="form-group" data-when="spot" style="display:none;"><label>Campaign</label>
+                    <input type="text" id="newProjectCampaign" placeholder="Spring launch"></div>
+                <div class="form-group" data-when="spot" style="display:none;"><label>Brand kit</label>
+                    <select id="newProjectBrand"></select>
+                    <span class="text-sm text-muted">Kits live in <strong>Brand</strong> and outlive this project.</span></div>
+                <div class="form-group" data-when="spot" style="display:none;"><label>Length</label>
+                    <select id="newProjectLength">
+                        <option value="30000">:30</option>
+                        <option value="15000">:15</option>
+                        <option value="6000">:06</option>
+                        <option value="60000">:60</option>
+                        <option value="0">No fixed length</option>
+                    </select>
+                    <span class="text-sm text-muted">A conform that misses this by more than a frame refuses rather than trimming.</span></div>
+                <div class="form-group" data-when="spot" style="display:none;"><label>Deliverables</label>
+                    <select id="newProjectPackage">
+                        <option value="campaign">Campaign &mdash; six files, air and social</option>
+                        <option value="rapid">Rapid &mdash; three files, social first</option>
+                        <option value="broadcast">Broadcast &mdash; six files, air led</option>
+                        <option value="">None yet</option>
+                    </select>
+                    <span class="text-sm text-muted">Decided now because it is what says which shots must be <em>shot</em> vertical rather than cropped later.</span></div>
                 <div class="form-group"><label>Style Preset</label>
                     <select data-field="style_preset">
                         <option value="cinematic">Cinematic</option>
@@ -16882,6 +16932,7 @@ THREE.GLTFLoader = GLTFLoader;
             document.getElementById('sidebarProjectList').classList.add('hidden');
             document.getElementById('sidebarProjectNav').classList.remove('hidden');
             document.getElementById('navProjectName').textContent = p.title;
+            paintProjectType(p);
             setStatusDot(p.status);
             navigateTo('dashboard');
             setTimeout(maybeShowProjectOnboarding, 250);
@@ -16944,16 +16995,103 @@ THREE.GLTFLoader = GLTFLoader;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
+    /**
+     * Film or Spot, shown as the FIRST question.
+     *
+     * It is the highest-leverage choice in the modal: it sets the frame rate,
+     * the runtime target and the deliverable set in one action, and every one
+     * of those is expensive to discover late. A spot generated at 24fps for a
+     * 29.97 CTV buy cannot be conformed afterwards, and a vertical placement
+     * decided after the board is a crop that keeps a third of the frame.
+     */
+    function onProjectTypeChange() {
+        const type = (document.getElementById('newProjectType') || {}).value || 'film';
+        for (const el of document.querySelectorAll('#newProjectModal [data-when]')) {
+            el.style.display = el.dataset.when === type ? '' : 'none';
+        }
+        // A spot's frame rate is a media-plan decision, not a taste one, so the
+        // default moves to the rate air and CTV are bought at. Still editable.
+        const fps = document.querySelector('#newProjectModal [data-field="target_fps"]');
+        if (fps && type === 'spot' && [...fps.options].some(o => o.value === '29.97')) fps.value = '29.97';
+        if (type === 'spot') loadNewProjectBrands();
+    }
+
+    async function loadNewProjectBrands() {
+        const sel = document.getElementById('newProjectBrand');
+        if (!sel || sel.options.length) return;
+        try {
+            const data = await api('/brands');
+            sel.innerHTML = '<option value="">No brand yet</option>'
+                + (data.brands || []).map(b => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join('');
+        } catch (_) { sel.innerHTML = '<option value="">No brand yet</option>'; }
+    }
+
+    /**
+     * Say which mode this project is in, beside its name.
+     *
+     * DERIVED rather than stored: a project is a spot when it carries the facts
+     * that make it one — a client, a bought runtime, or a deliverable set. A
+     * separate `type` column would be a second source of truth that could
+     * disagree with the fields the engine actually reads, and the fields are
+     * what change behaviour.
+     */
+    function paintProjectType(project) {
+        const el = document.getElementById('navProjectType');
+        if (!el) return;
+        const p = project || {};
+        const isSpot = !!(p.client || p.campaign || p.brand_id || Number(p.target_duration_ms) > 0);
+        if (!isSpot) { el.style.display = 'none'; el.textContent = ''; return; }
+        const secs = Number(p.target_duration_ms) > 0 ? `:${Math.round(p.target_duration_ms / 1000)}` : '';
+        el.textContent = `Spot${secs ? ' ' + secs : ''}${p.client ? ' · ' + p.client : ''}`;
+        el.title = 'This project carries a client, a bought runtime or a deliverable set. '
+            + 'Deliverables and Brand apply to it; a film simply never opens them.';
+        el.style.display = '';
+    }
+
     async function createProject() {
         const data = getModalData('newProjectModal');
         if (!data.title) return;
+        const type = (document.getElementById('newProjectType') || {}).value || 'film';
         try {
             const p = await api('/projects', { method: 'POST', body: JSON.stringify(data) });
+
+            /*
+             * A spot's own facts, and its deliverable set, in the same action.
+             * Written AFTER creation rather than as part of it because the
+             * create route owns a film's fields and this is deliberately
+             * additive: a project is a film unless somebody says otherwise, and
+             * everything already in this tool is one.
+             *
+             * Failures here are reported and do not undo the project: the
+             * project exists and is usable, and losing it because a deliverable
+             * package could not be applied would be the worse outcome.
+             */
+            if (type === 'spot') {
+                const spot = {
+                    client: (document.getElementById('newProjectClient') || {}).value || '',
+                    campaign: (document.getElementById('newProjectCampaign') || {}).value || '',
+                    brand_id: (document.getElementById('newProjectBrand') || {}).value || '',
+                    target_duration_ms: Number((document.getElementById('newProjectLength') || {}).value) || 0,
+                };
+                try { await api(`/projects/${p.id}`, { method: 'PUT', body: JSON.stringify(spot) }); }
+                catch (err) { setStatus('Project created, but its spot details did not save: ' + err.message); }
+
+                const pkg = (document.getElementById('newProjectPackage') || {}).value;
+                if (pkg) {
+                    try {
+                        const out = await api(`/projects/${p.id}/deliverables/plan`,
+                            { method: 'POST', body: JSON.stringify({ package: pkg }) });
+                        setStatus(`Spot created — ${out.created} deliverable(s), `
+                            + `shoot native: ${(out.native_ratios || []).join(', ') || 'none'}`);
+                    } catch (err) { setStatus('Project created, but the deliverables did not: ' + err.message); }
+                }
+            }
+
             closeModal('newProjectModal');
             clearModal('newProjectModal');
             state.currentProject = p;
             openProject(p.id);
-            setStatus('Project created');
+            if (type !== 'spot') setStatus('Project created');
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -27865,6 +28003,7 @@ ${fountainText.slice(0, 50000)}`;
             const p = await api('/projects/' + state.currentProject.id, { method: 'PUT', body: JSON.stringify(data) });
             state.currentProject = { ...state.currentProject, ...p };
             document.getElementById('navProjectName').textContent = state.currentProject.title;
+            paintProjectType(state.currentProject);
             setStatusDot(state.currentProject.status);
 
             /*
@@ -32341,11 +32480,20 @@ ${fountainText.slice(0, 50000)}`;
         try {
             const data = await api('/projects/' + state.currentProject.id + '/storyboard');
             const frames = data.frames || [];
-            // Which shots the screenplay has moved on from. Fetched alongside
-            // the board rather than on a page of its own, because the moment a
-            // director needs to know is while they are looking at the frames.
-            await loadScreenplayDrift();
-            await loadImpact();
+            /*
+             * The two reports are fetched AFTER the frames are painted, not
+             * before. They were awaited here, and on a real board that meant
+             * the grid sat empty for about a second while the engine worked out
+             * what was out of date — the staleness report those are built on
+             * costs six seconds on 76 shots, because "the payload IS the
+             * fingerprint" means fingerprinting reads and encodes every
+             * reference plate.
+             *
+             * The comment that used to sit here already said the right thing —
+             * the warning is ADDITIVE — and the awaits made it untrue. Additive
+             * means it arrives later and changes nothing about whether the
+             * pictures appear.
+             */
             // Read from the payload that drew the frames, rather than a second
             // request that could answer differently.
             if (state.currentProject) {
@@ -32375,7 +32523,7 @@ ${fountainText.slice(0, 50000)}`;
             } else {
                 // Kept so the viewer can step between shots without the grid.
                 FRAME_VIEWER.frames = frames;
-                grid.innerHTML = screenplayDriftBanner() + impactBanner() + frames.map(f => `
+                grid.innerHTML = '<div id="boardBanners"></div>' + frames.map(f => `
                     <div class="card" style="padding:0;overflow:hidden;">
                         <div style="position:relative;background:var(--surface-alt,var(--gl-bg-surface));min-height:160px;">
                             <img id="img-${f.shot_id}" loading="lazy" src="${frameSrc(f, 640)}"
@@ -32422,7 +32570,14 @@ ${fountainText.slice(0, 50000)}`;
                                 <button class="btn btn-secondary btn-sm" onclick="playFromShot('${f.shot_id}')" title="Watch the cut starting from this shot">&#9654;</button>
                                 <button class="btn btn-secondary btn-sm" onclick="insertShotAfter('${f.shot_id}')" title="Add a new shot immediately after this one, in the same scene">+ Shot</button>
                             </div>
-                            ${storyboardFacetTags(f)}
+                            <!--
+                                Given its own target so the drift and impact
+                                marks can be painted in when those reports land,
+                                which is after the frames. Rebuilding the whole
+                                grid instead would restart every image load and
+                                wipe the annotation canvases.
+                            -->
+                            <div data-facets="${f.shot_id}">${storyboardFacetTags(f)}</div>
                             ${f.description ? '<p class="text-sm" style="margin-top:6px;line-height:1.45;">' + esc(f.description) + '</p>' : ''}
                             ${storyboardDialogueHtml(f.dialogue)}
                             <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;">
@@ -32432,7 +32587,42 @@ ${fountainText.slice(0, 50000)}`;
                     </div>`).join('');
             }
             setStatus(frames.length + ' storyboard frame(s)');
+
+            /*
+             * The warnings, now that the pictures are up. Not awaited: a
+             * director looking for a frame should not wait on a report about
+             * whether it is out of date, and the banner is meaningful whenever
+             * it lands.
+             */
+            loadBoardBanners();
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /**
+     * Fill the banner strip above the board, after the frames are painted.
+     *
+     * Guarded on still being on the same board: these take seconds on a real
+     * project, and a director who has navigated away in the meantime should not
+     * have a banner from the previous film appear over the new one.
+     */
+    async function loadBoardBanners() {
+        const projectAtStart = state.currentProject && state.currentProject.id;
+        await loadScreenplayDrift();
+        await loadImpact();
+        const host = document.getElementById('boardBanners');
+        if (!host) return;
+        if (!state.currentProject || state.currentProject.id !== projectAtStart) return;
+        host.innerHTML = screenplayDriftBanner() + impactBanner();
+        /*
+         * The per-frame marks read the same two reports, so they are repainted
+         * once the reports are in. Without this the banner would say six shots
+         * are behind and no frame would carry a mark — a warning with nothing
+         * to point at, which is the state the tag exists to prevent.
+         */
+        for (const f of (FRAME_VIEWER.frames || [])) {
+            const cell = document.querySelector(`[data-facets="${f.shot_id}"]`);
+            if (cell) cell.innerHTML = storyboardFacetTags(f);
+        }
     }
 
     /** Normalise browser-supported images to the one durable board format. */

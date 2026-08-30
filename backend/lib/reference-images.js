@@ -87,6 +87,34 @@ function assignTags(names) {
  * reference, not fail the whole batch. The caller decides whether it can
  * proceed without it.
  */
+/*
+ * A small, bounded cache of encoded plates.
+ *
+ * Measured on the real project: the staleness report took SIX SECONDS while
+ * every other call took 2-10ms. "The payload IS the fingerprint" is the right
+ * decision and this is its cost — building an image payload inlines every
+ * reference plate, so fingerprinting 76 keyframes read 19 distinct files 314
+ * times and moved 487MB off disk for one JSON report. MAYA_front.png alone was
+ * read 61 times, each read followed by base64-encoding a megabyte.
+ *
+ * A CACHE rather than a cheaper formula. Weakening the fingerprint would mark
+ * every existing artefact stale — the "warning you cannot act on" this codebase
+ * has already paid for — so the same bytes still produce the same hash and only
+ * the reading is avoided.
+ *
+ * KEYED ON WHAT THE FILESYSTEM SAYS, never on the path alone. A plate is
+ * written to the same per-view filename and OVERWRITES, so a path is not an
+ * identity: cached on it, a regenerated plate would fingerprint as its old self
+ * and the staleness report would go quietly wrong — worse than slow, because it
+ * is the report that says whether anything is out of date.
+ *
+ * Bounded, because a server runs for days and an unbounded cache of megabyte
+ * strings is a memory leak that looks like a performance fix. Oldest out first;
+ * the working set of one report is a handful of plates.
+ */
+const DATA_URI_CACHE = new Map();
+const DATA_URI_CACHE_MAX = 24;
+
 function toDataUri(filePath) {
     if (!filePath) return null;
     try {
@@ -94,11 +122,32 @@ function toDataUri(filePath) {
         if (!stat.isFile() || stat.size === 0 || stat.size > MAX_INLINE_BYTES) return null;
         const mime = MIME_BY_EXT[path.extname(filePath).toLowerCase()];
         if (!mime) return null;
-        return `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`;
+
+        // mtime AND size: a regeneration changes both, and a filesystem with a
+        // coarse mtime cannot hide a change of length.
+        const key = `${filePath}|${stat.size}|${stat.mtimeMs}`;
+        const hit = DATA_URI_CACHE.get(key);
+        if (hit !== undefined) {
+            // Re-inserted so the most recently used survives eviction.
+            DATA_URI_CACHE.delete(key);
+            DATA_URI_CACHE.set(key, hit);
+            return hit;
+        }
+
+        const uri = `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`;
+        DATA_URI_CACHE.set(key, uri);
+        while (DATA_URI_CACHE.size > DATA_URI_CACHE_MAX) {
+            DATA_URI_CACHE.delete(DATA_URI_CACHE.keys().next().value);
+        }
+        return uri;
     } catch (_) {
         return null;
     }
 }
+
+/** For tests, and for anything that needs a cold read. */
+function clearDataUriCache() { DATA_URI_CACHE.clear(); }
+function dataUriCacheSize() { return DATA_URI_CACHE.size; }
 
 /** An http(s) URL is already reachable; anything else needs inlining. */
 function resolveUri(ref) {
@@ -225,6 +274,8 @@ function taggedNames(references) {
 }
 
 module.exports = {
+    clearDataUriCache,
+    dataUriCacheSize,
     MAX_REFERENCES,
     MAX_INLINE_BYTES,
     toTag,

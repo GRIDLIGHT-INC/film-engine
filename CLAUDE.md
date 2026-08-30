@@ -288,6 +288,7 @@ film-engine/
 │       ├── brand-kit.test.js           # A kit that reaches the frame, not a form nobody consults
 │       ├── compliance.test.js          # An unsubstantiated claim cannot start a run
 │       ├── spot-package.test.js        # A handoff whose every path stays inside it
+│       ├── staleness-cost.test.js      # A report nobody waits six seconds for
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
 │       ├── aspect-consistency.test.js   # The board and the footage are the same shape
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
@@ -748,6 +749,49 @@ Closing the style book's 21 unproven cases found **six real defects**, and eleve
 **And the QA specification was wrong twice, in the same direction — asserting a plausible behaviour against a deliberate one.** It expected over-long fields to be **truncated**; `validateEntry` refuses, and refusing is right, because trimming a name discards words the director typed and shows them something they did not write. It expected a project delete to **remove** that project's entries; the FK is `ON DELETE SET NULL` on purpose, so an entry is **promoted to the library** — an angle recorded while a film was open must outlive that film, which is the `film_refsheet_jobs` trap of migration 067 not being repeated. The code was right both times and the specification was corrected.
 
 `tests/style-book-gaps.test.js` is set-based over the registries that fail **partially**: the four `NEVER_WRITES` fields (a rule catching three is indistinguishable from one that works), the three length-limited fields, and the seven row lookups in the router (a 404 on six teaches a caller to trust the seventh).
+
+### A Report Nobody Waits Six Seconds For
+
+Reported as *"why does the server sometimes take a while showing items?"* — and
+the first half of the answer was not the server at all: it was not running. That
+is worth recording because the symptom was an **empty project list**, which is
+indistinguishable from lost data and was reasonably alarming. All four projects
+were in the database the whole time.
+
+The second half was real and measurable. Every call on the board takes 2–10ms
+**except the staleness report, which takes six seconds**. The cause is a
+consequence of a decision that is otherwise right — *the payload IS the
+fingerprint* — because building an image payload **inlines every reference plate
+as a base64 data URI**. Fingerprinting 76 keyframes read 19 distinct files
+**314 times** and moved **487MB** off disk to produce one JSON report;
+`MAYA_front.png` alone was read 61 times.
+
+**A cache, not a cheaper formula.** Weakening the fingerprint to make it fast
+would mark every existing artefact stale — the *"warning you cannot act on"*
+this codebase has already paid for once — so the same bytes still produce the
+same hash and only the reading is avoided. Keyed on **size and mtime, never the
+path alone**: a plate is written to the same per-view filename and overwrites,
+so a path is not an identity, and a regenerated plate served from cache would
+fingerprint as its old self and make the staleness report quietly wrong. Bounded,
+because a server runs for days and an unbounded cache of megabyte strings is a
+memory leak that looks like a performance fix. That took the report from 488MB
+to 124MB of disk.
+
+**But the fix that mattered was in the page.** `loadStoryboard` **awaited** the
+drift report and the impact report before writing a single frame into the grid.
+The comment sitting there already said the right thing — *"the board still
+renders; the warning is additive"* — and the awaits made it untrue. Additive
+means it arrives **later** and changes nothing about whether the pictures appear.
+
+Measured on the real board: **frames ready in 51ms**, banners a second later,
+over an empty grid that used to sit there for the whole wait. The per-frame
+drift and impact marks are repainted when the reports land, because a banner
+saying six shots are behind while no frame carries a mark is a warning with
+nothing to point at.
+
+The remaining six seconds is the honest cost of the formula on 76 shots — each
+shot's own frame is a distinct file that no cache can share — and it now happens
+where nobody is waiting on it.
 
 ### Commercial Mode — a Spot Is a Fan-Out, Not a Short Film
 
@@ -3112,6 +3156,7 @@ node --test backend/tests/shot-aspect.test.js
 node --test backend/tests/brand-kit.test.js
 node --test backend/tests/compliance.test.js
 node --test backend/tests/spot-package.test.js
+node --test backend/tests/staleness-cost.test.js
 node --test backend/tests/paid-preview.test.js
 node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js
