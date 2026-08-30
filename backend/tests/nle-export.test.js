@@ -657,3 +657,130 @@ describe('audio lanes reach every format that carries audio', () => {
         });
     }
 });
+
+describe('scene-scoped audio', () => {
+it('a scene\'s music and ambient reach the NLE, not only a shot\'s', () => {
+    /*
+     * Measured on the real project before this was fixed: The Glass Harbour has
+     * four generated music cues and ALL FOUR were absent from every export.
+     *
+     * Music and ambient are SCENE-scoped — `PIPELINE_STEPS` says so, and their
+     * assets carry a scene_id and no shot_id by design. Both generators built
+     * their lookup with `if (!a.shot_id) continue;`, so every score and every
+     * ambient bed was dropped at the door. Nothing failed: the file opened, the
+     * timeline played, and the missing layer read as a creative choice.
+     *
+     * That is precisely what AUDIO_LANES exists to prevent — this file's own
+     * comment says a lane that never arrives is work that cannot be done at
+     * all — and it is the same defect playback had, one surface over.
+     *
+     * The bed is laid ONCE across the scene rather than repeated per shot: a
+     * score restarting at every cut is a worse output than no score.
+     */
+    const shots = [
+        { id: 's1', shot_code: '1A', duration_ms: 4000, scene_id: 'sc1' },
+        { id: 's2', shot_code: '1B', duration_ms: 4000, scene_id: 'sc1' },
+        { id: 's3', shot_code: '2A', duration_ms: 4000, scene_id: 'sc2' },
+    ];
+    const assets = [
+        { id: 'v1', shot_id: 's1', asset_type: 'video_raw', file_path: '/m/1A.mp4', file_name: '1A.mp4', duration_ms: 4000 },
+        { id: 'v2', shot_id: 's2', asset_type: 'video_raw', file_path: '/m/1B.mp4', file_name: '1B.mp4', duration_ms: 4000 },
+        { id: 'v3', shot_id: 's3', asset_type: 'video_raw', file_path: '/m/2A.mp4', file_name: '2A.mp4', duration_ms: 4000 },
+        // Scene-scoped: no shot_id at all.
+        { id: 'm1', shot_id: null, scene_id: 'sc1', asset_type: 'audio_music',
+          file_path: '/m/scene1.mp3', file_name: 'scene1.mp3', duration_ms: 8000 },
+        { id: 'a1', shot_id: null, scene_id: 'sc2', asset_type: 'audio_ambient',
+          file_path: '/m/room2.mp3', file_name: 'room2.mp3', duration_ms: 4000 },
+        /*
+         * A bed for a scene with no shootable shot. It has nowhere to be laid,
+         * and must be SKIPPED rather than attached to whichever shot happens to
+         * be first — that would put the wrong room tone under the wrong picture,
+         * which plays perfectly and is wrong.
+         */
+        { id: 'orphan', shot_id: null, scene_id: 'sc99', asset_type: 'audio_ambient',
+          file_path: '/m/nowhere.mp3', file_name: 'nowhere.mp3', duration_ms: 4000 },
+    ];
+
+    for (const [name, gen] of [['FCPXML', generateFCPXML], ['Premiere XML', generatePremiereXML]]) {
+        const xml = gen({ title: 'Beds' }, shots, assets, {});
+        assert.ok(xml.includes('scene1.mp3'),
+            `${name}: the scene's score never reaches the export — four real cues were lost this way`);
+        assert.ok(xml.includes('room2.mp3'), `${name}: the scene's ambient bed never reaches the export`);
+        assert.ok(!xml.includes('nowhere.mp3'),
+            `${name}: a bed whose scene has no shot was laid anyway — under an unrelated scene`);
+
+        /*
+         * On the scene's FIRST shot. Laid on the last one it starts where the
+         * scene ends, so a score arrives after the scene it was written for —
+         * and the file still opens and plays.
+         */
+        // FCPXML declares the asset once and the clip references it by ID, so
+        // the clip block never contains the filename — searched for by ref.
+        const holder = name === 'FCPXML'
+            ? (() => {
+                const ref = xml.match(/<asset id="(a\d+)"[^>]*scene1\.mp3/)[1];
+                return xml.split('<clip name=').slice(1)
+                    .find(b => b.slice(0, b.indexOf('</clip>')).includes(`<audio ref="${ref}"`));
+            })()
+            : xml.split(/<clipitem[\s>]/).slice(1).find(b => b.slice(0, b.indexOf('</clipitem>')).includes('scene1.mp3'));
+        assert.ok(holder, `${name}: the score is declared but never laid on a clip`);
+        /*
+         * On the scene's FIRST shot, expressed as a POSITION rather than a name:
+         * FCPXML nests the bed inside the shot's own <clip>, while Premiere lays
+         * it on its own audio track named after the file, so the only thing both
+         * formats agree on is where it starts. Scene 1 begins at 0.
+         */
+        if (name === 'FCPXML') {
+            assert.ok(/^"1A"/.test(holder.trim()),
+                'FCPXML: the score is nested in the wrong shot — it belongs on the scene\'s first');
+        } else {
+            const start = holder.match(/<start>(-?\d+)<\/start>/);
+            assert.ok(start, 'Premiere XML: the score is laid with no start');
+            assert.equal(Number(start[1]), 0,
+                `Premiere XML: the score starts at frame ${start[1]} — scene 1 begins at 0, so it `
+                + 'is laid on the wrong shot and arrives after the scene it was written for');
+        }
+        /*
+         * Laid ONCE, not once per shot in the scene. Counted as timeline CLIPS
+         * rather than as occurrences of the filename: both formats name a file
+         * more than once for a single clip — Premiere writes the name on the
+         * clipitem, again inside its nested <file>, and once more as a
+         * pathurl — so counting text reports three clips where there is one.
+         */
+        let laid;
+        if (name === 'FCPXML') {
+            // The asset is declared once and LAID by <audio ref="…">; counting
+            // the declaration would report one however many times it is used.
+            const decl = xml.match(/<asset id="(a\d+)"[^>]*scene1\.mp3/);
+            assert.ok(decl, 'FCPXML: the score is not declared as an asset at all');
+            laid = (xml.match(new RegExp(`<audio ref="${decl[1]}"`, 'g')) || []).length;
+        } else {
+            laid = xml.split(/<clipitem[\s>]/).slice(1)
+                .filter(b => b.slice(0, b.indexOf('</clipitem>') + 1).includes('scene1.mp3')).length;
+        }
+        assert.equal(laid, 1,
+            `${name}: the score is laid on ${laid} clips — a bed restarting at every cut is `
+            + 'worse than no bed, and it already spans the scene');
+
+        /*
+         * And it runs its OWN length. The bed is 8s across a scene of two 4s
+         * shots; clipped to the shot it is laid on, a score would stop at the
+         * first cut — which plays, and is wrong, and is harder to notice than
+         * silence because some music does arrive.
+         */
+        if (name === 'FCPXML') {
+            const ref = xml.match(/<asset id="(a\d+)"[^>]*scene1\.mp3/)[1];
+            const laidTag = xml.match(new RegExp(`<audio ref="${ref}"[^>]*duration="(\\d+)/(\\d+)s"`));
+            assert.ok(laidTag, 'FCPXML: the score is laid with no duration');
+            const seconds = Number(laidTag[1]) / Number(laidTag[2]);
+            assert.equal(seconds, 8, `FCPXML: the 8s score is laid as ${seconds}s — cut off at the first cut`);
+        } else {
+            const dur = holder.match(/<duration>(\d+)<\/duration>/);
+            assert.ok(dur, 'Premiere XML: the score is laid with no duration');
+            // 8s at the default 24fps.
+            assert.equal(Number(dur[1]), 192,
+                `Premiere XML: the 8s score is laid as ${dur[1]} frames — cut off at the first cut`);
+        }
+    }
+});
+});

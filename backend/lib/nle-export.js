@@ -31,6 +31,46 @@ const AUDIO_LANES = [
     { type: 'audio_ambient', label: 'Ambient' },
 ];
 
+/**
+ * Scene-scoped audio, attached to the shot it should be laid on.
+ *
+ * Music and ambient are SCENE-scoped — `PIPELINE_STEPS` says so, and their
+ * assets carry a `scene_id` and no `shot_id`. Both generators built their
+ * lookup with `if (!a.shot_id) continue;`, so every score and every ambient bed
+ * was dropped at the door: measured on a real project, four generated music
+ * cues reached none of the three exports. Nothing failed — the file opened, the
+ * timeline played, and the missing layer read as a creative choice.
+ *
+ * That is exactly what AUDIO_LANES exists to prevent (see its comment above),
+ * and it is the same defect playback had one surface over.
+ *
+ * The bed is laid on the scene's FIRST shot and once only. A score that
+ * restarts at every cut is a worse output than no score, and its own measured
+ * duration already spans the scene — so the NLE holds one clip the length of
+ * the bed rather than one per shot.
+ *
+ * Returns a NEW map; the caller's own shot lookup is left alone, because a
+ * shot-scoped asset of the same type must still win on the shot that owns it.
+ */
+function sceneBedsByShot(shots, assets) {
+    const beds = {};
+    const firstShotOfScene = {};
+    for (const shot of shots) {
+        if (shot.scene_id && !firstShotOfScene[shot.scene_id]) firstShotOfScene[shot.scene_id] = shot.id;
+    }
+    for (const a of assets) {
+        if (a.shot_id || !a.scene_id) continue;
+        const shotId = firstShotOfScene[a.scene_id];
+        // A bed for a scene with no shootable shot has nowhere to be laid. It is
+        // skipped rather than attached to an unrelated scene, which would put
+        // the wrong room tone under the wrong picture.
+        if (!shotId) continue;
+        if (!beds[shotId]) beds[shotId] = [];
+        beds[shotId].push(a);
+    }
+    return beds;
+}
+
 /** Default project settings for backward compatibility */
 const DEFAULT_SETTINGS = {
     target_fps: 24,
@@ -424,6 +464,17 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
         if (!assetsByShot[a.shot_id]) assetsByShot[a.shot_id] = [];
         assetsByShot[a.shot_id].push(a);
     }
+    /*
+     * Scene-scoped beds, appended AFTER the shot's own assets so a shot-scoped
+     * asset of the same type still wins on the shot that owns it — `.find()`
+     * takes the first match, and a shot's own music is more specific than its
+     * scene's.
+     */
+    const bedsByShot = sceneBedsByShot(shots, assets);
+    for (const [shotId, list] of Object.entries(bedsByShot)) {
+        if (!assetsByShot[shotId]) assetsByShot[shotId] = [];
+        assetsByShot[shotId].push(...list);
+    }
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
     xml += `<!DOCTYPE fcpxml>\n`;
@@ -503,7 +554,19 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
             for (const { type: audioType } of AUDIO_LANES) {
                 const audioRef = assetIdMap[`${shot.id}_${audioType}`];
                 if (audioRef) {
-                    xml += `              <audio ref="${audioRef}" lane="${lane}" duration="${durRational}"/>\n`;
+                    /*
+                     * A scene BED runs its own length, not the shot's. It is
+                     * laid on the scene's first shot and spans the scene, so
+                     * clipping it to that one shot's duration would cut a score
+                     * off at the first cut — which is the same "it plays and it
+                     * is wrong" failure as dropping it entirely, and harder to
+                     * spot because a few seconds of music do arrive.
+                     */
+                    const bedAsset = (bedsByShot[shot.id] || []).find(a => a.asset_type === audioType);
+                    const audioDur = bedAsset && bedAsset.duration_ms
+                        ? `${msToFrames(bedAsset.duration_ms, fps) * frameDurNum}/${frameDurDen}s`
+                        : durRational;
+                    xml += `              <audio ref="${audioRef}" lane="${lane}" duration="${audioDur}"/>\n`;
                     lane++;
                 }
             }
@@ -561,6 +624,17 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
         if (!a.shot_id) continue;
         if (!assetsByShot[a.shot_id]) assetsByShot[a.shot_id] = [];
         assetsByShot[a.shot_id].push(a);
+    }
+    /*
+     * Scene-scoped beds, appended AFTER the shot's own assets so a shot-scoped
+     * asset of the same type still wins on the shot that owns it — `.find()`
+     * takes the first match, and a shot's own music is more specific than its
+     * scene's.
+     */
+    const bedsByShot = sceneBedsByShot(shots, assets);
+    for (const [shotId, list] of Object.entries(bedsByShot)) {
+        if (!assetsByShot[shotId]) assetsByShot[shotId] = [];
+        assetsByShot[shotId].push(...list);
     }
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
@@ -705,9 +779,18 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
         let audioOffset = 0;
         for (const shot of shots) {
             const durationMs = shot.duration_ms || 0;
-            const durFrames = msToFrames(durationMs, fps);
             const shotAssets = assetsByShot[shot.id] || [];
             const audioAsset = shotAssets.find(a => a.asset_type === audioTrack.type);
+            /*
+             * A scene BED runs its own length, not the shot's. It is laid on
+             * the scene's first shot and spans the scene, so clipping it there
+             * would cut a score off at the first cut — which plays, and is
+             * wrong, and is harder to notice than silence because some of the
+             * music does arrive. The same rule as the FCPXML lane above.
+             */
+            const isBed = !!(bedsByShot[shot.id] || []).find(a => a.asset_type === audioTrack.type);
+            const durFrames = msToFrames(
+                isBed && audioAsset && audioAsset.duration_ms ? audioAsset.duration_ms : durationMs, fps);
 
             if (audioAsset) {
                 xml += `          <clipitem>\n`;
@@ -744,6 +827,7 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
 
 module.exports = {
     AUDIO_LANES,
+    sceneBedsByShot,
     shootableShots,
     generateEDL,
     generateFCPXML,
