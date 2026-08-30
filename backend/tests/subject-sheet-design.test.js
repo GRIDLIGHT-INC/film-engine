@@ -423,3 +423,61 @@ test('an agent can write the structured fields too', () => {
         assert.deepEqual(missing, [], `${s.kind}_update cannot set: ${missing.join(', ')}`);
     }
 });
+
+/**
+ * The PLATE LAYOUT each sheet's design asks for, read from the design itself.
+ *
+ * Reported three times as "the location and prop plates are still not fixed",
+ * and every previous pass checked that the regions RENDER — which they do. The
+ * fault is that all three sheets reuse the CHARACTER's plate grid: two columns
+ * of 3/4 portraits. That is right for a turnaround and wrong for both others.
+ *
+ *   location   a 16/9 hero, full width, then three 4/3 tiles in a row
+ *   prop       five 1/1 tiles, auto-fitting
+ *   character  2-up portraits — already correct, and asserted so it stays
+ *
+ * A location plate is landscape because a location IS landscape; shown in a
+ * portrait crop it is the wrong picture of the right place, which is precisely
+ * what a plate exists to prevent.
+ */
+const PLATE_LAYOUTS = [
+    { kind: 'location', file: 'Location Card.dc.html', cls: 'ls-plate', hero: '16/9', rest: '4/3' },
+    { kind: 'prop', file: 'Prop Card.dc.html', cls: 'ps-plate', hero: '1/1', rest: '1/1' },
+];
+
+test('each sheet uses the plate shape its own design asks for', () => {
+    for (const spec of PLATE_LAYOUTS) {
+        const design = fs.readFileSync(path.join(HANDOFF, spec.file), 'utf8');
+
+        // Derived: the aspect ratios the design's own plate tiles declare.
+        const ratios = [...new Set([...design.matchAll(/aspect-ratio:\s*([0-9]+\s*\/\s*[0-9]+)/g)]
+            .map(m => m[1].replace(/\s+/g, '')))];
+        assert.ok(ratios.includes(spec.hero),
+            `${spec.kind}: the design does not declare ${spec.hero} — this test's reading is stale `
+            + `(it declares ${ratios.join(', ')})`);
+
+        // The page must have a plate rule OF ITS OWN for this kind, at that
+        // shape. Reusing .cs-plate is the defect: it is the character's.
+        const rule = new RegExp(`\\.${spec.cls}\\b[^}]*aspect-ratio\\s*:\\s*${spec.hero.replace('/', '\\s*/\\s*')}`);
+        assert.ok(rule.test(SRC),
+            `${spec.kind}: no .${spec.cls} rule at ${spec.hero} — the sheet is still using the `
+            + "character's portrait grid, which is the wrong shape for this subject");
+    }
+});
+
+test('the location sheet leads with ONE hero plate, not a row of equals', () => {
+    /*
+     * The design gives 01 · Master its own full-width block above the others,
+     * because the establishing plate is what every shot in the scene is
+     * re-photographed against — it is not one of four, it is the one.
+     */
+    const design = fs.readFileSync(path.join(HANDOFF, 'Location Card.dc.html'), 'utf8');
+    assert.ok(/grid-template-columns:\s*repeat\(3,/.test(design),
+        "this test's reading is stale: the design no longer lays the other plates three-up");
+
+    assert.ok(/ls-plates-hero|ls-hero/.test(SRC),
+        'the location sheet has no hero plate — every plate is rendered the same size, so the '
+        + 'establishing plate does not read as the one the scene is built on');
+    assert.ok(/\.ls-plates-rest[^}]*repeat\(3/.test(SRC),
+        'the remaining location plates are not laid out three-up as the design asks');
+});

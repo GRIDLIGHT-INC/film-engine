@@ -1370,6 +1370,38 @@
         .cs-label .rule { flex:1; height:1px; background:rgba(255,255,255,0.07); }
         .cs-label .note { color:#9fdce8; letter-spacing:.1em; }
         .cs-views { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+
+        /*
+         * A PLATE IS THE SHAPE OF ITS SUBJECT.
+         *
+         * All three sheets reused `.cs-views` — two columns of 3/4 portraits —
+         * which is right for a character turnaround and wrong for the others.
+         * A location plate is landscape because a location IS landscape, and
+         * shown in a portrait crop it is the wrong picture of the right place,
+         * which is exactly what a plate exists to prevent. Each shape is the one
+         * its own design handoff declares.
+         */
+        .ls-plates-hero { display:block; margin-bottom:10px; }
+        .ls-plates-hero .ls-plate { aspect-ratio:16/9; }
+        .ls-plates-rest { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+        .ls-plates-rest .ls-plate { aspect-ratio:4/3; }
+        .ls-plate {
+            position:relative; border-radius:12px; overflow:hidden; cursor:pointer;
+            border:1px solid rgba(255,255,255,0.08);
+            background:repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);
+        }
+        .ls-plate img { width:100%; height:100%; object-fit:cover; display:block; }
+
+        /* A prop is photographed square: it fills its own frame from every
+           side, and a turntable of five square views is what the design asks
+           for. */
+        .ps-plates { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+        .ps-plate {
+            position:relative; aspect-ratio:1/1; border-radius:12px; overflow:hidden; cursor:pointer;
+            border:1px solid rgba(255,255,255,0.08);
+            background:repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);
+        }
+        .ps-plate img { width:100%; height:100%; object-fit:cover; display:block; }
         .cs-plate {
             position:relative; aspect-ratio:3/4; border-radius:12px; overflow:hidden;
             border:1px solid rgba(255,255,255,0.08); cursor:pointer;
@@ -17081,8 +17113,27 @@ THREE.GLTFLoader = GLTFLoader;
                     try {
                         const out = await api(`/projects/${p.id}/deliverables/plan`,
                             { method: 'POST', body: JSON.stringify({ package: pkg }) });
-                        setStatus(`Spot created — ${out.created} deliverable(s), `
-                            + `shoot native: ${(out.native_ratios || []).join(', ') || 'none'}`);
+                        /*
+                         * The package sets the project's shape and RATE as well
+                         * as its file list, so the confirmation says what it
+                         * chose: a frame rate is not something to discover on
+                         * an export, and a spot generated at the wrong one
+                         * cannot be conformed afterwards.
+                         */
+                        const ps = out.project_settings;
+                        if (ps) Object.assign(p, {
+                            aspect_ratio: ps.aspect_ratio,
+                            target_resolution: ps.target_resolution,
+                            target_fps: ps.target_fps,
+                        });
+                        setStatus(`Spot created — ${out.created} deliverable(s)`
+                            + (ps ? `, ${ps.target_resolution} @ ${ps.target_fps}fps` : '')
+                            + `, shoot native: ${(out.native_ratios || []).join(', ') || 'none'}`);
+                        if (ps) alert(`This spot is set up:\n\n`
+                            + `${ps.target_resolution} · ${ps.aspect_ratio} · ${ps.target_fps}fps\n`
+                            + `${out.created} deliverables\n`
+                            + `Shot natively at: ${(out.native_ratios || []).join(', ') || 'nothing extra'}\n\n`
+                            + ps.why);
                     } catch (err) { setStatus('Project created, but the deliverables did not: ' + err.message); }
                 }
             }
@@ -24759,11 +24810,24 @@ ${fountainText.slice(0, 50000)}`;
         return (SS.kind === 'prop' && want === 'front') ? bare || null : null;
     };
 
-    function ssTile(v, label, caption) {
+    /**
+     * One plate tile.
+     *
+     * `shape` names the sheet's own plate class, because a plate is the shape
+     * of its SUBJECT: a location is landscape, a prop is square, a character is
+     * a portrait turnaround. All three used to share the character's grid,
+     * which showed a location in a portrait crop — the wrong picture of the
+     * right place, which is what a plate exists to prevent.
+     */
+    function ssTile(v, label, caption, shape) {
         const url = v && v.available && v.image_url ? API_BASE + v.image_url : '';
-        return `<figure class="cs-tile ss-slot">
+        const cls = shape || 'cs-tile';
+        return `<figure class="ss-slot" style="margin:0;">
+            <div class="${cls}">
             ${url ? `<img src="${esc(url)}" alt="${esc(label)}" onclick="openPlateViewer('${esc(url)}', ${jsAttr(label)})">`
-                  : `<div class="cs-drop ss-empty" onclick="generateSheetView(${jsAttr((v && v.view) || label)})">generate &rarr;</div>`}
+                  : `<div class="cs-drop ss-empty" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;"
+                          onclick="generateSheetView(${jsAttr((v && v.view) || label)})">generate &rarr;</div>`}
+            </div>
             <figcaption>${esc(label)}${caption ? `<span class="ss-view-angle">${esc(caption)}</span>` : ''}</figcaption>
         </figure>`;
     }
@@ -24793,9 +24857,20 @@ ${fountainText.slice(0, 50000)}`;
         <div class="ss-grid">
           <div class="ss-col">
             ${ssSection('ls-plates', 'Master plates', 'canonical · fed to generation',
-                `<div class="cs-views">${slots.map(sl =>
-                    ssTile(ssViewFor(sl.view), `${String(sl.n).padStart(2, '0')} · ${sl.role}`, sl.caption)
-                ).join('')}</div>${ssPlateMeta()}${ssPlateControls()}
+                /*
+                 * The establishing plate leads, full width. It is not one of
+                 * four — it is the one every shot in the scene is
+                 * re-photographed against, and the design gives it its own
+                 * block above the others for that reason.
+                 */
+                `<div class="ls-plates-hero">${
+                    ssTile(ssViewFor(slots[0].view),
+                        `${String(slots[0].n).padStart(2, '0')} · ${slots[0].role}`,
+                        slots[0].caption, 'ls-plate')}</div>
+                 ${slots.length > 1 ? `<div class="ls-plates-rest">${slots.slice(1).map(sl =>
+                    ssTile(ssViewFor(sl.view), `${String(sl.n).padStart(2, '0')} · ${sl.role}`,
+                        sl.caption, 'ls-plate')
+                 ).join('')}</div>` : ''}${ssPlateMeta()}${ssPlateControls()}
                  <button class="btn btn-secondary btn-sm" style="margin-top:6px;" onclick="ssEditPlatePlan()">Plan the views</button>`)}
 
             ${ssSection('ls-orientation', 'Orientation plan', 'keeps geography consistent across plates',
@@ -24925,8 +25000,14 @@ ${fountainText.slice(0, 50000)}`;
         <div class="ss-grid">
           <div class="ss-col">
             ${ssSection('ps-plates', 'Turntable · official views', 'canonical · fed to generation',
-                `<div class="cs-views">${SS.propViews.map(v =>
-                    ssTile(ssViewFor(v.id), v.label, `${v.angle} · ${v.caption}`)).join('')}</div>
+                /*
+                 * Square, auto-fitting, as the prop design lays it out. A prop
+                 * is photographed filling its own frame from every side, so
+                 * five equal square views ARE the turntable — there is no hero
+                 * among them the way a location has an establishing plate.
+                 */
+                `<div class="ps-plates">${SS.propViews.map(v =>
+                    ssTile(ssViewFor(v.id), v.label, `${v.angle} · ${v.caption}`, 'ps-plate')).join('')}</div>
                  ${ssPlateMeta()}${ssPlateControls()}`)}
 
             ${ssSection('ps-references', 'Concept art & references',

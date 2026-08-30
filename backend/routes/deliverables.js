@@ -93,6 +93,27 @@ function planRoute(req, res, projectId) {
     } catch (err) {
         return json(res, 400, { error: err.message, packages: Object.keys(PACKAGES) });
     }
+    /*
+     * The package also decides the project's SHAPE and RATE.
+     *
+     * Applying a package set the list of files and left aspect_ratio,
+     * target_resolution and target_fps at whatever a FILM defaults to — and a
+     * spot generated at 24fps for a 29.97 buy cannot be conformed afterwards.
+     *
+     * Only where the caller has not already chosen: `settings: false` leaves
+     * them alone, for the case where a director has deliberately set the
+     * project up and is adding a package to it.
+     */
+    let applied = null;
+    if (body.settings !== false) {
+        const { settingsForPackage } = require('../lib/deliverables');
+        applied = settingsForPackage(body.package);
+        db.prepare(`UPDATE film_projects
+                       SET aspect_ratio = ?, target_resolution = ?, target_fps = ?
+                     WHERE id = ?`)
+            .run(applied.aspect_ratio, applied.target_resolution, applied.target_fps, projectId);
+    }
+
     const existing = rowsFor(projectId);
     if (!body.append && existing.length) {
         db.prepare('DELETE FROM film_deliverables WHERE project_id = ?').run(projectId);
@@ -107,6 +128,9 @@ function planRoute(req, res, projectId) {
         replaced: body.append ? 0 : existing.length,
         deliverables: after,
         native_ratios: nativeRatiosFor(after),
+        // What the project was set to, and why — a change to the frame rate is
+        // not something to discover later on an export.
+        project_settings: applied,
     });
 }
 

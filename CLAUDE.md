@@ -753,6 +753,45 @@ Closing the style book's 21 unproven cases found **six real defects**, and eleve
 
 `tests/style-book-gaps.test.js` is set-based over the registries that fail **partially**: the four `NEVER_WRITES` fields (a rule catching three is indistinguishable from one that works), the three length-limited fields, and the seven row lookups in the router (a 404 on six teaches a caller to trust the seventh).
 
+### A Plate Is the Shape of Its Subject
+
+Reported three times as *"the location and prop plates are still not fixed"*,
+and every previous pass checked that the regions RENDER — which they did. The
+fault was one line: all three sheets reused `.cs-views`, the CHARACTER's grid of
+two 3/4 portraits. That is right for a turnaround and wrong for both others, so
+a **location plate was shown in a portrait crop** — the wrong picture of the
+right place, which is exactly what a plate exists to prevent.
+
+Each shape is now the one its own handoff declares: a location leads with a
+**16:9 hero** (the establishing plate is not one of four, it is the one every
+shot in the scene is re-photographed against) followed by three 4/3 tiles; a
+prop is **five 1/1 tiles auto-fitting**, because a prop fills its own frame from
+every side and there is no hero among them.
+
+`tests/subject-sheet-design.test.js` reads the aspect ratios out of the DESIGN
+FILES and requires the page to declare a matching rule per kind, so a design
+that changes fails the test rather than the page quietly disagreeing with it.
+
+### Choosing "Commercial" Sets the Format, Not Just the File List
+
+Applying a package set the client, the campaign, the brand, the runtime and the
+deliverables — and left `aspect_ratio`, `target_resolution` and `target_fps` at
+whatever a FILM defaults to. Those three decide the shape and rate every frame
+is generated at, and a spot generated at 24fps for a 29.97 buy cannot be
+conformed afterwards.
+
+`settingsForPackage` derives them from the package's own profiles: the MASTER is
+the longest landscape profile, and where a **broadcast** profile is present its
+rate wins, because an air rate is contractual while a social one is a
+convention. Derived rather than written down twice, so a package that gains a UK
+profile moves the project to 25fps with nothing to remember.
+
+The rule is split into `settingsFromProfiles` for a reason worth recording:
+every package that ships today has a master at the same rate as its air profile,
+so replacing `air || master` with `master` was **invisible against all three** —
+a rule nothing can distinguish is one nobody can trust, and this one decides
+whether a spot can be aired.
+
 ### Draft While Working, Finish at the End
 
 *"When we create video clips while we're working we'll always do 480P to save,

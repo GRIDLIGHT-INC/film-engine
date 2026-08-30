@@ -300,3 +300,82 @@ test('a project says whether it is a film or a spot, and the choice is made at c
     assert.ok(/p\.client \|\| p\.campaign \|\| p\.brand_id \|\| Number\(p\.target_duration_ms\)/.test(page),
         'the type is not derived from the fields that actually change behaviour');
 });
+
+test('a package decides the project\'s technical settings, derived from its own profiles', () => {
+    /*
+     * "When we select commercial does it automatically set all the formats we
+     * need? This needs to be done automatically."
+     *
+     * It set the client, the campaign, the brand, the runtime and the
+     * deliverables — and left aspect_ratio, target_resolution and target_fps at
+     * whatever a FILM defaults to. Those three decide the shape and rate every
+     * frame is generated at, and getting the rate wrong is the one mistake that
+     * cannot be fixed in the grade.
+     *
+     * DERIVED from the package's own profiles rather than written down twice: a
+     * package that gains a UK broadcast profile must move the project to 25fps
+     * with nothing to remember.
+     */
+    const { settingsForPackage } = require('../lib/deliverables');
+
+    for (const name of Object.keys(PACKAGES)) {
+        const out = settingsForPackage(name);
+        assert.ok(out, `${name} produced no settings`);
+        assert.ok(out.target_fps > 0, `${name} sets no frame rate`);
+        assert.ok(/^\d+x\d+$/.test(out.target_resolution), `${name} sets no resolution`);
+        assert.ok(out.aspect_ratio, `${name} sets no aspect ratio`);
+        assert.ok(out.why, `${name} does not say why it chose those`);
+
+        // The settings must MATCH one of the package's own profiles — not be
+        // an average of them, which is a shape nobody delivers.
+        const rows = planDeliverables(name);
+        const matched = rows.some(r =>
+            r.fps === out.target_fps
+            && `${r.width}x${r.height}` === out.target_resolution
+            && r.aspect_ratio === out.aspect_ratio);
+        assert.ok(matched,
+            `${name}: the project would be set to ${out.target_resolution} @ ${out.target_fps} `
+            + `${out.aspect_ratio}, which is not any deliverable in the package`);
+    }
+
+    /*
+     * Broadcast is CONTRACTUAL, so where a package contains an air profile its
+     * rate wins. A spot generated at 30fps for a 29.97 buy cannot be conformed
+     * afterwards — the one mistake this whole area exists to prevent.
+     */
+    const air = settingsForPackage('broadcast');
+    assert.equal(air.target_fps, 29.97,
+        `a package containing NA broadcast must set 29.97, got ${air.target_fps}`);
+    assert.ok(/broadcast/i.test(air.why), `the reason does not mention the air profile: ${air.why}`);
+
+    // Social-only: no air profile, so the social rate stands.
+    const rapid = settingsForPackage('rapid');
+    assert.ok(rapid.target_fps === 29.97 || rapid.target_fps === 30,
+        `rapid set an unexpected rate: ${rapid.target_fps}`);
+
+    // An unknown package refuses rather than inventing a format.
+    assert.throws(() => settingsForPackage('platinum'), /package/i);
+
+    /*
+     * THE AIR RATE WINS, proven over an explicit set.
+     *
+     * Every package that ships today has a master at the same rate as its
+     * broadcast profile, so this rule is invisible against all three — and a
+     * rule nothing can distinguish is one nobody can trust. It decides whether
+     * a spot is generated at a rate it can be AIRED at, which cannot be
+     * conformed afterwards.
+     */
+    const { settingsFromProfiles } = require('../lib/deliverables');
+    const mixed = settingsFromProfiles([
+        // The master is longer and social-rated…
+        { id: 'yt_60', label: 'YouTube :60', aspect: '16:9', width: 1920, height: 1080,
+          fps: 30, duration_ms: 60000, platform: 'youtube' },
+        // …and a UK air cut-down is in the same package.
+        { id: 'uk_15', label: 'UK broadcast :15', aspect: '16:9', width: 1920, height: 1080,
+          fps: 25, duration_ms: 15000, platform: 'broadcast' },
+    ]);
+    assert.equal(mixed.target_fps, 25,
+        'a package whose master is 30fps and which carries a 25fps AIR profile must generate at 25 — '
+        + 'an air rate is contractual and cannot be conformed afterwards');
+    assert.equal(mixed.target_resolution, '1920x1080', 'the master still sets the frame');
+});

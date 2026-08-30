@@ -142,23 +142,50 @@ function planPackage(input) {
      * the sequence carries it: rate, raster, exact frame count and the loudness
      * target Media Encoder normalises to.
      */
+    /*
+     * The EXPORT spec, not merely the match spec.
+     *
+     * The engine cannot do the finishing: `post` is served only by Gridlight,
+     * which does not implement it, so the upscale and the mix happen in Media
+     * Encoder — which is what preflight has reported as "finished in the NLE"
+     * from the start. So the codec and the audio layout have to be stated here
+     * or the question "what do I export?" has no answer anywhere, and a spec
+     * sheet giving a raster and a rate while leaving the codec to memory is how
+     * a broadcast delivery is rejected.
+     */
+    const codecFor = s2 => (s2.platform === 'broadcast' ? 'ProRes 422 HQ' : 'H.264 High');
+    const audioFor = s2 => (s2.platform === 'broadcast'
+        ? 'stereo mix 1/2 + M&E 3/4'
+        : 'stereo AAC 320k');
+
     const lines = [
         `# ${project.title || 'Spot'}`,
         '',
         `Client: ${project.client || '—'}`,
         `Campaign: ${project.campaign || '—'}`,
         '',
-        '## Sequences',
+        '## Export these from Premiere',
         '',
-        '| Sequence | Raster | Rate | Frames | Loudness | Captions |',
-        '|---|---|---|---|---|---|',
-        ...sequences.map(s => `| ${s.name} | ${s.width}x${s.height} | ${s.fps} | `
-            + `${s.duration_frames} | ${s.loudness_target || '—'} | ${s.caption_mode} |`),
+        '| Sequence | Raster | Rate | Frames | Codec | Audio | Loudness | Captions |',
+        '|---|---|---|---|---|---|---|---|',
+        ...sequences.map(s2 => `| ${s2.name} | ${s2.width}x${s2.height} | ${s2.fps} | `
+            + `${s2.duration_frames} | ${codecFor(s2)} | ${audioFor(s2)} | `
+            + `${s2.loudness_target || '—'} | ${s2.caption_mode} |`),
         '',
-        'Frame counts are exact. NTSC rates are nominal — a :30 at 29.97 is 900 frames, not 899 —',
+        'Frame counts are EXACT. NTSC rates are nominal — a :30 at 29.97 is 900 frames, not 899 —',
         'and a spot that arrives one frame short is rejected by the station.',
         '',
-        'Loudness is normalised by Media Encoder on export. Nothing in the engine measures it.',
+        '## What the engine did NOT do',
+        '',
+        'The upscale, the grade, the lip-sync and the audio mix all happen in **Premiere and Media',
+        'Encoder**. Nothing in this package has been upscaled, graded or loudness-normalised, and the',
+        'footage here is DRAFT resolution — generated small on purpose, because most clips are thrown',
+        'away while a cut is being found.',
+        '',
+        'So the export above is where the finishing happens: set the raster and rate from the table,',
+        'let Media Encoder normalise to the loudness target, and burn or attach captions as the last',
+        'column says. An editor who assumes the upscale already happened delivers a draft-resolution',
+        'master against a full-size spec — which plays perfectly, and is wrong.',
     ];
 
     return {

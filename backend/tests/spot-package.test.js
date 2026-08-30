@@ -142,3 +142,41 @@ test('the spec sheet states what the editor has to match, per sequence', () => {
         }
     }
 });
+
+test('the spec sheet states what Premiere must EXPORT, not just what it must match', () => {
+    /*
+     * "What is needed from Premiere to export as the final video to get to a
+     * final product?"
+     *
+     * The engine cannot answer that by doing it: `post` is served only by
+     * Gridlight, which does not implement it, so the upscale and the mix happen
+     * in Media Encoder. Preflight has reported those three stages as "finished
+     * in the NLE" from the start.
+     *
+     * What the engine CAN do — and must, or the question has no answer anywhere
+     * — is state the export spec per sequence: the codec, the audio layout and
+     * the loudness target, beside the raster and the exact frame count. A spec
+     * sheet that gives an editor a size and a rate and leaves the codec to
+     * memory is how a broadcast delivery gets rejected.
+     */
+    const m = plan();
+    const sheet = m.spec_sheet_content || '';
+
+    for (const d of planDeliverables('rapid')) {
+        assert.ok(sheet.includes(d.key), `${d.key} is not in the spec sheet`);
+    }
+    // Codec and audio, per the delivery matrix — the two things an editor sets
+    // in Media Encoder and cannot infer from a raster.
+    assert.ok(/codec/i.test(sheet), 'the spec sheet names no codec, so the export is a guess');
+    assert.ok(/ProRes|H\.?264/i.test(sheet), 'no actual codec is named');
+    assert.ok(/audio/i.test(sheet), 'the spec sheet says nothing about the audio layout');
+    assert.ok(/LUFS|LKFS/.test(sheet), 'no loudness target reaches the editor');
+
+    /*
+     * And it says plainly that the engine does NOT do these steps. An editor
+     * who assumes the upscale already happened delivers a 720p master against a
+     * 4K spec, which plays perfectly and is wrong.
+     */
+    assert.ok(/Media Encoder|Premiere/i.test(sheet),
+        'the spec sheet does not say where the finishing happens');
+});

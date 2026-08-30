@@ -186,7 +186,73 @@ function validateDeliverable(row) {
     return { valid: errors.length === 0, errors };
 }
 
+/**
+ * The project settings a package implies.
+ *
+ * Choosing "commercial" has to set the shape and the rate every frame is
+ * generated at, not just the list of files — those were left at whatever a FILM
+ * defaults to, and a spot generated at 24fps for a 29.97 buy cannot be
+ * conformed afterwards. It is the one mistake that cannot be fixed in the grade.
+ *
+ * DERIVED from the package's own profiles rather than written down a second
+ * time: a package that gains a UK broadcast profile moves the project to 25fps
+ * with nothing to remember.
+ *
+ * The MASTER is the 16:9 profile with the longest runtime — the full-length
+ * landscape cut everything else is derived from — and where the package
+ * contains a BROADCAST profile its rate wins, because an air rate is
+ * contractual while a social one is a convention.
+ */
+function settingsForPackage(packageId) {
+    const ids = PACKAGES[packageId];
+    if (!ids) {
+        throw new Error(`unknown package "${packageId}" — one of: ${Object.keys(PACKAGES).join(', ')}`);
+    }
+    return settingsFromProfiles(ids.map(id => DELIVERY_PROFILES.find(p => p.id === id)).filter(Boolean));
+}
+
+/**
+ * The derivation, over an explicit profile list.
+ *
+ * Separated from the package lookup so the AIR-RATE-WINS rule can be proven:
+ * every package that ships today happens to have a master at the same rate as
+ * its broadcast profile, so a mutation replacing `air || master` with `master`
+ * is invisible against all three. A rule nothing can distinguish is a rule
+ * nobody can trust, and this is the one that decides whether a spot is
+ * generated at a rate it can be AIRED at.
+ */
+function settingsFromProfiles(profiles) {
+    const landscape = profiles.filter(p => p.width >= p.height);
+    const pool = landscape.length ? landscape : profiles;
+    const master = pool.slice().sort((a, b) => b.duration_ms - a.duration_ms)[0];
+
+    const air = profiles.find(p => p.platform === 'broadcast');
+    const rateFrom = air || master;
+
+    /*
+     * The delivery preset is matched by RATE, because that is what a preset is
+     * for here — 29.97 is North American air, 25 is PAL, 30 is social-first.
+     */
+    const preset = rateFrom.fps === 25 ? 'spot_broadcast_uk'
+        : rateFrom.fps === 30 ? 'spot_social'
+        : 'spot_broadcast_na';
+
+    return {
+        aspect_ratio: master.aspect,
+        target_resolution: `${master.width}x${master.height}`,
+        target_fps: rateFrom.fps,
+        delivery_preset: preset,
+        master_profile: master.id,
+        why: air
+            ? `${air.label} is in this package, and an air rate is contractual — so ${air.fps}fps, `
+              + `with ${master.label} as the master at ${master.width}x${master.height}.`
+            : `No broadcast profile in this package, so the master (${master.label}) sets both the `
+              + `rate (${master.fps}fps) and the frame (${master.width}x${master.height}).`,
+    };
+}
+
 module.exports = {
     DELIVERY_PROFILES, PACKAGES, PLATFORMS, CAPTION_MODES, STATUSES,
     planDeliverables, nativeRatiosFor, frameCount, keyFor, validateDeliverable,
+    settingsForPackage, settingsFromProfiles,
 };
