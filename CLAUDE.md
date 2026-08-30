@@ -174,6 +174,7 @@ film-engine/
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
 │   │   ├── board-grouping.js      # Board groups for reading, setups for working
 │   │   ├── conform.js             # Shots → one film: pure plan, probed executors
+│   │   ├── export-package.js     # The XML plus the media it names, and what is wrong before you hand it over
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
@@ -274,6 +275,7 @@ film-engine/
 │       ├── inbetween-run.test.js     # The chain, the refusal, the correction and the approval
 │       ├── clip-coverage.test.js        # One clip, several shots, honoured by every assembly surface
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
+│       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
 │       ├── aspect-consistency.test.js   # The board and the footage are the same shape
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
@@ -734,6 +736,45 @@ Closing the style book's 21 unproven cases found **six real defects**, and eleve
 **And the QA specification was wrong twice, in the same direction — asserting a plausible behaviour against a deliberate one.** It expected over-long fields to be **truncated**; `validateEntry` refuses, and refusing is right, because trimming a name discards words the director typed and shows them something they did not write. It expected a project delete to **remove** that project's entries; the FK is `ON DELETE SET NULL` on purpose, so an entry is **promoted to the library** — an angle recorded while a film was open must outlive that film, which is the `film_refsheet_jobs` trap of migration 067 not being repeated. The code was right both times and the specification was corrected.
 
 `tests/style-book-gaps.test.js` is set-based over the registries that fail **partially**: the four `NEVER_WRITES` fields (a rule catching three is indistinguishable from one that works), the three length-limited fields, and the seven row lookups in the router (a 404 on six teaches a caller to trust the seventh).
+
+### An Export You Can Hand to Somebody Else
+
+An NLE export references its media by **absolute path**. On the machine that
+made it that works and looks finished; hand it to an editor — a different Mac, a
+shared drive, a zip — and every clip is offline: the timeline opens, the cuts are
+right, and there is no picture. Nothing errors, which is why it survived.
+
+**The preflight matters more than the package**, and it exists because of what
+happened when the packaging was first run against a real project. *The Glass
+Harbour* exported **zero clips**: every shot on it has `duration_ms = 0`, so
+`shootableShots` disqualified all thirteen and the export was a perfectly
+well-formed file describing **nothing**. A blank timeline is not something an
+editor can report back usefully — it just looks like the tool does not work.
+
+Blocking is what makes the handover pointless; warnings are what an editor
+should be told and can work around. Blocking on an **empty audio lane** would
+make the export unusable for exactly the workflow it exists to serve, since a
+lane that is empty today is where the sound pass lands tomorrow.
+
+The warning worth having is the one measured second: *Wingfall* reports
+**ready** with 13 shots and **two** of them shootable — a two-clip film with the
+other eleven silently absent, which is worse than the blocked case because it
+looks like it worked. `SHOTS_DROPPED` names them (`2AA, 2B, 2C, 3A…`), because a
+count sends you to the database.
+
+**Packaging refuses exactly what the preflight blocks.** One rule, not two: a
+package that builds happily from an export the preflight would refuse makes the
+preflight advisory, and an advisory check is one people skip. Media is **copied,
+never moved** — the project's own files have to survive being handed over — and
+the paths are rewritten on the **asset list** before generation rather than by
+editing the XML afterwards, because a find-and-replace over generated XML is how
+one of the three formats ends up missed. An **EDL carries no media** and says
+why: it names reels rather than files, so it is a conform list for an assistant
+who has the footage elsewhere.
+
+Served at `GET /film/projects/:id/export/{preflight,package}`, listed among the
+export formats so they are discoverable, and as `export_preflight` /
+`export_package` (**214 tools**).
 
 ### The Register That Was Removed, and the Station Nobody Could Correct
 
@@ -2977,6 +3018,7 @@ node --test backend/tests/inbetween-plan.test.js
 node --test backend/tests/inbetween-run.test.js
 node --test backend/tests/clip-coverage.test.js
 node --test backend/tests/nle-import-validity.test.js
+node --test backend/tests/export-package.test.js
 node --test backend/tests/paid-preview.test.js
 node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js

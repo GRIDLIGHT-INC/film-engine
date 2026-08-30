@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**212 tools, 51 families.** Everything the app can do, you can ask for in a
+**214 tools, 52 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -350,10 +350,23 @@ leg at a time. `sequence_generate_native` is a different Runway operation: one
 `node_out_assembly` · `node_out_timeline` · `node_out_asset` · `node_tf_mix` ·
 `node_tf_stitch` · `node_tf_encode` · `node_tf_fanout` · `node_tf_select` ·
 `node_in_prompt` · `node_in_asset` · `node_in_scene` · `node_in_subject` ·
-`node_in_stock` · `run_plan` · `run_report`
+`node_in_stock` · `run_plan` · `run_report` · `export_preflight` · `export_package`
 
 `run_plan` orders the work to minimise model swaps and reports the cost
 **before** anything generates.
+
+**Read `export_preflight` before you hand anyone an export.** It is free, and it
+catches the failure that looks most like success: a perfectly well-formed
+timeline file describing **nothing**, because no shot has a duration and every
+format refuses a zero-length clip. It also names the shots that will not appear
+at all — a film with thirteen shots and two of them shot exports two clips and
+says nothing about the other eleven.
+
+`export_package` writes the XML **and the media it names** into one folder with
+the paths rewritten. An ordinary export references media by absolute path, so
+handed to an editor on another machine it opens with every clip offline: the
+cuts are right and there is no picture. It copies rather than moves, and it
+refuses exactly what the preflight blocks.
 
 ### Running whole pipelines
 

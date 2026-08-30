@@ -7,6 +7,7 @@
  * GET /film/projects/:id/export/premiere  — Download Premiere Pro XML
  */
 
+const path = require('path');
 const { db, generateId } = require('../db/database');
 const { generateFCPXML, generateEDL, generatePremiereXML } = require('../lib/nle-export');
 const { generateFDX } = require('../lib/fdx-generator');
@@ -93,6 +94,8 @@ function handleNLEExport(req, res, urlParts, query) {
                 { id: 'fcpxml', name: 'Final Cut Pro XML', extension: '.fcpxml', content_type: 'application/xml' },
                 { id: 'edl', name: 'CMX 3600 EDL', extension: '.edl', content_type: 'text/plain' },
                 { id: 'premiere', name: 'Premiere Pro XML', extension: '.xml', content_type: 'application/xml' },
+                { id: 'preflight', name: 'Export preflight (free — nothing is written)', extension: '', content_type: 'application/json' },
+                { id: 'package', name: 'Packaged handover (XML + copied media)', extension: '/', content_type: 'application/json' },
                 { id: 'fdx', name: 'Final Draft XML', extension: '.fdx', content_type: 'application/xml' },
             ],
         }));
@@ -125,6 +128,48 @@ function handleNLEExport(req, res, urlParts, query) {
         aspect_ratio: project.aspect_ratio,
         color_space: project.color_space,
     };
+
+    /*
+     * What is wrong with this export, before anyone is handed it. FREE, and it
+     * leads: the first real project this ran against exported ZERO clips —
+     * every shot has duration_ms = 0, so shootableShots disqualified all of
+     * them — and the result was a well-formed file describing nothing. A blank
+     * timeline is not something an editor can report back usefully.
+     */
+    if (format === 'preflight') {
+        const { preflightExport } = require('../lib/export-package');
+        const out = preflightExport(project, shots, assets, { settings });
+        res.writeHead(out.ready ? 200 : 409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ project_id: projectId, ...out }));
+        return;
+    }
+
+    /*
+     * The XML plus the media it names, in one folder, with the paths rewritten.
+     * An export references media by ABSOLUTE path, so handed to anybody else it
+     * opens with every clip offline — the timeline is right and there is no
+     * picture.
+     */
+    if (format === 'package') {
+        const { packageExport } = require('../lib/export-package');
+        const { ensureDir } = require('../lib/file-storage');
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const dest = path.join(ensureDir(projectId, 'exports'), `${safeTitle}_${stamp}`);
+        packageExport(project, shots, assets, { format: query.target || 'premiere', dest, settings })
+            .then(out => {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    project_id: projectId, path: out.dest, xml: path.basename(out.xml_path),
+                    media: out.copied, preflight: out.preflight, format: out.format,
+                }));
+            })
+            .catch(err => {
+                res.writeHead(err.preflight ? 409 : 500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.code || 'PACKAGE_FAILED', message: err.message,
+                    ...(err.preflight ? { preflight: err.preflight } : {}) }));
+            });
+        return;
+    }
 
     if (format === 'fcpxml') {
         const content = generateFCPXML(project, shots, assets, settings);

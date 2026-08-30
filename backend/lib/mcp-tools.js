@@ -59,6 +59,7 @@ const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
 const { handleThreeD } = require('../routes/threed');
 const { handleProductionReports } = require('../routes/production-reports');
+const { handleNLEExport } = require('../routes/nle-export');
 const { handleBudget } = require('../routes/budget');
 const { handleConsistency } = require('../routes/consistency');
 const { handleStoryBible } = require('../routes/story-bible');
@@ -1978,6 +1979,24 @@ const PRODUCTION_TOOLS = [
         description: 'Every element grouped by type (characters, locations, props) with the scene count for each. `undescribed` is the actionable line: an element with no description reaches generation as a bare name, and every frame then invents its own version of it.',
         path: a => `/film/projects/${a.project_id}/elements-list`,
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'export_preflight',
+        handler: handleNLEExport, method: 'GET',
+        description: 'What is wrong with this project\u2019s NLE export BEFORE anyone is handed it. FREE \u2014 nothing is written and nothing is generated. Blocking problems make the handover pointless (no shot can be laid on a timeline; a file the export names is not on disk); warnings are things an editor should be told and can work around (an audio lane with nothing in it yet, shots that will arrive as gaps, a scene bed with nowhere to be laid). Read this before export_package or before sending anybody an export: the commonest failure is a perfectly well-formed file describing NOTHING, because no shot has a duration.',
+        path: a => `/film/projects/${a.project_id}/export/preflight`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'export_package',
+        handler: handleNLEExport, method: 'GET',
+        description: 'Write the NLE export AND the media it names into one folder, with the paths rewritten to point inside it. An ordinary export references media by absolute path, so handed to anybody else \u2014 another machine, a shared drive, a zip \u2014 it opens with every clip offline: the timeline is right and there is no picture. Media is COPIED, never moved. Refuses exactly what export_preflight blocks, and returns that preflight either way. `target` picks the format (premiere, fcpxml, edl); an EDL carries no media because it names reels rather than files.',
+        path: a => `/film/projects/${a.project_id}/export/package${a.target ? `?target=${encodeURIComponent(a.target)}` : ''}`,
+        schema: {
+            project_id: { type: 'string' },
+            target: { type: 'string', description: 'premiere (default), fcpxml or edl.' },
+        },
+        required: ['project_id'],
     },
     {
         name: 'run_report',
