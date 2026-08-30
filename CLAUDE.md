@@ -276,6 +276,7 @@ film-engine/
 │       ├── clip-coverage.test.js        # One clip, several shots, honoured by every assembly surface
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
+│       ├── spot-duration.test.js       # A spot is a length, not an approximate length
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
 │       ├── aspect-consistency.test.js   # The board and the footage are the same shape
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
@@ -3019,6 +3020,7 @@ node --test backend/tests/inbetween-run.test.js
 node --test backend/tests/clip-coverage.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
+node --test backend/tests/spot-duration.test.js
 node --test backend/tests/paid-preview.test.js
 node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js

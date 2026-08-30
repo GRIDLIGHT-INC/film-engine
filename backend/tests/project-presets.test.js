@@ -19,8 +19,12 @@ const {
 
 describe('project-presets', () => {
     describe('ASPECT_RATIOS', () => {
-        it('has 12 presets', () => {
-            assert.equal(ASPECT_RATIOS.length, 12);
+        it('has 13 presets', () => {
+            // 4:5 was added for commercial delivery — a Meta feed placement cut
+            // from a 16:9 master keeps 45% of its width, so it is generated at
+            // the ratio rather than cropped to it.
+            assert.equal(ASPECT_RATIOS.length, 13);
+            assert.ok(ASPECT_RATIO_IDS.includes('4:5'), 'Missing the Meta feed ratio');
         });
 
         it('includes IMAX formats', () => {
@@ -57,8 +61,11 @@ describe('project-presets', () => {
     });
 
     describe('RESOLUTIONS', () => {
-        it('has 8 presets', () => {
-            assert.equal(RESOLUTIONS.length, 8);
+        it('has 10 presets', () => {
+            // Two vertical rasters, so a social-first spot can be GENERATED at
+            // 9:16 rather than cropped to it afterwards.
+            assert.equal(RESOLUTIONS.length, 10);
+            assert.ok(RESOLUTIONS.some(r => r.height > r.width), 'no vertical raster is offered');
         });
 
         it('includes standard resolutions', () => {
@@ -73,10 +80,23 @@ describe('project-presets', () => {
         });
 
         it('each preset has valid dimensions', () => {
+            /*
+             * This asserted `width >= height` with an escape hatch for an id of
+             * '9:16' — which is an ASPECT id and can never appear in
+             * RESOLUTIONS, so the exemption never fired and the rule was simply
+             * "landscape only". That is wrong now and was always the wrong
+             * rule: a vertical raster is a real delivery, not a mistake.
+             *
+             * What actually has to hold is that the dimensions are usable:
+             * positive, and EVEN, because h.264 rejects an odd dimension and a
+             * rejection at the encoder is a paid generation that fails at the
+             * very end.
+             */
             for (const r of RESOLUTIONS) {
                 assert.ok(r.width > 0, `width should be positive on ${r.id}`);
                 assert.ok(r.height > 0, `height should be positive on ${r.id}`);
-                assert.ok(r.width >= r.height || r.id === '9:16', `width >= height on ${r.id}`);
+                assert.equal(r.width % 2, 0, `${r.id} has an odd width — h.264 will refuse it`);
+                assert.equal(r.height % 2, 0, `${r.id} has an odd height — h.264 will refuse it`);
             }
         });
     });
@@ -122,8 +142,14 @@ describe('project-presets', () => {
     });
 
     describe('DELIVERY_PRESETS', () => {
-        it('has 6 presets', () => {
-            assert.equal(DELIVERY_PRESETS.length, 6);
+        it('has 9 presets', () => {
+            // Three spot presets. A commercial's frame rate is chosen at
+            // generation and never conformed, so the preset exists to set it
+            // before a frame is bought.
+            assert.equal(DELIVERY_PRESETS.length, 9);
+            for (const id of ['spot_broadcast_na', 'spot_broadcast_uk', 'spot_social']) {
+                assert.ok(DELIVERY_PRESETS.some(p2 => p2.id === id), `missing the ${id} preset`);
+            }
         });
 
         it('includes theatrical DCP', () => {

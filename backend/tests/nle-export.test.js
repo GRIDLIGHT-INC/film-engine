@@ -47,7 +47,9 @@ const testAssets = [
 
 describe('msToTimecode', () => {
     it('converts 0ms to 00:00:00:00', () => {
-        assert.equal(msToTimecode(0), '00:00:00:00');
+        // A rate is required now: a timecode with no rate is a 24fps guess, and a
+        // :30 spot counted at 24 is a rejected broadcast delivery.
+        assert.equal(msToTimecode(0, 24), '00:00:00:00');
     });
 
     it('converts 1000ms to 00:00:01:00 at 24fps', () => {
@@ -142,7 +144,7 @@ describe('msToTimecodeDF', () => {
 
 describe('msToFrames', () => {
     it('converts 0ms to 0 frames', () => {
-        assert.equal(msToFrames(0), 0);
+        assert.equal(msToFrames(0, 24), 0);
     });
 
     it('converts 1000ms to 24 frames at 24fps', () => {

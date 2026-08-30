@@ -16,6 +16,10 @@ const ASPECT_RATIOS = [
     { id: '4:3',     label: '4:3 — Academy',                     ratio: '4:3',     decimal: 1.333 },
     { id: '9:16',    label: '9:16 — Vertical/Mobile',            ratio: '9:16',    decimal: 0.5625},
     { id: '1:1',     label: '1:1 — Square',                      ratio: '1:1',     decimal: 1.0   },
+    // Meta feed. Added for commercial delivery, where it is not a stylistic
+    // choice: a 4:5 placement derived from a 16:9 master keeps 45% of its width,
+    // so the frame has to be generated at it or the product leaves the shot.
+    { id: '4:5',     label: '4:5 — Meta feed (vertical)',        ratio: '4:5',     decimal: 0.8   },
     { id: '2:1',     label: '2:1 — Univisium (Netflix)',         ratio: '2:1',     decimal: 2.0   },
     { id: '2.76:1',  label: '2.76:1 — Ultra Panavision 70',     ratio: '2.76:1',  decimal: 2.76  },
     { id: 'custom',  label: 'Custom',                             ratio: 'custom',  decimal: null  },
@@ -33,6 +37,14 @@ const RESOLUTIONS = [
     { id: '8k',        label: '8K UHD',            width: 7680,  height: 4320  },
     { id: 'imax_5.6k', label: 'IMAX 5.6K',        width: 5616,  height: 4096  },
     { id: 'imax_12k',  label: 'IMAX 12K',         width: 12288, height: 8640  },
+    /*
+     * Vertical rasters. Not a stylistic option: a social-first campaign is
+     * GENERATED at 9:16 and the 16:9 derived from it, because the reverse keeps
+     * 32% of the width and loses the product. Listed as their own entries
+     * rather than left to "custom" so a preset can name one.
+     */
+    { id: '1080p_vertical', label: '1080x1920 — vertical HD',  width: 1080, height: 1920 },
+    { id: '4k_vertical',    label: '2160x3840 — vertical UHD', width: 2160, height: 3840 },
 ];
 
 const RESOLUTION_IDS = RESOLUTIONS.map(r => r.id);
@@ -65,6 +77,51 @@ const FRAME_RATE_VALUES = FRAME_RATES.map(f => f.fps);
 // ── Delivery Presets ────────────────────────────────────────────────
 // Each preset bundles resolution + aspect ratio + codec + color space
 const DELIVERY_PRESETS = [
+    /*
+     * The three spot presets. A commercial's frame rate is chosen at
+     * GENERATION and never conformed afterwards — conforming 24p footage to
+     * 29.97 for a CTV buy is the one mistake that cannot be fixed in the grade —
+     * so the preset exists to set the rate before a single frame is bought.
+     */
+    {
+        id: 'spot_broadcast_na',
+        label: 'Spot — NA broadcast / CTV',
+        description: 'US & Canada air and connected TV: 29.97 drop-frame, 1920x1080',
+        resolution: '1080p',
+        target_resolution: '1920x1080',
+        aspect_ratio: '16:9',
+        target_fps: 29.97,
+        color_space: 'Rec.709',
+        codec: 'prores_422_hq',
+        audio_channels: 'stereo',
+    },
+    {
+        id: 'spot_broadcast_uk',
+        label: 'Spot — UK/AU broadcast',
+        description: 'PAL territories: 25fps, 1920x1080',
+        resolution: '1080p',
+        target_resolution: '1920x1080',
+        aspect_ratio: '16:9',
+        target_fps: 25,
+        color_space: 'Rec.709',
+        codec: 'prores_422_hq',
+        audio_channels: 'stereo',
+    },
+    {
+        id: 'spot_social',
+        label: 'Spot — social first (vertical)',
+        description: 'Generated VERTICAL and cropped outward. A 9:16 placement '
+            + 'cut from a 16:9 master keeps 32% of its width, so a social-first '
+            + 'campaign is generated at 9:16 and the 16:9 is derived, never the '
+            + 'other way round.',
+        resolution: '1080p_vertical',
+        target_resolution: '1080x1920',
+        aspect_ratio: '9:16',
+        target_fps: 30,
+        color_space: 'Rec.709',
+        codec: 'h264',
+        audio_channels: 'stereo',
+    },
     {
         id: 'theatrical_dcp',
         label: 'Theatrical DCP',

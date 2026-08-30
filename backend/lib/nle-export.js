@@ -9,7 +9,28 @@
  * All functions accept data objects (no DB dependency) and return strings.
  */
 
-const FPS = 24;
+/**
+ * The rate a FRAME COUNT is counted at.
+ *
+ * NTSC rates are nominal in every timecode system there is: 29.97 is written as
+ * a timebase of 30 with an ntsc flag, and drop-frame drops NUMBERS rather than
+ * frames. So a :30 spot at 29.97 DF is 900 frames, not 899 — and multiplying
+ * 30.000s by 29.97 gives 899.1, which rounds to 899.
+ *
+ * That was a live defect rather than a new requirement: both generators already
+ * write `timebase = Math.round(fps)` with `ntsc TRUE`, and then computed every
+ * duration against 29.97, so the file declared 30 frames a second and laid
+ * durations counted at 29.97. It only shows at exactly thirty seconds — :15 and
+ * :06 round back to the right answer — which is the commonest spot length there
+ * is, and a station rejects a :30 that arrives one frame short.
+ */
+function countingRate(fps) {
+    if (fps === undefined || fps === null || !Number.isFinite(Number(fps))) {
+        throw new Error('a frame rate is required: a frame count means nothing without one, '
+            + 'and defaulting to 24 turns "the caller forgot" into a rejected broadcast delivery');
+    }
+    return isNtscFps(fps) ? Math.round(fps) : Number(fps);
+}
 
 /**
  * The audio elements that leave the engine on their own lanes.
@@ -128,7 +149,8 @@ function fcpxmlFormatName(width, height, fps) {
  * @param {number} fps - Frames per second (default 24)
  * @returns {string} "HH:MM:SS:FF" (NDF) or "HH:MM:SS;FF" (DF)
  */
-function msToTimecode(ms, fps = FPS) {
+function msToTimecode(ms, fps) {
+    countingRate(fps);
     if (ms < 0) ms = 0;
 
     // Use drop-frame for 29.97 and 59.94
@@ -225,8 +247,8 @@ function msToTimecodeDF(ms, fps = 29.97) {
  * @param {number} fps
  * @returns {number}
  */
-function msToFrames(ms, fps = FPS) {
-    return Math.round((ms / 1000) * fps);
+function msToFrames(ms, fps) {
+    return Math.round((ms / 1000) * countingRate(fps));
 }
 
 /**
@@ -235,7 +257,8 @@ function msToFrames(ms, fps = FPS) {
  * @param {number} fps
  * @returns {number}
  */
-function timecodeToFrames(tc, fps = FPS) {
+function timecodeToFrames(tc, fps) {
+    countingRate(fps);
     const m = String(tc || '').match(/^(\d{2}):(\d{2}):(\d{2}):(\d{2})$/);
     if (!m) return 0;
     const roundedFps = Math.round(fps);
@@ -839,6 +862,6 @@ module.exports = {
     escapeXml,
     fpsToRational,
     isNtscFps,
-    FPS,
+    countingRate,
     DEFAULT_SETTINGS,
 };
