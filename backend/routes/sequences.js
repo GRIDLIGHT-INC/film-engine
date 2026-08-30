@@ -17,7 +17,7 @@ const { db, generateId } = require('../db/database');
 const { imageOverride } = require('../lib/generation-override');
 // The strip: what a shot's stations are, and what a model documents room for.
 const { expandShots } = require('../lib/inbetweens');
-const { contractFor } = require('../lib/video-reference');
+const { contractFor, selectReferences } = require('../lib/video-reference');
 const { loadShotMotion } = require('../lib/shot-motion');
 const { runStrip, stripFingerprint, approvalState } = require('../lib/inbetween-run');
 
@@ -655,14 +655,50 @@ async function generateSequence(req, res, id) {
     const selected = requestedIndex === undefined ? plan.segments
         : plan.segments.filter((_, i) => i === Number(requestedIndex));
     if (!selected.length) return json(res, 400, { error: 'segment_index is outside this sequence plan' });
+    /*
+     * BUNDLE: the strip travels as `inbetween` REFERENCES on one longer
+     * generation, rather than as N-1 first/last legs that are stitched.
+     *
+     * Two shapes to compare on the same strip is the point of W5 — but only
+     * `legs` works everywhere. Which references a model will actually take is
+     * the CONTRACT's answer, never ours, so the list goes through
+     * selectReferences: seedance2_5 declares the role and hailuo3 does not, and
+     * over-sending is a provider rejection that costs a whole generation.
+     *
+     * What is dropped is REPORTED, never dropped in silence. A bundle quietly
+     * degraded to a plain generation looks exactly like a bundle that worked,
+     * and the only way to find out would be to watch the clip.
+     */
+    const bundleContract = shape_ === 'bundle' ? contractFor(model) : null;
+    const bundleDropped = [];
+    const stationRefs = (segment) => {
+        if (!bundleContract || !strip_) return null;
+        const codes = new Set([segment.from, segment.to].filter(Boolean));
+        const refs = stationList(strip_.expanded)
+            .filter(st => st.index > 0 && (!codes.size || codes.has(st.shot_code)))
+            .map(st => ({ role: 'inbetween', uri: st.image_path, at_ms: st.at_ms,
+                          shot_code: st.shot_code, index: st.index }))
+            .filter(r => r.uri);
+        if (!refs.length) return null;
+        const picked = selectReferences(
+            [{ role: 'keyframe', uri: (segment.keyframes[0] || {}).uri }, ...refs], bundleContract);
+        for (const d of picked.dropped || []) bundleDropped.push(d);
+        return picked.selected
+            .filter(r => r.role === 'inbetween')
+            .map(r => ({ uri: toDataUri(r.uri), role: 'inbetween' }))
+            .filter(r => r.uri);
+    };
+
     for (const segment of selected) {
         const keyframes = segment.keyframes
             .map(k => ({ uri: toDataUri(k.uri), position: k.position }))
             .filter(k => k.uri);
+        const refs = stationRefs(segment);
         // eslint-disable-next-line no-await-in-loop
         const result = await provider.generate('video', {
             prompt: segment.prompt,
             keyframes,
+            ...(refs && refs.length ? { reference_images: refs } : {}),
             duration_s: segment.duration_s,
             width: 1280, height: 720,
             ...(project && project.target_fps ? { target_fps: project.target_fps } : {}),
@@ -698,6 +734,28 @@ async function generateSequence(req, res, id) {
 
     return json(res, failed.length && !results.some(r => r.ok) ? 502 : 200, {
         sequence_id: id, segments: results,
+        shape: shape_,
+        /*
+         * A bundle that quietly degraded to a plain generation looks exactly
+         * like a bundle that worked, and the only way to find out would be to
+         * watch the clip. So the strip references this model would not take are
+         * named — the rule maxReferenceImages and the prompt ceiling each cost
+         * this codebase once already.
+         */
+        ...(shape_ === 'bundle' ? {
+            strip_references_sent: results.length && strip_
+                ? Math.max(0, (stationList(strip_.expanded).filter(st => st.index > 0).length)
+                    - bundleDropped.filter(d => d.role === 'inbetween').length)
+                : 0,
+            ...(bundleDropped.length ? {
+                strip_references_dropped: bundleDropped.map(d => ({
+                    role: d.role, shot_code: d.shot_code, index: d.index, reason: d.reason })),
+            } : {}),
+            ...(shape_ === 'bundle' && !(bundleContract && bundleContract.roles.includes('inbetween')) ? {
+                degraded: 'This model takes no in-between references, so the bundle shape sent none of '
+                    + 'the strip. Generate with shape=legs to use it.',
+            } : {}),
+        } : {}),
         not_attempted: selected.slice(results.length).map(s => `${s.from}→${s.to}`),
         needs_stitching: plan.needs_stitching,
         note: plan.needs_stitching && !failed.length

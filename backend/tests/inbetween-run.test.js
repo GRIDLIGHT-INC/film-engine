@@ -282,3 +282,49 @@ test('W4 · a sequence with no approved strip is unaffected', () => {
     assert.equal(run.approvalState(fp, stations).approved, true);
     assert.equal(run.approvalState('something-else', stations).stale, true);
 });
+
+test('W5 · bundle sends the strip as references; legs does not, and both say which', () => {
+    /*
+     * The shape was the half most likely to be declared and never consumed:
+     * `?shape=bundle` parsed cleanly, and the planner then fell through to the
+     * plain shot list, so a bundle was byte-identical to today's generation
+     * with the strip reaching nothing. That reads as "the shape works".
+     *
+     * Read from the SOURCE of the generate path rather than by running a
+     * provider, because what is being asserted is that the strip is put ON the
+     * payload at all — a behavioural test with a stub provider passes just as
+     * happily when reference_images is an empty array nobody built.
+     */
+    const src = SRC('routes/sequences.js');
+    const gen = src.slice(src.indexOf('async function generateSequence'));
+
+    assert.ok(/reference_images:\s*refs/.test(gen),
+        'the bundle never puts the strip on the payload — the shape is parsed and consumed by nothing');
+    // Bound to the ASSIGNMENT, not merely to the name appearing: `const picked =
+    // { selected: refs } || selectReferences(...)` contains the call and never
+    // runs it, and a bare /selectReferences\(/ passes on exactly that.
+    assert.ok(/const picked = selectReferences\(/.test(gen),
+        'the strip is attached without asking the model\'s contract whether it takes one');
+    assert.ok(/role:\s*'inbetween'/.test(gen),
+        'the strip travels with no role, so it cannot be ranked or refused by contract');
+
+    // legs must NOT attach them: it is N-1 first/last generations, and a strip
+    // sent as references beside its own endpoints asks the model which picture
+    // is the truth.
+    assert.ok(/shape_ === 'bundle' \? contractFor\(model\) : null/.test(gen),
+        'the reference path is not gated on the bundle shape — legs would attach the strip too');
+
+    // And what the model refused is named. A bundle silently degraded to a
+    // plain generation looks exactly like one that worked.
+    assert.ok(/strip_references_dropped/.test(gen), 'dropped strip references are not reported');
+    assert.ok(/degraded/.test(gen),
+        'a model that takes no in-between reference degrades the bundle in silence');
+
+    // The registry is what decides, and it must still disagree between models —
+    // otherwise the gate is vacuous.
+    const { CONTRACTS } = require('../lib/video-reference');
+    const takes = Object.entries(CONTRACTS).filter(([, c]) => c.roles.includes('inbetween')).map(([m]) => m);
+    assert.ok(takes.length >= 1, 'no model declares the inbetween role — the bundle can never send one');
+    assert.ok(takes.length < Object.keys(CONTRACTS).length,
+        'every model declares the inbetween role — over-sending is a rejection that costs a generation');
+});
