@@ -206,11 +206,31 @@ test('the field registry and the sheet agree, in both directions', () => {
      * field quietly dropped from it disappears from all three at once and every
      * one of them still passes. Held against what the sheet actually renders.
      */
+    /*
+     * Fields whose editor is not one input, each named with the control that
+     * writes it — the rule manual-edit.test.js follows. A list, a plan and a
+     * set of folding sections are all real editors; refusing to say so would
+     * push them out of the registry and out of every check with it.
+     */
     const NOT_A_SIMPLE_INPUT = {
-        // Named with its control, on the rule manual-edit.test.js follows: a
-        // repeating list is not one input, and refusing to say so would push a
-        // real editor out of the registry.
-        prop: { continuity_states: 'addPropState' },
+        location: {
+            description_sections: 'saveSheetSection',
+            continuity_flags: 'ssAddFlag',
+            plate_plan: 'ssEditPlatePlan',
+            orientation_plan: 'ssEditPlan',
+            // Composed FROM the sections rather than typed: buildPlatePrompt
+            // reads this column, so the sections write it.
+            description: 'saveSheetSection',
+        },
+        prop: {
+            continuity_states: 'addPropState',
+            materials_json: 'ssAddMaterial',
+            constraints_json: 'ssAddConstraint',
+            keywords: 'ssAddKeyword',
+            // The flat columns the structured ones replaced, read as fallbacks.
+            materials: 'ssAddMaterial',
+            constraints: 'ssAddConstraint',
+        },
     };
     for (const s of SUBJECTS) {
         const name = `render${s.kind[0].toUpperCase()}${s.kind.slice(1)}Sheet`;

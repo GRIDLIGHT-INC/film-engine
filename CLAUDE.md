@@ -212,6 +212,7 @@ film-engine/
 │       ├── shot-motion.test.js       # The move plays over the frame, and says what showing it costs
 │       ├── director-controls.test.js # Redo the dialogue, direct the score, read the toolbar
 │       ├── subject-sheets.test.js  # Every region of a location and prop sheet is drawn and fillable
+│       ├── subject-sheet-design.test.js # The sheets, against the designs they were drawn from
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop
 │       ├── decision-parity.test.js     # Every director decision, held to five links across both surfaces
@@ -2406,6 +2407,25 @@ Per-shot and per-project audio mixing: dialogue (0dB) + music (-8dB) + SFX (-4dB
 ### Smart Scheduling
 Optimizes pipeline execution by grouping steps by GPU model to minimize VRAM swapping. Model profiles track VRAM requirements and load times for 10 models. VRAM budget management (default 24GB) with residency suggestions (keep frequent models loaded, evict rare ones).
 
+### The Sheets, Against the Designs They Were Drawn From
+*"Look at the design we showed you for the location and props, and how complete the character sheet is — you didn't finish it exactly like the designs I provided. Finish it."*
+
+Correct. The first build derived its regions from labels **grepped** out of the handoff files, which produced ten headings and none of the structure underneath: one textarea where the design has six named, folding, character-counted sections; four pills where it has a plan of the room; a text field where it has material rows with colour swatches. It looked like the design in a screenshot and was not it.
+
+**So the denominator is derived from the design files themselves.** Every uppercase mono label in a handoff is an element that design asks for — **18 on the location card, 19 on the prop card** — and the sheets are held to rendering all of them. If the design changes, the test changes with it, and no reading of mine sits in between. The two labels that are genuinely one film's content (*"The north window"*, *"01 · Master wide — south to north"*) are excused **by name, each naming the feature that renders the structure they are an instance of** — requiring them as page strings would hardcode one diner into the app.
+
+`DESIGN_FEATURES` carries the **38** things that are not headings, each citing the phrase in the handoff it comes from — and a test reads the handoff and fails a citation that is not there, because a stale citation makes the registry a story.
+
+**What was missing, and why each matters.** The set description is six documents, not one: *3855 chars* in a single textarea is unreadable and un-editable, so it folds per section with its own kind and its own count. The **orientation plan** is a plan — a plate carries no information about what is behind its own camera, so without it each side of a room is generated from prose that cannot say. **Materials are rows** with a role and a hex, because the colour is the half a painter and an image model both need and a comma string cannot carry one. **Continuity flags and constraints are lists**, because *"chalkboard stays blank"* and *"lettering reads reversed"* are two things a person ticks off, not one paragraph they re-read. Plates are **numbered, named slots**, so a view nobody has generated is a labelled gap rather than an absence.
+
+**And the sections had to compose into `description`, or the sheet wrote where nothing generates from.** `buildPlatePrompt` reads `film_locations.description` and nothing else — storing six sections and leaving that column alone would take a director's whole set description and send none of it: the fields would fill, the plate would generate from an empty string, and nothing would say so. They compose in the template's order, and only when something is written, so a location described before the sections existed keeps what it had.
+
+The design says **four different ways** what reaches the generator — *canonical · fed to generation*, *prompt source*, *→ prompt*, *not sent* — and that distinction is the whole difference between a sheet and a form. All four are rendered, and the test requires that at least one thing be marked as NOT reaching it: a box beside the visual prompt that looks like it conditions a frame and does not is worse than one that is absent.
+
+Two supersessions are stated rather than left ambiguous. `continuity_notes` and the flat `materials`/`constraints` columns are still **read** as fallbacks, so nothing typed before the structured columns existed is lost — the sheet shows those lines as flags and rows. `continuity_notes` is no longer **written**: two columns answering *"what must stay true here"* is how they come to disagree.
+
+One route change was forced by a test rather than by taste: `constraints_json` and `keywords` were accepted inside a `for` loop over field names, and the manual-edit audit derives its denominator from `body.<field>` in the source — so a loop accepts fields no audit can see, which is precisely the gap that audit exists to catch. Written out.
+
 ### The Card Got Complicated for No Reason
 A character card carried **eight buttons** — Regen Image, Orbit Sheet, Views, Upload, Gallery, Voice, Edit, Delete — and clicking the card itself did nothing. Every one of those is something you do *while looking at* the character, and a 260px tile in a grid of twelve is a worse place to do it than a sheet with room. **Two buttons now: Edit and Delete.** Clicking opens the sheet.
 
@@ -2794,6 +2814,7 @@ node --test backend/tests/thumbnails.test.js
 node --test backend/tests/shot-motion.test.js
 node --test backend/tests/director-controls.test.js
 node --test backend/tests/subject-sheets.test.js
+node --test backend/tests/subject-sheet-design.test.js
 node --test backend/tests/previs-storyboard.test.js
 node --test backend/tests/previs-loop.test.js
 node --test backend/tests/decision-parity.test.js

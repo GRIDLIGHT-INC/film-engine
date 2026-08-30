@@ -250,6 +250,58 @@ async function sweepCompassViews(req, res, locationId) {
  * shapes meant the prop sheet asked for `views`, received something else, and
  * reported "No plate yet" for a prop that plainly had one.
  */
+/**
+ * The plates a subject has, as data.
+ *
+ * Split out of the route so the SINGLE GET can serve the same array the sheet
+ * reads — the sheet asked one endpoint for the subject and another for its
+ * plates, and a region built against the second rendered "no plate yet" the
+ * moment the first was all it had.
+ */
+function plateViewsFor(subjectId, kind) {
+    const out = { subject: null, views: [] };
+    const table = kind === 'prop' ? 'film_props' : 'film_locations';
+    const column = kind === 'prop' ? 'prop_id' : 'location_id';
+    const subject = db.prepare(`SELECT id, project_id, name FROM ${table} WHERE id = ?`).get(subjectId);
+    if (!subject) return out;
+    out.subject = subject;
+    const rows = db.prepare(
+        `SELECT id, file_name, file_path, metadata, created_at FROM film_assets
+          WHERE project_id = ? AND ${column} = ?
+            AND asset_type IN ('reference_image', 'character_sheet')
+       ORDER BY created_at ASC`).all(subject.project_id, subjectId);
+    out.views = rows.map(r => {
+        let meta = {};
+        try { meta = JSON.parse(r.metadata || '{}'); } catch (_) { meta = {}; }
+        let available = false;
+        try { available = !!(r.file_path && fs.existsSync(r.file_path)); } catch (_) { available = false; }
+        const subdir = (() => {
+            const parts = String(r.file_path || '').split(path.sep);
+            const at = parts.lastIndexOf(subject.project_id);
+            return at > 0 ? parts[at - 1] : 'refsheets';
+        })();
+        let size = null;
+        try {
+            const st = r.file_path && fs.existsSync(r.file_path) ? fs.statSync(r.file_path) : null;
+            if (st) size = st.size;
+        } catch (_) { size = null; }
+        return {
+            id: r.id,
+            view: String(meta.view || '').trim(),
+            file_name: r.file_name,
+            available,
+            // The provenance the design prints under the plates.
+            format: (path.extname(r.file_name || '') || '.png').replace('.', ''),
+            bytes: size,
+            seed: meta.seed || null,
+            image_url: (available && subdir)
+                ? getFileUrl(subdir, subject.project_id, r.file_name, r.created_at) : null,
+            created_at: r.created_at,
+        };
+    });
+    return out;
+}
+
 function listPlateViews(res, subjectId, kind) {
     const table = kind === 'prop' ? 'film_props' : 'film_locations';
     const column = kind === 'prop' ? 'prop_id' : 'location_id';
@@ -675,6 +727,26 @@ function handleLocations(req, res, urlParts, query) {
         if (req.method === 'GET') return getSubjectPlate(res, 'prop', propId);
     }
 
+    /*
+     * The registries the sheets are built from.
+     *
+     * Served rather than mirrored into the page: six description sections and
+     * five official views typed into the SPA go stale the first time one is
+     * renamed, and the page then renders a sheet the library does not describe.
+     */
+    if (urlParts[1] === 'sheet-spec' && req.method === 'GET') {
+        const S = require('../lib/subject-sheets');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            description_sections: S.DESCRIPTION_SECTIONS,
+            prop_views: S.PROP_VIEWS,
+            time_variants: S.TIME_VARIANTS,
+            plan_edges: S.PLAN_EDGES,
+            location_regions: S.LOCATION_REGIONS,
+            prop_regions: S.PROP_REGIONS,
+        }));
+    }
+
     // /film/locations/:id/image[/generate]
     if (urlParts[1] === 'locations' && urlParts[2] && urlParts[3] === 'image') {
         const locId = urlParts[2];
@@ -801,6 +873,39 @@ function getLocation(req, res, locId) {
      */
     loc.scene_count = loc.scenes.length;
 
+    /*
+     * Everything the sheet displays, from ONE call.
+     *
+     * The sheet reads the plates, the gallery and the props this set names; it
+     * used to fetch two of those separately and show nothing for the third.
+     * A region fed by nothing renders perfectly and is empty on every real
+     * subject, which is what shipped.
+     */
+    loc.views = plateViewsFor(locId, 'location').views;
+    try {
+        const { loadGallery } = require('../lib/subject-gallery');
+        loc.gallery = loadGallery(db, 'location', locId) || [];
+    } catch (_) { loc.gallery = []; }
+
+    /*
+     * The props this set NAMES.
+     *
+     * Read from the set-decoration section, because that is where a designer
+     * lists what is on the surfaces — and the point of the link is the count of
+     * what is named and does not exist yet, which is a to-do rather than a
+     * decoration.
+     */
+    loc.linked_props = [];
+    try {
+        const { parseJson } = require('../lib/subject-sheets');
+        const sections = parseJson(loc.description_sections, {}) || {};
+        const text = `${sections.decoration || ''} ${loc.description || ''}`.toLowerCase();
+        const props = db.prepare('SELECT id, name FROM film_props WHERE project_id = ?').all(loc.project_id);
+        loc.linked_props = props
+            .filter(pr => pr.name && new RegExp(`\\b${pr.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(text))
+            .map(pr => ({ id: pr.id, name: pr.name }));
+    } catch (_) { loc.linked_props = []; }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(loc));
 }
@@ -888,12 +993,117 @@ function updateLocation(req, res, locId) {
         name: 300, description: 5000, reference_prompt: 2000,
         lighting_default: 50, time_of_day_default: 50,
         atmosphere_notes: 2000, sound_notes: 2000,
-        // What must stay true across every shot here, once something has been
-        // moved, broken or repainted. The sheet's own region — see
-        // lib/subject-sheets.js.
-        continuity_notes: 2000,
         location_type: 100,
     };
+
+    /*
+     * The structured half of the sheet.
+     *
+     * Stored as JSON and REFUSED rather than repaired when it is not the shape
+     * the sheet reads — a bent row renders as a section with no label or a flag
+     * with no words, which looks like the sheet losing what was typed.
+     */
+    const { parseJson } = require('../lib/subject-sheets');
+    // What is there now, so a compose can refuse to lose it.
+    const current = db.prepare('SELECT description FROM film_locations WHERE id = ?').get(locId) || {};
+    if (body.description_sections !== undefined) {
+        const v = body.description_sections;
+        const obj = (v && typeof v === 'object' && !Array.isArray(v)) ? v : parseJson(v, null);
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+            return badReq(res, 'description_sections must be an object of { section_id: text }');
+        }
+        const clean = {};
+        for (const [k, text] of Object.entries(obj)) clean[String(k).slice(0, 40)] = String(text || '').slice(0, 8000);
+        fields.push('description_sections = ?');
+        values.push(JSON.stringify(clean));
+        /*
+         * And the paragraph the GENERATOR reads.
+         *
+         * buildPlatePrompt reads film_locations.description and nothing else,
+         * so storing six sections and leaving that column alone would take a
+         * whole set description and send none of it — the fields would fill and
+         * the plate would generate from an empty string. Composed in the
+         * template's order, and only when something is written: a location with
+         * no sections keeps whatever was typed before they existed.
+         */
+        const { composeDescription } = require('../lib/subject-sheets');
+        const composed = composeDescription(clean);
+        if (composed !== null) {
+            /*
+             * IT MUST NOT SILENTLY REPLACE A DESCRIPTION SOMEBODY WROTE.
+             *
+             * Every location in every existing project is described the old
+             * way, in one paragraph. Composing over it means the first time
+             * anyone fills in a single section, an 856-character set
+             * description becomes that one section — silently, and with no way
+             * back. Found by doing it to a real location while verifying, and
+             * recovered from the write-ahead log, which is not a recovery
+             * anyone should have to make.
+             *
+             * So a composition that does not CONTAIN what is already there is
+             * refused, and the refusal names both ways out. `replace_description`
+             * is the deliberate one.
+             */
+            const existing = String(current.description || '').trim();
+            const keeps = !existing || composed.includes(existing) || existing === composed;
+            if (!keeps && !body.replace_description) {
+                res.writeHead(409, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    error: 'DESCRIPTION_WOULD_BE_REPLACED',
+                    message: `This location already has a ${existing.length}-character description, `
+                        + 'written before the sections existed. Composing the sections would replace it.',
+                    existing_description: existing,
+                    hint: 'Move the existing text into one of the sections first — the sheet offers this — '
+                        + 'or send replace_description: true to discard it deliberately.',
+                }));
+            }
+            fields.push('description = ?');
+            values.push(composed.slice(0, 5000));
+        }
+    }
+    /*
+     * `continuity_notes` is no longer WRITTEN.
+     *
+     * continuity_flags replaced it, and the old column is still READ as a
+     * fallback so nothing typed before the list existed is lost — the sheet
+     * shows those lines as flags. Keeping it writable as well would leave two
+     * columns answering "what must stay true here", which is how they come to
+     * disagree; and a field a route accepts with no control anywhere is the gap
+     * the manual-edit audit exists to catch.
+     */
+    if (body.continuity_flags !== undefined) {
+        const list = Array.isArray(body.continuity_flags) ? body.continuity_flags : parseJson(body.continuity_flags, null);
+        if (!Array.isArray(list)) return badReq(res, 'continuity_flags must be an array of strings');
+        fields.push('continuity_flags = ?');
+        values.push(JSON.stringify(list.map(x => String(x).slice(0, 300)).filter(Boolean).slice(0, 40)));
+    }
+
+    if (body.plate_plan !== undefined) {
+        const list = Array.isArray(body.plate_plan) ? body.plate_plan : parseJson(body.plate_plan, null);
+        if (!Array.isArray(list)) return badReq(res, 'plate_plan must be an array of { role, caption }');
+        const clean = list.map((x, i) => ({
+            n: i + 1,
+            role: String((x && x.role) || '').slice(0, 120),
+            view: String((x && x.view) || '').slice(0, 120),
+            caption: String((x && x.caption) || '').slice(0, 200),
+        }));
+        if (clean.some(x => !x.role)) return badReq(res, 'every plate slot needs a role — an unnamed slot is a gap nobody can fill');
+        fields.push('plate_plan = ?');
+        values.push(JSON.stringify(clean));
+    }
+    if (body.orientation_plan !== undefined) {
+        const v = body.orientation_plan;
+        const obj = (v && typeof v === 'object' && !Array.isArray(v)) ? v : parseJson(v, null);
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+            return badReq(res, 'orientation_plan must be an object with compass edges');
+        }
+        const { PLAN_EDGES } = require('../lib/subject-sheets');
+        const clean = { interior: [], marker: String(obj.marker || '').slice(0, 200) };
+        for (const edge of PLAN_EDGES) clean[edge] = String(obj[edge] || '').slice(0, 200);
+        if (Array.isArray(obj.interior)) clean.interior = obj.interior.map(x => String(x).slice(0, 120)).filter(Boolean).slice(0, 8);
+        fields.push('orientation_plan = ?');
+        values.push(JSON.stringify(clean));
+    }
 
     for (const [field, maxLen] of Object.entries(textFields)) {
         if (body[field] !== undefined) {
@@ -1109,6 +1319,19 @@ function getProp(req, res, propId) {
     } catch (_) { prop.shots = []; }
     prop.shot_count = prop.shots.length;
 
+    // The same one-call rule the location follows.
+    prop.views = plateViewsFor(propId, 'prop').views;
+    try {
+        const { loadGallery } = require('../lib/subject-gallery');
+        prop.gallery = loadGallery(db, 'prop', propId) || [];
+    } catch (_) { prop.gallery = []; }
+    // The sets this object could belong to, for the way through the design
+    // draws to the location it lives on.
+    try {
+        prop.locations = db.prepare(
+            'SELECT id, name FROM film_locations WHERE project_id = ? ORDER BY name').all(prop.project_id);
+    } catch (_) { prop.locations = []; }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(prop));
 }
@@ -1216,6 +1439,45 @@ function updateProp(req, res, propId) {
         if (clean.some(st => !st.name)) return badReq(res, 'every continuity state needs a name');
         fields.push('continuity_states = ?');
         values.push(JSON.stringify(clean));
+    }
+
+    // Materials as ROWS: what it is, where it is, its colour. A hex nobody can
+    // see is a string, and a comma list cannot carry one at all.
+    if (body.materials_json !== undefined) {
+        const { parseJson } = require('../lib/subject-sheets');
+        const list = Array.isArray(body.materials_json) ? body.materials_json : parseJson(body.materials_json, null);
+        if (!Array.isArray(list)) return badReq(res, 'materials_json must be an array of { name, role, hex }');
+        const clean = list.map(x => ({
+            name: String((x && x.name) || '').slice(0, 120),
+            role: String((x && x.role) || '').slice(0, 160),
+            hex: /^#[0-9a-f]{6}$/i.test(String((x && x.hex) || '')) ? String(x.hex).toUpperCase() : '',
+        }));
+        if (clean.some(x => !x.name)) return badReq(res, 'every material needs a name');
+        fields.push('materials_json = ?');
+        values.push(JSON.stringify(clean));
+    }
+    /*
+     * Written out rather than looped.
+     *
+     * The accepted-field set is DERIVED from `body.<field>` in this source, so a
+     * loop over `body[listField]` accepts two fields that no audit can see —
+     * and a field the app stores with no control is exactly what that audit
+     * exists to catch.
+     */
+    const listColumn = (value, name) => {
+        const { parseJson } = require('../lib/subject-sheets');
+        const list = Array.isArray(value) ? value : parseJson(value, null);
+        if (!Array.isArray(list)) return null;
+        fields.push(`${name} = ?`);
+        values.push(JSON.stringify(list.map(x => String(x).slice(0, 300)).filter(Boolean).slice(0, 40)));
+        return true;
+    };
+    if (body.constraints_json !== undefined
+        && !listColumn(body.constraints_json, 'constraints_json')) {
+        return badReq(res, 'constraints_json must be an array of strings');
+    }
+    if (body.keywords !== undefined && !listColumn(body.keywords, 'keywords')) {
+        return badReq(res, 'keywords must be an array of strings');
     }
 
     for (const [field, maxLen] of Object.entries({

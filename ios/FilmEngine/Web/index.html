@@ -1414,6 +1414,112 @@
             border: 1px solid var(--gl-border, #2a2a30); border-radius: 5px;
             color: inherit; padding: 7px 9px; font: inherit; font-size: 13px; margin-bottom: 6px;
         }
+        /* ── the sheets, as the designs draw them ────────────────────────── */
+        .ss-reach {
+            font-family: ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: .08em;
+            padding: 1px 5px; border-radius: 3px; margin-left: 6px; white-space: nowrap;
+            border: 1px solid #2c4560; color: #8ab6e8;
+        }
+        .ss-reach.ss-not-sent { border-color: #4a3a20; color: #b08a4a; }
+
+        /* Numbered plate slots. An empty one offers to fill itself. */
+        .ss-slot figcaption { display: flex; flex-direction: column; gap: 2px; }
+        .ss-view-angle { font-size: 10px; color: var(--text-muted, #8a8a95); }
+        .cs-drop.ss-empty { cursor: pointer; font-size: 11px; letter-spacing: .06em; }
+        .cs-drop.ss-empty:hover { color: #8ab6e8; border-color: #2c4560; }
+        .ss-plate-meta {
+            font-family: ui-monospace, Menlo, monospace; font-size: 10px;
+            color: var(--text-muted, #8a8a95); margin: 6px 0 0;
+        }
+
+        /* The plan of the room. */
+        .ss-plan {
+            border: 1px solid var(--gl-border, #2a2a30); border-radius: 6px;
+            padding: 8px; font-size: 11px; background: var(--gl-bg-elevated, #16161c);
+        }
+        .ss-plan-mid { display: flex; gap: 8px; align-items: stretch; margin: 6px 0; min-width: 0; }
+        .ss-plan-edge { color: var(--text-muted, #8a8a95); }
+        .ss-plan-edge.w, .ss-plan-edge.e { flex: 0 0 30%; min-width: 0; }
+        .ss-plan-room {
+            flex: 1 1 auto; min-width: 0; border: 1px dashed var(--gl-border, #2a2a30);
+            border-radius: 4px; padding: 6px; display: flex; flex-wrap: wrap; gap: 4px;
+        }
+        .ss-plan-item {
+            font-size: 10px; padding: 1px 6px; border-radius: 8px;
+            background: rgba(255,255,255,.04);
+        }
+        .ss-plan-marker { font-size: 11px; color: #d9a441; margin: 6px 0 0; }
+
+        .ss-variants { display: flex; gap: 5px; flex-wrap: wrap; }
+        .ss-variant {
+            font-size: 11px; padding: 2px 9px; border-radius: 10px; cursor: pointer;
+            border: 1px solid var(--gl-border, #2a2a30);
+        }
+        .ss-variant.on { border-color: #2f5a37; color: #7fd18a; }
+
+        /* Six named, folding, counted sections. */
+        .ss-section { border-bottom: 1px solid var(--gl-border, #2a2a30); padding: 6px 0; }
+        .ss-section-head {
+            display: flex; justify-content: space-between; gap: 8px; cursor: pointer;
+            align-items: baseline; min-width: 0;
+        }
+        .ss-section-label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+        .ss-section-meta {
+            font-family: ui-monospace, Menlo, monospace; font-size: 10px;
+            color: var(--text-muted, #8a8a95); white-space: nowrap;
+        }
+        .ss-section.closed .ss-section-body { display: none; }
+        .ss-desc-total { font-family: ui-monospace, Menlo, monospace; }
+
+        .ss-import {
+            border: 1px solid #5a4720; background: rgba(217,164,65,.06);
+            border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; font-size: 12px;
+        }
+        .ss-import p { margin: 0 0 8px; }
+        .ss-linked { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+        .ss-linked-prop {
+            font-size: 11px; padding: 2px 8px; border-radius: 10px; cursor: pointer;
+            border: 1px solid #2c4560; color: #8ab6e8;
+        }
+
+        .ss-flag, .ss-constraint, .ss-material, .ss-appear-row, .ss-scene-row, .ss-spec-row {
+            display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; min-width: 0;
+            padding: 5px 0; border-bottom: 1px solid var(--gl-border, #2a2a30);
+        }
+        .ss-spec-row > span:first-child { flex: 0 0 90px; font-size: 11px; color: var(--text-muted, #8a8a95); }
+        .ss-spec-row .ss-input { flex: 1 1 120px; margin: 0; }
+        .ss-scene-row, .ss-appear-row { justify-content: space-between; }
+
+        .ss-mat-swatch {
+            width: 14px; height: 14px; border-radius: 3px; flex: 0 0 14px;
+            border: 1px solid var(--gl-border, #2a2a30);
+        }
+        .ss-keywords { display: flex; gap: 5px; flex-wrap: wrap; margin: 6px 0; }
+        .ss-keyword {
+            font-size: 11px; padding: 2px 8px; border-radius: 10px; cursor: pointer;
+            border: 1px solid var(--gl-border, #2a2a30);
+        }
+        .ss-keyword.ss-add { color: #8ab6e8; border-color: #2c4560; }
+
+        .ss-scale-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .ss-scale-hand {
+            font-size: 10px; padding: 3px 8px; border-radius: 3px;
+            background: rgba(255,255,255,.06); flex: 0 0 auto;
+        }
+        .ss-scale-prop {
+            font-size: 10px; padding: 3px 8px; border-radius: 3px; text-align: center;
+            background: rgba(138,182,232,.18); border: 1px solid #2c4560;
+        }
+
+        .ss-ref-filters { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 4px; }
+        .ss-ref-filter {
+            font-size: 10px; padding: 2px 8px; border-radius: 10px;
+            border: 1px solid var(--gl-border, #2a2a30); color: var(--text-muted, #8a8a95);
+        }
+        .ss-ref-filter.on { color: inherit; }
+        .ss-ref-star { color: #d9a441; }
+        .ss-open-set { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+
         .ss-spec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
         .ss-spec-grid label { font-size: 11px; color: var(--text-muted, #8a8a95); }
         .ss-compass { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -24071,7 +24177,35 @@ ${fountainText.slice(0, 50000)}`;
      * the busy spinner, the field writer and the export are shared, because
      * that is what came apart the last time a surface was built twice.
      */
-    const SS = { kind: null, id: null, data: null, views: [] };
+    /*
+     * The sheet's own state, plus the registries it renders FROM.
+     *
+     * The six description sections, the five official prop views and the hours
+     * a location is kept at are declared in lib/subject-sheets.js and served —
+     * mirroring them here is how a page and a library come to disagree about
+     * what a sheet is made of.
+     */
+    const SS = {
+        kind: null, id: null, data: null, views: [],
+        sections: [], propViews: [], times: [], collapsed: {},
+        parse(text, fallback) {
+            if (text && typeof text === 'object') return text;
+            try { const v = JSON.parse(text); return v == null ? fallback : v; } catch (_) { return fallback; }
+        },
+        // Mirrors parseList in lib/subject-sheets.js: a list column, or the
+        // paragraph it replaced split into lines, so nothing typed is lost.
+        list(json, legacy) {
+            const v = SS.parse(json, null);
+            if (Array.isArray(v) && v.length) return v.map(x => String(x).trim()).filter(Boolean);
+            return String(legacy || '').split(/\n|;/).map(x => x.trim()).filter(Boolean);
+        },
+        materials(json, legacy) {
+            const v = SS.parse(json, null);
+            if (Array.isArray(v) && v.length) return v.filter(m => m && m.name);
+            return String(legacy || '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean)
+                .map(name => ({ name, role: '', hex: '' }));
+        },
+    };
 
     async function openSubjectSheet(kind, id) {
         SS.kind = kind; SS.id = id; SS.data = null; SS.views = [];
@@ -24098,7 +24232,7 @@ ${fountainText.slice(0, 50000)}`;
         if (!body || !SS.id) return;
         try {
             const plural = SS.kind + 's';
-            const [subject, views, vocab] = await Promise.all([
+            const [subject, views, vocab, spec] = await Promise.all([
                 api(`/${plural}/${SS.id}`),
                 api(`/${plural}/${SS.id}/plate/views`).catch(() => ({ views: [] })),
                 /*
@@ -24113,8 +24247,17 @@ ${fountainText.slice(0, 50000)}`;
                 SS.kind === 'prop'
                     ? api('/card-vocabulary').catch(() => ({ prop_categories: [] }))
                     : Promise.resolve(null),
+                // The registries the sheet is BUILT from, served rather than
+                // mirrored: six sections and five views typed into the page go
+                // stale the first time one is renamed.
+                api('/sheet-spec').catch(() => null),
             ]);
             if (vocab && vocab.prop_categories) window.__propCategories = ['', ...vocab.prop_categories];
+            if (spec) {
+                SS.sections = spec.description_sections || [];
+                SS.propViews = spec.prop_views || [];
+                SS.times = spec.time_variants || [];
+            }
             SS.data = subject[SS.kind] || subject;
             SS.views = views.views || [];
             document.getElementById('ssName').textContent = (SS.data.name || SS.kind).toUpperCase();
@@ -24132,10 +24275,18 @@ ${fountainText.slice(0, 50000)}`;
 
     /* ── shared pieces ─────────────────────────────────────────────────── */
 
-    function ssSection(anchorId, title, what, inner) {
+    /*
+     * `reach` is HTML and arrives as its own argument.
+     *
+     * It was concatenated into the title, which ssSection escapes — so every
+     * "→ prompt" and "not sent" mark rendered as literal `<span …>` text. The
+     * marks are the whole difference between a sheet and a form, so they get a
+     * parameter rather than being smuggled through a field that is escaped.
+     */
+    function ssSection(anchorId, title, what, inner, reach) {
         return `<section class="ss-region" data-region="${anchorId}">
-            <h4>${esc(title)}</h4>
-            <p class="ss-what">${esc(what)}</p>
+            <h4>${esc(title)}${reach || ''}</h4>
+            ${what ? `<p class="ss-what">${esc(what)}</p>` : ''}
             ${inner}
         </section>`;
     }
@@ -24202,67 +24353,219 @@ ${fountainText.slice(0, 50000)}`;
         </div>`;
     }
 
+    /* ── pieces both sheets use ────────────────────────────────────────── */
+
+    /* The design marks what reaches the generator and what does not, four
+       different ways. That distinction is the whole difference between a sheet
+       and a form, so it is rendered rather than remembered. */
+    const ssReach = kind => kind === 'not-sent'
+        ? '<span class="ss-reach ss-not-sent">not sent</span>'
+        : '<span class="ss-reach">&rarr; prompt</span>';
+
+    function ssChips(list) {
+        return `<div class="cs-chips">${list.filter(Boolean).map(c =>
+            `<span class="cs-chip ${c.cls || ''}">${c.html || esc(c.text)}</span>`).join('')}</div>`;
+    }
+
+    /** One reference tile, with the star that means "this conditions a frame". */
+    function ssRefs() {
+        const gallery = (SS.data && SS.data.gallery) || [];
+        const cats = {};
+        gallery.forEach(g => {
+            const c = (g.category || g.role || 'other');
+            cats[c] = (cats[c] || 0) + 1;
+        });
+        const filters = `<div class="ss-ref-filters">
+            <span class="ss-ref-filter on">All ${gallery.length}</span>
+            ${Object.entries(cats).map(([c, n]) =>
+                `<span class="ss-ref-filter">${esc(c)} ${n}</span>`).join('')}
+        </div>
+        <p class="ss-what">starred refs are attached to the prompt</p>`;
+        const tiles = gallery.length
+            ? `<div class="cs-refs">${gallery.slice(0, 12).map(g => {
+                const sent = g.role === 'reference';
+                return `<figure class="cs-tile">
+                    ${g.image_url ? `<img src="${esc(API_BASE + g.image_url)}" alt="">` : '<div class="cs-drop"></div>'}
+                    <figcaption>${sent ? '<span class="ss-ref-star">&#9733;</span> ' : ''}${esc(g.note || g.role || '')}</figcaption>
+                </figure>`;
+            }).join('')}</div>`
+            : '<p class="text-muted">Nothing gathered yet.</p>';
+        return filters + tiles
+            + `<button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="openSubjectGallery()">+ Drop reference</button>`;
+    }
+
+    /** The provenance the design prints under the plates. */
+    function ssPlateMeta() {
+        const v = (SS.views || []).find(x => x.available) || null;
+        if (!v) return '';
+        const size = v.bytes ? `${Math.round(v.bytes / 1024)} kB` : '';
+        return `<p class="ss-plate-meta">${[v.seed ? `seed ${esc(String(v.seed))}` : '',
+            esc(v.format || 'png'), size].filter(Boolean).join(' · ')}</p>`;
+    }
+
+    /*
+     * Which plate fills a slot.
+     *
+     * A slot that names no view means the DEFAULT plate — the view-less one
+     * every location has had since before views existed. Matching the slot's
+     * role instead left the master plate out of its own slot and the sheet
+     * reported "Plates locked 0/1" for a location with two.
+     */
+    const ssViewFor = name => {
+        const want = String(name || '').trim().toLowerCase();
+        const views = SS.views || [];
+        const bare = views.find(v => !String(v.view || '').trim());
+        if (!want) return bare || views[0] || null;
+        const named = views.find(v => String(v.view || '').trim().toLowerCase() === want);
+        if (named) return named;
+        /*
+         * A view-less plate IS the front.
+         *
+         * Every plate generated before views existed carries no view name, and
+         * lib/plate-views.js ranks front first for exactly this reason — it is
+         * the identity plate, the one headlinePlate attaches to a shot. Without
+         * this the turntable reported "locked 1/5" with the front slot showing
+         * "generate →" for a prop whose plate is sitting right there.
+         */
+        return (SS.kind === 'prop' && want === 'front') ? bare || null : null;
+    };
+
+    function ssTile(v, label, caption) {
+        const url = v && v.available && v.image_url ? API_BASE + v.image_url : '';
+        return `<figure class="cs-tile ss-slot">
+            ${url ? `<img src="${esc(url)}" alt="${esc(label)}" onclick="openPlateViewer('${esc(url)}', ${jsAttr(label)})">`
+                  : `<div class="cs-drop ss-empty" onclick="generateSheetView(${jsAttr((v && v.view) || label)})">generate &rarr;</div>`}
+            <figcaption>${esc(label)}${caption ? `<span class="ss-view-angle">${esc(caption)}</span>` : ''}</figcaption>
+        </figure>`;
+    }
+
     /* ── location ──────────────────────────────────────────────────────── */
 
     function renderLocationSheet() {
         const l = SS.data || {};
-        const compass = ['north', 'east', 'south', 'west'];
-        const have = new Set(SS.views.map(v => v.view));
+        const S = SS.sections;
+        const sections = SS.parse(l.description_sections, {});
+        const flags = SS.list(l.continuity_flags, l.continuity_notes);
+        const plan = SS.parse(l.orientation_plan, {});
+        const planned = SS.parse(l.plate_plan, []);
+        const slots = planned.length ? planned : [{ n: 1, role: 'Master', view: '', caption: 'the establishing plate' }];
+        const made = slots.filter(x => ssViewFor(x.view)).length;
+        const total = Object.values(sections).join(' ').length;
+        const linked = l.linked_props || [];
+
+        document.getElementById('ssChips').innerHTML = ssChips([
+            { text: `${String(l.id || '').slice(0, 8)} · ${l.location_type || 'int/ext'}`, cls: 'ss-chip-id' },
+            { text: `Plates locked ${made}/${slots.length}`, cls: 'ss-chip-plates' },
+            { text: `Used in ${Number(l.scene_count) || 0} scenes`, cls: 'ss-chip-scenes' },
+            flags.length ? { text: `Continuity: ${flags.length} flag(s)`, cls: 'ss-chip-flags' } : null,
+        ]);
+
         return `
         <div class="ss-grid">
           <div class="ss-col">
-            ${ssSection('ls-plates', 'Master plates',
-                'Every shot in a scene set here is conditioned on one of these.', ssPlates())}
+            ${ssSection('ls-plates', 'Master plates', 'canonical · fed to generation',
+                `<div class="cs-views">${slots.map(sl =>
+                    ssTile(ssViewFor(sl.view), `${String(sl.n).padStart(2, '0')} · ${sl.role}`, sl.caption)
+                ).join('')}</div>${ssPlateMeta()}${ssPlateControls()}
+                 <button class="btn btn-secondary btn-sm" style="margin-top:6px;" onclick="ssEditPlatePlan()">Plan the views</button>`)}
 
-            ${ssSection('ls-orientation', 'Orientation',
-                'Which way each plate looks. A convention, not a survey — the first plate is north and the rest are quarter turns from it.',
-                `<div class="ss-compass">${compass.map(c =>
-                    `<span class="cs-pill${have.has(c) ? ' on' : ''}">${c}${have.has(c) ? '' : ' —'}</span>`).join('')}
+            ${ssSection('ls-orientation', 'Orientation plan', 'keeps geography consistent across plates',
+                `<div class="ss-plan">
+                    <div class="ss-plan-edge n">North · ${esc(plan.north || '—')}</div>
+                    <div class="ss-plan-mid">
+                        <div class="ss-plan-edge w">West · ${esc(plan.west || '—')}</div>
+                        <div class="ss-plan-room">${(plan.interior || []).map(x =>
+                            `<span class="ss-plan-item">${esc(x)}</span>`).join('') || '<span class="text-muted">—</span>'}</div>
+                        <div class="ss-plan-edge e">East · ${esc(plan.east || '—')}</div>
+                    </div>
+                    <div class="ss-plan-edge s">South · ${esc(plan.south || '—')}</div>
                  </div>
-                 <button class="btn btn-secondary btn-sm" style="margin-top:8px;"
-                         onclick="generateLocationVariant('compass')">Sweep the compass</button>`)}
+                 ${plan.marker ? `<p class="ss-plan-marker">&#9650; ${esc(plan.marker)}</p>` : ''}
+                 <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="ssEditPlan()">Edit the plan</button>`)}
 
-            ${ssSection('ls-variants', 'Time of day',
-                'The same place at another hour, kept as its own plate rather than regraded afterwards.',
-                `<div class="btn-row">${['dusk', 'night', 'dawn'].map(t =>
-                    `<button class="btn btn-secondary btn-sm" onclick="generateLocationVariant('${t}')">${t}${
-                        have.has(t) ? ' ✓' : ''}</button>`).join('')}</div>`)}
+            ${ssSection('ls-variants', 'Time of day variants',
+                'The same place at another hour, kept as its own plate rather than regraded.',
+                `<div class="ss-variants">${SS.times.map(t => {
+                    const have = ssViewFor(t);
+                    return `<span class="ss-variant${have ? ' on' : ''}" onclick="generateLocationVariant('${t}')">${t}${have ? ' &#10003;' : ''}</span>`;
+                }).join('')}</div>`)}
 
             ${ssSection('ls-references', 'Concept art & references',
-                'Explorations and gathered images. Only what is promoted to a reference ever conditions a frame.',
-                `<button class="btn btn-secondary btn-sm" onclick="openSubjectGallery()">Open gallery</button>`)}
+                'Explorations and gathered images.', ssRefs())}
+
+            ${ssSection('ls-scenes', 'Scenes here',
+                'Derived from the scene headings that name this location.',
+                (l.scenes || []).length
+                    ? (l.scenes || []).map(sc => {
+                        const hour = String(sc.time_of_day || '').toLowerCase();
+                        const covered = !hour || ssViewFor(hour);
+                        return `<div class="ss-scene-row">
+                            <span>Sc. ${esc(String(sc.scene_number))}</span>
+                            <span class="text-muted">${esc(sc.time_of_day || '')}${covered ? '' : ' · no plate'}</span>
+                        </div>`;
+                    }).join('')
+                    : '<p class="text-muted">No scene here yet.</p>')}
           </div>
 
           <div class="ss-col">
-            ${ssSection('ls-description', 'The place',
-                'Reaches every frame shot here. This is the field that keeps two scenes in one location looking like one location.',
-                ssField('description', l.description, { rows: 5, placeholder: 'A 1941 diner, re-topped in \'52 and kept spotless…' })
-                + '<p class="ss-what">What kind of place it is, for the schedule and the call sheet.</p>'
-                + ssField('location_type', l.location_type, { options: ['', 'interior', 'exterior', 'practical', 'stage', 'backlot'] }))}
+            ${ssSection('ls-description', 'Set description',
+                '', `<p class="ss-what ss-desc-total">${total} chars · ${S.length} sections · prompt source ${ssReach('prompt')}</p>` +
+                `<div class="btn-row" style="margin-bottom:8px;">
+                    <button class="btn btn-secondary btn-sm" onclick="ssCopyDescription()">Copy all</button>
+                    <button class="btn btn-secondary btn-sm" onclick="ssToggleSection('*')">Collapse all</button>
+                 </div>
+                 ${(!Object.keys(sections).length && String(l.description || '').trim())
+                    ? `<div class="ss-import">
+                        <p>This location was described before the sections existed
+                        (${String(l.description).trim().length} characters). Move it into a section to keep it —
+                        nothing is written until you choose.</p>
+                        <div class="btn-row">${S.map(sec =>
+                            `<button class="btn btn-secondary btn-sm" onclick="ssImportDescription('${sec.id}')">${esc(sec.label)}</button>`).join('')}</div>
+                       </div>`
+                    : ''}
+                 ${S.map(sec => {
+                    const text = sections[sec.id] || '';
+                    return `<div class="ss-section" data-section="${sec.id}">
+                        <div class="ss-section-head" onclick="ssToggleSection('${sec.id}')">
+                            <span class="ss-section-label">${esc(sec.label)}</span>
+                            <span class="ss-section-meta">${esc(sec.kind)} · ${text.length} chars</span>
+                        </div>
+                        <div class="ss-section-body">
+                            <p class="ss-what">${esc(sec.what)}</p>
+                            <textarea class="ss-input" rows="4" data-field="section_${sec.id}"
+                                onchange="saveSheetSection('${sec.id}', this.value, this)">${esc(text)}</textarea>
+                            ${sec.id === 'decoration' ? `<div class="ss-linked">${
+                                linked.map(pr => `<span class="ss-linked-prop" onclick="openSubjectSheet('prop','${pr.id}')">${esc(pr.name)}</span>`).join('')
+                                || '<span class="text-muted">No prop named here exists yet.</span>'
+                            }</div>` : ''}
+                        </div>
+                    </div>`;
+                 }).join('')}`)}
 
             ${ssSection('ls-lighting', 'Lighting default',
                 'How it is lit unless a shot says otherwise.',
-                ssField('lighting_default', l.lighting_default, { placeholder: 'low sun through the plate glass' })
-                + ssField('time_of_day_default', l.time_of_day_default, { placeholder: 'late afternoon' }))}
+                ssField('lighting_default', l.lighting_default, { placeholder: 'golden-hour rake off the water, lit practicals' })
+                + ssField('time_of_day_default', l.time_of_day_default, { placeholder: 'late afternoon' })
+                + ssField('location_type', l.location_type, { options: ['', 'interior', 'exterior', 'practical', 'stage', 'backlot'] }),
+                ssReach('prompt'))}
 
             ${ssSection('ls-atmosphere', 'Atmosphere',
                 'Weather, haze, season — the standing conditions of the place.',
-                ssField('atmosphere_notes', l.atmosphere_notes, { rows: 2, placeholder: 'salt haze off the harbour, warm inside' }))}
+                ssField('atmosphere_notes', l.atmosphere_notes, { rows: 2, placeholder: 'immaculate, gleaming, air still' }),
+                ssReach('prompt'))}
 
             ${ssSection('ls-sound', 'Sound notes',
-                'How the place SOUNDS. This reaches the ambient bed generated for every scene here.',
-                ssField('sound_notes', l.sound_notes, { rows: 2, placeholder: 'traffic two streets over, a screen door, gulls' }))}
+                'Notes for whoever writes the ambient cue. This does not reach the image prompt.',
+                ssField('sound_notes', l.sound_notes, { rows: 2, placeholder: 'gulls, a screen door, radio low behind the counter' }),
+                ssReach('not-sent'))}
 
             ${ssSection('ls-continuity', 'Continuity flags',
-                'What must stay true across every shot here, once something has been moved, broken or repainted.',
-                ssField('continuity_notes', l.continuity_notes, { rows: 3, placeholder: 'the third stool is missing from scene 9 onwards' }))}
-
-            ${ssSection('ls-scenes', 'Scenes here',
-                'Derived from the scene headings that name this location — nothing to fill in.',
-                `<p class="cs-prose">${Number(l.scene_count) || 0} scene(s)${
-                    (l.scenes || []).length
-                        ? ': ' + (l.scenes || []).map(x => esc(String(x.scene_number))).join(', ')
-                        : ''}.</p>`)}
+                'What must stay true in EVERY plate.',
+                `<div>${flags.map((f, i) => `<div class="ss-flag">
+                    <span>${esc(f)}</span>
+                    <button class="btn btn-secondary btn-sm" onclick="ssRemoveFlag(${i})">&times;</button>
+                 </div>`).join('') || '<p class="text-muted">Nothing to hold yet.</p>'}</div>
+                 <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="ssAddFlag()">Add flag</button>`)}
           </div>
         </div>`;
     }
@@ -24271,80 +24574,304 @@ ${fountainText.slice(0, 50000)}`;
 
     function renderPropSheet() {
         const p = SS.data || {};
-        let states = [];
-        try { states = JSON.parse(p.continuity_states || '[]') || []; } catch (_) { states = []; }
-        const size = [p.height_m && `${p.height_m}m tall`, p.width_m && `${p.width_m}m wide`,
-            p.length_m && `${p.length_m}m deep`].filter(Boolean).join(' · ');
+        const states = SS.parse(p.continuity_states, []);
+        const materials = SS.materials(p.materials_json, p.materials);
+        const constraints = SS.list(p.constraints_json, p.constraints);
+        const keywords = SS.list(p.keywords, '');
+        const made = SS.views.filter(v => v.available).length;
+        const mm = v => (Number(v) > 0 ? `${Math.round(Number(v) * 1000)} mm` : '—');
+        const biggest = Math.max(Number(p.height_m) || 0, Number(p.width_m) || 0, Number(p.length_m) || 0);
+        const verdict = !biggest ? 'size not declared'
+            : biggest < 0.12 ? 'one-hand object' : biggest < 0.6 ? 'two-hand object'
+            : biggest < 2 ? 'carried with effort' : 'set piece';
+
+        document.getElementById('ssChips').innerHTML = ssChips([
+            { text: `${String(p.id || '').slice(0, 8)} · ${p.category || 'generic'}`, cls: 'ss-chip-id' },
+            { text: `Turntable locked ${made}/${SS.propViews.length}`, cls: 'ss-chip-plates' },
+            { text: p.practical ? 'Handled on camera' : 'Not handled', cls: 'ss-chip-handled' },
+            { text: `${states.length || 1} state(s)`, cls: 'ss-chip-states' },
+        ]);
+
         return `
         <div class="ss-grid">
           <div class="ss-col">
-            ${ssSection('ps-plates', 'Master views',
-                'Every frame this object appears in is conditioned on one of these.', ssPlates())}
+            ${ssSection('ps-plates', 'Turntable · official views', 'canonical · fed to generation',
+                `<div class="cs-views">${SS.propViews.map(v =>
+                    ssTile(ssViewFor(v.id), v.label, `${v.angle} · ${v.caption}`)).join('')}</div>
+                 ${ssPlateMeta()}${ssPlateControls()}`)}
 
             ${ssSection('ps-references', 'Concept art & references',
-                'Explorations and gathered images. Only what is promoted to a reference ever conditions a frame.',
-                `<button class="btn btn-secondary btn-sm" onclick="openSubjectGallery()">Open gallery</button>`)}
+                'Explorations and gathered images.', ssRefs())}
 
-            ${ssSection('ps-states', 'Continuity states',
-                'Clean, chipped, burnt — the versions of the same object, and which scene each belongs to.',
-                `<div id="ssStates">${states.length
-                    ? states.map((st, i) => `<div class="ss-state">
-                        <strong>${esc(st.name)}</strong>
-                        ${st.scene ? `<span class="cs-pill">${esc(st.scene)}</span>` : ''}
-                        <span class="text-sm text-muted">${esc(st.what || '')}</span>
-                        <button class="btn btn-secondary btn-sm" onclick="removePropState(${i})">&times;</button>
-                      </div>`).join('')
-                    : '<p class="text-muted">One state — as built. Add another when it changes.</p>'}</div>
+            ${ssSection('ps-states', 'Continuity states', 'each state generates its own plate set',
+                `<div>${states.length ? states.map((st, i) => `<div class="ss-state">
+                    <strong>${String.fromCharCode(65 + i)} · ${esc(st.name)}</strong>
+                    ${st.scene ? `<span class="cs-pill">${esc(st.scene)}</span>` : '<span class="cs-pill">default</span>'}
+                    <span class="text-sm text-muted">${esc(st.what || '')}</span>
+                    <button class="btn btn-secondary btn-sm" onclick="removePropState(${i})">&times;</button>
+                 </div>`).join('') : '<p class="text-muted">One state — as built. Add another when it changes.</p>'}</div>
                  <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addPropState()">Add state</button>`)}
 
             ${ssSection('ps-appears', 'Appears in',
-                'Derived from the scene cards that name this prop — nothing to fill in.',
-                `<p class="cs-prose">${Number(p.shot_count) || 0} shot(s)${
-                    (p.shots || []).length ? ': ' + (p.shots || []).map(x => esc(x)).join(', ') : ''}.</p>
-                 <p class="ss-what">From the scene cards that NAME this prop — the same list that
-                 decides whether its plate reaches a frame.</p>`)}
+                'From the scene cards that NAME this prop — the same list that decides whether its plate reaches a frame.',
+                ((p.shots || []).length
+                    ? (p.shots || []).map(code => `<div class="ss-appear-row">
+                        <span>${esc(code)}</span>
+                        <span class="text-muted">state ${states.length ? 'A' : '—'}</span>
+                       </div>`).join('')
+                    : '<p class="text-muted">No shot names it yet.</p>')
+                + `<div class="ss-open-set">${(p.locations || []).slice(0, 6).map(loc =>
+                    `<span class="ss-linked-prop" onclick="openSubjectSheet('location','${loc.id}')">Open set &rarr; ${esc(loc.name)}</span>`).join('')
+                    || '<span class="text-muted">No set to open.</span>'}</div>`)}
           </div>
 
           <div class="ss-col">
             ${ssSection('ps-description', 'Object description',
-                'What it is, for a person. The field that reaches the prompt is below it.',
-                ssField('description', p.description, { rows: 3, placeholder: 'A tabletop jukebox selector, one per booth.' })
-                + '<p class="ss-what">Visual prompt — this is what reaches the image model and what the plate is generated from.</p>'
-                + ssField('visual_prompt', p.visual_prompt, { rows: 3, placeholder: 'polished chrome housing, amber acrylic page window…' }))}
+                `${String(p.visual_prompt || '').length} chars · prompt source`,
+                `<button class="btn btn-secondary btn-sm" style="margin-bottom:8px;" onclick="ssCopyDescription()">Copy</button>`
+                + ssField('visual_prompt', p.visual_prompt, { rows: 5, placeholder: 'Chrome-and-amber tabletop jukebox selector, bolted at seated height…' })
+                + `<div class="ss-keywords">${keywords.map((k, i) =>
+                    `<span class="ss-keyword" onclick="ssRemoveKeyword(${i})">${esc(k)} &times;</span>`).join('')}
+                   <span class="ss-keyword ss-add" onclick="ssAddKeyword()">+ keyword</span></div>
+                   <p class="ss-what">The few words that must survive into every frame.</p>`
+                + '<p class="ss-what">For a person; reaches no prompt.</p>'
+                + ssField('description', p.description, { rows: 2, placeholder: 'A tabletop jukebox selector, one per booth.' }),
+                ssReach('prompt'))}
 
-            ${ssSection('ps-materials', 'Materials & finish',
-                'What it is made of and how it catches light. Reaches the plate prompt.',
-                ssField('materials', p.materials, { rows: 2, placeholder: 'polished chrome, amber acrylic, bakelite trim' }))}
-
-            ${ssSection('ps-spec', 'Spec',
-                'Period, category, how many there are, and whether it has to work on camera.',
-                `<div class="ss-spec-grid">
-                    <label>Period ${ssField('period', p.period, { placeholder: '1952' })}</label>
-                    <label>Category ${ssField('category', p.category, { options: (window.__propCategories || ['', p.category || '']) })}</label>
-                    <label>Quantity ${ssField('quantity', p.quantity == null ? 1 : p.quantity, { type: 'number' })}</label>
-                    <label>Practical ${ssField('practical', p.practical ? 'yes' : 'no', { options: ['no', 'yes'] })}</label>
-                 </div>`)}
+            ${ssSection('ps-materials', 'Materials & finish', 'What it is made of and how it catches light.',
+                `<div>${materials.map((m, i) => `<div class="ss-material">
+                    <span class="ss-mat-swatch" style="background:${/^#[0-9A-F]{6}$/i.test(m.hex) ? m.hex : 'transparent'};"></span>
+                    <strong>${esc(m.name)}</strong>
+                    <span class="text-sm text-muted">${esc(m.role || '')}${m.hex ? ' · ' + esc(m.hex) : ''}</span>
+                    <button class="btn btn-secondary btn-sm" onclick="ssRemoveMaterial(${i})">&times;</button>
+                 </div>`).join('') || '<p class="text-muted">Nothing recorded.</p>'}</div>
+                 <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="ssAddMaterial()">Add material</button>`)}
 
             ${ssSection('ps-scale', 'Scale',
-                'How big it is. Without this an image model reproduces whatever it was shown, at any size — a 30cm sprinkler came back the size of a car.',
-                `<div class="ss-spec-grid">
+                'How big it is. Without this an image model reproduces whatever it was shown, at any size.',
+                `<div class="ss-scale-bar">
+                    <span class="ss-scale-hand">hand</span>
+                    <span class="ss-scale-prop" style="width:${Math.max(8, Math.min(100, (biggest || 0) * 120))}%;">prop</span>
+                 </div>
+                 <p class="cs-prose">W ${mm(p.width_m)} · H ${mm(p.height_m)} · D ${mm(p.length_m)} &mdash; ${verdict}</p>
+                 <div class="ss-spec-grid">
                     <label>Height (m) ${ssField('height_m', p.height_m, { type: 'number', step: '0.01' })}</label>
                     <label>Width (m) ${ssField('width_m', p.width_m, { type: 'number', step: '0.01' })}</label>
                     <label>Length (m) ${ssField('length_m', p.length_m, { type: 'number', step: '0.01' })}</label>
-                 </div>${size ? `<p class="cs-prose">${esc(size)}</p>` : ''}`)}
+                 </div>`)}
 
-            ${ssSection('ps-constraints', 'Constraints',
-                'What it must never be or do. Read by a person, and by the prompt.',
-                ssField('constraints', p.constraints, { rows: 2, placeholder: 'never lit from behind; the glass is never cracked before scene 11' })
-                + '<p class="ss-what">Production notes — for a person. These reach NO prompt, which is '
-                + 'worth saying: a box beside the visual prompt that looks like it conditions a frame '
-                + 'and does not is worse than one that is absent.</p>'
-                + ssField('notes', p.notes, { rows: 2, placeholder: 'two built, one held back for the break' }))}
+            ${ssSection('ps-spec', 'Spec', 'Period, category, how many there are, and whether it has to work on camera.',
+                `<div class="ss-spec-row"><span>Period</span>${ssField('period', p.period, { placeholder: '1952' })}</div>
+                 <div class="ss-spec-row"><span>Category</span>${ssField('category', p.category, { options: (window.__propCategories || ['', p.category || '']) })}</div>
+                 <div class="ss-spec-row"><span>Quantity</span>${ssField('quantity', p.quantity == null ? 1 : p.quantity, { type: 'number' })}</div>
+                 <div class="ss-spec-row"><span>Practical</span>${ssField('practical', p.practical ? 'yes' : 'no', { options: ['no', 'yes'] })}</div>`)}
+
+            ${ssSection('ps-constraints', 'Constraints', 'What it must never be or do.',
+                `<div>${constraints.map((c, i) => `<div class="ss-constraint">
+                    <span>${esc(c)}</span>
+                    <button class="btn btn-secondary btn-sm" onclick="ssRemoveConstraint(${i})">&times;</button>
+                 </div>`).join('') || '<p class="text-muted">Nothing recorded.</p>'}</div>
+                 <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="ssAddConstraint()">Add constraint</button>
+                 <p class="ss-what">Production notes — for a person. These reach NO prompt.</p>
+                 ${ssField('notes', p.notes, { rows: 2, placeholder: 'two built, one held back for the break' })}`)}
           </div>
         </div>`;
     }
 
     /* ── the ways in ───────────────────────────────────────────────────── */
+
+    /* ── editing the structured half ───────────────────────────────────── */
+
+    /** One description section. Merged, so writing one never clears another. */
+    async function saveSheetSection(id, text, el) {
+        const sections = { ...(SS.parse(SS.data.description_sections, {}) || {}), [id]: text };
+        try {
+            await api(`/locations/${SS.id}`, {
+                method: 'PUT', body: JSON.stringify({ description_sections: sections }),
+            });
+            SS.data.description_sections = JSON.stringify(sections);
+            if (el) el.style.borderColor = 'var(--gl-success, #166534)';
+            // Redrawn so the character count and the total move with the text —
+            // a count that does not is worse than none.
+            renderSubjectSheet();
+        } catch (err) {
+            if (el) el.style.borderColor = 'var(--gl-danger, #7f1d1d)';
+            setStatus('Error: ' + err.message);
+        }
+    }
+
+    /**
+     * Move an old one-paragraph description into a section.
+     *
+     * Every location written before the sections existed has its text in
+     * `description`, and composing over it would replace an 856-character set
+     * description with whatever was typed into one box. The route refuses that;
+     * this is the way through — the director says WHICH section the old text
+     * is, because only they know.
+     */
+    async function ssImportDescription(sectionId) {
+        const text = String((SS.data && SS.data.description) || '').trim();
+        if (!text) return;
+        const sections = { ...(SS.parse(SS.data.description_sections, {}) || {}), [sectionId]: text };
+        try {
+            await api(`/locations/${SS.id}`, {
+                method: 'PUT',
+                // Deliberate: the old text is now IN the sections, so composing
+                // over the column loses nothing.
+                body: JSON.stringify({ description_sections: sections, replace_description: true }),
+            });
+            SS.data.description_sections = JSON.stringify(sections);
+            await renderSubjectSheet();
+            setStatus('Moved into the section. The description is now composed from the sections.');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /** Fold a section, or all of them. Six open at once is unreadable. */
+    function ssToggleSection(id) {
+        const all = id === '*';
+        const nodes = document.querySelectorAll('#ssBody .ss-section');
+        const anyOpen = [...nodes].some(n => !n.classList.contains('closed'));
+        nodes.forEach(n => {
+            if (all) n.classList.toggle('closed', anyOpen);
+            else if (n.dataset.section === id) n.classList.toggle('closed');
+        });
+    }
+
+    /** The whole description, assembled the way the prompt receives it. */
+    function ssCopyDescription() {
+        const text = SS.kind === 'prop'
+            ? String((SS.data && SS.data.visual_prompt) || '')
+            : SS.sections.map(sec => {
+                const body = (SS.parse(SS.data.description_sections, {}) || {})[sec.id] || '';
+                return body ? `${sec.label.toUpperCase()}\n${body}` : '';
+            }).filter(Boolean).join('\n\n');
+        if (!text) return setStatus('Nothing written yet.');
+        navigator.clipboard.writeText(text)
+            .then(() => setStatus(`${text.length} characters copied.`))
+            .catch(() => setStatus('Could not reach the clipboard.'));
+    }
+
+    /** A generic list column: continuity flags, constraints, keywords. */
+    async function ssSaveList(field, list) {
+        const url = SS.kind === 'location' ? `/locations/${SS.id}` : `/props/${SS.id}`;
+        try {
+            await api(url, { method: 'PUT', body: JSON.stringify({ [field]: list }) });
+            SS.data[field] = JSON.stringify(list);
+            await renderSubjectSheet();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+    const ssReadList = field => SS.list(SS.data[field],
+        field === 'continuity_flags' ? SS.data.continuity_notes
+            : field === 'constraints_json' ? SS.data.constraints : '');
+
+    function ssAddFlag() {
+        const v = prompt('What must stay true in every plate?');
+        if (v && v.trim()) ssSaveList('continuity_flags', [...ssReadList('continuity_flags'), v.trim()]);
+    }
+    function ssRemoveFlag(i) {
+        const list = ssReadList('continuity_flags'); list.splice(i, 1);
+        ssSaveList('continuity_flags', list);
+    }
+    function ssAddConstraint() {
+        const v = prompt('What must it never be or do?');
+        if (v && v.trim()) ssSaveList('constraints_json', [...ssReadList('constraints_json'), v.trim()]);
+    }
+    function ssRemoveConstraint(i) {
+        const list = ssReadList('constraints_json'); list.splice(i, 1);
+        ssSaveList('constraints_json', list);
+    }
+    function ssAddKeyword() {
+        const v = prompt('A word that must survive into every frame:');
+        if (v && v.trim()) ssSaveList('keywords', [...SS.list(SS.data.keywords, ''), v.trim()]);
+    }
+    function ssRemoveKeyword(i) {
+        const list = SS.list(SS.data.keywords, ''); list.splice(i, 1);
+        ssSaveList('keywords', list);
+    }
+
+    /** A material row: what it is, where it is, and its colour. */
+    async function ssAddMaterial() {
+        const name = prompt('Material — "polished chrome", "amber acrylic"?');
+        if (!name || !name.trim()) return;
+        const role = prompt('Where is it, and how does it behave? — "panel, backlit"') || '';
+        const hex = prompt('Its colour as #rrggbb (optional) — a hex nobody can see is a string') || '';
+        const list = SS.materials(SS.data.materials_json, SS.data.materials);
+        list.push({ name: name.trim(), role: role.trim(), hex: hex.trim() });
+        await ssSaveList('materials_json', list);
+    }
+    async function ssRemoveMaterial(i) {
+        const list = SS.materials(SS.data.materials_json, SS.data.materials);
+        list.splice(i, 1);
+        await ssSaveList('materials_json', list);
+    }
+
+    /**
+     * The plan of the room.
+     *
+     * This is what keeps four plates of one place describing the same place —
+     * a plate carries no information about what is behind its own camera, so
+     * without the plan each side is generated from prose that cannot say.
+     */
+    async function ssEditPlan() {
+        const plan = SS.parse(SS.data.orientation_plan, {}) || {};
+        const next = { interior: plan.interior || [], marker: plan.marker || '' };
+        for (const edge of ['north', 'east', 'south', 'west']) {
+            const v = prompt(`${edge.toUpperCase()} — what is on that side?`, plan[edge] || '');
+            if (v === null) return;
+            next[edge] = v.trim();
+        }
+        const inside = prompt('Inside the room, comma separated — "counter and stools, centre aisle"',
+            (plan.interior || []).join(', '));
+        if (inside !== null) next.interior = inside.split(',').map(x => x.trim()).filter(Boolean);
+        const marker = prompt('Where does the action sit? — "corner booth, north end"', plan.marker || '');
+        if (marker !== null) next.marker = marker.trim();
+        try {
+            await api(`/locations/${SS.id}`, { method: 'PUT', body: JSON.stringify({ orientation_plan: next }) });
+            SS.data.orientation_plan = JSON.stringify(next);
+            await renderSubjectSheet();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /**
+     * Which views this location is MEANT to have.
+     *
+     * An ungenerated view then shows as a labelled empty slot rather than an
+     * absence nobody can see — which is the difference between "we still need
+     * the reverse" and a sheet that looks finished.
+     */
+    async function ssEditPlatePlan() {
+        const plan = SS.parse(SS.data.plate_plan, []) || [];
+        const raw = prompt(
+            'The views this location needs, one per line as "role | view name | caption".\n\n'
+            + 'The view name is what a shot card asks for; leave it blank for the default plate.',
+            (plan.length ? plan : [{ role: 'Master', view: '', caption: 'the establishing plate' }])
+                .map(x => [x.role, x.view, x.caption].join(' | ')).join('\n'));
+        if (raw === null) return;
+        const next = raw.split('\n').map(line => {
+            const [role, view, caption] = line.split('|').map(x => (x || '').trim());
+            return { role, view, caption };
+        }).filter(x => x.role);
+        try {
+            await api(`/locations/${SS.id}`, { method: 'PUT', body: JSON.stringify({ plate_plan: next }) });
+            SS.data.plate_plan = JSON.stringify(next);
+            await renderSubjectSheet();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /** Generate one named view — a planned slot, or an official prop view. */
+    function generateSheetView(view) {
+        if (SS.kind === 'location') return generateLocationVariant(view);
+        if (!confirm(`Generate the ${view} view of this prop?\n\nThis costs credits. Every frame it `
+            + 'appears in is conditioned on one of these.')) return;
+        return ssBusy(`Generating ${view}…`, async () => {
+            try {
+                await api(`/props/${SS.id}/plate/generate`, {
+                    method: 'POST', body: JSON.stringify({ view }),
+                });
+                await renderSubjectSheet();
+            } catch (err) { setStatus('Error: ' + err.message); }
+        });
+    }
 
     /**
      * Write one field.

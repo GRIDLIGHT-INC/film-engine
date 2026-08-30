@@ -84,9 +84,27 @@ const NAMED_DIFFERENTLY = {
     'projects.js updateProject': {
         annotation_feedback: { control: 'annotFeedbackToggle', why: 'a toggle on the storyboard, not in settings' },
     },
+    /*
+     * The sheets edit their structured half through real editors rather than
+     * one input each: a list of flags, a plan of a room, six folding sections.
+     * Named with the control that writes each, because a heuristic wide enough
+     * to match them automatically is also wide enough to pass a hardcoded
+     * value — the failure this check exists to catch.
+     */
     'locations.js updateProp': {
         continuity_states: { control: 'addPropState',
             why: 'a repeating list, not one input — the prop sheet\'s states region adds and removes them' },
+        materials_json: { control: 'ssAddMaterial',
+            why: 'rows of name, role and colour; a comma string cannot carry a hex' },
+        constraints_json: { control: 'ssAddConstraint', why: 'a list of things to hold true' },
+        keywords: { control: 'ssAddKeyword', why: 'a list of words that must survive into every frame' },
+    },
+    'locations.js updateLocation': {
+        description_sections: { control: 'saveSheetSection',
+            why: 'six named folding sections, each with its own length' },
+        continuity_flags: { control: 'ssAddFlag', why: 'a list of things to hold true in every plate' },
+        plate_plan: { control: 'ssEditPlatePlan', why: 'the views this location is meant to have' },
+        orientation_plan: { control: 'ssEditPlan', why: 'the room by compass edge, not one field' },
     },
 };
 

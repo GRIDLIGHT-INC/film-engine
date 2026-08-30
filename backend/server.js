@@ -383,8 +383,7 @@ const server = http.createServer(async (req, res) => {
          * match on their own third segment and would swallow these.
          */
         if ((parts[1] === 'projects' && parts[2] && parts[3] === 'sequences')
-            || (parts[1] === 'sequences' && parts[2])
-            || (parts[1] === 'sequence-frames' && parts[2] && parts[3])) {
+            || (parts[1] === 'sequences' && parts[2])) {
             const handled = await handleSequences(req, res, parts, query);
             if (handled !== false) return handled;
         }
@@ -1001,6 +1000,10 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Route: /film/props/:id
+        // The registries the location and prop sheets are built from.
+        if (parts[1] === 'sheet-spec') {
+            return handleLocations(req, res, parts, query);
+        }
         if (parts[1] === 'props') {
             return handleLocations(req, res, parts, query);
         }
