@@ -144,6 +144,74 @@ function buildVideoPrompt(sceneCard, characters, location, stylePreset, options)
  * @param {object} sceneCard - Parsed scene_card_yaml
  * @returns {{ num_frames: number, fps: number, duration_s: number, width: number, height: number }}
  */
+/**
+ * The frame a generation is asked for: the delivery raster, reshaped.
+ *
+ * ONE place, exported, because the image payload and the video payload must not
+ * compute this differently — which is exactly what happened once, when the
+ * board derived its shape from `aspect_ratio` and the footage from
+ * `target_resolution`, and ten of the eleven ratios the settings offer produced
+ * a storyboard in one format and footage in another with nothing said.
+ *
+ * `override` is a SHOT's own ratio, and it is a different question from the
+ * project's. The project's aspect is FITTED INSIDE the delivery raster: 2.39:1
+ * in a 1920x1080 delivery is 1920x804, because the operator chose that raster
+ * and a wider frame is not a size anyone asked for.
+ *
+ * A shot override is not a crop of the delivery frame, it is a SEPARATE
+ * DELIVERABLE — a vertical hero shot exists because a 9:16 crop of the master
+ * would keep 32% of its width. So it keeps the delivery raster's SHORT edge and
+ * derives the other from the ratio, which lands exactly on the rasters the
+ * delivery profiles ask for: 1080x1920 for Reels, 1080x1350 for a Meta feed,
+ * 1080x1080 for square. Fitting it inside the landscape frame instead would
+ * generate 608x1080 — a vertical picture at a third of the resolution it is
+ * delivered at.
+ */
+function buildVideoFrame(project, override) {
+    const proj = project || {};
+    let width = DEFAULT_WIDTH, height = DEFAULT_HEIGHT;
+    const m = String(proj.target_resolution || '').match(/^(\d+)\s*x\s*(\d+)$/i);
+    if (m) { width = Number(m[1]); height = Number(m[2]); }
+
+    // Even dimensions: h.264 rejects odd ones, and a rejection there is a paid
+    // generation that fails at the provider.
+    const even = n => Math.max(2, Math.round(n / 2) * 2);
+    const parse = v => {
+        const ar = String(v || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/);
+        if (!ar) return null;
+        const r = Number(ar[1]) / Number(ar[2]);
+        return Number.isFinite(r) && r > 0 ? r : null;
+    };
+
+    const shotRatio = parse(override);
+    if (shotRatio) {
+        const shortEdge = Math.min(width, height);
+        return shotRatio < 1
+            ? { width: even(shortEdge), height: even(shortEdge / shotRatio) }
+            : { width: even(shortEdge * shotRatio), height: even(shortEdge) };
+    }
+
+    /*
+     * THE BOARD AND THE FOOTAGE ARE THE SAME SHAPE. The aspect ratio is the
+     * CREATIVE decision and the resolution is the DELIVERY SIZE, so the frame is
+     * the aspect FITTED INSIDE the delivery raster. Fitted rather than
+     * area-preserved, because area-preserving gives 2226x932 for scope — wider
+     * than the delivery frame the operator chose.
+     *
+     * An absent or unparseable aspect reshapes nothing: absent means "use what
+     * is delivered", which is what every project had before a mood board could
+     * set one, and a guess here would silently reframe existing work.
+     */
+    const ratio = parse(proj.aspect_ratio);
+    if (ratio) {
+        const byWidth = { w: width, h: even(width / ratio) };
+        const byHeight = { w: even(height * ratio), h: height };
+        const fitted = byWidth.h <= height ? byWidth : byHeight;
+        width = fitted.w; height = fitted.h;
+    }
+    return { width, height };
+}
+
 function calculateVideoParams(sceneCard, project) {
     const durationMs = sceneCard.duration_ms || 4000;
     const durationS = durationMs / 1000;
@@ -184,19 +252,8 @@ function calculateVideoParams(sceneCard, project) {
      * is delivered", which is what every project had before a mood board could
      * set one, and a guess here would silently reframe existing work.
      */
-    const ar = String(proj.aspect_ratio || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/);
-    if (ar) {
-        const ratio = Number(ar[1]) / Number(ar[2]);
-        if (Number.isFinite(ratio) && ratio > 0) {
-            // Even dimensions: h.264 rejects odd ones, and a rejection here is
-            // a paid generation that fails at the provider.
-            const even = n => Math.max(2, Math.round(n / 2) * 2);
-            const byWidth = { w: width, h: even(width / ratio) };
-            const byHeight = { w: even(height * ratio), h: height };
-            const fitted = byWidth.h <= height ? byWidth : byHeight;
-            width = fitted.w; height = fitted.h;
-        }
-    }
+    const frame = buildVideoFrame(proj, sceneCard.aspect_ratio);
+    width = frame.width; height = frame.height;
 
     return {
         num_frames: DEFAULT_NUM_FRAMES,
@@ -296,6 +353,7 @@ function buildVideoPayload(sceneCard, characters, location, stylePreset, options
 module.exports = {
     buildVideoPrompt,
     calculateVideoParams,
+    buildVideoFrame,
     buildVideoPayload,
     CAMERA_CONTROL_MAP,
     DEFAULT_FPS,

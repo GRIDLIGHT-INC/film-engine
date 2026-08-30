@@ -5146,6 +5146,26 @@ table, .render-table { border-radius:12px; overflow:hidden; }
             <div class="flex-between mb-16">
                 <h2>Storyboard</h2>
                 <div style="display:flex;align-items:center;gap:12px;">
+                    <!--
+                        The protect frame. Drawn OVER the boards rather than
+                        replacing them: the question is what a placement would
+                        keep, and the answer is only readable against the whole
+                        frame it is cut from. A 9:16 crop of a 16:9 board keeps
+                        32% of its width, which is a number nobody believes
+                        until they see it over their own shot.
+                    -->
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"
+                           title="Draw what a vertical or square placement would keep, over every tile">
+                        Protect
+                        <select id="boardProtectRatio" onchange="renderBoardProtect()"
+                                style="width:auto;display:inline-block;min-width:90px;">
+                            <option value="">off</option>
+                            <option value="9:16">9:16</option>
+                            <option value="4:5">4:5</option>
+                            <option value="1:1">1:1</option>
+                            <option value="16:9">16:9</option>
+                        </select>
+                    </label>
                     <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
                         <input type="checkbox" id="useReferencesToggle" style="cursor:pointer;">
                         Use References
@@ -32140,9 +32160,31 @@ ${fountainText.slice(0, 50000)}`;
                                  onerror="this.style.display='none'"
                                  onload="storyboardDrawAnnotations('${f.shot_id}')">
                             <canvas id="annot-${f.shot_id}" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
+                            <!--
+                                The protect frame, over the picture. Two boxes:
+                                what the placement keeps, and (dimmed) what it
+                                throws away. Drawn as an overlay because the
+                                loss is only readable against the whole frame.
+                            -->
+                            <div class="board-protect" data-shot="${f.shot_id}"
+                                 style="position:absolute;inset:0;pointer-events:none;display:none;"></div>
                         </div>
                         <div style="padding:10px;">
                             <strong>Sc${f.scene_number} / ${esc(f.shot_code)}</strong>
+                            <!--
+                                Shoot this one vertical. A crop to 9:16 keeps a
+                                third of the width, so a shot carrying the
+                                product or the CTA is GENERATED at the ratio.
+                                Blank inherits the project's, which is what
+                                every shot does by default.
+                            -->
+                            <select data-field="aspect_ratio" title="Generate this shot at its own ratio"
+                                    onchange="setShotAspect('${f.shot_id}', this.value)"
+                                    style="width:auto;display:inline-block;margin-left:8px;font-size:11px;">
+                                ${['', '9:16', '4:5', '1:1', '16:9'].map(r =>
+                                    `<option value="${r}"${(f.aspect_ratio || '') === r ? ' selected' : ''}>`
+                                    + `${r ? r : 'project ratio'}</option>`).join('')}
+                            </select>
                             <!-- Its own wrapping row at full card width. Sharing a
                                  flex-between line with the shot code gave the buttons
                                  whatever was left over, and the sixth fell off the edge. -->
@@ -33671,6 +33713,59 @@ ${fountainText.slice(0, 50000)}`;
      * every render would re-download an unchanged board on each refresh, which
      * is a lot of bytes spent hiding one bug.
      */
+    /**
+     * Draw what a placement would KEEP over every board tile.
+     *
+     * The number this exists for: a 9:16 centre crop of a 16:9 frame keeps 32%
+     * of its width, 4:5 keeps 45%, 1:1 keeps 56%. Nobody believes those until
+     * they see them over their own shot, which is why it is drawn on the board
+     * rather than stated on a settings page.
+     *
+     * A centre crop is assumed, and that is honest rather than lazy: it is the
+     * worst case and the default any reframing tool starts from. What it cannot
+     * show is a subject that Auto Reframe would follow — but a subject can only
+     * be followed inside pixels that exist, which is the whole argument for
+     * shooting the vertical natively instead.
+     */
+    /** Shoot this shot at its own ratio. '' goes back to inheriting the project's. */
+    async function setShotAspect(shotId, ratio) {
+        try {
+            await api(`/shots/${shotId}`, { method: 'PUT', body: JSON.stringify({ aspect_ratio: ratio }) });
+            setStatus(ratio ? `Shot will be generated at ${ratio}` : 'Shot follows the project ratio');
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function renderBoardProtect() {
+        const ratio = (document.getElementById('boardProtectRatio') || {}).value || '';
+        const boxes = document.querySelectorAll('.board-protect');
+        if (!ratio) { boxes.forEach(b => { b.style.display = 'none'; b.innerHTML = ''; }); return; }
+        const [rw, rh] = ratio.split(':').map(Number);
+        if (!(rw > 0 && rh > 0)) return;
+
+        boxes.forEach(box => {
+            const img = box.parentNode.querySelector('img');
+            if (!img || !img.naturalWidth) { box.style.display = 'none'; return; }
+            const frame = img.naturalWidth / img.naturalHeight;
+            const want = rw / rh;
+            // Percentages of the DISPLAYED frame, so the overlay survives the
+            // tile being any size.
+            let w = 100, h = 100;
+            if (want < frame) w = (want / frame) * 100;  // narrower: side bars
+            else h = (frame / want) * 100;               // taller: top and bottom
+            const keptPct = Math.round(w);
+            box.style.display = 'block';
+            box.innerHTML = `
+                <div style="position:absolute;inset:0;background:rgba(0,0,0,0.55);"></div>
+                <div style="position:absolute;left:${(100 - w) / 2}%;top:${(100 - h) / 2}%;
+                            width:${w}%;height:${h}%;background:transparent;
+                            box-shadow:0 0 0 9999px rgba(0,0,0,0.55);
+                            outline:2px solid var(--gl-brand-pink,#ff4d8d);"></div>
+                <div style="position:absolute;left:6px;bottom:6px;font-size:11px;font-weight:600;
+                            color:#fff;text-shadow:0 1px 2px #000;">
+                    ${esc(ratio)} keeps ${keptPct}% of the width</div>`;
+        });
+    }
+
     function frameSrc(f, width) {
         const base = `${API_BASE}/film/storyboards/${state.currentProject.id}/${encodeURIComponent(f.shot_code)}.png`;
         const q = [];

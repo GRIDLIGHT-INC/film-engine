@@ -134,6 +134,32 @@ function updateShotCard(req, res, shotId) {
 
     db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?').run(JSON.stringify(card), shotId);
 
+    /*
+     * A shot's own aspect ratio is a COLUMN, not a card field.
+     *
+     * It is a production decision about how this shot is SHOT — a vertical hero
+     * or product shot is generated at 9:16 because a crop to it keeps 32% of the
+     * width — rather than something the writing says, so it is not part of the
+     * card's validated vocabulary and does not mark the card stale on its own.
+     *
+     * '' clears it back to inheriting the project's, which is what every shot
+     * does by default; the two states are genuinely different and must not be
+     * spelled the same way.
+     */
+    if (body.aspect_ratio !== undefined) {
+        const want = String(body.aspect_ratio || '').trim();
+        const { ASPECT_RATIO_IDS } = require('../lib/project-presets');
+        if (want && !ASPECT_RATIO_IDS.includes(want)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+                error: `Invalid aspect_ratio "${want}"`,
+                valid: ASPECT_RATIO_IDS,
+            }));
+        }
+        db.prepare('UPDATE film_shots SET aspect_ratio = ? WHERE id = ?').run(want, shotId);
+        changed.push('aspect_ratio');
+    }
+
     // Editing a card by hand is how a director answers a screenplay revision,
     // so this is where the drift warning clears. A warning that cannot be
     // cleared by doing the work it asks for is noise within a day.

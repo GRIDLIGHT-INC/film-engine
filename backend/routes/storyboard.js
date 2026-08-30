@@ -362,7 +362,7 @@ async function callImageGenStream(prompt, negativePrompt, seed, options, onProgr
 function loadProjectShots(projectId) {
     return db.prepare(`
         SELECT s.id AS shot_id, s.shot_code, s.scene_card_yaml, s.duration_ms, s.status,
-               s.scene_id, sc.scene_number, sc.int_ext, sc.location, sc.time_of_day,
+               s.scene_id, s.aspect_ratio, sc.scene_number, sc.int_ext, sc.location, sc.time_of_day,
                sc.description AS scene_description, sc.characters_present
         FROM film_shots s
         JOIN film_scenes sc ON s.scene_id = sc.id
@@ -840,6 +840,10 @@ function getStoryboard(req, res, projectId, query) {
             shot_code: shot.shot_code,
             scene_number: shot.scene_number,
             scene_id: shot.scene_id,
+            // Empty means "the project's", which is what every existing shot
+            // does. Served so the board's own picker shows the truth rather
+            // than a default that disagrees with what will be generated.
+            aspect_ratio: shot.aspect_ratio || '',
             description: sceneCard.action || sceneCard.description || shot.scene_description || '',
             duration_ms: duration,
             image_url: hasImage ? storyboardImageUrl(projectId, shot.shot_code) : null,

@@ -193,7 +193,19 @@ function panelSource(html) {
     assert.ok(start > 0, 'storyboard grid renderer not found');
     const tags = html.indexOf('function storyboardFacetTags(');
     assert.ok(tags > 0, 'the frame card renders no facets at all');
-    return html.slice(start, start + 4000) + html.slice(tags, tags + 3000);
+
+    /*
+     * Bounded by the TEMPLATE, not by a character count. A fixed 4000-character
+     * window stopped containing `description` and `dialogue` the moment a
+     * protect overlay and a per-shot ratio picker were added to the tile — and
+     * it read here as the panel having lost the two fields a storyboard exists
+     * to carry, which is the opposite of what happened.
+     *
+     * The card template ends where the map that builds it is joined.
+     */
+    const end = html.indexOf(".join('');", start);
+    assert.ok(end > start, 'the frame card template does not end where it is joined');
+    return html.slice(start, end) + html.slice(tags, tags + 3000);
 }
 
 test('the storyboard panel shows what a storyboard panel is for', () => {

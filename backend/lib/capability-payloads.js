@@ -394,7 +394,19 @@ const CAPABILITY_BUILDERS = {
             guidance_scale: overrides.guidance_scale,
             ip_adapter_image: overrides.ip_adapter_image,
             ip_adapter_weight: overrides.ip_adapter_weight,
-            aspect_ratio: ctx.project.aspect_ratio,
+            /*
+             * A SHOT's own ratio outranks the project's.
+             *
+             * A spot is not shot entirely vertical: it has a handful of shots
+             * that carry the product and the CTA, and those are generated at
+             * 9:16 because a crop to it keeps 32% of the width. Empty inherits
+             * the project's, which is what every existing shot does.
+             *
+             * The board and the footage must agree about this or the keyframe a
+             * clip is generated FROM is a different shape than the clip — so
+             * the same field feeds both, and `spec-consumption` holds them to it.
+             */
+            aspect_ratio: (ctx.sceneCard && ctx.sceneCard.aspect_ratio) || ctx.project.aspect_ratio,
             // The delivery size the director set, and the ceiling of whoever is
             // generating. A board sized from a constant made a 4K project and a
             // 720p project board identically.
@@ -821,6 +833,21 @@ function loadShotContext(shotId, opts) {
 
     let sceneCard = {};
     try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) { sceneCard = {}; }
+
+    /*
+     * A SHOT's own ratio, from its column rather than its card.
+     *
+     * It is a column because it is a production decision about how this shot is
+     * SHOT — a vertical hero or product shot is generated at 9:16 because a
+     * crop to it keeps 32% of the width — rather than something the writing
+     * says. Carried onto the card so the image builder and the video builder
+     * read it from the same place: two answers to "what shape is this shot"
+     * gives a keyframe of one shape and a clip of another, which is the exact
+     * defect the board/footage reconciliation was written to end.
+     *
+     * Empty inherits the project's, which is what every existing shot does.
+     */
+    if (shot.aspect_ratio) sceneCard.aspect_ratio = shot.aspect_ratio;
 
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
     const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(scene.project_id);
