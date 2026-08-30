@@ -16,7 +16,7 @@
 const { db, generateId } = require('../db/database');
 const { imageOverride } = require('../lib/generation-override');
 // The strip: what a shot's stations are, and what a model documents room for.
-const { expandShots } = require('../lib/inbetweens');
+const { expandShots, MAX_STATIONS_PER_SHOT, DEFAULT_CADENCE_S } = require('../lib/inbetweens');
 const { contractFor, selectReferences } = require('../lib/video-reference');
 const { loadShotMotion } = require('../lib/shot-motion');
 const { runStrip, stripFingerprint, approvalState } = require('../lib/inbetween-run');
@@ -205,15 +205,45 @@ function updateSequence(req, res, id) {
  * buildSegment, the segment loop and the stitch unchanged.
  */
 
-/** The station cap this project's model documents room for. Never a literal. */
-function stationCeiling(projectId, req) {
+/**
+ * How many stations a strip may have — which depends on the SHAPE, because the
+ * two shapes use a station for two different things.
+ *
+ * LEGS: N stations become N-1 segments, and each segment sends exactly TWO
+ * keyframes, first and last. A station is never a reference here, so the
+ * reference contract has no authority over it and the cap is the strip cap the
+ * module declares. Reading `contract.maxImages` here capped every strip on
+ * every keyframe-only model to a SINGLE station — a strip with nothing in it —
+ * and gen4.5 is the default, so the feature did nothing at all on the real
+ * project. Found by planning a real Wingfall sequence rather than a synthetic
+ * contract.
+ *
+ * BUNDLE: the strip travels as `inbetween` REFERENCES on one longer
+ * generation, so there the reference contract is exactly the right limit.
+ *
+ * What the model can take is still reported either way, because a legs strip on
+ * an adapter that accepts one keyframe degrades to a still per shot, and
+ * `planSequence` says so rather than pretending otherwise.
+ */
+function stationCeiling(projectId, req, shape) {
     const ceiling = keyframeCeiling(projectId, req);
     let model = null;
     if (ceiling.provider === 'runway') {
         model = process.env.RUNWAY_VIDEO_MODEL || 'gen4.5';
     }
     const contract = contractFor(model);
-    return { max: contract.maxImages, model, contract, why: contract.why };
+    const bundle = shape === 'bundle';
+    return {
+        max: bundle ? contract.maxImages : MAX_STATIONS_PER_SHOT,
+        shape: bundle ? 'bundle' : 'legs',
+        model,
+        contract,
+        keyframes: ceiling.max,
+        why: bundle
+            ? contract.why
+            : `a legs strip sends two keyframes per segment, so it is bounded by the strip cap `
+              + `(${MAX_STATIONS_PER_SHOT}) rather than by ${model || 'the model'}'s reference contract`,
+    };
 }
 
 /** Every station of this sequence that has already been generated. */
@@ -251,7 +281,7 @@ function stationAssets(projectId, sequenceId) {
 function stripFor(row, opts) {
     const o = opts || {};
     const shots = shotsOf(row);
-    const ceiling = stationCeiling(row.project_id, o.req);
+    const ceiling = stationCeiling(row.project_id, o.req, o.shape);
     const expanded = expandShots(shots, shot => {
         try { return loadShotMotion(shot.id); } catch (_) { return null; }
     }, { cadenceSeconds: o.cadenceSeconds, maxStations: ceiling.max });
@@ -384,11 +414,16 @@ function listStations(res, id, query) {
     const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
     if (!row) return json(res, 404, { error: 'Sequence not found' });
     const q = query || {};
-    const strip = stripFor(row, { cadenceSeconds: Number(q.cadence_s) || undefined });
+    // The shape decides the cap, so a station list read one way is not the
+    // same list read the other. Defaulting to legs matches the plan.
+    const shape = String(q.shape || 'legs') === 'bundle' ? 'bundle' : 'legs';
+    const strip = stripFor(row, { cadenceSeconds: Number(q.cadence_s) || undefined, shape });
     const stations = stationList(strip.expanded);
     return json(res, 200, {
         sequence_id: id,
-        cadence_s: (strip.expanded.strips[0] || {}).cadence_s || null,
+        shape,
+        cadence_s: (strip.expanded.strips.find(st => st.cadence_s) || {}).cadence_s
+            || Number(q.cadence_s) || DEFAULT_CADENCE_S,
         station_cap: strip.ceiling.max,
         strips: strip.expanded.strips.map(st => ({
             shot_id: st.shot_id, shot_code: st.shot_code,
@@ -502,7 +537,7 @@ function planRoute(res, id, query) {
     const model = runway ? (process.env.RUNWAY_VIDEO_MODEL || 'gen4.5') : null;
     let strip = null;
     if (wantsStrip) {
-        strip = stripFor(row, { cadenceSeconds: Number(q.cadence_s) || undefined });
+        strip = stripFor(row, { cadenceSeconds: Number(q.cadence_s) || undefined, shape });
     }
     const planInput = strip ? strip.expanded.stations : shotsOf(row);
     const plan = planSequence(planInput, {
@@ -540,6 +575,14 @@ function planRoute(res, id, query) {
         native_multi_shot: native,
         ...(strip ? {
             shape,
+            /*
+             * The cadence the plan actually used, stated once at the top. A
+             * shot whose move will not read contributes one station and carries
+             * no cadence of its own, so reading it off the first strip returned
+             * undefined — a plan that cannot say what it planned.
+             */
+            cadence_s: (strip.expanded.strips.find(st => st.cadence_s) || {}).cadence_s
+                || Number(q.cadence_s) || DEFAULT_CADENCE_S,
             /*
              * The counts travel; the station IMAGES do not. A plan is read in a
              * browser, and thirty base64 stills is megabytes spent showing

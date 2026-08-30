@@ -108,7 +108,7 @@ test('W1 · the station cap comes from the contract, never a literal', () => {
         `every contract planned the same number of images (${counts}) — the cap is not being read`);
 });
 
-test('W1 · the cap the ROUTE serves is the contract\'s, not a literal', async () => {
+test('W1 · the bundle cap the ROUTE serves is the contract\'s, not a literal', async () => {
     /*
      * The test above proves expandShots honours a cap it is HANDED. It says
      * nothing about where the route gets that number, and that is the half a
@@ -137,10 +137,19 @@ test('W1 · the cap the ROUTE serves is the contract\'s, not a literal', async (
     db.prepare(`INSERT INTO film_sequences (id, project_id, name, shot_ids, description)
                 VALUES (?, ?, 'cap', ?, 'a long push')`).run(seqId, projectId, JSON.stringify([shotId]));
 
+    /*
+     * Read in the BUNDLE shape, which is the one the reference contract really
+     * governs: there the strip travels as `inbetween` references on a single
+     * generation. In the legs shape a station is a segment endpoint rather than
+     * a reference, so the contract has no authority over the count — asserting
+     * it there is what made every strip on a keyframe-only model a single
+     * station, which is a strip with nothing in it.
+     */
     const planCap = () => new Promise(resolve => {
         const res = { writeHead(st) { this._s = st; }, end(p) { resolve(p ? JSON.parse(p) : null); } };
         Promise.resolve(handleSequences({ method: 'GET' }, res,
-            ['film', 'sequences', seqId, 'plan'], { expand: 'inbetweens', cadence_s: '1' }));
+            ['film', 'sequences', seqId, 'plan'],
+            { expand: 'inbetweens', cadence_s: '1', shape: 'bundle' }));
     });
 
     const before = process.env.RUNWAY_VIDEO_MODEL;
@@ -247,4 +256,89 @@ test('W1 · the strip is reachable from the page, not only from an agent', () =>
     assert.ok(naAt > stopAt,
         'a stopped strip does not say what it never attempted — reported as success, '
         + 'which is how a sequence gets joined through moments nobody has seen');
+});
+
+test('W1 · the legs shape is not capped by the REFERENCE contract', async () => {
+    /*
+     * Found by running the plan against the real Wingfall sequence rather than
+     * against a synthetic contract: every shot came back with ONE station and
+     * ZERO to generate, so the whole feature did nothing on the default model.
+     *
+     * The cause is a category error in the cap. `contract.maxImages` is how
+     * many REFERENCE images a model accepts alongside a generation — gen4.5
+     * takes exactly one, its keyframe. In the LEGS shape a station is not a
+     * reference: N stations become N-1 segments and each segment sends two
+     * keyframes, first and last. So the reference contract has no authority
+     * over how many stations a strip may have, and applying it capped every
+     * strip on every keyframe-only model to a single station — which is a strip
+     * with nothing in it.
+     *
+     * It binds for BUNDLE, where the strip really does travel as references.
+     *
+     * The set-based tests above could not catch this: they iterate CONTRACTS
+     * and pass a cap in, so they check that a cap is honoured rather than that
+     * the right cap is chosen.
+     */
+    const { db, generateId } = require('../db/database');
+    require('../db/schema').ensureSchema();
+    const { handleSequences } = require('../routes/sequences');
+
+    const projectId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title, provider_config) VALUES (?, ?, ?)')
+        .run(projectId, 'Legs cap', JSON.stringify({ video: 'runway' }));
+    const sceneId = generateId();
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, 1)').run(sceneId, projectId);
+    /*
+     * The FIRST shot is static on purpose: it contributes one station and no
+     * cadence of its own, which is the real shape on Wingfall's scene 1 and the
+     * case that breaks reading the cadence off `strips[0]`. With a moving shot
+     * first, that bug is invisible.
+     */
+    const shots = [];
+    for (const [code, movement] of [['1A', 'static'], ['1B', 'push-in'], ['1C', 'push-in']]) {
+        const id = generateId();
+        db.prepare(`INSERT INTO film_shots (id, scene_id, shot_code, duration_ms, scene_card_yaml)
+                    VALUES (?, ?, ?, 6000, ?)`)
+            .run(id, sceneId, code, JSON.stringify({ shot_code: code, camera: { movement, lens: '40mm' } }));
+        shots.push(id);
+    }
+    const seqId = generateId();
+    db.prepare(`INSERT INTO film_sequences (id, project_id, name, shot_ids, description)
+                VALUES (?, ?, 'legs', ?, 'a push across the street')`)
+        .run(seqId, projectId, JSON.stringify(shots));
+
+    const plan = (shape) => new Promise(resolve => {
+        const res = { writeHead(st) { this._s = st; }, end(p) { resolve(p ? JSON.parse(p) : null); } };
+        Promise.resolve(handleSequences({ method: 'GET' }, res, ['film', 'sequences', seqId, 'plan'],
+            { expand: 'inbetweens', cadence_s: '1', ...(shape ? { shape } : {}) }));
+    });
+
+    const before = process.env.RUNWAY_VIDEO_MODEL;
+    process.env.RUNWAY_VIDEO_MODEL = 'gen4.5';   // keyframe-only: maxImages 1
+    let legs, bundle;
+    try { legs = await plan('legs'); bundle = await plan('bundle'); }
+    finally {
+        if (before === undefined) delete process.env.RUNWAY_VIDEO_MODEL;
+        else process.env.RUNWAY_VIDEO_MODEL = before;
+    }
+
+    const { MAX_STATIONS_PER_SHOT } = require('../lib/inbetweens');
+    assert.ok(legs.station_cap > 1,
+        `a legs strip on a keyframe-only model was capped at ${legs.station_cap} station(s) — `
+        + 'the reference contract is being read as a station cap, so the strip is empty');
+    assert.equal(legs.station_cap, MAX_STATIONS_PER_SHOT,
+        'the legs cap is not the strip cap the module declares');
+    assert.ok(legs.images_needed > 0,
+        'a six-second push-in planned zero in-between images — the feature does nothing on this model');
+
+    // And the bundle shape still IS bound by the reference contract, because
+    // there the stations genuinely travel as references on one generation.
+    assert.equal(bundle.station_cap, contractFor('gen4.5').maxImages,
+        'the bundle shape ignores the reference contract it is actually limited by');
+
+    // The plan has to say what it planned, or two reads of the same sequence are
+    // indistinguishable: the shape decides the cap, and the cap decides the strip.
+    assert.equal(legs.cadence_s, 1, 'the plan does not report the cadence it used');
+    assert.equal(legs.shape, 'legs', 'the plan does not report which shape it planned');
+    assert.equal(bundle.shape, 'bundle', 'a bundle plan reports itself as something else');
 });

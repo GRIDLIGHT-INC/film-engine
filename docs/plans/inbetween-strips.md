@@ -1,7 +1,25 @@
 # In-Between Strips: a shot as a strip of stations, not a still
 
 Date: 2026-08-29
-Status: W0 built and passing. W1–W5 not started.
+Status: W0–W5 built and passing (`5b6c278`, `26f2b81`).
+
+The free half of **Done when** is proven on the real Wingfall scene-1 sequence:
+planned with `expand=inbetweens` for nothing, 1A expands to 4 stations / 3 to
+generate at a 1s cadence, and the other three shots report *no move that reads
+at this framing* rather than padding the strip. It then refuses to plan segments
+and NAMES the missing stations (`1A.1, 1A.2, 1A.3`), which is the rule W1 asks
+for. The paid half — generate the strip, correct a station, approve, send to
+video — has not been run, because it spends.
+
+Running it is what found the one real defect: **the station cap was the
+REFERENCE contract**, and `gen4.5` (the default) takes exactly one reference
+image, so every strip on it was capped to a single station and the feature did
+nothing at all on the real project. In the `legs` shape a station is a segment
+endpoint, not a reference — each segment sends two keyframes — so the cap is the
+strip cap. It binds only for `bundle`, where the strip really does travel as
+references. The set-based tests could not catch it: they pass a cap in and check
+it is honoured, which is a different question from whether the right cap was
+chosen.
 Related: `docs/plans/consistency-system.md`, `lib/video-sequence.js`, `lib/shot-motion.js`
 
 ---
