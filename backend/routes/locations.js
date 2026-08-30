@@ -152,8 +152,30 @@ function compassPlan(res, locationId) {
             catch (_) { return ''; }
         }),
     });
+    /*
+     * The prompt each side would be given, through the SAME buildPlatePrompt
+     * the sweep uses.
+     *
+     * A sweep sends a DIFFERENT prompt per side — that is the whole point, each
+     * being a quarter turn from the plate that exists — so showing one and
+     * implying the rest would understate what is bought. Built here rather than
+     * described, because a preview assembled separately is a fiction.
+     */
+    const { buildPlatePrompt } = require('../lib/reference-plates');
+    const full = db.prepare('SELECT * FROM film_locations WHERE id = ?').get(locationId);
+    const project = db.prepare('SELECT style_preset FROM film_projects WHERE id = ?').get(location.project_id);
+    const withPrompts = (plan.generate || []).map(v => {
+        let prompt = '';
+        try {
+            prompt = buildPlatePrompt('location', full, (project || {}).style_preset, v.name, true);
+        } catch (_) { prompt = ''; }
+        return { ...v, prompt };
+    });
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ location_id: locationId, location: location.name, ...plan }));
+    res.end(JSON.stringify({
+        location_id: locationId, location: location.name, ...plan, generate: withPrompts,
+    }));
 }
 
 async function sweepCompassViews(req, res, locationId) {

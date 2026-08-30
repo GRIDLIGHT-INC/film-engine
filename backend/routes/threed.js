@@ -128,6 +128,37 @@ function handleThreeD(req, res, urlParts, query) {
 
         const sub = urlParts[4];
         const stream = urlParts[5] === 'stream';
+        /*
+         * FREE: what the mesh would be built from, before it is bought.
+         *
+         * Through the SAME build3DPayload the generation uses. A mesh takes
+         * minutes and costs credits, and it is built from a description most
+         * directors have never read back — the prompt here is usually the first
+         * time anyone sees what the subject's own words amount to.
+         */
+        if (req.method === 'GET' && sub === 'preview') {
+            const loaded = loadSubject(kind, subjectId);
+            if (!loaded) return json(res, 404, { error: `${kind} not found` });
+            const { row, projectId } = loaded;
+            const subject = { ...normalizeSubject(row, kind), id: subjectId };
+            const payload = build3DPayload(subject, {});
+            const providers = require('../lib/providers');
+            const { providerConfigOf } = require('../lib/provider-config');
+            const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
+            return json(res, 200, {
+                subject_id: subjectId, kind,
+                provider: providers.resolveId('model3d', providerConfigOf(project || {})),
+                model: payload.model || null,
+                prompt: payload.prompt || '',
+                negative_prompt: payload.negative_prompt || '',
+                payload,
+                notes: String(subject.description || '').trim() ? [] : [
+                    `${subject.name || 'This subject'} has no description, so the mesh is built from `
+                    + 'its name alone.',
+                ],
+                free: true,
+            });
+        }
         if (req.method === 'POST' && sub === 'generate') return generateModel(req, res, kind, subjectId, stream);
         if (req.method === 'POST' && sub === 'from-image') return generateFromImage(req, res, kind, subjectId, stream);
         return json(res, 405, { error: 'Method not allowed' });

@@ -24087,6 +24087,15 @@ ${fountainText.slice(0, 50000)}`;
             + `${count} image${count === 1 ? '' : 's'} will be generated — this costs credits.\n\n`
             + 'Each side is a quarter turn from the plate you already have. North is that existing '
             + 'plate and is never regenerated.'
+            /*
+             * EVERY side's prompt. A sweep sends a different one per side —
+             * that is what makes them different sides — so showing the first
+             * and implying the rest would understate what is being bought.
+             */
+            + ((plan && plan.generate || []).some(v => v.prompt)
+                ? '\n\n' + plan.generate.map(v =>
+                    `${v.name}:\n${String(v.prompt || '').slice(0, 320)}`).join('\n\n')
+                : '')
             + (held.length
                 ? `\n\nAlready photographed, so not bought again: ${held.join(', ')}. `
                   + 'Delete a side with the × on it to have this re-shoot it.'
@@ -26750,16 +26759,28 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     async function generateCharacterImage(charId) {
-        if (!confirm('Generate reference image for this character? This calls the image generation service.')) return;
-        setStatus('Generating character reference image...', true);
-        try {
-            const result = await api('/characters/' + charId + '/refsheet/generate', {
-                method: 'POST',
-                body: JSON.stringify({ views: ['front'] })
-            });
-            setStatus('Character image generated');
-            loadCharacters();
-        } catch (err) { setStatus('Error generating image: ' + err.message); }
+        /*
+         * The prompt this plate is generated from, before it is bought. A plate
+         * conditions EVERY frame its subject appears in, so it is the single
+         * worst request to send unread — and it is editable, because the
+         * commonest fix is a word in the appearance rather than a re-roll.
+         */
+        return confirmPaidImage({
+            capability: 'image',
+            title: 'Generate character plate',
+            note: 'This picture becomes the reference for every frame this character appears in.',
+            previewUrl: `/characters/${charId}/refsheet/preview?views=front`,
+            send: async choices => {
+                setStatus('Generating character reference image...', true);
+                try {
+                    await api('/characters/' + charId + '/refsheet/generate', {
+                        method: 'POST', body: JSON.stringify({ views: ['front'], ...choices }),
+                    });
+                    setStatus('Character image generated');
+                    loadCharacters();
+                } catch (err) { setStatus('Error generating image: ' + err.message); }
+            },
+        });
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -26876,14 +26897,23 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     async function generateLocationImage(locId) {
-        if (!confirm('Generate reference image for this location?')) return;
-        setStatus('Generating location reference image...', true);
-        try {
-            const result = await api('/locations/' + locId + '/plate/generate', { method: 'POST' });  // plate/generate, not image/generate: the latter is a second,
-            // older generator that never inherited the plate fixes.
-            setStatus('Location image generated');
-            loadLocations();
-        } catch (err) { setStatus('Error generating image: ' + err.message); }
+        return confirmPaidImage({
+            capability: 'image',
+            title: 'Generate location plate',
+            note: 'Every shot in a scene is re-photographed against this place.',
+            previewUrl: `/locations/${locId}/plate/plate-preview`,
+            send: async choices => {
+                setStatus('Generating location reference image...', true);
+                try {
+                    // plate/generate, not image/generate: the latter is a
+                    // second, older generator that never inherited the fixes.
+                    await api('/locations/' + locId + '/plate/generate',
+                        { method: 'POST', body: JSON.stringify(choices) });
+                    setStatus('Location image generated');
+                    loadLocations();
+                } catch (err) { setStatus('Error generating image: ' + err.message); }
+            },
+        });
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -27006,13 +27036,21 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     async function generatePropImage(propId) {
-        if (!confirm('Generate reference image for this prop?')) return;
-        setStatus('Generating prop reference image...', true);
-        try {
-            const result = await api('/props/' + propId + '/plate/generate', { method: 'POST' });
-            setStatus('Prop image generated');
-            loadProps();
-        } catch (err) { setStatus('Error generating image: ' + err.message); }
+        return confirmPaidImage({
+            capability: 'image',
+            title: 'Generate prop plate',
+            note: 'This picture is what the prop looks like in every frame it appears in.',
+            previewUrl: `/props/${propId}/plate/plate-preview`,
+            send: async choices => {
+                setStatus('Generating prop reference image...', true);
+                try {
+                    await api('/props/' + propId + '/plate/generate',
+                        { method: 'POST', body: JSON.stringify(choices) });
+                    setStatus('Prop image generated');
+                    loadProps();
+                } catch (err) { setStatus('Error generating image: ' + err.message); }
+            },
+        });
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -31411,23 +31449,20 @@ ${fountainText.slice(0, 50000)}`;
 
     async function generateModelFor(kind, id, btn) {
         /*
-         * A paid action states its cost before it spends. Six of these were
-         * silent, which is why a director generated elsewhere rather than
-         * risk credits on something they could not see.
+         * The description this mesh is built from, before it is bought. A mesh
+         * takes minutes and costs credits, and it is built from words most
+         * directors have never read back — the preview is usually the first
+         * time anyone sees what a subject's own description amounts to.
          */
-        if (!confirm('Generate a 3D model for this subject?\n\nThis costs credits. A mesh takes a few minutes '
-            + 'and is generated from the subject\u2019s description and plate.')) return;
-        const path = '/' + (kind === 'prop' ? 'props' : 'characters') + '/' + id + '/model/generate';
-        if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
-        setStatus('Generating 3D model...', true);
-        try {
-            const res = await api(path, { method: 'POST', body: JSON.stringify({}) });
-            setStatus(res.status === 'generating' ? '3D job queued' : '3D model generated');
-            loadThreeD();
-        } catch (err) {
-            setStatus('Error: ' + err.message);
-            if (btn) { btn.disabled = false; btn.textContent = 'Generate 3D'; }
-        }
+        return confirmPaidImage({
+            capability: 'model3d',
+            title: 'Generate a 3D model',
+            note: 'A mesh takes a few minutes. It is built from the subject\u2019s description.',
+            previewUrl: `/${kind}s/${id}/model/preview`,
+            send: async choices => _shotAction(id, btn, 'Generate',
+                `/${kind}s/${id}/model/generate`, 'Modelling',
+                () => { if (typeof loadThreeD === 'function') loadThreeD(); }, choices),
+        });
     }
 
     async function rigModel(assetId, btn) {
@@ -31522,9 +31557,33 @@ ${fountainText.slice(0, 50000)}`;
          * silent, which is why a director generated elsewhere rather than
          * risk credits on something they could not see.
          */
-        if (!confirm(`Generate a 3D model for EVERY character and prop?\n\n`
-            + 'One paid generation per subject. Generate a single one first to see whether the '
-            + 'meshes are usable for your previs before buying them all.')) return;
+        if (!state.currentProject) return;
+        /*
+         * A batch sends a DIFFERENT prompt per subject, so no single prompt is
+         * the truth about what is bought. One is shown as a REPRESENTATIVE and
+         * labelled as one — showing it unlabelled would imply the batch sends
+         * that text, and showing none leaves the largest spend in the app
+         * approved on a count alone.
+         */
+        return (async () => {
+            let sample = null;
+            const subject = (state.characters || [])[0] || (state.props || [])[0] || null;
+            const kind = (state.characters || []).length ? 'character' : 'prop';
+            if (subject) {
+                try { sample = await api(`/${kind}s/${subject.id}/model/preview`); } catch (_) { sample = null; }
+            }
+            if (!confirm(`Generate a 3D model for EVERY character and prop?\n\n`
+                + 'One paid generation per subject. Generate a single one first to see whether the '
+                + 'meshes are usable for your previs before buying them all.'
+                + (sample && sample.prompt
+                    ? `\n\nEach subject sends its own prompt. ${subject.name || 'The first'} would send:\n\n`
+                      + String(sample.prompt).slice(0, 400)
+                    : ''))) return;
+            return generateAllModelsRun();
+        })();
+    }
+
+    function generateAllModelsRun() {
         if (!state.currentProject) return;
         const prog = document.getElementById('threedProgress');
         const bar = document.getElementById('threedProgressBar');
@@ -32017,9 +32076,24 @@ ${fountainText.slice(0, 50000)}`;
             if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
             return alert('This sequence cannot run yet.\n\n' + plan.reason);
         }
+        /*
+         * Every segment's prompt, in the confirmation itself.
+         *
+         * "Press Preview & cost first" is an instruction people skip, and the
+         * prompts are what is being approved. A sequence sends one PER SEGMENT,
+         * each naming the shot it travels from and to, so showing the first and
+         * implying the rest would understate what is bought.
+         */
+        const segs = plan.segments || [];
+        const prompts = segs.map((seg, i) =>
+            `${i + 1}. ${seg.from || '?'} \u2192 ${seg.to || '?'}`
+            + `${seg.duration_s ? ' (' + seg.duration_s + 's)' : ''}\n`
+            + `${String(seg.prompt || '(no prompt)').slice(0, 400)}`).join('\n\n');
+
         if (!confirm(`Generate ${plan.generations} clip${plan.generations === 1 ? '' : 's'}?\n\n`
-            + 'This costs credits. Press "Preview & cost" first to read exactly what will be sent.'
-            + (plan.degraded ? `\n\n${plan.degraded_reason}` : ''))) {
+            + (prompts ? `${prompts}\n\n` : '')
+            + (plan.degraded ? `${plan.degraded_reason}\n\n` : '')
+            + 'This costs credits.')) {
             if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
             return;
         }
@@ -32147,11 +32221,14 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     // Generic per-entity action (backends already exist). `reload` refreshes the page.
-    async function _shotAction(shotId, btn, label, path, running, reload) {
+    async function _shotAction(shotId, btn, label, path, running, reload, body) {
         if (btn) { btn.disabled = true; btn.textContent = running; }
         setStatus(running + '…');
         try {
-            await api(path, { method: 'POST', body: JSON.stringify({}) });
+            // The director's choices from the confirmation — an edited prompt,
+            // a quality tier — travel with the request. Empty when there were
+            // none, which is what every caller sent before.
+            await api(path, { method: 'POST', body: JSON.stringify(body || {}) });
             setStatus(label + ' complete');
             (reload || loadVideoShots)();
         } catch (err) {
@@ -32297,9 +32374,19 @@ ${fountainText.slice(0, 50000)}`;
      * unambiguously inside.
      */
     function generateScoreFor(sceneId, btn) {
-        if (!confirm('Generate a music cue for this scene?\n\nThis costs credits. It is generated '
-            + 'from the scene\u2019s mood, location and time of day.')) return;
-        _shotAction(sceneId, btn, 'Generate', '/scenes/' + sceneId + '/music/generate', 'Scoring', loadMusic);
+        /*
+         * The brief is FREE and builds the prompt the generator receives —
+         * the same walk, so the words shown are the words sent rather than a
+         * description of them.
+         */
+        return confirmPaidImage({
+            capability: 'music',
+            title: 'Score this scene',
+            note: 'Written to the measured length of the cut, not a default.',
+            previewUrl: `/scenes/${sceneId}/music/brief`,
+            send: async choices => _shotAction(sceneId, btn, 'Generate',
+                '/scenes/' + sceneId + '/music/generate', 'Scoring', loadMusic, choices),
+        });
     }
     /**
      * Store the scene's ambient direction.
@@ -32389,18 +32476,23 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     function generateAmbientFor(sceneId, btn) {
-        const said = ((window.__ambientCues || {})[sceneId] || {}).description
-            || (document.getElementById('amb_' + sceneId) || {}).value || '';
-        // Say what it is being told, because an empty direction means the bed
-        // is assembled from the location name and the hour and nothing else —
-        // which is what it always was, and worth knowing before paying for it.
-        if (!confirm('Generate an ambient bed for this scene?\n\nThis costs credits. It is a short '
-            + 'loop that is tiled across the scene rather than a full-length render.\n\n'
-            + (said.trim()
-                ? 'Direction: ' + said.trim()
-                : 'No ambient direction written — the bed will come from the location, its sound '
-                  + 'notes and the time of day.'))) return;
-        _shotAction(sceneId, btn, 'Generate', '/scenes/' + sceneId + '/ambient/generate', 'Generating ambient', loadMusic);
+        /*
+         * The ambient brief builds the same payload the generator receives,
+         * including the scene's own direction and the location's sound notes —
+         * two fields that were stored for years and reached nothing.
+         *
+         * An empty direction means the bed is assembled from the location name
+         * and the hour and nothing else, which is worth seeing before paying
+         * for it rather than after.
+         */
+        return confirmPaidImage({
+            capability: 'ambient',
+            title: 'Generate an ambient bed',
+            note: 'A short loop tiled across the scene, not a full-length render.',
+            previewUrl: `/scenes/${sceneId}/ambient/brief`,
+            send: async choices => _shotAction(sceneId, btn, 'Generate',
+                '/scenes/' + sceneId + '/ambient/generate', 'Ambient', loadMusic, choices),
+        });
     }
 
     function generateAllMusic() {
@@ -32436,9 +32528,32 @@ ${fountainText.slice(0, 50000)}`;
          * silent, which is why a director generated elsewhere rather than
          * risk credits on something they could not see.
          */
-        if (!confirm(`Generate video for EVERY shot that has a keyframe?\n\n`
-            + 'This is one paid generation per shot and is the largest single spend in the app. '
-            + 'Generate one shot first to check the look before buying the whole board.')) return;
+        if (!state.currentProject) return;
+        /*
+         * A batch sends a DIFFERENT prompt per shot, so no single one is the
+         * truth about what is bought. One is shown as a REPRESENTATIVE and
+         * labelled as one: unlabelled it would imply the batch sends that text,
+         * and with none the largest spend in the app is approved on a count.
+         */
+        return (async () => {
+            let sample = null;
+            const first = (state.shots || []).find(sh => sh.has_keyframe || sh.image_url)
+                || (state.shots || [])[0];
+            if (first) {
+                try { sample = await api(`/shots/${first.id}/video/preview`); } catch (_) { sample = null; }
+            }
+            if (!confirm(`Generate video for EVERY shot that has a keyframe?\n\n`
+                + 'This is one paid generation per shot and is the largest single spend in the app. '
+                + 'Generate one shot first to check the look before buying the whole board.'
+                + (sample && sample.prompt
+                    ? `\n\nEach shot sends its own prompt. ${first.shot_code || 'The first'} would send:\n\n`
+                      + String(sample.prompt).slice(0, 400)
+                    : ''))) return;
+            return generateAllVideosRun();
+        })();
+    }
+
+    function generateAllVideosRun() {
         if (!state.currentProject) return;
         const prog = document.getElementById('videoshotsProgress');
         const bar = document.getElementById('videoshotsProgressBar');

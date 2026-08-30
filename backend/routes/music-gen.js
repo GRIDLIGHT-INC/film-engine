@@ -96,6 +96,10 @@ function handleMusicGen(req, res, urlParts, query) {
         if (urlParts[4] === 'generate' && req.method === 'POST') {
             return generateAmbient(req, res, sceneId);
         }
+        // FREE: the bed this scene would be given, before it is bought.
+        if (urlParts[4] === 'brief' && req.method === 'GET') {
+            return ambientBrief(res, sceneId);
+        }
         return json(res, 405, { error: 'Method not allowed' });
     }
 
@@ -631,6 +635,57 @@ function ambientOptions(scene, body) {
         bed_ms: (length.seconds || 0) * 1000,
         bed_source: length.source,
     };
+}
+
+/**
+ * What the ambient bed would be asked for, spending nothing.
+ *
+ * Built through the SAME `buildAmbientPrompt` the generation uses — a brief
+ * assembled separately would be a description of the request rather than the
+ * request, which is the refine-preview defect this codebase has paid for once.
+ *
+ * It also makes visible the two fields that were stored for years and reached
+ * nothing: the scene's own ambient direction, and the location's sound notes.
+ * An empty direction means the bed is assembled from the location name and the
+ * hour and nothing else, which is worth seeing before paying for it.
+ */
+function ambientBrief(res, sceneId) {
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
+    if (!scene) return json(res, 404, { error: 'Scene not found' });
+    const location = scene.location_id
+        ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id)
+        : null;
+
+    const cue = db.prepare(
+        "SELECT * FROM film_music_cues WHERE scene_id = ? AND cue_type = 'ambient' ORDER BY start_ms LIMIT 1")
+        .get(sceneId) || {};
+    const payload = buildAmbientPrompt(scene, location, ambientOptions(scene, {}));
+
+    const providers = require('../lib/providers');
+    const { providerConfigOf } = require('../lib/provider-config');
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
+    const provider = providers.resolveId('ambient', providerConfigOf(project || {}));
+
+    const notes = [];
+    if (!String(scene.delivery_direction || '').trim() && !String(cue.description || '').trim()) {
+        notes.push('No ambient direction is written for this scene, so the bed is assembled from the '
+            + "location name and the hour and nothing else. The Music page's ambient box is where a "
+            + 'direction goes.');
+    }
+    if (location && !String(location.sound_notes || '').trim()) {
+        notes.push(`${location.name || 'This location'} has no sound notes — the field whose whole `
+            + 'purpose is describing how a place sounds is empty.');
+    }
+
+    return json(res, 200, {
+        scene_id: sceneId,
+        provider,
+        prompt: payload.prompt || '',
+        negative_prompt: payload.negative_prompt || '',
+        payload,
+        notes,
+        free: true,
+    });
 }
 
 async function generateAmbient(req, res, sceneId) {

@@ -550,3 +550,145 @@ test('the ceiling comes from the adapter, not from a number in the builder', () 
     assert.ok(!/slice\(0,\s*500\)/.test(video) && !/slice\(0,\s*300\)/.test(video),
         'the unconditional per-field caps are still applied before anything knows whether they fit');
 });
+
+test('every paid control shows the actual PROMPT, not just a warning', () => {
+    /*
+     * "We should always show the prompts when we ask to generate an image,
+     * audio, music or video so I can see what's sent and control the details."
+     *
+     * The test above requires a confirmation. This requires that the
+     * confirmation carries the REQUEST: the prompt as it will be sent, the
+     * assets that travel with it, and — where the payload has a prompt — a way
+     * to change it before it goes.
+     *
+     * A confirmation that says "this costs credits, continue?" is a speed bump.
+     * It tells the reader the stakes and nothing about what they are approving,
+     * which is exactly how a shot gets generated five times from a prompt
+     * nobody read.
+     */
+    const bodies = new Map();
+    for (const m of UI.matchAll(/function ([A-Za-z_$][\w$]*)\s*\(/g)) {
+        if (!bodies.has(m[1])) {
+            const open = UI.indexOf('{', m.index);
+            let depth = 0, close = open;
+            for (; close < UI.length; close += 1) {
+                if (UI[close] === '{') depth += 1;
+                else if (UI[close] === '}') { depth -= 1; if (!depth) break; }
+            }
+            bodies.set(m[1], UI.slice(open, close));
+        }
+    }
+
+    const promptless = [];
+    for (const name of PAID_ACTIONS) {
+        const body = bodies.get(name);
+        assert.ok(body, `${name} is gone from the page`);
+
+        // Follows one call level, like the gate check above: the prompt may be
+        // shown by a shared helper rather than inline, and refusing to follow
+        // the call reports a working control as broken.
+        const reaches = [body];
+        for (const m of body.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)) {
+            if (bodies.has(m[1])) reaches.push(bodies.get(m[1]));
+        }
+        /*
+         * Derived from BEHAVIOUR, not from a helper's name. Naming
+         * `confirmPaidImage` reported `refineFrame` as broken — it uses
+         * `confirmRefine`, which shows an editable prompt of its own because a
+         * refine sends something genuinely different (one picture and one
+         * instruction, no scene card). A rule that cries wolf on a working
+         * control is one that gets switched off.
+         *
+         * What must hold is that the control reaches something which reads a
+         * FREE PREVIEW ROUTE and puts a prompt in front of the director.
+         */
+        /*
+         * A free preview is not always spelled "preview". This engine's
+         * free-before-paid surfaces are named `preview`, `brief` and `plan` —
+         * a compass sweep reads `/plate/compass/plan`, a sequence reads
+         * `/sequences/:id/plan`, and a score reads `/scenes/:id/music/brief`.
+         * Requiring the word "preview" reported all three as showing no prompt
+         * while they showed every one, which is the cries-wolf failure.
+         */
+        const showsPrompt = reaches.some(src =>
+            /previewUrl|preview|\/brief|\/plan|brief`|plan`/.test(src) && /prompt/i.test(src));
+        if (!showsPrompt) promptless.push(name);
+    }
+
+    assert.deepStrictEqual(promptless, [],
+        `these spend credits without showing the prompt they send: ${promptless.join(', ')}. `
+        + 'A warning about cost is not a preview of the request.');
+});
+
+test('one helper shows every prompt, so two controls cannot disagree', () => {
+    /*
+     * Twelve hand-written confirmations is how three of them come to show the
+     * prompt, two show a truncated one, and the rest show a cost. The board and
+     * the viewer already came to disagree about their own markup tools for
+     * exactly this reason, which is why markupToolbar() exists.
+     *
+     * And it reads the FREE preview route rather than assembling text itself: a
+     * preview built separately from the generation is a plausible fiction,
+     * which refine already shipped once.
+     *
+     * The helper is `confirmPaidImage`, which already existed and already did
+     * all of this — the work was pointing the other ten controls at it. A
+     * second helper was written first and deleted: two confirmations is
+     * precisely the drift this test exists to prevent, and writing one while
+     * the other sat a hundred lines away is how it happens.
+     */
+    const at = UI.indexOf('async function confirmPaidImage(');
+    assert.ok(at > 0, 'there is no shared generation confirmation');
+    const open = UI.indexOf('{', at);
+    let depth = 0, close = open;
+    for (; close < UI.length; close += 1) {
+        if (UI[close] === '{') depth += 1;
+        else if (UI[close] === '}') { depth -= 1; if (!depth) break; }
+    }
+    const body = UI.slice(open, close);
+
+    /*
+     * It reads a URL its CALLER names, rather than knowing the routes itself —
+     * which is what lets one helper serve a plate, a clip, a score and a mesh.
+     * The rule is that it fetches what it is given and does not compose text.
+     */
+    assert.ok(/api\(o\.previewUrl\)/.test(body),
+        'the confirmation does not fetch the preview URL it was given — it is assembling its own '
+        + 'text, which is a fiction rather than a preview');
+    assert.ok(/textarea|CONFIRM_GEN_PROMPT/.test(body),
+        'the prompt is shown and cannot be edited — a preview of what you cannot prevent');
+    assert.ok(/estimated_cost|estimated_usd|cost/.test(body),
+        'the confirmation does not say what it costs');
+    assert.ok(/provider/.test(body), 'the confirmation does not say who it is being sent to');
+
+    /*
+     * A failed preview must DISARM, never arm. A gate whose purpose is
+     * inspection, permitting the spend when the inspection fails, is worse than
+     * no gate: it teaches people the check happened.
+     */
+    /*
+     * Bound to what the catch DOES, not to its existence. A gate whose purpose
+     * is inspection, permitting the spend when the inspection fails, is worse
+     * than no gate: it teaches people the check happened. `/catch/` alone is
+     * satisfied by a catch that arms the button.
+     */
+    const catchAt = body.indexOf('catch');
+    assert.ok(catchAt > 0, 'a preview that fails is not handled at all');
+    /*
+     * Bounded by BRACE DEPTH. Slicing to the first `}` lands inside the
+     * template literal that renders the failure message, so the handler read as
+     * empty and the check passed on a catch that armed the button.
+     */
+    const hOpen = body.indexOf('{', catchAt);
+    let hDepth = 0, hClose = hOpen;
+    for (; hClose < body.length; hClose += 1) {
+        if (body[hClose] === '{') hDepth += 1;
+        else if (body[hClose] === '}') { hDepth -= 1; if (!hDepth) break; }
+    }
+    const handler = body.slice(hOpen, hClose);
+    assert.ok(/confirmGenArm\(false\)/.test(handler),
+        'a failed preview does not DISARM the spend — the button stays live after the check that '
+        + 'was meant to inform it has failed');
+    assert.ok(!/confirmGenArm\(true\)/.test(handler),
+        'a failed preview arms the spend');
+});
