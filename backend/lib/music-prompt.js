@@ -247,10 +247,26 @@ function buildSFXPrompts(sceneCard, scene) {
 
     // Extract from explicit sfx_cues if present
     if (sceneCard.sfx_cues && Array.isArray(sceneCard.sfx_cues)) {
-        for (const cue of sceneCard.sfx_cues) {
+        for (const raw of sceneCard.sfx_cues) {
+            /*
+             * A cue may be a STRING or an object, like every other list on a
+             * scene card — characters and props both take either.
+             *
+             * Found on the live database: two shots carry string cues, and
+             * reading `cue.description` off a string gives undefined, so both
+             * would have generated a request with NO PROMPT — a paid call with
+             * nothing in it, or a provider rejection, and neither says why. The
+             * MCP tool describes sfx_cues as "an array" with no shape, so an
+             * agent writing strings is doing the obvious thing.
+             */
+            const cue = typeof raw === 'string' ? { description: raw } : (raw || {});
+            const text = String(cue.description || cue.sound || '').trim();
+            // A cue with nothing usable in it is DROPPED rather than sent
+            // empty: a request with no prompt costs money and returns noise.
+            if (!text) continue;
             sfxCues.push({
                 type: 'sfx',
-                prompt: cue.description || cue.sound,
+                prompt: text,
                 duration_s: cue.duration_s || 3.0,
                 model: 'audiogen',
                 category: cue.category || 'foley',

@@ -779,6 +779,33 @@ function buildCapabilityPayload(capability, ctx) {
     context.__budget = null;
     const payload = builder(context);
 
+    /*
+     * THE PROMPT A DIRECTOR EDITED, applied on the ONE payload path.
+     *
+     * It was read in `routes/storyboard.js` and applied after the builder, so
+     * only the board honoured it: the orchestrator and the flow canvas built
+     * the same generation and silently ignored the override. That is the exact
+     * divergence this module exists to prevent — one construction path, so the
+     * three callers cannot describe the same generation differently.
+     *
+     * An override is the WHOLE prompt. Nothing is appended after it, which is
+     * the contract generation-override.js already states: a director who edits
+     * the text and then finds the style preset stapled on has approved
+     * something other than what was sent, and that is worse than not offering
+     * the control at all.
+     *
+     * Applied to every payload with a prompt, including each element of an
+     * array — voice and sfx are one-context-to-many, and an override that
+     * reached only the first line would be a control that half works.
+     */
+    const override = typeof context.promptOverride === 'string' && context.promptOverride.trim()
+        ? context.promptOverride.trim() : null;
+    if (override) {
+        for (const one of (Array.isArray(payload) ? payload : [payload])) {
+            if (one && typeof one.prompt === 'string') one.prompt = override;
+        }
+    }
+
     // Which shot this spend belongs to, carried on the payload itself.
     //
     // The meter already knows the project (it rides in on the provider config);

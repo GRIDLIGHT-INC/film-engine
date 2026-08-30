@@ -179,6 +179,7 @@ film-engine/
 │   │   ├── export-package.js     # The XML plus the media it names, and what is wrong before you hand it over
 │   │   ├── deliverables.js       # A commercial is a fan-out: one row per file that leaves the job
 │   │   ├── brand-kit.js         # A brand outlives a project; every field says what it reaches
+│   │   ├── draft-video.js       # Draft while working, finish at the end — and what 480p actually costs
 │   │   ├── compliance.js        # Checks that must run BEFORE spend, never after
 │   │   ├── spot-package.js      # The Premiere handoff, planned but not written
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
@@ -289,6 +290,8 @@ film-engine/
 │       ├── compliance.test.js          # An unsubstantiated claim cannot start a run
 │       ├── spot-package.test.js        # A handoff whose every path stays inside it
 │       ├── staleness-cost.test.js      # A report nobody waits six seconds for
+│       ├── draft-video.test.js        # The smallest raster a model will actually accept
+│       ├── prompt-visibility.test.js   # Every prompt, before every spend
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
 │       ├── aspect-consistency.test.js   # The board and the footage are the same shape
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
@@ -3157,6 +3160,8 @@ node --test backend/tests/brand-kit.test.js
 node --test backend/tests/compliance.test.js
 node --test backend/tests/spot-package.test.js
 node --test backend/tests/staleness-cost.test.js
+node --test backend/tests/draft-video.test.js
+node --test backend/tests/prompt-visibility.test.js
 node --test backend/tests/paid-preview.test.js
 node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js

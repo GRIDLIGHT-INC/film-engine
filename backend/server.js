@@ -550,6 +550,15 @@ const server = http.createServer(async (req, res) => {
             return await handleScenes(req, res, parts, query);
         }
 
+        /*
+         * Route: /film/shots/:id/preview/:capability — free, and it must be
+         * matched BEFORE the general /film/shots/:id router, which would
+         * otherwise read `preview` as an unknown sub-path.
+         */
+        if (parts[1] === 'shots' && parts[2] && parts[3] === 'preview') {
+            return await handleShots(req, res, parts, query);
+        }
+
         // Route: /film/projects/:id/shotlist
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'shotlist') {
             return await handleShots(req, res, parts, query);

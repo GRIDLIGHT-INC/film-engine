@@ -352,7 +352,86 @@ function getShot(req, res, shotId) {
     }));
 }
 
+/**
+ * Exactly what THIS shot would send for THIS capability, before anything is
+ * spent.
+ *
+ * "We should always show the prompts when we ask to generate an image, audio,
+ * music or video so I can see what's sent and control the details."
+ *
+ * The project dry-run answers "what does this production send, and to whom",
+ * from whichever shot has the most built on it. This answers the question a
+ * director actually asks — with their finger over Generate on ONE frame — and
+ * it goes through the same `describeCapability`, because a preview assembled
+ * separately is a plausible fiction rather than a preview. That defect has been
+ * paid for here once already, when refine previewed a regeneration.
+ *
+ * FREE: no socket is opened, no credential appears in the answer, and pictures
+ * are described rather than printed.
+ */
+function shotPreview(req, res, shotId, capability, query) {
+    const providers = require('../lib/providers');
+    if (!providers.CAPABILITIES.includes(capability)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+            error: `Unknown capability "${capability}"`, capabilities: providers.CAPABILITIES,
+        }));
+    }
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Shot not found' }));
+    }
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
+
+    const { describeCapability } = require('../lib/dry-run');
+    const { providerConfigOf } = require('../lib/provider-config');
+
+    let ctx;
+    try {
+        const { loadShotContext } = require('../lib/capability-payloads');
+        ctx = { ...loadShotContext(shot.id), project };
+    } catch (_) { ctx = { project, shot, scene }; }
+
+    // The director's own words, so the preview shows what THEY would send
+    // rather than what the engine would have sent without them.
+    const q = query || {};
+    if (typeof q.prompt_override === 'string' && q.prompt_override.trim()) {
+        ctx.promptOverride = q.prompt_override;
+    }
+
+    const described = describeCapability(capability, ctx, providerConfigOf(project));
+    const one = Array.isArray(described.payload) ? described.payload[0] : described.payload;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        shot_id: shot.id, shot_code: shot.shot_code, capability,
+        ...described,
+        /*
+         * Lifted out of the payload so a page does not have to know where each
+         * capability keeps its prompt — and so "can I change this" has an
+         * answer rather than being inferred from whether a field happens to be
+         * present.
+         */
+        prompt: (one && typeof one.prompt === 'string') ? one.prompt : null,
+        prompt_editable: !!(one && typeof one.prompt === 'string'),
+        /*
+         * How many requests this is. voice and sfx are one-context-to-MANY —
+         * one payload per line, per cue — and a preview showing the first and
+         * implying it is the whole thing understates what is about to be spent.
+         */
+        requests: Array.isArray(described.payload) ? described.payload.length : 1,
+        free: true,
+    }));
+}
+
 function handleShots(req, res, urlParts, query) {
+    // GET /film/shots/:id/preview/:capability — free, and it is the same
+    // payload the generation itself builds.
+    if (urlParts[1] === 'shots' && urlParts[2] && urlParts[3] === 'preview' && req.method === 'GET') {
+        return shotPreview(req, res, urlParts[2], urlParts[4], query);
+    }
+
     // POST /film/shots — parts: ['film', 'shots']
     if (urlParts[1] === 'shots' && !urlParts[2] && req.method === 'POST') {
         return createShots(req, res);
