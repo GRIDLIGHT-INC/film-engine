@@ -107,7 +107,18 @@ function planRoute(req, res, projectId) {
     let applied = null;
     if (body.settings !== false) {
         const { settingsForPackage } = require('../lib/deliverables');
-        applied = settingsForPackage(body.package);
+        /*
+         * The package PROPOSES; a rate the director has already chosen stands.
+         *
+         * This ran an unconditional SET target_fps, so a project deliberately
+         * cut at 24fps had it silently replaced by the package's air rate --
+         * and `target_fps` is read by the conform and the NLE exporters and by
+         * nothing else, so it was never a generation constraint to begin with.
+         * Where the two differ, `rate_note` names the conversion the
+         * deliverable needs rather than refusing the choice.
+         */
+        const current = db.prepare('SELECT target_fps FROM film_projects WHERE id = ?').get(projectId);
+        applied = settingsForPackage(body.package, current);
         db.prepare(`UPDATE film_projects
                        SET aspect_ratio = ?, target_resolution = ?, target_fps = ?
                      WHERE id = ?`)

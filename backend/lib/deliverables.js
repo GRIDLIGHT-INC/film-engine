@@ -40,8 +40,8 @@ const DELIVERY_PROFILES = [
     { id: 'bcast_na_30',  label: 'NA broadcast :30',     aspect: '16:9', width: 1920, height: 1080, fps: 29.97, duration_ms: 30000, platform: 'broadcast', loudness: '-24 LKFS', caption_mode: 'none',    native: false },
     { id: 'bcast_na_15',  label: 'NA broadcast :15',     aspect: '16:9', width: 1920, height: 1080, fps: 29.97, duration_ms: 15000, platform: 'broadcast', loudness: '-24 LKFS', caption_mode: 'none',    native: false },
     { id: 'bcast_uk_30',  label: 'UK/AU broadcast :30',  aspect: '16:9', width: 1920, height: 1080, fps: 25,    duration_ms: 30000, platform: 'broadcast', loudness: '-23 LUFS', caption_mode: 'none',    native: false },
-    { id: 'ctv_30',       label: 'CTV programmatic :30', aspect: '16:9', width: 1920, height: 1080, fps: 29.97, duration_ms: 30000, platform: 'ctv',       loudness: '-24 LKFS', caption_mode: 'none',    native: false },
-    { id: 'yt_30',        label: 'YouTube :30',          aspect: '16:9', width: 1920, height: 1080, fps: 29.97, duration_ms: 30000, platform: 'youtube',   loudness: '-14 LUFS', caption_mode: 'sidecar', native: false },
+    { id: 'ctv_30',       label: 'CTV programmatic :30', aspect: '16:9', width: 1920, height: 1080, fps: 30,   duration_ms: 30000, platform: 'ctv',       loudness: '-24 LKFS', caption_mode: 'none',    native: false },
+    { id: 'yt_30',        label: 'YouTube :30',          aspect: '16:9', width: 1920, height: 1080, fps: 30,   duration_ms: 30000, platform: 'youtube',   loudness: '-14 LUFS', caption_mode: 'sidecar', native: false },
     { id: 'meta_feed_15', label: 'Meta feed :15',        aspect: '4:5',  width: 1080, height: 1350, fps: 30,    duration_ms: 15000, platform: 'meta',      loudness: '-14 LUFS', caption_mode: 'burned',  native: true  },
     { id: 'reels_15',     label: 'Reels/TikTok :15',     aspect: '9:16', width: 1080, height: 1920, fps: 30,    duration_ms: 15000, platform: 'tiktok',    loudness: '-14 LUFS', caption_mode: 'burned',  native: true  },
     { id: 'reels_06',     label: 'Bumper :06',           aspect: '9:16', width: 1080, height: 1920, fps: 30,    duration_ms:  6000, platform: 'shorts',    loudness: '-14 LUFS', caption_mode: 'burned',  native: true  },
@@ -203,12 +203,25 @@ function validateDeliverable(row) {
  * contains a BROADCAST profile its rate wins, because an air rate is
  * contractual while a social one is a convention.
  */
-function settingsForPackage(packageId) {
+/**
+ * The settings a package implies -- PROPOSED, not imposed.
+ *
+ * `project` is what the director has already decided. A rate they have chosen
+ * is never replaced: `target_fps` is read by conform.js and the three NLE
+ * exporters and by nothing else, so it says how the film is LAID OUT rather
+ * than what it is generated at -- no generator takes it, and Seedance has no
+ * fps field at all. Choosing 24 was never unsafe; it was only overwritten.
+ *
+ * Passing no project reproduces the old behaviour exactly, so every existing
+ * caller is unaffected.
+ */
+function settingsForPackage(packageId, project) {
     const ids = PACKAGES[packageId];
     if (!ids) {
         throw new Error(`unknown package "${packageId}" — one of: ${Object.keys(PACKAGES).join(', ')}`);
     }
-    return settingsFromProfiles(ids.map(id => DELIVERY_PROFILES.find(p => p.id === id)).filter(Boolean));
+    return settingsFromProfiles(
+        ids.map(id => DELIVERY_PROFILES.find(p => p.id === id)).filter(Boolean), project);
 }
 
 /**
@@ -221,7 +234,7 @@ function settingsForPackage(packageId) {
  * nobody can trust, and this is the one that decides whether a spot is
  * generated at a rate it can be AIRED at.
  */
-function settingsFromProfiles(profiles) {
+function settingsFromProfiles(profiles, project) {
     const landscape = profiles.filter(p => p.width >= p.height);
     const pool = landscape.length ? landscape : profiles;
     const master = pool.slice().sort((a, b) => b.duration_ms - a.duration_ms)[0];
@@ -237,10 +250,46 @@ function settingsFromProfiles(profiles) {
         : rateFrom.fps === 30 ? 'spot_social'
         : 'spot_broadcast_na';
 
+    /*
+     * THE DIRECTOR'S RATE WINS.
+     *
+     * 24 for television is not a workaround: it is how cinema has always
+     * reached a broadcast schedule -- a 24fps master is pulled down 2:3 for a
+     * 29.97 air, or run 4% fast for a 25fps one. The air rate is a fact about
+     * the DELIVERABLE, not about the timeline that produced it, and this
+     * function was conflating the two.
+     */
+    const chosen = Number(project && project.target_fps) > 0
+        ? Number(project.target_fps) : null;
+    const fps = chosen || rateFrom.fps;
+
+    /*
+     * Reported, never refused. Refusing would make the engine unusable for the
+     * commonest look in advertising; saying nothing would let a 24fps timeline
+     * reach an air date with no one having decided how it gets to 29.97.
+     *
+     * And silent when there is nothing to say: a warning that fires on work
+     * nobody needs to do is one people learn to dismiss, taking the real one
+     * with it -- the rule screenplay drift and the style check already follow.
+     */
+    let rateNote = null;
+    if (air && chosen && Math.abs(chosen - air.fps) > 1e-9) {
+        const how = Math.abs(air.fps - 29.97) < 1e-9 && (chosen === 24 || Math.abs(chosen - 23.976) < 1e-9)
+            ? '2:3 pulldown, the standard film-to-NTSC conversion'
+            : (Math.abs(air.fps - 25) < 1e-9 && (chosen === 24 || Math.abs(chosen - 23.976) < 1e-9)
+                ? 'a 4% speed-up, the standard film-to-PAL conversion'
+                : 'a frame-rate conversion');
+        rateNote = `This timeline is ${chosen}fps and ${air.label} airs at ${air.fps}fps, so the `
+            + `deliverable needs ${how}. Cutting at ${chosen} is a deliberate look and is kept; `
+            + 'the conversion happens on the way out, not here.';
+    }
+
     return {
         aspect_ratio: master.aspect,
         target_resolution: `${master.width}x${master.height}`,
-        target_fps: rateFrom.fps,
+        target_fps: fps,
+        rate_note: rateNote,
+        rate_chosen_by: chosen ? 'project' : 'package',
         delivery_preset: preset,
         master_profile: master.id,
         why: air

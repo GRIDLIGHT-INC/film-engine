@@ -379,3 +379,245 @@ test('a package decides the project\'s technical settings, derived from its own 
         + 'an air rate is contractual and cannot be conformed afterwards');
     assert.equal(mixed.target_resolution, '1920x1080', 'the master still sets the frame');
 });
+
+/**
+ * An NTSC rate is an AIR requirement, not a house style
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * 29.97 exists for one reason: NTSC colour needed the 1000/1001 pulldown, and
+ * North American linear broadcast delivery specs still carry it. That is
+ * contractual — a :30 delivered at 30fps to a station cut for 29.97 is a spot
+ * that gets rejected — so `bcast_na_*` keeps it and must.
+ *
+ * Nothing else inherits it. YouTube accepts 24/25/30/48/50/60 and asks for none
+ * of them specifically; a CTV programmatic file is a file, and where a buy
+ * genuinely demands 29.97 that is a per-buy override rather than the default
+ * every digital deliverable is built at.
+ *
+ * The table said otherwise, and contradicted itself doing it: meta, reels and
+ * square were declared at a clean 30 while youtube and ctv carried 29.97. The
+ * consequence was not cosmetic. `rapid` is YouTube + Reels + Square, contains
+ * NO broadcast profile at all, and resolved to:
+ *
+ *     -> fps: 29.97   preset: spot_broadcast_na
+ *     why: "No broadcast profile in this package, so the master (YouTube :30)
+ *           sets both the rate (29.97fps)..."
+ *
+ * — an all-digital campaign generated at a pulldown rate, and labelled a North
+ * American broadcast delivery, for no reason any destination asked for.
+ *
+ * Set-based over the profile table by PLATFORM, because the failure is
+ * partial by nature: four social profiles were already right, and any test
+ * written against those passes in exactly the state this catches.
+ */
+
+test('only a broadcast profile may carry an NTSC rate', () => {
+    const ntsc = fps => Math.abs(Number(fps) - Math.round(Number(fps))) > 1e-9;
+
+    const offenders = DELIVERY_PROFILES
+        .filter(p => p.platform !== 'broadcast' && ntsc(p.fps))
+        .map(p => `${p.id} (${p.platform}) at ${p.fps}`);
+
+    assert.deepStrictEqual(offenders, [],
+        'these profiles carry a 1000/1001 NTSC rate that their destination does not require, so '
+        + 'every spot built for them is generated with a pulldown inherited from analogue '
+        + `television: ${offenders.join('; ')}`);
+});
+
+test('a broadcast profile keeps the rate its region actually airs at', () => {
+    /*
+     * The other half of the same rule, and the reason this is not simply
+     * "integers everywhere": NA air IS 29.97 and UK air IS 25. Removing the
+     * fractional rate to tidy the table would produce a file a station rejects.
+     */
+    const air = DELIVERY_PROFILES.filter(p => p.platform === 'broadcast');
+    assert.ok(air.length >= 2, 'expected both NA and UK broadcast profiles in the table');
+
+    for (const p of air) {
+        const expected = /uk|au/i.test(p.id) ? 25 : 29.97;
+        assert.strictEqual(p.fps, expected,
+            `${p.id} airs at ${expected}fps; declared ${p.fps}`);
+    }
+});
+
+test('an all-digital package is not built at a broadcast rate, or labelled as one', () => {
+    const { settingsForPackage, PACKAGES } = require('../lib/deliverables');
+    /*
+     * The behavioural half. The profile table being right means nothing if the
+     * package that reads it still resolves to 29.97 — and this assertion used
+     * to accept `29.97 || 30`, which is why the defect survived: a rule loose
+     * enough to admit the bug is not a rule.
+     */
+    const rapid = settingsForPackage('rapid');
+    // PACKAGES maps an id straight to its list of profile ids.
+    const profiles = PACKAGES.rapid.map(id => DELIVERY_PROFILES.find(p => p.id === id));
+    assert.ok(!profiles.some(p => p.platform === 'broadcast'),
+        "this test's reading is stale: the rapid package now contains a broadcast profile");
+
+    assert.ok(Number.isInteger(rapid.target_fps),
+        `an all-digital package resolved to ${rapid.target_fps}fps — nothing it delivers to `
+        + 'requires a pulldown rate');
+    assert.ok(!/broadcast/.test(String(rapid.delivery_preset)),
+        `an all-digital package was labelled "${rapid.delivery_preset}" — it never airs, so a `
+        + 'broadcast delivery preset misstates both its loudness target and its rate');
+});
+
+test('a package that DOES contain air still follows the air rate', () => {
+    const { settingsForPackage } = require('../lib/deliverables');
+    // Unchanged, and it must be: an air rate is contractual and outranks the
+    // convention every digital profile in the same package follows.
+    for (const [id, expected] of [['campaign', 29.97], ['broadcast', 29.97]]) {
+        assert.strictEqual(settingsForPackage(id).target_fps, expected,
+            `${id} contains a NA broadcast profile and must resolve to ${expected}`);
+    }
+});
+
+/**
+ * A package PROPOSES a rate; the director chooses one
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * Applying a package ran an unconditional
+ *
+ *     UPDATE film_projects SET aspect_ratio = ?, target_resolution = ?, target_fps = ?
+ *
+ * so a director who had deliberately set 24fps had it silently replaced by
+ * whatever the package's air profile said. That is a real constraint on real
+ * work, and it rests on a conflation: `target_fps` is read by conform.js and
+ * the three NLE exporters and BY NOTHING ELSE. No generator takes it — Seedance
+ * has no fps field at all — so the rate is how the film is LAID OUT, not what
+ * it is generated at. Choosing 24 was never unsafe; it was just overwritten.
+ *
+ * And 24 for television is not a workaround, it is how cinema has always
+ * reached a broadcast schedule: a 24fps master is pulled down 2:3 for a 29.97
+ * air, or run 4% fast for a 25fps one. The air rate is a fact about the
+ * DELIVERABLE, not about the timeline that produced it.
+ *
+ * So the rule is: a package fills a rate that has not been chosen, and never
+ * replaces one that has. Where a chosen rate differs from an air profile in the
+ * package, that is REPORTED with the conversion named — never blocked. Blocking
+ * would make the engine refuse the single commonest look in advertising, and a
+ * warning nobody can act on is one they learn to dismiss.
+ *
+ * Set-based over the three packages crossed with "has the director already
+ * decided", because the failure is asymmetric: filling an empty rate is
+ * correct and replacing a chosen one is the bug, and a test that only checks
+ * the empty case passes in exactly the state this catches.
+ */
+
+test('a package fills an unset rate but never replaces a chosen one', () => {
+    const { settingsForPackage, PACKAGES } = require('../lib/deliverables');
+
+    for (const id of Object.keys(PACKAGES)) {
+        // No opinion yet: the package's derived rate is what you get.
+        const fresh = settingsForPackage(id, { target_fps: null });
+        assert.ok(Number(fresh.target_fps) > 0,
+            `${id}: a project with no rate must be given the package's own`);
+
+        // Already decided: 24fps, deliberately, for the film look.
+        const chosen = settingsForPackage(id, { target_fps: 24 });
+        assert.strictEqual(chosen.target_fps, 24,
+            `${id}: applying a package overwrote a deliberately chosen 24fps with `
+            + `${chosen.target_fps} — the director's rate is not the package's to replace`);
+    }
+});
+
+test('a chosen rate that differs from an air profile is reported, not refused', () => {
+    const { settingsForPackage } = require('../lib/deliverables');
+
+    // `broadcast` contains NA air at 29.97; the director wants the film look.
+    const s = settingsForPackage('broadcast', { target_fps: 24 });
+    assert.strictEqual(s.target_fps, 24, 'the chosen rate did not survive');
+    assert.ok(s.rate_note,
+        'a 24fps timeline against a 29.97 air profile produced no note at all — the director is '
+        + 'not told a conversion is needed at delivery');
+    assert.match(String(s.rate_note), /29\.97/,
+        `the note is "${s.rate_note}" — it must name the air rate the deliverable needs`);
+    assert.match(String(s.rate_note), /pulldown|2:3|convert/i,
+        `the note is "${s.rate_note}" — it must name the conversion, or it is an observation `
+        + 'the director cannot act on');
+
+    // And it is a NOTE, not a refusal.
+    assert.ok(!s.error && !s.refused,
+        'a 24fps master for a broadcast buy was refused — that is how cinema has always reached '
+        + 'a broadcast schedule, and refusing it makes the engine unusable for the commonest '
+        + 'look in advertising');
+});
+
+test('a chosen rate matching the package says nothing', () => {
+    /*
+     * A warning that fires when there is nothing to do is one people learn to
+     * dismiss, taking the real one with it — the rule screenplay drift and the
+     * style subject check both already follow.
+     */
+    const { settingsForPackage } = require('../lib/deliverables');
+    const s = settingsForPackage('broadcast', { target_fps: 29.97 });
+    assert.ok(!s.rate_note,
+        `a rate identical to the air profile produced the note "${s.rate_note}"`);
+});
+
+test('24fps is offered as a rate a person can actually pick', () => {
+    const { FRAME_RATES } = require('../lib/project-presets');
+    const ids = FRAME_RATES.map(r => String(r.fps));
+    for (const wanted of ['24', '23.976', '25', '29.97', '30']) {
+        assert.ok(ids.includes(wanted),
+            `${wanted}fps is not selectable — a rate the engine cannot be told is not a preference`);
+    }
+});
+
+/**
+ * ...and the ROUTE has to pass the choice in.
+ *
+ * Caught by mutation: replacing `settingsForPackage(body.package, current)`
+ * with `settingsForPackage(body.package)` failed nothing at all. The library
+ * honoured a chosen rate and the one call site that applies a package never
+ * told it what had been chosen — the exact shape where a fix exists and the
+ * caller ignores it, which this codebase has paid for repeatedly.
+ *
+ * So this drives the real route against a real database, because that is the
+ * only thing that can see the argument actually being passed.
+ */
+test('applying a package over HTTP keeps the rate the project already chose', async () => {
+    const { spawn } = require('child_process');
+    const fs = require('fs');
+    const os2 = require('os');
+    const path2 = require('path');
+
+    const dir = path2.join(os2.tmpdir(), 'fe-fps-' + require('crypto').randomUUID().slice(0, 8));
+    fs.mkdirSync(dir, { recursive: true });
+    const port = 3400 + Math.floor(Math.random() * 300);
+
+    const proc = spawn(process.execPath, [path2.join(__dirname, '..', 'server.js')],
+        { env: { ...process.env, PORT: String(port), FILM_DATA_DIR: dir }, stdio: 'pipe' });
+    proc.stdout.on('data', () => {});
+    proc.stderr.on('data', () => {});
+
+    const base = `http://localhost:${port}`;
+    const call = (m, p, b) => fetch(base + p, {
+        method: m, headers: { 'Content-Type': 'application/json' },
+        body: b ? JSON.stringify(b) : undefined,
+    }).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }));
+
+    try {
+        for (let i = 0; i < 100; i++) {
+            try { const h = await fetch(base + '/api/health'); if (h.ok) break; } catch (_) {}
+            await new Promise(r => setTimeout(r, 100));
+        }
+
+        const made = await call('POST', '/film/projects', { title: 'FPS probe', target_fps: 24 });
+        const pid = (made.body && (made.body.project || made.body).id);
+        assert.ok(pid, `could not create a project: ${JSON.stringify(made).slice(0, 200)}`);
+
+        // Deliberately the package whose air profile is 29.97.
+        const applied = await call('POST', `/film/projects/${pid}/deliverables/plan`, { package: 'broadcast' });
+        assert.ok(applied.status < 400, `apply failed: ${JSON.stringify(applied).slice(0, 200)}`);
+
+        const after = await call('GET', `/film/projects/${pid}`);
+        const fps = Number((after.body.project || after.body).target_fps);
+        assert.strictEqual(fps, 24,
+            `applying a broadcast package overwrote a deliberately chosen 24fps with ${fps} — `
+            + 'the route is not passing the project into settingsForPackage');
+    } finally {
+        proc.kill('SIGKILL');
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+    }
+});
