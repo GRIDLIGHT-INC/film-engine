@@ -13923,7 +13923,10 @@ THREE.GLTFLoader = GLTFLoader;
             <div class="card">
                 <div class="flex-between"><strong>${esc(e.spec_kind || e.kind)}</strong>
                     <button class="btn btn-sm" onclick="moodBoardDelete('${e.id}')">Remove</button></div>
-                ${e.image_path ? `<img src="${API_BASE}${esc(e.image_path)}" style="width:100%;margin-top:6px;border-radius:4px;" onerror="this.style.display='none'">` : ''}
+                ${e.image_url ? `<img src="${API_BASE}${esc(e.image_url)}" style="width:100%;margin-top:6px;border-radius:4px;"
+                        onclick="openPlateViewer('${API_BASE}${esc(e.image_url)}', ${jsAttr(e.note || 'Board reference')})"
+                        onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'text-sm text-muted',textContent:'This reference could not be loaded — the file may have been moved or deleted.'}))">`
+                    : (e.image_path ? `<div class="text-sm text-muted" style="margin-top:6px;">This reference has no servable location.</div>` : '')}
                 <p class="text-sm" style="margin-top:6px;">${esc(e.spec_value || e.note || '')}</p>
             </div>`).join('') || '<div class="text-muted">Nothing on the board yet.</div>';
         setStatus(`${(board.entries || []).length} board entr(ies)`);

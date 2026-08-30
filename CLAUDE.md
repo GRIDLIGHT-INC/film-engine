@@ -250,6 +250,7 @@ film-engine/
 │       ├── look-development.test.js    # A style preset naming a subject is caught, real styles are not
 │       ├── shot-tagger.test.js         # A screenplay line becomes a shot, with who is in it
 │       ├── mood-board.test.js          # The board composes a style preset, and warns about subjects
+│       ├── mood-board-images.test.js   # A picture pinned to the board is a picture you can see
 │       ├── storyboard-annotation.test.js # Every shape round-trips; markup survives regeneration
 │       ├── annotation-feedback.test.js # Marks steer a prompt only when asked, and say when they cannot
 │       ├── shot-anchor.test.js   # One anchor, held deliberately; it carries the set and replaces the plates
@@ -3220,6 +3221,7 @@ node --test backend/tests/run-plan.test.js
 node --test backend/tests/look-development.test.js
 node --test backend/tests/shot-tagger.test.js
 node --test backend/tests/mood-board.test.js
+node --test backend/tests/mood-board-images.test.js
 node --test backend/tests/storyboard-annotation.test.js
 node --test backend/tests/annotation-feedback.test.js
 node --test backend/tests/shot-anchor.test.js

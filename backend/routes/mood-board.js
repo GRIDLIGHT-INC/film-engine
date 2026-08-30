@@ -17,6 +17,7 @@
  * future frame from something the director was only trying out.
  */
 
+const path = require('path');
 const { db, generateId } = require('../db/database');
 const { validateStylePreset, SPEC_KINDS, allowedSpecValues, validateSpec, applyProjectSpecs } = require('../lib/look-development');
 
@@ -37,12 +38,47 @@ function json(res, status, data) {
  */
 const KIND_ORDER = ['medium', 'palette', 'lighting', 'lens', 'framing', 'texture', 'image', 'note'];
 
+/**
+ * The board entry, with a URL a browser can actually ask for.
+ *
+ * `image_path` is a FILESYSTEM path and must stay one: look-development.js
+ * reads it off disk to attach the board's look to a shot, so rewriting the
+ * column would fix the display and silently stop the look conditioning any
+ * frame. So the URL is DERIVED on read -- the split every plate already uses.
+ *
+ * It was rendered directly as `API_BASE + image_path`, which asks the server
+ * for `/Users/.../data/refsheets/x.png`, 404s, and was hidden by an `onerror`.
+ * A broken image and no image look identical from the outside, which is
+ * exactly how it was reported: "if I add images in the moodboard we don't see
+ * them".
+ *
+ * Derived from the path's own last two segments rather than assumed to be
+ * `refsheets`: an import can land in another directory, and a hardcoded subdir
+ * would serve one kind of board image and 404 the rest.
+ */
+function withImageUrl(entry) {
+    if (!entry || !entry.image_path) return entry;
+    const { getFileUrl } = require('../lib/file-storage');
+    const parts = String(entry.image_path).split(path.sep).filter(Boolean);
+    const filename = parts[parts.length - 1];
+    const projectDir = parts[parts.length - 2];
+    const subdir = parts[parts.length - 3];
+    if (!filename || !projectDir || !subdir) return entry;
+    try {
+        return { ...entry, image_url: getFileUrl(subdir, projectDir, filename, entry.updated_at || entry.created_at) };
+    } catch (_) {
+        return entry;   // an unservable path is still an entry; it just has no picture
+    }
+}
+
 function listBoard(req, res, projectId) {
     const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
     const entries = db.prepare(
         'SELECT * FROM film_mood_board WHERE project_id = ? ORDER BY sort_order, created_at').all(projectId);
-    return json(res, 200, { project_id: projectId, entries, count: entries.length });
+    return json(res, 200, {
+        project_id: projectId, entries: entries.map(withImageUrl), count: entries.length,
+    });
 }
 
 function addEntry(req, res, projectId) {
@@ -77,7 +113,9 @@ function addEntry(req, res, projectId) {
             body.spec_kind ? String(body.spec_kind) : null,
             body.spec_value !== undefined ? String(body.spec_value) : null);
 
-    return json(res, 201, { entry: db.prepare('SELECT * FROM film_mood_board WHERE id = ?').get(id) });
+    return json(res, 201, {
+        entry: withImageUrl(db.prepare('SELECT * FROM film_mood_board WHERE id = ?').get(id)),
+    });
 }
 
 function deleteEntry(req, res, entryId) {
@@ -231,7 +269,7 @@ function importBoardImage(req, res, projectId) {
             .run(id, projectId, String(body.note || '').trim(), imported.asset_id,
                 imported.file_path, next);
         return json(res, 201, {
-            entry: db.prepare('SELECT * FROM film_mood_board WHERE id = ?').get(id),
+            entry: withImageUrl(db.prepare('SELECT * FROM film_mood_board WHERE id = ?').get(id)),
             ...imported,
         });
     } catch (err) {
@@ -261,4 +299,4 @@ function handleMoodBoard(req, res, urlParts) {
     return json(res, 404, { error: 'Not found' });
 }
 
-module.exports = { handleMoodBoard, compose, KIND_ORDER };
+module.exports = { handleMoodBoard, compose, KIND_ORDER, withImageUrl };
