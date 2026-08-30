@@ -4631,6 +4631,9 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <span class="nav-icon">&#9654;</span> Playback
                 </button>
                 <!-- ==== CLAUDE:END ==== -->
+                <button class="nav-item" data-page="deliverables" onclick="navigateTo('deliverables')" data-tooltip="One row per file that leaves the job — and which ratios must be shot, not cropped" data-tooltip-pos="right">
+                    <span class="nav-icon">&#128230;</span> Deliverables
+                </button>
                 <button class="nav-item" data-page="rights" onclick="navigateTo('rights')" data-tooltip="Who cleared what — likeness, voice, music and model licences, per project" data-tooltip-pos="right">
                     <span class="nav-icon">&#128220;</span> Rights
                 </button>
@@ -5491,6 +5494,27 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 
         <!-- ── ACTS (FILM-146) ─────────────────────────────────── -->
         <!-- ── MARKETING ──────────────────────────────────────── -->
+        <div class="page" id="page-deliverables">
+            <div class="flex-between mb-16">
+                <h2>Deliverables</h2>
+                <div>
+                    <select id="deliverablePackage" style="width:auto;display:inline-block;min-width:170px;margin-right:8px;"></select>
+                    <button class="btn btn-secondary" onclick="applyDeliverablePackage()"
+                            title="Replaces the current set — a package is a statement about the whole job">Apply package</button>
+                    <button class="btn btn-primary" onclick="openDeliverable()">+ Deliverable</button>
+                </div>
+            </div>
+            <p class="text-sm text-muted mb-8">
+                One row per file that leaves the job. A film has one shape; a commercial has
+                fourteen to twenty-two. This set is decided <strong>before anything is
+                generated</strong>, because it is what says which shots must be <em>shot</em>
+                vertical rather than cropped later &mdash; a 9:16 crop of a 16:9 frame keeps 32% of
+                its width, and Auto Reframe cannot invent the two-thirds that were never generated.
+            </p>
+            <div id="deliverableVerdict" class="mb-8"></div>
+            <div id="deliverableList"></div>
+        </div>
+
         <div class="page" id="page-rights">
             <div class="flex-between mb-16">
                 <h2>Rights</h2>
@@ -16742,6 +16766,7 @@ THREE.GLTFLoader = GLTFLoader;
              * link — which land on a panel nobody filled.
              */
             jobsqueue: loadJobsQueuePage,
+            deliverables: loadDeliverables,
             rights: loadRights,
             titles: loadTitles,
             subtitles: loadSubtitles,
@@ -28161,6 +28186,214 @@ ${fountainText.slice(0, 50000)}`;
         social_card: '&#128241;', still: '&#128247;', thumbnail: '&#128443;', logo: '&#10024;' };
 
     // ══════════════════════════════════════════════════════════════
+    // DELIVERABLES
+    //
+    // The output list: one row per file that leaves the job. On a commercial it
+    // is filled in BEFORE anything is boarded, because the set is what says
+    // which shots must be shot vertical rather than cropped later.
+    //
+    // The profiles, packages and vocabularies are SERVED with the list rather
+    // than typed here: the route validates against them, so a page holding its
+    // own copy offers a platform the route refuses and the refusal reads as
+    // saving being broken.
+    // ══════════════════════════════════════════════════════════════
+    let DELIVERABLE_SERVED = { profiles: [], packages: [] };
+
+    async function loadDeliverables() {
+        if (!state.currentProject) return;
+        const pid = state.currentProject.id;
+        const host = document.getElementById('deliverableList');
+        let data;
+        try { data = await api(`/projects/${pid}/deliverables`); }
+        catch (err) { host.innerHTML = `<p class="text-sm text-muted">Could not read the deliverables: ${esc(err.message)}</p>`; return; }
+
+        DELIVERABLE_SERVED = { profiles: data.profiles || [], packages: data.packages || [] };
+        state.deliverableRows = data.deliverables || [];
+
+        const picker = document.getElementById('deliverablePackage');
+        if (picker && picker.options.length !== DELIVERABLE_SERVED.packages.length) {
+            picker.innerHTML = DELIVERABLE_SERVED.packages
+                .map(p => `<option value="${esc(p)}">${esc(p)} package</option>`).join('');
+        }
+
+        renderDeliverables(state.deliverableRows);
+        loadDeliverableVerdict();
+    }
+
+    function renderDeliverables(rows) {
+        const host = document.getElementById('deliverableList');
+        if (!rows.length) {
+            host.innerHTML = '<p class="text-sm text-muted">No deliverables. Apply a package, or add '
+                + 'one at a time. A film needs none of this &mdash; leave it empty and everything '
+                + 'behaves exactly as it always has.</p>';
+            return;
+        }
+        host.innerHTML = rows.map(d => `
+            <div class="card" style="margin-bottom:6px;">
+                <div class="flex-between" style="gap:8px;flex-wrap:wrap;min-width:0;">
+                    <div style="min-width:0;">
+                        <strong>${esc(d.label || d.key)}</strong>
+                        <span class="text-sm text-muted"> &middot; ${esc(d.key)}</span>
+                        <div class="tag-row" style="margin-top:4px;">
+                            <span class="tag">${esc(d.aspect_ratio)}</span>
+                            <span class="tag">${d.width}&times;${d.height}</span>
+                            <span class="tag">${d.fps} fps</span>
+                            <span class="tag">${(d.duration_ms / 1000).toFixed(0)}s</span>
+                            ${d.platform ? `<span class="tag">${esc(d.platform)}</span>` : ''}
+                            ${d.loudness_target ? `<span class="tag">${esc(d.loudness_target)}</span>` : ''}
+                            <span class="tag">captions: ${esc(d.caption_mode)}</span>
+                            ${d.native ? '<span class="tag" style="border-color:var(--gl-warning,#f59e0b);'
+                                + 'color:var(--gl-warning,#f59e0b);" title="Must be GENERATED at this ratio — '
+                                + 'a crop to it loses the product">shoot native</span>' : ''}
+                            <span class="badge">${esc(d.status)}</span>
+                        </div>
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="openDeliverable('${d.id}')">Edit</button>
+                        <button class="btn btn-secondary btn-sm" onclick="deleteDeliverable('${d.id}')">Delete</button>
+                    </div>
+                </div>
+            </div>`).join('');
+    }
+
+    /** The free verdict: does the cut hit each runtime, and what must be shot native. */
+    async function loadDeliverableVerdict() {
+        const host = document.getElementById('deliverableVerdict');
+        if (!host) return;
+        let v;
+        try { v = await api(`/projects/${state.currentProject.id}/deliverables/check`); }
+        catch (err) { host.innerHTML = ''; return; }
+
+        const cut = (v.cut_duration_ms / 1000).toFixed(1);
+        const lines = [];
+        if (v.target_duration_ms) {
+            const target = (v.target_duration_ms / 1000).toFixed(1);
+            const colour = v.on_target ? 'var(--gl-success)' : 'var(--gl-warning,#f59e0b)';
+            lines.push(`<span style="color:${colour};font-weight:600;">${cut}s / ${target}s</span>`);
+        } else if (v.cut_duration_ms) {
+            lines.push(`<span class="text-sm text-muted">cut runs ${cut}s &mdash; no target set</span>`);
+        }
+        if (v.native_ratios && v.native_ratios.length) {
+            lines.push(`<span class="tag">shoot native: ${v.native_ratios.map(esc).join(', ')}</span>`);
+        }
+        if (v.needs_native_shots) {
+            lines.push('<span class="text-sm" style="color:var(--gl-warning,#f59e0b);">'
+                + 'No shot is flagged to be shot at a vertical ratio, so every vertical placement '
+                + 'will be a crop of the master &mdash; losing two-thirds of the width.</span>');
+        }
+        host.innerHTML = lines.length ? `<div class="tag-row">${lines.join(' ')}</div>` : '';
+    }
+
+    async function applyDeliverablePackage() {
+        const pkg = (document.getElementById('deliverablePackage') || {}).value;
+        if (!pkg) return;
+        const existing = (state.deliverableRows || []).length;
+        if (existing && !confirm(`Apply the ${pkg} package?\n\nThis REPLACES the ${existing} deliverable(s) `
+            + 'already here. A package is a statement about the whole job rather than an addition to it, '
+            + 'so applying one twice should not leave you with twelve rows.')) return;
+        try {
+            const out = await api(`/projects/${state.currentProject.id}/deliverables/plan`,
+                { method: 'POST', body: JSON.stringify({ package: pkg }) });
+            setStatus(`${out.created} deliverable(s) planned`);
+            loadDeliverables();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function openDeliverable(id) {
+        const d = id ? (state.deliverableRows || []).find(x => x.id === id) || {} : {};
+        const profiles = DELIVERABLE_SERVED.profiles || [];
+        const platforms = [...new Set(profiles.map(p => p.platform))].filter(Boolean);
+        showModalHtml('deliverableModal', `
+            <div class="modal-header">
+                <h3>${id ? 'Edit deliverable' : 'New deliverable'}</h3>
+                <button class="modal-close" onclick="closeModal('deliverableModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group"><label>Key</label>
+                    <input type="text" id="delKey" data-field="key" maxlength="60" value="${esc(d.key || '')}"
+                           placeholder="e.g. 15_9x16">
+                    <span class="text-sm text-muted">This is the sequence name in Premiere, and how Media Encoder queues it.</span></div>
+                <div class="form-group"><label>Label</label>
+                    <input type="text" id="delLabel" data-field="label" maxlength="120" value="${esc(d.label || '')}"></div>
+                <div class="form-group"><label>Profile</label>
+                    <select id="delProfile" data-field="profile_id">
+                        <option value="">Hand-built</option>
+                        ${profiles.map(p => `<option value="${esc(p.id)}"${p.id === d.profile_id ? ' selected' : ''}>${esc(p.label)}</option>`).join('')}
+                    </select></div>
+                <div class="form-group"><label>Aspect ratio</label>
+                    <input type="text" id="delAspect" data-field="aspect_ratio" maxlength="12" value="${esc(d.aspect_ratio || '16:9')}"></div>
+                <div class="form-group"><label>Width</label>
+                    <input type="number" id="delWidth" data-field="width" min="2" step="2" value="${d.width || 1920}"></div>
+                <div class="form-group"><label>Height</label>
+                    <input type="number" id="delHeight" data-field="height" min="2" step="2" value="${d.height || 1080}"></div>
+                <div class="form-group"><label>Frame rate</label>
+                    <input type="number" id="delFps" data-field="fps" min="1" step="0.01" value="${d.fps || 29.97}">
+                    <span class="text-sm text-muted">Chosen at generation and never conformed &mdash; conforming 24p to 29.97 for a CTV buy cannot be fixed in the grade.</span></div>
+                <div class="form-group"><label>Duration (seconds)</label>
+                    <input type="number" id="delDuration" data-field="duration_ms" min="0.1" step="0.1" value="${((d.duration_ms || 30000) / 1000).toFixed(1)}"></div>
+                <div class="form-group"><label>Platform</label>
+                    <select id="delPlatform" data-field="platform">
+                        <option value="">Unspecified</option>
+                        ${platforms.map(p => `<option value="${esc(p)}"${p === d.platform ? ' selected' : ''}>${esc(p)}</option>`).join('')}
+                    </select></div>
+                <div class="form-group"><label>Loudness target</label>
+                    <input type="text" id="delLoudness" data-field="loudness_target" maxlength="40" value="${esc(d.loudness_target || '')}"
+                           placeholder="-24 LKFS">
+                    <span class="text-sm text-muted">Carried into the handoff. Media Encoder normalises on export; nothing here measures it.</span></div>
+                <div class="form-group"><label>Captions</label>
+                    <select id="delCaption" data-field="caption_mode">
+                        ${['none', 'sidecar', 'burned'].map(v => `<option value="${v}"${(d.caption_mode || 'sidecar') === v ? ' selected' : ''}>${v}</option>`).join('')}
+                    </select></div>
+                <div class="form-group"><label>Status</label>
+                    <select id="delStatus" data-field="status">
+                        ${['planned', 'ready', 'delivered', 'dropped'].map(v => `<option value="${v}"${(d.status || 'planned') === v ? ' selected' : ''}>${v}</option>`).join('')}
+                    </select></div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="delNative" data-field="native" ${d.native ? 'checked' : ''}> Shoot native</label>
+                    <span class="text-sm text-muted">Generated at this ratio rather than cropped to it. A 9:16 crop of a 16:9 frame keeps 32% of its width.</span></div>
+                <div class="form-group"><label>Order</label>
+                    <input type="number" id="delOrder" data-field="sort_order" min="0" value="${d.sort_order || 0}">
+                    <span class="text-sm text-muted">The order the sequences appear in the exported project.</span></div>
+                <div class="form-group"><label>Notes</label>
+                    <textarea id="delNotes" data-field="notes" rows="2" maxlength="2000">${esc(d.notes || '')}</textarea></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('deliverableModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveDeliverable(${id ? `'${id}'` : 'null'})">Save</button>
+            </div>`);
+    }
+
+    async function saveDeliverable(id) {
+        const v = i => (document.getElementById(i) || {}).value;
+        const body = {
+            key: v('delKey'), label: v('delLabel'), profile_id: v('delProfile'),
+            aspect_ratio: v('delAspect'), width: Number(v('delWidth')) || 0,
+            height: Number(v('delHeight')) || 0, fps: Number(v('delFps')) || 0,
+            duration_ms: Math.round((Number(v('delDuration')) || 0) * 1000),
+            platform: v('delPlatform'), loudness_target: v('delLoudness'),
+            caption_mode: v('delCaption'), status: v('delStatus'),
+            native: !!(document.getElementById('delNative') || {}).checked,
+            sort_order: Number(v('delOrder')) || 0,
+            notes: v('delNotes'),
+        };
+        if (!body.key) return setStatus('A deliverable needs a key — it is the sequence name');
+        try {
+            await api(id ? `/deliverables/${id}` : `/projects/${state.currentProject.id}/deliverables`,
+                { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+            closeModal('deliverableModal');
+            setStatus(id ? 'Deliverable updated' : 'Deliverable added');
+            loadDeliverables();
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function deleteDeliverable(id) {
+        if (!confirm('Remove this deliverable?\n\nNothing generated is affected — this is the list of '
+            + 'files that leave the job.')) return;
+        try { await api(`/deliverables/${id}`, { method: 'DELETE' }); loadDeliverables(); setStatus('Deliverable removed'); }
+        catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // RIGHTS
     //
     // The register the nine-page removal took out. It is rebuilt because the
@@ -36954,7 +37187,7 @@ ${fountainText.slice(0, 50000)}`;
     { id:'write',      label:'Write & Design', blurb:'The script, and everything designed out of it.',
       pages:['screenplay','scenes','notes','moodboard','characters','locations','props','threed'] },
     { id:'plan',       label:'Plan',           blurb:'Board it, block it, and know what it costs.',
-      pages:['storyboard','previs','consistency','milestones','budget'] },
+      pages:['deliverables','storyboard','previs','consistency','milestones','budget'] },
     { id:'production', label:'Production',     blurb:'Run the pipeline: picture, voice, score.',
       pages:['shotboard','videoshots','music','musiccues','playback','pipeline','flows'] },
     { id:'post',       label:'Post',           blurb:'Export it, and keep the files straight.',

@@ -50,7 +50,13 @@ const NAV_FLOW = {
 
     plan: {
         label: 'Plan',
-        pages: ['storyboard', 'previs', 'consistency', 'milestones', 'budget'],
+        /*
+         * `deliverables` leads the group. On a commercial the output list is
+         * decided BEFORE anything is boarded, because it is what says which
+         * shots must be shot vertical rather than cropped later — and a crop to
+         * 9:16 keeps a third of the frame. A film simply never opens it.
+         */
+        pages: ['deliverables', 'storyboard', 'previs', 'consistency', 'milestones', 'budget'],
     },
 
     production: {

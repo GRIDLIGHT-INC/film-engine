@@ -628,7 +628,43 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
  * @param {object} [settings] - Project settings (target_fps, target_resolution, etc.)
  * @returns {string} xmeml XML string
  */
-function generatePremiereXML(project, shots, assets = [], settings = {}) {
+/**
+ * Premiere Pro XML (FCP7 xmeml v5).
+ *
+ * With DELIVERABLES, one named sequence per row: a commercial is fourteen to
+ * twenty-two files and an editor should open ONE project already carrying a
+ * timeline per placement at the right size and rate — not one timeline they
+ * reshape six times by hand, which is where a wrong frame rate gets baked in
+ * and cannot be fixed afterwards.
+ *
+ * With none, byte-identical to what it always produced. Every film in this tool
+ * has no deliverable rows, and a feature that changes what an existing project
+ * exports the moment it ships is one nobody can adopt deliberately.
+ */
+function generatePremiereXML(project, shots, assets = [], settings = {}, deliverables = null) {
+    const list = Array.isArray(deliverables) ? deliverables : [];
+    let out = `<?xml version="1.0" encoding="UTF-8"?>\n<xmeml version="5">\n`;
+    if (!list.length) {
+        out += premiereSequence(project, shots, assets, settings, null);
+    } else {
+        for (const d of list) {
+            /*
+             * The deliverable's own raster and rate OVERRIDE the project's.
+             * That is the point of the row: a 9:16 placement laid in a 16:9
+             * sequence is the exact failure this subsystem exists to prevent.
+             */
+            out += premiereSequence(project, shots, assets, {
+                ...settings,
+                target_fps: d.fps,
+                target_resolution: `${d.width}x${d.height}`,
+            }, d.key || d.label || '');
+        }
+    }
+    out += `</xmeml>\n`;
+    return out;
+}
+
+function premiereSequence(project, shots, assets = [], settings = {}, seqName = null) {
     const se = { ...DEFAULT_SETTINGS, ...settings };
     const fps = se.target_fps;
     // xmeml has no gap element, so a shot with no media cannot be represented.
@@ -660,10 +696,12 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
         assetsByShot[shotId].push(...list);
     }
 
-    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-    xml += `<xmeml version="5">\n`;
+    let xml = '';
     xml += `  <sequence>\n`;
-    xml += `    <name>${title}</name>\n`;
+    // A deliverable's key is how the editor identifies the placement, and how
+    // Media Encoder queues it. With no deliverables this is the project title,
+    // exactly as before.
+    xml += `    <name>${seqName ? escapeXml(seqName) : title}</name>\n`;
     xml += `    <duration>${totalFrames}</duration>\n`;
     xml += `    <rate>\n`;
     xml += `      <timebase>${timebase}</timebase>\n`;
@@ -843,7 +881,6 @@ function generatePremiereXML(project, shots, assets = [], settings = {}) {
     xml += `      </audio>\n`;
     xml += `    </media>\n`;
     xml += `  </sequence>\n`;
-    xml += `</xmeml>\n`;
 
     return xml;
 }

@@ -67,6 +67,10 @@ const REMOVED = {
 /**
  * The menu, exactly as asked for: four labels, in this order, these pages.
  *
+ * `deliverables` leads Plan for commercial work: on a spot the output list is
+ * decided BEFORE anything is boarded, because it is what says which shots must
+ * be shot vertical rather than cropped later. A film never opens it.
+ *
  * `titles` and `subtitles` were NOT in the original request and are added
  * deliberately: their routes shipped with the delivery work and neither had a
  * page, so a credit's role, a card's hold and a cue's language could only be
@@ -77,7 +81,7 @@ const REMOVED = {
 const WANTED = [
     ['Write & Design', ['screenplay', 'scenes', 'notes', 'moodboard',
         'characters', 'locations', 'props', 'threed']],
-    ['Plan',           ['storyboard', 'previs', 'consistency', 'milestones', 'budget']],
+    ['Plan',           ['deliverables', 'storyboard', 'previs', 'consistency', 'milestones', 'budget']],
     ['Production',     ['shotboard', 'videoshots', 'music', 'musiccues', 'playback',
         'pipeline', 'flows']],
     ['Post',           ['exportpage', 'titles', 'subtitles', 'rights', 'marketing', 'assets',

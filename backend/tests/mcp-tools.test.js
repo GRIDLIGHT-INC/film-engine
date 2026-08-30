@@ -333,6 +333,10 @@ const CREATE_DELETE_PAIRS = [
     // A profile is a commitment, and one an agent can make it must be able to
     // withdraw — otherwise a wrong subject is locked in with no way back out.
     { create: 'consistency_create', remove: 'consistency_delete' },
+    // A deliverable is a planned file; one an agent can add and not remove makes
+    // a mis-scoped placement permanent, and the set is what decides which shots
+    // get shot twice.
+    { create: 'deliverable_create', remove: 'deliverable_delete' },
     { create: 'character_create',  remove: 'character_delete' },
     { create: 'location_create',   remove: 'location_delete' },
     { create: 'prop_create',       remove: 'prop_delete' },

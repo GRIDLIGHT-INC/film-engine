@@ -97,7 +97,7 @@ the LAN is a decision for whoever owns the network, not a side effect of a feasi
 
 ---
 
-## 3. Which of the 32 pages is phone work?
+## 3. Which of the 33 pages is phone work?
 
 The design question, and the answer is not "all of them". Classified by what the page asks a
 person to *do*:
@@ -115,11 +115,12 @@ on a desktop — you think of an angle away from the desk.
 and nothing is lost by making them read-only. `titles` and `subtitles` are the clearest case of
 that shape: a credit roll and a cue list are read to check a spelling, and typed with a keyboard.
 
-**Desktop only, and that is correct (18).**
+**Desktop only, and that is correct (19).**
 `screenplay` (a full-page editor with pagination), `previs` (a 3D stage with six-axis drag),
 `flows` (an SVG graph canvas), `timeline`-adjacent work in `videoshots` and `selects`,
 `colorgrading`, `colorpipeline`, `broadcastqc`, `dubbing`, `consistency`, `continuity`,
-`exportpage`, `pipeline`, `projects`, `settings`, `threed`, `marketing`, `music`. These are
+`exportpage`, `pipeline`, `projects`, `settings`, `threed`, `marketing`, `music`,
+`deliverables` (a spec table of rasters and rates — read on a phone, filled in at a desk). These are
 precision work on a large canvas. A phone version of the previs stage would be a worse tool that
 took weeks.
 
@@ -132,7 +133,7 @@ is exactly the judgement NeonCore's README already made.
 
 ### Option A — the agent surface, which already works ✅ zero cost
 
-**214 MCP tools** are reachable from Claude on a phone today. That is not a workaround; for this
+**220 MCP tools** are reachable from Claude on a phone today. That is not a workaround; for this
 codebase it is the native mobile interface. You can already, from a phone:
 
 - read the screenplay, revise a scene, re-run a breakdown

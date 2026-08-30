@@ -318,18 +318,38 @@ test('the delivery pages reach every field their routes accept', () => {
         { route: 'credits.js', fn: 'createTitleCard', saver: 'saveTitleCard', nav: 'titles' },
         { route: 'subtitles.js', fn: 'createSubtitle', saver: 'saveSubtitle', nav: 'subtitles' },
         { route: 'assets.js', fn: 'createRight', saver: 'saveRight', nav: 'rights' },
+        /*
+         * The field list lives in `insertRow` rather than in the create
+         * handler, which validates and delegates — so that is where the
+         * denominator is read from. Naming the wrong function here would derive
+         * an EMPTY field set and pass vacuously.
+         */
+        { route: 'deliverables.js', fn: 'insertRow', saver: 'saveDeliverable', nav: 'deliverables' },
     ];
 
     for (const sf of surfaces) {
         assert.ok(new RegExp(`data-page="${sf.nav}"`).test(PAGE), `no nav button for ${sf.nav}`);
         assert.ok(new RegExp(`id="page-${sf.nav}"`).test(PAGE), `no page markup for ${sf.nav}`);
 
+        /*
+         * The field list, preferring the route's OWN exported declaration over
+         * a regex across its handler. A scan for `body.<field>` is only as good
+         * as the parameter name it guesses: `routes/deliverables.js` builds its
+         * row in a helper whose parameter is `row`, so the scan derived ZERO
+         * fields and would have passed vacuously.
+         */
         const src = fs.readFileSync(path.join(__dirname, '..', 'routes', sf.route), 'utf8');
-        const at = src.indexOf(`function ${sf.fn}`);
-        assert.ok(at > -1, `${sf.fn} is gone from ${sf.route}`);
-        const routeBody = src.slice(at, src.indexOf('\nfunction ', at + 10));
-        const fields = [...new Set([...routeBody.matchAll(/body\.([a-z_]+)/g)].map(m => m[1]))]
-            .filter(f => f !== 'project_id');
+        let fields;
+        const declared = require(path.join(__dirname, '..', 'routes', sf.route));
+        if (Array.isArray(declared.EDITABLE)) {
+            fields = declared.EDITABLE.filter(f => f !== 'project_id');
+        } else {
+            const at = src.indexOf(`function ${sf.fn}`);
+            assert.ok(at > -1, `${sf.fn} is gone from ${sf.route}`);
+            const routeBody = src.slice(at, src.indexOf('\nfunction ', at + 10));
+            fields = [...new Set([...routeBody.matchAll(/body\.([a-z_]+)/g)].map(m => m[1]))]
+                .filter(f => f !== 'project_id');
+        }
         assert.ok(fields.length >= 5, `${sf.fn}: only ${fields.length} fields found — the scan is not reading the route`);
 
         const sAt = page.indexOf(`async function ${sf.saver}`);

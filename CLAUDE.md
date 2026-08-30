@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (94 migrations)
+│   │   └── migrations/     # SQL migration files (95 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -81,6 +81,7 @@ film-engine/
 │   │   ├── story-bible.js      # What things ARE, and which entity was written from which section
 │   │   ├── media-import.js     # Footage and sound made outside Film Engine: one route, all seven kinds
 │   │   ├── sequences.js        # Several shots, one continuous move: plan free, generate, or upload
+│   │   ├── deliverables.js     # The output list, and which ratios must be shot rather than cropped
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
@@ -175,6 +176,7 @@ film-engine/
 │   │   ├── board-grouping.js      # Board groups for reading, setups for working
 │   │   ├── conform.js             # Shots → one film: pure plan, probed executors
 │   │   ├── export-package.js     # The XML plus the media it names, and what is wrong before you hand it over
+│   │   ├── deliverables.js       # A commercial is a fan-out: one row per file that leaves the job
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
@@ -277,6 +279,7 @@ film-engine/
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
+│       ├── deliverables.test.js        # Fourteen to twenty-two files, planned before anything is boarded
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
 │       ├── aspect-consistency.test.js   # The board and the footage are the same shape
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
@@ -2843,7 +2846,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (94 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (95 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -3021,6 +3024,7 @@ node --test backend/tests/clip-coverage.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js
+node --test backend/tests/deliverables.test.js
 node --test backend/tests/paid-preview.test.js
 node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js

@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**214 tools, 52 families.** Everything the app can do, you can ask for in a
+**220 tools, 53 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -350,7 +350,20 @@ leg at a time. `sequence_generate_native` is a different Runway operation: one
 `node_out_assembly` · `node_out_timeline` · `node_out_asset` · `node_tf_mix` ·
 `node_tf_stitch` · `node_tf_encode` · `node_tf_fanout` · `node_tf_select` ·
 `node_in_prompt` · `node_in_asset` · `node_in_scene` · `node_in_subject` ·
-`node_in_stock` · `run_plan` · `run_report` · `export_preflight` · `export_package`
+`node_in_stock` · `run_plan` · `run_report` · `export_preflight` · `export_package` ·
+`deliverable_list` · `deliverable_plan` · `deliverable_create` · `deliverable_update` ·
+`deliverable_delete` · `deliverable_check`
+
+**A commercial is a fan-out, not a short film.** A film has one shape; a spot
+resolves to fourteen to twenty-two files. `deliverable_plan` applies a package
+(rapid, campaign, broadcast) and writes one row per file — and the set is decided
+**before anything is boarded**, because it is what says which ratios must be
+SHOT rather than cropped. A 9:16 crop of a 16:9 frame keeps 32% of its width, and
+no reframing tool can invent the two-thirds that were never generated.
+
+`deliverable_check` is free and carries the actionable line: **needs native
+shots** means a vertical placement exists with no shot flagged for it, so every vertical
+file will be a crop of the master — invisible until the client sees the cut.
 
 `run_plan` orders the work to minimise model swaps and reports the cost
 **before** anything generates.

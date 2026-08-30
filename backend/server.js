@@ -83,6 +83,7 @@ const { handleBreakdown } = require('./routes/breakdown');
 const { handleProductionReports } = require('./routes/production-reports');
 const { handleMoodBoard } = require('./routes/mood-board');
 const { handleStyleBook } = require('./routes/style-book');
+const { handleDeliverables } = require('./routes/deliverables');
 const { handleMediaImport } = require('./routes/media-import');
 const { handleSequences } = require('./routes/sequences');
 const { handleAnnotations } = require('./routes/annotations');
@@ -403,6 +404,17 @@ const server = http.createServer(async (req, res) => {
         if ((parts[1] === 'projects' && parts[2] && parts[3] === 'mood-board')
             || (parts[1] === 'mood-board' && parts[2])) {
             return await handleMoodBoard(req, res, parts, query);
+        }
+
+        /*
+         * Route: the deliverable set — one row per file that leaves the job.
+         * Matched before /film/projects/:id so the sub-paths are not swallowed
+         * by the project router, the same reason the style book sits above the
+         * shot router.
+         */
+        if ((parts[1] === 'projects' && parts[2] && parts[3] === 'deliverables')
+            || (parts[1] === 'deliverables' && parts[2])) {
+            return handleDeliverables(req, res, parts, query);
         }
 
         // Route: the style book — the director's library, and applying an

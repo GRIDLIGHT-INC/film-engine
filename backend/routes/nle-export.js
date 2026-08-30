@@ -171,6 +171,15 @@ function handleNLEExport(req, res, urlParts, query) {
         return;
     }
 
+    /*
+     * The deliverable set, if this project has one. A film has none and exports
+     * exactly as it always did; a commercial gets one sequence per placement,
+     * each at its own raster and rate.
+     */
+    const deliverables = db.prepare(
+        'SELECT * FROM film_deliverables WHERE project_id = ? ORDER BY sort_order, created_at')
+        .all(projectId);
+
     if (format === 'fcpxml') {
         const content = generateFCPXML(project, shots, assets, settings);
         const fileName = `${safeTitle}.fcpxml`;
@@ -198,7 +207,7 @@ function handleNLEExport(req, res, urlParts, query) {
     }
 
     if (format === 'premiere') {
-        const content = generatePremiereXML(project, shots, assets, settings);
+        const content = generatePremiereXML(project, shots, assets, settings, deliverables);
         const fileName = `${safeTitle}.prproj.xml`;
         registerExportAsset(projectId, 'premiere_xml', fileName, content);
         res.writeHead(200, {

@@ -60,6 +60,7 @@ const { handlePrevis } = require('../routes/previs');
 const { handleThreeD } = require('../routes/threed');
 const { handleProductionReports } = require('../routes/production-reports');
 const { handleNLEExport } = require('../routes/nle-export');
+const { handleDeliverables } = require('../routes/deliverables');
 const { handleBudget } = require('../routes/budget');
 const { handleConsistency } = require('../routes/consistency');
 const { handleStoryBible } = require('../routes/story-bible');
@@ -1978,6 +1979,75 @@ const PRODUCTION_TOOLS = [
         handler: handleProductionReports, method: 'GET',
         description: 'Every element grouped by type (characters, locations, props) with the scene count for each. `undescribed` is the actionable line: an element with no description reaches generation as a bare name, and every frame then invents its own version of it.',
         path: a => `/film/projects/${a.project_id}/elements-list`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'deliverable_list',
+        handler: handleDeliverables, method: 'GET',
+        description: 'Every file that leaves this job, with the profiles and package names the route validates against. A film has none of these and behaves exactly as it always has; a commercial has fourteen to twenty-two. Read this before boarding a spot: the set is what says which ratios must be SHOT rather than cropped.',
+        path: a => `/film/projects/${a.project_id}/deliverables`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'deliverable_plan',
+        handler: handleDeliverables, method: 'POST',
+        description: 'Apply a package preset (rapid, campaign, broadcast) and get one deliverable row per file. REPLACES the existing set unless append is true \u2014 a package is a statement about the whole job rather than an addition to it, so applying one twice should not leave twelve rows. `overrides` is keyed BY PROFILE ID, because a campaign that runs :20 on social and :30 on air is normal and a flat override would silently retime the broadcast master, whose length is contractual.',
+        path: a => `/film/projects/${a.project_id}/deliverables/plan`,
+        body: a => ({ package: a.package, append: a.append, overrides: a.overrides }),
+        schema: {
+            project_id: { type: 'string' },
+            package: { type: 'string', description: 'rapid, campaign or broadcast.' },
+            append: { type: 'boolean', description: 'Keep the existing rows and add to them.' },
+            overrides: { type: 'object', description: 'Per-profile field overrides, e.g. { reels_15: { duration_ms: 20000 } }.' },
+        },
+        required: ['project_id', 'package'],
+    },
+    {
+        name: 'deliverable_create',
+        handler: handleDeliverables, method: 'POST',
+        description: 'Add ONE hand-built deliverable. Use deliverable_plan for a standard package; this is for a placement no profile covers. `key` is the sequence name in Premiere and how Media Encoder queues it.',
+        path: a => `/film/projects/${a.project_id}/deliverables`,
+        body: a => { const b = { ...a }; delete b.project_id; return b; },
+        schema: {
+            project_id: { type: 'string' },
+            key: { type: 'string' }, label: { type: 'string' },
+            aspect_ratio: { type: 'string' }, width: { type: 'number' }, height: { type: 'number' },
+            fps: { type: 'number' }, duration_ms: { type: 'number' },
+            platform: { type: 'string' }, loudness_target: { type: 'string' },
+            caption_mode: { type: 'string', description: 'none, sidecar or burned.' },
+            native: { type: 'boolean', description: 'Generated at this ratio rather than cropped to it.' },
+            status: { type: 'string' }, notes: { type: 'string' },
+        },
+        required: ['project_id', 'key'],
+    },
+    {
+        name: 'deliverable_update',
+        handler: handleDeliverables, method: 'PUT',
+        description: 'Change one deliverable. MERGES \u2014 a deliverable is a whole spec, and a replace would drop the fields you were not asked about.',
+        path: a => `/film/deliverables/${a.deliverable_id}`,
+        body: a => { const b = { ...a }; delete b.deliverable_id; return b; },
+        schema: {
+            deliverable_id: { type: 'string' },
+            key: { type: 'string' }, label: { type: 'string' }, aspect_ratio: { type: 'string' },
+            width: { type: 'number' }, height: { type: 'number' }, fps: { type: 'number' },
+            duration_ms: { type: 'number' }, platform: { type: 'string' },
+            loudness_target: { type: 'string' }, caption_mode: { type: 'string' },
+            native: { type: 'boolean' }, status: { type: 'string' }, notes: { type: 'string' },
+        },
+        required: ['deliverable_id'],
+    },
+    {
+        name: 'deliverable_delete',
+        handler: handleDeliverables, method: 'DELETE',
+        description: 'Remove one deliverable. Nothing generated is affected \u2014 this is the list of files that leave the job.',
+        path: a => `/film/deliverables/${a.deliverable_id}`,
+        schema: { deliverable_id: { type: 'string' } }, required: ['deliverable_id'],
+    },
+    {
+        name: 'deliverable_check',
+        handler: handleDeliverables, method: 'GET',
+        description: 'FREE verdict on the output set: what the cut currently runs against each deliverable\u2019s bought runtime, and which ratios must be SHOT native rather than cropped. `needs_native_shots` is the actionable line \u2014 a vertical placement with no shot flagged for it will be a crop of the 16:9 master, losing two-thirds of the width, and that is invisible until the client sees it.',
+        path: a => `/film/projects/${a.project_id}/deliverables/check`,
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {

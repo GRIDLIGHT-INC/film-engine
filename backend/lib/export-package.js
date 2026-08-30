@@ -239,7 +239,7 @@ async function packageExport(project, shots, assets = [], opts = {}) {
      * lookalike is real is one that eventually excuses the real thing — so the
      * name moved instead.
      */
-    const content = spec.build(project, shots, rewritten, opts.settings || {});
+    const content = spec.build(project, shots, rewritten, opts.settings || {}, opts.deliverables || null);
     const stem = (project.title || 'export').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 60) || 'export';
     const xmlPath = path.join(dest, `${stem}.${spec.ext}`);
     fs.writeFileSync(xmlPath, content, 'utf8');
