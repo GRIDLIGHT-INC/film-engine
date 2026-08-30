@@ -44,6 +44,11 @@ const QA_CHECKS = [
     { id: 'project_continuity', scope: 'project', severity: SEVERITY.warning, label: 'Visual continuity across shots' },
     { id: 'project_audio_mix', scope: 'project', severity: SEVERITY.warning, label: 'All scenes have audio mix' },
     { id: 'project_timeline_complete', scope: 'project', severity: SEVERITY.error, label: 'Timeline has no gaps' },
+    /*
+     * Spot checks. They apply ONLY to a project that has said it is one -- a
+     * runtime target -- so a film is never failed for being the length it is.
+     */
+    { id: 'spot_duration_exact', scope: 'project', severity: SEVERITY.error, label: 'Cut hits the bought runtime exactly' },
 ];
 
 /**
@@ -205,6 +210,29 @@ function runProjectQA(projectId, db) {
         severity: SEVERITY.warning,
         message: `${scenesWithMusic}/${scenes.length} scenes have music`,
     });
+
+    /*
+     * The runtime, for a spot only.
+     *
+     * A film runs as long as it runs, so a project with no target is not
+     * examined at all rather than passed: a green tick against a rule that was
+     * never applied is worse than silence.
+     */
+    const spotTarget = Number(project.target_duration_ms) || 0;
+    if (spotTarget > 0) {
+        const { planConform } = require('./conform');
+        const plan = planConform(projectId);
+        const delta = plan.over_by_ms;
+        checks.push({
+            id: 'spot_duration_exact',
+            passed: delta !== null && Math.abs(delta) <= Math.ceil(1000 / (plan.fps || 24)),
+            severity: SEVERITY.error,
+            message: delta === null
+                ? 'The cut could not be measured'
+                : `Cut runs ${(plan.total_duration_ms / 1000).toFixed(1)}s against a `
+                  + `${(spotTarget / 1000).toFixed(1)}s target (${delta > 0 ? '+' : ''}${(delta / 1000).toFixed(1)}s)`,
+        });
+    }
 
     const passed = checks.filter(c => c.passed).length;
     const failed = checks.filter(c => !c.passed && c.severity === SEVERITY.error).length;

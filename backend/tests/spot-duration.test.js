@@ -79,3 +79,62 @@ test('the exported constant is gone, not merely unused', () => {
     assert.equal(nle.FPS, undefined,
         'nle-export still exports a hardcoded FPS; a rate belongs to a project, not to a module');
 });
+
+test('a conform that misses the bought runtime REFUSES, and names the overage', async () => {
+    /*
+     * M3's acceptance. A film runs as long as it runs; a commercial is bought
+     * by the second, and a :30 that arrives at 31.4s is rejected by the station.
+     *
+     * REFUSE rather than shorten — the doctrine `planConform` already follows
+     * for a missing shot. Silently trimming would deliver a spot the director
+     * did not cut, and joining what is there produces a shorter film that plays
+     * perfectly, which is the failure nobody notices until they watch all of it.
+     */
+    const { db, generateId } = require('../db/database');
+    require('../db/schema').ensureSchema();
+    const { planConform } = require('../lib/conform');
+
+    const mk = (targetMs, shotMs) => {
+        const pid = generateId();
+        db.prepare(`INSERT INTO film_projects (id, title, target_fps, target_resolution, target_duration_ms)
+                    VALUES (?, 'Spot', 29.97, '1920x1080', ?)`).run(pid, targetMs);
+        const sc = generateId();
+        db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, 1)').run(sc, pid);
+        const sh = generateId();
+        db.prepare(`INSERT INTO film_shots (id, scene_id, shot_code, duration_ms, sort_order)
+                    VALUES (?, ?, '1A', ?, 0)`).run(sh, sc, shotMs);
+        db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, duration_ms)
+                    VALUES (?, ?, ?, 'video_raw', '/m/1A.mp4', '1A.mp4', ?)`)
+            .run(generateId(), pid, sh, shotMs);
+        return pid;
+    };
+
+    // 31.4s against a :30 target.
+    const over = planConform(mk(30000, 31400));
+    assert.equal(over.ok, false, 'a 31.4s cut was conformed against a :30 target');
+    assert.ok(/1\.4|1400/.test(over.error || ''),
+        `the refusal does not name the overage: ${over.error}`);
+    assert.ok(/30/.test(over.error || ''), 'the refusal does not name the target');
+    assert.equal(over.over_by_ms, 1400, 'the overage is not reported as a number a caller can act on');
+
+    // Under-running is refused too: airtime paid for and not used.
+    const under = planConform(mk(30000, 28000));
+    assert.equal(under.ok, false, 'a 28s cut was conformed against a :30 target');
+    assert.equal(under.over_by_ms, -2000, 'an under-run is not reported');
+
+    // On target passes, with a ONE-FRAME tolerance: a cut is measured in whole
+    // frames and a target in milliseconds cannot always land on one exactly.
+    const exact = planConform(mk(30000, 30000));
+    assert.equal(exact.ok, true, `an exact :30 was refused: ${exact.error}`);
+    const oneFrame = planConform(mk(30000, 30000 + Math.floor(1000 / 30)));
+    assert.equal(oneFrame.ok, true, 'a cut one frame over the target was refused — the tolerance is not applied');
+
+    /*
+     * And a project with NO target is unaffected. That is every film ever made
+     * in this tool, and a length check that fires on them would be switched off
+     * the day it shipped.
+     */
+    const film = planConform(mk(0, 90000));
+    assert.equal(film.ok, true, 'a film with no runtime target was refused for its length');
+    assert.equal(film.over_by_ms, null, 'a film with no target reports an overage against nothing');
+});

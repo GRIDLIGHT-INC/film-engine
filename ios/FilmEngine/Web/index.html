@@ -5079,7 +5079,17 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 
         <!-- ── 5. SHOT BOARD ────────────────────────────────────── -->
         <div class="page" id="page-shotboard">
-            <div class="page-header"><h2>Shot Board</h2></div>
+            <div class="page-header flex-between">
+                <h2>Shot Board</h2>
+                <!--
+                    The running total against the bought runtime. This is the
+                    screen where an overlong spot gets fixed, so the number
+                    belongs here rather than on the export page, where finding
+                    out is too late to be cheap. A film has no target and this
+                    stays empty.
+                -->
+                <div id="shotboardRuntime" class="text-sm"></div>
+            </div>
             <div class="kanban-board" id="kanbanBoard"></div>
         </div>
 
@@ -23512,9 +23522,39 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // SHOT BOARD (Kanban)
     // ══════════════════════════════════════════════════════════════
+    /**
+     * The running total against the bought runtime.
+     *
+     * A film runs as long as it runs and this stays empty for one. A commercial
+     * is bought by the second, and this is the screen where an overlong spot
+     * gets fixed — finding out at export is too late to be cheap.
+     *
+     * Read from the free deliverables check, which measures the cut the same
+     * way the conform does: two answers to "how long is this" is how a board
+     * and an export come to disagree.
+     */
+    async function loadShotboardRuntime() {
+        const host = document.getElementById('shotboardRuntime');
+        if (!host || !state.currentProject) return;
+        host.innerHTML = '';
+        let v;
+        try { v = await api(`/projects/${state.currentProject.id}/deliverables/check`); }
+        catch (err) { return; }
+        if (!v.target_duration_ms) return;
+
+        const cut = (v.cut_duration_ms / 1000).toFixed(1);
+        const target = (v.target_duration_ms / 1000).toFixed(1);
+        const delta = (v.cut_duration_ms - v.target_duration_ms) / 1000;
+        const colour = v.on_target ? 'var(--gl-success)' : 'var(--gl-warning,#f59e0b)';
+        host.innerHTML = `<span style="color:${colour};font-weight:600;">${cut}s / ${target}s</span>`
+            + (v.on_target ? '' : `<span class="text-sm text-muted"> &middot; `
+                + `${delta > 0 ? 'over' : 'under'} by ${Math.abs(delta).toFixed(1)}s</span>`);
+    }
+
     async function loadShotBoard() {
         if (!state.currentProject) return;
         setStatus('Loading shots...');
+        loadShotboardRuntime();
         try {
             const data = await api('/projects/' + state.currentProject.id + '/shotlist');
             state.shots = data.shots || [];

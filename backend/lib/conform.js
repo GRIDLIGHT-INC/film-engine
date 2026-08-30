@@ -39,7 +39,8 @@ function database() { return require('../db/database').db; }
  */
 function planConform(projectId) {
     const db = database();
-    const project = db.prepare('SELECT id, title, target_fps, target_resolution FROM film_projects WHERE id = ?')
+    const project = db.prepare(
+        'SELECT id, title, target_fps, target_resolution, target_duration_ms FROM film_projects WHERE id = ?')
         .get(projectId);
     if (!project) return { ok: false, error: 'Project not found', clips: [], missing: [] };
 
@@ -116,6 +117,45 @@ function planConform(projectId) {
         plan.error = `Cannot conform: ${missing.length} shot(s) have no video — `
             + `${missing.map(m => m.shot_code).join(', ')}. `
             + 'Generate them, or remove them from the timeline. A film missing a shot plays fine and is wrong.';
+    }
+
+    /*
+     * THE RUNTIME IS A TARGET, NOT AN OUTCOME.
+     *
+     * A film runs as long as it runs. A commercial is BOUGHT by the second: a
+     * :30 that arrives at 31.4s is rejected by the station, and one that arrives
+     * at 29.6s has paid for airtime it did not use. So the length is checked
+     * here, before anything is muxed, and it REFUSES rather than trimming — the
+     * doctrine this file already follows for a missing shot. Silently shortening
+     * would deliver a spot the director did not cut.
+     *
+     * A target of 0 is "no target", which is every film ever made in this tool.
+     * `over_by_ms` is null for them rather than an overage against nothing: a
+     * check that fires on every existing project is one switched off the day it
+     * ships, taking the real case with it.
+     */
+    const target = Number(project.target_duration_ms) || 0;
+    plan.target_duration_ms = target;
+    plan.over_by_ms = null;
+    if (target > 0) {
+        const delta = plan.total_duration_ms - target;
+        plan.over_by_ms = delta;
+        // One frame of tolerance, stated rather than assumed: a cut is measured
+        // in whole frames and a target expressed in milliseconds cannot always
+        // land on one exactly.
+        const tolerance = Math.ceil(1000 / (plan.fps || 24));
+        if (Math.abs(delta) > tolerance) {
+            plan.ok = false;
+            const over = delta > 0;
+            plan.error = `Cannot conform: this cut runs ${(plan.total_duration_ms / 1000).toFixed(1)}s `
+                + `against a ${(target / 1000).toFixed(1)}s target — `
+                + `${over ? 'over' : 'under'} by ${(Math.abs(delta) / 1000).toFixed(1)}s. `
+                + (over
+                    ? 'A spot longer than the slot it was bought for is rejected by the station. '
+                      + 'Trim the cut; nothing here will shorten it for you.'
+                    : 'A spot shorter than its slot has paid for airtime it does not use. '
+                      + 'Extend a hold, or lengthen a shot.');
+        }
     }
     return plan;
 }
