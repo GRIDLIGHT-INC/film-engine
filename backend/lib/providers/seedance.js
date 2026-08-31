@@ -149,13 +149,53 @@ function buildVideoRequest(payload) {
 
     const allowed = WORKFLOWS[workflow].images;
     const used = images.slice(0, allowed);
-    if (workflow === 'image-to-video') {
-        body.image_url = used[0];
-    } else if (workflow === 'first-last-frame') {
-        body.first_frame_image = used[0];
-        body.last_frame_image = used[1];
-    } else if (workflow === 'omni-reference') {
-        body.reference_images = used;
+    /*
+     * WHICH FIELD CARRIES THE PICTURES IS PER WORKFLOW, and MuAPI is not
+     * uniform about it. Read from its own refusals rather than assumed:
+     *
+     *     image-to-video     image_url      one URL, not a list
+     *     first-last-frame   images_list
+     *     omni-reference     images_list
+     *     video-edit         images_list
+     *     text-to-video      no image field at all
+     *
+     * This sent three names and two of them exist nowhere in that table —
+     * `first_frame_image`/`last_frame_image` and `reference_images` — so both
+     * paths were refused outright with
+     * `{"loc":["body","images_list"],"msg":"Field required"}`. The two-keyframe
+     * path and the THIRTY-reference path could not generate at all, and
+     * omni-reference is the reason this adapter exists: Runway takes two.
+     *
+     * Only image-to-video was right, which is why single-frame generation
+     * worked and made the other two look like a different problem.
+     *
+     * Standardising everything on `images_list` is the tempting fix and it is
+     * also wrong: it repairs three and breaks the one that worked, because
+     * image-to-video does not accept it. Assuming uniformity fails whichever
+     * way you guess it.
+     *
+     * `images_list` is ORDERED, and on first-last-frame the order is the
+     * meaning: [0] is the frame the clip starts on, [1] is the frame it ends
+     * on. That is exactly the order `collectImages` builds.
+     */
+    const IMAGE_FIELD = {
+        'image-to-video': 'image_url',
+        'first-last-frame': 'images_list',
+        'omni-reference': 'images_list',
+        'video-edit': 'images_list',
+        'video-extend': 'images_list',
+    };
+    /*
+     * The map is the ONLY statement of the field name -- written out rather
+     * than special-casing `image_url` and hardcoding `images_list` for the
+     * rest, which made every other entry decorative: changing one to a name
+     * MuAPI refuses would have emitted `images_list` anyway, and the mistake
+     * would have looked corrected in the table while the request stayed wrong.
+     */
+    const field = IMAGE_FIELD[workflow];
+    if (field && used.length) {
+        // `image_url` is one URL; every other endpoint takes the ordered array.
+        body[field] = field === 'image_url' ? used[0] : used;
     }
     if (p.source_video || p.video_url) body.video_url = p.source_video || p.video_url;
 

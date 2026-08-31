@@ -316,6 +316,7 @@ film-engine/
 │       ├── generation-handles.test.js  # A generation the host abandons is not lost
 │       ├── music-cue-generation.test.js # The cue you wrote is the cue that gets generated
 │       ├── music-cue-fields.test.js  # The fields the cue contract promises must reach the generator
+│       ├── seedance-image-fields.test.js # Each Seedance workflow names its pictures differently
 │       ├── entity-create-fields.test.js # Creating a subject and updating one accept the same fields
 │       ├── provider-resolution-visible.test.js # Spend that goes somewhere nobody chose says so
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
@@ -856,6 +857,51 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### Each Seedance Workflow Names Its Pictures Differently
+
+Found while verifying an unexplained uncommitted change to the adapter, and it
+is a **live blocker on video**. Probed against MuAPI's own endpoints, which
+report their required fields for free:
+
+| workflow | field |
+|---|---|
+| image-to-video | `image_url` — one URL, not a list |
+| first-last-frame | `images_list` |
+| omni-reference | `images_list` |
+| video-edit | `images_list` (+ `video_url`) |
+| text-to-video | no image field at all |
+
+The adapter sent **three** names and two of them exist nowhere in that table:
+`first_frame_image` / `last_frame_image`, and `reference_images`. Both are
+refused outright — `{"loc":["body","images_list"],"msg":"Field required"}` — so
+the **two-keyframe path and the thirty-reference path could not generate at
+all**. Omni-reference is the reason this adapter is here: Runway takes two
+keyframes and Seedance takes thirty.
+
+Only `image_url` on image-to-video was right, which is why single-frame
+generation worked and made the other two look like a different problem.
+
+**The tempting fix is also wrong**, and was the change sitting in the tree:
+standardising every workflow on `images_list` repairs three and breaks the one
+that worked, because image-to-video does not accept it. MuAPI is not uniform
+here, and assuming it is fails whichever way you guess.
+
+`images_list` is **ordered**, and on first-last-frame the order is the meaning:
+[0] is the frame the clip starts on, [1] is the frame it ends on. Reversed, the
+move runs backwards — and it would read as a generation problem rather than a
+field-order one.
+
+The map is the **only** statement of the field name. The first implementation
+special-cased `image_url` and hardcoded `images_list` for everything else, which
+made every other entry decorative: changing one to a name MuAPI refuses still
+emitted `images_list`, so the table could be corrected while the request stayed
+wrong. Two mutations survived on exactly that before it was written out.
+
+Also confirmed: MuAPI accepts **no `resolution` field** on any Seedance
+endpoint — the tier is in the path (`-480p`, `-1080p`, `-4k`), which the adapter
+already does. Pinned, because sending one would be a setting that silently
+reaches nothing.
 
 ### The Fields the Cue Contract Promises Must Reach the Generator
 
@@ -3680,6 +3726,7 @@ node --test backend/tests/muapi-models.test.js
 node --test backend/tests/generation-handles.test.js
 node --test backend/tests/music-cue-generation.test.js
 node --test backend/tests/music-cue-fields.test.js
+node --test backend/tests/seedance-image-fields.test.js
 node --test backend/tests/entity-create-fields.test.js
 node --test backend/tests/provider-resolution-visible.test.js
 node --test backend/tests/provider-config-merge.test.js
