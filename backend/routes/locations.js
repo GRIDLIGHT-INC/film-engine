@@ -801,6 +801,11 @@ function handleLocations(req, res, urlParts, query) {
         if (urlParts[3] === 'orientation-plan' && urlParts[4] === 'import' && req.method === 'POST') {
             return importOrientationPlanRoute(req, res, locId);
         }
+        if (urlParts[3] === 'orientation-plan' && !urlParts[4] && req.method === 'DELETE') {
+            const removed = require('../lib/orientation-plans').dropOrientationPlan(locId);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ deleted: removed, recoverable: 'refsheets/deleted/orientation/' }));
+        }
         if (req.method === 'GET') return getLocation(req, res, locId);
         if (req.method === 'PUT') return updateLocation(req, res, locId);
         if (req.method === 'DELETE') return deleteLocation(req, res, locId);
@@ -918,9 +923,9 @@ function getLocation(req, res, locId) {
     // The uploaded plan is documentation, stored as `other`; it is intentionally
     // absent from the reference-image query that conditions storyboard frames.
     const planAsset = db.prepare(`SELECT file_name, created_at FROM film_assets
-        WHERE location_id = ? AND asset_type = 'other'
+        WHERE location_id = ? AND asset_type = 'other' AND json_valid(metadata)
           AND json_extract(metadata, '$.kind') = 'orientation_plan'
-        ORDER BY created_at DESC LIMIT 1`).get(locId);
+        ORDER BY created_at DESC, id DESC LIMIT 1`).get(locId);
     loc.orientation_plan_image_url = planAsset
         ? getFileUrl('refsheets', loc.project_id, planAsset.file_name, planAsset.created_at) : null;
 
@@ -1151,7 +1156,9 @@ function updateLocation(req, res, locId) {
         const { PLAN_EDGES } = require('../lib/subject-sheets');
         const clean = { interior: [], marker: String(obj.marker || '').slice(0, 200) };
         for (const edge of PLAN_EDGES) clean[edge] = String(obj[edge] || '').slice(0, 200);
-        if (Array.isArray(obj.interior)) clean.interior = obj.interior.map(x => String(x).slice(0, 120)).filter(Boolean).slice(0, 8);
+        if (Array.isArray(obj.interior)) clean.interior = obj.interior
+            .slice(0, 3).map(x => String(x || '').slice(0, 120));
+        while (clean.interior.length < 3) clean.interior.push('');
         fields.push('orientation_plan = ?');
         values.push(JSON.stringify(clean));
     }
@@ -1282,6 +1289,7 @@ function propagateLocationRename(projectId, oldName, newName) {
 }
 
 function deleteLocation(req, res, locId) {
+    require('../lib/orientation-plans').dropOrientationPlan(locId);
     const result = db.prepare('DELETE FROM film_locations WHERE id = ?').run(locId);
     if (result.changes === 0) {
         res.writeHead(404, { 'Content-Type': 'application/json' });

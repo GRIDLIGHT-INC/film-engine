@@ -24953,10 +24953,10 @@ ${fountainText.slice(0, 50000)}`;
                  <button class="btn btn-secondary btn-sm" style="margin-top:6px;" onclick="ssEditPlatePlan()">Plan the views</button>`)}
 
             ${ssSection('ls-orientation', 'Orientation plan', 'keeps geography consistent across plates',
-                `${l.orientation_plan_image_url ? `<img class="ss-plan-image" src="${esc(API_BASE + l.orientation_plan_image_url)}"
+                `<div class="ss-plan">${l.orientation_plan_image_url ? `<img class="ss-plan-image" src="${esc(API_BASE + l.orientation_plan_image_url)}"
                     alt="Orientation plan for ${esc(l.name || 'location')}"
                     onclick="openPlateViewer('${esc(API_BASE + l.orientation_plan_image_url)}', ${jsAttr((l.name || 'Location') + ' — orientation plan')})">` : ''}
-                 <div class="ss-plan"><div class="ss-plan-grid">
+                 <div class="ss-plan-grid">
                     <span></span><span class="ss-plan-edge n">North · ${esc(plan.north || '—')}</span><span></span>
                     <span class="ss-plan-edge w">West · ${esc(plan.west || '—')}</span>
                     <div class="ss-plan-room">${[0,1,2].map((_, i) =>
@@ -24969,6 +24969,7 @@ ${fountainText.slice(0, 50000)}`;
                    ${uploadControl('orientation-plan', `/locations/${SS.id}/orientation-plan/import`, {
                        extra: {}, after: 'renderSubjectSheet', title: 'Upload an LLM-generated orientation plan image'
                    })}
+                   ${l.orientation_plan_image_url ? `<button class="btn btn-secondary btn-sm" onclick="ssDeletePlanImage()">Remove image</button>` : ''}
                  </div>`)}
 
             ${ssSection('ls-variants', 'Time of day variants',
@@ -25030,6 +25031,7 @@ ${fountainText.slice(0, 50000)}`;
                     </div>`;
                  }).join('')}`)}
 
+            <div class="ls-support-grid">
             ${ssSection('ls-lighting', 'Lighting default',
                 'How it is lit unless a shot says otherwise.',
                 ssField('lighting_default', l.lighting_default, { placeholder: 'golden-hour rake off the water, lit practicals' })
@@ -25046,6 +25048,7 @@ ${fountainText.slice(0, 50000)}`;
                 'Notes for whoever writes the ambient cue. This does not reach the image prompt.',
                 ssField('sound_notes', l.sound_notes, { rows: 2, placeholder: 'gulls, a screen door, radio low behind the counter' }),
                 ssReach('not-sent'))}
+            </div>
 
             ${ssSection('ls-continuity', 'Continuity flags',
                 'What must stay true in EVERY plate.',
@@ -25098,7 +25101,7 @@ ${fountainText.slice(0, 50000)}`;
                 'Explorations and gathered images.', ssRefs())}
 
             ${ssSection('ps-states', 'Continuity states', 'each state generates its own plate set',
-                `<div>${states.length ? states.map((st, i) => `<div class="ss-state">
+                `<div class="ps-states-grid">${states.length ? states.map((st, i) => `<div class="ss-state">
                     <strong>${String.fromCharCode(65 + i)} · ${esc(st.name)}</strong>
                     ${st.scene ? `<span class="cs-pill">${esc(st.scene)}</span>` : '<span class="cs-pill">default</span>'}
                     <span class="text-sm text-muted">${esc(st.what || '')}</span>
@@ -25314,9 +25317,9 @@ ${fountainText.slice(0, 50000)}`;
             if (v === null) return;
             next[edge] = v.trim();
         }
-        const inside = prompt('Inside the room, comma separated — "counter and stools, centre aisle"',
+        const inside = prompt('Exactly three room zones, comma separated — "counter and stools, centre aisle, booths"',
             (plan.interior || []).join(', '));
-        if (inside !== null) next.interior = inside.split(',').map(x => x.trim()).filter(Boolean);
+        if (inside !== null) next.interior = inside.split(',').map(x => x.trim()).filter(Boolean).slice(0, 3);
         const marker = prompt('Where does the action sit? — "corner booth, north end"', plan.marker || '');
         if (marker !== null) next.marker = marker.trim();
         try {
@@ -25324,6 +25327,15 @@ ${fountainText.slice(0, 50000)}`;
             SS.data.orientation_plan = JSON.stringify(next);
             await renderSubjectSheet();
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    async function ssDeletePlanImage() {
+        if (!confirm('Remove this orientation-plan image?\n\nThe scan moves to deleted/orientation so it can be recovered by hand. The structured compass plan stays.')) return;
+        try {
+            await api(`/locations/${SS.id}/orientation-plan`, { method: 'DELETE' });
+            await renderSubjectSheet();
+            setStatus('Orientation-plan image removed; compass data kept.');
+        } catch (err) { setStatus('Could not remove the plan image: ' + err.message); }
     }
 
     /**

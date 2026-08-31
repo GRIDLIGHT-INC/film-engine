@@ -27,6 +27,9 @@ const {
 } = require('../lib/media-imports');
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+const JPEG = Buffer.from(
+    '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==',
+    'base64');
 function buildTriangleGlb() {
     const positions = Buffer.from(new Float32Array([
         0, 0, 0, 1, 0, 0, 0, 1, 0,
@@ -284,6 +287,52 @@ test('a second storyboard import archives and repoints the prior restorable vers
     const prior = db.prepare('SELECT file_path, file_name FROM film_assets WHERE id = ?').get(first.asset_id);
     assert.match(prior.file_name, /_v1\.png$/);
     assert.ok(fs.existsSync(prior.file_path), 'the prior storyboard version was not archived');
+});
+
+test('an orientation plan is one current attachment and preserves the prior scan', () => {
+    const owner = seed();
+    const first = importMedia('orientation-plan', {
+        ...owner, name: 'first-plan.png', data: `data:image/png;base64,${PNG.toString('base64')}`,
+    });
+    const firstRow = db.prepare('SELECT file_path FROM film_assets WHERE id = ?').get(first.asset_id);
+
+    const current = importMedia('orientation-plan', {
+        ...owner, name: 'phone-photo.jpeg', data: `data:image/jpeg;base64,${JPEG.toString('base64')}`,
+    });
+    const rows = db.prepare(`SELECT id, file_path, format, mime_type FROM film_assets
+        WHERE location_id = ? AND asset_type = 'other' AND json_valid(metadata)
+          AND json_extract(metadata, '$.kind') = 'orientation_plan'`).all(owner.locationId);
+
+    assert.deepStrictEqual(rows.map(row => row.id), [current.asset_id]);
+    assert.strictEqual(rows[0].format, 'jpg');
+    assert.strictEqual(rows[0].mime_type, 'image/jpeg');
+    assert.match(rows[0].file_path, /\.jpg$/);
+    assert.ok(fs.existsSync(rows[0].file_path));
+    assert.ok(!fs.existsSync(firstRow.file_path));
+    const archiveDir = path.join(path.dirname(firstRow.file_path), 'deleted', 'orientation');
+    assert.ok(fs.readdirSync(archiveDir).some(name => name.startsWith(first.asset_id + '_')),
+        'the previous scan was not moved to its recoverable orientation archive');
+});
+
+test('an unwritable archive cannot leave two current orientation plans', () => {
+    const owner = seed();
+    const first = importMedia('orientation-plan', {
+        ...owner, name: 'locked-plan.png', data: `data:image/png;base64,${PNG.toString('base64')}`,
+    });
+    const originalRename = fs.renameSync;
+    fs.renameSync = () => { throw new Error('read-only volume'); };
+    try {
+        const current = importMedia('orientation-plan', {
+            ...owner, name: 'replacement.png', data: `data:image/png;base64,${PNG.toString('base64')}`,
+        });
+        const ids = db.prepare(`SELECT id FROM film_assets WHERE location_id = ? AND asset_type = 'other'
+            AND json_valid(metadata) AND json_extract(metadata, '$.kind') = 'orientation_plan'`)
+            .all(owner.locationId).map(row => row.id);
+        assert.deepStrictEqual(ids, [current.asset_id]);
+        assert.ok(!ids.includes(first.asset_id));
+    } finally {
+        fs.renameSync = originalRename;
+    }
 });
 
 test('every registered import is reachable through its production route', async () => {

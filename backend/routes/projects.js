@@ -407,6 +407,8 @@ function deleteProject(req, res, id) {
         return;
     }
 
+    // Archive plan scans before the project cascade removes their registry rows.
+    require('../lib/orientation-plans').dropOrientationPlansForProject(id);
     const result = db.prepare('DELETE FROM film_projects WHERE id = ?').run(id);
 
     if (result.changes === 0) {
@@ -427,6 +429,7 @@ function deleteAllProjects(req, res) {
         return;
     }
 
+    require('../lib/orientation-plans').dropAllOrientationPlans();
     db.prepare('DELETE FROM film_projects').run();
 
     res.writeHead(200, { 'Content-Type': 'application/json' });

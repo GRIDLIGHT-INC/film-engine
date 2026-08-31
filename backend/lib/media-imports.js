@@ -670,9 +670,11 @@ function importMedia(target, input) {
     const { mime, bytes } = decodeDataUri(input && input.data);
     validateBytes(spec, mime, bytes);
 
+    const imageFormat = /^image\/jpe?g$/i.test(mime) ? 'jpg' : 'png';
+    const storedFormat = spec.kind === 'model' ? 'glb' : spec.kind === 'image' ? imageFormat : spec.kind;
     let filename;
     if (target === 'storyboard-image') filename = `${owner.shotCode}.png`;
-    else filename = `${safeStem(input.name)}_${generateId().slice(0, 8)}.${spec.kind === 'model' ? 'glb' : 'png'}`;
+    else filename = `${safeStem(input.name)}_${generateId().slice(0, 8)}.${storedFormat}`;
 
     const prospective = path.join(require('./file-storage').DATA_DIR, spec.subdir, owner.projectId, filename);
     if (target === 'storyboard-image') archiveCurrentStoryboard(owner.projectId, owner.shotId, owner.shotCode, prospective);
@@ -697,7 +699,13 @@ function importMedia(target, input) {
         .run(assetId, owner.projectId, owner.shotId,
             target === 'orientation-plan' ? input.locationId : null,
             assetType, filePath, filename,
-            spec.kind === 'model' ? 'glb' : 'png', mime, bytes.length, version, JSON.stringify(metadata));
+            storedFormat, mime, bytes.length, version, JSON.stringify(metadata));
+
+    if (target === 'orientation-plan') {
+        // The new row/file is durable before the prior scan is archived. A
+        // failed upload can therefore never destroy the only plan somebody had.
+        require('./orientation-plans').replaceOrientationPlan(input.locationId, assetId);
+    }
 
     if (target === 'storyboard-image') {
         db.prepare('UPDATE film_shots SET current_frame_version = NULL WHERE id = ?').run(owner.shotId);

@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**232 tools, 56 families.** Everything the app can do, you can ask for in a
+**233 tools, 56 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -206,7 +206,8 @@ hands over what the plan would be written from: the location's description,
 its existing views, and the scenes shot there. You write the plan; nothing
 here asks a server-side model to write it for you, because you are the model
 this engine is connected to. `orientation_plan_update` records what you
-decided.
+decided, and `orientation_plan_upload` puts the PNG/JPEG you generated into
+that same section without calling a server-side model.
 
 The plan is prose and geometry, not a picture — and a director can also upload
 a hand-drawn one, which is stored beside it rather than instead of it. An
@@ -214,7 +215,7 @@ uploaded plan is deliberately NOT a plate: it is never attached to a shot as a
 reference, because a floor diagram conditioning every frame of a location is
 exactly the failure it exists to prevent.
 
-`orientation_plan_brief` · `orientation_plan_update` ·
+`orientation_plan_brief` · `orientation_plan_update` · `orientation_plan_upload` ·
 
 
 `refsheet_orbit` builds a character turnaround from ONE orbiting clip and cuts it into five views — front, three-quarter, profile, back three-quarter, back. Frames of one motion cannot disagree with each other the way three separately generated plates can. It SPENDS CREDITS (~25 for a 5-second orbit, against roughly 45 for three plates); read `refsheet_orbit_preview` first, which is free. It is a bootstrap: it will not replace an approved front anchor, and says which views it left alone.

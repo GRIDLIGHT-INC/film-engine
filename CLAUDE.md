@@ -109,6 +109,7 @@ film-engine/
 │   │   ├── gridlight-client.js    # Shared HTTP client + request queue + 429 retry
 │   │   ├── file-storage.js        # Shared file storage utilities
 │   │   ├── media-imports.js       # Every external asset: plates, board images, footage and sound
+│   │   ├── orientation-plans.js   # One current plan scan; prior scans move to recoverable storage
 │   │   ├── media-kinds.js         # Where a generated media file goes, said once
 │   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending
 │   │   ├── inbetweens.js        # A shot as a strip of stations, not a still
