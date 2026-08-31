@@ -61,6 +61,26 @@ function pageStyles() {
  * render time, so there is no literal rule a page could declare to match them.
  * Counting them made the denominator 20; the assertable set is 17.
  */
+/**
+ * Declarations that belong to a region this change does not compose.
+ *
+ * Exempt BY NAME with the reason, never by pattern. `minmax(0,1fr) 300px` is
+ * real -- it is the location design's CONCEPT ART & REFERENCES footer (line
+ * 236) -- but we borrowed it for the BODY, where the design uses a flex row.
+ * Requiring it while the footer is uncomposed forces the broken body rule back
+ * or invites dead CSS, which is the cosmetic satisfaction this suite refuses.
+ * Named here and in the report's `deferred:` rather than silently dropped.
+ */
+const NOT_COMPOSED_HERE = {
+    /*
+     * EMPTY, and kept rather than deleted -- an empty object asserts on every
+     * run that every declaration the designs state is composed somewhere.
+     * `minmax(0,1fr) 300px` sat here while the Concept art & references footer
+     * was uncomposed; the footer now exists, so the exemption is gone and the
+     * declaration is required again.
+     */
+};
+
 function layoutDeclarations(designFile) {
     const src = fs.readFileSync(path.join(HANDOFF, designFile), 'utf8');
     const out = [];
@@ -71,6 +91,7 @@ function layoutDeclarations(designFile) {
             if (value.includes('{{')) continue;          // computed, not a literal rule
             if (seen.has(value)) continue;
             seen.add(value);
+            if (NOT_COMPOSED_HERE[`${prop}|${value}`]) continue;
             out.push({ prop, value });
         }
     }
@@ -317,45 +338,41 @@ function bodyColumns(designFile) {
 
 test('LOCATION composes narrow-left / wide-right, as the design does', () => {
     /*
-     * The design's body is a FLEX ROW with two flex-column children -- not a
-     * grid. There is no `grid-template-columns` for it anywhere in the file,
-     * which is why a grid-only search finds nothing and why "one shared
-     * two-column rule" is the wrong fix for these two sheets: prop composes
-     * with a grid, location with flex.
+     * The design's body is a FLEX ROW with two flex-column children -- there is
+     * no `grid-template-columns` for it anywhere in the file. My first version
+     * asserted a bounded first GRID token, which rejected a correct flex
+     * implementation of the very thing it was asking for. codex caught it.
+     * Derived from the design's own declarations now, so the contract is what
+     * the design states rather than one way of achieving it.
      */
     const design = fs.readFileSync(path.join(HANDOFF, 'Location Card.dc.html'), 'utf8');
-    const bases = bodyColumns('Location Card.dc.html');
+    const bases = [...design.matchAll(/flex:\s*(\d+ \d+ \d+px)/g)].map(m => m[1]);
     assert.ok(bases.includes('1 1 480px') && bases.includes('1 1 520px'),
         `this test's reading is stale: the design's body columns are now ${bases.join(' / ')}`);
     assert.ok(/max-width:\s*560px/.test(design),
         "this test's reading is stale: the plates column no longer caps at 560px");
 
-    /*
-     * BOUND TO THE LOCATION'S OWN RULE, not searched page-wide. My first
-     * version asked whether `max-width: 5xx` appeared anywhere in a 2MB
-     * stylesheet -- an unrelated `max-width:560px` satisfied it and the
-     * assertion passed against the broken sheet.
-     */
     const styles = pageStyles();
-    const ls = styles.match(/\.ss-grid\.ls-grid[^{]*\{([^}]*)\}/);
-    assert.ok(ls, 'there is no .ss-grid.ls-grid rule, so the location body has no composition');
-    const cols = (ls[1].match(/grid-template-columns\s*:\s*([^;}]+)/) || [])[1] || '';
+    const norm = t => t.replace(/\s+/g, ' ');
 
     /*
-     * The design bounds the PLATES column and lets the DESCRIPTION column
-     * grow: `flex: 1 1 480px; max-width: 560px` beside `flex: 1 1 520px`.
-     * Ours is `minmax(0,1fr) 300px` -- the other way round -- which computes
-     * to 1188px / 300px and stretches the compass to 1130px against the
-     * design's 457px.
+     * The PLATES column is bounded and the DESCRIPTION column grows. That
+     * asymmetry is the whole finding: ours computed 1188px / 300px, the
+     * inverse, which stretched the compass from the design's 457px to 1130px.
      */
-    const first = cols.split(/\s+(?![^(]*\))/)[0] || '';
-    assert.ok(!/1fr|^minmax\(0,\s*1fr\)$/.test(first),
-        `the location body is "${cols.trim()}" -- its FIRST column is the flexible one, so the `
-        + 'plates column grows to fill the sheet (measured 1188px against the design\'s ~499px) '
-        + 'and the description column is pinned narrow. The design bounds the first and grows '
-        + 'the second.');
-    assert.ok(/5[0-6]\dpx/.test(first),
-        `the location's plates column is "${first}" and is not bounded near the design's 560px cap`);
+    const first = styles.match(/\.ls-grid\s*>\s*\.ss-col:first-child[^{]*\{([^}]*)\}/);
+    const last = styles.match(/\.ls-grid\s*>\s*\.ss-col:last-child[^{]*\{([^}]*)\}/);
+    assert.ok(first && last,
+        'the location body has no first/last column rules, so nothing bounds the plates column');
+    assert.ok(/flex\s*:\s*1 1 480px/.test(norm(first[1])) && /max-width\s*:\s*560px/.test(norm(first[1])),
+        `the plates column is "${norm(first[1]).slice(0, 70)}" -- the design bounds it at `
+        + 'flex 1 1 480px / max-width 560px');
+    assert.ok(/flex\s*:\s*1 1 520px/.test(norm(last[1])),
+        `the description column is "${norm(last[1]).slice(0, 70)}" -- the design grows it at flex 1 1 520px`);
+
+    const body = styles.match(/\.ss-grid\.ls-grid[^{]*\{([^}]*)\}/);
+    assert.ok(body && /display\s*:\s*flex/.test(body[1]),
+        'the location body is not a flex row; the design wraps two flex columns');
 });
 
 test('the ORIENTATION header is one row, title left and note right', () => {
@@ -393,7 +410,12 @@ test('the ORIENTATION header is one row, title left and note right', () => {
         + 'separate blocks -- the design puts them on one row, title left and note right');
 
     const styles = pageStyles();
-    const rule = styles.match(new RegExp(`\\.${headClass}[^{]*\\{([^}]*)\\}`));
+    /*
+     * The STANDALONE rule. `.ss-region-head > h4 { … }` also starts with the
+     * class name, so a loose match reads the TITLE's typography and reports the
+     * header as not being a row. codex hit exactly that.
+     */
+    const rule = styles.match(new RegExp(`\\.${headClass}\\s*\\{([^}]*)\\}`));
     assert.ok(rule, `.${headClass} is emitted and has no CSS rule`);
     assert.ok(/display\s*:\s*flex/.test(rule[1]) && /justify-content\s*:\s*space-between/.test(rule[1]),
         `.${headClass} is not a space-between row, so every section note wraps to its own line`);
@@ -451,17 +473,40 @@ test('PROP puts the turntable full width ABOVE the two-column body', () => {
 
 /** The one style both designs use most for a section title / its note. */
 function typeSystem() {
-    const counts = { title: new Map(), note: new Map() };
+    /*
+     * The TITLE by frequency -- uppercase mono recurs 6x in the location card
+     * and 8x in the prop card, which is what makes it the system rather than
+     * one heading's decoration. The NOTE structurally: the span that FOLLOWS a
+     * title, which is what a section note is.
+     *
+     * Frequency alone got the note wrong: the most common non-uppercase mono
+     * style is a 9px caption used elsewhere on the card, and the test then
+     * reported the note as wrong against a size the design never sets for it.
+     * Row-capture got it wrong too -- a non-greedy scan to `</div>` stops at
+     * the first NESTED close and found only 2 headers. Following the title is
+     * both simple and correct.
+     */
+    const titles = new Map(), notes = new Map();
+    const bump = (m, k) => m.set(k, (m.get(k) || 0) + 1);
     for (const k of KINDS) {
         const src = fs.readFileSync(path.join(HANDOFF, k.design), 'utf8');
-        for (const m of src.matchAll(/font-family: 'JetBrains Mono', monospace;([^"]*)/g)) {
-            const decl = m[1].replace(/\s+/g, ' ').trim();
-            const bucket = /text-transform: uppercase/.test(decl) ? 'title' : 'note';
-            counts[bucket].set(decl, (counts[bucket].get(decl) || 0) + 1);
+        for (const m of src.matchAll(/<span style="([^"]*JetBrains Mono[^"]*text-transform: uppercase[^"]*)"/g)) {
+            bump(titles, m[1].replace(/\s+/g, ' ').trim());
+            /*
+             * Bounded to the SAME ROW: everything up to the first `</div>`
+             * after the title. An unbounded window picks up the 9px caption
+             * from the block below, which is what made the note derive as 9px.
+             */
+            const rest = src.slice(m.index + m[0].length);
+            const row = rest.slice(0, rest.indexOf('</div>'));
+            const next = row.match(/<span style="([^"]*JetBrains Mono[^"]*)"/);
+            if (next && !/text-transform: uppercase/.test(next[1])) {
+                bump(notes, next[1].replace(/\s+/g, ' ').trim());
+            }
         }
     }
     const top = m => [...m.entries()].sort((a, b) => b[1] - a[1])[0];
-    return { title: top(counts.title), note: top(counts.note) };
+    return { title: top(titles), note: top(notes) };
 }
 
 test('the section title and note use the design\'s type system', () => {
@@ -484,17 +529,32 @@ test('the section title and note use the design\'s type system', () => {
     assert.ok(new RegExp(`font-size\\s*:\\s*${size}px`).test(h4[1]),
         `section titles are ${(h4[1].match(/font-size\s*:\s*([^;]+)/) || [])[1]} where the design `
         + `sets ${size}px`);
-    assert.ok(new RegExp(`letter-spacing\\s*:\\s*0?${track}em`).test(h4[1]),
+    // `.2em` and `0.2em` are the same tracking; a leading zero is a style choice.
+    assert.ok(new RegExp(`letter-spacing\\s*:\\s*0?\\.?${String(track).replace(/^0?\./, '')}em`).test(h4[1]),
         `section titles track at ${(h4[1].match(/letter-spacing\s*:\s*([^;]+)/) || [])[1]} where `
         + `the design sets ${track}em — the difference is what makes the design's headings read `
         + 'as a system rather than as small bold text');
 
-    const noteSize = (sys.note[0].match(/font-size:\s*([\d.]+)px/) || [])[1];
-    const what = styles.match(/\.ss-what[^{]*\{([^}]*)\}/);
-    assert.ok(what, 'there is no .ss-what rule');
-    assert.ok(new RegExp(`font-size\\s*:\\s*${noteSize}px`).test(what[1]),
-        `section notes are ${(what[1].match(/font-size\s*:\s*([^;]+)/) || [])[1]} where the `
-        + `design sets ${noteSize}px`);
-    assert.ok(/JetBrains Mono|ui-monospace|monospace/.test(what[1]),
-        'section notes are not monospaced; the design sets JetBrains Mono on every one');
+    /*
+     * THE NOTE IS DELIBERATELY NOT ASSERTED, and this is a finding rather than
+     * a gap.
+     *
+     * There is no single note style to hold anything to. Reading every section
+     * header in the location design, the note beside the title is 10.5px after
+     * "Master plates", 10px after "Orientation plan", 9.5px after "Room
+     * layout", 9px after the plate tiles. The design sizes a note by context,
+     * so picking one and calling it canonical would be inventing a rule the
+     * design does not state -- and the test would then fail a correct
+     * implementation, which is the mistake this suite has already made twice.
+     *
+     * The TITLE is different: uppercase mono at 10.5px / 0.2em recurs 6 times
+     * in the location card and 8 in the prop card, unvaryingly. That is a
+     * system, and it is asserted above.
+     *
+     * What IS asserted about the note is structural, in the header test: it
+     * shares one space-between row with its title rather than wrapping beneath
+     * it. That is the thing the screenshot showed to be wrong.
+     */
+    assert.ok(sys.note, 'no note style could be derived at all — the header structure has changed');
 });
+

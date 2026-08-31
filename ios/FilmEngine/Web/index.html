@@ -1428,27 +1428,58 @@
         .cs-spec .k { font-family:ui-monospace,Menlo,monospace; font-size:9.5px; letter-spacing:.16em;
             text-transform:uppercase; color:rgba(232,232,234,0.4); }
         .cs-spec .v { font-size:14px; color:#e8e8ea; margin-top:5px; }
-        /* The location and prop sheets. Two columns on a wide modal, one on a
-           phone — the regions are independent, so a narrow screen stacks them
-           rather than squeezing both. */
-        .ss-grid { display: grid; gap: 0; align-items: start;
-            /* The gutter every design draws on its column blocks (26px 32px 32px).
-               Without it the sheet renders flush to the modal frame: "MASTER PLATES"
-               begins 2px from the edge and the right column runs into the other side. */
-            padding: 26px 32px 32px; }
-        .ss-grid.ls-grid { grid-template-columns: minmax(0,1fr) 300px; }
-        .ss-grid.ps-grid { grid-template-columns: minmax(0, 1fr) 400px; }
+        /* Each sheet keeps the composition of its own handoff. Location is a
+           wrapping flex pair with a bounded plates column; prop is a fixed
+           400px facts rail beneath a full-width turntable. */
+        .ss-grid { gap:0; align-items:start; }
+        .ss-grid.ls-grid { display:flex; flex-wrap:wrap; align-items:stretch; }
+        .ls-grid > .ss-col:first-child {
+            flex:1 1 480px; max-width:560px; min-width:0;
+            padding:28px 28px 32px 32px;
+            border-right:1px solid rgba(255,255,255,0.06);
+            border-bottom:1px solid rgba(255,255,255,0.06);
+            display:flex; flex-direction:column; gap:26px;
+        }
+        .ls-grid > .ss-col:last-child {
+            flex:1 1 520px; min-width:0; padding:28px 32px 32px 30px;
+            display:flex; flex-direction:column; gap:22px;
+        }
+        .ls-footer {
+            padding:26px 32px 32px; border-top:1px solid rgba(255,255,255,0.07);
+            background:rgba(0,0,0,0.25); display:grid;
+            grid-template-columns:minmax(0,1fr) 300px; gap:30px;
+        }
+        .ls-footer > .ss-col { display:flex; flex-direction:column; gap:14px; }
+        .ss-grid.ps-grid { display:grid; grid-template-columns:minmax(0, 1fr) 400px; }
+        .ps-turntable { padding:26px 32px 8px; }
+        .ps-grid > .ss-col:first-child {
+            padding:22px 30px 30px 32px; display:flex; flex-direction:column; gap:24px;
+        }
+        .ps-grid > .ss-col:last-child {
+            padding:22px 32px 30px 30px; border-left:1px solid rgba(255,255,255,0.06);
+            background:rgba(0,0,0,0.22); display:flex; flex-direction:column; gap:22px;
+        }
+        .ls-grid > .ss-col > .ss-region,
+        .ps-grid > .ss-col > .ss-region,
+        .ps-turntable > .ss-region { margin-bottom:0; }
         .ls-support-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
         .ps-states-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px; }
-        @media (max-width: 900px) { .ss-grid { grid-template-columns: 1fr; } }
+        @media (max-width:900px) {
+            .ss-grid.ps-grid { grid-template-columns:1fr; }
+            .ls-grid > .ss-col:first-child { max-width:none; border-right:0; }
+            .ls-footer { grid-template-columns:1fr; }
+        }
         .ss-col { min-width: 0; }
         .ss-region { margin-bottom: 20px; min-width: 0; }
-        .ss-region > h4 {
-            font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
-            color: var(--text-muted, #8a8a95); margin: 0 0 3px;
-            border-bottom: 1px solid var(--gl-border, #2a2a30); padding-bottom: 5px;
+        .ss-region-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+        .ss-region > h4, .ss-region-head > h4 {
+            font-family:'JetBrains Mono',ui-monospace,monospace;
+            font-size:10.5px; letter-spacing:0.2em; text-transform:uppercase;
+            color:rgba(232,232,234,0.5); margin:0;
         }
-        .ss-what { font-size: 11px; color: var(--text-muted, #8a8a95); margin: 5px 0 8px; }
+        .ss-region-head > .ss-what { white-space:nowrap; margin:0; }
+        .ss-what { font-family:'JetBrains Mono',ui-monospace,monospace; font-size:10px;
+            color:rgba(232,232,234,0.32); margin:5px 0 8px; }
         .ss-input {
             width: 100%; background: var(--gl-bg-elevated, #16161c);
             border: 1px solid var(--gl-border, #2a2a30); border-radius: 5px;
@@ -24706,8 +24737,10 @@ ${fountainText.slice(0, 50000)}`;
      */
     function ssSection(anchorId, title, what, inner, reach) {
         return `<section class="ss-region" data-region="${anchorId}">
-            <h4>${esc(title)}${reach || ''}</h4>
-            ${what ? `<p class="ss-what">${esc(what)}</p>` : ''}
+            <div class="ss-region-head">
+                <h4>${esc(title)}${reach || ''}</h4>
+                ${what ? `<p class="ss-what">${esc(what)}</p>` : ''}
+            </div>
             ${inner}
         </section>`;
     }
@@ -24979,21 +25012,9 @@ ${fountainText.slice(0, 50000)}`;
                     return `<span class="ss-variant${have ? ' on' : ''}" onclick="generateLocationVariant('${t}')">${t}${have ? ' &#10003;' : ''}</span>`;
                 }).join('')}</div>`)}
 
-            ${ssSection('ls-references', 'Concept art & references',
-                'Explorations and gathered images.', ssRefs())}
+            
 
-            ${ssSection('ls-scenes', 'Scenes here',
-                'Derived from the scene headings that name this location.',
-                (l.scenes || []).length
-                    ? (l.scenes || []).map(sc => {
-                        const hour = String(sc.time_of_day || '').toLowerCase();
-                        const covered = !hour || ssViewFor(hour);
-                        return `<div class="ss-scene-row">
-                            <span>Sc. ${esc(String(sc.scene_number))}</span>
-                            <span class="text-muted">${esc(sc.time_of_day || '')}${covered ? '' : ' · no plate'}</span>
-                        </div>`;
-                    }).join('')
-                    : '<p class="text-muted">No scene here yet.</p>')}
+            
           </div>
 
           <div class="ss-col">
@@ -25050,6 +25071,37 @@ ${fountainText.slice(0, 50000)}`;
                 ssReach('not-sent'))}
             </div>
 
+            
+          </div>
+        </div>
+
+        <!--
+            THE FOOTER, full width beneath the two-column body.
+
+            The design puts Concept art & references in a 1fr column with
+            Scenes here and Continuity flags in a 300px one, BELOW the body
+            rather than inside it (minmax(0,1fr) 300px, handoff line 236).
+            Kept in the body, the references were pinned to half the card and
+            the 300px column existed nowhere on the sheet.
+        -->
+        <div class="ls-footer">
+          <div class="ss-col">
+            ${ssSection('ls-references', 'Concept art & references',
+                'Explorations and gathered images.', ssRefs())}
+          </div>
+          <div class="ss-col">
+            ${ssSection('ls-scenes', 'Scenes here',
+                'Derived from the scene headings that name this location.',
+                (l.scenes || []).length
+                    ? (l.scenes || []).map(sc => {
+                        const hour = String(sc.time_of_day || '').toLowerCase();
+                        const covered = !hour || ssViewFor(hour);
+                        return `<div class="ss-scene-row">
+                            <span>Sc. ${esc(String(sc.scene_number))}</span>
+                            <span class="text-muted">${esc(sc.time_of_day || '')}${covered ? '' : ' · no plate'}</span>
+                        </div>`;
+                    }).join('')
+                    : '<p class="text-muted">No scene here yet.</p>')}
             ${ssSection('ls-continuity', 'Continuity flags',
                 'What must stay true in EVERY plate.',
                 `<div>${flags.map((f, i) => `<div class="ss-flag">
@@ -25084,8 +25136,7 @@ ${fountainText.slice(0, 50000)}`;
         ]);
 
         return `
-        <div class="ss-grid ps-grid">
-          <div class="ss-col">
+        <div class="ps-turntable">
             ${ssSection('ps-plates', 'Turntable · official views', 'canonical · fed to generation',
                 /*
                  * Square, auto-fitting, as the prop design lays it out. A prop
@@ -25096,6 +25147,10 @@ ${fountainText.slice(0, 50000)}`;
                 `<div class="ps-plates">${SS.propViews.map(v =>
                     ssTile(ssViewFor(v.id), v.label, `${v.angle} · ${v.caption}`, 'ps-plate')).join('')}</div>
                  ${ssPlateMeta()}${ssPlateControls()}`)}
+        </div>
+
+        <div class="ss-grid ps-grid">
+          <div class="ss-col">
 
             ${ssSection('ps-references', 'Concept art & references',
                 'Explorations and gathered images.', ssRefs())}

@@ -537,19 +537,38 @@ test('every sheet body carries the gutter its design draws, none sits flush to t
      * uses .cs-col-l/.cs-col-r and already has this; the location and prop
      * sheets share .ss-grid and had nothing.
      */
-    const grid = SRC.match(/\.ss-grid\s*\{([^}]*)\}/);
-    assert.ok(grid, '.ss-grid is gone — this test cannot see how the sheets are laid out');
-    const pad = grid[1].match(/padding:\s*([^;]+)/);
-    assert.ok(pad,
-        '.ss-grid has NO padding, so the location and prop sheets render flush to the modal '
-        + 'frame — "MASTER PLATES" begins against the edge and the right column runs into it. '
-        + 'The design puts a ~30px gutter on every column block.');
-    const sides = pad[1].trim().split(/\s+/).map(v => parseInt(v, 10));
-    // top right bottom [left] — the horizontal gutter is the second value.
-    const horizontal = sides.length > 1 ? sides[1] : sides[0];
-    assert.ok(horizontal >= 20,
-        `.ss-grid's horizontal gutter is ${horizontal}px — the design draws ~30px, and anything `
-        + 'this tight still reads as flush to the frame');
+    /*
+     * ON THE CONTAINER OR ON ITS COLUMNS -- the design does the latter.
+     *
+     * This required padding on `.ss-grid` itself, which was right while the
+     * body was a single padded grid. The design pads each COLUMN instead
+     * (`28px 28px 32px 32px` on the plates column, `28px 32px 32px 30px` on
+     * the description one) and the sheets now follow it, so the old assertion
+     * failed a body that is closer to the design than the one it was written
+     * for. The invariant it protects is unchanged: nothing renders flush to
+     * the modal frame.
+     */
+    const container = SRC.match(/\.ss-grid\s*\{([^}]*)\}/);
+    assert.ok(container, '.ss-grid is gone — this test cannot see how the sheets are laid out');
+
+    const columnPads = [...SRC.matchAll(/\.(?:ls|ps)-grid\s*>\s*\.ss-col[^{]*\{([^}]*)\}/g)]
+        .map(m => (m[1].match(/padding\s*:\s*([^;]+)/) || [])[1])
+        .filter(Boolean);
+    const containerPad = (container[1].match(/padding:\s*([^;]+)/) || [])[1];
+
+    assert.ok(containerPad || columnPads.length,
+        'neither the sheet body nor its columns carry a gutter, so the sheets render flush to '
+        + 'the modal frame: "MASTER PLATES" begins against the edge and the right column runs '
+        + 'into it. The design puts ~30px on every column block.');
+
+    const gutters = (containerPad ? [containerPad] : columnPads)
+        .map(v => v.trim().split(/\s+/).map(x => parseInt(x, 10)))
+        .map(sides => (sides.length > 1 ? sides[1] : sides[0]));
+    for (const horizontal of gutters) {
+        assert.ok(horizontal >= 20,
+            `a sheet column's horizontal gutter is ${horizontal}px — the design draws ~30px, and `
+            + 'anything this tight still reads as flush to the frame');
+    }
 });
 
 test('a plate carries its number and its generate affordance INSIDE the tile', () => {
