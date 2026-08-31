@@ -24846,6 +24846,29 @@ ${fountainText.slice(0, 50000)}`;
      * which showed a location in a portrait crop — the wrong picture of the
      * right place, which is what a plate exists to prevent.
      */
+    /**
+     * Upload a picture INTO ONE SLOT.
+     *
+     * The routes have always taken `body.view`, so a particular view has been
+     * uploadable since plate uploads shipped -- what the page offered was one
+     * Upload per subject, which fills the DEFAULT plate. On a sheet that draws
+     * its plates as numbered slots that is the wrong picture: the only way to
+     * fill 02 or the side view was to buy it, while the photograph the director
+     * already had could only be dropped on the subject as a whole.
+     */
+    function slotUpload(kind, subjectId, view, label) {
+        const target = kind === 'character' ? 'character-plate'
+            : kind === 'location' ? 'location-plate' : 'prop-plate';
+        const url = kind === 'character'
+            ? `/characters/${subjectId}/refsheet/import`
+            : `/${kind}s/${subjectId}/plate/import`;
+        return uploadControl(target, url, {
+            label: label || 'upload',
+            title: 'Use a picture you already have for this view',
+            extra: view ? { view: view } : {},
+        });
+    }
+
     function ssTile(v, label, caption, shape) {
         const url = v && v.available && v.image_url ? API_BASE + v.image_url : '';
         const cls = shape || 'cs-tile';
@@ -24866,7 +24889,9 @@ ${fountainText.slice(0, 50000)}`;
             ${url ? `<img src="${esc(url)}" alt="${esc(label)}" onclick="openPlateViewer('${esc(url)}', ${jsAttr(label)})">`
                   : `<div class="cs-drop ss-empty" style="width:100%;height:100%;"></div>`}
             <span class="ss-num">${esc(label)}</span>
-            ${url ? '' : `<span class="ss-gen" onclick="generateSheetView(${jsAttr((v && v.view) || label)})">generate &rarr;</span>`}
+            ${url ? '' : `<span class="ss-gen" onclick="generateSheetView(${jsAttr((v && v.view) || label)})">generate &rarr;</span>
+                <span class="ss-up" onclick="event.stopPropagation();">${
+                    slotUpload(SS.kind, SS.id, (v && v.view) || '', 'upload')}</span>`}
             </div>
             ${caption ? `<figcaption class="ss-slot-caption"><span class="ss-view-angle">${esc(caption)}</span></figcaption>` : ''}
         </figure>`;
@@ -25537,7 +25562,9 @@ ${fountainText.slice(0, 50000)}`;
                     ${p ? `<img src="${esc(csImg(p.image_url))}" alt="">` : ''}
                     <span class="vlabel">${esc(v.label)}</span>
                     <span class="vcap">${p ? esc(v.caption) : 'generate →'}</span>
-                    ${p ? '<span class="vdot"></span>' : ''}
+                    ${p ? '<span class="vdot"></span>'
+                        : `<span class="cs-up" onclick="event.stopPropagation();">${
+                            slotUpload('character', c.id, v.id, 'upload')}</span>`}
                   </div>`;
               }).join('')}</div>
             </div>
