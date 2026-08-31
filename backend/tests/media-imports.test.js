@@ -139,7 +139,7 @@ test('every registered director import persists, registers, serves and has a UI 
     const { MEDIA_KINDS } = require('../lib/media-kinds');
     const expected = [
         'character-plate', 'location-plate', 'mood-board-image', 'previs-image',
-        'prop-plate', 'storyboard-image', 'three-d-model',
+        'prop-plate', 'orientation-plan', 'storyboard-image', 'three-d-model',
         // The two surfaces whose entire content is a picture and which could
         // previously only be pointed at by a path on the server's own disk.
         'continuity-ref', 'marketing-asset',
@@ -313,6 +313,10 @@ test('every registered import is reachable through its production route', async 
         'prop-plate': {
             handler: require('../routes/locations').handleLocations,
             url: o => `/film/props/${o.propId}/plate/import`, mime: 'image/png', bytes: PNG, name: 'sedan.png',
+        },
+        'orientation-plan': {
+            handler: require('../routes/locations').handleLocations,
+            url: o => `/film/locations/${o.locationId}/orientation-plan/import`, mime: 'image/png', bytes: PNG, name: 'floor-plan.png',
         },
         'mood-board-image': {
             handler: require('../routes/mood-board').handleMoodBoard,

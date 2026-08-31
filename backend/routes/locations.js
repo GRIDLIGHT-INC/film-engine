@@ -428,6 +428,23 @@ function importSubjectPlateRoute(req, res, kind, subjectId) {
     }
 }
 
+/** Upload the drawn/LLM-authored floor plan beside, never instead of, the compass data. */
+function importOrientationPlanRoute(req, res, locationId) {
+    const loc = db.prepare('SELECT id, project_id FROM film_locations WHERE id = ?').get(locationId);
+    if (!loc) return badReq(res, 'Location not found', 404);
+    if (!req.body || !req.body.data) return badReq(res, 'no image supplied');
+    try {
+        const imported = require('../lib/media-imports').importMedia('orientation-plan', {
+            projectId: loc.project_id, locationId, data: req.body.data,
+            name: req.body.name || 'orientation-plan',
+        });
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ kind: 'orientation_plan', ...imported }));
+    } catch (err) {
+        badReq(res, err.message, /not found/i.test(err.message) ? 404 : 400);
+    }
+}
+
 /**
  * Refine an existing plate: keep the picture, change one thing.
  *
@@ -781,6 +798,9 @@ function handleLocations(req, res, urlParts, query) {
     if (urlParts[1] === 'locations' && urlParts[2]) {
         const locId = urlParts[2];
         if (!UUID_RE.test(locId)) return badReq(res, 'Invalid location ID');
+        if (urlParts[3] === 'orientation-plan' && urlParts[4] === 'import' && req.method === 'POST') {
+            return importOrientationPlanRoute(req, res, locId);
+        }
         if (req.method === 'GET') return getLocation(req, res, locId);
         if (req.method === 'PUT') return updateLocation(req, res, locId);
         if (req.method === 'DELETE') return deleteLocation(req, res, locId);
@@ -894,6 +914,15 @@ function getLocation(req, res, locId) {
      * fact about the film.
      */
     loc.scene_count = loc.scenes.length;
+
+    // The uploaded plan is documentation, stored as `other`; it is intentionally
+    // absent from the reference-image query that conditions storyboard frames.
+    const planAsset = db.prepare(`SELECT file_name, created_at FROM film_assets
+        WHERE location_id = ? AND asset_type = 'other'
+          AND json_extract(metadata, '$.kind') = 'orientation_plan'
+        ORDER BY created_at DESC LIMIT 1`).get(locId);
+    loc.orientation_plan_image_url = planAsset
+        ? getFileUrl('refsheets', loc.project_id, planAsset.file_name, planAsset.created_at) : null;
 
     /*
      * Everything the sheet displays, from ONE call.

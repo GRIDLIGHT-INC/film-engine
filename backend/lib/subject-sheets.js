@@ -212,6 +212,9 @@ const DESIGN_FEATURES = Object.freeze([
     { id: 'orientation-plan', subject: 'location', anchor: 'ss-plan',
       from: 'North · harbour window + door', reads: ['orientation_plan'],
       what: 'A plan of the room by compass edge, not four pills.' },
+    { id: 'orientation-plan-image', subject: 'location', anchor: 'ss-plan-image',
+      from: 'Orientation plan', reads: ['orientation_plan_image_url'],
+      what: 'A drawn or LLM-authored plan uploaded beside the structured compass data.' },
     { id: 'orientation-marker', subject: 'location', anchor: 'ss-plan-marker',
       from: 'corner booth in use', reads: ['orientation_plan'],
       what: 'Where the action sits inside the plan.' },
@@ -332,6 +335,8 @@ const AUTHORING = Object.freeze([
         fn: 'saveSheetSection', what: 'Write one of the six named sections. They compose into the description the generator reads.' },
     { subject: 'location', id: 'loc-plan', region: 'orientation', source: 'manual', spends: false,
         fn: 'ssEditPlan', what: 'Say what is on each compass edge, and where the action sits.' },
+    { subject: 'location', id: 'loc-plan-upload', region: 'orientation', source: 'upload', spends: false,
+        fn: 'uploadReferenceImage', what: 'Upload the plan image made by the connected LLM or art department; it remains production documentation, never a frame reference.' },
     { subject: 'location', id: 'loc-plate-plan', region: 'plates', source: 'manual', spends: false,
         fn: 'ssEditPlatePlan', what: 'Name the views this location needs, so an ungenerated one is a labelled gap.' },
 

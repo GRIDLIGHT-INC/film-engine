@@ -11,6 +11,9 @@ const { parseGlb } = require('./glb-parser');
  * is what a camera, a phone and every hosted image tool produce.
  */
 const IMAGE_MIMES = Object.freeze(['image/png', 'image/jpeg', 'image/jpg']);
+// Production documentation, deliberately outside the two asset types selected
+// by gatherShotReferences. A floor diagram must never condition a movie frame.
+const ORIENTATION_ASSET_TYPE = 'other';
 
 /*
  * What a person actually exports. Browsers label these inconsistently and some
@@ -104,6 +107,7 @@ const MEDIA_IMPORTS = Object.freeze({
     'character-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'character', mimes: IMAGE_MIMES }),
     'location-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'location', mimes: IMAGE_MIMES }),
     'prop-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'prop', mimes: IMAGE_MIMES }),
+    'orientation-plan': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', mimes: IMAGE_MIMES }),
     // The look has no subject table by design (KIND_SOURCE calls it `project`),
     // so a board image is stored and linked by the mood-board row instead.
     'mood-board-image': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
@@ -680,14 +684,19 @@ function importMedia(target, input) {
     const version = prior && prior.version ? prior.version + 1 : 1;
     const assetId = generateId();
     const assetType = target === 'storyboard-image' ? 'storyboard'
-        : target === 'previs-image' ? 'reference_image' : 'other';
+        : target === 'previs-image' ? 'reference_image'
+        : target === 'orientation-plan' ? ORIENTATION_ASSET_TYPE : 'other';
     const metadata = target === 'three-d-model'
         ? { kind: 'model_3d', subject_kind: 'imported', subject_name: safeStem(input.name), imported: true }
+        : target === 'orientation-plan'
+            ? { kind: 'orientation_plan', location_id: input.locationId, imported: true }
         : { kind: target === 'previs-image' ? 'previs_image' : 'storyboard_import', imported: true };
     db.prepare(`INSERT INTO film_assets
-        (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type, size_bytes, version, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(assetId, owner.projectId, owner.shotId, assetType, filePath, filename,
+        (id, project_id, shot_id, location_id, asset_type, file_path, file_name, format, mime_type, size_bytes, version, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(assetId, owner.projectId, owner.shotId,
+            target === 'orientation-plan' ? input.locationId : null,
+            assetType, filePath, filename,
             spec.kind === 'model' ? 'glb' : 'png', mime, bytes.length, version, JSON.stringify(metadata));
 
     if (target === 'storyboard-image') {
@@ -700,4 +709,4 @@ function importMedia(target, input) {
     };
 }
 
-module.exports = { MEDIA_IMPORTS, importMedia, decodeDataUri, validateBytes, measureDurationMs };
+module.exports = { MEDIA_IMPORTS, ORIENTATION_ASSET_TYPE, importMedia, decodeDataUri, validateBytes, measureDurationMs };

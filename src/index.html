@@ -1431,11 +1431,15 @@
         /* The location and prop sheets. Two columns on a wide modal, one on a
            phone — the regions are independent, so a narrow screen stacks them
            rather than squeezing both. */
-        .ss-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: start;
+        .ss-grid { display: grid; gap: 0; align-items: start;
             /* The gutter every design draws on its column blocks (26px 32px 32px).
                Without it the sheet renders flush to the modal frame: "MASTER PLATES"
                begins 2px from the edge and the right column runs into the other side. */
             padding: 26px 32px 32px; }
+        .ss-grid.ls-grid { grid-template-columns: minmax(0,1fr) 300px; }
+        .ss-grid.ps-grid { grid-template-columns: minmax(0, 1fr) 400px; }
+        .ls-support-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
+        .ps-states-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px; }
         @media (max-width: 900px) { .ss-grid { grid-template-columns: 1fr; } }
         .ss-col { min-width: 0; }
         .ss-region { margin-bottom: 20px; min-width: 0; }
@@ -1488,22 +1492,32 @@
         }
 
         /* The plan of the room. */
-        .ss-plan {
-            border: 1px solid var(--gl-border, #2a2a30); border-radius: 6px;
-            padding: 8px; font-size: 11px; background: var(--gl-bg-elevated, #16161c);
-        }
-        .ss-plan-mid { display: flex; gap: 8px; align-items: stretch; margin: 6px 0; min-width: 0; }
-        .ss-plan-edge { color: var(--text-muted, #8a8a95); }
-        .ss-plan-edge.w, .ss-plan-edge.e { flex: 0 0 30%; min-width: 0; }
+        .ss-plan { position:relative; padding:20px; border-radius:12px;
+            border:1px solid rgba(255,255,255,0.07); background:rgba(0,0,0,0.28); }
+        .ss-plan-grid { display:grid; grid-template-columns:62px minmax(0,1fr) 62px;
+            grid-template-rows:22px minmax(0,1fr) 22px; align-items:center;
+            justify-items:center; gap:8px; font-family:'JetBrains Mono',ui-monospace,monospace;
+            font-size:9.5px; letter-spacing:.14em; text-transform:uppercase;
+            color:rgba(232,232,234,.45); }
+        .ss-plan-edge { color:rgba(232,232,234,.45); text-align:center; }
+        .ss-plan-edge.n { color:oklch(0.82 0.09 200); }
+        .ss-plan-edge.w, .ss-plan-edge.e { writing-mode:vertical-rl; }
+        .ss-plan-edge.w { transform:rotate(180deg); }
         .ss-plan-room {
-            flex: 1 1 auto; min-width: 0; border: 1px dashed var(--gl-border, #2a2a30);
-            border-radius: 4px; padding: 6px; display: flex; flex-wrap: wrap; gap: 4px;
+            width:100%; height:168px; border:1px solid rgba(255,255,255,.14);
+            border-radius:4px; display:grid; grid-template-columns:1fr 1fr 1fr; overflow:hidden;
         }
-        .ss-plan-item {
-            font-size: 10px; padding: 1px 6px; border-radius: 8px;
-            background: rgba(255,255,255,.04);
-        }
-        .ss-plan-marker { font-size: 11px; color: #d9a441; margin: 6px 0 0; }
+        .ss-plan-zone { display:flex; align-items:center; justify-content:center; text-align:center;
+            padding:6px; color:rgba(232,232,234,.4); min-width:0; overflow-wrap:anywhere; }
+        .ss-plan-zone:first-child { border-right:1px dashed rgba(255,255,255,.10); }
+        .ss-plan-zone:nth-child(2) { color:rgba(232,232,234,.38);
+            background:repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0 8px,transparent 8px 16px); }
+        .ss-plan-zone:last-child { border-left:1px dashed rgba(255,255,255,.10); }
+        .ss-plan-marker { margin:12px 0 0; padding-top:10px;
+            border-top:1px solid rgba(255,255,255,.07); font-family:'JetBrains Mono',ui-monospace,monospace;
+            font-size:9px; letter-spacing:.1em; color:oklch(0.84 0.09 75); }
+        .ss-plan-image { width:100%; max-height:320px; object-fit:contain; display:block;
+            margin-bottom:12px; border-radius:4px; background:#08080a; cursor:zoom-in; }
 
         .ss-variants { display: flex; gap: 5px; flex-wrap: wrap; }
         .ss-variant {
@@ -24919,7 +24933,7 @@ ${fountainText.slice(0, 50000)}`;
         ]);
 
         return `
-        <div class="ss-grid">
+        <div class="ss-grid ls-grid">
           <div class="ss-col">
             ${ssSection('ls-plates', 'Master plates', 'canonical · fed to generation',
                 /*
@@ -24939,18 +24953,23 @@ ${fountainText.slice(0, 50000)}`;
                  <button class="btn btn-secondary btn-sm" style="margin-top:6px;" onclick="ssEditPlatePlan()">Plan the views</button>`)}
 
             ${ssSection('ls-orientation', 'Orientation plan', 'keeps geography consistent across plates',
-                `<div class="ss-plan">
-                    <div class="ss-plan-edge n">North · ${esc(plan.north || '—')}</div>
-                    <div class="ss-plan-mid">
-                        <div class="ss-plan-edge w">West · ${esc(plan.west || '—')}</div>
-                        <div class="ss-plan-room">${(plan.interior || []).map(x =>
-                            `<span class="ss-plan-item">${esc(x)}</span>`).join('') || '<span class="text-muted">—</span>'}</div>
-                        <div class="ss-plan-edge e">East · ${esc(plan.east || '—')}</div>
-                    </div>
-                    <div class="ss-plan-edge s">South · ${esc(plan.south || '—')}</div>
-                 </div>
-                 ${plan.marker ? `<p class="ss-plan-marker">&#9650; ${esc(plan.marker)}</p>` : ''}
-                 <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="ssEditPlan()">Edit the plan</button>`)}
+                `${l.orientation_plan_image_url ? `<img class="ss-plan-image" src="${esc(API_BASE + l.orientation_plan_image_url)}"
+                    alt="Orientation plan for ${esc(l.name || 'location')}"
+                    onclick="openPlateViewer('${esc(API_BASE + l.orientation_plan_image_url)}', ${jsAttr((l.name || 'Location') + ' — orientation plan')})">` : ''}
+                 <div class="ss-plan"><div class="ss-plan-grid">
+                    <span></span><span class="ss-plan-edge n">North · ${esc(plan.north || '—')}</span><span></span>
+                    <span class="ss-plan-edge w">West · ${esc(plan.west || '—')}</span>
+                    <div class="ss-plan-room">${[0,1,2].map((_, i) =>
+                        `<span class="ss-plan-zone">${esc((plan.interior || [])[i] || '—')}</span>`).join('')}</div>
+                    <span class="ss-plan-edge e">East · ${esc(plan.east || '—')}</span>
+                    <span></span><span class="ss-plan-edge s">South · ${esc(plan.south || '—')}</span><span></span>
+                 </div>${plan.marker ? `<p class="ss-plan-marker">&#9650; ${esc(plan.marker)}</p>` : ''}</div>
+                 <div class="btn-row" style="margin-top:8px;">
+                   <button class="btn btn-secondary btn-sm" onclick="ssEditPlan()">Edit the plan</button>
+                   ${uploadControl('orientation-plan', `/locations/${SS.id}/orientation-plan/import`, {
+                       extra: {}, after: 'renderSubjectSheet', title: 'Upload an LLM-generated orientation plan image'
+                   })}
+                 </div>`)}
 
             ${ssSection('ls-variants', 'Time of day variants',
                 'The same place at another hour, kept as its own plate rather than regraded.',
@@ -25062,7 +25081,7 @@ ${fountainText.slice(0, 50000)}`;
         ]);
 
         return `
-        <div class="ss-grid">
+        <div class="ss-grid ps-grid">
           <div class="ss-col">
             ${ssSection('ps-plates', 'Turntable · official views', 'canonical · fed to generation',
                 /*

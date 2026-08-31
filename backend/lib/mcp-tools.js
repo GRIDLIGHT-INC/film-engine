@@ -285,6 +285,25 @@ async function callNodeTool(nodeTypeId, args) {
  */
 const PRODUCTION_TOOLS = [
     {
+        name: 'orientation_plan_brief',
+        handler: handleLocations, method: 'GET',
+        path: a => `/film/locations/${a.location_id}`,
+        description: 'Read the free location brief used to author an orientation plan: structured set description, existing compass edges, scenes and linked props. No server-side model is called.',
+        schema: { location_id: { type: 'string' } }, required: ['location_id'],
+    },
+    {
+        name: 'orientation_plan_update',
+        handler: handleLocations, method: 'PUT',
+        path: a => `/film/locations/${a.location_id}`,
+        body: a => ({ orientation_plan: a.orientation_plan }),
+        description: 'Write the compass plan the connected LLM authored. Keeps structured geography beside any uploaded plan image.',
+        schema: {
+            location_id: { type: 'string' },
+            orientation_plan: { type: 'object', description: '{ north, east, south, west, interior: [], marker }' },
+        },
+        required: ['location_id', 'orientation_plan'],
+    },
+    {
         name: 'storyboard_upload',
         handler: handleStoryboard, method: 'POST',
         path: a => `/film/shots/${a.shot_id}/storyboard/import`,
@@ -3417,7 +3436,7 @@ function isFailure(result) {
 }
 
 module.exports = {
-    listTools, hasTool, callTool, isFailure, presentResult,
+    listTools, buildTools: listTools, hasTool, callTool, isFailure, presentResult,
     toolNameForNodeType, normalizeInputs, callRoute,
     NODE_TOOL_PREFIX, ROUTE_TOOLS, PRODUCTION_TOOLS, BATCH_TOOLS, ALL_ROUTE_TOOLS, SSE_EXCEPTION,
 };
