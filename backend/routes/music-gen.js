@@ -82,10 +82,175 @@ function filenameForResult(baseFilename, result) {
 
 // -- Route Handler -------------------------------------------------------
 
+
+/**
+ * Generate the cue somebody WROTE, named directly.
+ *
+ * The gap this closes: `music_cue_create`, `_update`, `_list` and `music_brief`
+ * all existed, and then there was nothing to generate with. So the only
+ * generation surface an agent could see was `node_gen_music`, which derives its
+ * own prompt from the scene and never reads the cue at all -- and reaching for
+ * it produced a scene-derived bed instead of the orchestral score that had been
+ * written out in full. Cue-authoring no tool can act on is the "capability with
+ * no control" case, pointed the other way.
+ *
+ * ADDRESSED BY CUE, NOT BY SCENE, and that is the point. A scene holds several
+ * cues at once; a scene-addressed route has to guess which one is meant, which
+ * is the defect above one level up. Naming the cue removes the guess.
+ *
+ * It routes on the cue's OWN kind and goes through the SAME builders the briefs
+ * and the scene routes use, so a cue previewed for free and a cue generated
+ * cannot describe different music.
+ */
+async function generateFromCue(req, res, cueId) {
+    const cue = db.prepare('SELECT * FROM film_music_cues WHERE id = ?').get(cueId);
+    if (!cue) return json(res, 404, { error: `No music cue ${cueId}` });
+    if (!cue.scene_id) {
+        return json(res, 400, {
+            error: 'This cue is not attached to a scene, so there is no length or context to score it against.',
+        });
+    }
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(cue.scene_id);
+    if (!scene) return json(res, 404, { error: 'The scene this cue belongs to is gone' });
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
+
+    /*
+     * An SFX cue is refused rather than attempted. Sound effects are built from
+     * the shot's own scene card by `buildSFXPrompts`, which takes a card and not
+     * a cue -- there is no builder that could honour this row. Named, with the
+     * route that does the job, because a refusal that does not say where to go
+     * is indistinguishable from the feature being broken.
+     */
+    if (cue.cue_type === 'sfx') {
+        return json(res, 400, {
+            error: 'SFX are generated from a shot, not from a cue row.',
+            cue_type: cue.cue_type,
+            hint: 'Use POST /film/shots/:id/sfx/generate — effects are read from the shot\'s scene card.',
+        });
+    }
+
+    const { cueSeconds } = require('../lib/scene-score');
+    const context = sceneScoreContext(scene);
+    const length = cueSeconds({
+        cue_ms: cue.duration_ms, cut_ms: context.cut_ms,
+        dialogue_ms: context.dialogue_ms, explain: true,
+    });
+
+    // ---- Ambient ---------------------------------------------------------
+    if (cue.cue_type === CUE_KIND_FOR.ambient) {
+        const location = scene.location_id
+            ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id)
+            : null;
+        const provider = resolveGenerator('ambient',
+            spendContext({ id: scene.project_id }, null, scene, cueOverride(req, 'ambient')));
+        // Through ambientOptions like every other bed, with the cue named.
+        const payload = buildAmbientPrompt(scene, location, ambientOptions(scene, req.body, cue));
+        return runCueGeneration(res, {
+            cue, scene, provider, payload, genType: 'ambient',
+            assetType: 'audio_ambient', suffix: 'ambient',
+            durationMs: (payload.duration_s || 0) * 1000,
+        });
+    }
+
+    // ---- Score, and the two music kinds beside it ------------------------
+    let sections = [];
+    try { sections = JSON.parse(cue.sections_json || '[]') || []; } catch (_) { sections = []; }
+    const scored = {
+        cue: { ...cue, sections: Array.isArray(sections) ? sections : [] },
+        context, length, derived: false,
+    };
+    const built = musicPayloadFor(scored, scene, project);
+    if (built.errors.length) return sectionRefusal(res, built.errors);
+
+    const provider = resolveGenerator('music',
+        spendContext({ id: scene.project_id }, null, scene, cueOverride(req, 'music')));
+    return runCueGeneration(res, {
+        cue, scene, provider, payload: built.payload, genType: 'score',
+        assetType: 'audio_music', suffix: 'score',
+        durationMs: (length.seconds || 0) * 1000,
+    });
+}
+
+/**
+ * Generate, store, register and LINK.
+ *
+ * The link is the part that was missing everywhere: `generated_asset_id` has
+ * been on this table since migration 016 and was written by nothing, so a scene
+ * could hold a cue and an audio file with no connection between them and "has
+ * this cue been generated" had no answer.
+ */
+async function runCueGeneration(res, o) {
+    const { cue, scene, provider, payload, genType, assetType, suffix, durationMs } = o;
+
+    const jobId = generateId();
+    db.prepare(
+        `INSERT INTO film_music_jobs (id, project_id, scene_id, gen_type, status, prompt, model, duration_ms)
+         VALUES (?, ?, ?, ?, 'generating', ?, ?, ?)`
+    ).run(jobId, scene.project_id, scene.id, genType, payload.prompt, payload.model, durationMs || null);
+
+    try {
+        const result = await provider.generate(genType === 'ambient' ? 'ambient' : 'music', payload, { timeout: 300000 });
+        if (!result.ok) {
+            db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?')
+                .run('failed', result.error, jobId);
+            return json(res, result.status || 500, { error: result.error, cue_id: cue.id });
+        }
+
+        const filename = filenameForResult(`${scene.scene_number || scene.id}_${suffix}_${cue.id.slice(0, 8)}.wav`, result);
+        ensureDir(scene.project_id, 'music');
+
+        let filePath;
+        try {
+            filePath = await persistProviderMedia(scene.project_id, 'music', filename, result.data, { serveDir: 'music' });
+        } catch (err) {
+            db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?')
+                .run('failed', err.message, jobId);
+            return json(res, 502, { error: `generated but could not be stored: ${err.message}`, cue_id: cue.id });
+        }
+
+        const assetId = generateId();
+        db.prepare(
+            `INSERT INTO film_assets (
+                id, project_id, scene_id, asset_type, file_path, file_name,
+                format, mime_type, duration_ms, version,
+                provider, provider_model, provider_job_id, license_source, license_status
+             )
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated')`
+        ).run(assetId, scene.project_id, scene.id, assetType, filePath, filename,
+              formatForResult(result), mimeForResult(result), durationMs || null,
+              provider.id, resultModel(result, payload), resultJobId(result));
+
+        linkCueAsset(cue.id, assetId);
+        db.prepare('UPDATE film_music_jobs SET status = ?, output_path = ? WHERE id = ?')
+            .run('complete', filePath, jobId);
+
+        return json(res, 200, {
+            cue_id: cue.id, cue_type: cue.cue_type, cue_title: cue.title || null,
+            scene_id: scene.id, job_id: jobId, status: 'complete',
+            asset_id: assetId,
+            generated_asset_id: assetId,
+            url: getFileUrl('music', scene.project_id, filename),
+            duration_s: durationMs ? Math.round(durationMs / 1000) : null,
+            provider: provider.id,
+            prompt: payload.prompt,
+        });
+    } catch (err) {
+        db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?')
+            .run('failed', err.message, jobId);
+        return json(res, 500, { error: err.message, cue_id: cue.id });
+    }
+}
+
 function handleMusicGen(req, res, urlParts, query) {
     // /film/music/:projectId/:filename
     if (urlParts[1] === 'music' && urlParts[2] && urlParts[3] && !['projects', 'scenes', 'shots'].includes(urlParts[1])) {
         return serveFile(res, urlParts[2], 'music', urlParts[3]);
+    }
+
+    // /film/music-cues/:id/generate — the cue somebody wrote, generated.
+    if (urlParts[1] === 'music-cues' && urlParts[2] && urlParts[3] === 'generate') {
+        if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+        return generateFromCue(req, res, urlParts[2]);
     }
 
     // /film/scenes/:id/music/generate[/stream]
@@ -209,6 +374,69 @@ function sceneScoreContext(scene) {
 }
 
 /**
+ * WHICH KIND OF CUE A CAPABILITY GENERATES FROM.
+ *
+ * The score path selected its cue with `ORDER BY start_ms LIMIT 1` and NO KIND
+ * FILTER. Every cue on a scene legitimately starts at 0 -- a score, a room tone
+ * and a stinger all begin when the scene does -- so that is not a tie-break, it
+ * is a coin toss: SQLite may return any row when the sort key is equal. On a
+ * real scene carrying an ambient bed called "Lot Air" (crickets and highway)
+ * beside an orchestral score, the crickets were used AS the score. Nothing
+ * errored, the file played, and the only signal was a director listening to it.
+ *
+ * Stated once and read by every path, because the ambient lookups already
+ * filtered correctly in TWO separate literals -- which is how the third one came
+ * to have no filter at all and how a fourth would drift again.
+ *
+ * `source` and `transition` are deliberately NOT part of the score. Diegetic
+ * music from a radio in shot, and a stinger across a cut, are different pieces
+ * of music with different lengths and different jobs; folding them into "the
+ * score" is the same conflation being fixed here, one step milder. They are
+ * reported as declined rather than silently ignored.
+ */
+const CUE_KIND_FOR = Object.freeze({
+    music: 'score',
+    ambient: 'ambient',
+    sfx: 'sfx',
+});
+
+/**
+ * The one cue of a given kind, and everything on the scene that was NOT chosen.
+ *
+ * The second half matters as much as the first: deriving a score while an
+ * ambient cue sits unused is CORRECT, and doing it silently is exactly what
+ * made the original defect invisible. A caller that is told "there is a cue
+ * here and it is not the kind I generate from" can act; one told nothing
+ * assumes their direction was read.
+ */
+function cueOfKind(sceneId, kind) {
+    const chosen = db.prepare(
+        'SELECT * FROM film_music_cues WHERE scene_id = ? AND cue_type = ? ORDER BY start_ms, created_at, id LIMIT 1'
+    ).get(sceneId, kind) || null;
+    const others = db.prepare(
+        'SELECT id, cue_type, title FROM film_music_cues WHERE scene_id = ? AND cue_type != ? ORDER BY start_ms'
+    ).all(sceneId, kind);
+    return { chosen, others };
+}
+
+/**
+ * Record which asset a cue produced.
+ *
+ * `generated_asset_id` has been on film_music_cues since migration 016 and was
+ * written by NOTHING -- so a scene could hold a cue and an audio file with no
+ * link between them, and "has this cue been generated" had no answer at all.
+ * Never throws: by the time this runs the audio exists and has been paid for,
+ * and failing the request over the bookkeeping is the worst trade available.
+ */
+function linkCueAsset(cueId, assetId) {
+    try {
+        if (!cueId || !assetId) return false;
+        db.prepare('UPDATE film_music_cues SET generated_asset_id = ? WHERE id = ?').run(assetId, cueId);
+        return true;
+    } catch (_) { return false; }
+}
+
+/**
  * The cue this scene is scored from.
  *
  * A cue somebody WROTE always wins — it is the musical direction, and deriving
@@ -218,8 +446,8 @@ function sceneScoreContext(scene) {
  */
 function cueForScene(scene, project, body) {
     const { scoreBrief, cueFromBrief, cueSeconds } = require('../lib/scene-score');
-    const written = db.prepare(
-        'SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1').get(scene.id);
+    const picked = cueOfKind(scene.id, CUE_KIND_FOR.music);
+    const written = picked.chosen;
     const context = sceneScoreContext(scene);
 
     const length = cueSeconds({
@@ -238,6 +466,7 @@ function cueForScene(scene, project, body) {
         return {
             cue: { ...written, sections: Array.isArray(sections) ? sections : [] },
             context, length, derived: false,
+            other_cues: picked.others,
             brief: scoreBrief(scene, context, project),
         };
     }
@@ -251,7 +480,7 @@ function cueForScene(scene, project, body) {
     if (body && body.description) derived.description = body.description;
     if (length.seconds) derived.duration_ms = length.seconds * 1000;
 
-    return { cue: derived, context, length, derived: true, brief };
+    return { cue: derived, context, length, derived: true, other_cues: picked.others, brief };
 }
 
 /**
@@ -442,6 +671,10 @@ async function generateMusic(req, res, sceneId) {
             musicProvider.id, resultModel(result, payload), resultJobId(result)
         );
 
+        // The cue this was generated FROM, so the row and its audio are connected.
+        // A derived score has no cue row to link, and linkCueAsset ignores a null.
+        linkCueAsset(scored.derived ? null : scored.cue.id, assetId);
+
         // Note: scene-level music is not a shot render, and render_ledger.shot_id
         // is NOT NULL + FK to film_shots — so we track it in film_music_jobs only.
         db.prepare('UPDATE film_music_jobs SET status = ?, output_path = ? WHERE id = ?').run('complete', filePath, jobId);
@@ -512,6 +745,7 @@ async function generateMusicStream(req, res, sceneId) {
                     assetId, scene.project_id, sceneId, filename, formatForResult(data), mimeForResult(data),
                     musicProvider.id, resultModel(data, payload), resultJobId(data)
                 );
+                linkCueAsset(scored.derived ? null : musicCue.id, assetId);
 
                 db.prepare('UPDATE film_music_jobs SET status = ? WHERE id = ?').run('complete', jobId);
             },
@@ -629,11 +863,19 @@ async function generateSFX(req, res, shotId) {
  * scene.estimated_duration is 0 on every scene in every real project, and 0 is
  * falsy, so the bed fell to a thirty-second default whatever the scene was.
  */
-function ambientOptions(scene, body) {
+function ambientOptions(scene, body, namedCue) {
     const { cueSeconds } = require('../lib/scene-score');
-    const cue = db.prepare(
-        "SELECT * FROM film_music_cues WHERE scene_id = ? AND cue_type = 'ambient' ORDER BY start_ms LIMIT 1"
-    ).get(scene.id);
+    /*
+     * A cue may be NAMED by the caller -- `music_cue_generate` addresses one
+     * directly. It still comes through here rather than being assembled at the
+     * call site: the length walk, the body-beats-the-cue rule and the declined
+     * list are one reading, and a second literal is how the ambient lookups
+     * came to exist twice in the first place.
+     */
+    const picked = namedCue
+        ? { chosen: namedCue, others: cueOfKind(scene.id, namedCue.cue_type).others }
+        : cueOfKind(scene.id, CUE_KIND_FOR.ambient);
+    const cue = picked.chosen;
     const context = sceneScoreContext(scene);
     const length = cueSeconds({
         cue_ms: cue && cue.duration_ms,
@@ -643,6 +885,7 @@ function ambientOptions(scene, body) {
     });
     return {
         cue: cue || null,
+        other_cues: picked.others,
         // A body beats the stored cue: a caller asking for something specific
         // on this run must not be overruled by a note written last week.
         direction: String((body && body.direction) || (cue && cue.description) || '').trim(),
@@ -671,9 +914,7 @@ function ambientBrief(res, sceneId) {
         ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id)
         : null;
 
-    const cue = db.prepare(
-        "SELECT * FROM film_music_cues WHERE scene_id = ? AND cue_type = 'ambient' ORDER BY start_ms LIMIT 1")
-        .get(sceneId) || {};
+    const cue = cueOfKind(sceneId, CUE_KIND_FOR.ambient).chosen || {};
     const payload = buildAmbientPrompt(scene, location, ambientOptions(scene, {}));
 
     const providers = require('../lib/providers');
@@ -753,6 +994,7 @@ async function generateAmbient(req, res, sceneId) {
             assetId, scene.project_id, sceneId, filePath, filename, formatForResult(result), mimeForResult(result), payload.duration_s * 1000,
             ambientProvider.id, resultModel(result, payload), resultJobId(result)
         );
+        linkCueAsset(ambient.cue && ambient.cue.id, assetId);
 
         db.prepare('UPDATE film_music_jobs SET status = ?, output_path = ? WHERE id = ?').run('complete', filePath, jobId);
 
@@ -831,6 +1073,7 @@ async function batchMusicStream(req, res, projectId) {
                 assetId, projectId, scene.id, filePath, filename, formatForResult(result), mimeForResult(result),
                 musicProvider.id, resultModel(result, musicPayload), resultJobId(result)
             );
+            linkCueAsset(musicScored.derived ? null : musicCue.id, assetId);
 
             sendEvent({ type: 'music_complete', scene_number: scene.scene_number, music_url: getFileUrl('music', projectId, filename) });
             completed++;
@@ -846,7 +1089,8 @@ async function batchMusicStream(req, res, projectId) {
         // the batch used to ignore the location's sound notes, the scene's own
         // direction and the measured length, all three of which the Music page
         // honoured.
-        const ambientPayload = buildAmbientPrompt(scene, location, ambientOptions(scene, null));
+        const ambient = ambientOptions(scene, null);
+        const ambientPayload = buildAmbientPrompt(scene, location, ambient);
 
         try {
             const result = await ambientProvider.generate('ambient', ambientPayload, { timeout: 300000 });
@@ -867,6 +1111,7 @@ async function batchMusicStream(req, res, projectId) {
                 assetId, projectId, scene.id, filePath, filename, formatForResult(result), mimeForResult(result),
                 ambientProvider.id, resultModel(result, ambientPayload), resultJobId(result)
             );
+            linkCueAsset(ambient.cue && ambient.cue.id, assetId);
 
             sendEvent({ type: 'ambient_complete', scene_number: scene.scene_number });
             completed++;
@@ -1164,4 +1409,13 @@ function exportSRT(req, res, projectId) {
     res.end(srt);
 }
 
-module.exports = { handleMusicGen };
+module.exports = {
+    handleMusicGen,
+    /*
+     * Exposed for tests. Which cue a path selects is the defect this module
+     * has already shipped once, and it cannot be checked from the outside:
+     * generating to find out costs money, and the wrong cue produces a
+     * perfectly good file.
+     */
+    _internal: { cueForScene, ambientOptions, cueOfKind, linkCueAsset, CUE_KIND_FOR, generateFromCue },
+};

@@ -995,6 +995,12 @@ const server = http.createServer(async (req, res) => {
         if (parts[1] === 'music-cues' && parts[2] && !parts[3]) {
             return handleAssets(req, res, parts, query);
         }
+        // /film/music-cues/:id/generate — generate the cue that was written.
+        // Registered beside the other music-cue verbs; handled by music-gen.js
+        // because that is where the payload builders and the persistence live.
+        if (parts[1] === 'music-cues' && parts[2] && parts[3] === 'generate') {
+            return await handleMusicGen(req, res, parts, query);
+        }
         if (parts[1] === 'music-cues' && parts[2] && parts[3] === 'rights') {
             return handleAssets(req, res, parts, query);
         }

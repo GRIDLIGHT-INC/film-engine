@@ -314,6 +314,7 @@ film-engine/
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
 │       ├── muapi-models.test.js        # MuAPI is the house provider: its models must be pickable, and reach MuAPI
 │       ├── generation-handles.test.js  # A generation the host abandons is not lost
+│       ├── music-cue-generation.test.js # The cue you wrote is the cue that gets generated
 │       ├── entity-create-fields.test.js # Creating a subject and updating one accept the same fields
 │       ├── provider-resolution-visible.test.js # Spend that goes somewhere nobody chose says so
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
@@ -854,6 +855,68 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### The Cue You Wrote Is the Cue That Gets Generated
+
+Reported with the line number: `routes/music-gen.js:222` selected the scene's
+score with `ORDER BY start_ms LIMIT 1` and **no `cue_type` filter**.
+
+Every cue on a scene legitimately starts at 0 — a score, a room tone and a
+stinger all begin when the scene does — so that is not a tie-break, it is a coin
+toss: SQLite may return any row when the sort key is equal. On the real DRIVE-IN
+scene, which carries three cues all at `start_ms 0`, an ambient bed called
+**"Lot Air" (crickets and highway) was used as the orchestral score**. Nothing
+errored, the file played, and the only signal was a director listening to it.
+
+**The bug is independent of which tool was reached for**, which is the important
+half: the correct route selected its cue the same way, so the same forest
+recording would have come back either way.
+
+`CUE_KIND_FOR` states the mapping once and `cueOfKind()` is the only selector.
+The ambient lookups already filtered correctly — in **two separate literals**,
+which is exactly how the third came to have no filter and how a fourth would
+drift again. The tie-break is now deterministic (`start_ms, created_at, id`)
+rather than left to the engine.
+
+**`source` and `transition` are deliberately not the score.** Diegetic music
+from a radio in shot, and a stinger across a cut, are different pieces of music
+with different lengths and different jobs; folding them in is the same
+conflation being fixed, one step milder. And a cue that is **declined is
+named** — `other_cues` on both branches — because deriving a score while an
+ambient cue sits unused is *correct*, and doing it silently is precisely what
+made the original defect invisible.
+
+**Nothing could generate a written cue.** `music_cue_create`, `_update`,
+`_list` and `music_brief` all existed, and then there was nothing to generate
+with — so the only generation surface an agent could see was `node_gen_music`,
+which derives its own prompt from the scene and never reads the cue. Reaching
+for it produced a scene-derived bed instead of the score that had been written
+out in full. Cue-authoring no tool can act on is the *capability with no
+control* case that `tests/manual-edit.test.js` exists to catch, pointed the
+other way.
+
+`music_cue_generate` is **addressed by CUE, not by scene**, and that is the
+point: a scene holds several cues at once, so a scene-addressed call has to
+guess which one was meant — the defect above, one level up. It routes on the
+cue's own kind through the same builders the briefs use, so a cue previewed for
+free and a cue generated cannot describe different music. An **SFX cue is
+refused and told where to go**: effects are built from a shot's scene card by
+`buildSFXPrompts`, which takes a card and not a cue, so there is no builder that
+could honour that row.
+
+**`generated_asset_id` had existed since migration 016 and was written by
+nothing.** A scene could hold a cue and an audio file with no link between them,
+and *"has this cue been generated"* had no answer at all. All five generating
+paths link it now, and the check is **per site** rather than a total — counting
+calls passes while one path has stopped linking, which a mutation proved.
+
+**And a `gen.*` node run alone stores nothing.** In a graph that is `out.asset`'s
+job, deliberately; executed on its own through MCP there is no `out.asset`
+downstream, so the bytes come back in the tool result and reach `film_assets`
+never — a paid generation that exists only in a transcript, which is how an MP3
+ended up being pulled out of raw tool output by hand. Every capability node now
+says so in its own description, derived rather than written per node, and
+`gen.music` names `music_cue_generate` as the thing to use instead.
 
 ### A Generation the Host Abandons Is Not Lost
 
@@ -3541,6 +3604,7 @@ node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js
 node --test backend/tests/muapi-models.test.js
 node --test backend/tests/generation-handles.test.js
+node --test backend/tests/music-cue-generation.test.js
 node --test backend/tests/entity-create-fields.test.js
 node --test backend/tests/provider-resolution-visible.test.js
 node --test backend/tests/provider-config-merge.test.js

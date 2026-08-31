@@ -156,10 +156,38 @@ function inputPortSchema(port, def) {
     };
 }
 
+/**
+ * Where to go instead, for the nodes that have a purpose-built route.
+ *
+ * `gen.music` derives its own prompt from the scene and never reads the cue
+ * somebody wrote, so reaching for it to generate a written score produces a
+ * scene-derived bed. That happened, and the reason it happened is that it was
+ * the ONLY generation surface exposed for music.
+ */
+const SPENDING_NODE_ALTERNATIVE = Object.freeze({
+    'gen.music': 'Derives its prompt from the SCENE and ignores any written cue — to generate a '
+        + 'cue you authored, use `music_cue_generate`, which reads the cue, persists the asset '
+        + 'and links it back.',
+});
+
 function describeNodeTool(id, def) {
     const bits = [`Run the \`${id}\` node — ${def.label}.`, `Kind: ${def.kind}.`];
     if (def.capability) {
         bits.push(`Calls the '${def.capability}' capability, so it resolves a provider and may cost money.`);
+        /*
+         * A node run ALONE stores nothing, and that is easy to be wrong about.
+         *
+         * Inside a graph, persistence is `out.asset`'s job -- deliberately, so
+         * a handler is not also a storage layer. Executed on its own through
+         * MCP there is no `out.asset` downstream, so the bytes come back in the
+         * tool result and reach film_assets never: a paid generation that
+         * exists only in a transcript. Said here because the description is the
+         * only place an agent can learn it, and it was learned the expensive
+         * way -- an MP3 that had to be pulled out of raw tool output by hand.
+         */
+        bits.push('NOT SAVED: run alone this returns the media in the tool result and writes NO '
+            + 'asset row — inside a flow, `out.asset` is what persists it.');
+        if (SPENDING_NODE_ALTERNATIVE[id]) bits.push(SPENDING_NODE_ALTERNATIVE[id]);
     }
     bits.push(def.inputs.length ? `Input ports: ${def.inputs.join(', ')}.` : 'No input ports — this is a source.');
     bits.push(`Output ports: ${def.outputs.join(', ')}.`);
@@ -1855,6 +1883,27 @@ const PRODUCTION_TOOLS = [
             cue_type: { type: 'string', enum: ['score', 'source', 'sfx', 'ambient', 'transition'] },
         },
         required: ['project_id'],
+    },
+    {
+        name: 'music_cue_generate',
+        handler: handleMusicGen, method: 'POST',
+        path: a => `/film/music-cues/${a.cue_id}/generate`,
+        body: a => { const { cue_id, ...rest } = a || {}; return rest; },
+        description:
+            'SPENDS MONEY. Generate the cue you WROTE \u2014 the score, the source music or the '
+            + 'ambient bed on that row \u2014 and store it as an asset linked back to the cue. '
+            + 'ADDRESSED BY CUE, not by scene, because a scene holds several cues at once and a '
+            + 'scene-addressed call has to guess which one you meant. Use this rather than '
+            + '`node_gen_music`: that node derives its own prompt from the scene and never reads '
+            + 'your cue, so a written orchestral score comes back as a scene-derived bed. Read '
+            + '`music_brief` first \u2014 it is free and shows the prompt this will send. An SFX '
+            + 'cue is refused here and named: effects are generated from a shot\u2019s scene card.',
+        schema: {
+            cue_id: { type: 'string', description: 'The cue to generate. From music_cue_list.' },
+            direction: { type: 'string', description: 'Ambient only: overrides the cue\u2019s description for this run.' },
+            negative_prompt: { type: 'string', description: 'What the generation must avoid, for this run.' },
+        },
+        required: ['cue_id'],
     },
     {
         name: 'music_cue_update',

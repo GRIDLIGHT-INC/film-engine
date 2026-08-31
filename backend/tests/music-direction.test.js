@@ -333,10 +333,36 @@ test('every path that builds a bed reads the direction', () => {
      * whoever used the third path ever finds out.
      */
     const route = read(ROUTE('music-gen.js'));
-    const ambientCalls = [...route.matchAll(/buildAmbientPrompt\([^)]*\)/g)].map(m => m[0]);
+    /*
+     * Each call WITH the function it sits in, because the assignment check has
+     * to be scoped. Searched file-wide, `const ambient = {}` in the batch path
+     * passed on the strength of `const ambient = ambientOptions(...)` in a
+     * different function — the same scoping mistake the prop-modal check
+     * already paid for.
+     */
+    const enclosing = (src, at) => {
+        const starts = [...src.slice(0, at).matchAll(/\n(?:async )?function \w+\(/g)];
+        const from = starts.length ? starts[starts.length - 1].index : 0;
+        const next = src.indexOf('\nfunction ', at);
+        return src.slice(from, next > 0 ? next : src.length);
+    };
+    const ambientCalls = [...route.matchAll(/buildAmbientPrompt\([^)]*\)/g)]
+        .map(m => ({ text: m[0], scope: enclosing(route, m.index) }));
     assert.ok(ambientCalls.length >= 2, 'the ambient build sites moved');
-    for (const call of ambientCalls) {
-        assert.ok(/ambientOptions|ambient\b/.test(call),
+    for (const { text: call, scope } of ambientCalls) {
+        /*
+         * The third argument must BE ambientOptions' output -- either called
+         * inline, or a variable assigned from it in this file. Matching the
+         * name `ambient` alone passed against `const ambient = {}`, which is
+         * the failure this check exists for; and refusing a variable outright
+         * would forbid an ordinary refactor, which is how a check gets
+         * loosened until it protects nothing.
+         */
+        const arg = (/buildAmbientPrompt\([^,]*,[^,]*,\s*([^)]*)\)/.exec(call) || [])[1] || '';
+        const inline = /ambientOptions\(/.test(arg);
+        const viaVar = /^[A-Za-z_$][\w$]*$/.test(arg.trim())
+            && new RegExp(`\\b${arg.trim()}\\s*=\\s*ambientOptions\\(`).test(scope);
+        assert.ok(inline || viaVar,
             `this path generates a bed with no direction and no measured length: ${call}`);
     }
     // Exactly one call to the builder, and it is inside the shared function.

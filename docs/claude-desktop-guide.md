@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**235 tools, 57 families.** Everything the app can do, you can ask for in a
+**236 tools, 57 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -513,7 +513,8 @@ These resolve a provider and bill you:
 
 ### Telling it what the music should be
 
-`music_cue_create` · `music_cue_list` · `music_cue_update` · `music_cue_delete`
+`music_cue_create` · `music_cue_list` · `music_cue_update` · `music_cue_delete` ·
+`music_cue_generate`
 
 A cue is the BRIEF for a piece of music, separate from generating it. What
 reaches the generator: description, mood, genre, instruments, tempo, key and
@@ -525,6 +526,19 @@ dialogue, lifts when she stands, out on the door" — rather than only what it
 sounds like; mood and genre already carry that. reference_track is sent as
 "in the style of X", which is the clearest single note a director gives and was
 stored and read by nothing until now.
+
+**`music_cue_generate` is what plays it.** It takes a **cue id**, not a scene:
+a scene holds a score, a room tone and effects at once, and anything addressed
+by scene has to guess which you meant. It reads your cue, generates it, stores
+it as an asset and links the asset back to the cue.
+
+**Do not reach for `node_gen_music`.** That is a graph node: it derives its own
+prompt from the scene and never reads your cue, so a written orchestral score
+comes back as a scene-derived bed. Run alone it also stores nothing — the audio
+arrives in the tool result and no asset row is written.
+
+An **SFX cue** is refused here on purpose and tells you where to go: effects are
+built from a shot's scene card, through `POST /film/shots/:id/sfx/generate`.
 
 OMIT duration_ms and the cue is scored to the MEASURED length of that scene's
 footage. Set it only to run deliberately past or under the cut. Before this,
