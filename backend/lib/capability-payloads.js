@@ -797,7 +797,8 @@ function withTierModel(payload, ctx, adapter) {
          * An adapter that declares no model list cannot be checked; its pin is
          * passed through as before.
          */
-        const known = adapter.models ? Object.keys(adapter.models) : null;
+        // Per capability: `image` here, through the registry's one rule.
+        const known = require('./providers').modelIdsFor(adapter, 'image');
         if (!known || known.includes(cfg.image_model)) {
             payload.model = cfg.image_model;
             Object.defineProperty(payload, '__model_for', {

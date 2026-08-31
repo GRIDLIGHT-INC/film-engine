@@ -776,6 +776,18 @@ const adapter = {
      * from KNOWN_IMAGE_MODELS so the two cannot disagree.
      */
     models: Object.freeze(Object.fromEntries([...KNOWN_IMAGE_MODELS].map(id => [id, {}]))),
+
+    /*
+     * Per capability. `models` above is the IMAGE list, and it was being served
+     * to the VIDEO dialog too -- so a director picking a clip model was offered
+     * gen4_image, which Runway refuses for video, while the actual video models
+     * this adapter already validates against were on no menu at all.
+     */
+    modelsByCapability: Object.freeze({
+        image: Object.freeze(Object.fromEntries([...KNOWN_IMAGE_MODELS].map(id => [id, {}]))),
+        video: Object.freeze(Object.fromEntries(Object.entries(RUNWAY_VIDEO_MODELS)
+            .map(([id, m]) => [id, { label: m.label || id }]))),
+    }),
     describeVideoRequest,
     maxKeyframes: MAX_KEYFRAMES,
     maxReferenceImages: 3,

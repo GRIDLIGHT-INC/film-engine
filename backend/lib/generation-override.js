@@ -167,8 +167,15 @@ function generationOverride(capability, body) {
  * A label matters here: `gemini-3-pro-image` means nothing on a button, and
  * "Nano Banana Pro" is what a director asked for by name.
  */
-function modelList(adapter) {
-    const m = adapter && adapter.models;
+function modelList(adapter, capability) {
+    /*
+     * Per capability, through the registry's one rule. This read a single flat
+     * `adapter.models`, so an adapter serving two capabilities offered the same
+     * menu to both -- Runway's image models under video, Meshy's under 3D.
+     */
+    let m = null;
+    try { m = require('./providers').modelsFor(adapter, capability); }
+    catch (_) { m = adapter && adapter.models; }
     if (!m) return null;
     if (Array.isArray(m)) {
         return m.map(x => (typeof x === 'string'
@@ -225,7 +232,7 @@ function generationOptions(capability) {
              * models as null, and Nano Banana Pro -- the only one of them that
              * a director would deliberately choose -- was unreachable.
              */
-            models: modelList(a),
+            models: modelList(a, cap),
         })),
         tiers: tiers
             ? Object.entries(tiers).map(([id, t]) => ({

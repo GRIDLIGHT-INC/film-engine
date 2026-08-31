@@ -34,29 +34,83 @@ const BASE_URL = process.env.MUAPI_BASE_URL || 'https://api.muapi.ai/api/v1';
  * slug is the one thing here that can change without warning, and a 404 on a
  * renamed endpoint should be a config fix rather than a code change.
  */
+/**
+ * Model -> the two endpoints it is served on, and what each will accept.
+ *
+ * TWO SLUGS, NOT ONE, and this is the defect that mattered. MuAPI serves
+ * text-to-image and editing as SEPARATE endpoints -- `nano-banana-2` and
+ * `nano-banana-2-edit` -- and only the second takes pictures. This adapter
+ * posted everything to the first and attached references as `image_urls`, a
+ * field neither endpoint has; FastAPI ignores an unknown field rather than
+ * refusing it, so every character plate, location plate and shot anchor was
+ * serialised, sent, and silently dropped. The frame came back plausible and
+ * conditioned on nothing, which is indistinguishable from conditioning being
+ * weak -- and this is the provider the whole production is moving to.
+ *
+ * `resolution` is declared per model rather than assumed, for the same reason:
+ * `nano-banana` and `nano-banana-2-lite` accept no resolution field at all, and
+ * sending one is a setting the director watches reach nothing.
+ *
+ * Every field here was read from MuAPI's own refusals, not from documentation --
+ * see tests/refresh-muapi-contract.js. The slug IS the path segment, which is
+ * the pattern seedance already follows, and stays overridable by env because a
+ * slug is the one thing that can change without warning.
+ */
 const MODELS = Object.freeze({
     'nano-banana-pro': {
         slug: process.env.MUAPI_SLUG_NANO_BANANA_PRO || 'nano-banana-pro',
+        editSlug: process.env.MUAPI_SLUG_NANO_BANANA_PRO_EDIT || 'nano-banana-pro-edit',
         label: 'Nano Banana Pro (Gemini 3 Pro Image)',
-        sizes: ['1K', '2K', '4K'],
+        resolution: true,
+        sizes: ['1k', '2k', '4k'],
     },
     'nano-banana-2': {
         slug: process.env.MUAPI_SLUG_NANO_BANANA_2 || 'nano-banana-2',
+        editSlug: process.env.MUAPI_SLUG_NANO_BANANA_2_EDIT || 'nano-banana-2-edit',
         label: 'Nano Banana 2',
-        sizes: ['1K', '2K', '4K'],
+        resolution: true,
+        sizes: ['1k', '2k', '4k'],
+    },
+    /*
+     * The cheap one, at half the price of Nano Banana 2 -- worth having on the
+     * menu precisely because a board is generated many times over, and the
+     * draft-then-finish argument the video side already makes applies here too.
+     */
+    'nano-banana-2-lite': {
+        slug: process.env.MUAPI_SLUG_NANO_BANANA_2_LITE || 'nano-banana-2-lite',
+        editSlug: process.env.MUAPI_SLUG_NANO_BANANA_2_LITE_EDIT || 'nano-banana-2-lite-edit',
+        label: 'Nano Banana 2 Lite',
+        resolution: false,
+        sizes: ['1k'],
     },
     'nano-banana': {
         slug: process.env.MUAPI_SLUG_NANO_BANANA || 'nano-banana',
+        editSlug: process.env.MUAPI_SLUG_NANO_BANANA_EDIT || 'nano-banana-edit',
         label: 'Nano Banana',
-        sizes: ['1K'],
+        resolution: false,
+        sizes: ['1k'],
     },
 });
 
 const DEFAULT_MODEL = process.env.MUAPI_IMAGE_MODEL || 'nano-banana-pro';
 const PROMPT_LIMIT = 16000;
 const MAX_REFERENCES = 8;
-const POLL_MS = 2500;
-const POLL_TRIES = 120;
+/*
+ * THE POLL BUDGET IS THE HOST'S, NOT THE MODEL'S.
+ *
+ * A tool call through the MCP host is abandoned at 60 seconds. A generation
+ * still polling at that moment is not slow — it is LOST: the handler is torn
+ * down mid-await, nothing is written, and the caller is told the device did not
+ * respond, which reads like a connection fault rather than a generation that
+ * very nearly finished. That failure is invisible and it cost a full run to
+ * find, because the real error never survived to be reported.
+ *
+ * So the budget is set BELOW the host's, and the adapter answers inside it
+ * either way — a frame, or a timeout that says so. Polled fast because these
+ * models are fast: MuAPI documents Nano Banana 2 Lite at about four seconds.
+ */
+const POLL_MS = 1500;
+const POLL_TRIES = 32;
 
 /**
  * The credential, with a deliberate fallback to `seedance`.
@@ -73,14 +127,26 @@ function muapiCredential() {
     return getCredential('seedance');
 }
 
-/** Nearest size the model actually serves, never larger than asked. */
+/*
+ * The tier to ask for, and it is LOWERCASE.
+ *
+ * MuAPI validates this field against the literals '1k', '2k', '4k' and rejects
+ * '1K' outright — a strict validator, which is a kindness: the wrong tier name
+ * fails at the request rather than silently returning the wrong size.
+ *
+ * SMALLEST TIER THAT COVERS THE REQUEST, never the nearest. This engine asks
+ * for the delivery raster (1672x944 against an uploaded plate, 1920x1080
+ * against project settings), and rounding 1672 DOWN to a 1024px tier delivers a
+ * frame smaller than the board it has to sit beside. Rounding up costs a few
+ * cents; rounding down costs a re-shoot.
+ */
+const TIER_PX = { '1k': 1024, '2k': 2048, '4k': 4096 };
+
 function imageSizeFor(width, height, model) {
     const allowed = (MODELS[model] || MODELS[DEFAULT_MODEL]).sizes;
     const longest = Math.max(Number(width) || 0, Number(height) || 0);
-    const wanted = longest >= 3000 ? '4K' : longest >= 1700 ? '2K' : longest >= 700 ? '1K' : '1K';
-    if (allowed.includes(wanted)) return wanted;
-    const order = ['4K', '2K', '1K'];
-    return order.slice(order.indexOf(wanted)).find(s => allowed.includes(s)) || allowed[allowed.length - 1];
+    const covering = allowed.find(t => TIER_PX[t] >= longest);
+    return covering || allowed[allowed.length - 1];
 }
 
 /** "16:9" from a width and height, since MuAPI takes a ratio rather than pixels. */
@@ -111,15 +177,43 @@ function buildImageRequest(p) {
         if (uri) images.push(uri);
     }
 
+    /*
+     * THE PICTURES DECIDE THE ENDPOINT.
+     *
+     * A reference is only honoured on the `-edit` endpoint, so attaching one and
+     * posting to text-to-image is not a degraded request, it is a DIFFERENT
+     * request that happens to succeed. Derived from what is attached rather than
+     * declared by the caller, on the rule seedance.js already states for its own
+     * workflows: a payload with pictures IS an edit.
+     */
+    const editing = images.length > 0;
+    const slug = editing ? spec.editSlug : spec.slug;
+
     const body = {
         prompt,
         aspect_ratio: aspectFor(p.width, p.height),
-        resolution: imageSizeFor(p.width, p.height, model),
     };
-    if (images.length) body.image_urls = images;
-    if (p.seed !== null && p.seed !== undefined) body.seed = p.seed;
+    /*
+     * Only where the endpoint has the field. `nano-banana` and the Lite model
+     * accept no resolution at all, and a size that reaches nothing is worse than
+     * no size -- it reads on the dialog as a choice that was applied.
+     */
+    if (spec.resolution) body.resolution = imageSizeFor(p.width, p.height, model);
+    /*
+     * `images_list`, which is what MuAPI calls it. This was `image_urls`, a name
+     * no nano endpoint has -- so it validated, generated, billed, and ignored
+     * every plate.
+     */
+    if (editing) body.images_list = images;
 
-    return { url: `${BASE_URL}/${spec.slug}`, body, model };
+    /*
+     * NO SEED. MuAPI accepts none on any nano endpoint, so sending one was a
+     * reproducibility claim that was never true. Named here rather than dropped
+     * silently, because `supportsSeed` is what a caller reads to decide whether
+     * a re-roll can be pinned.
+     */
+
+    return { url: `${BASE_URL}/${slug}`, body, model, slug, editing };
 }
 
 function describeImageRequest(p) {
@@ -165,7 +259,7 @@ async function pollResult(requestId, apiKey) {
             return { ok: false, status: 422, error: `muapi: ${data.error || data.detail || status}` };
         }
     }
-    return { ok: false, status: 504, error: 'muapi: timed out waiting for the image' };
+    return { ok: false, status: 504, error: `muapi: no image after ${Math.round(POLL_MS * POLL_TRIES / 1000)}s — the request may still be running at MuAPI; the tool call is abandoned at 60s so a slower model needs a shorter prompt or a smaller tier` };
 }
 
 async function generate(capability, payload, opts) {
@@ -215,9 +309,17 @@ async function generate(capability, payload, opts) {
 function meterMuapi(capability, payload, result) {
     if (capability !== 'image') return null;
     const p = payload || {};
-    const base = (result && result.provider_model) || p.model || DEFAULT_MODEL;
-    const size = imageSizeFor(p.width, p.height, MODELS[base] ? base : DEFAULT_MODEL);
-    const model = (size === '4K' || size === '2K') ? `${base}-${String(size).toLowerCase()}` : base;
+    /*
+     * The model IS the rate, with no size suffix.
+     *
+     * This used to append `-2k`/`-4k` and price against those, and MuAPI serves
+     * no such endpoints: resolution is a FIELD on one endpoint, not a product.
+     * Those rate-book rows could never be hit, and the suffix condition compared
+     * a lowercase tier against uppercase literals, so it never fired either --
+     * two mistakes cancelling into roughly the right number for the wrong reason.
+     */
+    const asked = (result && result.provider_model) || p.model;
+    const model = MODELS[asked] ? asked : DEFAULT_MODEL;
     return { unit: 'image', quantity: Math.max(1, Number(p.n) || 1), model };
 }
 
@@ -226,7 +328,7 @@ const muapiImageAdapter = {
     meter: meterMuapi,
     id: 'muapi',
     kind: 'generator',
-    label: 'MuAPI (Nano Banana)',
+    label: 'MuAPI (Nano Banana images)',
     requiresKey: true,
     capabilities: ['image'],
 
@@ -248,7 +350,8 @@ const muapiImageAdapter = {
         + 'dimensions are the tier\u2019s, not the ones asked for.',
     promptLimit: PROMPT_LIMIT,
     supportsNegativePrompt: 'folded',
-    supportsSeed: true,
+    // MuAPI accepts no seed field on any nano endpoint -- see buildImageRequest.
+    supportsSeed: false,
     referenceMode: 'edit',
     maxReferenceImages: MAX_REFERENCES,
     /*
@@ -270,7 +373,7 @@ const muapiImageAdapter = {
     maxImagePixels: 3840 * 2160,
 
     models: MODELS,
-    sizes: ['1K', '2K', '4K'],
+    sizes: ['1k', '2k', '4k'],
     buildImageRequest,
     describeImageRequest,
     generate,

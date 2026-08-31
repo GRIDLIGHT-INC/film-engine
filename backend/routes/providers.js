@@ -321,7 +321,9 @@ function setProjectProviders(req, res, projectId) {
              */
             const target = clean.image || providers.resolveId('image', clean);
             const adapter = providers.get(target);
-            const known = adapter && adapter.models ? Object.keys(adapter.models) : null;
+            // Checked for the IMAGE capability specifically -- an adapter that
+            // also serves video must not have its clip models accepted here.
+            const known = adapter ? providers.modelIdsFor(adapter, 'image') : null;
             if (known && !known.includes(m)) {
                 return json(res, 400, {
                     error: `${target} does not offer a model called "${m}"`,

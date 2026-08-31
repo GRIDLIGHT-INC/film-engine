@@ -389,6 +389,17 @@ const adapter = {
      * unknown one is currently replaced without a word.
      */
     models: Object.freeze({ 'gpt-image-1': {} }),
+
+    /*
+     * Per capability. `gpt-image-1` was the single flat entry and this adapter
+     * serves llm as well, so the reasoning dialog offered an image model.
+     */
+    modelsByCapability: Object.freeze({
+        image: Object.freeze({ 'gpt-image-1': {} }),
+        llm: Object.freeze({
+            [DEFAULT_LLM_MODEL]: { label: DEFAULT_LLM_MODEL },
+        }),
+    }),
     id: 'openai',
     kind: 'generator',
     label: 'OpenAI',

@@ -119,6 +119,47 @@ const RATE_BOOK = {
      * averaging them would make the precision tier look free on a board that
      * used it once and cheap on one that used it everywhere.
      */
+    /*
+     * The Nano Banana family bought from MuAPI rather than from Google.
+     *
+     * CHEAPER THAN THE SOURCE, which is the opposite of the Meshy line below
+     * and is why the preference walk tries this first. MuAPI lists Nano Banana
+     * 2 at $0.06 for a 1K frame against Google's published $0.067, and the same
+     * key already pays for Seedance footage — one vendor, one invoice, and no
+     * second billing relationship to go wrong.
+     */
+    'muapi:image': {
+        unit: 'image', native_unit: 'image', native_per_unit: 1,
+        usd_per_native: 0.06,
+        /*
+         * Read from MuAPI's own /models catalogue rather than from a blog post,
+         * which corrected two figures and deleted five rows that never existed.
+         *
+         * Nano Banana Pro was held at Google's $0.134 and flagged inferred on
+         * the belief that MuAPI quotes rather than lists it. MuAPI lists it, at
+         * $0.12 -- so the ceiling was over-reporting every Pro board, and the
+         * `inferred` flag made that look like diligence.
+         *
+         * The `-2k` and `-4k` rows were fiction. Resolution on MuAPI is a FIELD
+         * on one endpoint, not a separate product, so nothing could ever be
+         * priced under those names -- and the code that would have produced them
+         * compared a lowercase tier against uppercase literals, so it never
+         * fired either. Two mistakes cancelling is not a working price list.
+         */
+        models: {
+            'nano-banana-pro':    { usd_per_native: 0.12 },
+            'nano-banana-2':      { usd_per_native: 0.06 },
+            'nano-banana-2-lite': { usd_per_native: 0.03 },
+            'nano-banana':        { usd_per_native: 0.03 },
+        },
+        source: 'https://api.muapi.ai/api/v1/models',
+        checked: '2026-08-31',
+        note: 'Per-image list prices from MuAPI\'s own catalogue endpoint. The editing '
+            + 'endpoints (-edit) are listed at the same rate as their text-to-image twins, '
+            + 'so a referenced frame costs what an unreferenced one does. Refresh with '
+            + 'backend/tests/refresh-muapi-contract.js.',
+    },
+
     'google:image': {
         unit: 'image', native_unit: 'image', native_per_unit: 1,
         usd_per_native: 0.067,

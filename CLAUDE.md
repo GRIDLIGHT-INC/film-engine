@@ -311,6 +311,7 @@ film-engine/
 │       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
+│       ├── muapi-models.test.js        # MuAPI is the house provider: its models must be pickable, and reach MuAPI
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
 │       ├── credentials-global.test.js   # A key is entered once, for the machine, not once per film
 │       ├── plate-views.test.js         # A turnaround is three pictures, and the app used the wrong one
@@ -849,6 +850,78 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### A Model List Means Nothing Except Relative to a Capability
+
+*"Relabel the Seedance 2.5 key in setup muapi (that's actually the key from
+muapi) and add muapi's video and image models in the appropriate prompt
+selections. I will use muapi from now on for almost everything (especially
+images)."*
+
+The relabel was the ask. Deriving the set found two things behind it, and the
+second is the one that was costing money.
+
+**`modelList()` read ONE flat `adapter.models`, and four adapters here serve
+more than one capability.** So the VIDEO dialog was offered Runway's IMAGE
+models — `gen4_image`, which Runway refuses for a clip — while the eleven video
+models the adapter already validates against were on no menu at all; the 3D
+dialog answered *"which model should this mesh use"* with `nano-banana-pro`; and
+Seedance, declaring no models, offered an **empty menu**, which is
+indistinguishable from MuAPI being unavailable for footage. That empty menu is
+what was reported. `modelsFor(adapter, capability)` is the one rule, because
+**five call sites were each doing `Object.keys(adapter.models)`** to answer the
+same question — which is how two of them come to disagree about whether a pinned
+model is legal.
+
+**And every reference image sent to MuAPI was silently dropped.** MuAPI serves
+text-to-image and editing on SEPARATE endpoints — `nano-banana-2` and
+`nano-banana-2-edit` — and only the second takes pictures, under the name
+`images_list`. The adapter posted everything to the first and attached
+references as `image_urls`, a field neither endpoint has. FastAPI **ignores** an
+unknown field rather than refusing it, so every character plate, location plate
+and shot anchor was serialised, sent, billed for, and thrown away. The frame came
+back plausible and conditioned on nothing — indistinguishable from conditioning
+being weak, on the provider the whole production is moving to.
+
+**The provider was asked rather than read about.** MuAPI publishes a live
+`/models` catalogue, and the accepted-field set for an endpoint can be read from
+a **422 on an all-wrong-types body** — free, because validation refuses before it
+bills. That is how `images_list`, the lowercase `1k/2k/4k` tier, and the absence
+of any `seed` field were established. `supportsSeed` was declared **true** and
+MuAPI accepts no seed on any nano endpoint, so *"same seed, same frame"* was
+never true here: a claimed control that reaches nothing is worse than an absent
+one, because it gets relied on.
+
+**Three rate-book rows were fiction and one was over-reported.** Nano Banana Pro
+was held at Google's $0.134 and flagged `inferred` on the belief MuAPI quotes
+rather than lists it — MuAPI lists it at **$0.12**, so the flag made
+over-reporting look like diligence. The `-2k` and `-4k` rows described products
+that do not exist: resolution is a FIELD on one endpoint, not a separate model,
+and the code that would have produced those names compared a lowercase tier
+against uppercase literals so it never fired. Two mistakes cancelling is not a
+working price list.
+
+**On Seedance the model IS the price tier**, which is why the video menu is the
+four resolutions rather than the six workflows. The workflow is *derived* from
+what is attached — a payload with four pictures IS an omni-reference request,
+and letting a caller declare otherwise sends four images to an endpoint that
+reads one — so it is not a choice and must not be offered as one. The resolution
+is, and it ranges from **$0.17 to $1.70 a second**. The ids match the rate book's
+own keys exactly, so the dialog's estimate is the number that will be charged,
+and they are derived from `RESOLUTIONS` rather than typed twice. `resolutionFor`
+now reads the chosen model: the dialog has always been able to send `model` and
+this adapter read only `resolution`, so picking *"Seedance 2.5 — 1080p"* changed
+the confirmation's label and nothing about the request.
+
+`tests/muapi-models.test.js` derives its denominator from `providers.list()`
+crossed with declared capabilities, and from MuAPI's catalogue snapshotted with
+its date by `tests/refresh-muapi-contract.js`. The reference field is derived as
+**the one the editing endpoint accepts and its text-to-image twin does not** —
+that difference IS what makes an edit an edit. Reading the probe's `required`
+flag instead is wrong, and was wrong on the first attempt: the probe supplies
+every field, so a supplied one returns a type error rather than a missing one,
+and all four models reported as having no reference field while the routing was
+already correct.
 
 ### A Report Nobody Waits Six Seconds For
 
@@ -3277,6 +3350,7 @@ node --test backend/tests/ios-app.test.js
 node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js
+node --test backend/tests/muapi-models.test.js
 node --test backend/tests/provider-config-merge.test.js
 node --test backend/tests/credentials-global.test.js
 node --test backend/tests/plate-views.test.js

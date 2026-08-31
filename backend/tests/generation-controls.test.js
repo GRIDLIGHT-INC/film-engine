@@ -289,10 +289,19 @@ test('a provider that names its models offers them, by the name a director uses'
         const served = generationOptions(cap).providers;
         for (const p of served) {
             const adapter = providers.list().find(a => a.id === p.id);
-            if (!adapter || !adapter.models) continue;
+            if (!adapter) continue;
+            /*
+             * PER CAPABILITY. This compared against the adapter's single flat
+             * `models`, which was the right question only while no adapter
+             * served two capabilities with different models. Meshy declares four
+             * IMAGE models and two MESH ones, and the flat count made serving
+             * the correct two look like a shortfall of two.
+             */
+            const declaredModels = providers.modelsFor(adapter, cap);
+            if (!declaredModels) continue;
             checked++;
-            const declared = Array.isArray(adapter.models)
-                ? adapter.models.length : Object.keys(adapter.models).length;
+            const declared = Array.isArray(declaredModels)
+                ? declaredModels.length : Object.keys(declaredModels).length;
             assert.ok(Array.isArray(p.models) && p.models.length === declared,
                 `${cap}/${p.id}: declares ${declared} models and serves `
                 + `${p.models ? p.models.length : 'null'} — a picker cannot offer what it is not sent`);

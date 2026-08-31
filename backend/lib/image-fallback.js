@@ -144,6 +144,13 @@ function imageProviderChain(projectConfig) {
  * metered chain never called, and billed a live generation while proving
  * nothing.
  */
+
+/** This adapter's IMAGE model ids, via the registry's one rule. */
+function imageModelIds(adapter) {
+    try { return require('./providers').modelIdsFor(adapter, 'image'); }
+    catch (_) { return adapter && adapter.models ? Object.keys(adapter.models) : null; }
+}
+
 async function runImageFallbackChain(chain, payloadOrFactory, opts) {
     const adapters = Array.isArray(chain) ? chain : [];
     if (!adapters.length) {
@@ -181,7 +188,7 @@ async function runImageFallbackChain(chain, payloadOrFactory, opts) {
          */
         if (payload && payload.model
             && ((payload.__model_for && payload.__model_for !== adapter.id)
-                || (adapter.models && !adapter.models[payload.model]))) {
+                || (imageModelIds(adapter) && !imageModelIds(adapter).includes(payload.model)))) {
             delete payload.model;
             delete payload.__model_for;
         }

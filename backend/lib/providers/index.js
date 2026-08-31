@@ -471,6 +471,49 @@ function isProviderConfigured(id) {
  * better than the old floor, which handed back a local gateway that may not
  * have been running and failed at the socket.
  */
+/**
+ * Which models this adapter offers FOR THIS CAPABILITY.
+ *
+ * There was one flat `adapter.models` per adapter, and four adapters here serve
+ * more than one capability -- so the video dialog was handed Runway's IMAGE
+ * models, the 3D dialog was handed Meshy's image models, and the llm dialog was
+ * handed OpenAI's. A model id only means anything relative to a capability: the
+ * same adapter refuses `gen4_image` for a clip and accepts it for a frame.
+ *
+ * `modelsByCapability` is the statement; `models` stays as the shorthand for the
+ * single-capability adapters, which are most of them, so nothing has to be
+ * rewritten to keep working. An adapter that says nothing about a capability
+ * offers no model choice there, which is different from offering the wrong one.
+ *
+ * ONE RULE, ONE PLACE. Five call sites were each doing
+ * `Object.keys(adapter.models)` to answer this, which is how two of them come to
+ * disagree about whether a pinned model is legal.
+ */
+function modelsFor(adapterOrId, capability) {
+    const a = typeof adapterOrId === 'string' ? get(adapterOrId) : adapterOrId;
+    if (!a) return null;
+    const cap = String(capability || '').trim();
+    const byCap = a.modelsByCapability;
+    if (byCap && cap) {
+        if (!(cap in byCap)) return null;
+        return byCap[cap] || null;
+    }
+    // Single-capability adapters may use the shorthand. An adapter serving
+    // several and declaring only a flat list is a bug the tests refuse, but
+    // reading it here would still be better than answering "no models".
+    return a.models || null;
+}
+
+/** The model ids offered for a capability, or null when there is no choice. */
+function modelIdsFor(adapterOrId, capability) {
+    const m = modelsFor(adapterOrId, capability);
+    if (!m) return null;
+    const ids = Array.isArray(m)
+        ? m.map(x => (typeof x === 'string' ? x : (x && (x.id || x.name)))).filter(Boolean)
+        : Object.keys(m);
+    return ids.length ? ids : null;
+}
+
 function unavailableAdapter(capability) {
     const hosted = list()
         .filter(a => a.id !== DEFAULT_PROVIDER && (a.capabilities || []).includes(capability))
@@ -573,4 +616,5 @@ register(gridlightAdapter);
 _autoload();
 
 module.exports = {
+    modelsFor, modelIdsFor,
     firstConfigured, resolveIdWithReason, describeResolution, accountDefaultFor, refreshAccountDefaults, register, get, list, resolve, resolveId, resolveGenerator, metered, isProviderConfigured, defaultProviderConfig, localGatewayEnabled, refreshLocalGateway, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };

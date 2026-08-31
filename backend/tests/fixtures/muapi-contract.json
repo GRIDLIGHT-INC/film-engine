@@ -1,0 +1,4835 @@
+{
+ "source": "https://api.muapi.ai/api/v1/models",
+ "checked": "2026-08-31",
+ "how": "Accepted fields read from a 422 on an all-wrong-types body: free, and an ignored field is absent.",
+ "catalogue": [
+  {
+   "name": "add-image-watermark",
+   "category": "Image to Image",
+   "family": "watermark",
+   "cost": 0,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "add-video-watermark",
+   "category": "Video to Video",
+   "family": "watermark",
+   "cost": 0,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-anime-generator",
+   "category": "Text to Image",
+   "family": "tools",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-background-remover",
+   "category": "Image to Image",
+   "family": "tools",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-captions",
+   "category": "Video to Video",
+   "family": "tools",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-clipping",
+   "category": "Video to Video",
+   "family": "video",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-color-photo",
+   "category": "Image to Image",
+   "family": "tools",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-dance-effects",
+   "category": "Video to Video",
+   "family": "effects",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-dress-change",
+   "category": "Image to Image",
+   "family": "tools",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-ghibli-style",
+   "category": "Image to Image",
+   "family": "tools",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-image-extension",
+   "category": "Image to Image",
+   "family": "tools",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-image-face-swap",
+   "category": "Image to Image",
+   "family": "tools",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-image-upscaler",
+   "category": "Image to Image",
+   "family": "tools",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-object-eraser",
+   "category": "Image to Image",
+   "family": "tools",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-product-photography",
+   "category": "Image to Image",
+   "family": "tools",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-product-shot",
+   "category": "Image to Image",
+   "family": "tools",
+   "cost": 0.06,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-skin-enhancer",
+   "category": "Image to Image",
+   "family": "tools",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-video-effects",
+   "category": "Image to Video",
+   "family": "effects",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-video-face-swap",
+   "category": "Video to Video",
+   "family": "tools",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-video-upscaler",
+   "category": "Video to Video",
+   "family": "tools",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ai-video-upscaler-pro",
+   "category": "Video to Video",
+   "family": "tools",
+   "cost": 0.24,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "any-llm",
+   "category": "Text to Text",
+   "family": "llm",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "autocrop",
+   "category": "Video to Video",
+   "family": "video",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "bytedance-seededit-v3",
+   "category": "Image to Image",
+   "family": "seedream",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "bytedance-seedream-5.0-pro",
+   "category": "Text to Image",
+   "family": "seedream-5",
+   "cost": 0.045,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "bytedance-seedream-5.0-pro-edit",
+   "category": "Image to Image",
+   "family": "seedream-5",
+   "cost": 0.045,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "bytedance-seedream-5.0-pro-layer",
+   "category": "Image to Image",
+   "family": "seedream-5",
+   "cost": 0.045,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "bytedance-seedream-v3",
+   "category": "Text to Image",
+   "family": "seedream",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "bytedance-seedream-v4",
+   "category": "Text to Image",
+   "family": "seedream",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "bytedance-seedream-v4-edit",
+   "category": "Image to Image",
+   "family": "seedream",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "bytedance-seedream-v4.5",
+   "category": "Text to Image",
+   "family": "seedream-v45",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "bytedance-seedream-v4.5-edit",
+   "category": "Image to Image",
+   "family": "seedream-v45",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "bytedance-seedream-v5.0",
+   "category": "Text to Image",
+   "family": "seedream",
+   "cost": 0.0325,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "bytedance-seedream-v5.0-edit",
+   "category": "Image to Image",
+   "family": "seedream",
+   "cost": 0.0325,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "chroma-image",
+   "category": "Text to Image",
+   "family": "chroma",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "claude-fable-5",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "claude-haiku-4-5",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "claude-opus-4-5",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0006,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "claude-opus-4-6",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0006,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "claude-opus-4-7",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0006,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "claude-opus-4-8",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0006,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "claude-opus-5",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0006,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "claude-sonnet-4-5",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.00035,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "claude-sonnet-4-6",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "claude-sonnet-5",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0004,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "creatify-lipsync",
+   "category": "Audio to Video",
+   "family": "lipsync",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "deepseek-v4-flash",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "deepseek-v4-pro",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0002,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "elevenlabs-text-to-dialogue-v3",
+   "category": "Text to Audio",
+   "family": "audio-generation",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "elevenlabs-tts-turbo-2-5",
+   "category": "Text to Audio",
+   "family": "audio-generation",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "face-expression-change",
+   "category": "Image to Image",
+   "family": "qwen",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "facebook-fetch-reels",
+   "category": "other",
+   "family": "social-scraper",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "facebook-publish",
+   "category": "other",
+   "family": "social",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-1-dev-style-lora-inference",
+   "category": "Lora Support",
+   "family": "flux",
+   "cost": 0.025,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-1-dev-style-lora-trainer",
+   "category": "Training",
+   "family": "flux",
+   "cost": 0.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-dev",
+   "category": "Text to Image",
+   "family": "flux-2",
+   "cost": 0.015,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-dev-edit",
+   "category": "Image to Image",
+   "family": "flux-2",
+   "cost": 0.031,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-flex",
+   "category": "Text to Image",
+   "family": "flux-2",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-flex-edit",
+   "category": "Image to Image",
+   "family": "flux-2",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-4b",
+   "category": "Text to Image",
+   "family": "flux-2",
+   "cost": 0.0104,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-4b-edit",
+   "category": "Image to Image",
+   "family": "flux-2",
+   "cost": 0.0156,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-4b-edit-lora",
+   "category": "Lora Support",
+   "family": "flux-2",
+   "cost": 0.025,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-4b-style-lora-trainer",
+   "category": "Training",
+   "family": "flux",
+   "cost": 4.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-4b-text-to-image-lora",
+   "category": "Lora Support",
+   "family": "flux-2",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-4b-turbo",
+   "category": "Text to Image",
+   "family": "flux-2",
+   "cost": 0.0052,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-4b-turbo-edit",
+   "category": "Image to Image",
+   "family": "flux-2",
+   "cost": 0.0078,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-9b",
+   "category": "Text to Image",
+   "family": "flux-2",
+   "cost": 0.013,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-9b-edit",
+   "category": "Image to Image",
+   "family": "flux-2",
+   "cost": 0.0208,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-9b-edit-lora",
+   "category": "Lora Support",
+   "family": "flux-2",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-9b-style-lora-trainer",
+   "category": "Training",
+   "family": "flux",
+   "cost": 4,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-9b-text-to-image-lora",
+   "category": "Lora Support",
+   "family": "flux-2",
+   "cost": 0.025,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-9b-turbo",
+   "category": "Text to Image",
+   "family": "flux-2",
+   "cost": 0.0065,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-klein-9b-turbo-edit",
+   "category": "Image to Image",
+   "family": "flux-2",
+   "cost": 0.0104,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-pro",
+   "category": "Text to Image",
+   "family": "flux-2",
+   "cost": 0.032,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-2-pro-edit",
+   "category": "Image to Image",
+   "family": "flux-2",
+   "cost": 0.032,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-3-dev",
+   "category": "Text to Image",
+   "family": "flux-3",
+   "cost": 0.025,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-3-image-to-image",
+   "category": "Image to Image",
+   "family": "flux-3",
+   "cost": 0.06,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-3-image-to-video",
+   "category": "Image to Video",
+   "family": "flux-3",
+   "cost": 0.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-3-omni",
+   "category": "Image to Video",
+   "family": "flux-3",
+   "cost": 0.4,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-3-start-end-to-video",
+   "category": "Image to Video",
+   "family": "flux-3",
+   "cost": 0.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-3-text-to-image",
+   "category": "Text to Image",
+   "family": "flux-3",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-3-text-to-video",
+   "category": "Text to Video",
+   "family": "flux-3",
+   "cost": 0.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-3-text-to-video-draft",
+   "category": "Text to Video",
+   "family": "flux-3",
+   "cost": 0.45,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-3-video-extend",
+   "category": "Video to Video",
+   "family": "flux-3",
+   "cost": 0.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-3-video-extend-draft",
+   "category": "Video to Video",
+   "family": "flux-3",
+   "cost": 0.45,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-3-video-upscaler",
+   "category": "Video to Video",
+   "family": "flux-3",
+   "cost": 1.43,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-dev",
+   "category": "Text to Image",
+   "family": "flux",
+   "cost": 0.015,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-dev-lora",
+   "category": "Training",
+   "family": "flux",
+   "cost": 0.015,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-kontext-dev-i2i",
+   "category": "Image to Image",
+   "family": "kontext",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-kontext-dev-t2i",
+   "category": "Text to Image",
+   "family": "kontext",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-kontext-effects",
+   "category": "Image to Image",
+   "family": "kontext",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-kontext-max-i2i",
+   "category": "Image to Image",
+   "family": "kontext",
+   "cost": 0.06,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-kontext-max-t2i",
+   "category": "Text to Image",
+   "family": "kontext",
+   "cost": 0.06,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-kontext-pro-i2i",
+   "category": "Image to Image",
+   "family": "kontext",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-kontext-pro-t2i",
+   "category": "Text to Image",
+   "family": "kontext",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-krea-dev",
+   "category": "Text to Image",
+   "family": "flux",
+   "cost": 0.015,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-lora-trainer",
+   "category": "Training",
+   "family": "flux",
+   "cost": 3.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-pulid",
+   "category": "Image to Image",
+   "family": "flux",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-redux",
+   "category": "Image to Image",
+   "family": "flux",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "flux-schnell",
+   "category": "Text to Image",
+   "family": "flux",
+   "cost": 0.003,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-2-5-flash",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.00005,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-2-5-pro",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.00025,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-2-5-pro-tts",
+   "category": "Text to Audio",
+   "family": "gemini-tts",
+   "cost": 0.035,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-3-1-flash-tts",
+   "category": "Text to Audio",
+   "family": "gemini-tts",
+   "cost": 0.035,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-3-1-pro",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0006,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-3-5-flash",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-3-5-flash-openai",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-3-6-flash",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-3-6-flash-openai",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-3-7-flash",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-3-7-flash-openai",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-3-flash",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-3-pro",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0006,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-audio-vision",
+   "category": "Text to Text",
+   "family": "audio-understanding",
+   "cost": 0.004,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-omni-audio",
+   "category": "other",
+   "family": "gemini-omni",
+   "cost": 0,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-omni-character",
+   "category": "Image to Image",
+   "family": "gemini-omni",
+   "cost": 0,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-omni-flash-1-1-edit",
+   "category": "Video to Video",
+   "family": "gemini-omni",
+   "cost": 0.8,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-omni-flash-1-1-image-to-video",
+   "category": "Image to Video",
+   "family": "gemini-omni",
+   "cost": 0.8,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-omni-flash-1-1-reference-to-video",
+   "category": "Image to Video",
+   "family": "gemini-omni",
+   "cost": 1.28,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-omni-flash-1-1-text-to-video",
+   "category": "Text to Video",
+   "family": "gemini-omni",
+   "cost": 0.8,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-omni-image-to-video",
+   "category": "Image to Video",
+   "family": "gemini-omni",
+   "cost": 1.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-omni-text-to-video",
+   "category": "Text to Video",
+   "family": "gemini-omni",
+   "cost": 1.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-omni-video-edit",
+   "category": "Video to Video",
+   "family": "gemini-omni",
+   "cost": 2.4,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gemini-video-vision",
+   "category": "Text to Text",
+   "family": "video-understanding",
+   "cost": 0.004,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "generate-social-video-script",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "google-imagen4",
+   "category": "Text to Image",
+   "family": "google",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "google-imagen4-fast",
+   "category": "Text to Image",
+   "family": "google",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "google-imagen4-ultra",
+   "category": "Text to Image",
+   "family": "google",
+   "cost": 0.06,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-5-2",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.00023,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-5-4",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.00023,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-5-5",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.00045,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-5-6-luna",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0002,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-5-6-sol",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0008,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-5-6-terra",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0004,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-5-mini",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-5-nano",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.00005,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-codex",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.00023,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-image-1.5",
+   "category": "Text to Image",
+   "family": "gpt-1.5",
+   "cost": 0.054,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-image-1.5-edit",
+   "category": "Image to Image",
+   "family": "gpt-1.5",
+   "cost": 0.054,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-image-2-image-to-image",
+   "category": "Image to Image",
+   "family": "gpt",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt-image-2-text-to-image",
+   "category": "Text to Image",
+   "family": "gpt",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt4o-edit",
+   "category": "Image to Image",
+   "family": "gpt",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt4o-image-to-image",
+   "category": "Image to Image",
+   "family": "gpt",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "gpt4o-text-to-image",
+   "category": "Text to Image",
+   "family": "gpt",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-4-3",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-4-5",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-4-6",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-4-7",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-imagine-extend",
+   "category": "Text to Video",
+   "family": "grok",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-imagine-image-2",
+   "category": "Text to Image",
+   "family": "grok",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-imagine-image-2-edit",
+   "category": "Image to Image",
+   "family": "grok",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-imagine-image-to-image",
+   "category": "Image to Image",
+   "family": "grok",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-imagine-image-to-video",
+   "category": "Image to Video",
+   "family": "grok",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-imagine-text-to-image",
+   "category": "Text to Image",
+   "family": "grok",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-imagine-text-to-image-quality",
+   "category": "Text to Image",
+   "family": "grok",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-imagine-text-to-video",
+   "category": "Text to Video",
+   "family": "grok",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "grok-imagine-video-1-5-preview",
+   "category": "Image to Video",
+   "family": "video-generation",
+   "cost": 0.64,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1-image-to-video-1080p",
+   "category": "Image to Video",
+   "family": "happy-horse-1",
+   "cost": 1.8,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1-image-to-video-720p",
+   "category": "Image to Video",
+   "family": "happy-horse-1",
+   "cost": 0.9,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1-reference-to-video-1080p",
+   "category": "Image to Video",
+   "family": "happy-horse-1",
+   "cost": 2.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1-reference-to-video-720p",
+   "category": "Image to Video",
+   "family": "happy-horse-1",
+   "cost": 1.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1-text-to-video-1080p",
+   "category": "Text to Video",
+   "family": "happy-horse-1",
+   "cost": 1.8,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1-text-to-video-720p",
+   "category": "Text to Video",
+   "family": "happy-horse-1",
+   "cost": 0.9,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1-video-edit-1080p",
+   "category": "Video to Video",
+   "family": "happy-horse-1",
+   "cost": 2.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1-video-edit-720p",
+   "category": "Video to Video",
+   "family": "happy-horse-1",
+   "cost": 1.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1.1-image-to-video-1080p",
+   "category": "Image to Video",
+   "family": "happy-horse-1.1",
+   "cost": 0.9,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1.1-image-to-video-720p",
+   "category": "Image to Video",
+   "family": "happy-horse-1.1",
+   "cost": 0.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1.1-reference-to-video-1080p",
+   "category": "Image to Video",
+   "family": "happy-horse-1.1",
+   "cost": 0.9,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1.1-reference-to-video-720p",
+   "category": "Image to Video",
+   "family": "happy-horse-1.1",
+   "cost": 0.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1.1-text-to-video-1080p",
+   "category": "Text to Video",
+   "family": "happy-horse-1.1",
+   "cost": 0.9,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1.1-text-to-video-720p",
+   "category": "Text to Video",
+   "family": "happy-horse-1.1",
+   "cost": 0.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1.1-video-edit-1080p",
+   "category": "Video to Video",
+   "family": "happy-horse-1.1",
+   "cost": 0.9,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "happy-horse-1.1-video-edit-720p",
+   "category": "Video to Video",
+   "family": "happy-horse-1.1",
+   "cost": 0.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "heygen-video-translate",
+   "category": "Video to Video",
+   "family": "tools",
+   "cost": 0.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "hidream-i1-dev",
+   "category": "Text to Image",
+   "family": "hidream",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "hidream-i1-fast",
+   "category": "Text to Image",
+   "family": "hidream",
+   "cost": 0.008,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "hidream-i1-full",
+   "category": "Text to Image",
+   "family": "hidream",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "hunyuan-fast-text-to-video",
+   "category": "Text to Video",
+   "family": "hunyuan",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "hunyuan-image-2.1",
+   "category": "Text to Image",
+   "family": "hunyuan",
+   "cost": 0.035,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "hunyuan-image-3.0",
+   "category": "Text to Image",
+   "family": "hunyuan",
+   "cost": 0.065,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "hunyuan-image-to-video",
+   "category": "Image to Video",
+   "family": "hunyuan",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "hunyuan-text-to-video",
+   "category": "Text to Video",
+   "family": "hunyuan",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ideogram-character",
+   "category": "Image to Image",
+   "family": "ideogram",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ideogram-v3-reframe",
+   "category": "Image to Image",
+   "family": "ideogram",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ideogram-v3-t2i",
+   "category": "Text to Image",
+   "family": "ideogram",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "image-effects",
+   "category": "Image to Image",
+   "family": "effects",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "infinitetalk-image-to-video",
+   "category": "Audio to Video",
+   "family": "infinite-talk",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "infinitetalk-video-to-video",
+   "category": "Video to Video",
+   "family": "infinite-talk",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "instagram-fetch-reels",
+   "category": "other",
+   "family": "social-scraper",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "instagram-publish",
+   "category": "other",
+   "family": "social",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kimi-k3",
+   "category": "Text to Text",
+   "family": "text-generation",
+   "cost": 0.0001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o1-edit-image",
+   "category": "Image to Image",
+   "family": "kling-o1",
+   "cost": 0.036,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o1-image-to-video",
+   "category": "Image to Video",
+   "family": "kling-o1",
+   "cost": 0.72,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o1-reference-to-video",
+   "category": "Image to Video",
+   "family": "kling-o1",
+   "cost": 0.72,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o1-standard-image-to-video",
+   "category": "Image to Video",
+   "family": "kling-o1",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o1-standard-reference-to-video",
+   "category": "Image to Video",
+   "family": "kling-o1",
+   "cost": 0.72,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o1-standard-video-edit",
+   "category": "Video to Video",
+   "family": "kling-o1",
+   "cost": 1.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o1-text-to-image",
+   "category": "Text to Image",
+   "family": "kling-o1",
+   "cost": 0.036,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o1-text-to-video",
+   "category": "Text to Video",
+   "family": "kling-o1",
+   "cost": 0.72,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o1-video-edit",
+   "category": "Video to Video",
+   "family": "kling-o1",
+   "cost": 1.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o1-video-edit-fast",
+   "category": "Video to Video",
+   "family": "kling-o1",
+   "cost": 0.585,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o3-image",
+   "category": "Text to Image",
+   "family": "kling",
+   "cost": 0.027,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-o3-image-edit",
+   "category": "Image to Image",
+   "family": "kling",
+   "cost": 0.027,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v1-avatar-pro",
+   "category": "Audio to Video",
+   "family": "kling-v1",
+   "cost": 0.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v1-avatar-standard",
+   "category": "Audio to Video",
+   "family": "kling-v1",
+   "cost": 0.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2-avatar-pro",
+   "category": "Audio to Video",
+   "family": "kling-v2",
+   "cost": 0.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2-avatar-standard",
+   "category": "Audio to Video",
+   "family": "kling-v2",
+   "cost": 0.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2.1-master-i2v",
+   "category": "Image to Video",
+   "family": "kling-v2.1",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2.1-master-t2v",
+   "category": "Text to Video",
+   "family": "kling-v2.1",
+   "cost": 1.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2.1-pro-i2v",
+   "category": "Image to Video",
+   "family": "kling-v2.1",
+   "cost": 0.4,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2.1-standard-i2v",
+   "category": "Image to Video",
+   "family": "kling-v2.1",
+   "cost": 0.225,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2.5-turbo-pro-i2v",
+   "category": "Image to Video",
+   "family": "kling-v2.5",
+   "cost": 0.45,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2.5-turbo-pro-t2v",
+   "category": "Text to Video",
+   "family": "kling-v2.5",
+   "cost": 0.45,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2.5-turbo-std-i2v",
+   "category": "Image to Video",
+   "family": "kling-v2.5",
+   "cost": 0.28,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2.6-pro-i2v",
+   "category": "Image to Video",
+   "family": "kling-v2.6",
+   "cost": 0.9,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2.6-pro-motion-control",
+   "category": "Video to Video",
+   "family": "kling-v2.6",
+   "cost": 0.145,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2.6-pro-t2v",
+   "category": "Text to Video",
+   "family": "kling-v2.6",
+   "cost": 0.9,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v2.6-std-motion-control",
+   "category": "Video to Video",
+   "family": "kling-v2.6",
+   "cost": 0.45,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3-turbo-pro-image-to-video",
+   "category": "Image to Video",
+   "family": "kling-v3.0",
+   "cost": 0.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3-turbo-pro-text-to-video",
+   "category": "Text to Video",
+   "family": "kling-v3.0",
+   "cost": 0.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3-turbo-standard-image-to-video",
+   "category": "Image to Video",
+   "family": "kling-v3.0",
+   "cost": 0.56,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3-turbo-standard-text-to-video",
+   "category": "Text to Video",
+   "family": "kling-v3.0",
+   "cost": 0.56,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-4k-image-to-video",
+   "category": "Image to Video",
+   "family": "kling-v3.0",
+   "cost": 2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-4k-text-to-video",
+   "category": "Text to Video",
+   "family": "kling-v3.0",
+   "cost": 2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-omni-4k-image-to-video",
+   "category": "Image to Video",
+   "family": "kling-v3-omni",
+   "cost": 2.6785,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-omni-4k-text-to-video",
+   "category": "Text to Video",
+   "family": "kling-v3-omni",
+   "cost": 2.6785,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-omni-pro-image-to-video",
+   "category": "Image to Video",
+   "family": "kling-v3-omni",
+   "cost": 0.56,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-omni-pro-text-to-video",
+   "category": "Text to Video",
+   "family": "kling-v3-omni",
+   "cost": 0.56,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-omni-standard-image-to-video",
+   "category": "Image to Video",
+   "family": "kling-v3-omni",
+   "cost": 0.42,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-omni-standard-text-to-video",
+   "category": "Text to Video",
+   "family": "kling-v3-omni",
+   "cost": 0.42,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-pro-image-to-video",
+   "category": "Image to Video",
+   "family": "kling-v3.0",
+   "cost": 0.72,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-pro-motion-control",
+   "category": "Video to Video",
+   "family": "kling-v3.0",
+   "cost": 0.16,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-pro-text-to-video",
+   "category": "Text to Video",
+   "family": "kling-v3.0",
+   "cost": 0.72,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-standard-image-to-video",
+   "category": "Image to Video",
+   "family": "kling-v3.0",
+   "cost": 0.72,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-standard-text-to-video",
+   "category": "Text to Video",
+   "family": "kling-v3.0",
+   "cost": 0.72,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "kling-v3.0-std-motion-control",
+   "category": "Video to Video",
+   "family": "kling-v3.0",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "krea-v2-turbo",
+   "category": "Text to Image",
+   "family": "krea",
+   "cost": 0.015,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "krea-v2-turbo-lora",
+   "category": "Lora Support",
+   "family": "krea",
+   "cost": 0.015,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "latent-sync",
+   "category": "Audio to Video",
+   "family": "lipsync",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "leonardoai-lucid-origin",
+   "category": "Text to Image",
+   "family": "leonardoai",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "leonardoai-motion-2.0",
+   "category": "Image to Video",
+   "family": "leonardoai",
+   "cost": 0.4,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "leonardoai-phoenix-1.0",
+   "category": "Text to Image",
+   "family": "leonardoai",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "linkedin-publish",
+   "category": "other",
+   "family": "social",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2-19b-image-to-video",
+   "category": "Image to Video",
+   "family": "ltx",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2-19b-lipsync",
+   "category": "Audio to Video",
+   "family": "ltx",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2-19b-text-to-video",
+   "category": "Text to Video",
+   "family": "ltx",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2-fast-image-to-video",
+   "category": "Image to Video",
+   "family": "ltx",
+   "cost": 0.46,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2-fast-text-to-video",
+   "category": "Text to Video",
+   "family": "ltx",
+   "cost": 0.46,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2-pro-image-to-video",
+   "category": "Image to Video",
+   "family": "ltx",
+   "cost": 0.46,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2-pro-text-to-video",
+   "category": "Text to Video",
+   "family": "ltx",
+   "cost": 0.46,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2.3-image-to-video",
+   "category": "Image to Video",
+   "family": "ltx2.3",
+   "cost": 0.104,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2.3-lipsync",
+   "category": "Audio to Video",
+   "family": "ltx2.3",
+   "cost": 0.26,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2.3-text-to-video",
+   "category": "Text to Video",
+   "family": "ltx2.3",
+   "cost": 0.104,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2.3-video-extend",
+   "category": "Video to Video",
+   "family": "ltx2.3",
+   "cost": 0.104,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2.5-image-to-video",
+   "category": "Image to Video",
+   "family": "ltx2.5",
+   "cost": 0.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ltx-2.5-text-to-video",
+   "category": "Text to Video",
+   "family": "ltx2.5",
+   "cost": 0.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "luma-flash-reframe",
+   "category": "Video to Video",
+   "family": "luma",
+   "cost": 0.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "meshy-6-image-to-3d",
+   "category": "Image to 3D",
+   "family": "meshy",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "meshy-6-multi-image-to-3d",
+   "category": "Image to 3D",
+   "family": "meshy",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "meshy-6-text-to-3d",
+   "category": "Text to 3D",
+   "family": "meshy",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "meshy-v7-image-to-3d",
+   "category": "Image to 3D",
+   "family": "meshy-v7",
+   "cost": 1.716,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "meshy-v7-multi-image-to-3d",
+   "category": "Image to 3D",
+   "family": "meshy-v7",
+   "cost": 1.716,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "midjourney-niji",
+   "category": "Text to Image",
+   "family": "midjourney",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "midjourney-v7",
+   "category": "Text to Image",
+   "family": "midjourney",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "midjourney-v8",
+   "category": "Text to Image",
+   "family": "midjourney",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-h3-image-to-video",
+   "category": "Image to Video",
+   "family": "minimax-h3",
+   "cost": 1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-h3-image-to-video-lora",
+   "category": "Lora Support",
+   "family": "minimax-h3",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-h3-open-image-to-video",
+   "category": "Image to Video",
+   "family": "minimax-h3",
+   "cost": 0.26,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-h3-open-reference-to-video",
+   "category": "Image to Video",
+   "family": "minimax-h3",
+   "cost": 0.33,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-h3-open-text-to-video",
+   "category": "Text to Video",
+   "family": "minimax-h3",
+   "cost": 0.26,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-h3-reference-to-video",
+   "category": "Image to Video",
+   "family": "minimax-h3",
+   "cost": 1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-h3-reference-to-video-lora",
+   "category": "Lora Support",
+   "family": "minimax-h3",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-h3-text-to-video",
+   "category": "Text to Video",
+   "family": "minimax-h3",
+   "cost": 1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-h3-text-to-video-lora",
+   "category": "Lora Support",
+   "family": "minimax-h3",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-hailuo-02-pro-i2v",
+   "category": "Image to Video",
+   "family": "minimax-2",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-hailuo-02-pro-t2v",
+   "category": "Text to Video",
+   "family": "minimax-2",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-hailuo-02-standard-i2v",
+   "category": "Image to Video",
+   "family": "minimax-2",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-hailuo-02-standard-t2v",
+   "category": "Text to Video",
+   "family": "minimax-2",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-hailuo-2.3-fast",
+   "category": "Image to Video",
+   "family": "minimax-2.3",
+   "cost": 0.24,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-hailuo-2.3-pro-i2v",
+   "category": "Image to Video",
+   "family": "minimax-2.3",
+   "cost": 0.63,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-hailuo-2.3-pro-t2v",
+   "category": "Text to Video",
+   "family": "minimax-2.3",
+   "cost": 0.63,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-hailuo-2.3-standard-i2v",
+   "category": "Image to Video",
+   "family": "minimax-2.3",
+   "cost": 0.36,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-hailuo-2.3-standard-t2v",
+   "category": "Text to Video",
+   "family": "minimax-2.3",
+   "cost": 0.36,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-image-01-subject-reference",
+   "category": "Image to Image",
+   "family": "minimax",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-music-3.0",
+   "category": "Text to Audio",
+   "family": "minimax-music",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-speech-2.6-hd",
+   "category": "Text to Audio",
+   "family": "minimax-2.6",
+   "cost": 0.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-speech-2.6-turbo",
+   "category": "Text to Audio",
+   "family": "minimax-2.6",
+   "cost": 0.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "minimax-voice-clone",
+   "category": "Text to Audio",
+   "family": "minimax-2.3",
+   "cost": 0.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "mmaudio-v2-text-to-audio",
+   "category": "Text to Audio",
+   "family": "mmaudio",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "mmaudio-v2-video-to-video",
+   "category": "Video to Video",
+   "family": "mmaudio",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "moderate-image",
+   "category": "other",
+   "family": "moderation",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "moderate-text",
+   "category": "Text to Text",
+   "family": "moderation",
+   "cost": 0.001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "moderate-video",
+   "category": "other",
+   "family": "moderation",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "motion-controls",
+   "category": "Image to Video",
+   "family": "effects",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "motion-graphics",
+   "category": "Text to Video",
+   "family": "motion-graphics",
+   "cost": 0.63,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "motion-graphics-edit",
+   "category": "Video to Video",
+   "family": "motion-graphics",
+   "cost": 0.63,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "muse-image-edit",
+   "category": "Image to Image",
+   "family": "muse-image",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "muse-image-text-to-image",
+   "category": "Text to Image",
+   "family": "muse-image",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "nano-banana",
+   "category": "Text to Image",
+   "family": "nano",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "nano-banana-2",
+   "category": "Text to Image",
+   "family": "nano",
+   "cost": 0.06,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "nano-banana-2-edit",
+   "category": "Image to Image",
+   "family": "nano",
+   "cost": 0.06,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "nano-banana-2-lite",
+   "category": "Text to Image",
+   "family": "nano",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "nano-banana-2-lite-edit",
+   "category": "Image to Image",
+   "family": "nano",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "nano-banana-edit",
+   "category": "Image to Image",
+   "family": "nano",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "nano-banana-effects",
+   "category": "Image to Image",
+   "family": "nano",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "nano-banana-pro",
+   "category": "Text to Image",
+   "family": "nano",
+   "cost": 0.12,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "nano-banana-pro-edit",
+   "category": "Image to Image",
+   "family": "nano",
+   "cost": 0.12,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "neta-lumina",
+   "category": "Text to Image",
+   "family": "neta",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ocr-recognize-text",
+   "category": "other",
+   "family": "ocr",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "omnihuman-1-5",
+   "category": "Audio to Video",
+   "family": "omnihuman",
+   "cost": 0.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "openai-sora",
+   "category": "Text to Video",
+   "family": "sora",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "openai-sora-2-image-to-video",
+   "category": "Image to Video",
+   "family": "sora",
+   "cost": 0.8,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "openai-sora-2-pro-characters",
+   "category": "Text to Text",
+   "family": "sora",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "openai-sora-2-pro-image-to-video",
+   "category": "Image to Video",
+   "family": "sora",
+   "cost": 2.4,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "openai-sora-2-pro-storyboard",
+   "category": "Text to Video",
+   "family": "sora",
+   "cost": 0.58,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "openai-sora-2-pro-text-to-video",
+   "category": "Text to Video",
+   "family": "sora",
+   "cost": 2.4,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "openai-sora-2-text-to-video",
+   "category": "Text to Video",
+   "family": "sora",
+   "cost": 0.8,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "openai-whisper",
+   "category": "other",
+   "family": "whisper",
+   "cost": 0.012,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "openrouter-vision",
+   "category": "Text to Text",
+   "family": "llm",
+   "cost": 0.025,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ovi-image-to-video",
+   "category": "Image to Video",
+   "family": "ovi",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "ovi-text-to-video",
+   "category": "Text to Video",
+   "family": "ovi",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "perfect-pony-xl",
+   "category": "Text to Image",
+   "family": "pony",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "photo-pack",
+   "category": "Image to Image",
+   "family": "nano",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "pinterest-publish",
+   "category": "other",
+   "family": "social",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "pixverse-v4.5-i2v",
+   "category": "Image to Video",
+   "family": "pixverse-v4.5",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "pixverse-v4.5-t2v",
+   "category": "Text to Video",
+   "family": "pixverse-v4.5",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "pixverse-v5-i2v",
+   "category": "Image to Video",
+   "family": "pixverse-v5",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "pixverse-v5-t2v",
+   "category": "Text to Video",
+   "family": "pixverse-v5",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "pixverse-v5.5-i2v",
+   "category": "Image to Video",
+   "family": "pixverse-v5.5",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "pixverse-v5.5-t2v",
+   "category": "Text to Video",
+   "family": "pixverse-v5.5",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "pixverse-v6-extend",
+   "category": "Video to Video",
+   "family": "pixverse-v6",
+   "cost": 0.295,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "pixverse-v6-i2v",
+   "category": "Image to Video",
+   "family": "pixverse-v6",
+   "cost": 0.295,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "pixverse-v6-t2v",
+   "category": "Text to Video",
+   "family": "pixverse-v6",
+   "cost": 0.295,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "pixverse-v6-transition",
+   "category": "Image to Video",
+   "family": "pixverse-v6",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "portrait-stylist",
+   "category": "Image to Image",
+   "family": "flux-klein",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image",
+   "category": "Text to Image",
+   "family": "qwen",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-2.0",
+   "category": "Text to Image",
+   "family": "qwen2",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-2.0-edit",
+   "category": "Image to Image",
+   "family": "qwen2",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-2.0-pro",
+   "category": "Text to Image",
+   "family": "qwen2",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-2.0-pro-edit",
+   "category": "Image to Image",
+   "family": "qwen2",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-2512-lora-trainer",
+   "category": "Training",
+   "family": "qwen-image",
+   "cost": 2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-edit",
+   "category": "Image to Image",
+   "family": "qwen",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-edit-2511",
+   "category": "Image to Image",
+   "family": "qwen",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-edit-2511-lora",
+   "category": "Lora Support",
+   "family": "qwen",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-edit-lora",
+   "category": "Lora Support",
+   "family": "qwen",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-edit-plus",
+   "category": "Image to Image",
+   "family": "qwen",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-edit-plus-lora",
+   "category": "Lora Support",
+   "family": "qwen",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-lora-trainer",
+   "category": "Training",
+   "family": "qwen-image",
+   "cost": 2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-text-to-image-2512-lora",
+   "category": "Lora Support",
+   "family": "qwen",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-image-text-to-image-lora",
+   "category": "Lora Support",
+   "family": "qwen",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen-text-to-image-2512",
+   "category": "Image to Image",
+   "family": "qwen",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen3-image-to-image",
+   "category": "Image to Image",
+   "family": "qwen3",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen3-pro-image-to-image",
+   "category": "Image to Image",
+   "family": "qwen3",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen3-pro-text-to-image",
+   "category": "Text to Image",
+   "family": "qwen3",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "qwen3-text-to-image",
+   "category": "Text to Image",
+   "family": "qwen3",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "remix-video",
+   "category": "Video to Video",
+   "family": "tools",
+   "cost": 0.025,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "reve-image-edit",
+   "category": "Image to Image",
+   "family": "reve",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "reve-text-to-image",
+   "category": "Text to Image",
+   "family": "reve",
+   "cost": 0.032,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "runway-act-two-i2v",
+   "category": "Image to Video",
+   "family": "runway",
+   "cost": 0.07,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "runway-act-two-v2v",
+   "category": "Video to Video",
+   "family": "runway",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "runway-aleph-v2v",
+   "category": "Video to Video",
+   "family": "runway",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "runway-image-to-video",
+   "category": "Image to Video",
+   "family": "runway",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "runway-text-to-video",
+   "category": "Text to Video",
+   "family": "runway",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "sdxl-image",
+   "category": "Text to Image",
+   "family": "sdxl",
+   "cost": 0.004,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "sdxl-lora",
+   "category": "Training",
+   "family": "sdxl",
+   "cost": 0.002,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-character",
+   "category": "Image to Image",
+   "family": "sd-v2.0",
+   "cost": 0.18,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-extend",
+   "category": "Text to Video",
+   "family": "sd-v2.0",
+   "cost": 1.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-first-last-frame",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 1.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-first-last-frame-fast",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 0.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-i2v",
+   "category": "Image to Video",
+   "family": "sd-v2.0",
+   "cost": 0.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-i2v-480p",
+   "category": "Image to Video",
+   "family": "sd-v2.0",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-image-to-video",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 1.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-image-to-video-fast",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 0.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-mini-image-to-video",
+   "category": "Image to Video",
+   "family": "seedance-2.0-mini",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-mini-omni-reference",
+   "category": "Text to Video",
+   "family": "seedance-2.0-mini",
+   "cost": 0.15,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-mini-spicy-image-to-video",
+   "category": "Image to Video",
+   "family": "seedance-2.0-mini",
+   "cost": 0.22,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-mini-spicy-text-to-video",
+   "category": "Text to Video",
+   "family": "seedance-2.0-mini",
+   "cost": 0.22,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-mini-text-to-video",
+   "category": "Text to Video",
+   "family": "seedance-2.0-mini",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-omni-reference",
+   "category": "Image to Video",
+   "family": "sd-v2.0",
+   "cost": 1.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-omni-reference-480p",
+   "category": "Image to Video",
+   "family": "sd-v2.0",
+   "cost": 1.44,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-omni-reference-no-video",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 1.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-omni-reference-no-video-fast",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 0.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-omni-reference-train",
+   "category": "Training",
+   "family": "sd-v2.0",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-spicy-image-to-video",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 1.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-spicy-image-to-video-fast",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 1.155,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-spicy-text-to-video",
+   "category": "Text to Video",
+   "family": "sd-2",
+   "cost": 1.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-spicy-text-to-video-fast",
+   "category": "Text to Video",
+   "family": "sd-2",
+   "cost": 1.155,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-t2v",
+   "category": "Text to Video",
+   "family": "sd-v2.0",
+   "cost": 0.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-t2v-480p",
+   "category": "Text to Video",
+   "family": "sd-v2.0",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-text-to-video",
+   "category": "Text to Video",
+   "family": "sd-2",
+   "cost": 1.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-text-to-video-fast",
+   "category": "Text to Video",
+   "family": "sd-2",
+   "cost": 0.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-video-edit",
+   "category": "Video to Video",
+   "family": "sd-v2.0",
+   "cost": 1.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-video-watermark-remover-pro",
+   "category": "Video to Video",
+   "family": "sd-v2.0",
+   "cost": 0.065,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-extend",
+   "category": "Text to Video",
+   "family": "sd-v2.0",
+   "cost": 1.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-extend-1080p",
+   "category": "Text to Video",
+   "family": "sd-v2.0",
+   "cost": 2.3625,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-first-last-frame",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 1.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-first-last-frame-1080p",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 3.375,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-first-last-frame-4k",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 6.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-first-last-frame-fast",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 1.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-image-to-video",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 1.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-image-to-video-1080p",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 3.375,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-image-to-video-4k",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 6.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-image-to-video-fast",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 1.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-image-to-video-fast-1080p",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 2.363,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-omni-reference",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 1.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-omni-reference-1080p",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 3.375,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-omni-reference-4k",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 6.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-omni-reference-fast",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 1.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-omni-reference-fast-1080p",
+   "category": "Image to Video",
+   "family": "sd-2",
+   "cost": 2.363,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-text-to-video",
+   "category": "Text to Video",
+   "family": "sd-2",
+   "cost": 1.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-text-to-video-1080p",
+   "category": "Text to Video",
+   "family": "sd-2",
+   "cost": 3.375,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-text-to-video-4k",
+   "category": "Text to Video",
+   "family": "sd-2",
+   "cost": 6.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-text-to-video-fast",
+   "category": "Text to Video",
+   "family": "sd-2",
+   "cost": 1.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-vip-text-to-video-fast-1080p",
+   "category": "Text to Video",
+   "family": "sd-2",
+   "cost": 2.363,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2-watermark-remover",
+   "category": "Video to Video",
+   "family": "sd-v2.0",
+   "cost": 0.025,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.1-image-to-video",
+   "category": "Image to Video",
+   "family": "seedance-2.1",
+   "cost": 0.4,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.1-text-to-video",
+   "category": "Text to Video",
+   "family": "seedance-2.1",
+   "cost": 0.4,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-first-last-frame",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 1.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-first-last-frame-1080p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 4.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-first-last-frame-480p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 0.85,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-first-last-frame-4k",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 8.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-image-to-video",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 1.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-image-to-video-1080p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 4.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-image-to-video-480p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 0.85,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-image-to-video-4k",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 8.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-first-last-frame",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 1.87,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-first-last-frame-1080p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-first-last-frame-480p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-first-last-frame-4k",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-image-to-video",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 1.87,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-image-to-video-1080p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-image-to-video-480p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-image-to-video-4k",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-omni-reference",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 1.87,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-omni-reference-1080p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-omni-reference-480p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-omni-reference-4k",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-text-to-video",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 1.87,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-text-to-video-1080p",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-text-to-video-480p",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-text-to-video-4k",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-video-edit",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 1.87,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-video-edit-1080p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-video-edit-480p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-video-edit-4k",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-video-extend",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 1.87,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-video-extend-1080p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-video-extend-480p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-intl-video-extend-4k",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-omni-reference",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 1.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-omni-reference-1080p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 4.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-omni-reference-480p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 0.85,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-omni-reference-4k",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 8.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-first-last-frame",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 1.87,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-first-last-frame-1080p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-first-last-frame-480p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-first-last-frame-4k",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-image-to-video",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-image-to-video-1080p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-image-to-video-480p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-image-to-video-4k",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-omni-reference",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 1.87,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-omni-reference-1080p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-omni-reference-480p",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-omni-reference-4k",
+   "category": "Image to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-text-to-video",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-text-to-video-1080p",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-text-to-video-480p",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-text-to-video-4k",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-video-edit",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 1.87,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-video-edit-1080p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-video-edit-480p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-video-edit-4k",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-video-extend",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 1.87,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-video-extend-1080p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 4.675,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-video-extend-480p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 0.935,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-spicy-video-extend-4k",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 9.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-text-to-video",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 1.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-text-to-video-1080p",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 4.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-text-to-video-480p",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 0.85,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-text-to-video-4k",
+   "category": "Text to Video",
+   "family": "seedance-2.5",
+   "cost": 8.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-video-edit",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 1.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-video-edit-1080p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 4.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-video-edit-480p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 0.85,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-video-edit-4k",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 8.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-video-extend",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 1.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-video-extend-1080p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 4.25,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-video-extend-480p",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 0.85,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-2.5-video-extend-4k",
+   "category": "Video to Video",
+   "family": "seedance-2.5",
+   "cost": 8.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-lite-i2v",
+   "category": "Image to Video",
+   "family": "bytedance",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-lite-reference-video",
+   "category": "Image to Video",
+   "family": "bytedance",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-lite-t2v",
+   "category": "Text to Video",
+   "family": "bytedance",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-pro-i2v",
+   "category": "Image to Video",
+   "family": "bytedance",
+   "cost": 0.18,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-pro-i2v-fast",
+   "category": "Image to Video",
+   "family": "bytedance",
+   "cost": 0.06,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-pro-t2v",
+   "category": "Text to Video",
+   "family": "bytedance",
+   "cost": 0.18,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-pro-t2v-fast",
+   "category": "Text to Video",
+   "family": "bytedance",
+   "cost": 0.06,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-v1.5-pro-i2v",
+   "category": "Image to Video",
+   "family": "seedance-v1.5-pro",
+   "cost": 0.34,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-v1.5-pro-i2v-fast",
+   "category": "Image to Video",
+   "family": "seedance-v1.5-pro",
+   "cost": 0.26,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-v1.5-pro-t2v",
+   "category": "Text to Video",
+   "family": "seedance-v1.5-pro",
+   "cost": 0.34,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-v1.5-pro-t2v-fast",
+   "category": "Text to Video",
+   "family": "seedance-v1.5-pro",
+   "cost": 0.26,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-v1.5-pro-video-extend",
+   "category": "Video to Video",
+   "family": "seedance-v1.5-pro",
+   "cost": 0.34,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedance-v1.5-pro-video-extend-fast",
+   "category": "Video to Video",
+   "family": "seedance-v1.5-pro",
+   "cost": 0.26,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seedvr2-image-upscale",
+   "category": "Image to Image",
+   "family": "seedvr2",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-ai-mentions",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.0333,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-ai-mentions-metrics",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-ai-response",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.025,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-backlinks",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-backlinks-history",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.025,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-backlinks-pages",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-business-listings",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.005,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-business-profile",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.003,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-business-reviews",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.0083,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-business-updates",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.003,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-domain-overview",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-google-qa",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.003,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-google-serp",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-keyword-overview",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-keyword-research",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.017,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-keywords-for-keywords",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-keywords-search-volume",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.005,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-lighthouse-audit",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.017,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-local-serp",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.0033,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-rank-track",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-rank-track-batch",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.001,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-related-keywords",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-relevant-pages",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-youtube-organic",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.003333,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-youtube-video-comments",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.003333,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-youtube-video-info",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "seo-youtube-video-subtitles",
+   "category": "Text to Text",
+   "family": "seo",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "suno-add-instrumental",
+   "category": "Text to Audio",
+   "family": "suno",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "suno-add-vocals",
+   "category": "Text to Audio",
+   "family": "suno",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "suno-boost-music-style",
+   "category": "Text to Text",
+   "family": "suno",
+   "cost": 0.003,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "suno-convert-to-wav",
+   "category": "Text to Audio",
+   "family": "suno",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "suno-create-music",
+   "category": "Text to Audio",
+   "family": "suno",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "suno-extend-music",
+   "category": "Text to Audio",
+   "family": "suno",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "suno-generate-lyrics",
+   "category": "Text to Text",
+   "family": "suno",
+   "cost": 0.003,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "suno-generate-mashup",
+   "category": "Text to Audio",
+   "family": "suno",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "suno-generate-sounds",
+   "category": "Text to Audio",
+   "family": "suno",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "suno-remix-music",
+   "category": "Text to Audio",
+   "family": "suno",
+   "cost": 0.09,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "suno-voice-clone",
+   "category": "Text to Audio",
+   "family": "suno",
+   "cost": 0,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "sync-lipsync",
+   "category": "Audio to Video",
+   "family": "lipsync",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "threads-publish",
+   "category": "other",
+   "family": "social",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "tiktok-carousel",
+   "category": "Text to Image",
+   "family": "carousel",
+   "cost": 0.028,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "tiktok-fetch-profile",
+   "category": "other",
+   "family": "social-scraper",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "tiktok-fetch-videos",
+   "category": "other",
+   "family": "social-scraper",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "tiktok-publish",
+   "category": "other",
+   "family": "social",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "topaz-image-upscale",
+   "category": "Image to Image",
+   "family": "topaz",
+   "cost": 0.075,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "topaz-video-upscale",
+   "category": "Video to Video",
+   "family": "topaz",
+   "cost": 0.08,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "tripo3d-h31-image-to-3d",
+   "category": "Image to 3D",
+   "family": "tripo3d",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "tripo3d-h31-multiview-to-3d",
+   "category": "Image to 3D",
+   "family": "tripo3d",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "tripo3d-h31-text-to-3d",
+   "category": "Text to 3D",
+   "family": "tripo3d",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "tripo3d-p1-image-to-3d",
+   "category": "Image to 3D",
+   "family": "tripo3d",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "tripo3d-p1-text-to-3d",
+   "category": "Text to 3D",
+   "family": "tripo3d",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "twitter-fetch-posts",
+   "category": "other",
+   "family": "social-scraper",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veed-lipsync",
+   "category": "Audio to Video",
+   "family": "lipsync",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo-4-image-to-video",
+   "category": "Image to Video",
+   "family": "veo-4",
+   "cost": 3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo-4-text-to-video",
+   "category": "Text to Video",
+   "family": "veo-4",
+   "cost": 3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3-fast-image-to-video",
+   "category": "Image to Video",
+   "family": "veo",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3-fast-text-to-video",
+   "category": "Text to Video",
+   "family": "veo",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3-image-to-video",
+   "category": "Image to Video",
+   "family": "veo",
+   "cost": 2.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3-text-to-video",
+   "category": "Text to Video",
+   "family": "veo",
+   "cost": 2.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3.1-4k-video",
+   "category": "Text to Video",
+   "family": "veo3.1",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3.1-extend-video",
+   "category": "Text to Video",
+   "family": "veo3.1",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3.1-fast-image-to-video",
+   "category": "Image to Video",
+   "family": "veo3.1",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3.1-fast-text-to-video",
+   "category": "Text to Video",
+   "family": "veo3.1",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3.1-image-to-video",
+   "category": "Image to Video",
+   "family": "veo3.1",
+   "cost": 2.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3.1-lite-image-to-video",
+   "category": "Image to Video",
+   "family": "veo3.1",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3.1-lite-text-to-video",
+   "category": "Text to Video",
+   "family": "veo3.1",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3.1-reference-to-video",
+   "category": "Image to Video",
+   "family": "veo3.1",
+   "cost": 0.6,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "veo3.1-text-to-video",
+   "category": "Text to Video",
+   "family": "veo3.1",
+   "cost": 2.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vfx",
+   "category": "Image to Video",
+   "family": "effects",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "video-background-remover",
+   "category": "Video to Video",
+   "family": "tools",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "video-combiner",
+   "category": "Video to Video",
+   "family": "video-tools",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "video-effects",
+   "category": "Image to Video",
+   "family": "effects",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "video-watermark-remover",
+   "category": "Video to Video",
+   "family": "tools",
+   "cost": 0.065,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q1-reference",
+   "category": "Image to Video",
+   "family": "vidu-q1",
+   "cost": 0.4,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q2-pro-image-to-video",
+   "category": "Image to Video",
+   "family": "vidu-q2",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q2-pro-start-end-video",
+   "category": "Image to Video",
+   "family": "vidu-q2",
+   "cost": 0.13,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q2-pro-text-to-video",
+   "category": "Text to Video",
+   "family": "vidu-q2",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q2-reference",
+   "category": "Image to Video",
+   "family": "vidu-q2",
+   "cost": 0.065,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q2-reference-to-image",
+   "category": "Image to Image",
+   "family": "vidu-q2",
+   "cost": 0.032,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q2-text-to-image",
+   "category": "Text to Image",
+   "family": "vidu-q2",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q2-turbo-image-to-video",
+   "category": "Image to Video",
+   "family": "vidu-q2",
+   "cost": 0.13,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q2-turbo-start-end-video",
+   "category": "Image to Video",
+   "family": "vidu-q2",
+   "cost": 0.06,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q2-turbo-text-to-video",
+   "category": "Text to Video",
+   "family": "vidu-q2",
+   "cost": 0.13,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q3-pro-first-last-frames",
+   "category": "Image to Video",
+   "family": "vidu-q3-pro",
+   "cost": 0.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q3-pro-image-to-video",
+   "category": "Image to Video",
+   "family": "vidu-q3-pro",
+   "cost": 0.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q3-pro-text-to-video",
+   "category": "Text to Video",
+   "family": "vidu-q3-pro",
+   "cost": 0.75,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q3-turbo-first-last-frames",
+   "category": "Image to Video",
+   "family": "vidu-q3-turbo",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q3-turbo-image-to-video",
+   "category": "Image to Video",
+   "family": "vidu-q3-turbo",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-q3-turbo-text-to-video",
+   "category": "Text to Video",
+   "family": "vidu-q3-turbo",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-v2.0-i2v",
+   "category": "Image to Video",
+   "family": "vidu-v2",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "vidu-v2.0-t2v",
+   "category": "Text to Video",
+   "family": "vidu-v2",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "volcengine-video-to-video-lip-sync",
+   "category": "Video to Video",
+   "family": "volcengine-lipsync",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.1-image-to-video",
+   "category": "Image to Video",
+   "family": "wan2.1",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.1-lora-i2v",
+   "category": "Training",
+   "family": "wan2.1",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.1-lora-t2v",
+   "category": "Training",
+   "family": "wan2.1",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.1-reference-video",
+   "category": "Image to Video",
+   "family": "wan2.1",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.1-text-to-image",
+   "category": "Text to Image",
+   "family": "wan2.1",
+   "cost": 0.03,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.1-text-to-video",
+   "category": "Text to Video",
+   "family": "wan2.1",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.2-5b-fast-t2v",
+   "category": "Text to Video",
+   "family": "wan2.2",
+   "cost": 0.016,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.2-animate",
+   "category": "Video to Video",
+   "family": "wan2.2",
+   "cost": 0.35,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.2-edit-video",
+   "category": "Video to Video",
+   "family": "wan2.2",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.2-image-to-video",
+   "category": "Image to Video",
+   "family": "wan2.2",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.2-speech-to-video",
+   "category": "Audio to Video",
+   "family": "wan2.2",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.2-spicy-image-to-video",
+   "category": "Image to Video",
+   "family": "wan2.2-spicy",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.2-spicy-video-extend",
+   "category": "Video to Video",
+   "family": "wan2.2-spicy",
+   "cost": 0.2,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.2-text-to-video",
+   "category": "Text to Video",
+   "family": "wan2.2",
+   "cost": 0.3,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.5-image-edit",
+   "category": "Image to Image",
+   "family": "wan2.5",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.5-image-to-video",
+   "category": "Image to Video",
+   "family": "wan2.5",
+   "cost": 0.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.5-image-to-video-fast",
+   "category": "Image to Video",
+   "family": "wan2.5",
+   "cost": 0.44,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.5-text-to-image",
+   "category": "Text to Image",
+   "family": "wan2.5",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.5-text-to-video",
+   "category": "Text to Video",
+   "family": "wan2.5",
+   "cost": 0.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.5-text-to-video-fast",
+   "category": "Text to Video",
+   "family": "wan2.5",
+   "cost": 0.44,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.6-image-edit",
+   "category": "Image to Image",
+   "family": "wan2.6",
+   "cost": 0.045,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.6-image-to-video",
+   "category": "Image to Video",
+   "family": "wan2.6",
+   "cost": 0.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.6-image-to-video-spicy",
+   "category": "Image to Video",
+   "family": "wan2.6-spicy",
+   "cost": 1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.6-text-to-image",
+   "category": "Text to Image",
+   "family": "wan2.6",
+   "cost": 0.04,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.6-text-to-video",
+   "category": "Text to Video",
+   "family": "wan2.6",
+   "cost": 0.65,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.7-image-edit",
+   "category": "Image to Image",
+   "family": "wan2.7",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.7-image-edit-pro",
+   "category": "Image to Image",
+   "family": "wan2.7",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.7-image-to-video",
+   "category": "Image to Video",
+   "family": "wan2.7",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.7-image-to-video-spicy",
+   "category": "Image to Video",
+   "family": "wan2.7-spicy",
+   "cost": 1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.7-reference-to-video",
+   "category": "Image to Video",
+   "family": "wan2.7",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.7-text-to-image",
+   "category": "Text to Image",
+   "family": "wan2.7",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.7-text-to-image-pro",
+   "category": "Text to Image",
+   "family": "wan2.7",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.7-text-to-video",
+   "category": "Text to Video",
+   "family": "wan2.7",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.7-video-edit",
+   "category": "Video to Video",
+   "family": "wan2.7",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan2.7-video-extend",
+   "category": "Video to Video",
+   "family": "wan2.7",
+   "cost": 0.1,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan3.0-image-edit",
+   "category": "Image to Image",
+   "family": "wan3.0",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan3.0-image-to-video",
+   "category": "Image to Video",
+   "family": "wan3.0",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan3.0-prime-image-to-video",
+   "category": "Image to Video",
+   "family": "wan3.0",
+   "cost": 0.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan3.0-prime-reference-to-video",
+   "category": "Image to Video",
+   "family": "wan3.0",
+   "cost": 0.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan3.0-prime-text-to-video",
+   "category": "Text to Video",
+   "family": "wan3.0",
+   "cost": 0.7,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan3.0-reference-to-video",
+   "category": "Image to Video",
+   "family": "wan3.0",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan3.0-spicy-image-to-video",
+   "category": "Image to Video",
+   "family": "wan3.0-spicy",
+   "cost": 0.55,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan3.0-spicy-reference-to-video",
+   "category": "Image to Video",
+   "family": "wan3.0-spicy",
+   "cost": 0.55,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan3.0-spicy-text-to-video",
+   "category": "Text to Video",
+   "family": "wan3.0-spicy",
+   "cost": 0.55,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan3.0-text-to-image",
+   "category": "Text to Image",
+   "family": "wan3.0",
+   "cost": 0.05,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "wan3.0-text-to-video",
+   "category": "Text to Video",
+   "family": "wan3.0",
+   "cost": 0.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "x-publish",
+   "category": "other",
+   "family": "social",
+   "cost": 0.02,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "youtube-download",
+   "category": "other",
+   "family": "video-download",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "youtube-fetch-shorts",
+   "category": "other",
+   "family": "social-scraper",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "youtube-publish",
+   "category": "other",
+   "family": "social",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "youtube-set-thumbnail",
+   "category": "other",
+   "family": "social",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "youtube-update-metadata",
+   "category": "other",
+   "family": "social",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "z-image-base",
+   "category": "Text to Image",
+   "family": "z-image",
+   "cost": 0.013,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "z-image-base-lora-trainer",
+   "category": "Training",
+   "family": "z-image",
+   "cost": 2.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "z-image-base-text-to-image-lora",
+   "category": "Lora Support",
+   "family": "image-generation",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "z-image-lora-trainer",
+   "category": "Training",
+   "family": "z-image",
+   "cost": 2.5,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "z-image-p",
+   "category": "Text to Image",
+   "family": "z-image",
+   "cost": 0.004,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "z-image-turbo",
+   "category": "Text to Image",
+   "family": "z-image",
+   "cost": 0.007,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "z-image-turbo-image-to-image-lora",
+   "category": "Lora Support",
+   "family": "image-generation",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  },
+  {
+   "name": "z-image-turbo-text-to-image-lora",
+   "category": "Lora Support",
+   "family": "image-generation",
+   "cost": 0.01,
+   "cost_currency": "USD"
+  }
+ ],
+ "endpoints": {
+  "nano-banana": {
+   "prompt": {
+    "required": false,
+    "enum": null
+   },
+   "aspect_ratio": {
+    "required": false,
+    "enum": [
+     "1:1",
+     "3:4",
+     "4:3",
+     "9:16",
+     "16:9",
+     "3:2",
+     "2:3",
+     "5:4",
+     "4:5",
+     "21:9"
+    ]
+   }
+  },
+  "nano-banana-2": {
+   "prompt": {
+    "required": false,
+    "enum": null
+   },
+   "aspect_ratio": {
+    "required": false,
+    "enum": [
+     "1:1",
+     "1:4",
+     "1:8",
+     "2:3",
+     "3:2",
+     "3:4",
+     "4:1",
+     "4:3",
+     "4:5",
+     "5:4",
+     "8:1",
+     "9:16",
+     "16:9",
+     "21:9",
+     "Auto"
+    ]
+   },
+   "resolution": {
+    "required": false,
+    "enum": [
+     "1k",
+     "2k",
+     "4k"
+    ]
+   },
+   "output_format": {
+    "required": false,
+    "enum": [
+     "jpg",
+     "png"
+    ]
+   }
+  },
+  "nano-banana-2-edit": {
+   "prompt": {
+    "required": false,
+    "enum": null
+   },
+   "images_list": {
+    "required": false,
+    "enum": null
+   },
+   "aspect_ratio": {
+    "required": false,
+    "enum": [
+     "1:1",
+     "1:4",
+     "1:8",
+     "2:3",
+     "3:2",
+     "3:4",
+     "4:1",
+     "4:3",
+     "4:5",
+     "5:4",
+     "8:1",
+     "9:16",
+     "16:9",
+     "21:9",
+     "Auto"
+    ]
+   },
+   "resolution": {
+    "required": false,
+    "enum": [
+     "1k",
+     "2k",
+     "4k"
+    ]
+   },
+   "output_format": {
+    "required": false,
+    "enum": [
+     "jpg",
+     "png"
+    ]
+   }
+  },
+  "nano-banana-2-lite": {
+   "prompt": {
+    "required": false,
+    "enum": null
+   },
+   "aspect_ratio": {
+    "required": false,
+    "enum": [
+     "1:1",
+     "2:3",
+     "3:2",
+     "3:4",
+     "4:3",
+     "4:5",
+     "5:4",
+     "9:16",
+     "16:9",
+     "21:9"
+    ]
+   }
+  },
+  "nano-banana-2-lite-edit": {
+   "prompt": {
+    "required": false,
+    "enum": null
+   },
+   "images_list": {
+    "required": false,
+    "enum": null
+   },
+   "aspect_ratio": {
+    "required": false,
+    "enum": [
+     "1:1",
+     "2:3",
+     "3:2",
+     "3:4",
+     "4:3",
+     "4:5",
+     "5:4",
+     "9:16",
+     "16:9",
+     "21:9"
+    ]
+   }
+  },
+  "nano-banana-edit": {
+   "prompt": {
+    "required": false,
+    "enum": null
+   },
+   "images_list": {
+    "required": false,
+    "enum": null
+   },
+   "aspect_ratio": {
+    "required": false,
+    "enum": [
+     "Auto",
+     "1:1",
+     "3:4",
+     "4:3",
+     "9:16",
+     "16:9",
+     "3:2",
+     "2:3",
+     "5:4",
+     "4:5",
+     "21:9"
+    ]
+   }
+  },
+  "nano-banana-pro": {
+   "prompt": {
+    "required": false,
+    "enum": null
+   },
+   "aspect_ratio": {
+    "required": false,
+    "enum": [
+     "1:1",
+     "3:4",
+     "4:3",
+     "9:16",
+     "16:9",
+     "3:2",
+     "2:3",
+     "5:4",
+     "4:5",
+     "21:9"
+    ]
+   },
+   "resolution": {
+    "required": false,
+    "enum": [
+     "1k",
+     "2k",
+     "4k"
+    ]
+   }
+  },
+  "nano-banana-pro-edit": {
+   "prompt": {
+    "required": false,
+    "enum": null
+   },
+   "images_list": {
+    "required": false,
+    "enum": null
+   },
+   "aspect_ratio": {
+    "required": false,
+    "enum": [
+     "1:1",
+     "3:4",
+     "4:3",
+     "9:16",
+     "16:9",
+     "3:2",
+     "2:3",
+     "5:4",
+     "4:5",
+     "21:9"
+    ]
+   },
+   "resolution": {
+    "required": false,
+    "enum": [
+     "1k",
+     "2k",
+     "4k"
+    ]
+   }
+  }
+ }
+}

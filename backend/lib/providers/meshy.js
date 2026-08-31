@@ -618,6 +618,19 @@ const adapter = {
      * the director believes they pinned the 3-credit one.
      */
     models: Object.freeze(Object.fromEntries(IMAGE_MODELS.map(id => [id, {}]))),
+
+    /*
+     * Per capability. The flat list above is Meshy's IMAGE models, and the 3D
+     * dialog was being offered them -- so "which model should this mesh use"
+     * answered with nano-banana-pro. The mesh models are Meshy's own grades.
+     */
+    modelsByCapability: Object.freeze({
+        image: Object.freeze(Object.fromEntries(IMAGE_MODELS.map(id => [id, {}]))),
+        model3d: Object.freeze({
+            'meshy-5': { label: 'Meshy 5 (latest)' },
+            'meshy-4': { label: 'Meshy 4' },
+        }),
+    }),
     id: 'meshy',
     kind: 'generator',
     label: 'Meshy (3D + image)',

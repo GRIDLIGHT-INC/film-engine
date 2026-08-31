@@ -61,6 +61,17 @@ const POLL_TIMEOUT_MS = Number(process.env.SEEDANCE_POLL_TIMEOUT_MS || 900000);
 function resolutionFor(payload) {
     const explicit = String(payload.resolution || payload.quality || '').toLowerCase();
     if (RESOLUTIONS[explicit]) return explicit;
+    /*
+     * A MODEL CHOSEN ON THE DIALOG IS A RESOLUTION CHOSEN.
+     *
+     * The dialog has always been able to send `model`, and this adapter read
+     * only `resolution` -- so picking "Seedance 2.5 - 1080p" changed the label
+     * on the confirmation and nothing about the request. Read after the
+     * explicit field so a route that genuinely knows the tier still wins.
+     */
+    const asked = String(payload.model || payload.video_model || '');
+    const byModel = VIDEO_MODELS[asked] || POST_MODELS[asked];
+    if (byModel) return byModel.resolution;
     const raster = String(payload.target_resolution || '');
     const m = /^(\d+)\s*[x:]\s*(\d+)$/i.exec(raster);
     const longEdge = m ? Math.max(Number(m[1]), Number(m[2])) : 0;
@@ -185,6 +196,52 @@ function buildVideoRequest(payload) {
  * and no compositing -- and an adapter that returns an upscaled file when asked
  * to grade reports success for work it never did.
  */
+/**
+ * The models a director may pick, per capability.
+ *
+ * ON SEEDANCE THE MODEL IS THE PRICE TIER, and that is the whole reason this
+ * list exists. The WORKFLOW is derived from what is attached -- a payload with
+ * four pictures IS an omni-reference request, and letting a caller declare
+ * otherwise sends four images to an endpoint that reads one -- so the workflow
+ * is not a choice and must not be offered as one. What IS a choice, and costs
+ * between $0.17 and $1.70 a second, is the resolution. Offering that as the
+ * "model" makes the dialog's cost estimate the number that will be charged.
+ *
+ * Nothing was offered here at all before this: the adapter declared no models,
+ * so the video dialog listed MuAPI with an empty menu -- indistinguishable from
+ * MuAPI being unavailable for footage.
+ *
+ * DERIVED FROM `RESOLUTIONS`, never typed twice, so a tier added there appears
+ * on the dialog and in the rate book with nothing to remember. The id matches
+ * the rate book's own key exactly, because a model whose name the pricing
+ * cannot find reports its generation as free.
+ *
+ * The `intl` and `spicy` endpoint families MuAPI also serves are deliberately
+ * NOT offered: they are separate moderation/region products at their own prices,
+ * and putting them on a director's menu beside the standard tiers invites
+ * picking one by accident at a rate nobody checked.
+ */
+const VIDEO_WORKFLOWS = ['text-to-video', 'image-to-video', 'first-last-frame', 'omni-reference'];
+const POST_WORKFLOWS = ['video-edit', 'video-extend'];
+
+function tierModels(workflows, prefix) {
+    const out = {};
+    for (const [tier, spec] of Object.entries(RESOLUTIONS)) {
+        const id = `seedance-2.5${prefix}${spec.suffix}`;
+        out[id] = {
+            label: `Seedance 2.5 ${prefix ? 'video edit ' : ''}\u2014 ${tier} ($${spec.usdPerSecond.toFixed(2)}/s)`,
+            resolution: tier,
+            suffix: spec.suffix,
+            workflows,
+            usdPerSecond: spec.usdPerSecond,
+        };
+    }
+    return Object.freeze(out);
+}
+
+const VIDEO_MODELS = tierModels(VIDEO_WORKFLOWS, '');
+const POST_MODELS = tierModels(POST_WORKFLOWS, '-video-edit');
+
 const POST_SERVED = Object.freeze({
     upscale: true,
     face_restore: false,   // Seedance exposes no face-restoration workflow
@@ -416,7 +473,10 @@ const seedanceAdapter = {
     meter: meterSeedance,
     id: 'seedance',
     kind: 'generator',
-    label: 'Seedance 2.5 (ByteDance)',
+    // Labelled for the ACCOUNT, not the model: the key pasted here is a MuAPI
+    // account key that also reaches the Nano Banana image adapter, and a label
+    // naming ByteDance is why it was pasted twice under two names.
+    label: 'MuAPI (Seedance 2.5 video)',
     requiresKey: true,
     capabilities: ['video', 'post'],
 
@@ -454,15 +514,22 @@ const seedanceAdapter = {
 
     resolutions: RESOLUTIONS,
     workflows: WORKFLOWS,
+
+    // Per capability: this adapter serves two, and one flat list would offer
+    // video tiers to the finishing pass and edit tiers to a clip.
+    modelsByCapability: { video: VIDEO_MODELS, post: POST_MODELS },
     buildVideoRequest,
     describeVideoRequest,
     generate,
 
     connection: {
-        instructions: 'Seedance 2.5 is reached through MuAPI. Create a key at muapi.ai and paste it here.',
+        instructions: 'This is your MuAPI account key \u2014 the same one the Nano Banana image '
+            + 'adapter uses. Create it at muapi.ai and paste it once; whichever of the two you '
+            + 'save it under, both read it.',
         helpUrl: 'https://muapi.ai/',
     },
 };
 
 module.exports = { adapter: seedanceAdapter, seedanceAdapter, buildVideoRequest,
-    buildPostRequest, POST_SERVED, describeVideoRequest, RESOLUTIONS, WORKFLOWS, generate };
+    buildPostRequest, POST_SERVED, describeVideoRequest, RESOLUTIONS, WORKFLOWS,
+    VIDEO_MODELS, POST_MODELS, generate };

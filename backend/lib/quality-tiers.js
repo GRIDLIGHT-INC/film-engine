@@ -221,7 +221,7 @@ function resolveTier(tier, config, request) {
          * validated.
          */
         const adapter = providers.get(cfg.image);
-        const known = adapter && adapter.models ? Object.keys(adapter.models) : null;
+        const known = adapter ? providers.modelIdsFor(adapter, 'image') : null;
         const pinnedModel = (cfg.image_model && (!known || known.includes(cfg.image_model)))
             ? cfg.image_model : null;
         const model = pinnedModel || (spec && spec.models[cfg.image]) || null;
