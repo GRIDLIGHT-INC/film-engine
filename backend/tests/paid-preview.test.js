@@ -349,6 +349,18 @@ test('every import target is reachable from an agent', () => {
         'three-d-model': 'model_upload',
         'continuity-ref': 'continuity_upload',
         'marketing-asset': 'marketing_upload',
+        /*
+         * Reserved with codex in the confer, before the tool exists -- so this
+         * suite states the contract the implementation owes rather than being
+         * relaxed to fit what shipped.
+         *
+         * The two orientation tools that DO exist write the plan's TEXT. The
+         * ask is "I'll ask the LLM to generate it and upload a picture", so an
+         * agent that can author a plan and not put an image in the section has
+         * only half the capability. Naming it here keeps that visible instead
+         * of letting the target be quietly excused.
+         */
+        'orientation-plan': 'orientation_plan_upload',
     };
 
     const unreachable = [];

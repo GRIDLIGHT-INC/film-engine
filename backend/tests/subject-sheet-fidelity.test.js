@@ -85,6 +85,44 @@ function declared(styles, prop, value) {
         .some(m => norm(`${prop}:${m[1]}`) === target);
 }
 
+/**
+ * The class a declaration belongs to, and whether any markup WEARS it.
+ *
+ * WHY THIS EXISTS: the first version of the test below asked only whether a
+ * declaration appeared anywhere in the stylesheet. A rule nothing wears
+ * satisfies that perfectly, and two did -- `.ls-support-grid` and
+ * `.ps-states-grid` were declared and appeared nowhere else in the page. So
+ * 2 of the 17 read as green while nothing on screen had that geometry. codex
+ * caught it in the confer critique; it is the exact failure this suite was
+ * written to prevent.
+ *
+ * "Worn" means the class name occurs OUTSIDE its own CSS rule. That is
+ * deliberately looser than `class="..."`: `ssTile(v, label, caption, 'ps-plate')`
+ * passes the class as an ARGUMENT and assigns it with `class="${cls}"`, so the
+ * literal never appears in markup. My own first sweep reported `ps-plate` as
+ * dead on exactly that basis -- a false positive that would have deleted a live
+ * rule.
+ */
+function classesDeclaring(styles, prop, value) {
+    const norm = s => s.replace(/\s+/g, '').toLowerCase();
+    const target = norm(`${prop}:${value}`);
+    const out = [];
+    for (const m of styles.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+        const selector = m[1], body = m[2];
+        const has = [...body.matchAll(new RegExp(`${prop}\\s*:\\s*([^;}]+)`, 'gi'))]
+            .some(d => norm(`${prop}:${d[1]}`) === target);
+        if (!has) continue;
+        for (const c of selector.matchAll(/\.([a-z0-9-]+)/gi)) out.push(c[1]);
+    }
+    return [...new Set(out)];
+}
+
+/** Does anything outside the stylesheet name this class? */
+function worn(cls) {
+    const outsideCss = UI.replace(/<style[^>]*>[\s\S]*?<\/style>/g, ' ');
+    return new RegExp(`\\b${cls.replace(/-/g, '\\-')}\\b`).test(outsideCss);
+}
+
 test('the denominator is derived from both canonical files, and is not small', () => {
     let total = 0;
     for (const k of KINDS) {
@@ -100,7 +138,7 @@ test('the denominator is derived from both canonical files, and is not small', (
         + 'the whole claim is "exactly the same".');
 });
 
-test('every layout declaration in the design is declared by the page', () => {
+test('every layout declaration is declared AND worn by rendered markup', () => {
     const styles = pageStyles();
     const missing = [];
     for (const k of KINDS) {
@@ -111,6 +149,23 @@ test('every layout declaration in the design is declared by the page', () => {
     assert.deepStrictEqual(missing, [],
         'the design states these and the page declares none of them, so the sheet is a different '
         + 'layout wearing the right labels:\n  ' + missing.join('\n  '));
+
+    /*
+     * AND THE RULE MUST BE WORN. Declared-but-unworn is not fidelity, it is
+     * dead CSS that happens to contain the right characters.
+     */
+    const unworn = [];
+    for (const k of KINDS) {
+        for (const d of layoutDeclarations(k.design)) {
+            const classes = classesDeclaring(styles, d.prop, d.value);
+            if (!classes.length) continue;                 // already reported above
+            if (classes.some(worn)) continue;
+            unworn.push(`${k.kind}: ${d.prop}: ${d.value}  (declared by .${classes.join(', .')} — worn by nothing)`);
+        }
+    }
+    assert.deepStrictEqual(unworn, [],
+        'these are declared and no markup wears them, so the geometry is in the stylesheet and '
+        + 'not on the screen:\n  ' + unworn.join('\n  '));
 });
 
 test('the orientation plan is the design\'s compass grid, not a flex approximation', () => {
