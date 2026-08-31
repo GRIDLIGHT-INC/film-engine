@@ -222,9 +222,12 @@ function describeImageRequest(p) {
 }
 
 /** Poll until the frame is finished, on seedance.js's contract. */
-async function pollResult(requestId, apiKey) {
+async function pollResult(requestId, apiKey, budgetMs) {
     const url = `${BASE_URL}/predictions/${encodeURIComponent(requestId)}/result`;
-    for (let i = 0; i < POLL_TRIES; i++) {
+    // Bounded by TIME rather than by a try count: the caller's budget is in
+    // milliseconds, and a fixed number of tries cannot honour it.
+    const deadline = Date.now() + (Number(budgetMs) || (POLL_MS * POLL_TRIES));
+    while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, POLL_MS));
         let res;
         try {
@@ -259,7 +262,7 @@ async function pollResult(requestId, apiKey) {
             return { ok: false, status: 422, error: `muapi: ${data.error || data.detail || status}` };
         }
     }
-    return { ok: false, status: 504, error: `muapi: no image after ${Math.round(POLL_MS * POLL_TRIES / 1000)}s — the request may still be running at MuAPI; the tool call is abandoned at 60s so a slower model needs a shorter prompt or a smaller tier` };
+    return { ok: false, status: 504, error: `muapi: no image after ${Math.round((Number(budgetMs) || POLL_MS * POLL_TRIES) / 1000)}s — the request may still be running at MuAPI; the tool call is abandoned at 60s so a slower model needs a shorter prompt or a smaller tier` };
 }
 
 async function generate(capability, payload, opts) {
@@ -292,7 +295,12 @@ async function generate(capability, payload, opts) {
     const requestId = data.request_id || data.id;
     if (!requestId) return { ok: false, status: 502, error: 'muapi: no request id returned' };
 
-    const out = await pollResult(requestId, apiKey);
+    if (opts && typeof opts.onHandle === 'function') {
+        try { opts.onHandle(requestId, { capability }); } catch (_) { /* never blocks a paid call */ }
+    }
+    const budget = require('../generation-jobs').budgetFor((opts && opts.timeout) || (POLL_MS * POLL_TRIES));
+    const out = await pollResult(requestId, apiKey, budget);
+    if (!out.ok && out.status === 504 && opts && opts.onTimeout) return opts.onTimeout(requestId, budget);
     if (!out.ok) return out;
     return { ok: true, data: out.data, provider: 'muapi', provider_model: req.model };
 }
@@ -323,6 +331,22 @@ function meterMuapi(capability, payload, result) {
     return { unit: 'image', quantity: Math.max(1, Number(p.n) || 1), model };
 }
 
+
+/**
+ * Finish a job from its handle.
+ *
+ * The other half of `onHandle`: the id was written down before polling, and
+ * this is what turns it back into bytes when the call that started it was
+ * abandoned. Same poll function the live path uses, so a collected result
+ * cannot differ from one that arrived normally.
+ */
+async function collect(requestId, opts) {
+    const { apiKey } = muapiCredential();
+    if (!apiKey) return { ok: false, status: 401, error: 'muapi: no API key configured' };
+    const budget = require('../generation-jobs').budgetFor((opts && opts.timeout) || (POLL_MS * POLL_TRIES));
+    return pollResult(String(requestId), apiKey, budget);
+}
+
 const muapiImageAdapter = {
     supports: capability => (muapiImageAdapter.capabilities || []).includes(capability),
     meter: meterMuapi,
@@ -345,6 +369,14 @@ const muapiImageAdapter = {
      * same for its own 512px/1K/2K/4K tier, and inventing `tier` here would
      * make two adapters describe one behaviour two ways.
      */
+    /*
+     * Asynchronous: the provider accepts the job and returns an id, and the
+     * result is polled for. Declared so the handle machinery can find it -- a
+     * tool call abandoned mid-poll loses a generation that was already billed
+     * unless the id was written down first.
+     */
+    asyncGeneration: true,
+
     sizeControl: 'snapped',
     sizeControlReason: 'MuAPI takes an aspect ratio and a 1K/2K/4K tier; the exact pixel '
         + 'dimensions are the tier\u2019s, not the ones asked for.',
@@ -377,6 +409,7 @@ const muapiImageAdapter = {
     buildImageRequest,
     describeImageRequest,
     generate,
+    collect,
 
     connection: {
         instructions: 'MuAPI serves the Nano Banana family. One key covers images and Seedance video — if you already pasted it for Seedance, this adapter reuses it.',
@@ -385,4 +418,4 @@ const muapiImageAdapter = {
 };
 
 module.exports = { adapter: muapiImageAdapter, muapiImageAdapter, buildImageRequest,
-                   describeImageRequest, MODELS, generate, imageSizeFor, aspectFor };
+                   describeImageRequest, MODELS, generate, collect, imageSizeFor, aspectFor };

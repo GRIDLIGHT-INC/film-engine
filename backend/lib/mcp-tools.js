@@ -45,6 +45,7 @@ const { handleScripts } = require('../routes/scripts');
 const { handleScenes } = require('../routes/scenes');
 const { handleShots } = require('../routes/shots');
 const { handleCharacters } = require('../routes/characters');
+const { handleGenerationJobs } = require('../routes/generation-jobs');
 const { handleLocations } = require('../routes/locations');
 const { handleStoryboard } = require('../routes/storyboard');
 const { handleComments } = require('../routes/scripts');
@@ -284,6 +285,29 @@ async function callNodeTool(nodeTypeId, args) {
  * against one of them fails immediately.
  */
 const PRODUCTION_TOOLS = [
+    {
+        name: 'generation_pending',
+        handler: handleGenerationJobs, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/generation-jobs`,
+        description:
+            'What this project has generations OUTSTANDING for \u2014 accepted by their provider and '
+            + 'not yet delivered here. FREE. A tool call is abandoned by the agent host at 60 seconds, '
+            + 'and a video or a 4K mesh routinely takes longer, so a generation that "failed to respond" '
+            + 'is usually still running and already paid for. Check here before generating the same '
+            + 'thing again, which would buy it twice.',
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'generation_collect',
+        handler: handleGenerationJobs, method: 'POST',
+        path: a => `/film/generation-jobs/${a.job_id}/collect`,
+        description:
+            'Deliver a generation that was accepted earlier, from its handle. FREE \u2014 this polls a '
+            + 'job already paid for and never starts a new one. Safe to call repeatedly: a job still '
+            + 'running answers "not finished yet" and stays collectable. Use it after a generation tool '
+            + 'reports that the host abandoned the call, and after `generation_pending` lists a job.',
+        schema: { job_id: { type: 'string' } }, required: ['job_id'],
+    },
     {
         name: 'orientation_plan_brief',
         handler: handleLocations, method: 'GET',

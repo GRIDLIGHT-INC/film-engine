@@ -64,7 +64,7 @@ something. That is the single most useful thing to copy.
 | Pages in the SPA | **38** | `id="page-*"` |
 | Modals | **31** | |
 | Rail entries | **7** | `var RAIL` |
-| MCP tools | **233** | `listTools()` |
+| MCP tools | **235** | `listTools()` |
 | SPA size | **2.01 MB** | one file, `build.target: single-html` |
 | Non-print media queries | **7** | six incidental + the phone breakpoint Option B added; see below |
 
@@ -133,7 +133,7 @@ is exactly the judgement NeonCore's README already made.
 
 ### Option A — the agent surface, which already works ✅ zero cost
 
-**233 MCP tools** are reachable from Claude on a phone today. That is not a workaround; for this
+**235 MCP tools** are reachable from Claude on a phone today. That is not a workaround; for this
 codebase it is the native mobile interface. You can already, from a phone:
 
 - read the screenplay, revise a scene, re-run a breakdown

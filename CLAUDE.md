@@ -26,7 +26,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (97 migrations)
+│   │   └── migrations/     # SQL migration files (98 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -62,6 +62,7 @@ film-engine/
 │   │   ├── backups.js          # Auto-backup system (Phase 18)
 │   │   ├── flows.js            # Flow CRUD + graph validation (Phase 1)
 │   │   ├── previs.js           # Previs blocking CRUD + framing solve (Phase 2)
+│   │   ├── generation-jobs.js  # Outstanding generations, and collecting them
 │   │   ├── production-reports.js # Staleness, sides, DOOD, run plan, breakdown summary (reports)
 │   │   ├── mood-board.js       # Look development: references → style preset
 │   │   ├── annotations.js      # Markup on a storyboard frame (arrows, shapes, notes)
@@ -312,6 +313,7 @@ film-engine/
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
 │       ├── muapi-models.test.js        # MuAPI is the house provider: its models must be pickable, and reach MuAPI
+│       ├── generation-handles.test.js  # A generation the host abandons is not lost
 │       ├── entity-create-fields.test.js # Creating a subject and updating one accept the same fields
 │       ├── provider-resolution-visible.test.js # Spend that goes somewhere nobody chose says so
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
@@ -852,6 +854,77 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### A Generation the Host Abandons Is Not Lost
+
+*"A tool call through the MCP host is abandoned at sixty seconds. Any generation
+still polling at that moment is not slow — it is LOST. The handler is torn down
+mid-await, nothing is written to `film_assets`, and the caller is told:*
+`Device 'mannys-mac-pro-local' did not respond within 60s.` *Which reads like a
+connection fault. It is not. The provider very likely finished the job and
+billed for it; the result had nowhere to be delivered."*
+
+Measured across every adapter that polls:
+
+| | | |
+|---|---|---|
+| meshy | 900s | **15× over the window** |
+| seedance | 900s | **15× over** |
+| bfl | 300s | 5× over |
+| runway | 300s | 5× over |
+| muapi | 48s | under |
+
+**No timeout value fixes this**, which is the whole point: no budget is both
+longer than a 4K render and shorter than the abort. Shortening them alone trades
+a lost result for a failed one and still burns the money.
+
+**The fix is a handle.** Every one of these providers returns an id the moment
+it accepts the job, and that id lived only in a local variable inside the poll
+loop — so the abort took the only reference to work already being billed for.
+Writing it down **before** polling means the process can die, the host can
+abort, and the job is still collectable. The happy path is deliberately
+unchanged: the adapter still polls and still returns bytes.
+
+**The budget belongs to the caller, not the adapter.** An HTTP request can wait
+fifteen minutes for a mesh and nothing abandons it; a tool call has sixty
+seconds whatever the adapter would prefer. So every async adapter now takes
+`opts.timeout` and passes it through `budgetFor()`, and the window is declared
+by **`backend/mcp-server.js`** — that process is the one with the constraint,
+and it is a different program from `backend/server.js`, so an env var set at its
+own startup cannot leak into the browser path. The margin is not politeness: the
+adapter has to notice the deadline, stop, write the handle and return a sentence
+the model can act on, all before the host stops listening.
+
+**`onHandle` is injected at `resolve()`**, the one funnel every generation goes
+through, for the same reason the provenance stamp is — threading a callback
+through the per-domain routes, the orchestrator and the flow canvas is how two
+of the three end up recording nothing. The project, shot and scene come from the
+config the caller already tagged, so a handle is attributed exactly as its cost
+is, from one source.
+
+**A timeout is reported as `pending`, not as a failure.** The symptom was *"the
+device did not respond"*, which sends the reader to the network. Naming the
+handle and the way to collect it is the difference between a lost render and one
+that is simply not finished yet. Collecting is **free and idempotent** — it
+polls a job already paid for, and a job still running answers *"not finished
+yet"* and stays collectable.
+
+Served at `GET /film/projects/:id/generation-jobs`, `POST
+/film/generation-jobs/:id/collect`, and as `generation_pending` /
+`generation_collect` (**235 tools**). The route is registered **before** the
+project catch-alls, on the trap `/film/locations/:id` already cost once: a
+handler that exists and is never reached looks exactly like a missing feature.
+
+`tests/generation-handles.test.js` derives the async adapters **from the
+source** — a sleep inside a bounded loop against a poll URL — and holds the
+declaration two ways, so an adapter that starts polling later is caught and one
+that declares it without polling is caught too. Three of its checks had to be
+scoped to the **generate path, following one call level**: `collect()` polls and
+computes a budget by design, so a file-wide search was satisfied by the recovery
+path while the path that actually spends ignored the window, and meshy delegates
+its whole submit-and-poll to `run(...)` so its own body mentions neither. Both
+were proven by mutation rather than by reading. The handle check requires a
+**call** rather than the `typeof` guard beside it, for the same reason.
 
 ### Creating a Subject and Updating One Must Accept the Same Fields
 
@@ -3262,7 +3335,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (97 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (98 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -3467,6 +3540,7 @@ node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js
 node --test backend/tests/muapi-models.test.js
+node --test backend/tests/generation-handles.test.js
 node --test backend/tests/entity-create-fields.test.js
 node --test backend/tests/provider-resolution-visible.test.js
 node --test backend/tests/provider-config-merge.test.js

@@ -226,8 +226,10 @@ async function call(method, path, apiKey, body) {
  * onProgress is called with Meshy's 0-100 progress so SSE callers can forward
  * it; without this a mesh generation looks frozen for several minutes.
  */
-async function pollTask(path, taskId, apiKey, onProgress) {
-    const deadline = Date.now() + POLL_TIMEOUT_MS;
+async function pollTask(path, taskId, apiKey, onProgress, budgetMs) {
+    // The budget is the CALLER's: an HTTP request can wait fifteen minutes for
+    // a mesh, a tool call through the host has under sixty seconds.
+    const deadline = Date.now() + (Number(budgetMs) || POLL_TIMEOUT_MS);
     let lastProgress = -1;
 
     while (Date.now() < deadline) {
@@ -351,7 +353,7 @@ function buildRequest(payload) {
  * Submit, poll, and (for text-to-mesh) refine.
  * @param {function} [onProgress] (percent, phase) — forwarded to SSE callers.
  */
-async function run(payload, onProgress) {
+async function run(payload, onProgress, opts, capability) {
     // getCredential returns { apiKey, meta } — the image path destructures it
     // and these two did not, so the mesh routes sent `Bearer [object Object]`
     // and Meshy answered 401 Invalid API key with a perfectly good key saved.
@@ -371,7 +373,12 @@ async function run(payload, onProgress) {
 
     const report = (pct, phase) => onProgress && onProgress(pct, phase);
 
-    let task = await pollTask(request.path, taskId, apiKey, p => report(p, request.operation));
+    if (opts && typeof opts.onHandle === 'function') {
+        try { opts.onHandle(taskId, { operation: request.operation, path: request.path }); } catch (_) { /* never blocks a paid call */ }
+    }
+    const budget = require('../generation-jobs').budgetFor((opts && opts.timeout) || POLL_TIMEOUT_MS);
+    let task = await pollTask(request.path, taskId, apiKey, p => report(p, request.operation), budget);
+    if (!task.ok && task.status === 504 && opts && opts.onTimeout) return opts.onTimeout(taskId, budget);
     if (!task.ok) return task;
 
     let refineTaskId = null;
@@ -522,12 +529,12 @@ async function runImage(payload) {
 }
 
 
-async function generate(capability, payload) {
+async function generate(capability, payload, opts) {
     if (!supports(capability)) {
         return { ok: false, status: 400, error: `meshy: unsupported capability "${capability}"` };
     }
     if (capability === 'image') return runImage(payload);
-    return run(payload);
+    return run(payload, undefined, opts, capability);
 }
 
 /**
@@ -543,7 +550,7 @@ async function generateStream(capability, payload, res, callbacks = {}) {
             callbacks.onProgress({ percent, phase, provider: 'meshy' });
         }
     };
-    const result = await run(payload, onProgress);
+    const result = await run(payload, onProgress, opts, 'model3d');
     if (!result.ok) return { ok: false, error: result.error };
     return { ok: true, finalData: result.data, meta: result.meta, provider_job_id: result.provider_job_id };
 }
@@ -609,6 +616,29 @@ function meterMeshy(capability, payload, result) {
     return null;
 }
 
+
+/**
+ * Finish a job from its handle.
+ *
+ * The other half of `onHandle`: the id was written down before polling, and
+ * this is what turns it back into bytes when the call that started it was
+ * abandoned. Same poll function the live path uses, so a collected result
+ * cannot differ from one that arrived normally.
+ */
+async function collect(taskId, opts) {
+    const { apiKey } = getCredential('meshy', 'MESHY_API_KEY');
+    if (!apiKey) return missingKey();
+    /*
+     * The PATH is operation-specific and cannot be derived from the id, so it
+     * travels in the job's meta -- recorded by `onHandle` at submit time. A
+     * collect with no path cannot know which endpoint to ask.
+     */
+    const opPath = (opts && opts.path) || (opts && opts.meta && opts.meta.path);
+    if (!opPath) return { ok: false, status: 400, error: 'meshy: the job did not record which endpoint it was submitted to' };
+    const budget = require('../generation-jobs').budgetFor((opts && opts.timeout) || POLL_TIMEOUT_MS);
+    return pollTask(opPath, String(taskId), apiKey, null, budget);
+}
+
 const adapter = {
     meter: meterMeshy,
     /*
@@ -631,6 +661,13 @@ const adapter = {
             'meshy-4': { label: 'Meshy 4' },
         }),
     }),
+    /*
+     * Asynchronous: the provider accepts the job and returns an id, and the
+     * result is polled for. Declared so the handle machinery can find it -- a
+     * tool call abandoned mid-poll loses a generation that was already billed
+     * unless the id was written down first.
+     */
+    asyncGeneration: true,
     id: 'meshy',
     kind: 'generator',
     label: 'Meshy (3D + image)',
@@ -736,6 +773,7 @@ const adapter = {
 
     supports,
     generate,
+    collect,
     generateStream,
     health,
 

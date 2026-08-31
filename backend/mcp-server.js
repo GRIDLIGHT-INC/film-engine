@@ -22,6 +22,22 @@
  *      the same location the HTTP server uses, so both see one project set.
  */
 
+/**
+ * THE HOST ABANDONS A TOOL CALL AT SIXTY SECONDS.
+ *
+ * Declared by this process rather than detected, because this process is the
+ * one with the constraint: `backend/server.js` is a different program serving a
+ * browser that will happily wait minutes for a mesh. Every async adapter passes
+ * its budget through `generation-jobs.budgetFor`, which finishes early enough
+ * to write the handle down and answer — so a long generation reached this way
+ * comes back as "still running, collect it" instead of being torn down
+ * mid-await and reported as "the device did not respond".
+ *
+ * Overridable, because a host with a different window should say so rather than
+ * have this number guessed at.
+ */
+if (!process.env.FILM_HOST_ABORT_MS) process.env.FILM_HOST_ABORT_MS = '60000';
+
 const readline = require('readline');
 
 // Protocol versions this server understands. We echo the client's when we know

@@ -614,8 +614,62 @@ function resolutionReport(projectConfig) {
  * It must never be the reason a generation cannot happen, so the stamp is
  * guarded -- the rule metering and fingerprinting already follow.
  */
+/**
+ * The adapter, with its bookkeeping attached.
+ *
+ * `onHandle` and `onTimeout` are injected HERE rather than passed by each
+ * route, for the reason the provenance stamp above is: `resolve()` is the one
+ * funnel every generation goes through, and threading a callback through the
+ * per-domain routes, the orchestrator and the flow canvas is how two of the
+ * three end up not recording anything.
+ *
+ * The project, shot and scene come from the config the caller already tagged --
+ * `provider-config.tag()` attaches them non-enumerably, and `metered()` reads
+ * the same three fields to attribute spend. So a handle is attributed exactly
+ * as its cost is, from one source.
+ */
+function withJobRecording_(adapter, capability, projectConfig) {
+    if (!adapter || typeof adapter.generate !== 'function' || !adapter.asyncGeneration) return adapter;
+    const cfg = projectConfig || {};
+    const jobs = require('../generation-jobs');
+    const inner = adapter.generate.bind(adapter);
+
+    const wrapped = Object.create(adapter);
+    wrapped.generate = async (cap, payload, opts) => {
+        let jobId = null;
+        const o = Object.assign({}, opts || {});
+        const theirs = o.onHandle;
+        o.onHandle = (requestId, meta) => {
+            jobId = jobs.record({
+                provider: adapter.id, capability: cap || capability, requestId,
+                projectId: cfg.__project_id || null,
+                shotId: cfg.__shot_id || null,
+                sceneId: cfg.__scene_id || null,
+                meta: meta || {},
+            });
+            if (typeof theirs === 'function') { try { theirs(requestId, meta); } catch (_) {} }
+            return jobId;
+        };
+        o.onTimeout = (requestId, waitedMs) =>
+            jobs.timedOut({ provider: adapter.id, jobId, requestId, waitedMs });
+
+        const result = await inner(cap, payload, o);
+        /*
+         * Settle it. A handle left `pending` after a call that plainly finished
+         * would offer a collect for a job already delivered, which is how a
+         * frame gets paid for twice.
+         */
+        try {
+            if (jobId && result && result.ok) jobs.complete(jobId, {});
+            else if (jobId && result && !result.pending) jobs.fail(jobId, result && result.error);
+        } catch (_) { /* bookkeeping never fails a generation */ }
+        return result;
+    };
+    return wrapped;
+}
+
 function resolve(capability, projectConfig) {
-    const adapter = resolveAdapter_(capability, projectConfig);
+    const adapter = withJobRecording_(resolveAdapter_(capability, projectConfig), capability, projectConfig);
     try {
         if (adapter && !Object.prototype.hasOwnProperty.call(adapter, '__resolution')) {
             Object.defineProperty(adapter, '__resolution', {

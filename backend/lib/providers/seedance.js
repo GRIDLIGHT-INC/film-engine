@@ -417,7 +417,16 @@ async function generate(capability, payload, opts) {
     const requestId = data.request_id || data.id;
     if (!requestId) return { ok: false, status: 502, error: 'seedance: no request id returned' };
 
-    const out = await awaitResult(requestId, apiKey, Date.now() + ((opts && opts.timeout) || POLL_TIMEOUT_MS));
+    /*
+     * The handle, written down BEFORE polling. Everything after this line can
+     * be torn down without losing the job.
+     */
+    if (opts && typeof opts.onHandle === 'function') {
+        try { opts.onHandle(requestId, { capability }); } catch (_) { /* never blocks a paid call */ }
+    }
+    const budget = require('../generation-jobs').budgetFor((opts && opts.timeout) || POLL_TIMEOUT_MS);
+    const out = await awaitResult(requestId, apiKey, Date.now() + budget);
+    if (!out.ok && out.status === 504 && opts && opts.onTimeout) return opts.onTimeout(requestId, budget);
     if (!out.ok) return out;
     return {
         ok: true,
@@ -465,6 +474,22 @@ function meterSeedance(capability, payload, result) {
     return { unit: 'second', quantity: Math.max(1, seconds), model };
 }
 
+
+/**
+ * Finish a job from its handle.
+ *
+ * The other half of `onHandle`: the id was written down before polling, and
+ * this is what turns it back into bytes when the call that started it was
+ * abandoned. Same poll function the live path uses, so a collected result
+ * cannot differ from one that arrived normally.
+ */
+async function collect(requestId, opts) {
+    const { apiKey } = getCredential('seedance');
+    if (!apiKey) return { ok: false, status: 401, error: 'seedance: no API key configured' };
+    const budget = require('../generation-jobs').budgetFor((opts && opts.timeout) || POLL_TIMEOUT_MS);
+    return awaitResult(String(requestId), apiKey, Date.now() + budget);
+}
+
 const seedanceAdapter = {
     // Asked directly by the readiness checks as well as by resolve(): an
     // adapter that cannot answer "do you serve this?" is treated as not
@@ -495,6 +520,14 @@ const seedanceAdapter = {
      */
     defaultModel: 'seedance-2.5',
 
+    /*
+     * Asynchronous: the provider accepts the job and returns an id, and the
+     * result is polled for. Declared so the handle machinery can find it -- a
+     * tool call abandoned mid-poll loses a generation that was already billed
+     * unless the id was written down first.
+     */
+    asyncGeneration: true,
+
     // Thirty. This is the reason it is here: Runway takes two.
     maxKeyframes: MAX_KEYFRAMES,
     keyframeNote: 'The seedance-2.5-omni-reference endpoint accepts up to 30 reference images '
@@ -521,6 +554,7 @@ const seedanceAdapter = {
     buildVideoRequest,
     describeVideoRequest,
     generate,
+    collect,
 
     connection: {
         instructions: 'This is your MuAPI account key \u2014 the same one the Nano Banana image '
@@ -532,4 +566,4 @@ const seedanceAdapter = {
 
 module.exports = { adapter: seedanceAdapter, seedanceAdapter, buildVideoRequest,
     buildPostRequest, POST_SERVED, describeVideoRequest, RESOLUTIONS, WORKFLOWS,
-    VIDEO_MODELS, POST_MODELS, generate };
+    VIDEO_MODELS, POST_MODELS, generate, collect };

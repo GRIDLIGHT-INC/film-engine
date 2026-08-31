@@ -143,8 +143,13 @@ async function generate(capability, payload, opts) {
     const pollingUrl = data.polling_url || (data.id ? `${BASE_URL}/get_result?id=${encodeURIComponent(data.id)}` : null);
     if (!pollingUrl) return { ok: false, status: 502, error: 'bfl: no polling URL returned' };
 
-    const timeout = (opts && opts.timeout) || POLL_TIMEOUT_MS;
+    const handleId = data.id || pollingUrl;
+    if (opts && typeof opts.onHandle === 'function') {
+        try { opts.onHandle(handleId, { capability, polling_url: pollingUrl }); } catch (_) { /* never blocks a paid call */ }
+    }
+    const timeout = require('../generation-jobs').budgetFor((opts && opts.timeout) || POLL_TIMEOUT_MS);
     const out = await awaitResult(pollingUrl, apiKey, Date.now() + timeout);
+    if (!out.ok && out.status === 504 && opts && opts.onTimeout) return opts.onTimeout(handleId, timeout);
     if (!out.ok) return out;
     return { ok: true, data: out.data, provider: 'bfl', provider_model: req.model };
 }
@@ -168,12 +173,40 @@ function meterBFL(capability, payload, result) {
     return { unit: 'megapixel', quantity: Math.max(0.1, px / 1e6), model };
 }
 
+
+/**
+ * Finish a job from its handle.
+ *
+ * The other half of `onHandle`: the id was written down before polling, and
+ * this is what turns it back into bytes when the call that started it was
+ * abandoned. Same poll function the live path uses, so a collected result
+ * cannot differ from one that arrived normally.
+ */
+async function collect(handle, opts) {
+    const { apiKey } = getCredential('bfl');
+    if (!apiKey) return { ok: false, status: 401, error: 'bfl: no API key configured' };
+    // The handle may be the polling URL itself or the bare id -- `onHandle`
+    // records whichever the submit returned.
+    const url = String(handle).startsWith('http')
+        ? String(handle)
+        : `${BASE_URL}/get_result?id=${encodeURIComponent(String(handle))}`;
+    const budget = require('../generation-jobs').budgetFor((opts && opts.timeout) || POLL_TIMEOUT_MS);
+    return awaitResult(url, apiKey, Date.now() + budget);
+}
+
 const bflImageAdapter = {
     // Asked directly by the readiness checks as well as by resolve(): an
     // adapter that cannot answer "do you serve this?" is treated as not
     // serving it, and is quietly skipped as a preference.
     supports: capability => (bflImageAdapter.capabilities || []).includes(capability),
     meter: meterBFL,
+    /*
+     * Asynchronous: the provider accepts the job and returns an id, and the
+     * result is polled for. Declared so the handle machinery can find it -- a
+     * tool call abandoned mid-poll loses a generation that was already billed
+     * unless the id was written down first.
+     */
+    asyncGeneration: true,
     id: 'bfl',
     kind: 'generator',
     label: 'Black Forest Labs (FLUX.2)',
@@ -198,6 +231,7 @@ const bflImageAdapter = {
     models: MODELS,
     buildImageRequest,
     generate,
+    collect,
 
     connection: {
         instructions: 'Create a key at api.bfl.ai. API usage includes commercial rights to what you generate.',

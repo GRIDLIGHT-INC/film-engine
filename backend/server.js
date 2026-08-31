@@ -81,6 +81,7 @@ const { handleEvents } = require('./routes/events');
 const { handleStoryBible } = require('./routes/story-bible');
 const { handleBreakdown } = require('./routes/breakdown');
 const { handleProductionReports } = require('./routes/production-reports');
+const { handleGenerationJobs } = require('./routes/generation-jobs');
 const { handleMoodBoard } = require('./routes/mood-board');
 const { handleStyleBook } = require('./routes/style-book');
 const { handleDeliverables } = require('./routes/deliverables');
@@ -443,6 +444,14 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/projects/:id/bible[/:section] and /bible-drift
         if (parts[1] === 'projects' && parts[2] && (parts[3] === 'bible' || parts[3] === 'bible-drift')) {
             return handleStoryBible(req, res, parts);
+        }
+
+        // Outstanding generations. Registered BEFORE the project catch-alls
+        // below, on the trap /film/locations/:id already cost once: a handler
+        // that exists and is never reached looks exactly like a missing feature.
+        if (parts[1] === 'generation-jobs'
+            || (parts[1] === 'projects' && parts[3] === 'generation-jobs')) {
+            return await handleGenerationJobs(req, res, parts, query);
         }
 
         if (parts[1] === 'projects' && parts[2] && ['staleness', 'screenplay-drift', 'impact', 'scale-check', 'sides', 'dood', 'run-plan', 'breakdown-summary', 'elements-list', 'run-report', 'board-groups', 'setups', 'conform'].includes(parts[3])) {

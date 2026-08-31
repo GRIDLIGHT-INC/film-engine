@@ -713,8 +713,33 @@ function meterRunway(capability, payload, result) {
     return null;
 }
 
+
+/**
+ * Finish a job from its handle.
+ *
+ * The other half of `onHandle`: the id was written down before polling, and
+ * this is what turns it back into bytes when the call that started it was
+ * abandoned. Same poll function the live path uses, so a collected result
+ * cannot differ from one that arrived normally.
+ */
+async function collect(taskId, opts) {
+    const { apiKey: key } = getCredential('runway');
+    if (!key) return { ok: false, status: 401, error: 'runway: no API key configured' };
+    const budget = require('../generation-jobs').budgetFor((opts && opts.timeout) || DEFAULT_TIMEOUT_MS);
+    const done = await pollTask(String(taskId), key, Date.now() + budget);
+    if (!done.ok) return done;
+    return { ok: true, status: 200, url: done.url, task: done.task, provider: 'runway' };
+}
+
 const adapter = {
     meter: meterRunway,
+    /*
+     * Asynchronous: the provider accepts the job and returns an id, and the
+     * result is polled for. Declared so the handle machinery can find it -- a
+     * tool call abandoned mid-poll loses a generation that was already billed
+     * unless the id was written down first.
+     */
+    asyncGeneration: true,
     id: 'runway',
     kind: 'generator',
     label: 'Runway',
@@ -799,6 +824,8 @@ const adapter = {
 
     supports,
 
+    collect,
+
     async generate(capability, payload, opts) {
         if (!supports(capability)) {
             return { ok: false, status: 400, error: `runway: unsupported capability '${capability}'` };
@@ -813,14 +840,20 @@ const adapter = {
             return { ok: false, status: 400, error: 'runway: a prompt or a keyframe image is required' };
         }
 
-        const timeout = (opts && opts.timeout) || DEFAULT_TIMEOUT_MS;
+        const timeout = require('../generation-jobs').budgetFor((opts && opts.timeout) || DEFAULT_TIMEOUT_MS);
         const deadline = Date.now() + timeout;
 
         try {
             const submitted = await submitTask(request, key);
             if (!submitted.ok) return { ok: false, status: submitted.status, error: submitted.error };
 
+            if (opts && typeof opts.onHandle === 'function') {
+                try { opts.onHandle(submitted.id, { capability }); } catch (_) { /* never blocks a paid call */ }
+            }
             const done = await pollTask(submitted.id, key, deadline);
+            if (!done.ok && done.status === 504 && opts && opts.onTimeout) {
+                return opts.onTimeout(submitted.id, timeout);
+            }
             if (!done.ok) {
                 return { ok: false, status: done.status, error: done.error, provider: 'runway', provider_job_id: submitted.id };
             }

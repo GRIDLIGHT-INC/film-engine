@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**233 tools, 56 families.** Everything the app can do, you can ask for in a
+**235 tools, 57 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -431,6 +431,35 @@ Validate before running, estimate before any fan-out. **`flow_run` costs money.*
 
 `impact_report` answers *what did that change break* — one edit, all the way
 down, splitting **redo now** from **waiting on something above it**.
+
+---
+
+### When a generation takes longer than I do
+
+`generation_pending` · `generation_collect`
+
+A tool call is abandoned by the agent host at **sixty seconds**, and a clip or a
+4K mesh routinely takes longer. That does not mean it failed: the provider
+accepted the job, is still working, and is already billing for it. What used to
+happen then is that the result had nowhere to be delivered and the call came
+back as *"the device did not respond"* — which reads like a connection fault, so
+the natural next move was to generate the same thing again and pay twice.
+
+Every asynchronous provider now hands back a **handle** the moment it accepts a
+job, and that handle is written down before any waiting starts. So:
+
+- a long generation returns *"still running, collect it with `generation_collect`"*
+- `generation_pending` lists everything outstanding for a project
+- `generation_collect` delivers one, and is **free** — it polls work already
+  paid for, never starts anything new
+
+Collecting is safe to repeat. A job that has not finished answers *"not yet"*
+and stays collectable; a job already delivered says so rather than being
+delivered twice.
+
+**Check `generation_pending` before re-running a generation that seemed to
+fail.** It is the difference between collecting a clip you have bought and
+buying it again.
 
 ---
 
