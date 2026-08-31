@@ -426,3 +426,75 @@ test('PROP puts the turntable full width ABOVE the two-column body', () => {
         'the prop turntable is rendered INSIDE the two-column body, so its five official views '
         + 'are squeezed into half the card; the design places them full width above it');
 });
+
+
+/**
+ * TYPOGRAPHY — the section title and its note
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * Added because "exactly the same" plausibly covers type, and because leaving
+ * it out would have meant patching layout now and typography later. Derived
+ * from BOTH designs, which agree: the section-title style appears 6 times in
+ * the location card and 8 in the prop card, and the note style 3 and 4 times.
+ * Two files agreeing on one style is what makes it the system rather than one
+ * heading's decoration.
+ *
+ *     design title : 'JetBrains Mono' 10.5px / 0.2em / uppercase / rgba(232,232,234,0.5)
+ *     design note  : 'JetBrains Mono' 10px / rgba(232,232,234,0.32)
+ *     ours title   : 11px / .08em / uppercase / var(--text-muted)   -- no mono
+ *     ours note    : 11px / var(--text-muted)                       -- no mono
+ *
+ * Bound to the rules ssSection's output actually wears, not searched
+ * page-wide: two of my three composition assertions first passed against the
+ * broken sheet on exactly that mistake.
+ */
+
+/** The one style both designs use most for a section title / its note. */
+function typeSystem() {
+    const counts = { title: new Map(), note: new Map() };
+    for (const k of KINDS) {
+        const src = fs.readFileSync(path.join(HANDOFF, k.design), 'utf8');
+        for (const m of src.matchAll(/font-family: 'JetBrains Mono', monospace;([^"]*)/g)) {
+            const decl = m[1].replace(/\s+/g, ' ').trim();
+            const bucket = /text-transform: uppercase/.test(decl) ? 'title' : 'note';
+            counts[bucket].set(decl, (counts[bucket].get(decl) || 0) + 1);
+        }
+    }
+    const top = m => [...m.entries()].sort((a, b) => b[1] - a[1])[0];
+    return { title: top(counts.title), note: top(counts.note) };
+}
+
+test('the section title and note use the design\'s type system', () => {
+    const sys = typeSystem();
+    assert.ok(sys.title && sys.title[1] >= 6,
+        `this test's reading is stale: no section-title style recurs across the designs (${
+            sys.title ? sys.title[1] : 0} occurrences)`);
+
+    const size = (sys.title[0].match(/font-size:\s*([\d.]+)px/) || [])[1];
+    const track = (sys.title[0].match(/letter-spacing:\s*([\d.]+)em/) || [])[1];
+    assert.ok(size && track, `could not read the design's title metrics from "${sys.title[0]}"`);
+
+    const styles = pageStyles();
+    const h4 = styles.match(/\.ss-region\s*>\s*h4[^{]*\{([^}]*)\}/);
+    assert.ok(h4, 'there is no .ss-region > h4 rule, so section titles have no style of their own');
+
+    assert.ok(/JetBrains Mono|ui-monospace|monospace/.test(h4[1]),
+        `section titles are not monospaced; the design sets 'JetBrains Mono' on every one of the `
+        + `${sys.title[1]} it draws`);
+    assert.ok(new RegExp(`font-size\\s*:\\s*${size}px`).test(h4[1]),
+        `section titles are ${(h4[1].match(/font-size\s*:\s*([^;]+)/) || [])[1]} where the design `
+        + `sets ${size}px`);
+    assert.ok(new RegExp(`letter-spacing\\s*:\\s*0?${track}em`).test(h4[1]),
+        `section titles track at ${(h4[1].match(/letter-spacing\s*:\s*([^;]+)/) || [])[1]} where `
+        + `the design sets ${track}em — the difference is what makes the design's headings read `
+        + 'as a system rather than as small bold text');
+
+    const noteSize = (sys.note[0].match(/font-size:\s*([\d.]+)px/) || [])[1];
+    const what = styles.match(/\.ss-what[^{]*\{([^}]*)\}/);
+    assert.ok(what, 'there is no .ss-what rule');
+    assert.ok(new RegExp(`font-size\\s*:\\s*${noteSize}px`).test(what[1]),
+        `section notes are ${(what[1].match(/font-size\s*:\s*([^;]+)/) || [])[1]} where the `
+        + `design sets ${noteSize}px`);
+    assert.ok(/JetBrains Mono|ui-monospace|monospace/.test(what[1]),
+        'section notes are not monospaced; the design sets JetBrains Mono on every one');
+});
