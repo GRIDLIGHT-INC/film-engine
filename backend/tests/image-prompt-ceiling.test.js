@@ -58,6 +58,15 @@ const EXPECTED = {
      */
     google: { exact: 16000, documented: false },
     /*
+     * MuAPI proxies the same Nano Banana (Gemini) models google-image reaches
+     * directly, so the ceiling is theirs and the reasoning above applies
+     * unchanged: stated in TOKENS upstream, not characters, and 16000
+     * characters is comfortably inside the context these models carry. Matched
+     * to the sibling adapter rather than invented, and marked undocumented
+     * because no character count is published.
+     */
+    muapi: { exact: 16000, documented: false },
+    /*
      * BFL publishes no character limit for FLUX.2. Held at 4000, matching
      * OpenAI's documented figure, on the same reasoning Meshy's was set:
      * matched to a comparable model rather than assumed unbounded.

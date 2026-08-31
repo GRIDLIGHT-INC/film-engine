@@ -105,7 +105,7 @@ function buildImageRequest(payload) {
         input,
         response_format: {
             type: 'image',
-            mime_type: 'image/png',
+            mime_type: 'image/jpeg',
             image_size: imageSizeFor(p.width, p.height, model),
         },
     };

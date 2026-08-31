@@ -76,7 +76,7 @@ Current resolution with the credentials on this machine:
 | Capability | Resolves to | Note |
 |---|---|---|
 | `llm` | `anthropic` | keyed — Claude Opus 5 via the Messages API |
-| `image` | `google` → `bfl` → `openai` | preference is an ordered walk; `google` (Nano Banana 2 / Pro) and `bfl` (FLUX.2) lead when keyed, `openai` when they are not |
+| `image` | `muapi` → `google` → `meshy` → `bfl` → `openai` | preference is an ordered walk; `muapi` leads when keyed — one MuAPI account key reaches the Nano Banana models (and the Seedance video ones), so a single credential covers what would otherwise be two. `google` reaches the same Gemini image models directly; `bfl` (FLUX.2) and `openai` follow |
 | `video` | `seedance` → `runway` | `seedance` (Seedance 2.5, via MuAPI) leads when keyed — its omni-reference workflow takes 30 reference images where Runway's gen4.5 takes two |
 | `voice`, `music`, `sfx`, `ambient` | `elevenlabs` | keyed |
 | `model3d` | `meshy` | keyed |

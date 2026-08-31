@@ -89,7 +89,7 @@ const IMAGE_TIERS = Object.freeze({
          * Meshy stays next in line: it is what this board has been generating
          * on, and it is the fallback when no Google key is present.
          */
-        order: ['google', 'meshy', 'bfl', 'openai', 'runway', 'gridlight'],
+        order: ['muapi', 'google', 'meshy', 'bfl', 'openai', 'runway', 'gridlight'],
         models: Object.freeze({
             google: 'gemini-3.1-flash-image', meshy: 'nano-banana-2', bfl: 'flux-2-pro',
         }),
