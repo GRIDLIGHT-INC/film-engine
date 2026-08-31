@@ -222,6 +222,7 @@ film-engine/
 │       ├── director-controls.test.js # Redo the dialogue, direct the score, read the toolbar
 │       ├── subject-sheets.test.js  # Every region of a location and prop sheet is drawn and fillable
 │       ├── subject-sheet-design.test.js # The sheets, against the designs they were drawn from
+│       ├── subject-sheet-fidelity.test.js # ...and against the designs' GEOMETRY, not just their labels
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop
 │       ├── decision-parity.test.js     # Every director decision, held to five links across both surfaces
@@ -3198,6 +3199,7 @@ node --test backend/tests/shot-motion.test.js
 node --test backend/tests/director-controls.test.js
 node --test backend/tests/subject-sheets.test.js
 node --test backend/tests/subject-sheet-design.test.js
+node --test backend/tests/subject-sheet-fidelity.test.js
 node --test backend/tests/previs-storyboard.test.js
 node --test backend/tests/previs-loop.test.js
 node --test backend/tests/decision-parity.test.js
