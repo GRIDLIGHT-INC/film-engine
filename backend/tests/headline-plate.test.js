@@ -128,9 +128,31 @@ test('the display and the generation path use the SAME rule', () => {
      * comment describing its removal.
      */
     const code = list.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    const newestWins = (code.match(/ORDER BY created_at DESC LIMIT 1/g) || []).length;
-    assert.strictEqual(newestWins, 0,
-        'the locations route still takes the newest reference row as the headline plate');
+
+    /*
+     * SCOPED TO A PLATE SELECTION, not to the clause anywhere in the file.
+     *
+     * The bug this catches is a REFERENCE-PLATE query going back to
+     * newest-wins. Counting the clause file-wide also catches every unrelated
+     * latest-row lookup — and the orientation plan is exactly that: its query
+     * asks for the most recently uploaded plan, which is correct, and the
+     * broad pattern could not tell the two apart. A test that fires on correct
+     * code is one people edit until it stops, and the real assertion goes with
+     * it.
+     *
+     * Seams collapsed first: these queries are built by concatenating string
+     * literals across lines, so `asset_type` and the ORDER BY sit in different
+     * fragments and a line-wise read never sees them together.
+     */
+    const flat = code.replace(/['"`]\s*\+\s*['"`]/g, ' ').replace(/\s+/g, ' ');
+    const offenders = [];
+    for (const m of flat.matchAll(/ORDER BY created_at DESC LIMIT 1/g)) {
+        const query = flat.slice(Math.max(0, m.index - 320), m.index);
+        if (/reference_image|character_sheet/.test(query)) offenders.push(query.slice(-120));
+    }
+    assert.deepStrictEqual(offenders, [],
+        'the locations route still takes the newest reference row as the headline plate:\n  '
+        + offenders.join('\n  '));
 });
 
 test('the location plate URL is built one way, not two', () => {

@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**230 tools, 56 families.** Everything the app can do, you can ask for in a
+**232 tools, 56 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -197,6 +197,25 @@ is not tracked against the subject's description, so editing that description
 will never tell you to regenerate over a picture you supplied.
 
 `plate_generate` · `plate_upload` · `plate_refine` · `plate_compass` ·
+
+A location also carries an ORIENTATION PLAN — which way is north, what stands
+against each wall, where the camera can and cannot go. It is what keeps the
+geography consistent between one plate and the next, so a reverse angle puts
+the door where the first plate put it. `orientation_plan_brief` is FREE and
+hands over what the plan would be written from: the location's description,
+its existing views, and the scenes shot there. You write the plan; nothing
+here asks a server-side model to write it for you, because you are the model
+this engine is connected to. `orientation_plan_update` records what you
+decided.
+
+The plan is prose and geometry, not a picture — and a director can also upload
+a hand-drawn one, which is stored beside it rather than instead of it. An
+uploaded plan is deliberately NOT a plate: it is never attached to a shot as a
+reference, because a floor diagram conditioning every frame of a location is
+exactly the failure it exists to prevent.
+
+`orientation_plan_brief` · `orientation_plan_update` ·
+
 
 `refsheet_orbit` builds a character turnaround from ONE orbiting clip and cuts it into five views — front, three-quarter, profile, back three-quarter, back. Frames of one motion cannot disagree with each other the way three separately generated plates can. It SPENDS CREDITS (~25 for a 5-second orbit, against roughly 45 for three plates); read `refsheet_orbit_preview` first, which is free. It is a bootstrap: it will not replace an approved front anchor, and says which views it left alone.
 `storyboard_upload` · `previs_image_upload` · `model_upload` · `plate_view_list` · `plate_view_delete` · `plate_generate_all` · `consistency_create` ·
