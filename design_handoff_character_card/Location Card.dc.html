@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #050506; }
+  a { color: oklch(0.76 0.11 200); text-decoration: none; }
+  a:hover { color: oklch(0.86 0.09 200); }
+  ::-webkit-scrollbar { height: 8px; width: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
+</style>
+</helmet>
+
+<div style="min-height: 100vh; padding: 48px 40px 72px; background:
+  radial-gradient(1100px 600px at 22% -10%, rgba(120,160,190,0.10), transparent 60%),
+  radial-gradient(900px 500px at 90% 110%, rgba(190,120,110,0.07), transparent 60%),
+  #050506; font-family: 'Instrument Sans', Helvetica, Arial, sans-serif; color: #e8e8ea;">
+
+  <div style="max-width: 1560px; margin: 0 auto; border-radius: 22px; border: 1px solid rgba(255,255,255,0.09);
+    background: linear-gradient(160deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018) 40%, rgba(255,255,255,0.01));
+    backdrop-filter: blur(34px); box-shadow: 0 40px 120px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06); overflow: hidden;">
+
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 32px; padding: 26px 32px 22px; border-bottom: 1px solid rgba(255,255,255,0.07);">
+      <div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;">
+          <h1 style="margin: 0; font-size: 28px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;">The Glass Harbour Diner — Late Afternoon</h1>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(232,232,234,0.42); white-space: nowrap;">LOC-0031 · INT/EXT</span>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;">
+          <span style="white-space: nowrap; flex: none; padding: 5px 10px; border-radius: 6px; border: 1px solid oklch(0.76 0.11 200 / 0.35); background: oklch(0.76 0.11 200 / 0.10); color: oklch(0.86 0.08 200);">Plates locked 3/4</span>
+          <span style="white-space: nowrap; flex: none; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: rgba(232,232,234,0.55);">Period 1955 · built 1941</span>
+          <span style="white-space: nowrap; flex: none; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: rgba(232,232,234,0.55);">Used in 6 scenes</span>
+          <span style="white-space: nowrap; flex: none; padding: 5px 10px; border-radius: 6px; border: 1px solid oklch(0.76 0.11 75 / 0.30); background: oklch(0.76 0.11 75 / 0.09); color: oklch(0.86 0.08 75);">Continuity: pie slice gone</span>
+        </div>
+      </div>
+      <div style="flex: none; display: flex; align-items: center; gap: 10px;">
+        <button style="padding: 9px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: #e8e8ea; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; white-space: nowrap;" style-hover="background: rgba(255,255,255,0.09);">Export sheet</button>
+        <button style="padding: 9px 14px; border-radius: 8px; border: 1px solid oklch(0.76 0.11 200 / 0.4); background: oklch(0.76 0.11 200 / 0.14); color: oklch(0.9 0.07 200); font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; white-space: nowrap;" style-hover="background: oklch(0.76 0.11 200 / 0.22);">Generate plate</button>
+        <button style="width: 34px; height: 34px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: rgba(232,232,234,0.6); font-size: 15px; cursor: pointer;" style-hover="color: #fff; background: rgba(255,255,255,0.06);">✕</button>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: stretch;">
+
+      <div style="flex: 1 1 480px; max-width: 560px; min-width: 0; padding: 28px 28px 32px 32px; border-right: 1px solid rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; gap: 26px;">
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Master plates</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.1em; color: oklch(0.8 0.09 200); white-space: nowrap;">canonical · fed to generation</span>
+          </div>
+          <div style="position: relative; aspect-ratio: 16/9; border-radius: 12px; border: 1px solid oklch(0.76 0.11 200 / 0.32); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);">
+            <span style="position: absolute; top: 10px; left: 11px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(232,232,234,0.75);">01 · Master wide — south to north</span>
+            <span style="position: absolute; bottom: 10px; left: 11px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.35);">establishing plate · aisle to harbour window</span>
+            <span style="position: absolute; top: 10px; right: 11px; width: 6px; height: 6px; border-radius: 50%; background: oklch(0.76 0.11 200);"></span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px;">
+            <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid oklch(0.76 0.11 200 / 0.28); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);">
+              <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.72);">02 · Reverse</span>
+              <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.35);">back wall, mirror panel</span>
+            </div>
+            <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid oklch(0.76 0.11 200 / 0.28); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);">
+              <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.72);">03 · Counter</span>
+              <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.35);">west side, stools, backbar</span>
+            </div>
+            <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px dashed oklch(0.76 0.11 75 / 0.45); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 9px), rgba(255,255,255,0.015);">
+              <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.62);">04 · Exterior</span>
+              <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: oklch(0.82 0.09 75);">generate →</span>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-radius: 9px; background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06); font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; color: rgba(232,232,234,0.45);">
+            <span>seed 51190·d — set v2</span>
+            <span>2048 × 1152 · png</span>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Orientation plan</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.32); white-space: nowrap;">keeps geography consistent across plates</span>
+          </div>
+          <div style="position: relative; padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.07); background: rgba(0,0,0,0.28);">
+            <div style="display: grid; grid-template-columns: 62px minmax(0,1fr) 62px; grid-template-rows: 22px minmax(0,1fr) 22px; align-items: center; justify-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(232,232,234,0.45);">
+              <span></span><span style="color: oklch(0.82 0.09 200);">North · harbour window + door</span><span></span>
+              <span style="writing-mode: vertical-rl; transform: rotate(180deg);">West · counter</span>
+              <div style="width: 100%; height: 168px; border: 1px solid rgba(255,255,255,0.14); border-radius: 4px; display: grid; grid-template-columns: 1fr 1fr 1fr; overflow: hidden;">
+                <div style="border-right: 1px dashed rgba(255,255,255,0.10); display: flex; align-items: center; justify-content: center; text-align: center; padding: 6px; color: rgba(232,232,234,0.4);">counter<br>+ stools</div>
+                <div style="background: repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 8px, transparent 8px 16px); display: flex; align-items: center; justify-content: center; text-align: center; padding: 6px; color: rgba(232,232,234,0.38);">checker<br>aisle</div>
+                <div style="border-left: 1px dashed rgba(255,255,255,0.10); display: flex; align-items: center; justify-content: center; text-align: center; padding: 6px; color: rgba(232,232,234,0.4);">4 booths<br>under windows</div>
+              </div>
+              <span style="writing-mode: vertical-rl;">East · booths</span>
+              <span></span><span>South · back wall, register, mirror</span><span></span>
+            </div>
+            <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.07); font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: oklch(0.84 0.09 75);">▲ corner booth in use — north end</div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Time of day variants</span>
+          <div style="display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px;">
+            <div style="position: relative; aspect-ratio: 1/1; border-radius: 10px; border: 1px solid oklch(0.76 0.11 200 / 0.32); background: repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02); overflow: hidden;">
+              <span style="position: absolute; bottom: 7px; left: 8px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: oklch(0.86 0.08 200);">Late aft ✓</span>
+            </div>
+            <div style="position: relative; aspect-ratio: 1/1; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); background: repeating-linear-gradient(135deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 9px), rgba(255,255,255,0.015); overflow: hidden;">
+              <span style="position: absolute; bottom: 7px; left: 8px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Dusk</span>
+            </div>
+            <div style="position: relative; aspect-ratio: 1/1; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); background: repeating-linear-gradient(135deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 9px), rgba(255,255,255,0.015); overflow: hidden;">
+              <span style="position: absolute; bottom: 7px; left: 8px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Night</span>
+            </div>
+            <div style="position: relative; aspect-ratio: 1/1; border-radius: 10px; border: 1px dashed rgba(255,255,255,0.16); background: rgba(255,255,255,0.015); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer;" style-hover="border-color: oklch(0.76 0.11 200 / 0.5);">
+              <span style="font-size: 15px; color: rgba(232,232,234,0.4);">+</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(232,232,234,0.45);">Add</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1 1 520px; min-width: 0; padding: 28px 32px 32px 30px; display: flex; flex-direction: column; gap: 22px;">
+
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Set description</span>
+          <sc-if value="{{ showCharCounts }}" hint-placeholder-val="{{ true }}">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.32); white-space: nowrap;">3855 chars · 6 sections · prompt source</span>
+          </sc-if>
+          <span style="flex: 1; height: 1px; background: rgba(255,255,255,0.07);"></span>
+          <button style="padding: 5px 9px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); color: rgba(232,232,234,0.6); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; white-space: nowrap;" style-hover="color: #fff;">Copy all</button>
+          <button style="padding: 5px 9px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); color: rgba(232,232,234,0.6); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; white-space: nowrap;" style-hover="color: #fff;">Collapse all</button>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+
+          <div style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.022); overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: oklch(0.84 0.08 200);">Room layout</span>
+              <span style="flex: 1;"></span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.3);">geography · 780 chars</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.45);">−</span>
+            </div>
+            <p style="margin: 0; padding: 13px 14px 15px; font-size: 14.5px; line-height: 1.6; color: rgba(232,232,234,0.86); text-wrap: pretty;">One long rectangular room. At the NORTH end, the big front window onto the harbour, with the entrance door beside it. Running the full length of the WEST side, the chrome-edged counter with its row of bolted swivel stools, the backbar behind it, and the pass through to the kitchen. Running the full length of the EAST side, the four red booths against the wall, each under a window. At the SOUTH end, opposite the harbour window, the back wall: the brass cash register on a stand, the coat hooks, the door to the restrooms, and a mirrored panel that reflects the length of the room back toward the water. The centre aisle of checkerboard tile runs north to south between counter and booths. The corner booth in use is the last one, at the north end nearest the window.</p>
+          </div>
+
+          <div style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.022); overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: oklch(0.84 0.08 200);">The place</span>
+              <span style="flex: 1;"></span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.3);">tone · 300 chars</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.45);">−</span>
+            </div>
+            <p style="margin: 0; padding: 13px 14px 15px; font-size: 14.5px; line-height: 1.6; color: rgba(232,232,234,0.86); text-wrap: pretty;">AN AMERICAN HARBOURSIDE DINER, 1955. Built 1941, re-topped and re-upholstered in 1952, kept immaculate ever since — the owner polishes it daily. It gleams. Postwar optimism in chrome, and the wrong room to have the worst conversation of your life in.</p>
+          </div>
+
+          <div style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.022); overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: oklch(0.84 0.08 200);">Architecture</span>
+              <span style="flex: 1;"></span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.3);">surfaces · 640 chars</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.45);">−</span>
+            </div>
+            <p style="margin: 0; padding: 13px 14px 15px; font-size: 14.5px; line-height: 1.6; color: rgba(232,232,234,0.86); text-wrap: pretty;">Streamline-moderne prefab shell. Chrome-edged counter, chrome-pedestal swivel stools with saturated red vinyl seats, unsplit and bright. Stainless backsplash polished to a mirror. Mirrored strip along the backbar doubling the room. Deep red vinyl banquettes with tight piping. Boomerang-pattern formica tabletops in cream and red with bright chrome edge banding, newer than the building. Black-and-white checkerboard floor tile, waxed, a faint traffic path worn pale down the centre aisle. Pressed-tin ceiling, slow ceiling fans, milk-glass pendant globes, lit.</p>
+          </div>
+
+          <div style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.022); overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: oklch(0.84 0.08 200);">Set decoration</span>
+              <span style="flex: 1;"></span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.3);">23 items linked to props</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.45);">−</span>
+            </div>
+            <p style="margin: 0; padding: 13px 14px 15px; font-size: 14.5px; line-height: 1.6; color: rgba(232,232,234,0.86); text-wrap: pretty;">Chrome-and-amber tabletop jukebox selector bolted at every booth, song cards crisp. Chrome napkin dispenser, glass sugar pourer with a chrome flip lid, glass salt and pepper shakers, ketchup and mustard bottles, straw dispenser, condiment caddy. Printed card menus. Paper placemats. Revolving pie case under glass domes — lemon meringue, cherry — one slice gone. Chrome milkshake spindle mixer and stacked steel cups. Bulb-glass coffee warmers on a hotplate. Stacked heavy white diner china. Brass cash register, gumball machine, a bowl of matchbooks. Coca-Cola wall clock. A clean, empty, unwritten chalkboard with no lettering on it at all. Order wheel over the pass and a service bell. Chrome coat hooks. A radio behind the counter.</p>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; padding: 0 14px 14px;">
+              <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid oklch(0.76 0.11 200 / 0.3); background: oklch(0.76 0.11 200 / 0.08); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: oklch(0.86 0.08 200);">jukebox selector · PRP-004</span>
+              <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid oklch(0.76 0.11 200 / 0.3); background: oklch(0.76 0.11 200 / 0.08); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: oklch(0.86 0.08 200);">pie case · PRP-011</span>
+              <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid oklch(0.76 0.11 200 / 0.3); background: oklch(0.76 0.11 200 / 0.08); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: oklch(0.86 0.08 200);">brass register · PRP-002</span>
+              <span style="padding: 4px 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.5);">+ 20 unlinked → create props</span>
+            </div>
+          </div>
+
+          <div style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.022); overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: oklch(0.84 0.08 200);">The north window</span>
+              <span style="flex: 1;"></span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: oklch(0.84 0.09 75);">hard constraint</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.45);">−</span>
+            </div>
+            <p style="margin: 0; padding: 13px 14px 15px; font-size: 14.5px; line-height: 1.6; color: rgba(232,232,234,0.86); text-wrap: pretty;">A big sheet of CLEAR plate glass — clean and transparent, with nothing painted on it except the name. Painted across the glass in a period hand-lettered script are the words THE GLASS HARBOUR DINER, GLASS beginning with the letter G and HARBOUR beginning with the letter H; from inside the room this lettering is mirrored and reads backwards. A neon OPEN sign, also reversed from in here.</p>
+          </div>
+
+          <div style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.022); overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: oklch(0.84 0.08 200);">Outside that window</span>
+              <span style="flex: 1;"></span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.3);">background plate</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.45);">−</span>
+            </div>
+            <p style="margin: 0; padding: 13px 14px 15px; font-size: 14.5px; line-height: 1.6; color: rgba(232,232,234,0.86); text-wrap: pretty;">A real, actual working harbour, photographed through the clear glass — a genuine location in real depth and real perspective. Moored fishing boats with masts, rigging and hulls on dark water. A timber jetty with bollards and coiled rope. A stone breakwater. A lighthouse out on the point. Gulls. Parked 1950s cars at the kerb. The low sun sits over the water throwing a broken glitter path across it.</p>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; align-items: start;">
+          <div style="padding: 14px 15px; border-radius: 11px; border: 1px solid rgba(255,255,255,0.07); background: rgba(0,0,0,0.28);">
+            <div style="display: flex; align-items: baseline; gap: 8px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(232,232,234,0.45);">Lighting default</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: oklch(0.8 0.09 200);">→ prompt</span>
+            </div>
+            <p style="margin: 7px 0 0; font-size: 14px; line-height: 1.55; color: rgba(232,232,234,0.82);">Golden-hour rake off the water, lit practicals, no fill from camera side.</p>
+          </div>
+          <div style="padding: 14px 15px; border-radius: 11px; border: 1px solid rgba(255,255,255,0.07); background: rgba(0,0,0,0.28);">
+            <div style="display: flex; align-items: baseline; gap: 8px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(232,232,234,0.45);">Atmosphere</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: oklch(0.8 0.09 200);">→ prompt</span>
+            </div>
+            <p style="margin: 7px 0 0; font-size: 14px; line-height: 1.55; color: rgba(232,232,234,0.82);">Immaculate, gleaming, almost too cheerful. Air still. Haze with distance outside.</p>
+          </div>
+          <div style="padding: 14px 15px; border-radius: 11px; border: 1px solid rgba(255,255,255,0.07); background: rgba(0,0,0,0.28);">
+            <div style="display: flex; align-items: baseline; gap: 8px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(232,232,234,0.45);">Sound notes</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.35);">not sent</span>
+            </div>
+            <p style="margin: 7px 0 0; font-size: 14px; line-height: 1.55; color: rgba(232,232,234,0.7);">Gulls, a screen door, radio low behind the counter. Notes for whoever writes the ambient cue.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding: 26px 32px 32px; border-top: 1px solid rgba(255,255,255,0.07); background: rgba(0,0,0,0.25); display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 30px;">
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Concept art & references</span>
+          <div style="display: flex; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;">
+            <span style="padding: 4px 9px; border-radius: 6px; background: rgba(255,255,255,0.07); color: #e8e8ea; white-space: nowrap;">All 11</span>
+            <span style="padding: 4px 9px; border-radius: 6px; color: rgba(232,232,234,0.42); white-space: nowrap;">Period 4</span>
+            <span style="padding: 4px 9px; border-radius: 6px; color: rgba(232,232,234,0.42); white-space: nowrap;">Materials 3</span>
+            <span style="padding: 4px 9px; border-radius: 6px; color: rgba(232,232,234,0.42); white-space: nowrap;">Light 2</span>
+            <span style="padding: 4px 9px; border-radius: 6px; color: rgba(232,232,234,0.42); white-space: nowrap;">Harbour 2</span>
+          </div>
+          <span style="flex: 1; height: 1px; background: rgba(255,255,255,0.07);"></span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,232,234,0.32); white-space: nowrap;">starred refs are attached to the prompt</span>
+        </div>
+        <div style="display: grid; grid-template-columns: {{ refColumns }}; gap: 12px;">
+          <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid oklch(0.76 0.11 200 / 0.32); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.05) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);">
+            <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.7);">★ Period diner</span>
+            <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.35);">1955 archive photo</span>
+          </div>
+          <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid oklch(0.76 0.11 200 / 0.32); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.05) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);">
+            <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.7);">★ Window lettering</span>
+            <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.35);">hand-lettered script, reversed</span>
+          </div>
+          <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.04) 0 2px, transparent 2px 9px), rgba(255,255,255,0.018);">
+            <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.6);">Booth detail</span>
+            <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.3);">vinyl piping, formica edge</span>
+          </div>
+          <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.04) 0 2px, transparent 2px 9px), rgba(255,255,255,0.018);">
+            <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.6);">Harbour</span>
+            <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.3);">jetty, breakwater, lighthouse</span>
+          </div>
+          <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.04) 0 2px, transparent 2px 9px), rgba(255,255,255,0.018);">
+            <span style="position: absolute; top: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(232,232,234,0.6);">Light study</span>
+            <span style="position: absolute; bottom: 8px; left: 9px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: rgba(232,232,234,0.3);">glitter path on water</span>
+          </div>
+          <div style="position: relative; aspect-ratio: 4/3; border-radius: 11px; border: 1px dashed rgba(255,255,255,0.16); background: rgba(255,255,255,0.015); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer;" style-hover="border-color: oklch(0.76 0.11 200 / 0.5); background: rgba(255,255,255,0.03);">
+            <span style="font-size: 18px; color: rgba(232,232,234,0.4);">+</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(232,232,234,0.45);">Drop reference</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,232,234,0.5);">Scenes here</span>
+        <div style="display: flex; flex-direction: column; gap: 1px; border: 1px solid rgba(255,255,255,0.06); border-radius: 11px; overflow: hidden; background: rgba(255,255,255,0.06);">
+          <div style="display: flex; justify-content: space-between; gap: 10px; padding: 10px 13px; background: rgba(10,10,12,0.6);">
+            <span style="font-size: 13px;">Sc. 14 — The offer</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.4); white-space: nowrap;">late aft</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; gap: 10px; padding: 10px 13px; background: rgba(10,10,12,0.6);">
+            <span style="font-size: 13px;">Sc. 15 — Pie, untouched</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: rgba(232,232,234,0.4); white-space: nowrap;">late aft</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; gap: 10px; padding: 10px 13px; background: rgba(10,10,12,0.6);">
+            <span style="font-size: 13px;">Sc. 31 — After close</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: oklch(0.84 0.09 75); white-space: nowrap;">night · no plate</span>
+          </div>
+        </div>
+        <div style="padding: 12px 13px; border-radius: 11px; border: 1px solid oklch(0.76 0.11 75 / 0.25); background: oklch(0.76 0.11 75 / 0.06);">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(0.86 0.08 75);">Continuity flags</div>
+          <ul style="margin: 8px 0 0; padding-left: 16px; font-size: 13px; line-height: 1.55; color: rgba(232,232,234,0.75);">
+            <li>Chalkboard must stay blank in every plate</li>
+            <li>Window lettering reads reversed from inside</li>
+            <li>One pie slice gone from Sc. 15 onward</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showCharCounts&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Card&quot;},&quot;referenceDensity&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Comfortable&quot;,&quot;Dense&quot;],&quot;default&quot;:&quot;Comfortable&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;References&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const density = this.props.referenceDensity ?? "Comfortable";
+    return {
+      showCharCounts: this.props.showCharCounts ?? true,
+      refColumns: density === "Dense" ? "repeat(6, minmax(0,1fr))" : "repeat(4, minmax(0,1fr))"
+    };
+  }
+}
+</script>
+</body>
+</html>
