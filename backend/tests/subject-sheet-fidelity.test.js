@@ -286,3 +286,143 @@ test('the canonical design files are TRACKED, or every design test is a local ac
             + 'fail on a fresh clone');
     }
 });
+
+/**
+ * COMPOSITION — where a region sits, not just what it declares
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * The assertions above hold every layout DECLARATION the design states, and
+ * they pass. A browser comparison showed the sheet still does not look like the
+ * design, because a declaration says nothing about WHICH COLUMN a region is in
+ * or HOW WIDE that column is. Measured, app against design:
+ *
+ *     compass rails    62px … 62px      identical
+ *     compass rows     22px 168px 22px  identical
+ *     left column      design ~499px    app 1188px   (.ss-grid = 1188px 300px)
+ *
+ * So the compass geometry is pixel-exact and stretched across a column two and
+ * a half times too wide, which is why the room box reads as a letterbox rather
+ * than a floor plan. codex named this in the confer critique; I acknowledged it
+ * and we shipped without closing it. These three assertions close it.
+ *
+ * Every expected value is DERIVED FROM THE DESIGN FILE, so a design change
+ * moves the test with it and no reading of mine sits in between.
+ */
+
+/** The design's own body-column declarations, read from the file. */
+function bodyColumns(designFile) {
+    const src = fs.readFileSync(path.join(HANDOFF, designFile), 'utf8');
+    return [...src.matchAll(/flex:\s*(\d+\s+\d+\s+\d+px)/g)].map(m => m[1].replace(/\s+/g, ' '));
+}
+
+test('LOCATION composes narrow-left / wide-right, as the design does', () => {
+    /*
+     * The design's body is a FLEX ROW with two flex-column children -- not a
+     * grid. There is no `grid-template-columns` for it anywhere in the file,
+     * which is why a grid-only search finds nothing and why "one shared
+     * two-column rule" is the wrong fix for these two sheets: prop composes
+     * with a grid, location with flex.
+     */
+    const design = fs.readFileSync(path.join(HANDOFF, 'Location Card.dc.html'), 'utf8');
+    const bases = bodyColumns('Location Card.dc.html');
+    assert.ok(bases.includes('1 1 480px') && bases.includes('1 1 520px'),
+        `this test's reading is stale: the design's body columns are now ${bases.join(' / ')}`);
+    assert.ok(/max-width:\s*560px/.test(design),
+        "this test's reading is stale: the plates column no longer caps at 560px");
+
+    /*
+     * BOUND TO THE LOCATION'S OWN RULE, not searched page-wide. My first
+     * version asked whether `max-width: 5xx` appeared anywhere in a 2MB
+     * stylesheet -- an unrelated `max-width:560px` satisfied it and the
+     * assertion passed against the broken sheet.
+     */
+    const styles = pageStyles();
+    const ls = styles.match(/\.ss-grid\.ls-grid[^{]*\{([^}]*)\}/);
+    assert.ok(ls, 'there is no .ss-grid.ls-grid rule, so the location body has no composition');
+    const cols = (ls[1].match(/grid-template-columns\s*:\s*([^;}]+)/) || [])[1] || '';
+
+    /*
+     * The design bounds the PLATES column and lets the DESCRIPTION column
+     * grow: `flex: 1 1 480px; max-width: 560px` beside `flex: 1 1 520px`.
+     * Ours is `minmax(0,1fr) 300px` -- the other way round -- which computes
+     * to 1188px / 300px and stretches the compass to 1130px against the
+     * design's 457px.
+     */
+    const first = cols.split(/\s+(?![^(]*\))/)[0] || '';
+    assert.ok(!/1fr|^minmax\(0,\s*1fr\)$/.test(first),
+        `the location body is "${cols.trim()}" -- its FIRST column is the flexible one, so the `
+        + 'plates column grows to fill the sheet (measured 1188px against the design\'s ~499px) '
+        + 'and the description column is pinned narrow. The design bounds the first and grows '
+        + 'the second.');
+    assert.ok(/5[0-6]\dpx/.test(first),
+        `the location's plates column is "${first}" and is not bounded near the design's 560px cap`);
+});
+
+test('the ORIENTATION header is one row, title left and note right', () => {
+    const design = fs.readFileSync(path.join(HANDOFF, 'Location Card.dc.html'), 'utf8');
+    const at = design.indexOf('Orientation plan');
+    const header = design.slice(Math.max(0, at - 300), at);
+    assert.ok(/display:\s*flex/.test(header) && /justify-content:\s*space-between/.test(header),
+        "this test's reading is stale: the orientation header is no longer a space-between row");
+
+    /*
+     * Ours computes `display:block`, so the note wraps beneath the title. The
+     * design puts "keeps geography consistent across plates" on the same line,
+     * right-aligned -- the pattern every section header on both sheets uses.
+     */
+    /*
+     * BOUND TO ssSection, the ONE builder every region on both sheets uses.
+     * It emits `<h4>title</h4>` then `<p class="ss-what">note</p>` -- two block
+     * elements -- so the note wraps beneath the title on every section, not
+     * just this one. My first version looked for any `.ss-*-head` rule with
+     * flex on it and passed without ever reaching the header that is actually
+     * rendered.
+     */
+    const fnAt = UI.indexOf('function ssSection(');
+    assert.ok(fnAt > -1, 'ssSection is gone -- this test cannot see how a section header is built');
+    let jj = UI.indexOf('{', fnAt), dd = 0, ee = -1;
+    for (let k = jj; k < UI.length; k++) {
+        if (UI[k] === '{') dd++;
+        else if (UI[k] === '}') { dd--; if (!dd) { ee = k + 1; break; } }
+    }
+    const fn = UI.slice(fnAt, ee < 0 ? fnAt + 4000 : ee);
+
+    const headClass = (fn.match(/class="(ss-[a-z-]*head[a-z-]*)"/) || [])[1];
+    assert.ok(headClass,
+        'ssSection does not wrap the title and its note in a header element, so they stack as '
+        + 'separate blocks -- the design puts them on one row, title left and note right');
+
+    const styles = pageStyles();
+    const rule = styles.match(new RegExp(`\\.${headClass}[^{]*\\{([^}]*)\\}`));
+    assert.ok(rule, `.${headClass} is emitted and has no CSS rule`);
+    assert.ok(/display\s*:\s*flex/.test(rule[1]) && /justify-content\s*:\s*space-between/.test(rule[1]),
+        `.${headClass} is not a space-between row, so every section note wraps to its own line`);
+});
+
+test('PROP puts the turntable full width ABOVE the two-column body', () => {
+    const design = fs.readFileSync(path.join(HANDOFF, 'Prop Card.dc.html'), 'utf8');
+    const turntable = design.indexOf('{{ viewColumns }}');
+    const body = design.indexOf('minmax(0, 1fr) 400px');
+    assert.ok(turntable > -1 && body > -1 && turntable < body,
+        "this test's reading is stale: the turntable no longer precedes the prop body");
+
+    /*
+     * Ours keeps the official views inside column one, so the five turntable
+     * plates are squeezed into half the card. codex raised this in the confer
+     * critique and it is still open.
+     */
+    const at = UI.indexOf('function renderPropSheet');
+    assert.ok(at > -1, 'renderPropSheet is gone');
+    let j = UI.indexOf('{', at), d = 0, e = -1;
+    for (let k = j; k < UI.length; k++) {
+        if (UI[k] === '{') d++;
+        else if (UI[k] === '}') { d--; if (!d) { e = k + 1; break; } }
+    }
+    const fn = UI.slice(at, e < 0 ? at + 20000 : e);
+    const views = fn.indexOf("'ps-plates'");
+    const grid = fn.indexOf('ss-grid');
+    assert.ok(views > -1, 'the prop sheet no longer renders its turntable');
+    assert.ok(grid === -1 || views < grid,
+        'the prop turntable is rendered INSIDE the two-column body, so its five official views '
+        + 'are squeezed into half the card; the design places them full width above it');
+});
