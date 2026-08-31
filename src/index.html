@@ -1520,6 +1520,9 @@
         .ss-plate-meta {
             font-family: ui-monospace, Menlo, monospace; font-size: 10px;
             color: var(--text-muted, #8a8a95); margin: 6px 0 0;
+            /* What made it on the left, what the file is on the right — the
+               design's own meta row under the plate block. */
+            display: flex; justify-content: space-between; gap: 12px;
         }
 
         /* The plan of the room. */
@@ -24849,12 +24852,28 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     /** The provenance the design prints under the plates. */
+    /**
+     * What this plate IS: seed where one was recorded, size, and the REAL
+     * format.
+     *
+     * It fell back to the literal 'png' and so reported a JPEG plate as a PNG
+     * -- the asset row said `format: jpg, mime_type: image/jpeg` and the file
+     * on disk ended `.jpg`. Nothing shows a format we were not told; an
+     * unknown one is simply omitted rather than guessed, because a confident
+     * wrong answer here is worse than a shorter line.
+     *
+     * A space-between row, as the design draws it: what made the picture on
+     * the left, what the file is on the right.
+     */
     function ssPlateMeta() {
         const v = (SS.views || []).find(x => x.available) || null;
         if (!v) return '';
-        const size = v.bytes ? `${Math.round(v.bytes / 1024)} kB` : '';
-        return `<p class="ss-plate-meta">${[v.seed ? `seed ${esc(String(v.seed))}` : '',
-            esc(v.format || 'png'), size].filter(Boolean).join(' · ')}</p>`;
+        const kb = v.bytes ? `${Math.round(v.bytes / 1024)} kB` : '';
+        const left = [v.seed ? `seed ${esc(String(v.seed))}` : '', v.set ? esc(v.set) : '']
+            .filter(Boolean).join(' — ');
+        const right = [v.format ? esc(String(v.format)) : '', kb].filter(Boolean).join(' · ');
+        if (!left && !right) return '';
+        return `<p class="ss-plate-meta"><span>${left}</span><span>${right}</span></p>`;
     }
 
     /*
@@ -24953,7 +24972,20 @@ ${fountainText.slice(0, 50000)}`;
         const flags = SS.list(l.continuity_flags, l.continuity_notes);
         const plan = SS.parse(l.orientation_plan, {});
         const planned = SS.parse(l.plate_plan, []);
-        const slots = planned.length ? planned : [{ n: 1, role: 'Master', view: '', caption: 'the establishing plate' }];
+        /*
+         * FOUR SLOTS, as the design draws them -- its own badge reads "Plates
+         * locked 3/4". A location that has never been planned is the common
+         * case and was rendering the hero ALONE, because the 3-up row is only
+         * emitted when there is more than one slot. The roles are the generic
+         * coverage a location needs; the design's own names (Reverse, Counter,
+         * Exterior) are one diner's content, so only the structure is copied.
+         */
+        const slots = planned.length ? planned : [
+            { n: 1, role: 'Master', view: '', caption: 'the establishing plate' },
+            { n: 2, role: 'Reverse', view: 'south', caption: 'the opposite side' },
+            { n: 3, role: 'Detail', view: 'east', caption: 'a closer read of one part' },
+            { n: 4, role: 'Exterior', view: 'west', caption: 'how it sits in its surroundings' },
+        ];
         const made = slots.filter(x => ssViewFor(x.view)).length;
         const total = Object.values(sections).join(' ').length;
         const linked = l.linked_props || [];

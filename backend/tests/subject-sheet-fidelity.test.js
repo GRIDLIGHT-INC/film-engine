@@ -558,3 +558,74 @@ test('the section title and note use the design\'s type system', () => {
     assert.ok(sys.note, 'no note style could be derived at all — the header structure has changed');
 });
 
+
+/**
+ * THE PLATE BLOCK — four slots, and a meta line that tells the truth
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * Found by opening the sheet rather than by running the suite, which is the
+ * only way any of this was ever going to surface.
+ *
+ * 1. The design's master-plates block is a HERO PLUS THREE numbered slots, the
+ *    empty ones offering `generate →`; its own badge reads "Plates locked
+ *    3/4". Ours renders the hero and nothing else, because the default plan is
+ *    a single entry and the 3-up row is emitted only when `slots.length > 1`.
+ *    So a location with no stored plan shows one plate where the design shows
+ *    the coverage it expects.
+ *
+ * 2. The meta line SAYS "png" FOR A JPEG. `listPlateViews` selects
+ *    `id, file_name, file_path, metadata, created_at` and no format, so
+ *    `ssPlateMeta` falls through to a hardcoded 'png' -- while the asset row
+ *    holds `format: jpg, mime_type: image/jpeg` and the file on disk is
+ *    `location_DRIVE-IN_THEATRE_-_LOT.jpg`. This is the same lie the plate
+ *    upload work already paid for once: a name that disagrees with the bytes.
+ */
+
+test('the master-plates block offers the four slots the design draws', () => {
+    const design = fs.readFileSync(path.join(HANDOFF, 'Location Card.dc.html'), 'utf8');
+    const slots = [...design.matchAll(/>0(\d) · /g)].map(m => Number(m[1]));
+    assert.ok(slots.length >= 4,
+        `this test's reading is stale: the design draws ${slots.length} numbered plate slots`);
+
+    const at = UI.indexOf('function renderLocationSheet');
+    let j = UI.indexOf('{', at), d = 0, e = -1;
+    for (let k = j; k < UI.length; k++) {
+        if (UI[k] === '{') d++;
+        else if (UI[k] === '}') { d--; if (!d) { e = k + 1; break; } }
+    }
+    const fn = UI.slice(at, e < 0 ? at + 20000 : e);
+
+    /*
+     * The DEFAULT plan must carry them. A location that has never been planned
+     * is the common case, and it is exactly the case that renders one plate.
+     */
+    const fallback = fn.match(/planned\.length \? planned : (\[[\s\S]*?\])/);
+    assert.ok(fallback, 'the plate-plan fallback is gone');
+    const entries = (fallback[1].match(/\{/g) || []).length;
+    assert.strictEqual(entries, slots.length,
+        `the default plate plan has ${entries} slot(s) where the design draws ${slots.length}; `
+        + 'with fewer than two the 3-up row is never emitted and the sheet shows the hero alone');
+});
+
+test('the plate meta never claims a format the file does not have', () => {
+    /*
+     * Behavioural on the SOURCE, because the lie is a fallback: the UI cannot
+     * report a format the API does not send, and the API does not select one.
+     */
+    const routes = fs.readFileSync(path.join(ROOT, 'routes', 'locations.js'), 'utf8');
+    const views = routes.match(/SELECT id, file_name, file_path[^`]*FROM film_assets/);
+    assert.ok(views, 'listPlateViews no longer selects its columns the way this test reads them');
+    assert.match(views[0], /format/,
+        'the views query does not select `format`, so the sheet cannot know what the file is — '
+        + 'and ssPlateMeta falls back to a hardcoded "png" while the asset row says jpg');
+
+    const at = UI.indexOf('function ssPlateMeta');
+    let j = UI.indexOf('{', at), d = 0, e = -1;
+    for (let k = j; k < UI.length; k++) {
+        if (UI[k] === '{') d++;
+        else if (UI[k] === '}') { d--; if (!d) { e = k + 1; break; } }
+    }
+    const fn = UI.slice(at, e < 0 ? at + 2000 : e);
+    assert.ok(!/\|\|\s*'png'/.test(fn),
+        "ssPlateMeta still falls back to the literal 'png', which reports a JPEG plate as a PNG");
+});

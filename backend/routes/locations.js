@@ -288,7 +288,8 @@ function plateViewsFor(subjectId, kind) {
     if (!subject) return out;
     out.subject = subject;
     const rows = db.prepare(
-        `SELECT id, file_name, file_path, metadata, created_at FROM film_assets
+        `SELECT id, file_name, file_path, metadata, created_at, format, mime_type, size_bytes
+         FROM film_assets
           WHERE project_id = ? AND ${column} = ?
             AND asset_type IN ('reference_image', 'character_sheet')
        ORDER BY created_at ASC`).all(subject.project_id, subjectId);
@@ -319,6 +320,15 @@ function plateViewsFor(subjectId, kind) {
             image_url: (available && subdir)
                 ? getFileUrl(subdir, subject.project_id, r.file_name, r.created_at) : null,
             created_at: r.created_at,
+            /*
+             * WHAT THE FILE ACTUALLY IS. Without these the sheet's meta line
+             * fell back to a hardcoded 'png' and reported a JPEG plate as a
+             * PNG -- the same disagreement between a name and its bytes the
+             * plate upload work already paid for once.
+             */
+            format: r.format || null,
+            mime_type: r.mime_type || null,
+            bytes: r.size_bytes || null,
         };
     });
     return out;
@@ -333,7 +343,8 @@ function listPlateViews(res, subjectId, kind) {
         return res.end(JSON.stringify({ error: `${kind === 'prop' ? 'Prop' : 'Location'} not found` }));
     }
     const rows = db.prepare(
-        `SELECT id, file_name, file_path, metadata, created_at FROM film_assets
+        `SELECT id, file_name, file_path, metadata, created_at, format, mime_type, size_bytes
+         FROM film_assets
           WHERE project_id = ? AND ${column} = ?
             AND asset_type IN ('reference_image', 'character_sheet')
        ORDER BY created_at ASC`).all(loc.project_id, subjectId);
@@ -376,6 +387,15 @@ function listPlateViews(res, subjectId, kind) {
             image_url: (available && subdir)
                 ? getFileUrl(subdir, loc.project_id, r.file_name, r.created_at) : null,
             created_at: r.created_at,
+            /*
+             * WHAT THE FILE ACTUALLY IS. Without these the sheet's meta line
+             * fell back to a hardcoded 'png' and reported a JPEG plate as a
+             * PNG -- the same disagreement between a name and its bytes the
+             * plate upload work already paid for once.
+             */
+            format: r.format || null,
+            mime_type: r.mime_type || null,
+            bytes: r.size_bytes || null,
         };
     });
 
