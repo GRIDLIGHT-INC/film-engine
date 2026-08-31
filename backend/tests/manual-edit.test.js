@@ -123,7 +123,27 @@ function updateHandlers() {
         const src = fs.readFileSync(path.join(ROUTES, file), 'utf8');
         for (const m of src.matchAll(/function\s+(update|edit|patch|set)([A-Z]\w*)\s*\(/g)) {
             const next = src.indexOf('\nfunction ', m.index + 10);
-            const body = src.slice(m.index, next > 0 ? next : m.index + 4000);
+            let body = src.slice(m.index, next > 0 ? next : m.index + 4000);
+
+            /*
+             * FOLLOW ONE CALL LEVEL.
+             *
+             * A handler may accept its fields directly, or delegate to a shared
+             * builder -- `characterFields(body)`, `propFields(body)` -- which is
+             * what create and update now use so the two cannot drift apart.
+             * Reading only the handler's own body reported the delegating ones
+             * as accepting NO fields, which reads as "the handler is gone" and
+             * takes the whole denominator with it. One level, not an unbounded
+             * walk: the same rule screenplay-mutators already follows, and for
+             * the same reason -- an unbounded walk eventually finds a `body.x`
+             * in something unrelated.
+             */
+            for (const call of body.matchAll(/\b([a-z][A-Za-z0-9_]*Fields)\s*\(\s*body\b/g)) {
+                const at = src.indexOf(`function ${call[1]}(`);
+                if (at < 0) continue;
+                const stop = src.indexOf('\nfunction ', at + 10);
+                body += '\n' + src.slice(at, stop > 0 ? stop : src.length);
+            }
 
             const fields = new Set();
             // `if (body.x !== undefined)`

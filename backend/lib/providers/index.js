@@ -537,7 +537,7 @@ function unavailableAdapter(capability) {
     };
 }
 
-function resolve(capability, projectConfig) {
+function resolveAdapter_(capability, projectConfig) {
     if (!isCapability(capability)) {
         /*
          * An unknown capability. This handed back the local gateway, which was
@@ -566,6 +566,69 @@ function resolve(capability, projectConfig) {
  * generate, fall back to the default generator so a bad per-capability choice
  * can never crash generation.
  */
+/**
+ * WHERE THIS CHOICE CAME FROM, in a form something can print.
+ *
+ * `resolveIdWithReason` has always returned a `source` and an `explicit` flag,
+ * and `describeResolution` has always turned them into the right sentence.
+ * NOTHING CONSUMED EITHER. Every generation went through `resolveId`, which
+ * throws the reason away on its only line -- so a project that lost its `image`
+ * pin mid-session fell through the preference walk onto a different vendor, on a
+ * different account, and reported nothing at all. It was discovered when that
+ * vendor's billing rejected it.
+ *
+ * `explicit` is the load-bearing field, not the provider name: a project pinned
+ * to Google is fine, and a project that pins nothing and silently lands on
+ * Google is the failure. Both resolve to the string "google".
+ */
+function resolutionOf(capability, projectConfig) {
+    const r = resolveIdWithReason(capability, projectConfig || {});
+    return {
+        capability,
+        provider: r.id || null,
+        source: r.source || null,
+        explicit: !!r.explicit,
+        note: describeResolution(capability, projectConfig || {}),
+    };
+}
+
+/** The same answer for every capability, for a settings or preflight panel. */
+function resolutionReport(projectConfig) {
+    const out = {};
+    for (const cap of CAPABILITIES) out[cap] = resolutionOf(cap, projectConfig);
+    return out;
+}
+
+/**
+ * The adapter, carrying its own provenance.
+ *
+ * Stamped HERE because `resolve()` is the one funnel every generation goes
+ * through -- the per-domain routes, the orchestrator and the flow canvas all
+ * obtain their adapter from it. Attaching it at each caller instead is how one
+ * path reports the reroute and the other three stay silent.
+ *
+ * NON-ENUMERABLE, exactly as `__project_id` is: a provider_config is
+ * round-tripped through the settings panel, and a diagnostic field that rode
+ * along would be written back into the column on the next save.
+ *
+ * It must never be the reason a generation cannot happen, so the stamp is
+ * guarded -- the rule metering and fingerprinting already follow.
+ */
+function resolve(capability, projectConfig) {
+    const adapter = resolveAdapter_(capability, projectConfig);
+    try {
+        if (adapter && !Object.prototype.hasOwnProperty.call(adapter, '__resolution')) {
+            Object.defineProperty(adapter, '__resolution', {
+                value: resolutionOf(capability, projectConfig),
+                enumerable: false, configurable: true, writable: true,
+            });
+        } else if (adapter) {
+            adapter.__resolution = resolutionOf(capability, projectConfig);
+        }
+    } catch (_) { /* provenance is a diagnostic, never a blocker */ }
+    return adapter;
+}
+
 function resolveGenerator(capability, projectConfig) {
     const adapter = resolve(capability, projectConfig);
     if (adapter && typeof adapter.generate === 'function') return adapter;
@@ -617,4 +680,4 @@ _autoload();
 
 module.exports = {
     modelsFor, modelIdsFor,
-    firstConfigured, resolveIdWithReason, describeResolution, accountDefaultFor, refreshAccountDefaults, register, get, list, resolve, resolveId, resolveGenerator, metered, isProviderConfigured, defaultProviderConfig, localGatewayEnabled, refreshLocalGateway, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };
+    firstConfigured, resolveIdWithReason, resolutionOf, resolutionReport, describeResolution, accountDefaultFor, refreshAccountDefaults, register, get, list, resolve, resolveId, resolveGenerator, metered, isProviderConfigured, defaultProviderConfig, localGatewayEnabled, refreshLocalGateway, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };

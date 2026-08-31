@@ -209,6 +209,57 @@ function getCharacter(req, res, charId) {
     res.end(JSON.stringify(ch));
 }
 
+/**
+ * The fields a character write accepts, as a SET clause.
+ *
+ * ONE LIST, USED BY BOTH PATHS. `createCharacter` carried its own INSERT column
+ * list, written when the table was smaller and never grown -- so `height_m`,
+ * `lora_id` and `ti_token` reached the update path and were silently dropped on
+ * create. `height_m` is the one that costs: it produces the scale clause in an
+ * image prompt, so a character created and never updated generates at whatever
+ * size the model imagines, and nothing reports it.
+ *
+ * Returning the clause rather than performing the write is what lets create
+ * INSERT its identity and then apply exactly what update would apply. A second
+ * list is how the first one went stale.
+ */
+function characterFields(body) {
+    const fields = [];
+    const values = [];
+
+    const textFields = {
+        name: 200, description: 5000, appearance_prompt: 2000,
+        personality_notes: 2000, age_range: 50, gender: 50,
+        ethnicity: 100, build: 100, hair: 200, distinguishing: 500,
+        lora_id: 200, ti_token: 200
+    };
+
+    for (const [field, maxLen] of Object.entries(textFields)) {
+        if (body[field] !== undefined) {
+            fields.push(`${field} = ?`);
+            values.push(String(body[field]).slice(0, maxLen));
+        }
+    }
+
+    // Height in metres. Validated as a number rather than a length-capped
+    // string: it is the one field here the prompt divides by.
+    if (body.height_m !== undefined) {
+        const n = Number(body.height_m);
+        if (!Number.isFinite(n) || n <= 0) {
+            return { error: 'height_m must be a positive number of metres' };
+        }
+        fields.push('height_m = ?');
+        values.push(n);
+    }
+
+    if (body.reference_images !== undefined) {
+        fields.push('reference_images = ?');
+        values.push(JSON.stringify(body.reference_images));
+    }
+
+    return { fields, values };
+}
+
 function createCharacter(req, res, projectId) {
     const body = req.body;
     if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
@@ -238,29 +289,28 @@ function createCharacter(req, res, projectId) {
         return;
     }
 
-    const id = generateId();
-    const now = new Date().toISOString();
+    /*
+     * Validated BEFORE the row exists, so a bad height cannot leave a
+     * half-made character behind for someone to find later.
+     */
+    const built = characterFields(body);
+    if (built.error) return badRequest(res, built.error);
 
-    db.prepare(`
-        INSERT INTO film_characters (id, project_id, name, description, appearance_prompt,
-            personality_notes, age_range, gender, ethnicity, build, hair, distinguishing,
-            reference_images, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-        id, projectId,
-        body.name.trim().slice(0, 200),
-        (body.description || '').slice(0, 5000),
-        (body.appearance_prompt || '').slice(0, 2000),
-        (body.personality_notes || '').slice(0, 2000),
-        (body.age_range || '').slice(0, 50),
-        (body.gender || '').slice(0, 50),
-        (body.ethnicity || '').slice(0, 100),
-        (body.build || '').slice(0, 100),
-        (body.hair || '').slice(0, 200),
-        (body.distinguishing || '').slice(0, 500),
-        JSON.stringify(body.reference_images || []),
-        now, now
-    );
+    const id = generateId();
+
+    /*
+     * Identity only. Every other column carries its own default, and the
+     * values come from the SAME builder the update path uses -- which is what
+     * stops this list going stale again the next time a column is added.
+     */
+    db.prepare(`INSERT INTO film_characters (id, project_id, name, created_at, updated_at)
+        VALUES (?, ?, ?, datetime('now'), datetime('now'))`)
+        .run(id, projectId, body.name.trim().slice(0, 200));
+
+    if (built.fields.length) {
+        db.prepare(`UPDATE film_characters SET ${built.fields.join(', ')} WHERE id = ?`)
+            .run(...built.values, id);
+    }
 
     const row = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(id);
     res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -288,38 +338,9 @@ function updateCharacter(req, res, charId) {
         return;
     }
 
-    const fields = [];
-    const values = [];
-
-    const textFields = {
-        name: 200, description: 5000, appearance_prompt: 2000,
-        personality_notes: 2000, age_range: 50, gender: 50,
-        ethnicity: 100, build: 100, hair: 200, distinguishing: 500,
-        lora_id: 200, ti_token: 200
-    };
-
-    for (const [field, maxLen] of Object.entries(textFields)) {
-        if (body[field] !== undefined) {
-            fields.push(`${field} = ?`);
-            values.push(String(body[field]).slice(0, maxLen));
-        }
-    }
-
-    // Height in metres. Validated as a number rather than a length-capped
-    // string: it is the one field here the prompt divides by.
-    if (body.height_m !== undefined) {
-        const n = Number(body.height_m);
-        if (!Number.isFinite(n) || n <= 0) {
-            return badRequest(res, 'height_m must be a positive number of metres');
-        }
-        fields.push('height_m = ?');
-        values.push(n);
-    }
-
-    if (body.reference_images !== undefined) {
-        fields.push('reference_images = ?');
-        values.push(JSON.stringify(body.reference_images));
-    }
+    const built = characterFields(body);
+    if (built.error) return badRequest(res, built.error);
+    const { fields, values } = built;
 
     // Recording where a description came from is a change in itself, and does
     // not require rewriting the description to say it. Refusing a link-only

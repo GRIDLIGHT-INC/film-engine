@@ -312,6 +312,8 @@ film-engine/
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
 │       ├── muapi-models.test.js        # MuAPI is the house provider: its models must be pickable, and reach MuAPI
+│       ├── entity-create-fields.test.js # Creating a subject and updating one accept the same fields
+│       ├── provider-resolution-visible.test.js # Spend that goes somewhere nobody chose says so
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
 │       ├── credentials-global.test.js   # A key is entered once, for the machine, not once per film
 │       ├── plate-views.test.js         # A turnaround is three pictures, and the app used the wrong one
@@ -850,6 +852,120 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### Creating a Subject and Updating One Must Accept the Same Fields
+
+Reported as *"`prop_create` accepted `height_m`, `width_m`, `length_m` and
+stored all three as `null`, while `prop_update` with the identical values
+persisted them"* — correct, and those two names are a **symptom**.
+
+Each create handler carried **its own INSERT column list**, written when the
+table was smaller and never grown, so every column added since reached the
+update path and nothing else. Measured against the schema before the fix:
+**character dropped 3, location 5, prop 12 — twenty fields**. The dimensions
+were simply the ones somebody noticed, because they are the ones that produce
+the scale clause in an image prompt:
+
+```
+Scale: DRIVE-IN SPEAKER POST is roughly 1.7 times the size of a car tyre,
+1.1m tall, 0.12m long, 0.55m wide
+```
+
+A subject created and never updated generates at whatever size the model
+imagines, and nothing reports it. The location gap is the same shape and worse
+to discover: `orientation_plan` never survived a create, and a plate carries no
+information about what is behind its own camera, so each side of a room was
+generated from prose that could not say.
+
+**One builder per entity, used by both paths.** `characterFields` /
+`locationFields` / `propFields` return a SET clause rather than performing the
+write, so create INSERTs its identity and then applies exactly what update
+would. Every non-identity column already carries a schema default — including
+`lighting_default`, whose `'natural'` fallback was typed into the handler *and*
+is the column default — so the identity-only INSERT is byte-equivalent. A second
+list is how the first one went stale.
+
+**The test is a property, not a field list:**
+
+```
+create(body)  ==  create({name}) then update(body)
+```
+
+A test enumerating the fields it knows about is only as complete as the
+afternoon it was written, and the column added next is exactly the one that
+would be dropped again. This compares the two code paths against each other over
+every column the table actually has, read from the schema at run time. A column
+the update path does not accept either is not a failure — both store the default
+and agree; the test asks only that the two paths cannot **disagree**.
+
+Three probe values had to be shaped from the routes' own validators rather than
+typed — `continuity_states` wants `{name, what, scene}`, `description_sections`
+an object, `category` a value from `PROP_CATEGORIES` — because a probe the route
+**refuses** proves nothing about the two paths agreeing and reads as a defect
+that is not there.
+
+`tests/manual-edit.test.js` derives its denominator by parsing `body.x` out of
+each `update*` handler, and the delegation made those handlers look like they
+accepted nothing — reported as *"updateCharacter is gone"*, which would have
+taken the whole denominator with it. It **follows one call level** now, to a
+`*Fields(body)` builder, which is the rule `screenplay-mutators` already
+follows; one level rather than an unbounded walk, because an unbounded walk
+eventually finds a `body.x` in something unrelated.
+
+### Spend That Goes Somewhere Nobody Chose Says So
+
+*"`film_projects.provider_config` lost its `image` key mid-session. Nothing
+failed and nothing was reported. Image generation fell through the resolution
+order onto Google, billed against a personal Gemini key rather than the Meshy
+account the project was configured for — discovered only when Google's billing
+rejected it."*
+
+**The reason was already computed.** `resolveIdWithReason` returns a `source`
+(`project` / `env` / `quality_tier` / `account_default` / the preference walk)
+and an `explicit` flag, and `describeResolution` turns them into exactly the
+right sentence. `describeResolution` had **zero consumers** — declared,
+exported, wired to nothing, the same shape as `NEVER_WRITES` and `scope` on
+`PIPELINE_STEPS`. Every generation went through `resolveId`, which throws the
+reason away on its only line. The engine's own comment predicted this:
+
+> the picker said every tier used Meshy while the project resolved to OpenAI,
+> and both were telling the truth about different code.
+
+**`explicit` is the load-bearing field, not the provider name.** A project
+pinned to Google is fine; a project that pins nothing and silently lands on
+Google is the failure — and both resolve to the string `google`. That is why
+this was invisible on every surface that printed the name.
+
+Stamped in **`resolve()`**, the one funnel every generation goes through, so the
+per-domain routes, the orchestrator and the flow canvas cannot disagree about
+it; **non-enumerable**, exactly as `__project_id` is, because a `provider_config`
+is round-tripped through the settings panel and a diagnostic that rode along
+would be written back into the column on the next save. Surfaced on the settings
+payload (`resolution`, `unpinned`), on the free `dry_run`, on the **run plan**
+beside the projected cost — a plan that projects a total and does not name the
+account it will be billed to is half a plan — and beside the picker on the page.
+
+Warnings are named **per capability**: on the real Wingfall project `video` and
+`post` both fall through to Seedance, which produced two identical sentences
+until each carried its own capability — the rule `SHOTS_DROPPED` already
+follows.
+
+Three things the mutation pass forced out, each of which had the test passing
+while the feature was broken. The dry-run check asserted *"if it says fallback,
+it warns"* and therefore passed against a report claiming every provider was
+explicitly chosen — the comfortable lie, and the one this exists to catch; it
+asserts **positively** now. The run-plan probe pinned `image` and, in an
+isolated database where nothing else holds a credential, produced **no fallback
+row at all**, so every assertion about the warning passed vacuously — there is a
+second project that pins nothing, and **a credential has to exist for anything
+to fall through to**. And the settings check called `resolutionReport` directly,
+which proves the helper works and says nothing about the payload a page
+receives; it drives `handleProviders` now.
+
+A provider string that names no registered adapter is **not a vendor**: with no
+credentials `llm` reports *"the MCP host"*, which spends nothing and is the
+architecture rather than a silent reroute. Derived from the registry rather than
+exempting `llm` by name.
 
 ### A Model List Means Nothing Except Relative to a Capability
 
@@ -3351,6 +3467,8 @@ node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js
 node --test backend/tests/muapi-models.test.js
+node --test backend/tests/entity-create-fields.test.js
+node --test backend/tests/provider-resolution-visible.test.js
 node --test backend/tests/provider-config-merge.test.js
 node --test backend/tests/credentials-global.test.js
 node --test backend/tests/plate-views.test.js

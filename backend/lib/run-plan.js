@@ -153,8 +153,38 @@ function buildRunPlan(projectId, options) {
     const compliance = complianceFor(projectId);
     const blockedByCompliance = !opts.ignore_compliance && compliance.blocks;
 
+    /*
+     * WHICH VENDOR EACH STRIP WOULD SPEND AT, and whether anyone chose it.
+     *
+     * A plan that projects a cost and does not name the account it will be
+     * billed to is only half a plan. A project that loses a provider pin falls
+     * through the preference walk onto a different vendor silently, and the
+     * projected total is identical -- the money simply leaves from somewhere
+     * else. Reported here rather than discovered on an invoice, and never
+     * throwing, because this is the surface that exists to stop spend.
+     */
+    let routing = [];
+    try {
+        const providers = require('./providers');
+        const cfg = (() => {
+            try { return require('./provider-config').providerConfigFor(projectId); }
+            catch (_) { return {}; }
+        })();
+        routing = [...new Set(strips.map(st => st.capability).filter(Boolean))]
+            .map(cap => providers.resolutionOf(cap, cfg));
+    } catch (_) { routing = []; }
+    const unpinned = routing.filter(r => r.provider && !r.explicit);
+
     return {
         project_id: projectId,
+        // Named per capability, with `explicit` the load-bearing field: the
+        // provider string looks the same whether it was chosen or defaulted to.
+        routing,
+        // Named per capability. Two capabilities falling through to the same
+        // vendor produce two identical sentences otherwise, and "which one do I
+        // pin" then sends you to the database — the rule SHOTS_DROPPED already
+        // follows.
+        unpinned_providers: unpinned.map(r => `${r.capability}: ${r.note}`),
         order,
         order_rationale: PLAN_ORDERS[order],
         compliance: compliance.findings,

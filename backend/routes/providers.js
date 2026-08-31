@@ -198,6 +198,18 @@ function getProjectProviders(res, projectId) {
     for (const cap of CAPABILITIES) effective[cap] = providers.resolveId(cap, config);
 
     /*
+     * AND WHO CHOSE IT.
+     *
+     * `effective` names a provider and says nothing about where that answer
+     * came from, which is exactly the state that let a project lose its `image`
+     * pin and silently bill a different vendor on a different account. The
+     * provider name is identical in both cases -- only `explicit` separates
+     * "this project chose Google" from "nobody chose anything and Google won a
+     * preference walk".
+     */
+    const resolution = providers.resolutionReport(config);
+
+    /*
      * The quality tiers, and what each would ACTUALLY use on this install right
      * now. The menu is the point: a director chooses Draft, Standard or
      * Precision, and the provider behind it is an implementation detail that
@@ -226,7 +238,8 @@ function getProjectProviders(res, projectId) {
     }
 
     return json(res, 200, {
-        project_id: projectId, capabilities: CAPABILITIES, config, effective,
+        project_id: projectId, capabilities: CAPABILITIES, config, effective, resolution,
+        unpinned: CAPABILITIES.filter(c => resolution[c] && resolution[c].provider && !resolution[c].explicit),
         image_quality: config.image_quality || DEFAULT_TIER,
         image_tiers: tierMenu(config),
         generation,

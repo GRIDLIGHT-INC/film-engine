@@ -191,6 +191,30 @@ function costFor(providerId, capability, model, payload) {
  * `ctx` is whatever loadShotContext / loadSceneContext produced; this function
  * opens nothing and reads no credential.
  */
+/**
+ * Who chose this provider, on a report whose whole job is telling the truth
+ * before anything spends.
+ *
+ * A dry run that names a vendor and not the reason is the report that would
+ * have caught the lost `image` pin and did not: the provider string is
+ * identical whether a project chose it or a preference walk did.
+ */
+function stampResolution(out, capability, providerConfig) {
+    try {
+        // Required here: `providers` is function-scoped in describeCapability,
+        // so reaching for it from module scope threw a ReferenceError that this
+        // very catch swallowed — the report stayed silent about staying silent.
+        const r = require('./providers').resolutionOf(capability, providerConfig || {});
+        out.provider_explicit = r.explicit;
+        out.provider_source = r.source;
+        out.provider_note = r.note;
+        if (!r.explicit && r.provider) {
+            out.notes.push(`This project pins no ${capability} provider — ${r.note}. `
+                + 'Spend will go to that vendor, on whichever account holds its key.');
+        }
+    } catch (_) { /* a diagnostic must never break the report it annotates */ }
+}
+
 function describeCapability(capability, ctx, providerConfig) {
     const providers = require('./providers');
     const out = { capability, provider: null, model: null, inputs: [], payload: null,
@@ -206,6 +230,7 @@ function describeCapability(capability, ctx, providerConfig) {
      */
     if (capability === 'llm') {
         out.provider = providers.resolveId('llm', providerConfig || {}) || 'the MCP host';
+        stampResolution(out, 'llm', providerConfig);
         out.notes.push('Reasoning runs in the connected MCP host (Claude Desktop), not through a '
             + 'request this engine builds. It consumes your plan window and charges the project '
             + 'nothing. The server-side adapter is only used by the few HTTP routes that predate MCP.');
@@ -220,6 +245,7 @@ function describeCapability(capability, ctx, providerConfig) {
         return out;
     }
     out.provider = id;
+    stampResolution(out, capability, providerConfig);
 
     /*
      * 3D is not in capability-payloads: meshes are built by lib/threed-prompt

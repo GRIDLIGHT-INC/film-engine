@@ -1014,54 +1014,42 @@ function createLocation(req, res, projectId) {
     }
 
     const id = generateId();
-    const now = new Date().toISOString();
 
-    db.prepare(`
-        INSERT INTO film_locations (id, project_id, name, description, reference_prompt,
-            reference_images, lighting_default, time_of_day_default, atmosphere_notes,
-            sound_notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-        id, projectId,
-        body.name.trim().slice(0, 300),
-        (body.description || '').slice(0, 5000),
-        (body.reference_prompt || '').slice(0, 2000),
-        JSON.stringify(body.reference_images || []),
-        // 500, not 50: this reaches the prompt, and a lighting note worth
-        // writing does not fit in fifty characters.
-        (body.lighting_default || 'natural').slice(0, 500),
-        (body.time_of_day_default || '').slice(0, 50),
-        (body.atmosphere_notes || '').slice(0, 2000),
-        (body.sound_notes || '').slice(0, 2000),
-        now, now
-    );
+    /*
+     * Identity only, then the SAME builder the update path uses. Every other
+     * column carries its own default -- including `lighting_default`, whose
+     * 'natural' fallback was typed here and is also the column default -- so
+     * this list cannot go stale again the next time a column is added.
+     */
+    db.prepare(`INSERT INTO film_locations (id, project_id, name, created_at, updated_at)
+        VALUES (?, ?, ?, datetime('now'), datetime('now'))`)
+        .run(id, projectId, body.name.trim().slice(0, 300));
+
+    const built = locationFields(body, id);
+    if (built.error) { db.prepare('DELETE FROM film_locations WHERE id = ?').run(id); return badReq(res, built.error); }
+    if (built.fields && built.fields.length) {
+        db.prepare(`UPDATE film_locations SET ${built.fields.join(', ')} WHERE id = ?`)
+            .run(...built.values, id);
+    }
 
     const row = db.prepare('SELECT * FROM film_locations WHERE id = ?').get(id);
     res.writeHead(201, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(row));
 }
 
-function updateLocation(req, res, locId) {
-    // Which part of the story bible this description was written from.
-    //
-    // Recorded here rather than inferred later, because only the person writing
-    // the words knows which section they were reading. Without it a bible
-    // revision can say "something changed" and never "and MAYA's appearance came
-    // from it", which is the difference between a note and an instruction.
-    if (req.body && req.body.bible_section) {
-        stampSubject('location', locId, String(req.body.bible_section));
-    }
-    const body = req.body;
-    const propagateToScreenplay = body.propagate_to_screenplay !== false;
-
-    // Get current location to check for name changes
-    const currentLoc = db.prepare('SELECT * FROM film_locations WHERE id = ?').get(locId);
-    if (!currentLoc) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Location not found' }));
-        return;
-    }
-
+/**
+ * The fields a location write accepts, as a SET clause.
+ *
+ * ONE LIST, USED BY BOTH PATHS. `createLocation` carried its own INSERT column
+ * list, written when the table was smaller and never grown -- so
+ * `location_type`, `description_sections`, `continuity_flags`, `plate_plan` and
+ * `orientation_plan` reached the update path and were silently dropped on
+ * create. The orientation plan is the one that costs: a plate carries no
+ * information about what is behind its own camera, so without it each side of a
+ * room is generated from prose that cannot say.
+ */
+function locationFields(body, locId) {
+    const errorOf = message => ({ error: message });
     const fields = [];
     const values = [];
 
@@ -1086,7 +1074,7 @@ function updateLocation(req, res, locId) {
         const v = body.description_sections;
         const obj = (v && typeof v === 'object' && !Array.isArray(v)) ? v : parseJson(v, null);
         if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
-            return badReq(res, 'description_sections must be an object of { section_id: text }');
+            return errorOf('description_sections must be an object of { section_id: text }');
         }
         const clean = {};
         for (const [k, text] of Object.entries(obj)) clean[String(k).slice(0, 40)] = String(text || '').slice(0, 8000);
@@ -1123,15 +1111,14 @@ function updateLocation(req, res, locId) {
             const existing = String(current.description || '').trim();
             const keeps = !existing || composed.includes(existing) || existing === composed;
             if (!keeps && !body.replace_description) {
-                res.writeHead(409, { 'Content-Type': 'application/json' });
-                return res.end(JSON.stringify({
+                return { conflict: {
                     error: 'DESCRIPTION_WOULD_BE_REPLACED',
                     message: `This location already has a ${existing.length}-character description, `
                         + 'written before the sections existed. Composing the sections would replace it.',
                     existing_description: existing,
                     hint: 'Move the existing text into one of the sections first — the sheet offers this — '
                         + 'or send replace_description: true to discard it deliberately.',
-                }));
+                } };
             }
             fields.push('description = ?');
             values.push(composed.slice(0, 5000));
@@ -1149,21 +1136,21 @@ function updateLocation(req, res, locId) {
      */
     if (body.continuity_flags !== undefined) {
         const list = Array.isArray(body.continuity_flags) ? body.continuity_flags : parseJson(body.continuity_flags, null);
-        if (!Array.isArray(list)) return badReq(res, 'continuity_flags must be an array of strings');
+        if (!Array.isArray(list)) return errorOf('continuity_flags must be an array of strings');
         fields.push('continuity_flags = ?');
         values.push(JSON.stringify(list.map(x => String(x).slice(0, 300)).filter(Boolean).slice(0, 40)));
     }
 
     if (body.plate_plan !== undefined) {
         const list = Array.isArray(body.plate_plan) ? body.plate_plan : parseJson(body.plate_plan, null);
-        if (!Array.isArray(list)) return badReq(res, 'plate_plan must be an array of { role, caption }');
+        if (!Array.isArray(list)) return errorOf('plate_plan must be an array of { role, caption }');
         const clean = list.map((x, i) => ({
             n: i + 1,
             role: String((x && x.role) || '').slice(0, 120),
             view: String((x && x.view) || '').slice(0, 120),
             caption: String((x && x.caption) || '').slice(0, 200),
         }));
-        if (clean.some(x => !x.role)) return badReq(res, 'every plate slot needs a role — an unnamed slot is a gap nobody can fill');
+        if (clean.some(x => !x.role)) return errorOf('every plate slot needs a role — an unnamed slot is a gap nobody can fill');
         fields.push('plate_plan = ?');
         values.push(JSON.stringify(clean));
     }
@@ -1171,7 +1158,7 @@ function updateLocation(req, res, locId) {
         const v = body.orientation_plan;
         const obj = (v && typeof v === 'object' && !Array.isArray(v)) ? v : parseJson(v, null);
         if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
-            return badReq(res, 'orientation_plan must be an object with compass edges');
+            return errorOf('orientation_plan must be an object with compass edges');
         }
         const { PLAN_EDGES } = require('../lib/subject-sheets');
         const clean = { interior: [], marker: String(obj.marker || '').slice(0, 200) };
@@ -1198,6 +1185,38 @@ function updateLocation(req, res, locId) {
     // not require rewriting the description to say it. Refusing a link-only
     // update would mean an agent that has just read the bible has to touch the
     // text to record that it did.
+    return { fields, values };
+}
+
+function updateLocation(req, res, locId) {
+    // Which part of the story bible this description was written from.
+    //
+    // Recorded here rather than inferred later, because only the person writing
+    // the words knows which section they were reading. Without it a bible
+    // revision can say "something changed" and never "and MAYA's appearance came
+    // from it", which is the difference between a note and an instruction.
+    if (req.body && req.body.bible_section) {
+        stampSubject('location', locId, String(req.body.bible_section));
+    }
+    const body = req.body;
+    const propagateToScreenplay = body.propagate_to_screenplay !== false;
+
+    // Get current location to check for name changes
+    const currentLoc = db.prepare('SELECT * FROM film_locations WHERE id = ?').get(locId);
+    if (!currentLoc) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Location not found' }));
+        return;
+    }
+
+    const built = locationFields(body, locId);
+    if (built.error) return badReq(res, built.error);
+    if (built.conflict) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(built.conflict));
+    }
+    const { fields, values } = built;
+
     if (fields.length === 0 && req.body && req.body.bible_section) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ linked: true, bible_section: String(req.body.bible_section) }));
@@ -1439,39 +1458,40 @@ function createProp(req, res, projectId) {
     }
 
     const id = generateId();
-    const now = new Date().toISOString();
 
-    db.prepare(`
-        INSERT INTO film_props (id, project_id, name, description, visual_prompt,
-            category, reference_images, notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-        id, projectId,
-        body.name.trim().slice(0, 200),
-        (body.description || '').slice(0, 2000),
-        (body.visual_prompt || '').slice(0, 2000),
-        (body.category || 'generic').slice(0, 50),
-        JSON.stringify(body.reference_images || []),
-        (body.notes || '').slice(0, 2000),
-        now
-    );
+    /*
+     * Identity only, then the SAME builder the update path uses -- twelve
+     * columns used to reach update and be dropped here, every dimension among
+     * them.
+     */
+    db.prepare(`INSERT INTO film_props (id, project_id, name, created_at)
+        VALUES (?, ?, ?, datetime('now'))`)
+        .run(id, projectId, body.name.trim().slice(0, 200));
+
+    const built = propFields(body);
+    if (built.error) { db.prepare('DELETE FROM film_props WHERE id = ?').run(id); return badReq(res, built.error); }
+    if (built.fields && built.fields.length) {
+        db.prepare(`UPDATE film_props SET ${built.fields.join(', ')} WHERE id = ?`)
+            .run(...built.values, id);
+    }
 
     const row = db.prepare('SELECT * FROM film_props WHERE id = ?').get(id);
     res.writeHead(201, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(row));
 }
 
-function updateProp(req, res, propId) {
-    // Which part of the story bible this description was written from.
-    //
-    // Recorded here rather than inferred later, because only the person writing
-    // the words knows which section they were reading. Without it a bible
-    // revision can say "something changed" and never "and MAYA's appearance came
-    // from it", which is the difference between a note and an instruction.
-    if (req.body && req.body.bible_section) {
-        stampSubject('prop', propId, String(req.body.bible_section));
-    }
-    const body = req.body;
+/**
+ * The fields a prop write accepts, as a SET clause.
+ *
+ * ONE LIST, USED BY BOTH PATHS, and this was the worst of the three: twelve
+ * columns reached the update path and were dropped on create -- every
+ * dimension, the materials, the continuity states, the constraints, whether it
+ * is a practical. The dimensions are the ones that reach a prompt, producing
+ * the scale clause an image model needs because nothing in it knows how big a
+ * speaker post is.
+ */
+function propFields(body) {
+    const errorOf = message => ({ error: message });
     const fields = [];
     const values = [];
 
@@ -1482,7 +1502,7 @@ function updateProp(req, res, propId) {
         if (body[field] === undefined) continue;
         const n = Number(body[field]);
         if (!Number.isFinite(n) || n <= 0) {
-            return badReq(res, `${field} must be a positive number of metres`);
+            return errorOf(`${field} must be a positive number of metres`);
         }
         fields.push(`${field} = ?`);
         values.push(n);
@@ -1497,7 +1517,7 @@ function updateProp(req, res, propId) {
     }
     if (body.quantity !== undefined) {
         const n = Math.round(Number(body.quantity));
-        if (!Number.isFinite(n) || n < 0) return badReq(res, 'quantity must be a whole number');
+        if (!Number.isFinite(n) || n < 0) return errorOf('quantity must be a whole number');
         fields.push('quantity = ?');
         values.push(n);
     }
@@ -1515,7 +1535,7 @@ function updateProp(req, res, propId) {
             what: String((st && st.what) || '').slice(0, 500),
             scene: String((st && st.scene) || '').slice(0, 120),
         }));
-        if (clean.some(st => !st.name)) return badReq(res, 'every continuity state needs a name');
+        if (clean.some(st => !st.name)) return errorOf('every continuity state needs a name');
         fields.push('continuity_states = ?');
         values.push(JSON.stringify(clean));
     }
@@ -1525,13 +1545,13 @@ function updateProp(req, res, propId) {
     if (body.materials_json !== undefined) {
         const { parseJson } = require('../lib/subject-sheets');
         const list = Array.isArray(body.materials_json) ? body.materials_json : parseJson(body.materials_json, null);
-        if (!Array.isArray(list)) return badReq(res, 'materials_json must be an array of { name, role, hex }');
+        if (!Array.isArray(list)) return errorOf('materials_json must be an array of { name, role, hex }');
         const clean = list.map(x => ({
             name: String((x && x.name) || '').slice(0, 120),
             role: String((x && x.role) || '').slice(0, 160),
             hex: /^#[0-9a-f]{6}$/i.test(String((x && x.hex) || '')) ? String(x.hex).toUpperCase() : '',
         }));
-        if (clean.some(x => !x.name)) return badReq(res, 'every material needs a name');
+        if (clean.some(x => !x.name)) return errorOf('every material needs a name');
         fields.push('materials_json = ?');
         values.push(JSON.stringify(clean));
     }
@@ -1553,10 +1573,10 @@ function updateProp(req, res, propId) {
     };
     if (body.constraints_json !== undefined
         && !listColumn(body.constraints_json, 'constraints_json')) {
-        return badReq(res, 'constraints_json must be an array of strings');
+        return errorOf('constraints_json must be an array of strings');
     }
     if (body.keywords !== undefined && !listColumn(body.keywords, 'keywords')) {
-        return badReq(res, 'keywords must be an array of strings');
+        return errorOf('keywords must be an array of strings');
     }
 
     for (const [field, maxLen] of Object.entries({
@@ -1577,6 +1597,24 @@ function updateProp(req, res, propId) {
     // not require rewriting the description to say it. Refusing a link-only
     // update would mean an agent that has just read the bible has to touch the
     // text to record that it did.
+    return { fields, values };
+}
+
+function updateProp(req, res, propId) {
+    // Which part of the story bible this description was written from.
+    //
+    // Recorded here rather than inferred later, because only the person writing
+    // the words knows which section they were reading. Without it a bible
+    // revision can say "something changed" and never "and MAYA's appearance came
+    // from it", which is the difference between a note and an instruction.
+    if (req.body && req.body.bible_section) {
+        stampSubject('prop', propId, String(req.body.bible_section));
+    }
+    const body = req.body;
+    const built = propFields(body);
+    if (built.error) return badReq(res, built.error);
+    const { fields, values } = built;
+
     if (fields.length === 0 && req.body && req.body.bible_section) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ linked: true, bible_section: String(req.body.bible_section) }));

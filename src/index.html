@@ -28056,6 +28056,23 @@ ${fountainText.slice(0, 50000)}`;
             // saveProviderConfig before it writes anything.
             const stamp = `<input type="hidden" id="providerPanelProject" value="${esc(proj.project_id || (state.currentProject && state.currentProject.id) || '')}">`;
 
+            /*
+             * WHO CHOSE THIS, said where the choice is made.
+             *
+             * "Automatic" and a pinned provider can resolve to the SAME vendor,
+             * and the select looks identical either way. A project that lost its
+             * `image` pin mid-session went on generating happily against a
+             * different company's account and reported nothing until that
+             * company's billing rejected it. The provider name never changes;
+             * only who chose it does.
+             */
+            const providerFallbackNote = (proj, cap) => {
+                const r = (proj.resolution || {})[cap];
+                if (!r || !r.provider || r.explicit) return '';
+                return '<div class="text-sm" style="margin-top:4px;color:#d9a441;">⚠ '
+                    + esc(r.note) + ' — spend goes to that vendor, on whichever account holds its key.</div>';
+            };
+
             const advanced = caps.map(cap => {
                 const opts = supportsCap(cap);
                 if (opts.length === 0) return '';
@@ -28072,6 +28089,7 @@ ${fountainText.slice(0, 50000)}`;
                         ${opts.map(o => '<option value="' + esc(o.id) + '"' + (o.id === pinned ? ' selected' : '') + '>' + esc(o.label) + (o.id === proj.effective[cap] && !pinned ? ' (in use)' : '') + '</option>').join('')}
                     </select>
                     ${capabilityHelp[cap] ? '<div class="text-sm text-muted" style="margin-top:4px;">' + esc(capabilityHelp[cap]) + '</div>' : ''}
+                    ${providerFallbackNote(proj, cap)}
                     </div>
                 </div>`;
             }).join('');
