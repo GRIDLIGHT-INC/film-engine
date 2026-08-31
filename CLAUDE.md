@@ -315,6 +315,7 @@ film-engine/
 │       ├── muapi-models.test.js        # MuAPI is the house provider: its models must be pickable, and reach MuAPI
 │       ├── generation-handles.test.js  # A generation the host abandons is not lost
 │       ├── music-cue-generation.test.js # The cue you wrote is the cue that gets generated
+│       ├── music-cue-fields.test.js  # The fields the cue contract promises must reach the generator
 │       ├── entity-create-fields.test.js # Creating a subject and updating one accept the same fields
 │       ├── provider-resolution-visible.test.js # Spend that goes somewhere nobody chose says so
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
@@ -855,6 +856,79 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### The Fields the Cue Contract Promises Must Reach the Generator
+
+*"Look at the prompt it actually sent — description, genre, instruments, and the
+project genre. That's it. No mood, no tempo_bpm, no key_signature, no
+reference_track. So 'D major, 60bpm, horns rather than trumpets, delicate
+becoming grand' was written, stored, and dropped."*
+
+Measured on the real DRIVE-IN cue: **four of the seven** fields
+`music_cue_create` names as reaching the generator reached nothing. Two separate
+causes, which is why it was four rather than one.
+
+**Three were payload FIELDS on an endpoint that reads a string.** `mood`,
+`tempo_bpm` and `key_signature` came back as `payload.mood`,
+`payload.tempo_bpm`, `payload.key` — and ElevenLabs' `/music` takes a prompt,
+so anything not in that string is a knob the director watches reach nothing.
+The mood was consulted only as an **index into a table** of default instruments
+and a tempo range; it was never spoken.
+
+**The fourth was a positional accident.** `reference_track` *was* in the prompt,
+and `fitMusicPrompt` summarises `parts[0]` and keeps the tail whole. Its own
+comment says why — *the description is the longest part and the least musical* —
+which was true, and the description was not `parts[0]`: the reference was pushed
+before it. So the trim ate the reference, and with the remaining tail already
+over the ceiling it returned that tail whole: **1039 characters against a 600
+limit**, missing the single clearest note a director gives.
+
+**The parts are RANKED now**, the way `fitAdditions` ranks an image prompt and
+for the same reason — with limited room, what to cut is a judgement and a
+positional accident is not one. Description 0 (trimmable, with a floor), key and
+tempo 1 (tiny, exact, unguessable from prose), genre 2, mood 3, instruments 4,
+reference 5, the project's genre 6.
+
+Two things the fit needed, and one it did not:
+
+**The description keeps a floor.** Once the facts were spoken they came to more
+than the ceiling on their own, and the old fallback returned them and dropped
+the description — the field the contract calls the one that matters most. That
+regression was introduced *while fixing this* and caught by measurement.
+
+**The reference is capped to a phrase.** The real one runs to 232 characters —
+longer than every other fact combined — and carrying it whole pushed the prompt
+past its ceiling, so it was dropped entirely. Cut at a **clause** boundary, not
+a word: a word cut left it ending *"…opens with one fragile instrument and"*,
+and the last thing a model reads should be a complete thought.
+
+**And a second pass was written and then deleted.** It existed to reclaim the
+description's reserve, and once the reference was capped nothing was ever
+skipped for size again — it never fired on any cue that could be constructed,
+including a maximal one with fourteen instruments. Unexercised code that looks
+like a safeguard is worse than none: it reads as covering a case nobody checked.
+
+Result on the real cue: **1039 characters with four fields missing → 507 with
+all seven present.**
+
+**The sections 500 is NOT reproduced, and is not claimed fixed.** Reported as
+two consecutive `elevenlabs 500: Internal Server error` on a four-section plan.
+The exact body this adapter builds for that plan was sent to the live API while
+investigating and **generated successfully**; probing the endpoint found no
+length limit on styles, on chunk text, or on chunk count. Two things were done
+anyway, both defensible on their own terms. A **style is a tag, not a
+paragraph** — the cue's full description was travelling as one 785-character
+style, copied onto every chunk, so a four-section plan sent it four times and
+the body came to 7KB; it is capped at 200 characters, kept from the front. And
+an upstream **5xx is retried once**, because a failed generation bills nothing
+and the alternative is what happened: a transient error read as *"sections do
+not work"* and the workaround was to stop using them. **5xx and 429 only** — a
+4xx is our own request, and replaying it buys the same refusal twice.
+
+The denominator is **the tool's own sentence**, parsed from the description
+`music_cue_create` publishes. A hand-written list would be a third statement of
+the same contract and the one that goes stale; this way, promising a field and
+not sending it fails, and so does quietly dropping a promise.
 
 ### The Cue You Wrote Is the Cue That Gets Generated
 
@@ -3605,6 +3679,7 @@ node --test backend/tests/manual-edit.test.js
 node --test backend/tests/muapi-models.test.js
 node --test backend/tests/generation-handles.test.js
 node --test backend/tests/music-cue-generation.test.js
+node --test backend/tests/music-cue-fields.test.js
 node --test backend/tests/entity-create-fields.test.js
 node --test backend/tests/provider-resolution-visible.test.js
 node --test backend/tests/provider-config-merge.test.js

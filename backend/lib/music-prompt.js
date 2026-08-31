@@ -96,20 +96,94 @@ const TIME_AMBIENT_MODIFIER = {
  * wrong trade every time. Cut at a sentence boundary where possible, so the
  * model does not read half a thought.
  */
+/**
+ * Fit the cue into the prompt ceiling, cutting what matters least.
+ *
+ * This was `[first, ...rest]`: summarise the first part, keep the tail whole.
+ * It broke in BOTH directions. `reference_track` was pushed before the
+ * description, so the trim ate the reference and returned a 1039-character
+ * prompt against a 600 ceiling; and once the facts were spoken the tail grew
+ * past the ceiling on its own, so the fallback returned the tail and dropped
+ * the DESCRIPTION — the field the contract calls "the one that matters most".
+ *
+ * So the parts are RANKED, the way `fitAdditions` ranks an image prompt, and
+ * for the same reason: with limited room, deciding what to cut is a judgement
+ * and a positional accident is not one.
+ *
+ *   0  the description        what the music DOES. Trimmable, with a floor.
+ *   1  key and tempo          tiny, exact, and unguessable from prose.
+ *   2  genre                  what kind of music this is.
+ *   3  mood                   how it feels.
+ *   4  instruments            what plays it.
+ *   5  reference              "sounds like X" — the longest of the short parts.
+ *   6  the project's genre    context, and the first thing to lose.
+ *
+ * The description keeps a FLOOR rather than a share: a cue reduced to
+ * `orchestral, D major, 60 bpm` has lost the brief entirely, and the whole
+ * point of the field is that it says what the music does against the scene.
+ */
+const DESCRIPTION_FLOOR = 180;
+const REFERENCE_MAX_CHARS = 140;
+
+/**
+ * Cut prose at a CLAUSE boundary, not mid-thought.
+ *
+ * A word-boundary cut left the reference ending `...opens with one fragile
+ * instrument and` — the last thing the model reads is a dangling conjunction,
+ * which is worse than the shorter phrase would have been. The video prompt
+ * already states the rule: cut so the last thing read is complete.
+ */
+function toClause(text) {
+    let out = String(text || '').trim().replace(/[,;—-]\s*$/, '');
+    const cut = Math.max(out.lastIndexOf(', '), out.lastIndexOf(' — '), out.lastIndexOf('; '));
+    if (/\s(and|but|or|with|that|which|of|to|the|a|an|into|from)$/i.test(out) && cut > 20) {
+        out = out.slice(0, cut);
+    }
+    return out.replace(/[,;—-]\s*$/, '').trim();
+}
+
 function fitMusicPrompt(parts) {
     const { MUSIC_PROMPT_LIMIT, summarise } = require('./scene-score');
-    const list = parts.filter(Boolean);
-    const joined = list.join(', ');
+    const list = (Array.isArray(parts) ? parts : [])
+        .map(p => (typeof p === 'string' ? { text: p, rank: 2 } : p))
+        .filter(p => p && String(p.text || '').trim());
+
+    const joined = list.map(p => p.text).join(', ');
     if (joined.length <= MUSIC_PROMPT_LIMIT) return joined;
 
-    const [first, ...rest] = list;
-    const tail = rest.join(', ');
-    // Everything after the description is short and load-bearing; if the tail
-    // alone overruns there is nothing sensible left to cut, so it is returned
-    // whole rather than mangled.
-    const room = MUSIC_PROMPT_LIMIT - tail.length - 2;
-    if (room < 40) return tail;
-    return [summarise(first, room), tail].filter(Boolean).join(', ');
+    const described = list.find(p => p.rank === 0);
+    const others = list.filter(p => p !== described).sort((a, b) => a.rank - b.rank);
+
+    /*
+     * The short facts first, in rank order, while they fit — leaving the
+     * description its floor. Then the description takes whatever is left.
+     */
+    const reserve = described ? DESCRIPTION_FLOOR + 2 : 0;
+    const kept = [];
+    let used = 0;
+    for (const part of others) {
+        const cost = part.text.length + (kept.length ? 2 : 0);
+        if (used + cost > MUSIC_PROMPT_LIMIT - reserve) continue;   // skipped, not truncated
+        kept.push(part);
+        used += cost;
+    }
+
+    if (!described) return kept.map(p => p.text).join(', ');
+
+    const room = MUSIC_PROMPT_LIMIT - used - (kept.length ? 2 : 0);
+    // Trailing full stop stripped: the parts are comma-joined, and `…brass., in
+    // D major` reads as two sentences colliding rather than one list.
+    const head = summarise(described.text, Math.max(DESCRIPTION_FLOOR, room)).replace(/\.\s*$/, '');
+
+    /*
+     * No second pass to reclaim the reserve. There was one, and once
+     * `reference_track` was capped to a phrase nothing was ever skipped for
+     * size any more — so it never fired on any cue that could be constructed,
+     * including a maximal one with fourteen instruments. Unexercised code that
+     * looks like a safeguard is worse than none: it reads as covering a case
+     * nobody has checked.
+     */
+    return [head, ...kept.map(p => p.text)].filter(Boolean).join(', ');
 }
 
 function buildMusicPrompt(musicCue, scene, project, opts) {
@@ -117,41 +191,75 @@ function buildMusicPrompt(musicCue, scene, project, opts) {
     const mood = cue.mood || 'calm';
     const moodConfig = MOOD_TO_MUSIC[mood] || MOOD_TO_MUSIC['calm'];
 
+    /*
+     * THE DESCRIPTION LEADS, AND IT IS WHAT GIVES WAY.
+     *
+     * `fitMusicPrompt` summarises `parts[0]` and keeps the rest whole, and its
+     * own comment says why: the description is the longest part and the least
+     * musical. That was true and the description was NOT parts[0] --
+     * `reference_track` was pushed before it. So on any cue whose description
+     * runs long the trim summarised the REFERENCE away, and with the remaining
+     * tail already over the ceiling it returned that tail whole: a 1039
+     * character prompt against a 600 limit, missing the one note a director
+     * cares most about. Measured on the real DRIVE-IN cue.
+     */
     const promptParts = [];
 
+    promptParts.push({ rank: 0, text: cue.description
+        || `${mood} ${moodConfig.genre_hint} instrumental soundtrack` });
+
     /*
-     * "Sounds like X" is the clearest music note a director gives, and
-     * `reference_track` was stored and read by nothing. Named as a REFERENCE
-     * rather than pasted in raw, so it reads as a style to match instead of a
-     * title to quote.
+     * THE MUSICAL FACTS, SAID OUT LOUD.
+     *
+     * `mood`, `tempo_bpm` and `key_signature` were returned as fields on the
+     * payload -- `payload.mood`, `payload.tempo_bpm`, `payload.key` -- and
+     * ElevenLabs reads none of them: /music takes a prompt STRING, so anything
+     * not in it is a knob the director watches reach nothing. The mood was
+     * consulted only as an index into a table of default instruments and a
+     * tempo range; it was never spoken.
+     *
+     * They are short, they are load-bearing, and they follow the description
+     * precisely so the trim above can never be what removes them.
+     *
+     * ONLY WHAT WAS WRITTEN. A tempo derived from the mood table is a guess,
+     * and a guessed tempo in the prompt is indistinguishable from a chosen one
+     * -- the mistake this engine has already paid for on lenses and on subject
+     * scale. The derived value still travels as `tempo_bpm` for callers that
+     * want a number; it is not asserted to the model as the director's.
      */
-    if (cue.reference_track) {
-        promptParts.push(`in the style of ${String(cue.reference_track).trim()}`);
-    }
+    if (cue.genre) promptParts.push({ rank: 2, text: cue.genre });
+    if (cue.mood) promptParts.push({ rank: 3, text: String(cue.mood).trim() });
 
-    // Cue description or auto-generated
-    if (cue.description) {
-        promptParts.push(cue.description);
-    } else {
-        promptParts.push(`${mood} ${moodConfig.genre_hint} instrumental soundtrack`);
-    }
-
-    // Genre
-    if (cue.genre) {
-        promptParts.push(cue.genre);
-    }
-
-    // Instruments
     const instruments = cue.instruments
         ? (typeof cue.instruments === 'string' ? JSON.parse(cue.instruments) : cue.instruments)
         : moodConfig.instruments;
     if (instruments && instruments.length > 0) {
-        promptParts.push(instruments.join(', '));
+        promptParts.push({ rank: 4, text: instruments.join(', ') });
     }
 
-    // Project style hint
+    if (cue.key_signature) promptParts.push({ rank: 1, text: `in ${String(cue.key_signature).trim()}` });
+    if (cue.tempo_bpm) promptParts.push({ rank: 1, text: `${Math.round(Number(cue.tempo_bpm))} bpm` });
+
+    /*
+     * "Sounds like X" is the clearest single note a director gives. Named as a
+     * REFERENCE rather than pasted in raw, so it reads as a style to match
+     * instead of a title to quote.
+     */
+    if (cue.reference_track) {
+        /*
+         * Capped, because a reference is a PHRASE. The one on the real cue runs
+         * to 232 characters -- longer than every other fact put together -- and
+         * carrying it whole pushed the prompt past its ceiling, which meant it
+         * was dropped entirely and the clearest note a director gives reached
+         * nothing. Its opening is the load-bearing half; the rest elaborates.
+         */
+        const { summarise } = require('./scene-score');
+        promptParts.push({ rank: 5,
+            text: `in the style of ${toClause(summarise(String(cue.reference_track).trim(), REFERENCE_MAX_CHARS))}` });
+    }
+
     if (project && project.genre) {
-        promptParts.push(`${project.genre} film score`);
+        promptParts.push({ rank: 6, text: `${project.genre} film score` });
     }
 
     /*
@@ -213,7 +321,9 @@ function buildMusicPrompt(musicCue, scene, project, opts) {
          * writing a second list beside it, is how a sectioned cue and a plain
          * one come to describe different films.
          */
-        prompt_parts: promptParts.filter(Boolean),
+        // Plain strings: a composition plan wants a LIST of styles, and the
+        // rank is a budgeting concern that has no meaning to the provider.
+        prompt_parts: promptParts.filter(Boolean).map(p => p.text),
         negative_prompt: (cue.negative_prompt || '').trim(),
         sections: Array.isArray(cue.sections) ? cue.sections : [],
         duration_s: durationS,

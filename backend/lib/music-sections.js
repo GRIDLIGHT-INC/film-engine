@@ -150,9 +150,30 @@ function splitToFit(totalMs, direction) {
  * beside it, is how the sectioned cue and the plain one come to describe
  * different films.
  */
+/**
+ * A STYLE IS A TAG, NOT A PARAGRAPH.
+ *
+ * `positive_global_styles` is built from the prompt's own parts, and parts[0]
+ * is the cue's full description -- so a 785-character paragraph travelled as
+ * one "style", and on the v2 chunk shape the globals are copied onto EVERY
+ * chunk, so a four-section plan sent it four times and the body came to 7KB.
+ *
+ * Capped rather than dropped: the description is what the cue IS, and a plan
+ * that carried only `orchestral, warm horns` would have lost the brief. Kept
+ * from the FRONT, on the rule the prompt trim already follows -- the opening
+ * sentences say what the thing is.
+ *
+ * This is NOT the cause of `elevenlabs 500`. The exact body this builds for a
+ * four-section plan was sent to the live API while investigating that report
+ * and generated successfully, so the 500 is not reproducible here and is not
+ * claimed to be fixed. This is wrong on its own terms.
+ */
+const STYLE_MAX_CHARS = 200;
+
 function compositionPlan(globalParts, sections, negativeGlobal) {
+    const { summarise } = require('./scene-score');
     const positive = (Array.isArray(globalParts) ? globalParts : styleList(globalParts))
-        .map(p => str(p)).filter(Boolean);
+        .map(p => summarise(str(p), STYLE_MAX_CHARS)).filter(Boolean);
     return {
         positive_global_styles: positive,
         negative_global_styles: styleList(negativeGlobal),
@@ -186,6 +207,7 @@ function sectionFit(sections, cutMs) {
 }
 
 module.exports = {
+    STYLE_MAX_CHARS,
     SECTION_MIN_MS, SECTION_MAX_MS, CUE_MAX_MS, MAX_SECTIONS,
     styleList, validateSections, splitToFit, compositionPlan, sectionFit,
 };

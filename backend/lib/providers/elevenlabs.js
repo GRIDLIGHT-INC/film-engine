@@ -282,7 +282,39 @@ function buildMusicRequest(payload) {
     };
 }
 
+/**
+ * An upstream 5xx is the PROVIDER failing, and a failed generation bills
+ * nothing — so it is worth one more attempt.
+ *
+ * Reported as: two consecutive `elevenlabs 500: Internal Server error` on a
+ * four-section composition plan, then success on the next call with the plan
+ * removed. The natural conclusion was that sections do not work, and the
+ * workaround was to stop using them — which is the expensive kind of wrong,
+ * because sections are what give a cue a real 4/4/4/3 build instead of one
+ * prompt hoping for an arc. (The exact body this adapter builds for that plan
+ * was later sent to the live API and generated fine, so the 500 is not
+ * reproducible and is most likely transient — which is precisely the case a
+ * retry exists for.)
+ *
+ * 5xx AND 429 ONLY. A 4xx is our own request and replaying it buys the same
+ * refusal twice — the rule `lib/image-fallback.js` already states for image
+ * providers, and the reason a 422 must never be retried.
+ */
+const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_DELAY_MS = 1200;
+
 async function callElevenLabs(request, apiKey, opts) {
+    const first = await callElevenLabsOnce(request, apiKey, opts);
+    if (first.ok || !RETRY_STATUS.has(first.status)) return first;
+
+    await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+    const second = await callElevenLabsOnce(request, apiKey, opts);
+    if (second.ok) return second;
+    // Named, so a genuine outage does not read as one flaky call.
+    return { ...second, error: `${second.error} (retried once after ${first.status})` };
+}
+
+async function callElevenLabsOnce(request, apiKey, opts) {
     const controller = new AbortController();
     const timeout = (opts && opts.timeout) || 300000;
     const timer = setTimeout(() => controller.abort(), timeout);
