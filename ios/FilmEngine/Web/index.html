@@ -5284,6 +5284,17 @@ table, .render-table { border-radius:12px; overflow:hidden; }
             <!-- 340px, not 260: the card carries six controls now (anchor, refine,
                  versions, regen, direct, add) and at 260 the last one overflowed off
                  the card, so the way to add a shot was invisible rather than absent. -->
+            <!--
+                Drift and impact banners, OUTSIDE the grid.
+                `.entity-grid` is a real CSS grid, so every direct child takes a
+                cell — an empty one included. Written as the grid's first child
+                this took the first cell and pushed the top row of frames one
+                column across, which is what "why is there space on the left"
+                was. Out here it is also no longer destroyed when the grid
+                repaints, which matters because these reports arrive a second
+                later, asynchronously and by design.
+            -->
+            <div id="boardBanners"></div>
             <div id="storyboardGrid" class="entity-grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));"></div>
         </div>
 
@@ -24236,7 +24247,7 @@ ${fountainText.slice(0, 50000)}`;
         return confirmPaidImage({
             title: 'Refine this plate',
             note: 'This REPLACES the plate for this view. The previous picture is gone.',
-            previewUrl: `/locations/${locationId}/refine-preview?${q}`,
+            previewUrl: `/locations/${locationId}/plate/refine-preview?${q}`,
             send: async choices => {
                 setStatus('Refining plate...', true);
                 try {
@@ -24282,9 +24293,19 @@ ${fountainText.slice(0, 50000)}`;
         const base = kind === 'character' ? `/characters/${subjectId}/refsheet`
             : kind === 'prop' ? `/props/${subjectId}/plate`
             : `/locations/${subjectId}/plate`;
+        /*
+         * `/plate/plate-preview`, not `/plate-preview`.
+         *
+         * The route dispatches the preview INSIDE the `urlParts[3] === 'plate'`
+         * block, so `/locations/:id/plate-preview` never enters it -- it fell
+         * through to the plain location GET, which answers 200 with the
+         * location row and no `prompt` at all. The gate then opened with an
+         * empty prompt and no facts, which is indistinguishable from the
+         * dialog being broken and is exactly how it was reported.
+         */
         const previewUrl = kind === 'character'
             ? `${base}/preview`
-            : `${base}-preview${view ? `?view=${encodeURIComponent(view)}` : ''}`;
+            : `${base}/plate-preview${view ? `?view=${encodeURIComponent(view)}` : ''}`;
         return confirmPaidImage({
             title: 'Generate this plate',
             note: 'A plate conditions every frame its subject appears in. This replaces the '
@@ -32671,7 +32692,7 @@ ${fountainText.slice(0, 50000)}`;
             } else {
                 // Kept so the viewer can step between shots without the grid.
                 FRAME_VIEWER.frames = frames;
-                grid.innerHTML = '<div id="boardBanners"></div>' + frames.map(f => `
+                grid.innerHTML = frames.map(f => `
                     <div class="card" style="padding:0;overflow:hidden;">
                         <div style="position:relative;background:var(--surface-alt,var(--gl-bg-surface));min-height:160px;">
                             <img id="img-${f.shot_id}" loading="lazy" src="${frameSrc(f, 640)}"

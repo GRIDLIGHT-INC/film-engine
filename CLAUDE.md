@@ -296,6 +296,8 @@ film-engine/
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
 │       ├── generation-controls.test.js # Provider, model, tier and size, on the dialog that spends
 │       ├── every-generate-button.test.js # The denominator is discovered, not typed into a list
+│       ├── preview-reachability.test.js # A preview that answers 200 with the wrong body is not a preview
+│       ├── grid-children.test.js       # A grid child that is not a card takes a card's place
 │       ├── aspect-consistency.test.js   # The board and the footage are the same shape
 │       ├── resolution-trickle.test.js   # One resolution, set once, reaching every creative
 │       ├── staleness-accept.test.js     # A warning you cannot act on is one you learn to ignore
@@ -3258,6 +3260,8 @@ node --test backend/tests/prompt-visibility.test.js
 node --test backend/tests/paid-preview.test.js
 node --test backend/tests/generation-controls.test.js
 node --test backend/tests/every-generate-button.test.js
+node --test backend/tests/preview-reachability.test.js
+node --test backend/tests/grid-children.test.js
 node --test backend/tests/aspect-consistency.test.js
 node --test backend/tests/resolution-trickle.test.js
 node --test backend/tests/staleness-accept.test.js

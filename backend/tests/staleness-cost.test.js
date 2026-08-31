@@ -150,8 +150,21 @@ test('the board paints its frames before it waits for any report', () => {
             + 'while a report that only adds a warning is computed');
     }
 
-    // And the banners still arrive: additive means LATER, not never.
-    assert.ok(/boardBanners/.test(body), 'the board has nowhere to put the banners');
+    /*
+     * And the banners still arrive: additive means LATER, not never.
+     *
+     * The HOST moved out of the grid and into the static markup -- as a grid
+     * child an empty banner div took the first cell and pushed the top row of
+     * frames one column across. So loadStoryboard no longer names the element;
+     * what it must still do is kick off the load, un-awaited.
+     */
+    assert.match(body, /loadBoardBanners\s*\(/,
+        'the board never starts the banner load, so a drift or impact warning never arrives');
+    assert.ok(!/await\s+loadBoardBanners/.test(body),
+        'loadStoryboard AWAITS the banners, which is what made the grid sit empty for six '
+        + 'seconds on a real project');
+    assert.match(page, /id="boardBanners"/,
+        'there is no #boardBanners host anywhere, so the banners have nowhere to land');
     const filler = page.indexOf('async function loadBoardBanners');
     assert.ok(filler > 0, 'nothing fills the banner strip after the frames are painted');
     const fill = page.slice(filler, page.indexOf('\n    /**', filler + 10));
