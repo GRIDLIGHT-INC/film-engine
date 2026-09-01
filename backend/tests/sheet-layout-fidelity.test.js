@@ -600,3 +600,45 @@ test('LOCATION: every editable control honours view mode', () => {
     assert.deepStrictEqual(unlocked, [],
         'these controls on the location sheet ignore view mode:\n  ' + unlocked.join('\n  '));
 });
+
+test('every section these column tests place is rendered unconditionally', () => {
+    /*
+     * THE PRECONDITION THE COLUMN TESTS REST ON, made explicit.
+     *
+     * Every check above reads the renderer's SOURCE and places a section by
+     * where its literal sits between the column divs. That is only equivalent
+     * to where it RENDERS while every section is emitted unconditionally.
+     *
+     * Measured: short-circuiting one section so it renders nothing
+     * (`${'' && ssSection('ps-materials', …)}`) left the whole file passing
+     * 20/20, while the browser showed 8 regions instead of 9 — the section was
+     * gone from the DOM and no test noticed. Source position had stopped
+     * meaning runtime presence, and nothing said so.
+     *
+     * A DOM assertion is the direct fix and is not available here: ADR-002
+     * means no bundler and zero devDependencies, so there is no jsdom to render
+     * into. What CAN be enforced is the precondition — if a section becomes
+     * conditional, this fails and says the column tests can no longer prove
+     * what they claim, rather than passing over a sheet that lost a section.
+     */
+    const SHEETS = [
+        ['renderPropSheet', /ssSection\('(ps-[a-z]+)'/g],
+        ['renderLocationSheet', /ssSection\('(ls-[a-z]+)'/g],
+        ['characterSheetHtml', /<div class="cs-label"><span>([^<]+)</g],
+    ];
+    const conditional = [];
+    for (const [fn, re] of SHEETS) {
+        const src = renderer(fn);
+        const found = [...src.matchAll(re)];
+        assert.ok(found.length > 0, `${fn}: found no sections — the scan is not seeing the markup`);
+        for (const m of found) {
+            // A trailing `?` or `&&` immediately before the section is a guard,
+            // so the section may render for some subjects and not others.
+            const before = src.slice(Math.max(0, m.index - 120), m.index);
+            if (/[?]\s*`?\s*$|&&\s*`?\s*$/.test(before)) conditional.push(`${fn}: ${m[1]}`);
+        }
+    }
+    assert.deepStrictEqual(conditional, [],
+        'these sections are rendered conditionally, so their position in the source no longer '
+        + 'proves where — or whether — they render:\n  ' + conditional.join('\n  '));
+});
