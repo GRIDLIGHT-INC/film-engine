@@ -483,9 +483,24 @@ test('LOCATION: the sheet measured correct is left exactly as it is', () => {
 /** Which column each labelled section renders into, by position in the markup. */
 function labelColumnsOf(fnName, colPattern, labelPattern) {
     const src = renderer(fnName);
-    const cols = [...src.matchAll(colPattern)].map(m => m.index);
-    assert.ok(cols.length >= 2,
-        `${fnName}: found ${cols.length} columns — the scan is not seeing the markup`);
+    // Each column's EXTENT, not just where it opens. Assigning a label to "the
+    // last column opened before it" ignores the closing tag, so a section that
+    // renders AFTER a column closes is attributed to it anyway. That is not
+    // hypothetical: the character sheet's concept band renders full-width
+    // outside both columns (measured at 1496px against the columns' 467 and
+    // 978), and the first version of this helper reported it as column 1 —
+    // which would have stayed green if someone moved it INTO a column, the
+    // exact regression this test exists to catch.
+    const spans = [...src.matchAll(colPattern)].map(m => {
+        let depth = 0, close = src.length;
+        for (let j = m.index; j < src.length; j++) {
+            if (src.startsWith('<div', j)) depth++;
+            else if (src.startsWith('</div>', j)) { depth--; if (!depth) { close = j; break; } }
+        }
+        return { open: m.index, close };
+    });
+    assert.ok(spans.length >= 2,
+        `${fnName}: found ${spans.length} columns — the scan is not seeing the markup`);
     const labels = [...src.matchAll(labelPattern)];
     assert.ok(labels.length > 0,
         `${fnName}: found no section labels — the sheet was restructured and this test
@@ -493,9 +508,7 @@ function labelColumnsOf(fnName, colPattern, labelPattern) {
 
     const at = {};
     for (const l of labels) {
-        let col = -1;
-        for (let i = 0; i < cols.length; i++) if (l.index > cols[i]) col = i;
-        at[l[1]] = col;
+        at[l[1]] = spans.findIndex(sp => l.index > sp.open && l.index < sp.close);
     }
     return at;
 }
@@ -507,12 +520,19 @@ function labelColumnsOf(fnName, colPattern, labelPattern) {
  */
 const CHARACTER_LAYOUT = [
     ['Official views', 'Physical spec', 'Palette', 'Work on this character'],
-    ['Appearance', 'Description', 'Personality', 'Wardrobe &amp; props',
-     'Concept art &amp; references'],
+    ['Appearance', 'Description', 'Personality', 'Wardrobe &amp; props'],
 ];
 
-const CHARACTER_COLUMN = Object.fromEntries(
-    CHARACTER_LAYOUT.flatMap((names, col) => names.map(n => [n, col])));
+// The concept band spans the full width BELOW both columns — measured in a
+// browser at 1496px where the columns are 467 and 978. It is not a member of
+// either, and saying so is the point: the first version of this list put it in
+// column 1, which is what a column-opening-only scan reports.
+const CHARACTER_OUTSIDE = ['Concept art &amp; references'];
+
+const CHARACTER_COLUMN = Object.fromEntries([
+    ...CHARACTER_OUTSIDE.map(n => [n, -1]),
+    ...CHARACTER_LAYOUT.flatMap((names, col) => names.map(n => [n, col])),
+]);
 
 test('CHARACTER: every section renders in the column the reference draws it in', () => {
     const at = labelColumnsOf('characterSheetHtml',
