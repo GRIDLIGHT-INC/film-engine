@@ -25273,7 +25273,8 @@ ${fountainText.slice(0, 50000)}`;
                         </div>
                         <div class="ss-section-body">
                             <p class="ss-what">${esc(sec.what)}</p>
-                            <textarea class="ss-input" rows="4" data-field="section_${sec.id}"
+                            <textarea class="ss-input${sheetEditable() ? '' : ' ss-view'}" rows="4"
+                                data-field="section_${sec.id}"${sheetEditable() ? '' : ' readonly tabindex="-1"'}
                                 onchange="saveSheetSection('${sec.id}', this.value, this)">${esc(text)}</textarea>
                             ${sec.id === 'decoration' ? `<div class="ss-linked">${
                                 linked.map(pr => `<span class="ss-linked-prop" onclick="openSubjectSheet('prop','${pr.id}')">${esc(pr.name)}</span>`).join('')
@@ -25382,33 +25383,6 @@ ${fountainText.slice(0, 50000)}`;
 
         <div class="ss-grid ps-grid">
           <div class="ss-col">
-
-            ${ssSection('ps-references', 'Concept art & references',
-                'Explorations and gathered images.', ssRefs())}
-
-            ${ssSection('ps-states', 'Continuity states', 'each state generates its own plate set',
-                `<div class="ps-states-grid">${states.length ? states.map((st, i) => `<div class="ss-state">
-                    <strong>${String.fromCharCode(65 + i)} · ${esc(st.name)}</strong>
-                    ${st.scene ? `<span class="cs-pill">${esc(st.scene)}</span>` : '<span class="cs-pill">default</span>'}
-                    <span class="text-sm text-muted">${esc(st.what || '')}</span>
-                    <button class="btn btn-secondary btn-sm" onclick="removePropState(${i})">&times;</button>
-                 </div>`).join('') : '<p class="text-muted">One state — as built. Add another when it changes.</p>'}</div>
-                 <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addPropState()">Add state</button>`)}
-
-            ${ssSection('ps-appears', 'Appears in',
-                'From the scene cards that NAME this prop — the same list that decides whether its plate reaches a frame.',
-                ((p.shots || []).length
-                    ? (p.shots || []).map(code => `<div class="ss-appear-row">
-                        <span>${esc(code)}</span>
-                        <span class="text-muted">state ${states.length ? 'A' : '—'}</span>
-                       </div>`).join('')
-                    : '<p class="text-muted">No shot names it yet.</p>')
-                + `<div class="ss-open-set">${(p.locations || []).slice(0, 6).map(loc =>
-                    `<span class="ss-linked-prop" onclick="openSubjectSheet('location','${loc.id}')">Open set &rarr; ${esc(loc.name)}</span>`).join('')
-                    || '<span class="text-muted">No set to open.</span>'}</div>`)}
-          </div>
-
-          <div class="ss-col">
             ${ssSection('ps-description', 'Object description',
                 `${String(p.visual_prompt || '').length} chars · prompt source`,
                 `<button class="btn btn-secondary btn-sm" style="margin-bottom:8px;" onclick="ssCopyDescription()">Copy</button>`
@@ -25430,6 +25404,20 @@ ${fountainText.slice(0, 50000)}`;
                  </div>`).join('') || '<p class="text-muted">Nothing recorded.</p>'}</div>
                  <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="ssAddMaterial()">Add material</button>`)}
 
+            ${ssSection('ps-states', 'Continuity states', 'each state generates its own plate set',
+                `<div class="ps-states-grid">${states.length ? states.map((st, i) => `<div class="ss-state">
+                    <strong>${String.fromCharCode(65 + i)} · ${esc(st.name)}</strong>
+                    ${st.scene ? `<span class="cs-pill">${esc(st.scene)}</span>` : '<span class="cs-pill">default</span>'}
+                    <span class="text-sm text-muted">${esc(st.what || '')}</span>
+                    <button class="btn btn-secondary btn-sm" onclick="removePropState(${i})">&times;</button>
+                 </div>`).join('') : '<p class="text-muted">One state — as built. Add another when it changes.</p>'}</div>
+                 <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addPropState()">Add state</button>`)}
+
+            ${ssSection('ps-references', 'Concept art & references',
+                'Explorations and gathered images.', ssRefs())}
+          </div>
+
+          <div class="ss-col">
             ${ssSection('ps-scale', 'Scale',
                 'How big it is. Without this an image model reproduces whatever it was shown, at any size.',
                 `<div class="ss-scale-bar">
@@ -25448,6 +25436,18 @@ ${fountainText.slice(0, 50000)}`;
                  <div class="ss-spec-row"><span>Category</span>${ssField('category', p.category, { options: (window.__propCategories || ['', p.category || '']) })}</div>
                  <div class="ss-spec-row"><span>Quantity</span>${ssField('quantity', p.quantity == null ? 1 : p.quantity, { type: 'number' })}</div>
                  <div class="ss-spec-row"><span>Practical</span>${ssField('practical', p.practical ? 'yes' : 'no', { options: ['no', 'yes'] })}</div>`)}
+
+            ${ssSection('ps-appears', 'Appears in',
+                'From the scene cards that NAME this prop — the same list that decides whether its plate reaches a frame.',
+                ((p.shots || []).length
+                    ? (p.shots || []).map(code => `<div class="ss-appear-row">
+                        <span>${esc(code)}</span>
+                        <span class="text-muted">state ${states.length ? 'A' : '—'}</span>
+                       </div>`).join('')
+                    : '<p class="text-muted">No shot names it yet.</p>')
+                + `<div class="ss-open-set">${(p.locations || []).slice(0, 6).map(loc =>
+                    `<span class="ss-linked-prop" onclick="openSubjectSheet('location','${loc.id}')">Open set &rarr; ${esc(loc.name)}</span>`).join('')
+                    || '<span class="text-muted">No set to open.</span>'}</div>`)}
 
             ${ssSection('ps-constraints', 'Constraints', 'What it must never be or do.',
                 `<div>${constraints.map((c, i) => `<div class="ss-constraint">

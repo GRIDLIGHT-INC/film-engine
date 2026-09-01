@@ -269,3 +269,314 @@ test('upload and generate stay available in BOTH modes', () => {
     // And there must BE picture controls to speak of.
     assert.ok(PICTURE_CONTROLS.some(c => UI.includes(c)), 'the sheets render no picture controls at all');
 });
+
+// ---------------------------------------------------------------------------
+// PROP — design-ref-prop.png
+//
+// The reference draws the object description — the 1936-character text every
+// plate is generated FROM — at the top of the WIDE column, with materials, the
+// continuity states and the reference strip beneath it, and the short factual
+// fields (scale, spec, appears in, constraints) stacked in the narrow rail.
+//
+// The render has them inverted: the description sits in a scrolling 400px rail
+// while a single reference thumbnail owns the 1152px column.
+//
+// `.ps-grid` is ALREADY `minmax(0, 1fr) 400px`, identical to the value
+// `Prop Card.dc.html` declares — so the CSS is correct and the SECTION
+// PLACEMENT is not. Nothing has ever measured column membership, which is how
+// 70 passing tests coexisted with a visibly wrong sheet.
+// ---------------------------------------------------------------------------
+
+/**
+ * Which column each `data-region` renders into, by position in the markup.
+ *
+ * `-1` means the region is outside every column — the full-width strip above
+ * them. Section order is expressed ONLY by markup order inside each `.ss-col`:
+ * there is no registry, enum or ordering array anywhere to read, which is why
+ * this is derived from the rendered structure rather than from a list.
+ *
+ * The two `assert.ok` guards are not decoration. A renderer refactored to build
+ * its sections in a loop would yield zero literals here, and every membership
+ * assertion below would then pass over an empty set — which is the shape of
+ * vacuous test this file already had to be tightened against twice.
+ */
+function columnsOf(fnName, prefix) {
+    const src = renderer(fnName);
+    const cols = [...src.matchAll(/<div class="ss-col"[^>]*>/g)].map(m => m.index);
+    assert.ok(cols.length >= 2,
+        `${fnName}: found ${cols.length} columns — the scan is not seeing the markup`);
+    const regions = [...src.matchAll(new RegExp(`ssSection\\('(${prefix}-[a-z]+)'`, 'g'))];
+    assert.ok(regions.length > 0,
+        `${fnName}: found no ssSection literals — the renderer was refactored to build its
+         sections some other way, and this test can no longer read its structure`);
+
+    const at = {};
+    for (const r of regions) {
+        let col = -1;
+        for (let i = 0; i < cols.length; i++) if (r.index > cols[i]) col = i;
+        at[r[1]] = col;
+    }
+    return at;
+}
+
+/** `grid-template-columns` for a selector, split into tracks, `minmax()` intact. */
+function tracksOf(selector) {
+    const rule = new RegExp(selector.replace(/\./g, '\\.') + '\\s*\\{([^}]*)\\}').exec(baseCss());
+    assert.ok(rule, `${selector} has no rule outside a media query`);
+    const decl = /grid-template-columns\s*:\s*([^;]+)/.exec(rule[1]);
+    assert.ok(decl, `${selector} declares no grid-template-columns`);
+
+    const tracks = [];
+    let depth = 0, cur = '';
+    for (const ch of decl[1].trim()) {
+        if (ch === '(') depth++;
+        else if (ch === ')') depth--;
+        if (/\s/.test(ch) && !depth) { if (cur) tracks.push(cur); cur = ''; }
+        else cur += ch;
+    }
+    if (cur) tracks.push(cur);
+    return tracks;
+}
+
+const columnName = i => i < 0 ? 'the full-width strip'
+    : i === 0 ? 'the wide column' : `the rail (column ${i})`;
+
+/**
+ * The prop sheet as `design-ref-prop.png` draws it: the wide column carries the
+ * writing and the pictures, the rail carries the short factual fields, and the
+ * turntable spans both above them.
+ *
+ * Order is stated as an ARRAY and membership is derived from it, so the layout
+ * is written down once. The first version was a flat object whose KEY ORDER
+ * silently carried the stacking order — it worked, and it meant that
+ * alphabetising the literal for tidiness would have quietly changed what the
+ * order test asserts while the file looked untouched.
+ */
+const PROP_LAYOUT = [
+    ['ps-description', 'ps-materials', 'ps-states', 'ps-references'],  // the wide column
+    ['ps-scale', 'ps-spec', 'ps-appears', 'ps-constraints'],           // the rail
+];
+const PROP_OUTSIDE = ['ps-plates'];                                    // the full-width turntable
+
+const PROP_COLUMN = Object.fromEntries([
+    ...PROP_OUTSIDE.map(r => [r, -1]),
+    ...PROP_LAYOUT.flatMap((names, col) => names.map(r => [r, col])),
+]);
+
+test('PROP: every region renders in the column the reference draws it in', () => {
+    const at = columnsOf('renderPropSheet', 'ps');
+
+    assert.deepStrictEqual(Object.keys(at).sort(), Object.keys(PROP_COLUMN).sort(),
+        'the regions on the prop sheet are not the ones this test knows about — '
+        + 'a section was added or removed, and the expected layout needs revisiting');
+
+    const wrong = [];
+    for (const [region, want] of Object.entries(PROP_COLUMN)) {
+        if (at[region] !== want) {
+            wrong.push(`${region} renders in ${columnName(at[region])}, `
+                + `the reference puts it in ${columnName(want)}`);
+        }
+    }
+    assert.deepStrictEqual(wrong, [], `\n  ${wrong.join('\n  ')}\n`);
+});
+
+test('PROP: each column runs in the order the reference stacks it', () => {
+    const src = renderer('renderPropSheet');
+    for (const col of [0, 1]) {
+        assertOrder(src, PROP_LAYOUT[col].map(r => `ssSection('${r}'`), `PROP ${columnName(col)}`);
+    }
+});
+
+test('PROP: the object description renders in the flexible column, not the fixed rail', () => {
+    // The user-visible defect, expressed as geometry rather than as a column
+    // index: the description is bound to the track the STYLESHEET makes
+    // flexible, so this stays true if the grid is ever re-declared. A fixed
+    // `400px` track is the 1936-character description in a scroll box.
+    const tracks = tracksOf('.ss-grid.ps-grid');
+    assert.equal(tracks.length, 2,
+        `.ps-grid declares ${tracks.length} tracks (${tracks.join(' | ')}) — the sheet is not two columns`);
+
+    const at = columnsOf('renderPropSheet', 'ps');
+    const track = tracks[at['ps-description']];
+    assert.ok(track && !/^\d+px$/.test(track),
+        `the object description renders in a ${track} column. It is the longest text on the `
+        + `sheet and the text every plate is generated from; the reference gives it the `
+        + `flexible track (${tracks[0]}).`);
+});
+
+test('PROP: the turntable strip stays full width, above both columns', () => {
+    // subject-sheet-fidelity's existing pin, restated as membership: moving
+    // sections between the columns must not pull the official views into one.
+    const src = renderer('renderPropSheet');
+    const at = columnsOf('renderPropSheet', 'ps');
+    assert.equal(at['ps-plates'], -1,
+        `the turntable renders inside ${columnName(at['ps-plates'])} — the reference spans it across both`);
+    assert.ok(src.indexOf('ps-turntable') < src.indexOf('ps-grid'),
+        'the turntable strip renders below the two-column body, not above it');
+});
+
+test('PROP: every editable control goes through ssField, and the move drops none', () => {
+    /*
+     * The one real security surface in this change. Every moved block is
+     * cut-and-pasted whole; a RETYPED field is how a dropped `esc()` on
+     * `description` or `materials` becomes stored XSS, and how a control
+     * arrives that `ssField` never sees and so never locks in view mode.
+     *
+     * The count is pinned because this change moves markup and must neither
+     * add nor drop a field. If a later change legitimately adds one, this
+     * number is the thing to update deliberately.
+     */
+    const src = renderer('renderPropSheet');
+    const raw = [...src.matchAll(/<(textarea|input|select)\b/g)].map(m => m[1]);
+    assert.deepStrictEqual(raw, [],
+        `the prop sheet renders ${raw.join(', ')} directly instead of through ssField — `
+        + 'a control ssField never sees is editable in view mode, and unescaped');
+    assert.equal((src.match(/ssField\(/g) || []).length, 10,
+        'the prop sheet gained or lost a field — this change moves sections, it does not edit them');
+});
+
+// ---------------------------------------------------------------------------
+// LOCATION — containment
+//
+// Measured correct against `design-ref-location.png` and explicitly OUT OF
+// SCOPE: 4 flex columns, with Lighting / Atmosphere / Sound already sharing a
+// row. An earlier research pass reported that trio as missing; that was a
+// faulty probe, not the render. This pins it so the prop change cannot leak.
+// ---------------------------------------------------------------------------
+
+const LOCATION_COLUMN = {
+    'ls-plates': 0, 'ls-orientation': 0, 'ls-variants': 0,
+    'ls-description': 1, 'ls-lighting': 1, 'ls-atmosphere': 1, 'ls-sound': 1,
+    'ls-references': 2,
+    'ls-scenes': 3, 'ls-continuity': 3,
+};
+
+test('LOCATION: the sheet measured correct is left exactly as it is', () => {
+    const at = columnsOf('renderLocationSheet', 'ls');
+    assert.deepStrictEqual(at, LOCATION_COLUMN,
+        'the location sheet moved. It was measured correct against its reference and is out of '
+        + 'scope for the prop fix — this is the containment guard, so treat a failure here as '
+        + 'the prop change having leaked rather than as a layout to re-tune.');
+});
+
+// ---------------------------------------------------------------------------
+// CHARACTER — column membership
+//
+// The prop and location sheets are protected by `columnsOf`, which keys on the
+// `data-region` attribute `ssSection` emits. `characterSheetHtml` makes ZERO
+// `ssSection` calls — it builds its own markup — so it carried no membership
+// protection at all: moving a section between its columns failed nothing, on
+// the one sheet the original complaint actually named.
+//
+// It is keyed on the SECTION LABEL rather than on a class, and that choice is
+// deliberate. The label is what `design-ref-character.png` and
+// `subject-sheet-design.test.js` already treat as the contract — it is
+// semantic. A class name is styling, and a test keyed on styling breaks when
+// someone renames a class for a styling reason.
+//
+// Converting the sheet to `ssSection` would be the tidier fix and was rejected:
+// it wraps every region in new `.ss-region` markup, which changes the cascade
+// on a layout that was just measured against its reference image. Closing a
+// test gap is not worth risking the design it is meant to protect.
+// ---------------------------------------------------------------------------
+
+/** Which column each labelled section renders into, by position in the markup. */
+function labelColumnsOf(fnName, colPattern, labelPattern) {
+    const src = renderer(fnName);
+    const cols = [...src.matchAll(colPattern)].map(m => m.index);
+    assert.ok(cols.length >= 2,
+        `${fnName}: found ${cols.length} columns — the scan is not seeing the markup`);
+    const labels = [...src.matchAll(labelPattern)];
+    assert.ok(labels.length > 0,
+        `${fnName}: found no section labels — the sheet was restructured and this test
+         can no longer read it`);
+
+    const at = {};
+    for (const l of labels) {
+        let col = -1;
+        for (let i = 0; i < cols.length; i++) if (l.index > cols[i]) col = i;
+        at[l[1]] = col;
+    }
+    return at;
+}
+
+/**
+ * The character sheet as `design-ref-character.png` draws it: official views,
+ * the spec and the palette down the left; the writing, wardrobe and references
+ * down the right. Order within each column is the array order.
+ */
+const CHARACTER_LAYOUT = [
+    ['Official views', 'Physical spec', 'Palette', 'Work on this character'],
+    ['Appearance', 'Description', 'Personality', 'Wardrobe &amp; props',
+     'Concept art &amp; references'],
+];
+
+const CHARACTER_COLUMN = Object.fromEntries(
+    CHARACTER_LAYOUT.flatMap((names, col) => names.map(n => [n, col])));
+
+test('CHARACTER: every section renders in the column the reference draws it in', () => {
+    const at = labelColumnsOf('characterSheetHtml',
+        /<div class="cs-col-[lr]"/g,
+        /<div class="cs-label"><span>([^<]+)<\/span>/g);
+
+    assert.deepStrictEqual(Object.keys(at).sort(), Object.keys(CHARACTER_COLUMN).sort(),
+        'the sections on the character sheet are not the ones this test knows about — '
+        + 'one was added or removed, and the expected layout needs revisiting');
+
+    const wrong = [];
+    for (const [label, want] of Object.entries(CHARACTER_COLUMN)) {
+        if (at[label] !== want) {
+            wrong.push(`"${label}" renders in ${columnName(at[label])}, `
+                + `the reference puts it in ${columnName(want)}`);
+        }
+    }
+    assert.deepStrictEqual(wrong, [], `\n  ${wrong.join('\n  ')}\n`);
+});
+
+test('CHARACTER: each column runs in the order the reference stacks it', () => {
+    const src = renderer('characterSheetHtml');
+    for (const col of [0, 1]) {
+        assertOrder(src, CHARACTER_LAYOUT[col].map(l => `<span>${l}</span>`),
+            `CHARACTER ${columnName(col)}`);
+    }
+});
+
+test('LOCATION: every editable control honours view mode', () => {
+    /*
+     * The set-description textarea is written inline rather than through
+     * ssField, and that is DELIBERATE: subject-sheets.test.js requires every
+     * ssField() call to name a literal, registry-declared field, and a
+     * section's field name is built at run time from its id. The sections are
+     * a dynamic set with their own save path and sit outside that registry on
+     * purpose — routing them through ssField fights an intentional design and
+     * fails two of that file's assertions.
+     *
+     * So the invariant is not "no raw controls", it is the one that actually
+     * matters: every editable control on the sheet locks in view mode. It was
+     * doing neither — the textarea ignored the mode entirely, leaving a set
+     * description editable on a sheet that opens read-only.
+     */
+    const src = renderer('renderLocationSheet');
+    const controls = [...src.matchAll(/<(textarea|input|select)\b[^>]*>/g)].map(m => m[0]);
+    // Without this the check passes vacuously the moment the sheet renders no
+    // raw control at all — which is exactly the state it was briefly left in.
+    assert.ok(controls.length > 0,
+        'the location sheet renders no raw control — either it moved to ssField (fine, but '
+        + 'this check no longer covers anything) or the scan is broken');
+    /*
+     * The lock is `readonly` (or `disabled` on a select), not merely a mention
+     * of sheetEditable(). The first version of this check accepted the latter,
+     * and a mutation stripping the readonly passed it: the tag also carries a
+     * mode-derived CLASS, which greys the box without locking it. A control
+     * that looks read-only and accepts typing is worse than one that looks
+     * editable.
+     */
+    const unlocked = controls
+        .filter(tag => {
+            const word = /^<select/.test(tag) ? 'disabled' : 'readonly';
+            return !(new RegExp(word).test(tag) && /sheetEditable\(\)/.test(tag));
+        })
+        .map(tag => tag.replace(/\s+/g, ' ').slice(0, 90));
+    assert.deepStrictEqual(unlocked, [],
+        'these controls on the location sheet ignore view mode:\n  ' + unlocked.join('\n  '));
+});

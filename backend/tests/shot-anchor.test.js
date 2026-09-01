@@ -742,11 +742,42 @@ test('the board offers a way into the attempts, and a way back', () => {
     }
     if (!html.includes('id="frameVersionsModal"')) missing.push('the attempts modal is not in the page');
     if (!/onclick="restoreFrameVersion\(/.test(html)) missing.push('nothing restores a version');
-    // A modal-overlay is shown by `.open`; `.active` shows a page, so the wrong
-    // class here builds a modal that is present and invisible.
-    if (!/frameVersionsModal'\)\.classList\.add\('open'\)/.test(html)) {
-        missing.push('the attempts modal is never actually shown');
+    /*
+     * A modal-overlay is shown by exactly one class; `.active` shows a PAGE, so
+     * the wrong class here builds a modal that is present and invisible.
+     *
+     * The class is DERIVED from the stylesheet rather than written as 'open',
+     * and the CALL is satisfied either inline or through showModal() — the one
+     * shared helper, which adds that class AND stacks the overlay above
+     * whatever opened it. This test used to match the inline call shape and so
+     * failed the day openFrameVersions moved onto the helper: the modal opened
+     * correctly and the assertion was coupled to one way of achieving it, which
+     * is the mistake subject-sheet-fidelity's rejected grid-template-columns
+     * check already cost once.
+     */
+    const shows = [...html.matchAll(/\.modal-overlay\.([\w-]+)\s*\{([^}]*)\}/g)]
+        .filter(m => /display\s*:\s*(?!none)/.test(m[2])).map(m => m[1]);
+    if (shows.length !== 1) missing.push(`${shows.length} classes display a .modal-overlay, expected 1`);
+    const SHOW = shows[0];
+    // Bounded by showModal's OWN BODY, never by a character window. A fixed
+    // window is fragile in the direction that lies: `showModal` currently runs
+    // 469 chars to its `classList.add`, so a 600-char window left 131 chars of
+    // slack — one guard or aria attribute added to that function and the check
+    // silently stops matching, failing a page that works perfectly.
+    const fnAt = html.indexOf('function showModal');
+    let body = '';
+    if (fnAt >= 0) {
+        let i = html.indexOf('{', fnAt), depth = 0;
+        for (let j = i; j < html.length; j++) {
+            if (html[j] === '{') depth++;
+            else if (html[j] === '}') { depth--; if (!depth) { body = html.slice(fnAt, j + 1); break; } }
+        }
     }
+    if (!body) missing.push('showModal is gone');
+    const helperShows = !!SHOW && new RegExp(`classList\\.add\\('${SHOW}'\\)`).test(body);
+    const inline = SHOW && new RegExp(`frameVersionsModal'\\)\\.classList\\.add\\('${SHOW}'\\)`).test(html);
+    const viaHelper = /showModal\('frameVersionsModal'\)/.test(html) && helperShows;
+    if (!inline && !viaHelper) missing.push('the attempts modal is never actually shown');
     assert.deepStrictEqual(missing, [], `\n  ${missing.join('\n  ')}`);
 });
 

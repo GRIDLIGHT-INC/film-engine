@@ -969,6 +969,68 @@ all**, so it rendered in normal flow at the tile's top-left and overprinted the
 view label: "upload" and "RIGHT" on the same pixels, which reads as the tile
 being broken.
 
+
+### A Column Is Not a Style, It Is Where the Words Go
+
+The prop sheet rendered its two columns **inverted** against
+`design-ref-prop.png`: the 1936-character object description — the text every
+plate is generated FROM — sat in a scrolling **400px** rail, while a single
+reference thumbnail owned the **1152px** column.
+
+**The CSS was already right.** `.ps-grid` is `minmax(0, 1fr) 400px`, identical
+to the value `Prop Card.dc.html` declares. Nothing needed re-tuning; five
+`ssSection(...)` calls were in the wrong `.ss-col`. Touching the grid would have
+broken a correct rule to compensate for a markup-order fault.
+
+**Nothing had ever measured column membership**, which is why 70 passing tests
+coexisted with a visibly wrong sheet. `subject-sheet-design` asserts every
+element the design LABELS is present; `subject-sheet-fidelity` asserts each
+layout declaration is declared and worn. Both are about PRESENCE — and every
+section here was present, in the wrong half of the page.
+
+The test is set-based over **all 9** `ps-*` regions, read out of
+`renderPropSheet`'s own markup and placed by counting the `.ss-col` openings
+before each. Section order is expressed **only** by markup order — there is no
+registry, enum or ordering array anywhere to read — so it reads the rendered
+structure rather than a list, and refuses to run if the scan sees fewer than
+five regions: a renderer refactored to a loop would otherwise yield zero
+literals and make every membership assertion pass over an empty set.
+
+**The description is bound to the STYLESHEET's geometry, not to a column
+index.** It asserts the description lands in whichever track `.ps-grid` makes
+flexible, so it survives the grid being re-declared. Swapping the tracks to
+`400px minmax(0, 1fr)` flips it from fail to pass — which is what proves it
+reads geometry rather than always failing.
+
+**A move script needs its own containment guard, and this one cost 10,850
+lines.** Cutting each block by balanced braces is right — a retyped field is how
+a dropped `esc()` on `description` or `materials` becomes stored XSS — but the
+first version bounded only the START of the region and scanned for the closing
+`</div>` to **end of file**. It swallowed everything to the last one in the
+document, `renderCharacterSheet` included. The block-level check passed, because
+all 8 blocks were still present exactly once; what was missing was everything
+else. A move changes order, not content, so the script now asserts the line
+count does not move and the region is under 200 lines. **The character tests
+failing was the only signal** — the prop tests all went green over a gutted
+file.
+
+Measured in a real browser before and after: the description moved from the
+400px rail to a 1090px box in the 1152px column, and stayed `readOnly` in view
+mode. The **location** sheet is measured correct against its own reference —
+560/992 columns, 1158+300 bottom rail, Lighting / Atmosphere / Sound sharing
+`y=1192` — and is byte-identical afterwards, pinned so a prop change cannot leak
+into it.
+
+**And an assertion coupled to a call SHAPE failed the day the call improved.**
+`shot-anchor` matched the literal `frameVersionsModal').classList.add('open')`,
+so routing `openFrameVersions` through the shared `showModal()` helper — which
+adds that same class *and* stacks the overlay above whatever opened it — read as
+the modal never being shown. It now derives the display class from the
+stylesheet and accepts either the inline call or the helper, **and checks the
+helper really adds that class**, which the literal match never could. Strictly
+stronger than what it replaced: it catches a modal nothing opens, and one the
+helper shows with the wrong class.
+
 ### Each Seedance Workflow Names Its Pictures Differently
 
 Found while verifying an unexplained uncommitted change to the adapter, and it
