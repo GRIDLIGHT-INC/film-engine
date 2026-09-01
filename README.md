@@ -87,7 +87,8 @@ Steps are scheduled by the GPU memory-aware scheduling engine, which batches by 
 ```bash
 cd backend
 
-# Run all unit tests (251 tests)
+# Run every unit test (3,102 at the time of writing — the suite grows, so
+# trust the run, not this number)
 node --test tests/*.test.js
 
 # Run specific test suites

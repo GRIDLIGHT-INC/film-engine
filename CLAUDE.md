@@ -1031,6 +1031,57 @@ helper really adds that class**, which the literal match never could. Strictly
 stronger than what it replaced: it catches a modal nothing opens, and one the
 helper shows with the wrong class.
 
+
+**Three more gaps closed in review, and one of them was in this test itself.**
+
+The **character sheet had no column protection at all** — `characterSheetHtml`
+makes **zero** `ssSection` calls against location's 10 and prop's 9, so it
+carries no `data-region` and moving a section between its columns failed
+nothing, on the one sheet the original complaint named. It is keyed on the
+section **label**, which `design-ref-character.png` and `subject-sheet-design`
+already treat as the contract, rather than on a class, which is styling.
+Converting the sheet to `ssSection` is tidier and was rejected: it wraps every
+region in new `.ss-region` markup and changes the cascade on a layout measured
+against its reference image days earlier. Closing a test gap is not worth
+risking the design it exists to protect.
+
+**A modal rule had silently stopped policing anything.**
+`page-handlers.test.js`'s *"every modal is shown with the class its own CSS
+displays"* scans for a modal opened at a CALL SITE, and once the stacking work
+routed all **35** overlays through `showModal()` there were **zero** call sites
+left to scan. It matched an empty set and passed, across 49 sites. It checks the
+helper itself now, bounded by that function's own body rather than a character
+window.
+
+**A location field ignored view mode.** The set-description textarea was written
+inline because it saves through `saveSheetSection`, so it stayed editable on a
+sheet that opens read-only. Routing it through `ssField` was tried and is
+**wrong**: `subject-sheets` requires every `ssField()` call to name a literal,
+registry-declared field, and a section's name is built at run time — those
+sections sit outside that registry on purpose. It carries the same mode lock
+inline instead.
+
+**And the column scan ignored where a column CLOSES.** It assigned each section
+to the last column that *opened* before it and never read the closing tag. The
+character sheet's concept band spans full width **below** both columns —
+measured in a browser at **1496px** against columns of 467 and 978 — and the
+test recorded it as column 1. Worse than a wrong label: the test claimed to
+catch a section moving between columns and already held the wrong answer for
+that one, so moving the band *into* a column would have passed silently. Found
+only because the browser disagreed with two artefacts that agreed with each
+other — **my test and my verification probe shared the same wrong model, so they
+could not check each other.**
+
+**Every column check rests on a precondition that is now enforced.** They read
+the renderer's SOURCE and place a section by where its literal sits between the
+column divs; that equals where it RENDERS only while every section is emitted
+unconditionally. Short-circuiting one section so it rendered nothing left the
+file passing **20/20** while the browser showed **8 regions instead of 9**. A
+DOM assertion is the direct fix and is unavailable — [ADR-002](docs/adr/002-vanilla-http-no-framework.md)
+means no bundler and no jsdom — so the precondition is asserted instead: a
+section that becomes conditional fails with *"their position in the source no
+longer proves where — or whether — they render"*.
+
 ### Each Seedance Workflow Names Its Pictures Differently
 
 Found while verifying an unexplained uncommitted change to the adapter, and it
