@@ -593,6 +593,16 @@
         /* ══════════════════════════════════════════════════════════
            MODAL
            ══════════════════════════════════════════════════════════ */
+        /* The working state on the control that was pressed. */
+        .is-generating { opacity: .85; cursor: progress; }
+        .gen-spin {
+            display: inline-block; width: 10px; height: 10px; margin-right: 6px;
+            border: 2px solid currentColor; border-right-color: transparent;
+            border-radius: 50%; vertical-align: -1px;
+            animation: gen-spin 0.7s linear infinite;
+        }
+        @keyframes gen-spin { to { transform: rotate(360deg); } }
+
         .modal-overlay {
             position: fixed; inset: 0;
             background: rgba(0,0,0,0.75);
@@ -1415,13 +1425,35 @@
             font-size:10px; letter-spacing:.14em; text-transform:uppercase;
             color:rgba(232,232,234,0.85); text-shadow:0 1px 3px rgba(0,0,0,.8);
         }
+        /* The upload affordance on a PENDING plate. It had no rule at all, so it
+           rendered in normal flow at the tile's top-left and sat directly on
+           top of the view label — "upload" and "RIGHT" overprinted, which reads
+           as the tile being broken. Placed top-right, where a locked tile puts
+           its dot and a pending one has none. */
+        .cs-plate .cs-up { position:absolute; top:6px; right:7px; z-index:2; }
+        .cs-plate .cs-up .btn { font-size:9.5px; padding:2px 7px; }
+
         .cs-plate .vcap {
             position:absolute; bottom:7px; left:9px; font-family:ui-monospace,Menlo,monospace;
             font-size:9.5px; color:rgba(232,232,234,0.55); text-shadow:0 1px 3px rgba(0,0,0,.8);
         }
         .cs-plate .vdot { position:absolute; top:8px; right:8px; width:6px; height:6px;
             border-radius:50%; background:#5ac8dc; }
-        .cs-spec { display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
+        /* TWO columns, as the reference draws it: AGE | HEIGHT over BUILD | ERA.
+           This was repeat(3,1fr) and rendered as one row of three, which is the
+           "sections aren't organized properly" complaint at its smallest. */
+        /* DESCRIPTION and PERSONALITY share a row under one rule, as the image
+           sets them. Stacked full width is what made the right column run long
+           and pushed the reference strip below the fold. */
+        /* View mode: the same box, without the form furniture. */
+        .ss-input.ss-view { border-color:transparent; background:transparent; cursor:default;
+            resize:none; padding-left:0; }
+        .ss-input.ss-view:focus { outline:none; }
+
+        .cs-two-up { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+        @media (max-width: 900px) { .cs-two-up { grid-template-columns:1fr; } }
+
+        .cs-spec { display:grid; grid-template-columns:repeat(2,1fr); gap:1px;
             background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.06);
             border-radius:10px; overflow:hidden; }
         .cs-spec .cell { padding:11px 13px; background:rgba(10,10,12,0.55); }
@@ -1653,13 +1685,20 @@
             font-family:ui-monospace,Menlo,monospace; font-size:9.5px; text-transform:uppercase;
             border:1px solid transparent; color:rgba(232,232,234,0.42); background:transparent; }
         .cs-pill.active { background:rgba(255,255,255,0.07); color:#e8e8ea; }
-        .cs-tiles { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; }
+        /* A COMPACT ROW, which is the complaint named first: "the images are too
+           big". In all three references this is a strip of small uniform
+           thumbnails with a caption under each, plus a dashed DROP REFERENCE —
+           not a row of cards. Auto-filling so the strip stays uniform at any
+           sheet width rather than stretching six tiles across a wide modal. */
+        .cs-tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(168px,1fr));
+            gap:10px; }
         @media (max-width:1400px){ .cs-tiles { grid-template-columns:repeat(4,minmax(0,1fr)); } }
         @media (max-width:1000px){ .cs-tiles { grid-template-columns:repeat(3,minmax(0,1fr)); } }
         @media (max-width:700px){ .cs-tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } }
         .cs-tile { position:relative; aspect-ratio:4/3; border-radius:11px; overflow:hidden;
             border:1px solid rgba(255,255,255,0.08); cursor:pointer;
-            background:repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02); }
+            background:repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 9px), rgba(255,255,255,0.02);
+            height:118px; }
         .cs-tile.starred { border-color:rgba(90,200,220,0.32); }
         .cs-tile img { width:100%; height:100%; object-fit:cover; display:block; }
         .cs-tile .tl { position:absolute; bottom:6px; left:8px; right:8px;
@@ -5423,7 +5462,17 @@ table, .render-table { border-radius:12px; overflow:hidden; }
             <div class="page-header"><h2>Playback</h2></div>
             <div class="flex-between mb-16">
                 <div class="text-sm text-muted" id="playbackSummary">Loading timeline…</div>
-                <button class="btn btn-secondary btn-sm" onclick="loadPlayback()">Refresh</button>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"
+                           title="Draw what a vertical or square placement would keep, over the cut">
+                        Protect
+                        <select id="pbProtectRatio" onchange="renderPlaybackProtect()"
+                                style="width:auto;display:inline-block;min-width:110px;">
+                            <option value="">off</option>
+                        </select>
+                    </label>
+                    <button class="btn btn-secondary btn-sm" onclick="loadPlayback()">Refresh</button>
+                </div>
             </div>
 
             <div id="playbackEmpty" class="glossary-empty hidden">
@@ -5434,6 +5483,14 @@ table, .render-table { border-radius:12px; overflow:hidden; }
             <div id="playbackMain" class="hidden">
                 <div class="pb-stage">
                     <video id="pbVideo" class="pb-video" preload="metadata" playsinline></video>
+                    <!--
+                      The protect frame, over the CUT.
+                      The board shows whether a frame survives a vertical crop;
+                      only playback shows whether the ACTION does. Sized in
+                      script against the video's own pixels, because the stage
+                      is the project's shape and the clip may not be.
+                    -->
+                    <div id="pbProtect" style="position:absolute;display:none;pointer-events:none;z-index:3;"></div>
                     <!--
                       The shot's dialogue.
                       lib/timeline.js has picked audio_mix or audio_dialogue per
@@ -6838,6 +6895,10 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 </div>
                 <div class="cs-head-right">
                     <button class="btn btn-primary btn-sm" onclick="generateOfficialViews()">Generate views</button>
+                    <!-- Not in the reference: the design has no way to change
+                         anything. Styled as the other header actions so it does
+                         not read as a different kind of control. -->
+                    <button class="btn btn-sm" id="csModeBtn" onclick="toggleSheetMode()">Edit</button>
                     <button class="btn btn-sm" onclick="exportCharacterSheet()">Export sheet</button>
                     <button class="modal-close" onclick="closeModal('characterSheetModal')">&times;</button>
                 </div>
@@ -6862,6 +6923,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 </div>
                 <div class="cs-head-right">
                     <button class="btn btn-primary btn-sm" id="ssGenerateBtn" onclick="generateSheetPlate()">Generate plate</button>
+                    <button class="btn btn-sm" id="ssModeBtn" onclick="toggleSheetMode()">Edit</button>
                     <button class="btn btn-sm" onclick="exportSubjectSheet()">Export sheet</button>
                     <button class="modal-close" onclick="closeModal('subjectSheetModal')">&times;</button>
                 </div>
@@ -13795,8 +13857,95 @@ THREE.GLTFLoader = GLTFLoader;
         flowCanvasRender();
     }
 
+    /**
+     * WHILE A GENERATION RUNS, THE THING YOU CLICKED SAYS SO.
+     *
+     * "As it generates I still don't see a spinner until we get the content
+     * back into the engine." A generation takes up to a minute; with nothing on
+     * the control that was pressed the page looks exactly as it did a moment
+     * before, which reads as the button being broken and invites a second press
+     * on a paid action.
+     *
+     * The status bar at the bottom is not enough, and this codebase already
+     * said so once: "`Regenerating...` went to the status bar while the card you
+     * clicked looked exactly as it had... feedback belongs on the thing you
+     * touched." That was fixed for storyboard frames and never made general —
+     * measured across the 29 functions that POST to a generator, 19 wrote to
+     * the status bar alone and 4 said nothing at all.
+     *
+     * SO IT LIVES IN `api()`, the one call every one of them reaches, rather
+     * than in 23 function bodies. Threading a flag through 23 call sites is how
+     * 21 of them end up without it, and a function added next month gets this
+     * with nothing to remember.
+     */
+    let GENERATION_ORIGIN = null;
+
+    /*
+     * The control that OPENED the confirmation, never the confirmation's own
+     * Generate button: `confirmGenResolve` closes the dialog before the work
+     * starts, so marking that button decorates something already hidden while
+     * the sheet the director is looking at stays silent.
+     */
+    document.addEventListener('click', e => {
+        const el = e.target && e.target.closest && e.target.closest('button, .btn, [onclick]');
+        if (!el) return;
+        if (el.closest('#confirmGenModal')) return;
+        GENERATION_ORIGIN = el;
+    }, true);
+
+    /** A POST that buys something, as opposed to a read that costs nothing. */
+    const GEN_BUSY_URL = /\/(generate|regenerate|refine|recompose|orbit|compass|plate|refsheet|explore|sequence|stitch|models?\/|inbetweens)/;
+    const GEN_BUSY_FREE = /preview|\/plan\b|\/brief|\/views|\/gallery|prompt/;
+
+    function spendsOnThisCall(path, opts) {
+        return String((opts && opts.method) || 'GET').toUpperCase() === 'POST'
+            && GEN_BUSY_URL.test(path) && !GEN_BUSY_FREE.test(path);
+    }
+
+    /**
+     * Mark the origin, and hand back the release.
+     *
+     * REFCOUNTED, because a batch fires several generations against one button
+     * and the first to finish would otherwise clear the state while the rest are
+     * still running. Restores the control's own disabled state rather than
+     * assuming it was enabled, and never throws: a bookkeeping failure must not
+     * take down a generation that has already been paid for.
+     */
+    function beginGenerationBusy() {
+        const el = GENERATION_ORIGIN;
+        if (!el) return () => {};
+        try {
+            el.__genBusy = (el.__genBusy || 0) + 1;
+            if (el.__genBusy === 1) {
+                el.__genWasDisabled = !!el.disabled;
+                el.__genLabel = el.innerHTML;
+                el.classList.add('is-generating');
+                el.disabled = true;
+                const started = Date.now();
+                el.__genTick = setInterval(() => {
+                    const s = Math.round((Date.now() - started) / 1000);
+                    try { el.innerHTML = `<span class="gen-spin"></span>Working ${s}s`; } catch (_) {}
+                }, 1000);
+                el.innerHTML = '<span class="gen-spin"></span>Working';
+            }
+        } catch (_) { /* never blocks a generation */ }
+        return () => {
+            try {
+                el.__genBusy = Math.max(0, (el.__genBusy || 1) - 1);
+                if (el.__genBusy) return;
+                clearInterval(el.__genTick);
+                el.classList.remove('is-generating');
+                el.disabled = el.__genWasDisabled;
+                if (el.__genLabel !== undefined) el.innerHTML = el.__genLabel;
+            } catch (_) { /* the control may have been re-rendered away */ }
+        };
+    }
+
     async function api(path, opts = {}) {
         const url = API() + path;
+        // Released in the finally below, so a FAILED generation frees the
+        // control too — a spinner that never resolves is worse than none.
+        const releaseBusy = spendsOnThisCall(path, opts) ? beginGenerationBusy() : null;
         try {
             const res = await fetch(url, {
                 headers: { 'Content-Type': 'application/json', ...opts.headers },
@@ -13809,6 +13958,8 @@ THREE.GLTFLoader = GLTFLoader;
         } catch (err) {
             if (err.message.includes('fetch')) throw new Error('Backend offline');
             throw err;
+        } finally {
+            if (releaseBusy) releaseBusy();
         }
     }
 
@@ -21032,10 +21183,10 @@ THREE.GLTFLoader = GLTFLoader;
         document.getElementById('titlePageDraftDate').value = currentTitlePage.draft_date || '';
         document.getElementById('titlePageContact').value = currentTitlePage.contact || '';
 
-        // `open` is the only class .modal-overlay is displayed by; built with
-        // `active` this dialog never appeared, so the toolbar's Title Page
-        // button — the documented way to edit it — silently did nothing.
-        modal.classList.add('open');
+        // Through showModal: `open` is the only class .modal-overlay is
+        // displayed by, AND the helper is what puts this above whatever it was
+        // opened from. Setting the class here did the first and not the second.
+        showModal('titlePageModal');
     }
 
     function parseTitlePageFromEditor(editor) {
@@ -21606,7 +21757,7 @@ THREE.GLTFLoader = GLTFLoader;
     // FILM-131: Import Script Functions
     function openImportModal() {
         resetImportModal();
-        document.getElementById('importScriptModal').classList.add('open');
+        showModal('importScriptModal');
     }
 
     function resetImportModal() {
@@ -23986,7 +24137,7 @@ ${fountainText.slice(0, 50000)}`;
         const body = document.getElementById('entityInspectBody');
         document.getElementById('entityInspectTitle').textContent = 'Loading…';
         body.innerHTML = '';
-        modal.classList.add('open');
+        showModal('entityInspectModal');
 
         let row;
         try {
@@ -24530,7 +24681,7 @@ ${fountainText.slice(0, 50000)}`;
             // to disagree about which one is in use.
             document.getElementById('entityInspectTitle').textContent = `${r.character} — reference views`;
             document.getElementById('entityInspectBody').innerHTML = body;
-            document.getElementById('entityInspectModal').classList.add('open');
+            showModal('entityInspectModal');
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -24545,7 +24696,7 @@ ${fountainText.slice(0, 50000)}`;
         try {
             await api(`/characters/${charId}/refsheet/views/${encodeURIComponent(view)}`, { method: 'DELETE' });
             setStatus(`${view} view deleted`);
-            document.getElementById('entityInspectModal').classList.remove('open');
+            closeModal('entityInspectModal');
             loadCharacters();
         } catch (err) { setStatus('Error: ' + err.message); }
     }
@@ -24748,19 +24899,67 @@ ${fountainText.slice(0, 50000)}`;
         </section>`;
     }
 
+    /**
+     * VIEW MODE / EDIT MODE.
+     *
+     * The reference sheets are a READ-ONLY document: a director opens one to
+     * look at it, and a page of input boxes is a form, not a sheet. So a sheet
+     * opens in view mode and an EDIT button at the top right — not in the
+     * design, added because the design has no way to change anything — turns
+     * the fields on.
+     *
+     * NO LAYOUT SHIFT, which is the acceptance bar. The same element is used in
+     * both modes and only `readonly` and a border change: swapping an input for
+     * a paragraph would reflow the whole column on every toggle, and the eye
+     * reads that as the sheet breaking.
+     *
+     * PICTURES ARE NOT PART OF THE MODE. Uploading and generating stay
+     * available in both, because looking at a sheet is exactly when you notice
+     * a plate is wrong — locking them away in view mode would take the controls
+     * you use most while reading.
+     */
+    let SHEET_MODE = 'view';
+    function sheetEditable() { return SHEET_MODE === 'edit'; }
+
+    /** The button says what pressing it will DO next, on both sheets. */
+    function paintSheetModeButtons() {
+        const label = sheetEditable() ? 'Done' : 'Edit';
+        ['csModeBtn', 'ssModeBtn'].forEach(id => {
+            const b = document.getElementById(id);
+            if (b) b.textContent = label;
+        });
+    }
+
+    function toggleSheetMode() {
+        SHEET_MODE = SHEET_MODE === 'view' ? 'edit' : 'view';
+        paintSheetModeButtons();
+        // Re-render whichever sheet is open; both keep their scroll position
+        // because the box each field occupies does not change.
+        const cs = document.getElementById('characterSheetModal');
+        const ss = document.getElementById('subjectSheetModal');
+        if (cs && cs.classList.contains('open')) renderCharacterSheet();
+        else if (ss && ss.classList.contains('open')) renderSubjectSheet();
+    }
+
     /** A field a director types straight into. Saved on blur, never on a timer. */
     function ssField(field, value, opts) {
         const o = opts || {};
+        /*
+         * `readonly` rather than a different element: the box stays exactly the
+         * same size, so leaving edit mode moves nothing on the page.
+         */
+        const ro = sheetEditable() ? '' : ' readonly tabindex="-1"';
+        const view = sheetEditable() ? '' : ' ss-view';
         const common = `data-field="${field}" onchange="saveSheetField('${field}', this.value, this)"`;
         if (o.rows) {
-            return `<textarea class="ss-input" rows="${o.rows}" placeholder="${esc(o.placeholder || '')}" ${common}>${esc(value || '')}</textarea>`;
+            return `<textarea class="ss-input${view}" rows="${o.rows}" placeholder="${esc(o.placeholder || '')}"${ro} ${common}>${esc(value || '')}</textarea>`;
         }
         if (o.options) {
-            return `<select class="ss-input" ${common}>${
+            return `<select class="ss-input${view}"${sheetEditable() ? '' : ' disabled'} ${common}>${
                 o.options.map(v => `<option value="${esc(v)}"${String(value || '') === v ? ' selected' : ''}>${esc(v || '—')}</option>`).join('')
             }</select>`;
         }
-        return `<input class="ss-input" type="${o.type || 'text'}"${o.step ? ` step="${o.step}"` : ''}
+        return `<input class="ss-input${view}" type="${o.type || 'text'}"${o.step ? ` step="${o.step}"` : ''}${ro}
             placeholder="${esc(o.placeholder || '')}" value="${esc(value == null ? '' : String(value))}" ${common}>`;
     }
 
@@ -25687,7 +25886,33 @@ ${fountainText.slice(0, 50000)}`;
               }).join('')}</div>
             </div>
 
-            <div class="cs-actions">
+<div class="cs-physical">
+              <div class="cs-label"><span>Physical spec</span><span class="rule"></span></div>
+              ${spec.length
+                  ? `<div class="cs-spec">${spec.map(([k, v]) =>
+                        `<div class="cell"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>`
+                  : `<p class="text-sm text-muted">Nothing recorded.
+                       <a style="cursor:pointer;color:var(--gl-accent,#818cf8);"
+                          onclick="closeModal('characterSheetModal'); editCharacter('${c.id}')">Add the physical spec</a>
+                       — voice casting and the size in every prompt read these.</p>`}
+            </div>
+
+<div class="cs-palette">
+              <div class="cs-label"><span>Palette</span><span class="rule"></span></div>
+              ${palette.length
+                  ? `<div class="cs-swatches">${palette.map((p, i) => `
+                        <div class="cs-swatch" onclick="removePaletteSwatch(${i})"
+                             title="Click to remove" style="cursor:pointer;">
+                        <div class="chip" style="background:${esc(p.hex)};"></div>
+                        <div class="cap">${esc(p.name || p.hex)}</div></div>`).join('')}</div>`
+                  : '<p class="text-sm text-muted">No palette locked yet.</p>'}
+              <div class="cs-add">
+                <button class="btn btn-sm" onclick="addPaletteSwatch()">+ Colour</button>
+                <button class="btn btn-sm" onclick="paletteFromImage()">From a picture</button>
+              </div>
+            </div>
+
+<div class="cs-actions">
               <div class="cs-label"><span>Work on this character</span><span class="rule"></span></div>
               <div class="card-actions" style="flex-wrap:wrap;">
                 <button class="btn btn-sm" onclick="generateCharacterImage('${c.id}')">Regen plate</button>
@@ -25702,29 +25927,26 @@ ${fountainText.slice(0, 50000)}`;
           </div>
 
           <div class="cs-col-r">
-            <div class="cs-physical">
-              <div class="cs-label"><span>Physical spec</span><span class="rule"></span></div>
-              ${spec.length
-                  ? `<div class="cs-spec">${spec.map(([k, v]) =>
-                        `<div class="cell"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>`
-                  : `<p class="text-sm text-muted">Nothing recorded.
-                       <a style="cursor:pointer;color:var(--gl-accent,#818cf8);"
-                          onclick="closeModal('characterSheetModal'); editCharacter('${c.id}')">Add the physical spec</a>
-                       — voice casting and the size in every prompt read these.</p>`}
-            </div>
+            
             <div class="cs-details">
               <div class="cs-label"><span>Appearance</span>
                 <span class="rule"></span>
                 <span class="note">${(c.appearance_prompt || '').length} chars · prompt source</span></div>
               <div class="cs-prose">${esc(c.appearance_prompt || 'No appearance written. This is the text every plate is generated from.')}</div>
             </div>
-            <div>
-              <div class="cs-label"><span>Description</span><span class="rule"></span></div>
-              <div class="cs-prose small">${esc(c.description || '—')}</div>
+            <!-- Side by side, as the reference sets them under one rule. Stacked
+                 full width is what made this column run long and pushed the
+                 reference strip below the fold. -->
+            <div class="cs-two-up">
+              <div>
+                <div class="cs-label"><span>Description</span><span class="rule"></span></div>
+                <div class="cs-prose small">${esc(c.description || '—')}</div>
+              </div>
+              <div>
+                <div class="cs-label"><span>Personality</span><span class="rule"></span></div>
+                <div class="cs-prose small">${esc(c.personality_notes || '—')}</div>
+              </div>
             </div>
-            ${c.personality_notes ? `<div>
-              <div class="cs-label"><span>Personality</span><span class="rule"></span></div>
-              <div class="cs-prose small">${esc(c.personality_notes)}</div></div>` : ''}
 
             <div class="cs-wardrobe">
               <div class="cs-label"><span>Wardrobe &amp; props</span><span class="rule"></span>
@@ -25755,20 +25977,7 @@ ${fountainText.slice(0, 50000)}`;
               </div>
             </div>
 
-            <div class="cs-palette">
-              <div class="cs-label"><span>Palette</span><span class="rule"></span></div>
-              ${palette.length
-                  ? `<div class="cs-swatches">${palette.map((p, i) => `
-                        <div class="cs-swatch" onclick="removePaletteSwatch(${i})"
-                             title="Click to remove" style="cursor:pointer;">
-                        <div class="chip" style="background:${esc(p.hex)};"></div>
-                        <div class="cap">${esc(p.name || p.hex)}</div></div>`).join('')}</div>`
-                  : '<p class="text-sm text-muted">No palette locked yet.</p>'}
-              <div class="cs-add">
-                <button class="btn btn-sm" onclick="addPaletteSwatch()">+ Colour</button>
-                <button class="btn btn-sm" onclick="paletteFromImage()">From a picture</button>
-              </div>
-            </div>
+            
           </div>
         </div>
 
@@ -28925,6 +29134,8 @@ ${fountainText.slice(0, 50000)}`;
 
         DELIVERABLE_SERVED = { profiles: data.profiles || [], packages: data.packages || [] };
         state.deliverableRows = data.deliverables || [];
+        // The board and playback pickers offer what this job ships.
+        try { refreshProtectOptions(); } catch (_) { /* pickers may not be on screen */ }
 
         const picker = document.getElementById('deliverablePackage');
         if (picker && picker.options.length !== DELIVERABLE_SERVED.packages.length) {
@@ -30623,7 +30834,7 @@ ${fountainText.slice(0, 50000)}`;
         }
         // Same fault: this form never appeared at all, which is why nobody
         // noticed it was missing its travel allowance and prep days.
-        modal.classList.add('open');
+        showModal(modal.id);
     }
 
     async function saveCostInput(entityType, entityId) {
@@ -30778,13 +30989,75 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // MODAL HELPERS
     // ══════════════════════════════════════════════════════════════
+    /**
+     * WHICH MODAL PAINTS ON TOP.
+     *
+     * Every `.modal-overlay` carries the same `z-index: 1000`, so paint order
+     * fell to DOM order -- and `confirmGenModal` is declared near the top of the
+     * file with THIRTY-ONE overlays after it, including both subject sheets. So
+     * the pre-spend confirmation opened correctly, with the prompt, the model,
+     * the quality and the size, UNDERNEATH the sheet it was launched from, where
+     * it could be neither read nor clicked.
+     *
+     * Reported four times as "I still don't get the modal", and every time it
+     * was there. Five test files passed throughout because they check that the
+     * confirmation is INVOKED and that its markup is right; none of them could
+     * see that it was invisible. A gate nobody can read is a gate that is not
+     * there, and the generation went ahead anyway -- which is the spend the
+     * whole mechanism exists to prevent.
+     *
+     * A DEPTH, not a running counter. A counter would work on the day it
+     * shipped and climb for the life of the session, eventually clearing the top
+     * bar and the sidebar. The stack holds what is actually open, so closing
+     * gives the depth back.
+     *
+     * The base `z-index: 1000` stays in the stylesheet: a modal opened by
+     * something that does not come through here must still APPEAR. This supplies
+     * the ordering, not the visibility.
+     */
+    const MODAL_Z_BASE = 1000;
+    const MODAL_STACK = [];
+
     function showModal(id) {
-        document.getElementById(id).classList.add('open');
+        const el = document.getElementById(id);
+        if (!el) return;
+        // Re-showing one already open RAISES it rather than counting it twice --
+        // several flows re-enter a modal that is still open, and a double count
+        // is a depth that never comes back down.
+        const at = MODAL_STACK.indexOf(id);
+        if (at >= 0) MODAL_STACK.splice(at, 1);
+        MODAL_STACK.push(id);
+        restackModals();
+        el.classList.add('open');
         const firstInput = document.querySelector('#' + id + ' input[type="text"], #' + id + ' textarea');
         if (firstInput) setTimeout(() => firstInput.focus(), 50);
     }
 
-    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+    function closeModal(id) {
+        const el = document.getElementById(id);
+        const at = MODAL_STACK.indexOf(id);
+        if (at >= 0) MODAL_STACK.splice(at, 1);
+        restackModals();
+        if (!el) return;
+        el.classList.remove('open');
+        // Given back, or a closed modal goes on sitting above the page.
+        el.style.zIndex = '';
+    }
+
+    /**
+     * Re-number the whole stack, bottom to top.
+     *
+     * Assigning only the modal that just moved leaves the one it was raised
+     * ABOVE holding the same number -- equal z-index falls back to DOM order,
+     * which is the bug this exists to end. Walking the stack is a handful of
+     * elements and cannot drift out of step with itself.
+     */
+    function restackModals() {
+        MODAL_STACK.forEach((mid, i) => {
+            const m = document.getElementById(mid);
+            if (m) m.style.zIndex = String(MODAL_Z_BASE + i + 1);
+        });
+    }
 
     /**
      * Build (or refill) a modal from HTML and show it.
@@ -30805,7 +31078,8 @@ ${fountainText.slice(0, 50000)}`;
         } else {
             modal.querySelector('.modal').innerHTML = html;
         }
-        modal.classList.add('open');
+        // Delegated, so a modal built at run time stacks like every other one.
+        showModal(id);
         return modal;
     }
 
@@ -30817,7 +31091,7 @@ ${fountainText.slice(0, 50000)}`;
                 dismissProjectOnboarding();
             }
             document.querySelectorAll('.modal-overlay.open').forEach(m => {
-                if (m.id !== 'projectOnboardingModal') m.classList.remove('open');
+                if (m.id !== 'projectOnboardingModal') closeModal(m.id);
             });
         }
         if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -30841,12 +31115,12 @@ ${fountainText.slice(0, 50000)}`;
     const CONTEXT_OVERLAP = 500;
 
     function openTextConvertModal() {
-        document.getElementById('textConvertModal').classList.add('open');
+        showModal('textConvertModal');
         resetConvertModal();
     }
 
     function closeTextConvertModal() {
-        document.getElementById('textConvertModal').classList.remove('open');
+        closeModal('textConvertModal');
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -30877,13 +31151,12 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     function openSuggestionsPanel() {
-        const modal = document.getElementById('suggestionsModal');
-        modal.classList.add('open');
+        showModal('suggestionsModal');
         renderSuggestions();
     }
 
     function closeSuggestionsPanel() {
-        document.getElementById('suggestionsModal').classList.remove('open');
+        closeModal('suggestionsModal');
     }
 
     function renderSuggestions() {
@@ -31488,7 +31761,7 @@ ${fountainText.slice(0, 50000)}`;
     // Close on backdrop click
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
         overlay.addEventListener('click', e => {
-            if (e.target === overlay) overlay.classList.remove('open');
+            if (e.target === overlay) closeModal(overlay.id);
         });
     });
 
@@ -33541,11 +33814,11 @@ ${fountainText.slice(0, 50000)}`;
             </div>`;
         }).join('');
         document.getElementById('frameVersionsNote').textContent = data.note || '';
-        document.getElementById('frameVersionsModal').classList.add('open');
+        showModal('frameVersionsModal');
     }
 
     function closeFrameVersions() {
-        document.getElementById('frameVersionsModal').classList.remove('open');
+        closeModal('frameVersionsModal');
     }
 
     async function restoreFrameVersion(shotId, version) {
@@ -34081,7 +34354,7 @@ ${fountainText.slice(0, 50000)}`;
         }
         if (i < 0) return setStatus('That shot is not on the board any more.');
         FRAME_VIEWER.index = i;
-        document.getElementById('frameViewerModal').classList.add('open');
+        showModal('frameViewerModal');
         frameViewerPaint();
     }
 
@@ -34464,35 +34737,184 @@ ${fountainText.slice(0, 50000)}`;
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
+    /*
+     * ONE renderer for the protect frame, because there are now two surfaces
+     * that draw it and a second copy is how the board and the playback come to
+     * disagree about what a placement keeps.
+     *
+     * `frameRatio` is the PICTURE's ratio, never the container's. A board tile
+     * is letterboxed inside its cell and the playback stage is the project's
+     * shape while the clip may be a hair off it — measuring the container would
+     * draw a guide that is right about the box and wrong about the shot.
+     */
+    function protectBoxFor(frameRatio, want) {
+        let w = 100, h = 100;
+        if (want < frameRatio) w = (want / frameRatio) * 100;   // narrower: side bars
+        else h = (frameRatio / want) * 100;                     // taller: top and bottom
+        return { w, h, left: (100 - w) / 2, top: (100 - h) / 2 };
+    }
+
+    function protectOverlayHTML(frameRatio, ratios) {
+        const parsed = (ratios || [])
+            .map(r => { const [w, h] = String(r).split(':').map(Number); return { r, v: w / h }; })
+            .filter(x => Number.isFinite(x.v) && x.v > 0)
+            .sort((a, b) => a.v - b.v);
+        if (!parsed.length || !Number.isFinite(frameRatio) || frameRatio <= 0) return '';
+
+        /*
+         * The NARROWEST placement carries the mask, because it is the one that
+         * decides whether the shot survives. Drawing a mask per ratio would
+         * stack four translucent blacks and make the tightest crop the
+         * brightest region on screen, which is exactly backwards.
+         */
+        const tight = protectBoxFor(frameRatio, parsed[0].v);
+        let html = `<div style="position:absolute;left:${tight.left}%;top:${tight.top}%;`
+            + `width:${tight.w}%;height:${tight.h}%;`
+            + `box-shadow:0 0 0 9999px rgba(0,0,0,0.55);`
+            + `outline:2px solid var(--gl-brand-pink,#ff4d8d);"></div>`;
+
+        // Every other placement as an outline only — the frame it would take,
+        // without a second opinion about brightness.
+        for (const p of parsed.slice(1)) {
+            const b = protectBoxFor(frameRatio, p.v);
+            html += `<div style="position:absolute;left:${b.left}%;top:${b.top}%;`
+                + `width:${b.w}%;height:${b.h}%;`
+                + `outline:1px dashed rgba(255,255,255,0.8);"></div>`;
+        }
+
+        const label = parsed.map(p => `${esc(p.r)} ${Math.round(protectBoxFor(frameRatio, p.v).w)}%`)
+            .join('  ·  ');
+        html += `<div style="position:absolute;left:6px;bottom:6px;font-size:11px;font-weight:600;`
+            + `color:#fff;text-shadow:0 1px 2px #000;white-space:nowrap;">`
+            + `keeps ${label} of the width</div>`;
+        return html;
+    }
+
+    /*
+     * The ratios THIS JOB actually ships, read from the deliverable set.
+     *
+     * A hardcoded 9:16/4:5/1:1 list asks the director to remember which
+     * placements the campaign bought. The deliverable rows already say, and
+     * they are the same rows `needs_native_shots` is computed from — so the
+     * guide on the board and the warning on the deliverables page are answering
+     * from one source rather than two.
+     *
+     * Falls back to the standard three when nothing is planned yet, because a
+     * spot with no deliverables is usually a spot nobody has scoped, not a spot
+     * that ships one file.
+     */
+    function protectRatiosPlanned() {
+        const rows = (state.deliverableRows || []);
+        const seen = [];
+        for (const d of rows) {
+            const r = String(d.aspect_ratio || '').trim();
+            if (r && !seen.includes(r)) seen.push(r);
+        }
+        return seen;
+    }
+
+    function protectOptionsHTML(selected) {
+        const planned = protectRatiosPlanned();
+        const opts = ['<option value="">off</option>'];
+        if (planned.length) {
+            opts.push(`<option value="all">all planned (${planned.length})</option>`);
+            for (const r of planned) opts.push(`<option value="${esc(r)}">${esc(r)}</option>`);
+        }
+        for (const r of ['9:16', '4:5', '1:1', '16:9']) {
+            if (!planned.includes(r)) opts.push(`<option value="${r}">${r}</option>`);
+        }
+        const html = opts.join('');
+        return selected ? html.replace(`value="${selected}"`, `value="${selected}" selected`) : html;
+    }
+
+    /** Expand a select value into the list of ratios to draw. */
+    function protectSelection(value) {
+        if (!value) return [];
+        if (value === 'all') return protectRatiosPlanned();
+        return [value];
+    }
+
+    /** Keep both pickers offering what the job actually ships. */
+    function refreshProtectOptions() {
+        for (const id of ['boardProtectRatio', 'pbProtectRatio']) {
+            const sel = document.getElementById(id);
+            if (!sel) continue;
+            const keep = sel.value;
+            sel.innerHTML = protectOptionsHTML(keep);
+            // A ratio that is no longer planned must not stay silently selected.
+            if (sel.value !== keep) { sel.value = ''; }
+        }
+    }
+
     function renderBoardProtect() {
-        const ratio = (document.getElementById('boardProtectRatio') || {}).value || '';
+        const value = (document.getElementById('boardProtectRatio') || {}).value || '';
+        const ratios = protectSelection(value);
         const boxes = document.querySelectorAll('.board-protect');
-        if (!ratio) { boxes.forEach(b => { b.style.display = 'none'; b.innerHTML = ''; }); return; }
-        const [rw, rh] = ratio.split(':').map(Number);
-        if (!(rw > 0 && rh > 0)) return;
+        if (!ratios.length) { boxes.forEach(b => { b.style.display = 'none'; b.innerHTML = ''; }); return; }
 
         boxes.forEach(box => {
             const img = box.parentNode.querySelector('img');
             if (!img || !img.naturalWidth) { box.style.display = 'none'; return; }
-            const frame = img.naturalWidth / img.naturalHeight;
-            const want = rw / rh;
-            // Percentages of the DISPLAYED frame, so the overlay survives the
-            // tile being any size.
-            let w = 100, h = 100;
-            if (want < frame) w = (want / frame) * 100;  // narrower: side bars
-            else h = (frame / want) * 100;               // taller: top and bottom
-            const keptPct = Math.round(w);
             box.style.display = 'block';
-            box.innerHTML = `
-                <div style="position:absolute;inset:0;background:rgba(0,0,0,0.55);"></div>
-                <div style="position:absolute;left:${(100 - w) / 2}%;top:${(100 - h) / 2}%;
-                            width:${w}%;height:${h}%;background:transparent;
-                            box-shadow:0 0 0 9999px rgba(0,0,0,0.55);
-                            outline:2px solid var(--gl-brand-pink,#ff4d8d);"></div>
-                <div style="position:absolute;left:6px;bottom:6px;font-size:11px;font-weight:600;
-                            color:#fff;text-shadow:0 1px 2px #000;">
-                    ${esc(ratio)} keeps ${keptPct}% of the width</div>`;
+            box.innerHTML = protectOverlayHTML(img.naturalWidth / img.naturalHeight, ratios);
         });
+    }
+
+    /**
+     * The same guide, over the cut.
+     *
+     * The board answers "would this FRAME survive the crop". Playback answers
+     * the question the board cannot: whether the ACTION stays inside it while
+     * the camera moves — a subject that starts centred and ends at the edge is
+     * a shot that boards fine and crops badly, and that is only visible in
+     * motion.
+     *
+     * Measured off the video's own pixels, not the stage: `.pb-video` is
+     * `object-fit: contain`, so a clip whose ratio differs from the project's
+     * is letterboxed inside the stage and the picture box is smaller than the
+     * element. Drawing on the element would put the guide over black.
+     */
+    /*
+     * Redrawn on the three things that move it: the clip changing (new pixel
+     * dimensions), the window resizing (the stage is fluid), and the picker.
+     * Bound once, lazily, so re-entering the page does not stack listeners —
+     * the leak that turns a guide into a hundred guides.
+     */
+    let _pbProtectBound = false;
+    function bindPlaybackProtect() {
+        if (_pbProtectBound) return;
+        const vid = document.getElementById('pbVideo');
+        if (!vid) return;
+        _pbProtectBound = true;
+        vid.addEventListener('loadedmetadata', renderPlaybackProtect);
+        vid.addEventListener('loadeddata', renderPlaybackProtect);
+        window.addEventListener('resize', renderPlaybackProtect);
+    }
+
+    function renderPlaybackProtect() {
+        const host = document.getElementById('pbProtect');
+        const vid = document.getElementById('pbVideo');
+        if (!host || !vid) return;
+        const value = (document.getElementById('pbProtectRatio') || {}).value || '';
+        const ratios = protectSelection(value);
+        if (!ratios.length || !vid.videoWidth || !vid.videoHeight) {
+            host.style.display = 'none'; host.innerHTML = ''; return;
+        }
+
+        const stage = host.parentNode;
+        const sw = stage.clientWidth, sh = stage.clientHeight;
+        const vr = vid.videoWidth / vid.videoHeight;
+        if (!sw || !sh) { host.style.display = 'none'; return; }
+        // The contained picture box inside the stage.
+        let pw = sw, ph = sw / vr;
+        if (ph > sh) { ph = sh; pw = sh * vr; }
+
+        host.style.display = 'block';
+        host.style.left = `${(sw - pw) / 2}px`;
+        host.style.top = `${(sh - ph) / 2}px`;
+        host.style.width = `${pw}px`;
+        host.style.height = `${ph}px`;
+        host.innerHTML = protectOverlayHTML(vr, ratios);
     }
 
     function frameSrc(f, width) {
@@ -37154,6 +37576,22 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     async function loadPlayback() {
+        /*
+         * The pickers offer what the JOB ships, so they have to be rebuilt when
+         * the deliverable set is read — and the set is read on its own page, not
+         * this one. Fetched here rather than assumed present: opening Playback
+         * first is the normal order, and an empty picker would look like the
+         * feature is missing.
+         */
+        try {
+            if (!(state.deliverableRows || []).length && state.currentProject) {
+                const d = await api(`/projects/${state.currentProject.id}/deliverables`);
+                state.deliverableRows = d.deliverables || [];
+            }
+        } catch (_) { /* the guide falls back to the standard ratios */ }
+        refreshProtectOptions();
+        bindPlaybackProtect();
+
         if (!state.currentProject) return;
         const summary = document.getElementById('playbackSummary');
         try {

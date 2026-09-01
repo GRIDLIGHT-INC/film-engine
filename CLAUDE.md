@@ -317,6 +317,9 @@ film-engine/
 │       ├── music-cue-generation.test.js # The cue you wrote is the cue that gets generated
 │       ├── music-cue-fields.test.js  # The fields the cue contract promises must reach the generator
 │       ├── seedance-image-fields.test.js # Each Seedance workflow names its pictures differently
+│       ├── modal-stacking.test.js     # A modal opened on top of another must paint on top of it
+│       ├── generation-busy.test.js    # While a generation runs, the thing you clicked says so
+│       ├── sheet-layout-fidelity.test.js # The three sheets, laid out as the reference images draw them
 │       ├── entity-create-fields.test.js # Creating a subject and updating one accept the same fields
 │       ├── provider-resolution-visible.test.js # Spend that goes somewhere nobody chose says so
 │       ├── provider-config-merge.test.js # A save must not drop the choices it was not asked about
@@ -857,6 +860,114 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### A Modal Opened On Top of Another Must Paint On Top of It
+
+Asked four times: *"I still don't get the modal with the prompt that will be
+sent."* Then, mid-session: *"the prompt pops up BEHIND the character modal."*
+
+**The confirmation was never missing.** It opened correctly every time, with the
+prompt, the provider, the model, the quality and the size — underneath whatever
+sheet it was launched from, where it could be neither read nor clicked.
+
+Every `.modal-overlay` carried the same `z-index: 1000`, so paint order fell to
+DOM order, and `confirmGenModal` is declared at DOM index 3 with **31 overlays
+after it**, both subject sheets among them. Measured in the running page: with
+the sheet and the confirmation open, `document.elementFromPoint()` at the
+confirmation's own centre returned `characterSheetModal`.
+
+**This is why five test files passed throughout.** `every-generate-button`,
+`paid-preview`, `generation-controls`, `prompt-visibility` and
+`loading-never-sticks` all check the confirmation is *invoked* and that its
+markup is right. None could see it was invisible — and a gate nobody can read is
+a gate that is not there, so the generation went ahead anyway, which is the
+spend the whole mechanism exists to prevent.
+
+`showModal` assigns a **depth**, not a running counter: a counter works on the
+day it ships and climbs for the life of the session until it clears the top bar.
+The stack holds what is actually open, `restackModals()` re-numbers all of it on
+every change — assigning only the modal that moved leaves the one it was raised
+above holding the same number, and equal z-index falls straight back to DOM
+order — and closing gives the depth back. The base `z-index: 1000` stays in the
+stylesheet: a modal opened by something this does not reach must still *appear*.
+
+**Fifteen sites set the class directly** and would have escaped any rule the
+helper applied, so they are routed through it — the same reasoning as *"a caller
+that cannot choose the class cannot get that wrong."* The detector that finds
+them resolves each receiver against the real modal id set: `exportDropdown` uses
+`open` too, and a bare regex reported four working dropdown handlers as
+escaping, which is four cries of wolf out of ten and how a check gets switched
+off. It also falls through on an id absent from the markup rather than returning,
+because `showCostInputModal` and `showModalHtml` **build** theirs at run time.
+
+### While a Generation Runs, the Thing You Clicked Says So
+
+*"As it generates I still don't see a spinner until we get the content back."*
+
+`every-generate-button.test.js` already asks every generating function to show
+that it is working — and its predicate accepts `setStatus(msg, true)`, the
+**bottom status bar**. Measured across the 29 functions it discovers: **6** put
+any state on the control that was clicked, **19** wrote to the status bar alone,
+**4** said nothing at all. The test's standard was weaker than the codebase's
+own, which had already recorded the lesson for storyboard frames — *"feedback
+belongs on the thing you touched"* — and never generalised it.
+
+**The mechanism lives in `api()`**, the single call all 29 reach, rather than in
+23 function bodies: threading a flag through 23 call sites is how 21 of them end
+up without it, and a function added next month is covered with nothing to
+remember. The origin is the control that **opened** the confirmation, never the
+dialog's own Generate button — `confirmGenResolve` closes the dialog before the
+work starts, so marking that button decorates something already hidden.
+
+Refcounted, because a batch fires several generations from one button and the
+first to finish would otherwise clear the state while the rest still run.
+Released in a `finally`, so a **failed** generation frees the control too — a
+spinner that never resolves is worse than none. Only a POST to a generating
+endpoint counts: a busy state on every read is noise, and noise is what makes a
+real one unreadable.
+
+Three of that test's assertions were too loose and each survived a mutation:
+asserting after both requests resolved passed against no refcount at all (it is
+checked **between** the two completions now); testing only a free GET left the
+URL predicate carried by the method check alone (a non-generating **POST** is
+tested too); and matching `readonly` anywhere in the page passed against a
+`.cs-spec` rule that lives inside a `@media` block while the base rule said
+something else.
+
+### The Three Sheets, Laid Out as the Reference Images Draw Them
+
+*"The biggest issues are at the bottom where the images are too big, sections
+aren't organized properly on all three."*
+
+The screenshots in the repo root are the spec, and where the HTML disagrees the
+image wins — the checked-in `.dc.html` handoff is **not** the authority, since
+70 tests already passed against it while the render was wrong. Those tests are
+about PRESENCE (*every element the design labels is on the sheet*) and
+declaration; the complaint is about ORDER, COLUMN and SIZE, which nothing
+measured.
+
+Measured in a real browser on THE MAN's own sheet before the fix: `PHYSICAL
+SPEC` rendered in the **right** column as three equal columns where the design
+puts it in the **left** as a 2×2; `PALETTE` sat bottom-right where the design
+has it under the spec on the left; `DESCRIPTION` and `PERSONALITY` were stacked
+full width where the design sets them side by side — which is what made the
+right column run long and pushed the reference strip below the fold. The bottom
+strip was a row of 239px cards where all three references show a compact strip
+of small uniform thumbnails.
+
+**View mode / edit mode is new behaviour, in neither the design nor the
+handoff.** A sheet opens read-only, because a page of input boxes is a form and
+not a sheet; an EDIT button sits with the other header actions. The same element
+is used in both modes with only `readonly` and a border changing — swapping an
+input for a paragraph would reflow the column on every toggle, and **no layout
+shift** is the acceptance bar. **Pictures are not part of the mode**: uploading
+and generating stay available in both, because looking at a sheet is exactly
+when you notice a plate is wrong.
+
+And `.cs-up` — the upload affordance on a pending plate — had **no CSS rule at
+all**, so it rendered in normal flow at the tile's top-left and overprinted the
+view label: "upload" and "RIGHT" on the same pixels, which reads as the tile
+being broken.
 
 ### Each Seedance Workflow Names Its Pictures Differently
 
@@ -3727,6 +3838,9 @@ node --test backend/tests/generation-handles.test.js
 node --test backend/tests/music-cue-generation.test.js
 node --test backend/tests/music-cue-fields.test.js
 node --test backend/tests/seedance-image-fields.test.js
+node --test backend/tests/modal-stacking.test.js
+node --test backend/tests/generation-busy.test.js
+node --test backend/tests/sheet-layout-fidelity.test.js
 node --test backend/tests/entity-create-fields.test.js
 node --test backend/tests/provider-resolution-visible.test.js
 node --test backend/tests/provider-config-merge.test.js
