@@ -1076,3 +1076,101 @@ the approved 15-second master survives beside it.
 Item 30's `archivePreviousTake` currently guards `subdir === 'video'` only.
 Extending it to `music` and `audio` is a one-word change and should be made
 before anyone regenerates an approved cue in place.
+
+### 32. The engine asked for WAV and got 128 kbps MP3
+
+`lib/providers/elevenlabs.js` → `normalizeOutputFormat`, `wrapPcmAsWav`
+`lib/music-prompt.js` → `sample_rate`
+
+`music-prompt` has built every audio payload with `output_format: 'wav'` since
+it was written. The adapter's normaliser accepted only ElevenLabs' own
+vocabulary:
+
+```js
+if (requested.startsWith('mp3_') || requested.startsWith('pcm_')) return requested;
+return DEFAULT_OUTPUT_FORMAT;          // 'mp3_44100_128'
+```
+
+`'wav'` matches neither. So **every score, ambient bed and effect this engine
+has ever generated came back as 128 kbps MP3 at 44.1 kHz** — the lowest tier the
+API offers — while the code that asked for it said WAV. Nothing failed and
+nothing warned; the request was simply not in a language the function spoke.
+
+Confirmed on disk: all three cues on this project are `mp3, 44100, 2, 128000`.
+
+Two consequences for a spot:
+
+- **Lossy at the source.** It is compressed before the mix, the loudness pass
+  and the delivery encode, so generation loss compounds through every stage.
+- **Wrong rate.** 44.1 kHz is the CD rate; video and broadcast run at 48 kHz, so
+  every cue needed a sample-rate conversion into the timeline that nobody asked
+  for.
+
+Fixed: `'wav'`/`'pcm'` plus the requested `sample_rate` now translate to the
+matching `pcm_*` tier, snapped to the nearest documented rate **at or above** the
+ask — never quietly below it, which is the whole point of asking. Payloads now
+request 48 kHz.
+
+**And the trap that makes this more than a one-line fix.** ElevenLabs' `pcm_*`
+returns raw samples with **no container**. Saved as `.wav` those bytes open in
+nothing, and nothing in this codebase writes a RIFF header — `media-imports`
+only ever reads one. So the adapter now writes the 44-byte header itself, and
+**infers the channel count from the byte count** rather than assuming it:
+`/music` returns stereo and `/text-to-speech` returns mono, and a wrong guess
+plays at half or double speed. A byte count that fits neither returns null, the
+raw bytes are kept, and `meta.pcm_wrapped_as_wav: false` says so — a file
+labelled honestly as raw beats one that plays at the wrong pitch.
+
+**Not yet verified against a live response.** The header maths is tested; the
+channel inference is a model of what the API returns and wants one cheap
+generation to confirm.
+
+### 33. …and item 32 only covered one endpoint in three
+
+`lib/providers/elevenlabs.js` → `soundGenerationUrl`, `buildSfxRequest`, `buildAmbientRequest`
+
+Item 32 fixed `normalizeOutputFormat`, which serves `/music` and
+`/text-to-speech`. Ambient beds and effects go to **`/sound-generation`**, and
+those two builders never consulted it. They did not fall back to MP3 — they
+**declared** it:
+
+```js
+mimeType: 'audio/mpeg',
+format: 'mp3',
+```
+
+hardcoded, with no `output_format` on the request at all. So the first ambient
+generated *after* the format fix still came back `mp3, 44100, 2, 128000`.
+
+A fix that covers one of three endpoints looks done and is not, which is why
+this gets its own number rather than a silent edit. `/sound-generation` takes
+`output_format` as a query parameter exactly as `/music` does; both builders now
+send it, carry `durationSeconds` so a raw-PCM response can have its channels
+inferred, and set their mime type from the format rather than asserting it.
+
+Asking for nothing still behaves exactly as before.
+
+### Confirmed working: the ambient derivation fix (item 20)
+
+The same generation proves item 20. The prompt that went out was the written
+brief and nothing else — no `ambient sounds of DRIVE-IN THEATRE - LOT, outdoor,
+nighttime atmosphere` tail arguing with a cue that explicitly excluded traffic
+and people.
+
+### 34. Milestones had routes but no tool
+
+`lib/mcp-tools.js` → `milestone_list`, `milestone_update`
+
+`film_milestones` has existed since migration 014, `routes/dashboard.js` serves
+GET/POST/PUT for it, and the nine standard phases are seeded on first read. None
+of it was reachable from the tool surface — the same shape as `agent_presence`
+(item 26) and `spend_record` (item 28): a capability with working plumbing and
+no control.
+
+Both tools added. `milestone_update` deliberately moves ONE milestone: setting
+the last one complete does not backfill the ones before it. A timeline whose
+final box is ticked while the middle ones are not is a real state a production
+can be in, and inferring otherwise would rewrite history the director did not.
+
+`milestone_update` carries a `body` mapping — the guard from item 29 covers it,
+so a POST/PUT tool that silently posts `{}` cannot be added here again.

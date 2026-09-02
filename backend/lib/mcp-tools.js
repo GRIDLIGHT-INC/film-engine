@@ -2593,8 +2593,24 @@ const PRODUCTION_TOOLS = [
             bible_section: { type: 'string', description: 'The story bible section these words were written from.' },
             character_id: { type: 'string' },
             appearance_prompt: { type: 'string', description: 'What this person looks like, in prompt terms.' },
-            description: { type: 'string' },
+            description: { type: 'string', description: 'Who they are and what they are for \u2014 the production-facing note, not the prompt.' },
             age_range: { type: 'string' },
+            /*
+             * THE REST OF THE SHEET.
+             *
+             * The route has accepted these since characters had a table, and
+             * the sheet renders every one of them \u2014 but this tool declared
+             * only four, so the fields a director actually fills in were
+             * unreachable from here and stayed empty on every character in
+             * every project. A tool that cannot fill the sheet it describes
+             * makes the sheet look like a form nobody uses.
+             */
+            build: { type: 'string', description: 'Frame and carriage \u2014 "tall and lean, moves without hurry".' },
+            hair: { type: 'string', description: 'Cut, colour and how it behaves \u2014 it is the first thing continuity loses.' },
+            distinguishing: { type: 'string', description: 'The marks that identify this person in a frame: scars, asymmetry, a habitual set of the jaw.' },
+            ethnicity: { type: 'string' },
+            gender: { type: 'string' },
+            personality_notes: { type: 'string', description: 'How they behave and what they never do. Reaches performance direction, not the image prompt.' },
         },
             required: ['character_id'],
     },

@@ -628,3 +628,121 @@ test('the archive happens BEFORE the write, on the one funnel every clip passes'
     assert.ok(body.indexOf('archivePreviousTake') < body.indexOf('saveFile'),
         'archiving after the save would copy the NEW take and still lose the old one');
 });
+
+
+/*
+ * THE ENGINE ASKED FOR WAV AND GOT 128 KBPS MP3.
+ *
+ * `music-prompt` has always built payloads with `output_format: 'wav'`. The
+ * adapter's normaliser accepted only ElevenLabs' own vocabulary — `mp3_*` or
+ * `pcm_*` — so 'wav' matched neither and fell through to the DEFAULT,
+ * `mp3_44100_128`. Every score, bed and effect this engine has generated came
+ * back at the lowest tier the API offers, lossy before the mix and at the CD
+ * rate rather than the 48k video runs at. Nothing failed; the request was
+ * simply not in a language the function spoke.
+ */
+const el = require('../lib/providers/elevenlabs');
+
+test("'wav' is a format the adapter understands, at the rate that was asked for", () => {
+    assert.strictEqual(el.normalizeOutputFormat({ output_format: 'wav', sample_rate: 48000 }), 'pcm_48000');
+    assert.strictEqual(el.normalizeOutputFormat({ output_format: 'wav', sample_rate: 44100 }), 'pcm_44100');
+    // Never quietly served BELOW the ask — that is the whole point of asking.
+    assert.strictEqual(el.normalizeOutputFormat({ output_format: 'wav', sample_rate: 30000 }), 'pcm_44100');
+    // An explicit ElevenLabs format still wins, and an unknown one still falls back.
+    assert.strictEqual(el.normalizeOutputFormat({ output_format: 'mp3_44100_192' }), 'mp3_44100_192');
+    assert.strictEqual(el.normalizeOutputFormat({}), 'mp3_44100_128');
+});
+
+test('raw PCM is given a real WAV header, with channels inferred not assumed', () => {
+    // 1s of 48k stereo 16-bit.
+    const stereo = el.wrapPcmAsWav(Buffer.alloc(48000 * 2 * 2), 48000, 1);
+    assert.strictEqual(stereo.slice(0, 4).toString(), 'RIFF');
+    assert.strictEqual(stereo.slice(8, 12).toString(), 'WAVE');
+    assert.strictEqual(stereo.readUInt16LE(22), 2, 'channels');
+    assert.strictEqual(stereo.readUInt32LE(24), 48000, 'sample rate');
+    assert.strictEqual(stereo.readUInt32LE(40), 48000 * 2 * 2, 'data chunk size');
+
+    // TTS returns mono; guessing stereo would play it at half speed.
+    assert.strictEqual(el.wrapPcmAsWav(Buffer.alloc(48000 * 2), 48000, 1).readUInt16LE(22), 1);
+
+    // A byte count that fits neither means our model of the response is wrong.
+    // Better to return null and keep the raw bytes, labelled, than to hand back
+    // a file that plays at the wrong pitch.
+    assert.strictEqual(el.wrapPcmAsWav(Buffer.alloc(12345), 48000, 1), null);
+});
+
+test('music payloads ask for 48k, the rate video actually runs at', () => {
+    const src = read('lib/music-prompt.js');
+    assert.ok(!/sample_rate: 44100/.test(src),
+        '44.1k is the CD rate; every cue at it costs a sample-rate conversion into the timeline');
+});
+
+
+/*
+ * A FIX THAT COVERS ONE OF THREE ENDPOINTS LOOKS DONE AND IS NOT.
+ *
+ * Item 32 fixed the output format on /music and /text-to-speech. Ambient and
+ * SFX go to /sound-generation, and those builders did not FALL BACK to mp3 —
+ * they declared it: `mimeType: 'audio/mpeg', format: 'mp3'`, hardcoded, with no
+ * output_format on the request at all. So beds and effects stayed 128 kbps
+ * 44.1 kHz after the music path was already fixed.
+ */
+test('every ElevenLabs endpoint honours the requested format, not just /music', () => {
+    const wav = { description: 'x', duration_s: 20, output_format: 'wav', sample_rate: 48000 };
+
+    for (const [name, req] of [['ambient', el.buildAmbientRequest(wav)],
+                               ['sfx', el.buildSfxRequest({ ...wav, duration_s: 3 })]]) {
+        assert.match(req.url, /output_format=pcm_48000/, `${name} must send the format`);
+        assert.strictEqual(req.format, 'wav', name);
+        assert.strictEqual(req.mimeType, 'audio/wav', name);
+        // Needed so raw PCM can have its channels inferred rather than assumed.
+        assert.ok(Number(req.durationSeconds) > 0, `${name} must carry its duration`);
+    }
+
+    // Asking for nothing still behaves exactly as it always did.
+    assert.strictEqual(el.buildAmbientRequest({ description: 'x', duration_s: 20 }).format, 'mp3');
+});
+
+
+test('all four audio capabilities ask for the uncompressed render at 48k', () => {
+    const { buildVoicePayload } = require('../lib/dialogue-builder');
+    const voice = buildVoicePayload({ line: 'hello', character: 'RAY' }, null, null, {});
+    assert.strictEqual(voice.output_format, 'wav');
+    assert.strictEqual(voice.sample_rate, 48000,
+        '24k is telephone grade for dialogue that goes through a mix and a delivery encode');
+
+    const music = read('lib/music-prompt.js');
+    assert.ok(!/sample_rate: 44100/.test(music), '44.1k is the CD rate; picture runs at 48k');
+
+    // And every endpoint resolves it to the same PCM tier.
+    for (const req of [
+        el.buildVoiceRequest(voice),
+        el.buildMusicRequest({ prompt: 'x', duration_ms: 20000, output_format: 'wav', sample_rate: 48000 }),
+        el.buildAmbientRequest({ description: 'x', duration_s: 20, output_format: 'wav', sample_rate: 48000 }),
+        el.buildSfxRequest({ description: 'x', duration_s: 3, output_format: 'wav', sample_rate: 48000 }),
+    ]) assert.strictEqual(req.outputFormat, 'pcm_48000');
+});
+
+/*
+ * A DUPLICATE KEY IS A SETTING THAT CANNOT BE READ BY LOOKING.
+ *
+ * `buildVoicePayload` carried `output_format`/`sample_rate` twice. JavaScript
+ * keeps the LAST, so the first pair was dead the moment it was written — and an
+ * audit asking "does voice request a format" found two answers and believed the
+ * wrong one. The surviving pair said 24000: telephone-grade dialogue, hidden
+ * only because the adapter did not understand 'wav' at all and fell back to MP3.
+ * Fixing the adapter would have turned a dormant mistake into a real one.
+ */
+test('the voice payload states its format exactly once', () => {
+    const dlg = read('lib/dialogue-builder.js')
+        .replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.strictEqual((dlg.match(/output_format:/g) || []).length, 1);
+    assert.strictEqual((dlg.match(/sample_rate:/g) || []).length, 1);
+});
+
+test('takes are archived for audio too, not only video', () => {
+    const src = read('lib/provider-media.js');
+    assert.match(src, /VERSIONED = \['video', 'music', 'audio'\]/,
+        'a cue regenerated at a new length writes to the same filename — keyed to the cue id — '
+        + 'so guarding video alone left an approved score overwritable by a take nobody had heard');
+});

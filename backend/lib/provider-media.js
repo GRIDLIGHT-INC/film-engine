@@ -202,8 +202,16 @@ async function persistProviderMedia(projectId, subdir, filename, data, opts) {
      * Before the write, not after: `saveFile` overwrites, so by the time we hold
      * the returned path the previous take is already gone.
      */
+    /*
+     * Video, music and audio alike. Item 30 guarded `video` only, which left the
+     * same destruction available one directory over: a cue regenerated at a new
+     * length writes to the same filename — it is keyed to the cue id — so an
+     * approved score could be overwritten by a take nobody had heard yet. A
+     * take is a take whatever the medium.
+     */
+    const VERSIONED = ['video', 'music', 'audio'];
     let archived = null;
-    if (subdir === 'video') {
+    if (VERSIONED.includes(subdir)) {
         try {
             const { getFilePath } = require('./file-storage');
             archived = archivePreviousTake(getFilePath(projectId, subdir, filename));

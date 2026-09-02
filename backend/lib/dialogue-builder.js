@@ -66,8 +66,29 @@ function buildVoicePayload(dialogueLine, voiceProfile, character, context) {
          * understands one, and the style and stability dials on every model.
          */
         speed: 1.0,
+        /*
+         * 48k, NOT 24k — and this key is the only one that counts.
+         *
+         * Two things were wrong here and they hid each other. `sample_rate` was
+         * 24000: telephone grade, for dialogue that then goes through a mix, a
+         * loudness pass and a delivery encode, against a picture running at 48k.
+         * And it was invisible, because the adapter did not understand 'wav' at
+         * all (item 32) and fell back to 128 kbps MP3 — so the number never
+         * reached anything and nobody could hear it being wrong.
+         *
+         * Fixing the adapter would have made a dormant mistake real: 'wav' now
+         * resolves to a `pcm_*` tier, and this would have started delivering
+         * genuine, uncompressed, 24 kHz dialogue.
+         *
+         * There is also only ONE of these keys now. A second `output_format`
+         * and `sample_rate` pair was added at the top of this object during that
+         * fix, which JavaScript silently resolves in favour of whichever comes
+         * LAST — so the earlier one was dead the moment it was written, and the
+         * audit that looked for "does voice ask for a format" found two answers
+         * and believed the wrong one.
+         */
         output_format: 'wav',
-        sample_rate: 24000,
+        sample_rate: 48000,
         stream: true,
     };
 

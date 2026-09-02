@@ -380,7 +380,7 @@ function buildMusicPrompt(musicCue, scene, project, opts) {
         energy: moodConfig.energy,
         instruments: instruments || [],
         output_format: 'wav',
-        sample_rate: 44100,
+        sample_rate: 48000,
         seed: cue.seed || null,
         loopable: false,
         stream: true,
@@ -578,7 +578,7 @@ function buildAmbientPrompt(scene, location, opts) {
         loopable: true,
         crossfade_s: 5.0,
         output_format: 'wav',
-        sample_rate: 44100,
+        sample_rate: 48000,
         seed: null,
         stream: true,
     };
