@@ -1486,8 +1486,15 @@
         /* Sound is two even columns: the music kinds beside the sound kinds.
            Not the prop sheet's wide-plus-rail, because neither half of a cue
            sheet is a margin note. */
-        .ss-grid.snd-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; }
-        .snd-grid > .ss-col { padding:18px 22px; display:flex; flex-direction:column; gap:18px; min-width:0; }
+        /* Fits its CONTAINER, not the viewport. The first version was a fixed
+           1fr 1fr, which is right in a full-width sheet and collides in a
+           250px scene card five-across — the headings printed over each other
+           and only a browser showed it. auto-fit collapses to one column when
+           there is not room for two. */
+        .ss-grid.snd-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:0; }
+        .snd-grid > .ss-col { padding:14px 16px; display:flex; flex-direction:column; gap:16px; min-width:0; }
+        .snd-grid .ss-region-head h4 { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .snd-grid .ss-what { display:block; }
         .ss-cue { padding:8px 0; border-bottom:1px solid var(--gl-border,rgba(255,255,255,.07)); }
         .ss-cue:last-of-type { border-bottom:0; }
         .ps-turntable { padding:26px 32px 8px; }
