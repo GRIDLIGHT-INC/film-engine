@@ -59,10 +59,106 @@ async function parseErrorResponse(response) {
     try { return JSON.parse(text); } catch (_) { return text; }
 }
 
+/*
+ * 'wav' IS A THING THE ENGINE ASKS FOR AND THIS NEVER UNDERSTOOD.
+ *
+ * `lib/music-prompt.js` has always built its payloads with
+ * `output_format: 'wav'` and a `sample_rate`. This accepted only strings
+ * already in ElevenLabs' own vocabulary — `mp3_*` or `pcm_*` — so 'wav' matched
+ * neither and fell through to the DEFAULT.
+ *
+ * The default is `mp3_44100_128`. So every score, every ambient bed and every
+ * effect this engine has ever generated came back as **128 kbps MP3 at
+ * 44.1 kHz** — the lowest tier ElevenLabs offers — while the code that asked
+ * for it said WAV. Nothing failed and nothing warned; the request was simply
+ * not in a language this function spoke.
+ *
+ * Two things wrong with that for a spot. It is LOSSY AT THE SOURCE, before the
+ * mix, the loudness pass and the delivery encode, so the generation loss
+ * compounds through every stage. And 44.1 kHz is the CD rate: video and
+ * broadcast run at 48 kHz, so every cue needs a sample-rate conversion on the
+ * way into the timeline that nobody asked for.
+ *
+ * Now translated: 'wav'/'pcm' plus the requested sample rate becomes the
+ * matching `pcm_*` tier, snapped to a rate the API documents.
+ */
+const PCM_RATES = [8000, 16000, 22050, 24000, 44100, 48000];
+
 function normalizeOutputFormat(payload) {
-    const requested = payload.output_format || '';
-    if (String(requested).startsWith('mp3_') || String(requested).startsWith('pcm_')) return requested;
+    const requested = String(payload.output_format || '');
+    if (requested.startsWith('mp3_') || requested.startsWith('pcm_')) return requested;
+
+    if (/^(wav|pcm|lossless)$/i.test(requested)) {
+        const asked = Number(payload.sample_rate) || 48000;
+        // The nearest documented rate at or ABOVE the ask, so a request for 48k
+        // is never quietly served at 44.1k — the whole point of asking.
+        const rate = PCM_RATES.find(r => r >= asked) || PCM_RATES[PCM_RATES.length - 1];
+        return `pcm_${rate}`;
+    }
     return DEFAULT_OUTPUT_FORMAT;
+}
+
+/**
+ * ElevenLabs' `pcm_*` returns RAW SAMPLES WITH NO HEADER.
+ *
+ * Saving those bytes as `.wav` produces a file no player will open, which is
+ * the trap that makes "just ask for PCM" a bug rather than a fix. Nothing in
+ * this codebase writes a RIFF header — `media-imports` only ever READS one.
+ *
+ * Channels are INFERRED from the byte count rather than assumed: TTS returns
+ * mono and /music returns stereo, and guessing wrong halves or doubles the
+ * playback speed, which is the single most embarrassing way to get this wrong.
+ * bytes = rate x channels x 2 x seconds, so the count and the duration we asked
+ * for give the answer. Anything that does not land on 1 or 2 means an
+ * assumption here is wrong, and the caller is told rather than handed a file
+ * that plays at the wrong pitch.
+ */
+function wrapPcmAsWav(pcm, sampleRate, seconds, declaredChannels) {
+    if (!Buffer.isBuffer(pcm) || !pcm.length) return null;
+    const rate = Number(sampleRate) || 48000;
+    const secs = Number(seconds) || 0;
+
+    /*
+     * A DECLARED channel count wins, and text-to-speech is the reason.
+     *
+     * The inference below needs the duration we asked for, and
+     * `buildVoiceRequest` has none to carry — TTS length is whatever the line
+     * turns out to be. So voice fell to the default, and the default was 2:
+     * every line of dialogue would have been headed as stereo while ElevenLabs
+     * returns mono, which plays at DOUBLE SPEED and the wrong pitch.
+     *
+     * Measured before this line existed: a mono 48k response came back with
+     * `channels: 2` and a byte rate of 192000 where mono 48k is 96000.
+     *
+     * Voice is the only caller with no duration, and it is the one endpoint
+     * whose channel count the provider documents — so it states the fact
+     * rather than leaving it to be guessed from bytes it cannot predict.
+     */
+    let channels = Number(declaredChannels) === 1 || Number(declaredChannels) === 2
+        ? Number(declaredChannels)
+        : 2;
+    if (secs > 0) {
+        const inferred = Math.round(pcm.length / (rate * 2 * secs));
+        if (inferred === 1 || inferred === 2) channels = inferred;
+        else return null;             // our model of the response is wrong: say so
+    }
+    const bitsPerSample = 16;
+    const byteRate = rate * channels * bitsPerSample / 8;
+    const head = Buffer.alloc(44);
+    head.write('RIFF', 0);
+    head.writeUInt32LE(36 + pcm.length, 4);
+    head.write('WAVE', 8);
+    head.write('fmt ', 12);
+    head.writeUInt32LE(16, 16);                       // PCM chunk size
+    head.writeUInt16LE(1, 20);                        // format: PCM
+    head.writeUInt16LE(channels, 22);
+    head.writeUInt32LE(rate, 24);
+    head.writeUInt32LE(byteRate, 28);
+    head.writeUInt16LE(channels * bitsPerSample / 8, 32);
+    head.writeUInt16LE(bitsPerSample, 34);
+    head.write('data', 36);
+    head.writeUInt32LE(pcm.length, 40);
+    return Buffer.concat([head, pcm]);
 }
 
 function buildVoiceRequest(payload) {
@@ -112,13 +208,29 @@ function buildVoiceRequest(payload) {
         model: modelId,
         voiceId,
         outputFormat,
+        // Documented mono, and unlike the other three this request cannot carry
+        // a duration for the byte-count inference to work from.
+        channels: 1,
         mimeType: outputFormat.startsWith('pcm_') ? 'audio/wav' : 'audio/mpeg',
         format: outputFormat.startsWith('pcm_') ? 'wav' : 'mp3',
     };
 }
 
-function soundGenerationUrl() {
-    return `${(process.env.ELEVENLABS_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '')}/sound-generation`;
+/*
+ * `/sound-generation` takes an `output_format` too, and this never sent one.
+ *
+ * Item 32 fixed the format for /music and /text-to-speech. It did not reach
+ * here, because ambient and SFX do not go to /music at all — and these two
+ * builders did not fall back to MP3, they DECLARED it: `mimeType: 'audio/mpeg',
+ * format: 'mp3'`, hardcoded, with no output_format on the request. So the beds
+ * and effects stayed 128 kbps 44.1 kHz even after the music path was fixed.
+ *
+ * A fix that covers one of three endpoints is the kind that looks done and is
+ * not, which is why this is worth its own note rather than a silent edit.
+ */
+function soundGenerationUrl(outputFormat) {
+    const base = `${(process.env.ELEVENLABS_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '')}/sound-generation`;
+    return outputFormat ? `${base}?output_format=${encodeURIComponent(outputFormat)}` : base;
 }
 
 function clampSfxDuration(payload, fallback) {
@@ -127,16 +239,20 @@ function clampSfxDuration(payload, fallback) {
 }
 
 function buildSfxRequest(payload) {
+    const outputFormat = normalizeOutputFormat(payload);
+    const seconds = clampSfxDuration(payload, 3);
     return {
-        url: soundGenerationUrl(),
+        url: soundGenerationUrl(outputFormat),
         body: {
             text: payload.text || payload.prompt || payload.description || '',
-            duration_seconds: clampSfxDuration(payload, 3),
+            duration_seconds: seconds,
             prompt_influence: typeof payload.prompt_influence === 'number' ? payload.prompt_influence : 0.3,
         },
         model: 'elevenlabs-sound-effects',
-        mimeType: 'audio/mpeg',
-        format: 'mp3',
+        outputFormat,
+        durationSeconds: seconds,
+        mimeType: outputFormat.startsWith('pcm_') ? 'audio/wav' : 'audio/mpeg',
+        format: outputFormat.startsWith('pcm_') ? 'wav' : 'mp3',
     };
 }
 
@@ -153,18 +269,25 @@ function buildSfxRequest(payload) {
  * than left to the endpoint default.
  */
 function buildAmbientRequest(payload) {
+    const outputFormat = normalizeOutputFormat(payload);
+    const seconds = clampSfxDuration(payload, SFX_MAX_SECONDS);
     return {
-        url: soundGenerationUrl(),
+        url: soundGenerationUrl(outputFormat),
         body: {
             text: payload.text || payload.prompt || payload.description || '',
-            duration_seconds: clampSfxDuration(payload, SFX_MAX_SECONDS),
+            duration_seconds: seconds,
             prompt_influence: typeof payload.prompt_influence === 'number' ? payload.prompt_influence : 0.3,
             loop: true,
             model_id: LOOPABLE_SFX_MODEL,
         },
         model: LOOPABLE_SFX_MODEL,
-        mimeType: 'audio/mpeg',
-        format: 'mp3',
+        outputFormat,
+        // Carried for the same reason /music carries it: a raw-PCM response has
+        // its channel count inferred from the byte count, and that needs the
+        // duration we asked for.
+        durationSeconds: seconds,
+        mimeType: outputFormat.startsWith('pcm_') ? 'audio/wav' : 'audio/mpeg',
+        format: outputFormat.startsWith('pcm_') ? 'wav' : 'mp3',
     };
 }
 
@@ -277,6 +400,11 @@ function buildMusicRequest(payload) {
         body,
         model: modelId,
         outputFormat,
+        // Carried so a raw-PCM response can have its channel count INFERRED
+        // from the byte count rather than assumed. /music returns stereo and
+        // /text-to-speech returns mono, and a wrong guess plays at half or
+        // double speed.
+        durationMs: lengthMs,
         mimeType: outputFormat.startsWith('pcm_') ? 'audio/wav' : 'audio/mpeg',
         format: outputFormat.startsWith('pcm_') ? 'wav' : 'mp3',
     };
@@ -338,7 +466,28 @@ async function callElevenLabsOnce(request, apiKey, opts) {
             return { ok: false, status: response.status, error: normalizeError('elevenlabs', response.status, body) };
         }
 
-        const data = Buffer.from(await response.arrayBuffer());
+        let data = Buffer.from(await response.arrayBuffer());
+
+        /*
+         * A `pcm_*` response is raw samples with no container. Saved straight to
+         * `.wav` it is a file nothing will open, so the header goes on here —
+         * at the one point the bytes, the requested rate and the requested
+         * duration are all in hand.
+         *
+         * If the wrapper cannot make sense of the byte count it returns null
+         * rather than a guess, and we keep the raw bytes and say so in `meta`.
+         * A file that plays at the wrong pitch is worse than one labelled
+         * honestly as raw.
+         */
+        let pcmWrapped = false;
+        if (String(request.outputFormat || '').startsWith('pcm_')) {
+            const rate = Number(String(request.outputFormat).split('_')[1]) || 48000;
+            const seconds = Number(request.durationSeconds)
+                || (Number(request.durationMs) > 0 ? Number(request.durationMs) / 1000 : 0);
+            const wrapped = wrapPcmAsWav(data, rate, seconds, request.channels);
+            if (wrapped) { data = wrapped; pcmWrapped = true; }
+        }
+
         return {
             ok: true,
             status: response.status,
@@ -351,6 +500,10 @@ async function callElevenLabsOnce(request, apiKey, opts) {
                 voice_id: request.voiceId || '',
                 output_format: request.outputFormat || '',
                 format: request.format,
+                // Said out loud: a pcm request whose header could not be
+                // written is raw samples on disk, and the reader has to know.
+                ...(String(request.outputFormat || '').startsWith('pcm_')
+                    ? { pcm_wrapped_as_wav: pcmWrapped } : {}),
             },
         };
     } catch (err) {
@@ -539,6 +692,7 @@ async function listVoices(opts) {
 }
 
 module.exports = {
+    wrapPcmAsWav, normalizeOutputFormat,
     adapter,
     listVoices,
     refusedVoices,

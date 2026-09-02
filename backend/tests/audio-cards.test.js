@@ -115,3 +115,69 @@ test('every category offers BOTH ways to add audio', () => {
     assert.deepStrictEqual(gaps, [], '\n  ' + gaps.join('\n  ') + '\n');
     assert.ok(cueTypes().length >= 5, 'the vocabulary shrank');
 });
+
+/**
+ * A cue with no audio yet must still render a card.
+ *
+ * This is the one the suite missed. Every assertion above reads the SOURCE —
+ * that the card exists, that it names each column — and all of them passed
+ * while the Music & Sound page rendered completely blank, with
+ * `Cannot read properties of undefined (reading 'toString')` in the status bar.
+ *
+ * The cause was `(asset && (asset.format || '')).toString()`: with no asset the
+ * guard yields `undefined` and `.toString()` throws. Most cues have no asset —
+ * that is the normal state of a cue somebody has just written — so ONE
+ * ungenerated cue took the whole page down, and the page is where the feature
+ * lives.
+ *
+ * So this EXECUTES the renderer instead of reading it. A source check cannot
+ * tell a working card from one that throws on the commonest input it has.
+ */
+test('a cue with no audio yet renders a card rather than taking the page down', () => {
+    const src = UI;
+    const CATEGORIES = cueTypes();
+
+    const grab = (name) => {
+        const start = src.indexOf(`function ${name}(`);
+        assert.ok(start > -1, `${name} is gone`);
+        let depth = 0;
+        for (let i = src.indexOf('{', start); i < src.length; i++) {
+            if (src[i] === '{') depth++;
+            else if (src[i] === '}' && --depth === 0) return src.slice(start, i + 1);
+        }
+        throw new Error(`${name} does not close`);
+    };
+
+    const preamble = `
+        const API_BASE = '';
+        const SOUND_CATEGORIES = ${JSON.stringify(CATEGORIES.map(t => ({ type: t, label: t })))};
+        function esc(v) { return String(v == null ? '' : v); }
+        // Stubbed, not extracted: the upload control is asserted by its own
+        // test above, and pulling it in would drag half the page with it.
+        function mediaUploadControl() { return '<span class="up"></span>'; }
+    `;
+    const card = new Function(`${preamble}
+        ${grab('fmtDuration')} ${grab('fmtSize')} ${grab('fmtAge')} ${grab('soundCueCard')}
+        return soundCueCard;`)();
+
+    // The state every cue starts in: written, not yet generated.
+    for (const type of CATEGORIES) {
+        const html = card({ id: 'c1', cue_type: type, title: 'A cue' }, undefined);
+        assert.match(html, /snd-card/, `an ungenerated ${type} cue renders no card`);
+        assert.match(html, /A cue/, `an ungenerated ${type} cue loses its own title`);
+    }
+    // A null asset is the same state spelled differently, and reaches here from
+    // a cue whose generated_asset_id points at a row that has been deleted.
+    assert.match(card({ id: 'c2', cue_type: 'score', title: 'B' }, null), /snd-card/);
+
+    // And a generated one still reports what it is.
+    const full = card({ id: 'c3', cue_type: 'score', title: 'C' }, {
+        id: 'a1', url: '/film/music/p/x.wav', format: 'wav',
+        duration_ms: 32000, size_bytes: 3072000, provider: 'elevenlabs',
+        created_at: new Date().toISOString(),
+    });
+    assert.match(full, /WAV/, 'the format is not shown');
+    assert.match(full, /0:32/, 'the duration is not shown');
+    assert.match(full, /2\.9 MB|3\.1 MB|3 MB/, 'the size is not shown');
+    assert.match(full, /elevenlabs/, 'the provider is not shown');
+});

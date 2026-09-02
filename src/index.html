@@ -32889,7 +32889,7 @@ ${fountainText.slice(0, 50000)}`;
         // Only facts the row actually holds. A missing one is omitted, never
         // shown as a blank or a zero.
         const facts = [
-            (asset && (asset.format || '')).toString().toUpperCase() || null,
+            asset && asset.format ? String(asset.format).toUpperCase() : null,
             fmtDuration(asset && asset.duration_ms),
             fmtSize(asset && asset.size_bytes),
         ].filter(Boolean);
@@ -33074,7 +33074,15 @@ ${fountainText.slice(0, 50000)}`;
             };
 
             grid.innerHTML = banner + scenes.map(sc => `
-                <div class="entity-card">
+                <!--
+                  A scene's sound is a SHEET, not a tile. The grid is
+                  auto-fill/minmax(300px), which is right for a row of entity
+                  cards and wrong here: it gave the whole sheet one 300px track
+                  with the page empty beside it, and squeezed its own two
+                  columns into that. Spanning every track is what gives the
+                  categories room to sit side by side.
+                -->
+                <div class="entity-card" style="grid-column:1/-1;">
                     <div class="flex-between">
                         <strong style="font-size:13px;">Scene ${esc(String(sc.scene_number))}</strong>
                         <span class="text-sm text-muted">${esc(sc.location || '')}${sc.time_of_day ? ' &middot; ' + esc(sc.time_of_day) : ''}</span>
