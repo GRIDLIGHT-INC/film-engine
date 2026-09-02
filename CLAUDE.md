@@ -1082,6 +1082,55 @@ means no bundler and no jsdom — so the precondition is asserted instead: a
 section that becomes conditional fails with *"their position in the source no
 longer proves where — or whether — they render"*.
 
+
+**What this sprint is worth repeating for, and what it is worth avoiding.**
+
+*A pattern to repeat:* **mutation-prove the pins, not only the failing tests.**
+Three of the ten checks added here pass by design — they guard behaviour that is
+already correct. A pin that cannot fail is worse than none, because it reads as
+coverage. Each was made to fail on the defect it guards before being trusted,
+and two were found too weak that way and rewritten. One accepted any mention of
+`sheetEditable()` while the control it guarded had lost its `readonly`.
+
+*An anti-pattern, and the fourth of its family:* **never bound a scan by a
+character count.** The widened `shot-anchor` assertion used
+`function showModal[\s\S]{0,600}?classList\.add(...)` against a function that
+runs **469 characters** to that call — **131 characters of slack** before one
+added guard would push it out of range. This file already records *"third time
+this codebase has paid for a bounded character class"* (`[^)]`, `[^\]]`); a
+bounded character *window* is the same mistake wearing a different hat. Bound by
+brace or paren depth from the declaration instead.
+
+**Its early-detection signal is specific and worth memorising: the test starts
+reporting that the FEATURE is broken while the feature demonstrably works.** A
+bounded scan does not fail loudly when it goes out of range — it silently stops
+matching, and then blames the code it can no longer see.
+
+*A second anti-pattern with a signal:* **a refactor that removes a pattern
+disarms every audit that scans for it.** After routing 35 overlays onto one
+helper, the rule policing how modals are shown matched **zero** call sites and
+passed across 49 of them. The signal is a green test whose subject count has
+quietly gone to zero — which is why the scans here now assert they found
+something before asserting anything about it.
+
+*A taste decision worth restating:* when a test gap and the design conflict,
+**the design wins and the test takes the weaker identity.** Keying the character
+sheet on its section labels is objectively weaker than `data-region`, and it was
+chosen anyway, because the alternative restructures markup that had just been
+measured against its reference image. Closing a test gap is not worth risking
+what the test exists to protect.
+
+*A caveat about this repo specifically:* there is **no jsdom and no bundler**
+([ADR-002](docs/adr/002-vanilla-http-no-framework.md), zero devDependencies), so
+a test cannot assert against a rendered DOM. Where a check needs runtime truth,
+assert the **precondition** that makes source equivalent to runtime and say so
+in the failure message — and take the real measurement in a browser once, by
+hand, recording the number.
+
+The full retrospective, written for retrieval by failure mode rather than by
+feature, is [`docs/solutions/sheet-fidelity-and-generation-feedback.md`](docs/solutions/sheet-fidelity-and-generation-feedback.md)
+— the first entry in that directory.
+
 ### Each Seedance Workflow Names Its Pictures Differently
 
 Found while verifying an unexplained uncommitted change to the adapter, and it
