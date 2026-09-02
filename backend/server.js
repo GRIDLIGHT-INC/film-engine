@@ -391,6 +391,34 @@ const server = http.createServer(async (req, res) => {
             if (handled !== false) return handled;
         }
 
+        /*
+         * The shape of a sound, for the card that plays it.
+         *
+         * Answered here rather than from a media route because the file lives
+         * wherever its capability puts it, and the asset row is the only thing
+         * that knows which. Peaks, not an image: one small JSON serves every
+         * width the card is drawn at.
+         */
+        if (parts[1] === 'assets' && parts[2] && parts[3] === 'waveform' && req.method === 'GET') {
+            const { db } = require('./db/database');
+            const row = db.prepare('SELECT file_path FROM film_assets WHERE id = ?').get(parts[2]);
+            if (!row || !row.file_path) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ error: 'No such asset' }));
+            }
+            const { waveformFor } = require('./lib/waveform');
+            const wave = await waveformFor(row.file_path);
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                // Keyed on mtime and size inside, so a regenerated cue gets a
+                // new shape; safe to hold for a day.
+                'Cache-Control': 'public, max-age=86400',
+            });
+            // null is a legitimate answer: no encoder, or a file that will not
+            // decode. The card draws a flat line and still plays the audio.
+            return res.end(JSON.stringify(wave || { peaks: [], buckets: 0 }));
+        }
+
         if (parts[1] === 'media-kinds'
             || (parts[1] === 'assets' && parts[2] && parts[3] === 'coverage')
             // A cue's own audio. Listed here because the music handler matches

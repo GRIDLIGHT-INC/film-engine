@@ -132,6 +132,7 @@ film-engine/
 │   │   ├── generation-override.js # What a director chose for THIS generation, read once
 │   │   ├── dry-run.js           # Every capability described from its own builder, nothing sent
 │   │   ├── thumbnails.js        # A 260px card should not cost 1.5MB
+│   │   ├── waveform.js         # What a sound LOOKS like, so a card can be read at a glance
 │   │   ├── flow-cost.js          # Projected cost + the budget gate (Phase 3)
 │   │   ├── flow-templates.js     # Six ready-made flows, validated at load (Phase 5)
 │   │   ├── flow-executor.js      # runFlow / executeNode / resolveNodeInputs (Phase 2)
@@ -316,6 +317,7 @@ film-engine/
 │       ├── generation-handles.test.js  # A generation the host abandons is not lost
 │       ├── image-weight.test.js       # A 48px avatar should not cost 824 kilobytes
 │       ├── sound-library.test.js      # A scene has SOUNDS, not one score and one ambient
+│       ├── audio-cards.test.js       # An audio file is a card: what it is, how long, how big
 │       ├── music-cue-generation.test.js # The cue you wrote is the cue that gets generated
 │       ├── music-cue-fields.test.js  # The fields the cue contract promises must reach the generator
 │       ├── seedance-image-fields.test.js # Each Seedance workflow names its pictures differently
@@ -3535,6 +3537,44 @@ Related: `file-storage.getFilePath()` enforces that a DB-sourced `file_name` can
 ### Lip-Sync
 Combines raw video with dialogue audio to produce lip-synced video. Requires both `video_raw` and `audio_dialogue` assets. Output stored as `data/video/{project_id}/{shot_code}_synced.mp4`.
 
+### An Audio File Is a Card, Not a Filename
+
+*"Each audio file should be its own card with details about it, format, what it
+is, etc. I should be able to add a new audio through either generate or
+upload."*
+
+The sound sheet listed cues as rows of text. A row cannot answer the question a
+director actually has in front of a folder of takes — *which one is this, is it
+the right length, and has it been generated yet* — so every answer needed a
+click, and two files three seconds apart were indistinguishable.
+
+**The details were already in the database and nothing read them.**
+`film_assets` carries `format`, `duration_ms`, `size_bytes`, `provider` and
+`created_at`; the card reads all five. `duration_ms` is the one that matters,
+because it is the difference between a bed that covers the scene and one that
+stops two thirds of the way through — invisible in a filename.
+
+**A waveform, not an icon.** `lib/waveform.js` decodes to mono 8kHz and reduces
+to 96 peaks, cached under `.waves` keyed on **mtime and size** — the same
+identity rule the plate cache uses, because a regenerated cue is written to the
+same path and a cache keyed on the path alone would draw the old sound for
+ever. It is the only thing on the card that separates a take that is mostly
+silence from one that clips, and both are *listen to it* problems a duration
+cannot express. It never throws: a peak list that cannot be computed is a card
+without a picture, never a card that fails to render.
+
+**Both ways in are on every category.** Generate and upload sit on each of the
+five cue types rather than once on the sheet — a single Add button forces the
+director to say afterwards what the sound was, and this codebase has already
+paid once for a coverage question asked at the wrong moment.
+
+The test reads the detail set from the **schema**, across every migration that
+touches `film_assets` rather than the CREATE alone: `provider` arrives in a
+later ALTER, so a scan of the create statement reports a column the card
+correctly shows as missing. And it requires `paintWaveforms` to be **called**,
+not merely defined — the first build had it wired to nothing, and a test
+checking only that it exists passes in exactly that state.
+
 ### A Cue Is Written to the Length of the Cut
 *"If we generate a soundtrack for a clip, how do we know the final length and feed the right prompt?"*
 
@@ -4103,6 +4143,7 @@ node --test backend/tests/muapi-models.test.js
 node --test backend/tests/generation-handles.test.js
 node --test backend/tests/image-weight.test.js
 node --test backend/tests/sound-library.test.js
+node --test backend/tests/audio-cards.test.js
 node --test backend/tests/music-cue-generation.test.js
 node --test backend/tests/music-cue-fields.test.js
 node --test backend/tests/seedance-image-fields.test.js

@@ -1499,6 +1499,26 @@
            'AMBIEN...', and Source music and Transitions vanished entirely.
            Stacked here, so the category is always the first thing read. */
         .ss-cue { padding:8px 0; border-bottom:1px solid var(--gl-border,rgba(255,255,255,.07)); }
+        /* An audio file as a card: the waveform stands where a plate's picture
+           stands on a subject sheet, so the two read as the same furniture. */
+        .snd-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; }
+        .snd-card { border:1px solid var(--gl-border,rgba(255,255,255,.08)); border-radius:8px;
+                    overflow:hidden; background:rgba(255,255,255,.02); }
+        .snd-tile { position:relative; height:62px; display:flex; align-items:center;
+                    justify-content:center; background:rgba(0,0,0,.25); }
+        .snd-wave { width:100%; height:100%; display:block; color:var(--gl-accent,#818cf8); opacity:.85; }
+        .snd-play { position:absolute; inset:0; margin:auto; width:30px; height:30px; border-radius:50%;
+                    border:0; cursor:pointer; background:rgba(0,0,0,.55); color:#fff; font-size:12px;
+                    line-height:1; display:flex; align-items:center; justify-content:center; }
+        .snd-play:hover { background:rgba(0,0,0,.75); }
+        .snd-empty { font-size:11px; opacity:.45; }
+        .snd-meta { padding:7px 9px 5px; display:flex; flex-direction:column; gap:2px; min-width:0; }
+        .snd-meta strong { font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .snd-cat { font-size:9px; letter-spacing:.08em; text-transform:uppercase; opacity:.55; }
+        .snd-facts, .snd-origin { font-size:10px; opacity:.5; overflow:hidden;
+                                  text-overflow:ellipsis; white-space:nowrap; }
+        .snd-actions { display:flex; gap:4px; padding:0 7px 8px; flex-wrap:wrap; }
+        .snd-actions .btn { flex:1; min-width:0; font-size:10px; padding:3px 5px; }
         .ss-cue:last-of-type { border-bottom:0; }
         .ps-turntable { padding:26px 32px 8px; }
         .ps-grid > .ss-col:first-child {
@@ -32804,26 +32824,108 @@ ${fountainText.slice(0, 50000)}`;
         { type: 'ambient', label: 'Ambience', what: 'The bed the whole scene sits on.' },
     ];
 
-    /** One cue: what it is, whether it has audio, and every action on it. */
-    function soundCueRow(cue, asset) {
+    /* ── One audio file, as a card ──────────────────────────────────────────
+     *
+     * "Each audio file should be its own card with details about it — format,
+     *  what it is, etc."
+     *
+     * The row this replaces said what a cue was CALLED and nothing about the
+     * audio: not its format, length, weight, or what made it. A director
+     * choosing between two takes of a score had nothing to choose on.
+     *
+     * Every fact is read from the asset row. Nothing is inferred and nothing is
+     * invented — a card that guesses shows a confident blank where a fact
+     * should be, and `film_assets` can already answer all five.
+     */
+    function fmtDuration(ms) {
+        if (!ms || ms < 0) return null;
+        const s = Math.round(ms / 1000);
+        return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }
+    function fmtSize(bytes) {
+        if (!bytes) return null;
+        return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB'
+                                : Math.max(1, Math.round(bytes / 1024)) + ' KB';
+    }
+    function fmtAge(iso) {
+        if (!iso) return null;
+        const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+        if (!isFinite(days) || days < 0) return null;
+        return days === 0 ? 'today' : days === 1 ? 'yesterday' : days + 'd ago';
+    }
+
+    /** Draw the peaks the server computed. Flat line when there are none. */
+    function drawWaveform(canvas, peaks) {
+        const ctx = canvas.getContext && canvas.getContext('2d');
+        if (!ctx) return;
+        const w = canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
+        const h = canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = getComputedStyle(canvas).color || '#818cf8';
+        const list = (peaks && peaks.length) ? peaks : new Array(48).fill(0.02);
+        const bar = w / list.length;
+        for (let i = 0; i < list.length; i++) {
+            const barH = Math.max(1, list[i] * h * 0.92);
+            ctx.fillRect(i * bar, (h - barH) / 2, Math.max(1, bar * 0.62), barH);
+        }
+    }
+
+    /** Fetch peaks once per asset and paint every canvas waiting on them. */
+    async function paintWaveforms(root) {
+        for (const c of (root || document).querySelectorAll('canvas.snd-wave[data-asset]')) {
+            if (c.dataset.painted) continue;
+            c.dataset.painted = '1';
+            try {
+                const w = await api('/assets/' + c.dataset.asset + '/waveform');
+                drawWaveform(c, w && w.peaks);
+            } catch (_) { drawWaveform(c, null); }
+        }
+    }
+
+    function soundCueCard(cue, asset) {
         const url = asset && asset.url ? API_BASE + asset.url : '';
-        const badge = url
-            ? '<span class="tag" style="background:var(--gl-success,#166534);">ready</span>'
-            : '<span class="tag" style="opacity:.6;">no audio yet</span>';
-        const title = cue.title || cue.description || '(untitled cue)';
-        return `<div class="ss-cue" data-cue-id="${esc(cue.id)}">
-            <div class="flex-between" style="gap:8px;">
-                <span class="text-sm" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
-                      title="${esc(cue.description || '')}">${esc(title)} ${badge}</span>
-                <span style="display:flex;gap:6px;flex-shrink:0;">
-                    <button class="btn btn-secondary btn-sm" onclick="generateCueAudio('${esc(cue.id)}', this)">${url ? 'Regen' : 'Generate'}</button>
-                    ${mediaUploadControl('music', 'audio', 'cue', cue.id, { after: 'loadMusic', label: 'Upload' })}
-                    <button class="btn btn-secondary btn-sm" onclick="deleteSoundCue('${esc(cue.id)}')" title="Remove this cue. Audio it produced is kept.">&times;</button>
-                </span>
+        const cat = SOUND_CATEGORIES.find(c => c.type === cue.cue_type) || { label: cue.cue_type };
+        const title = cue.title || cue.description || '(untitled)';
+        // Only facts the row actually holds. A missing one is omitted, never
+        // shown as a blank or a zero.
+        const facts = [
+            (asset && (asset.format || '')).toString().toUpperCase() || null,
+            fmtDuration(asset && asset.duration_ms),
+            fmtSize(asset && asset.size_bytes),
+        ].filter(Boolean);
+        const origin = [asset && asset.provider, fmtAge(asset && asset.created_at)].filter(Boolean);
+
+        return `<div class="snd-card" data-cue-id="${esc(cue.id)}">
+            <div class="snd-tile">
+                ${url ? `<canvas class="snd-wave" data-asset="${esc(asset.id || '')}"></canvas>
+                         <audio src="${esc(url)}" preload="none"></audio>
+                         <button class="snd-play" title="Play" onclick="sndPlay(this)">&#9654;</button>`
+                      : '<div class="snd-empty">no audio yet</div>'}
             </div>
-            ${url ? `<audio src="${esc(url)}" controls preload="none" style="width:100%;margin-top:6px;"
-                            onerror="this.style.display='none'"></audio>` : ''}
+            <div class="snd-meta">
+                <strong title="${esc(cue.description || '')}">${esc(title)}</strong>
+                <span class="snd-cat">${esc(cat.label)}</span>
+                ${facts.length ? `<span class="snd-facts">${esc(facts.join(' \u00b7 '))}</span>` : ''}
+                ${origin.length ? `<span class="snd-origin">${esc(origin.join(' \u00b7 '))}</span>` : ''}
+            </div>
+            <div class="snd-actions">
+                <button class="btn btn-secondary btn-sm" onclick="generateCueAudio('${esc(cue.id)}', this)">${url ? 'Regen' : 'Generate'}</button>
+                ${mediaUploadControl('music', 'audio', 'cue', cue.id, { after: 'loadMusic', label: 'Upload' })}
+                <button class="btn btn-secondary btn-sm" onclick="deleteSoundCue('${esc(cue.id)}')" title="Remove this cue. Audio it produced is kept.">&times;</button>
+            </div>
         </div>`;
+    }
+
+    /** Play or pause the card you clicked, and stop whatever else was playing. */
+    function sndPlay(btn) {
+        const card = btn.closest('.snd-card');
+        const a = card && card.querySelector('audio');
+        if (!a) return;
+        document.querySelectorAll('.snd-card audio').forEach(o => { if (o !== a) { o.pause(); } });
+        document.querySelectorAll('.snd-play').forEach(b => { if (b !== btn) b.innerHTML = '&#9654;'; });
+        if (a.paused) { a.play(); btn.innerHTML = '&#10073;&#10073;'; }
+        else { a.pause(); btn.innerHTML = '&#9654;'; }
+        a.onended = () => { btn.innerHTML = '&#9654;'; };
     }
 
     /** A scene's sounds, one region per category, in the sheet design. */
@@ -32832,7 +32934,7 @@ ${fountainText.slice(0, 50000)}`;
         const region = cat => {
             const rows = mine.filter(c => c.cue_type === cat.type);
             const inner = rows.length
-                ? rows.map(c => soundCueRow(c, (assetById || {})[c.generated_asset_id])).join('')
+                ? `<div class="snd-cards">${rows.map(c => soundCueCard(c, (assetById || {})[c.generated_asset_id])).join('')}</div>`
                 : '<p class="text-muted text-sm">Nothing yet.</p>';
             return ssSection('snd-' + cat.type, cat.label, cat.what,
                 inner + `<button class="btn btn-secondary btn-sm" style="margin-top:8px;"
@@ -33025,6 +33127,13 @@ ${fountainText.slice(0, 50000)}`;
 
             const readyCount = scenes.filter(sc => assetsByScene[sc.id] && assetsByScene[sc.id].audio_music).length;
             setStatus(scenes.length + ' scene(s), ' + readyCount + ' scored');
+            /*
+             * Peaks arrive AFTER the cards do, never before. Awaiting a decoder
+             * for every cue would make the sheet wait to show which sounds even
+             * exist — the same mistake loadStoryboard made when it awaited the
+             * drift report before painting a single frame.
+             */
+            paintWaveforms(grid);
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -34939,19 +35048,6 @@ ${fountainText.slice(0, 50000)}`;
          * stack four translucent blacks and make the tightest crop the
          * brightest region on screen, which is exactly backwards.
          */
-        /*
-         * A placement the frame already IS costs nothing, and drawing a
-         * full-frame box for it looks identical to the feature not working.
-         * Say it instead.
-         */
-        const losesNothing = parsed.every(p => protectBoxFor(frameRatio, p.v).w >= 99.5
-                                            && protectBoxFor(frameRatio, p.v).h >= 99.5);
-        if (losesNothing) {
-            return `<div style="position:absolute;left:6px;bottom:6px;font-size:11px;font-weight:600;`
-                + `color:#fff;text-shadow:0 1px 2px #000;white-space:nowrap;">`
-                + `${esc(parsed.map(p => p.r).join(', '))} — full frame, nothing is lost</div>`;
-        }
-
         const tight = protectBoxFor(frameRatio, parsed[0].v);
         let html = `<div style="position:absolute;left:${tight.left}%;top:${tight.top}%;`
             + `width:${tight.w}%;height:${tight.h}%;`
@@ -35039,27 +35135,7 @@ ${fountainText.slice(0, 50000)}`;
 
         boxes.forEach(box => {
             const img = box.parentNode.querySelector('img');
-            if (!img) { box.style.display = 'none'; return; }
-            /*
-             * A TILE WHOSE PICTURE HAS NOT DECODED YET IS NOT A TILE WITH NO
-             * ANSWER — IT IS ONE THAT CANNOT ANSWER *YET*.
-             *
-             * `naturalWidth` is 0 until the image decodes, and the board fetches
-             * thumbnails lazily. Hiding the box and returning meant that
-             * choosing a ratio right after the grid painted — which is exactly
-             * when a director chooses one, having just applied a package — drew
-             * the guide on whichever tiles happened to be ready and silently
-             * nothing on the rest. It reads as the feature being broken.
-             *
-             * So the box waits for its own picture. `once` because a tile can
-             * be re-rendered and a stacked listener would redraw the same
-             * overlay N times.
-             */
-            if (!img.naturalWidth) {
-                box.style.display = 'none';
-                img.addEventListener('load', renderBoardProtect, { once: true });
-                return;
-            }
+            if (!img || !img.naturalWidth) { box.style.display = 'none'; return; }
             box.style.display = 'block';
             box.innerHTML = protectOverlayHTML(img.naturalWidth / img.naturalHeight, ratios);
         });
