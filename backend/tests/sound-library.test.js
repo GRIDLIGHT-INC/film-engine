@@ -64,8 +64,18 @@ test('a scene can hold MANY cues of the same type — nothing selects just one',
     if (/cue_type = \?[^;]*LIMIT 1/s.test(ROUTE)) {
         collapses.push('routes/music-gen.js: cueOfKind takes LIMIT 1, so a scene has one cue per type');
     }
-    if (/!\w*Cues\[c\.scene_id\]/.test(UI)) {
-        collapses.push('src/index.html: the page keeps the FIRST cue of a type per scene and drops the rest');
+    /*
+     * The page must render EVERY cue. It must NOT be asserted by the absence of
+     * a single-cue lookup: two of those remain deliberately, because the
+     * scene-level "score this scene" and the ambient direction box each act on
+     * one cue and have to pick, exactly as the route does. The first version of
+     * this check matched those and reported working code as broken.
+     */
+    if (!/cuesByScene\[c\.scene_id\] \|\|= \[\]\)\.push\(c\)/.test(UI)) {
+        collapses.push('src/index.html: the page does not collect every cue per scene');
+    }
+    if (!/mine\.filter\(c => c\.cue_type === cat\.type\)/.test(UI)) {
+        collapses.push('src/index.html: the sound sheet does not render one row per cue of a category');
     }
     /*
      * The THIRD site, and asserted by RUNNING it rather than by grepping.
@@ -154,9 +164,26 @@ test('the sound surface renders every cue individually, in the sheet design', ()
      */
     const gaps = [];
     if (!/function renderSoundSheet/.test(UI)) gaps.push('there is no sound sheet renderer');
-    if (!/ssSection\('snd-/.test(UI)) gaps.push('the sound surface does not use ssSection regions');
+    if (!/ssSection\('snd-' \+ cat\.type/.test(UI)) gaps.push('the sound sheet does not build ssSection regions');
+    /*
+     * The region ids are COMPUTED — `ssSection('snd-' + cat.type, ...)` — so the
+     * literal "snd-score" appears nowhere in the source. Grepping for it
+     * reported a working sheet as missing every category, which is the
+     * grep-versus-runtime failure this codebase has paid for before. The list
+     * the page declares is read instead, and compared against the schema.
+     */
+    const block = /const SOUND_CATEGORIES = \[([\s\S]*?)\];/.exec(UI);
+    assert.ok(block, 'SOUND_CATEGORIES is gone — the sheet has no category list to read');
+    const declared = [...block[1].matchAll(/type: '([a-z]+)'/g)].map(m => m[1]);
+    /*
+     * Scoped to the SOUND_CATEGORIES block, and that scoping is the point. The
+     * first version searched the whole page for `{ type: 'x', label:` — which
+     * is also the shape of the SCREENPLAY ELEMENT types, where 'transition'
+     * appears again. Deleting the sound category left the screenplay one, the
+     * check passed, and a mutation proved it was reading the wrong list.
+     */
     for (const t of TYPES) {
-        if (!new RegExp(`snd-${t}`).test(UI)) gaps.push(`no region for cue type "${t}"`);
+        if (!declared.includes(t)) gaps.push(`the sound sheet has no category for cue type "${t}"`);
     }
     assert.deepStrictEqual(gaps, [], '\n  ' + gaps.join('\n  ') + '\n');
 });
