@@ -1493,8 +1493,14 @@
            there is not room for two. */
         .ss-grid.snd-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:0; }
         .snd-grid > .ss-col { padding:14px 16px; display:flex; flex-direction:column; gap:16px; min-width:0; }
-        .snd-grid .ss-region-head h4 { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .snd-grid .ss-what { display:block; }
+        /* ssSection lays the title and its one-line description SIDE BY SIDE,
+           which is right in a wide sheet and wrong in a 300px column: the
+           description won the space and the titles were clipped to nothing —
+           'AMBIEN...', and Source music and Transitions vanished entirely.
+           Stacked here, so the category is always the first thing read. */
+        .snd-grid .ss-region-head { display:block; }
+        .snd-grid .ss-region-head h4 { display:block; margin:0 0 2px; }
+        .snd-grid .ss-what { display:block; margin:0 0 6px; }
         .ss-cue { padding:8px 0; border-bottom:1px solid var(--gl-border,rgba(255,255,255,.07)); }
         .ss-cue:last-of-type { border-bottom:0; }
         .ps-turntable { padding:26px 32px 8px; }
