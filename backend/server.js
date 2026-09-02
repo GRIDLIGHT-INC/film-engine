@@ -393,6 +393,11 @@ const server = http.createServer(async (req, res) => {
 
         if (parts[1] === 'media-kinds'
             || (parts[1] === 'assets' && parts[2] && parts[3] === 'coverage')
+            // A cue's own audio. Listed here because the music handler matches
+            // music-cues and would swallow it -- the /film/locations/:id trap
+            // already cost once: a handler that exists and is never reached
+            // looks exactly like a missing feature.
+            || (parts[1] === 'music-cues' && parts[2] && parts[3] === 'audio')
             || (['shots', 'scenes'].includes(parts[1]) && parts[2] && parts[3] === 'media')) {
             const handled = await handleMediaImport(req, res, parts, query);
             if (handled !== false) return handled;

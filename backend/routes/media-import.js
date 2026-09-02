@@ -55,7 +55,7 @@ function listMediaKinds(res) {
     });
 }
 
-function importForCapability(req, res, scopeKind, ownerId, capability) {
+function importForCapability(req, res, scopeKind, ownerId, capability, opts = {}) {
     const spec = MEDIA_KINDS[capability];
     if (!spec || spec.media === 'image') {
         return json(res, 404, {
@@ -103,8 +103,17 @@ function importForCapability(req, res, scopeKind, ownerId, capability) {
             } catch (err) { coverageError = err.message; }
         }
 
+        // A caller that owns the row this file belongs to gets to record the
+        // link before the response leaves, so an upload cannot be reported as
+        // attached while the row still points at nothing.
+        let attached = null;
+        if (typeof opts.onImported === 'function') {
+            try { attached = opts.onImported(imported); } catch (_) { attached = null; }
+        }
+
         return json(res, 201, {
             ...imported,
+            ...(attached ? { attached } : {}),
             ...(coverage ? { covers: coverage.covers } : {}),
             ...(coverageError ? { coverage_error: coverageError } : {}),
             ...(coverageError ? {
@@ -156,6 +165,12 @@ function setClipCoverage(req, res, assetId) {
     }
 }
 
+/** Which uploadable kind a cue's audio is, from the cue's own type. */
+const CUE_CAPABILITY = Object.freeze({
+    score: 'music', source: 'music', transition: 'music',
+    ambient: 'ambient', sfx: 'sfx',
+});
+
 function handleMediaImport(req, res, urlParts) {
     if (urlParts[1] === 'media-kinds' && req.method === 'GET') return listMediaKinds(res);
 
@@ -163,6 +178,38 @@ function handleMediaImport(req, res, urlParts) {
     if (urlParts[1] === 'assets' && urlParts[2] && urlParts[3] === 'coverage' && req.method === 'PUT') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid asset ID' });
         return setClipCoverage(req, res, urlParts[2]);
+    }
+
+    /*
+     * A SOUND A DIRECTOR ALREADY HAS, attached to the cue that describes it.
+     *
+     * media_upload has always landed audio as an ASSET. An asset is not a cue:
+     * it carries no level, no fades, no offset and no place on the sheet, so an
+     * uploaded bed never reached the mix, the playback or the export. "Add
+     * manually" produced a file nobody heard.
+     *
+     * The capability is derived from the cue's own type rather than asked for,
+     * because a cue that says it is ambient and stores its audio as music is a
+     * row that disagrees with itself, and nothing downstream could tell which
+     * half to believe.
+     */
+    if (urlParts[1] === 'music-cues' && urlParts[2] && urlParts[3] === 'audio' && req.method === 'POST') {
+        const { db } = require('../db/database');
+        const cue = db.prepare('SELECT * FROM film_music_cues WHERE id = ?').get(urlParts[2]);
+        if (!cue) return json(res, 404, { error: `No music cue ${urlParts[2]}` });
+        if (!cue.scene_id) {
+            return json(res, 400, {
+                error: 'This cue is not attached to a scene, so its audio has nowhere to play.',
+            });
+        }
+        const capability = CUE_CAPABILITY[cue.cue_type] || 'music';
+        return importForCapability(req, res, 'scene', cue.scene_id, capability, {
+            onImported: (imported) => {
+                db.prepare('UPDATE film_music_cues SET generated_asset_id = ? WHERE id = ?')
+                    .run(imported.asset_id, cue.id);
+                return { cue_id: cue.id, cue_type: cue.cue_type, capability };
+            },
+        });
     }
 
     const scope = urlParts[1] === 'shots' ? 'shot' : urlParts[1] === 'scenes' ? 'scene' : null;
