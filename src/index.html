@@ -25419,7 +25419,24 @@ ${fountainText.slice(0, 50000)}`;
         const materials = SS.materials(p.materials_json, p.materials);
         const constraints = SS.list(p.constraints_json, p.constraints);
         const keywords = SS.list(p.keywords, '');
-        const made = SS.views.filter(v => v.available).length;
+        /*
+         * LOCKED COUNTS THE TURNTABLE, NOT EVERY PICTURE.
+         *
+         * It counted PICTURES and asked which were canonical. A subject can
+         * hold two pictures for one slot — a view-less plate is the identity
+         * plate and reads as `front`, while an explicit `front` view may also
+         * exist — so one slot counted twice. Measured on the live install:
+         * 9 views, 6 counted, 5 slots actually filled, front counted twice.
+         *
+         * Restricting the count to canonical names was the first attempt and
+         * still returned 6/5, because both of those rows genuinely ARE front.
+         * Only counting SLOTS can be bounded by the number of slots, which is
+         * the shape the location and character sheets already had — and why
+         * neither of them could ever print this.
+         */
+        const slotFilled = (id) => (SS.views || []).some(v =>
+            v.available && String(v.view || 'front').trim().toLowerCase() === String(id).toLowerCase());
+        const made = (SS.propViews || []).filter(slot => slotFilled(slot.id)).length;
         const mm = v => (Number(v) > 0 ? `${Math.round(Number(v) * 1000)} mm` : '—');
         const biggest = Math.max(Number(p.height_m) || 0, Number(p.width_m) || 0, Number(p.length_m) || 0);
         const verdict = !biggest ? 'size not declared'
