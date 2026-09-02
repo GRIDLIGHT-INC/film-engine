@@ -969,6 +969,119 @@ all**, so it rendered in normal flow at the tile's top-left and overprinted the
 view label: "upload" and "RIGHT" on the same pixels, which reads as the tile
 being broken.
 
+
+### A Column Is Not a Style, It Is Where the Words Go
+
+The prop sheet rendered its two columns **inverted** against
+`design-ref-prop.png`: the 1936-character object description — the text every
+plate is generated FROM — sat in a scrolling **400px** rail, while a single
+reference thumbnail owned the **1152px** column.
+
+**The CSS was already right.** `.ps-grid` is `minmax(0, 1fr) 400px`, identical
+to the value `Prop Card.dc.html` declares. Nothing needed re-tuning; five
+`ssSection(...)` calls were in the wrong `.ss-col`. Touching the grid would have
+broken a correct rule to compensate for a markup-order fault.
+
+**Nothing had ever measured column membership**, which is why 70 passing tests
+coexisted with a visibly wrong sheet. `subject-sheet-design` asserts every
+element the design LABELS is present; `subject-sheet-fidelity` asserts each
+layout declaration is declared and worn. Both are about PRESENCE — and every
+section here was present, in the wrong half of the page.
+
+The test is set-based over **all 9** `ps-*` regions, read out of
+`renderPropSheet`'s own markup and placed by counting the `.ss-col` openings
+before each. Section order is expressed **only** by markup order — there is no
+registry, enum or ordering array anywhere to read — so it reads the rendered
+structure rather than a list, and refuses to run if the scan sees fewer than
+five regions: a renderer refactored to a loop would otherwise yield zero
+literals and make every membership assertion pass over an empty set.
+
+**The description is bound to the STYLESHEET's geometry, not to a column
+index.** It asserts the description lands in whichever track `.ps-grid` makes
+flexible, so it survives the grid being re-declared. Swapping the tracks to
+`400px minmax(0, 1fr)` flips it from fail to pass — which is what proves it
+reads geometry rather than always failing.
+
+**A move script needs its own containment guard, and this one cost 10,850
+lines.** Cutting each block by balanced braces is right — a retyped field is how
+a dropped `esc()` on `description` or `materials` becomes stored XSS — but the
+first version bounded only the START of the region and scanned for the closing
+`</div>` to **end of file**. It swallowed everything to the last one in the
+document, `renderCharacterSheet` included. The block-level check passed, because
+all 8 blocks were still present exactly once; what was missing was everything
+else. A move changes order, not content, so the script now asserts the line
+count does not move and the region is under 200 lines. **The character tests
+failing was the only signal** — the prop tests all went green over a gutted
+file.
+
+Measured in a real browser before and after: the description moved from the
+400px rail to a 1090px box in the 1152px column, and stayed `readOnly` in view
+mode. The **location** sheet is measured correct against its own reference —
+560/992 columns, 1158+300 bottom rail, Lighting / Atmosphere / Sound sharing
+`y=1192` — and is byte-identical afterwards, pinned so a prop change cannot leak
+into it.
+
+**And an assertion coupled to a call SHAPE failed the day the call improved.**
+`shot-anchor` matched the literal `frameVersionsModal').classList.add('open')`,
+so routing `openFrameVersions` through the shared `showModal()` helper — which
+adds that same class *and* stacks the overlay above whatever opened it — read as
+the modal never being shown. It now derives the display class from the
+stylesheet and accepts either the inline call or the helper, **and checks the
+helper really adds that class**, which the literal match never could. Strictly
+stronger than what it replaced: it catches a modal nothing opens, and one the
+helper shows with the wrong class.
+
+
+**Three more gaps closed in review, and one of them was in this test itself.**
+
+The **character sheet had no column protection at all** — `characterSheetHtml`
+makes **zero** `ssSection` calls against location's 10 and prop's 9, so it
+carries no `data-region` and moving a section between its columns failed
+nothing, on the one sheet the original complaint named. It is keyed on the
+section **label**, which `design-ref-character.png` and `subject-sheet-design`
+already treat as the contract, rather than on a class, which is styling.
+Converting the sheet to `ssSection` is tidier and was rejected: it wraps every
+region in new `.ss-region` markup and changes the cascade on a layout measured
+against its reference image days earlier. Closing a test gap is not worth
+risking the design it exists to protect.
+
+**A modal rule had silently stopped policing anything.**
+`page-handlers.test.js`'s *"every modal is shown with the class its own CSS
+displays"* scans for a modal opened at a CALL SITE, and once the stacking work
+routed all **35** overlays through `showModal()` there were **zero** call sites
+left to scan. It matched an empty set and passed, across 49 sites. It checks the
+helper itself now, bounded by that function's own body rather than a character
+window.
+
+**A location field ignored view mode.** The set-description textarea was written
+inline because it saves through `saveSheetSection`, so it stayed editable on a
+sheet that opens read-only. Routing it through `ssField` was tried and is
+**wrong**: `subject-sheets` requires every `ssField()` call to name a literal,
+registry-declared field, and a section's name is built at run time — those
+sections sit outside that registry on purpose. It carries the same mode lock
+inline instead.
+
+**And the column scan ignored where a column CLOSES.** It assigned each section
+to the last column that *opened* before it and never read the closing tag. The
+character sheet's concept band spans full width **below** both columns —
+measured in a browser at **1496px** against columns of 467 and 978 — and the
+test recorded it as column 1. Worse than a wrong label: the test claimed to
+catch a section moving between columns and already held the wrong answer for
+that one, so moving the band *into* a column would have passed silently. Found
+only because the browser disagreed with two artefacts that agreed with each
+other — **my test and my verification probe shared the same wrong model, so they
+could not check each other.**
+
+**Every column check rests on a precondition that is now enforced.** They read
+the renderer's SOURCE and place a section by where its literal sits between the
+column divs; that equals where it RENDERS only while every section is emitted
+unconditionally. Short-circuiting one section so it rendered nothing left the
+file passing **20/20** while the browser showed **8 regions instead of 9**. A
+DOM assertion is the direct fix and is unavailable — [ADR-002](docs/adr/002-vanilla-http-no-framework.md)
+means no bundler and no jsdom — so the precondition is asserted instead: a
+section that becomes conditional fails with *"their position in the source no
+longer proves where — or whether — they render"*.
+
 ### Each Seedance Workflow Names Its Pictures Differently
 
 Found while verifying an unexplained uncommitted change to the adapter, and it
