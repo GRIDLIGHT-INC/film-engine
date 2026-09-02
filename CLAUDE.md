@@ -314,6 +314,7 @@ film-engine/
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
 │       ├── muapi-models.test.js        # MuAPI is the house provider: its models must be pickable, and reach MuAPI
 │       ├── generation-handles.test.js  # A generation the host abandons is not lost
+│       ├── sound-library.test.js      # A scene has SOUNDS, not one score and one ambient
 │       ├── music-cue-generation.test.js # The cue you wrote is the cue that gets generated
 │       ├── music-cue-fields.test.js  # The fields the cue contract promises must reach the generator
 │       ├── seedance-image-fields.test.js # Each Seedance workflow names its pictures differently
@@ -969,6 +970,66 @@ all**, so it rendered in normal flow at the tile's top-left and overprinted the
 view label: "upload" and "RIGHT" on the same pixels, which reads as the tile
 being broken.
 
+
+### A Scene Has Sounds, Not One Score and One Ambient
+
+*"The music and sound area is horrible. I'd like to generate and/or add
+manually several sounds and categorize them. Right now we can only have one
+score and one ambient."*
+
+**The data model was never the limit.** `film_music_cues` has declared **five**
+cue types since migration 016 — `score`, `source`, `sfx`, `ambient`,
+`transition` — and carries no UNIQUE constraint, so several sounds per scene
+have always been storable. **Four separate sites selected one and threw the rest
+away**, and a director who wrote three effects was told nothing.
+
+`cueOfKind` took `LIMIT 1`. The page kept the first cue of each type per scene.
+`sceneBeds` laid out ONE asset for each of TWO kinds — so `source`, `sfx` and
+`transition` could never be heard however they were generated. And
+`routes/timeline.js` mapped all five types down to two before the beds were
+even built, with an asset query that excluded `audio_sfx`.
+
+**I found the third and fourth only by reading `cueOfKind`'s callers.** My own
+test had named two, and its comment warned that fixing one leaves the other.
+Fixing the route and the page alone would have generated the right sounds,
+displayed them, and played none of the three new types.
+
+The link each cue already carries is what makes several of a kind possible:
+`generated_asset_id` points at the audio THAT cue produced, so two scores in one
+scene are two files rather than one row winning a tie-break. A cue with no link
+falls back to the scene's newest asset of its type, so beds made before the link
+existed still play rather than vanishing the day this shipped.
+
+**SFX was refused outright**, with a hint to the shot route. The reasoning was
+sound as far as it went — effects are normally read from a scene card, and no
+builder took a cue — but a director who writes *"a screen door two streets
+over"* on a cue wants THAT sound, and being sent elsewhere to describe it again
+is the feature not existing. It reuses `buildSFXPrompts` by making the cue a
+one-entry card, so a cue-written effect and a card-written one cannot describe
+different sounds.
+
+**An upload was an asset, never a cue.** `media_upload` landed audio correctly
+and an asset carries no level, no fades, no offset and no place on the sheet —
+so an uploaded bed never reached the mix, the playback or the export. *"Add
+manually"* produced a file nobody heard. `POST /film/music-cues/:id/audio` goes
+through the same import machinery and links the cue; the capability is derived
+from `cue_type` rather than asked for, because a cue that says ambient and
+stores music disagrees with itself. `server.js` dispatches it explicitly — the
+music handler matches `music-cues` and would otherwise swallow it, the
+`/film/locations/:id` trap that already cost once.
+
+The surface is `renderSoundSheet`: one `ssSection` region per category, the same
+furniture as the three subject sheets. The categories ARE the schema's
+vocabulary, and the test reads the migration's own CHECK, so a sixth type cannot
+be added without a home.
+
+**Three of that test's assertions reported working code as broken** and had to
+be rebound: one matched the deliberate back-compat path in `sceneBeds`, one
+matched input validation rather than a refusal, and one read the wrong file. A
+fourth was worse — it searched the whole page for `{ type: 'x', label: ... }`,
+which is also the shape of the SCREENPLAY element list, where `transition`
+appears again; deleting a sound category left the screenplay one and the check
+passed. Only a mutation found it.
 
 ### A Column Is Not a Style, It Is Where the Words Go
 
@@ -4000,6 +4061,7 @@ node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js
 node --test backend/tests/muapi-models.test.js
 node --test backend/tests/generation-handles.test.js
+node --test backend/tests/sound-library.test.js
 node --test backend/tests/music-cue-generation.test.js
 node --test backend/tests/music-cue-fields.test.js
 node --test backend/tests/seedance-image-fields.test.js

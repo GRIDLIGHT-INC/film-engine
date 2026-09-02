@@ -1483,6 +1483,13 @@
         }
         .ls-footer > .ss-col { display:flex; flex-direction:column; gap:14px; }
         .ss-grid.ps-grid { display:grid; grid-template-columns:minmax(0, 1fr) 400px; }
+        /* Sound is two even columns: the music kinds beside the sound kinds.
+           Not the prop sheet's wide-plus-rail, because neither half of a cue
+           sheet is a margin note. */
+        .ss-grid.snd-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; }
+        .snd-grid > .ss-col { padding:18px 22px; display:flex; flex-direction:column; gap:18px; min-width:0; }
+        .ss-cue { padding:8px 0; border-bottom:1px solid var(--gl-border,rgba(255,255,255,.07)); }
+        .ss-cue:last-of-type { border-bottom:0; }
         .ps-turntable { padding:26px 32px 8px; }
         .ps-grid > .ss-col:first-child {
             padding:22px 30px 30px 32px; display:flex; flex-direction:column; gap:24px;
@@ -27002,9 +27009,15 @@ ${fountainText.slice(0, 50000)}`;
          * a clip dropped on a sequence must also mark that sequence complete
          * and point at the file, or the page still shows it as never run.
          */
-        const url = scope === 'sequence'
-            ? `/sequences/${ownerId}/import`
-            : `/${scope === 'scene' ? 'scenes' : 'shots'}/${ownerId}/media/${capability}/import`;
+        // A cue's audio has its own route: it must LINK the file to the cue, not
+        // merely land it on the scene. An asset carries no level, no fades and
+        // no place on the sheet, so an upload that stops at the scene is a file
+        // nobody hears.
+        const url = scope === 'cue'
+            ? `/music-cues/${ownerId}/audio`
+            : scope === 'sequence'
+                ? `/sequences/${ownerId}/import`
+                : `/${scope === 'scene' ? 'scenes' : 'shots'}/${ownerId}/media/${capability}/import`;
         return `<label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;"
                        title="${esc(o.title || `Use ${media === 'video' ? 'a clip' : 'audio'} you made elsewhere — it is stored exactly where a generated one goes`)}"
                        onclick="event.stopPropagation();">${esc(o.label || 'Upload')}
@@ -32733,6 +32746,105 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // MUSIC & SOUND
     // ══════════════════════════════════════════════════════════════
+    /*
+     * ── THE SOUND SHEET ────────────────────────────────────────────────────
+     *
+     * A scene is a CUE SHEET: several sounds, each categorised, each with its
+     * own audio. This page rendered exactly two rows — one Score, one Ambient —
+     * so three sound effects showed as none, and `source` and `transition`
+     * could be written and never seen.
+     *
+     * Built from `ssSection` like the character, location and prop sheets, so
+     * sound is the same furniture rather than a fourth idiom. The categories
+     * ARE the schema's cue_type vocabulary; the test reads the migration's own
+     * CHECK and compares, so a sixth type cannot be added without a home here.
+     */
+    const SOUND_CATEGORIES = [
+        { type: 'score', label: 'Score', what: 'The music written for this scene.' },
+        { type: 'source', label: 'Source music', what: 'Music playing inside the scene — a radio, a jukebox in shot.' },
+        { type: 'transition', label: 'Transitions', what: 'A stinger carrying one cut into the next.' },
+        { type: 'sfx', label: 'Sound effects', what: 'Specific sounds. As many as the scene needs.' },
+        { type: 'ambient', label: 'Ambience', what: 'The bed the whole scene sits on.' },
+    ];
+
+    /** One cue: what it is, whether it has audio, and every action on it. */
+    function soundCueRow(cue, asset) {
+        const url = asset && asset.url ? API_BASE + asset.url : '';
+        const badge = url
+            ? '<span class="tag" style="background:var(--gl-success,#166534);">ready</span>'
+            : '<span class="tag" style="opacity:.6;">no audio yet</span>';
+        const title = cue.title || cue.description || '(untitled cue)';
+        return `<div class="ss-cue" data-cue-id="${esc(cue.id)}">
+            <div class="flex-between" style="gap:8px;">
+                <span class="text-sm" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                      title="${esc(cue.description || '')}">${esc(title)} ${badge}</span>
+                <span style="display:flex;gap:6px;flex-shrink:0;">
+                    <button class="btn btn-secondary btn-sm" onclick="generateCueAudio('${esc(cue.id)}', this)">${url ? 'Regen' : 'Generate'}</button>
+                    ${mediaUploadControl('music', 'audio', 'cue', cue.id, { after: 'loadMusic', label: 'Upload' })}
+                    <button class="btn btn-secondary btn-sm" onclick="deleteSoundCue('${esc(cue.id)}')" title="Remove this cue. Audio it produced is kept.">&times;</button>
+                </span>
+            </div>
+            ${url ? `<audio src="${esc(url)}" controls preload="none" style="width:100%;margin-top:6px;"
+                            onerror="this.style.display='none'"></audio>` : ''}
+        </div>`;
+    }
+
+    /** A scene's sounds, one region per category, in the sheet design. */
+    function renderSoundSheet(sc, cues, assetById) {
+        const mine = (cues || []).filter(c => c.scene_id === sc.id);
+        const region = cat => {
+            const rows = mine.filter(c => c.cue_type === cat.type);
+            const inner = rows.length
+                ? rows.map(c => soundCueRow(c, (assetById || {})[c.generated_asset_id])).join('')
+                : '<p class="text-muted text-sm">Nothing yet.</p>';
+            return ssSection('snd-' + cat.type, cat.label, cat.what,
+                inner + `<button class="btn btn-secondary btn-sm" style="margin-top:8px;"
+                        onclick="addSoundCue('${esc(sc.id)}', '${cat.type}')">+ ${esc(cat.label)}</button>`);
+        };
+        return `<div class="ss-grid snd-grid">
+            <div class="ss-col">${SOUND_CATEGORIES.slice(0, 3).map(region).join('')}</div>
+            <div class="ss-col">${SOUND_CATEGORIES.slice(3).map(region).join('')}</div>
+        </div>`;
+    }
+
+    /** Generate the audio for ONE cue — the cue written, not the scene's first. */
+    function generateCueAudio(cueId, btn) {
+        return confirmPaidImage({
+            capability: 'music',
+            title: 'Generate this cue',
+            note: 'Generates the audio for this cue only. Others on the scene are untouched.',
+            send: async choices => _shotAction(cueId, btn, 'Generate',
+                '/music-cues/' + cueId + '/generate', 'Generating', loadMusic, choices),
+        });
+    }
+
+    /** Add a cue of a category to a scene. Several of a kind is the point. */
+    async function addSoundCue(sceneId, cueType) {
+        if (!state.currentProject) return;
+        const label = (SOUND_CATEGORIES.find(c => c.type === cueType) || {}).label || cueType;
+        const title = prompt('What is this ' + label.toLowerCase() + '?', '');
+        if (title === null) return;
+        try {
+            await api('/projects/' + state.currentProject.id + '/music-cues', {
+                method: 'POST',
+                body: JSON.stringify({ scene_id: sceneId, cue_type: cueType,
+                                       title: title || label, description: title || '' }),
+            });
+            setStatus(label + ' cue added', true);
+            loadMusic();
+        } catch (err) { setStatus('Could not add the cue: ' + err.message, true); }
+    }
+
+    /** Remove a cue. The audio it produced is an asset and is deliberately kept. */
+    async function deleteSoundCue(cueId) {
+        if (!confirm('Remove this cue? Any audio it generated stays in the project.')) return;
+        try {
+            await api('/music-cues/' + cueId, { method: 'DELETE' });
+            setStatus('Cue removed', true);
+            loadMusic();
+        } catch (err) { setStatus('Could not remove the cue: ' + err.message, true); }
+    }
+
     async function loadMusic() {
         if (!state.currentProject) return;
         setStatus('Loading music...');
@@ -32744,20 +32856,36 @@ ${fountainText.slice(0, 50000)}`;
                 api('/projects/' + pid + '/providers').catch(() => ({ effective: {} })),
                 api('/projects/' + pid + '/music-cues').catch(() => ({ music_cues: [] })),
             ]);
-            // What a director has already said about how each scene sounds.
+            /*
+             * EVERY cue a scene holds, grouped by scene — not the first of each
+             * kind. This kept one score and one ambient and dropped the rest, so
+             * three sound effects showed as one and `source`, `sfx` and
+             * `transition` were invisible however they were written.
+             *
+             * The two single-cue lookups stay: the scene-level "score this
+             * scene" and the ambient direction box each act on one cue and have
+             * to pick, exactly as the route does.
+             */
+            const cuesByScene = {};
             const ambientCues = {};
             const scoreCues = {};
             (cueData.music_cues || []).forEach(c => {
                 if (!c.scene_id) return;
+                (cuesByScene[c.scene_id] ||= []).push(c);
                 if (c.cue_type === 'ambient') { if (!ambientCues[c.scene_id]) ambientCues[c.scene_id] = c; }
                 else if (c.cue_type === 'score' && !scoreCues[c.scene_id]) scoreCues[c.scene_id] = c;
             });
+            window.__cuesByScene = cuesByScene;
             window.__ambientCues = ambientCues;
             window.__scoreCues = scoreCues;
             const scenes = sceneData.scenes || [];
             // Latest job per (scene, gen_type).
             const jobKey = {};
             (jobData.jobs || []).forEach(j => { const k = j.scene_id + ':' + j.gen_type; if (!jobKey[k]) jobKey[k] = j; });
+            // Keyed by id too, because a cue points at its own audio via
+            // generated_asset_id — what makes two scores two files.
+            const assetById = {};
+            (jobData.assets || []).forEach(a => { if (a && a.id) assetById[a.id] = a; });
             const assetsByScene = {};
             (jobData.assets || []).forEach(a => {
                 if (!a.scene_id) return;
@@ -32812,9 +32940,16 @@ ${fountainText.slice(0, 50000)}`;
                         <strong style="font-size:13px;">Scene ${esc(String(sc.scene_number))}</strong>
                         <span class="text-sm text-muted">${esc(sc.location || '')}${sc.time_of_day ? ' &middot; ' + esc(sc.time_of_day) : ''}</span>
                     </div>
-                    ${audioRow('Score', sc, 'score', musicProvider,
+                    ${renderSoundSheet(sc, cueData.music_cues || [], assetById)}
+                    <!--
+                      The two scene-level rows stay: "score this scene" and "give
+                      it a bed" are single actions, and they are how every
+                      existing project's audio was made. The sheet above is the
+                      cue sheet. The two coexist deliberately.
+                    -->
+                    ${audioRow('Score (scene)', sc, 'score', musicProvider,
                         mediaUploadControl('music', 'audio', 'scene', sc.id, { after: 'loadMusic', label: 'Upload' }))}
-                    ${audioRow('Ambient', sc, 'ambient', ambientProvider,
+                    ${audioRow('Ambient (scene)', sc, 'ambient', ambientProvider,
                         mediaUploadControl('ambient', 'audio', 'scene', sc.id, { after: 'loadMusic', label: 'Upload' }))}
                     <!--
                       The bed was assembled from a lookup table on the location
