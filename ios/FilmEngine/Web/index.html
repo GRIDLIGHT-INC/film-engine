@@ -25387,6 +25387,32 @@ ${fountainText.slice(0, 50000)}`;
 
     /* ── prop ──────────────────────────────────────────────────────────── */
 
+    /*
+     * VIEWS THAT ARE NOT ON THE TURNTABLE ARE STILL PICTURES.
+     *
+     * The turntable renders the five canonical slots and matches each by exact
+     * name, so a plate generated as "rear", "three-quarter rear" or "interior"
+     * was filed, paid for, sitting on disk -- and rendered NOWHERE. The sheet
+     * showed one tile and looked like the generation had failed.
+     *
+     * A canonical set is right: which angles a turnaround needs is a fact about
+     * turnarounds. But it cannot be the only thing the sheet can display, or the
+     * naming of a view silently decides whether the director ever sees it.
+     */
+    function psExtraViews() {
+        const canonical = new Set((SS.propViews || []).map(v => String(v.id).toLowerCase()));
+        const extra = (SS.views || []).filter(v => {
+            const name = String(v.view || '').trim();
+            return name && !canonical.has(name.toLowerCase());
+        });
+        if (!extra.length) return '';
+        return ssSection('ps-extra-views', 'Other views', 'off the turntable · still fed to generation',
+            `<div class="ps-plates">${extra.map(v =>
+                ssTile(v, v.view, 'named view · not one of the five', 'ps-plate')).join('')}</div>
+             <p class="ss-note">Generated under a name the turntable does not carry. Rename or regenerate
+             it as one of the five to have it count towards "locked".</p>`);
+    }
+
     function renderPropSheet() {
         const p = SS.data || {};
         const states = SS.parse(p.continuity_states, []);
@@ -25419,6 +25445,7 @@ ${fountainText.slice(0, 50000)}`;
                 `<div class="ps-plates">${SS.propViews.map(v =>
                     ssTile(ssViewFor(v.id), v.label, `${v.angle} · ${v.caption}`, 'ps-plate')).join('')}</div>
                  ${ssPlateMeta()}${ssPlateControls()}`)}
+            ${psExtraViews()}
         </div>
 
         <div class="ss-grid ps-grid">
