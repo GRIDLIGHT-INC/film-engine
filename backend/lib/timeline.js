@@ -269,6 +269,57 @@ function attachPauses(shot, media) {
  * offline audio mixer ever read them; a player that ignores them is playing a
  * different mix from the one being delivered.
  */
+/**
+ * Every sound a scene plays, not one per kind.
+ *
+ * A scene is a CUE SHEET: several sounds, each with its own offset, level and
+ * fades — all of which `film_music_cues` has carried since migration 016. This
+ * laid out ONE asset for each of TWO kinds, so a director who wrote three sound
+ * effects heard none of them, and `source`, `sfx` and `transition` could never
+ * play at all however they were generated.
+ *
+ * Two shapes are accepted deliberately. An ARRAY is the cue sheet: one entry per
+ * cue, each carrying the asset its own `generated_asset_id` points at, so two
+ * scores in one scene are two beds rather than one. The older object keyed by
+ * kind is still honoured because the timeline's existing contracts — default
+ * gain, the offset-into-the-scene reading, the end_ms — are asserted against it,
+ * and rewriting those assertions to fit a new shape is how a contract quietly
+ * changes meaning.
+ */
+function sceneSounds(sceneId, sceneAssets = {}, cues = {}) {
+    const at = cues[sceneId];
+    const assets = sceneAssets[sceneId] || {};
+
+    if (Array.isArray(at)) {
+        return at
+            .map(cue => ({
+                kind: BED_KIND_FOR[cue.cue_type] || 'music',
+                type: ASSET_TYPE_FOR[cue.cue_type] || 'audio_music',
+                asset: cue.asset || null,
+                cue,
+            }))
+            .filter(b => b.asset && b.asset.file_path);
+    }
+
+    const out = [];
+    for (const [kind, type] of [['music', 'audio_music'], ['ambient', 'audio_ambient']]) {
+        const asset = assets[type];
+        if (!asset || !asset.file_path) continue;
+        out.push({ kind, type, asset, cue: (at || {})[kind] || null });
+    }
+    return out;
+}
+
+/** Which stem a cue type plays on, and which asset type it is stored as. */
+const BED_KIND_FOR = Object.freeze({
+    score: 'music', source: 'music', transition: 'music',
+    ambient: 'ambient', sfx: 'sfx',
+});
+const ASSET_TYPE_FOR = Object.freeze({
+    score: 'audio_music', source: 'audio_music', transition: 'audio_music',
+    ambient: 'audio_ambient', sfx: 'audio_sfx',
+});
+
 function sceneBeds(entries, sceneAssets = {}, cues = {}) {
     const spans = new Map();
     for (const entry of entries) {
@@ -280,11 +331,7 @@ function sceneBeds(entries, sceneAssets = {}, cues = {}) {
 
     const beds = [];
     for (const [sceneId, span] of spans) {
-        const assets = sceneAssets[sceneId] || {};
-        for (const [kind, type] of [['music', 'audio_music'], ['ambient', 'audio_ambient']]) {
-            const asset = assets[type];
-            if (!asset || !asset.file_path) continue;
-            const cue = (cues[sceneId] || {})[kind] || null;
+        for (const { kind, type, asset, cue } of sceneSounds(sceneId, sceneAssets, cues)) {
             /*
              * start_ms is an offset INTO THE SCENE, not into the film — that is
              * what the mixer has always read it as, and it is the only reading
@@ -439,6 +486,9 @@ function timecodeToMs(tc, fps = DEFAULT_FPS) {
 
 module.exports = {
     sceneBeds,
+    sceneSounds,
+    BED_KIND_FOR,
+    ASSET_TYPE_FOR,
     DEFAULT_BED_GAIN_DB,
     buildTimeline,
     resolveShotMedia,

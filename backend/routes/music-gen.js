@@ -121,11 +121,37 @@ async function generateFromCue(req, res, cueId) {
      * route that does the job, because a refusal that does not say where to go
      * is indistinguishable from the feature being broken.
      */
+    /*
+     * SFX FROM THE CUE THAT WAS WRITTEN.
+     *
+     * This used to refuse, pointing at the shot route, and the reasoning was
+     * sound as far as it went: effects are normally read from a shot's scene
+     * card, and no builder took a cue. But a director who writes "a screen door
+     * two streets over" on a cue wants THAT sound, and being sent to a different
+     * route to describe it again is the feature not existing.
+     *
+     * It reuses `buildSFXPrompts` rather than growing a second prompt path — the
+     * cue becomes a one-entry card, so a cue-written effect and a card-written
+     * one cannot describe different sounds.
+     */
     if (cue.cue_type === 'sfx') {
-        return json(res, 400, {
-            error: 'SFX are generated from a shot, not from a cue row.',
-            cue_type: cue.cue_type,
-            hint: 'Use POST /film/shots/:id/sfx/generate — effects are read from the shot\'s scene card.',
+        const text = String(cue.description || cue.title || '').trim();
+        if (!text) {
+            return json(res, 400, {
+                error: 'This sound effect cue has no description, so there is nothing to generate.',
+                hint: 'Write what the sound is on the cue, then generate it.',
+            });
+        }
+        const payloads = buildSFXPrompts({ sfx_cues: [{ description: text }] }, scene);
+        if (!payloads.length) {
+            return json(res, 400, { error: 'The cue produced no sound-effect payload.' });
+        }
+        const provider = resolveGenerator('sfx',
+            spendContext({ id: scene.project_id }, null, scene, cueOverride(req, 'sfx')));
+        return runCueGeneration(res, {
+            cue, scene, provider, payload: payloads[0], genType: 'sfx',
+            assetType: 'audio_sfx', suffix: 'sfx',
+            durationMs: (payloads[0].duration_s || 0) * 1000,
         });
     }
 
@@ -409,14 +435,33 @@ const CUE_KIND_FOR = Object.freeze({
  * here and it is not the kind I generate from" can act; one told nothing
  * assumes their direction was read.
  */
+/**
+ * Every cue of a kind on a scene, in the order they play.
+ *
+ * A scene is a CUE SHEET. `LIMIT 1` made it one sound per kind: a director who
+ * wrote three effects, or a second score for the back half of a scene, got one
+ * and was told nothing. The rows were always there — nothing selected them.
+ */
+function cuesOfKind(sceneId, kind) {
+    return db.prepare(
+        'SELECT * FROM film_music_cues WHERE scene_id = ? AND cue_type = ? ORDER BY start_ms, created_at, id'
+    ).all(sceneId, kind);
+}
+
+/**
+ * The cue a SCENE-LEVEL generate acts on, plus the ones it declined.
+ *
+ * Still one, and deliberately: "score this scene" is a single action and has to
+ * pick. What changed is that the others are no longer invisible — `all` carries
+ * the whole sheet, so a caller that wants every sound can have it.
+ */
 function cueOfKind(sceneId, kind) {
-    const chosen = db.prepare(
-        'SELECT * FROM film_music_cues WHERE scene_id = ? AND cue_type = ? ORDER BY start_ms, created_at, id LIMIT 1'
-    ).get(sceneId, kind) || null;
+    const all = cuesOfKind(sceneId, kind);
+    const chosen = all[0] || null;
     const others = db.prepare(
         'SELECT id, cue_type, title FROM film_music_cues WHERE scene_id = ? AND cue_type != ? ORDER BY start_ms'
     ).all(sceneId, kind);
-    return { chosen, others };
+    return { chosen, others, all };
 }
 
 /**

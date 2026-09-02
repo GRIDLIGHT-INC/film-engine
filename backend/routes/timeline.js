@@ -100,7 +100,7 @@ function loadTimeline(projectId) {
         SELECT a.scene_id, a.asset_type, a.file_path, a.duration_ms, a.created_at
         FROM film_assets a
         WHERE a.project_id = ? AND a.scene_id IS NOT NULL AND a.shot_id IS NULL
-          AND a.asset_type IN ('audio_music', 'audio_ambient')
+          AND a.asset_type IN ('audio_music', 'audio_ambient', 'audio_sfx')
         ORDER BY a.created_at DESC
     `).all(projectId);
     const sceneAssets = {};
@@ -113,14 +113,38 @@ function loadTimeline(projectId) {
     // The cue's own level, fades and offset. Declared since migration 016 and
     // read only by the offline mixer; a player that ignores them is playing a
     // different mix from the one being delivered.
+    /*
+     * EVERY cue, with the audio IT produced — not one per kind.
+     *
+     * This mapped all five cue types down to two and kept the first of each, so
+     * a scene with three sound effects contributed one bed, and `source`,
+     * `transition` and `sfx` could never be heard however they were generated.
+     *
+     * The link each cue already carries is what makes several of a kind
+     * possible: `generated_asset_id` points at the audio THAT cue produced, so
+     * two scores in one scene are two files rather than one row winning a
+     * tie-break. A cue with no link falls back to the scene's newest asset of
+     * its type, so beds made before the link existed still play rather than
+     * vanishing the day this shipped.
+     */
+    const cueAssets = {};
+    for (const row of db.prepare(`
+        SELECT id, file_path, duration_ms, asset_type FROM film_assets
+        WHERE project_id = ? AND asset_type IN ('audio_music', 'audio_ambient', 'audio_sfx')
+    `).all(projectId)) cueAssets[row.id] = row;
+
+    const { ASSET_TYPE_FOR } = require('../lib/timeline');
     const cues = {};
     for (const row of db.prepare(`
         SELECT c.* FROM film_music_cues c
         WHERE c.project_id = ? AND c.scene_id IS NOT NULL
-        ORDER BY c.start_ms
+        ORDER BY c.start_ms, c.created_at, c.id
     `).all(projectId)) {
-        const kind = row.cue_type === 'ambient' ? 'ambient' : 'music';
-        (cues[row.scene_id] ||= {})[kind] ||= row;
+        const linked = row.generated_asset_id ? cueAssets[row.generated_asset_id] : null;
+        const fallback = (sceneAssets[row.scene_id] || {})[ASSET_TYPE_FOR[row.cue_type] || 'audio_music'];
+        const asset = linked || fallback || null;
+        if (!asset || !asset.file_path) continue;
+        (cues[row.scene_id] ||= []).push({ ...row, asset });
     }
 
     const { coverageFor } = require('../lib/clip-coverage');
