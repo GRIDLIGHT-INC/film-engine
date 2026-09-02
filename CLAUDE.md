@@ -1808,7 +1808,10 @@ removal that was asked for.
 rather than from a list — the list is exactly what nobody updates. It holds four
 rules: no handler calls a loader nothing defines, no `onclick` names a function
 nothing defines, every modal is shown with the class its own CSS displays, and
-every page in the menu has a loader. That last one immediately caught
+every page in the menu has a loader. **The third of those later stopped
+policing anything** — it scanned for a modal opened at a call site, and the
+stacking work left zero call sites to scan; it checks the shared helper now.
+See *A Column Is Not a Style, It Is Where the Words Go*. That last one immediately caught
 `jobsqueue`, which was filled by its own nav button and by nothing else — so
 arriving from the home page's run report landed on a panel nobody filled. The
 vendored 3D library is excluded **by region**, not by name: including it produced
