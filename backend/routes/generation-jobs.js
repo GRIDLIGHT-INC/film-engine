@@ -58,7 +58,17 @@ async function handleGenerationJobs(req, res, parts) {
          * the sequence that bought it.
          */
         const b = (req.body && req.body.belongs_to) || null;
-        const out = await jobs.collect(parts[2], b ? { metaPatch: b } : {});
+        /*
+         * BOTH, because `belongs_to` answers two different questions.
+         *
+         * For a sequence leg it is meta the handle could not record, and it is
+         * merged into the job's meta. For a PLATE it names the subject to file
+         * against, which `collect` reads off opts directly. Passing only
+         * metaPatch is why naming a plate here did nothing at all: the value
+         * arrived, went into a meta bag nothing looked at for this purpose, and
+         * the job answered "already completed" as if it had not been asked.
+         */
+        const out = await jobs.collect(parts[2], b ? { metaPatch: b, belongs_to: b } : {});
         return json(res, out.ok ? 200 : (out.status || 500), out);
     }
 
