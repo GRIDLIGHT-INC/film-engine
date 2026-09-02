@@ -314,6 +314,7 @@ film-engine/
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
 │       ├── muapi-models.test.js        # MuAPI is the house provider: its models must be pickable, and reach MuAPI
 │       ├── generation-handles.test.js  # A generation the host abandons is not lost
+│       ├── image-weight.test.js       # A 48px avatar should not cost 824 kilobytes
 │       ├── sound-library.test.js      # A scene has SOUNDS, not one score and one ambient
 │       ├── music-cue-generation.test.js # The cue you wrote is the cue that gets generated
 │       ├── music-cue-fields.test.js  # The fields the cue contract promises must reach the generator
@@ -970,6 +971,45 @@ all**, so it rendered in normal flow at the tile's top-left and overprinted the
 view label: "upload" and "RIGHT" on the same pixels, which reads as the tile
 being broken.
 
+
+### A 48px Avatar Should Not Cost 824 Kilobytes
+
+*"Every once in a while when I load a project or an area the data takes time
+loading. This has been a repeating issue."*
+
+**It was never the API.** Every endpoint answers in 1–12ms, including on the
+largest project, and the staleness report — once six seconds — is 2ms since its
+cache. It is the PICTURES. Measured on the live install: reference plates total
+**77MB**, single files run **668KB to 1.2MB**, and a character card paints one
+at **48x48**. `loadCharacters` took **863ms cold and 4ms warm**, which is
+exactly why the symptom was intermittent and never reproduced on demand — the
+second look is the browser's cache, not the app.
+
+`file-storage.js` has served a cached thumbnail for any `?w=` since it was
+written, and falls through to the original on any failure so it can never take
+down the picture it is optimising. **Nothing had ever asked**: four thumbnails
+existed on the whole install, all under `storyboards/`.
+
+`plateSrc` mirrors `frameSrc` rather than inventing a second idiom, because the
+cache buster and the width share one query string and a plate URL already
+carries `?v=`.
+
+**Two things the scan got wrong first**, both corrected before anything was
+built on them. It required a literal `API_BASE` or `/film/` in the src and found
+**19** sites; there are **33** — the character sheet's tiles go through
+`csImg()`, so the origin is already inside the variable and the scan could not
+see the very files that prompted the complaint. And a general transform mangled
+`${API_BASE}${esc(x)}`, which is TWO expressions, into invalid JS; it was
+reverted and done per-pattern instead.
+
+**The viewer is deliberately untouched, and now guarded.** A tile hands its own
+`src` to `openPlateViewer`, so thumbnailing the tile would have thumbnailed the
+full-size viewer — *"a plate you cannot see full size is one you cannot judge."*
+A test asserts no handoff carries a width.
+
+The remaining sites are exempt **by name with a reason**: `frameSrc` already
+takes a width, `thumbnail_path` already points at one, marketing posters are
+judged full size, and style-book media is author-supplied and served whole.
 
 ### A Scene Has Sounds, Not One Score and One Ambient
 
@@ -4061,6 +4101,7 @@ node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js
 node --test backend/tests/muapi-models.test.js
 node --test backend/tests/generation-handles.test.js
+node --test backend/tests/image-weight.test.js
 node --test backend/tests/sound-library.test.js
 node --test backend/tests/music-cue-generation.test.js
 node --test backend/tests/music-cue-fields.test.js

@@ -1498,9 +1498,6 @@
            description won the space and the titles were clipped to nothing —
            'AMBIEN...', and Source music and Transitions vanished entirely.
            Stacked here, so the category is always the first thing read. */
-        .snd-grid .ss-region-head { display:block; }
-        .snd-grid .ss-region-head h4 { display:block; margin:0 0 2px; }
-        .snd-grid .ss-what { display:block; margin:0 0 6px; }
         .ss-cue { padding:8px 0; border-bottom:1px solid var(--gl-border,rgba(255,255,255,.07)); }
         .ss-cue:last-of-type { border-bottom:0; }
         .ps-turntable { padding:26px 32px 8px; }
@@ -1530,6 +1527,9 @@
             color:rgba(232,232,234,0.5); margin:0;
         }
         .ss-region-head > .ss-what { white-space:nowrap; margin:0; }
+        .snd-grid .ss-region-head { display:block; }
+        .snd-grid .ss-region-head h4 { display:block; margin:0 0 2px; }
+        .snd-grid .ss-what { display:block; margin:0 0 6px; }
         .ss-what { font-family:'JetBrains Mono',ui-monospace,monospace; font-size:10px;
             color:rgba(232,232,234,0.32); margin:5px 0 8px; }
         .ss-input {
@@ -14153,7 +14153,7 @@ THREE.GLTFLoader = GLTFLoader;
             <div class="card">
                 <div class="flex-between"><strong>${esc(e.spec_kind || e.kind)}</strong>
                     <button class="btn btn-sm" onclick="moodBoardDelete('${e.id}')">Remove</button></div>
-                ${e.image_url ? `<img src="${API_BASE}${esc(e.image_url)}" style="width:100%;margin-top:6px;border-radius:4px;"
+                ${e.image_url ? `<img src="${esc(plateSrc(e.image_url, 480))}" style="width:100%;margin-top:6px;border-radius:4px;"
                         onclick="openPlateViewer('${API_BASE}${esc(e.image_url)}', ${jsAttr(e.note || 'Board reference')})"
                         onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'text-sm text-muted',textContent:'This reference could not be loaded — the file may have been moved or deleted.'}))">`
                     : (e.image_path ? `<div class="text-sm text-muted" style="margin-top:6px;">This reference has no servable location.</div>` : '')}
@@ -24107,7 +24107,7 @@ ${fountainText.slice(0, 50000)}`;
                              ondragover="onShotDragOver(event)"
                              ondrop="onShotDrop(event,'${s.id}')"
                              onclick="openShotDetail('${s.id}')" style="cursor:pointer;">
-                            <img src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(s.shot_code)}.png"
+                            <img src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(s.shot_code)}.png?w=480"
                                  style="width:100%;height:60px;object-fit:cover;border-radius:4px;margin-bottom:6px;display:block;" onerror="this.style.display='none'">
                             <div class="shot-code">&#9776; Sc${s.scene_number} / ${esc(s.shot_code)}</div>
                             <div class="shot-meta">${esc(s.location || '')} ${s.duration_ms ? '&middot; ' + (s.duration_ms/1000).toFixed(1) + 's' : ''}${s.transition_in_type && s.transition_in_type !== 'cut' ? ' &middot; ' + esc(s.transition_in_type) : ''}</div>
@@ -24215,7 +24215,7 @@ ${fountainText.slice(0, 50000)}`;
             <div style="display:flex;gap:20px;flex-wrap:wrap;">
                 <div style="flex:1 1 340px;min-width:280px;">
                     ${img
-                        ? `<img src="${API_BASE}${esc(img)}" style="width:100%;border-radius:6px;display:block;cursor:zoom-in;"
+                        ? `<img src="${esc(plateSrc(img, 480))}" style="width:100%;border-radius:6px;display:block;cursor:zoom-in;"
                              title="Click to see it full size"
                              onclick="openPlateViewer('${API_BASE}${esc(img)}', ${jsAttr(row.name || 'Reference')})"
                              onerror="this.parentElement.innerHTML='<p class=text-muted>The plate file is missing.</p>'">`
@@ -24308,7 +24308,7 @@ ${fountainText.slice(0, 50000)}`;
         const card = v => `
             <div style="flex:0 0 200px;position:relative;">
                 ${v.available
-                    ? `<img src="${API_BASE}${esc(v.image_url)}"
+                    ? `<img src="${esc(plateSrc(v.image_url, 480))}"
                              style="width:100%;border-radius:6px;display:block;cursor:zoom-in;"
                              title="Click to see it full size"
                              onclick="openPlateViewer('${API_BASE}${esc(v.image_url)}', ${jsAttr(locationName + ' — ' + (v.label || v.view || 'default'))})">`
@@ -24564,7 +24564,7 @@ ${fountainText.slice(0, 50000)}`;
                     <div class="entity-card" style="cursor:pointer;" onclick="openCharacterSheet('${c.id}')" title="Open the character sheet">
                         <div class="entity-card-header">
                             ${c.reference_image_url
-                                ? '<img src="' + API_BASE + c.reference_image_url + '" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;cursor:zoom-in;" title="Click to see the plate full size"'
+                                ? '<img src="' + plateSrc(c.reference_image_url, 160) + '" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;cursor:zoom-in;" title="Click to see the plate full size"'
                                     // stopPropagation: the card is itself clickable and opens the
                                     // inspector, so without this you get both and the one you
                                     // asked for is underneath.
@@ -24649,7 +24649,7 @@ ${fountainText.slice(0, 50000)}`;
                                 /* API_BASE, because the route returns a PATH and the
                                    page is served from a different port — without it
                                    every picture is a perfectly good string and a 404. */
-                                ? `<img src="${API_BASE}${esc(v.image_url)}" alt="${esc(v.view)}"
+                                ? `<img src="${esc(plateSrc(v.image_url, 480))}" alt="${esc(v.view)}"
                                        style="width:100%;border-radius:6px;display:block;cursor:zoom-in;"
                                        title="Click to see it full size"
                                        onclick="openPlateViewer('${API_BASE}${esc(v.image_url)}', ${jsAttr(r.character + ' — ' + v.view)})">`
@@ -25061,7 +25061,7 @@ ${fountainText.slice(0, 50000)}`;
             ? `<div class="cs-refs">${gallery.slice(0, 12).map(g => {
                 const sent = g.role === 'reference';
                 return `<figure class="cs-tile">
-                    ${g.image_url ? `<img src="${esc(API_BASE + g.image_url)}" alt="">` : '<div class="cs-drop"></div>'}
+                    ${g.image_url ? `<img src="${esc(plateSrc(g.image_url, 320))}" alt="">` : '<div class="cs-drop"></div>'}
                     <figcaption>${sent ? '<span class="ss-ref-star">&#9733;</span> ' : ''}${esc(g.note || g.role || '')}</figcaption>
                 </figure>`;
             }).join('')}</div>`
@@ -25873,6 +25873,30 @@ ${fountainText.slice(0, 50000)}`;
         return url && !/^https?:/i.test(url) ? API_BASE + url : url;
     }
 
+    /*
+     * A plate at the size it will be DRAWN, not the size it was made.
+     *
+     * Measured on the live install: the reference plates total 77MB, single
+     * files run 668KB to 1.2MB, and a character card paints one at 48x48. The
+     * first visit to an area pulled full plates down to make thumbnails of
+     * them — loadCharacters took 863ms cold and 4ms warm, which is why the
+     * slowness was intermittent and never reproduced on demand.
+     *
+     * file-storage.js has served a cached thumbnail for any `?w=` since it was
+     * written, and falls through to the original on any failure so it can
+     * never take down the picture it is optimising. Nothing had ever asked:
+     * four thumbnails existed on the whole install, all under storyboards/.
+     *
+     * Built like frameSrc rather than as a second idiom, because the cache
+     * buster and the width have to share one query string — a plate URL
+     * already carries `?v=`.
+     */
+    function plateSrc(url, width) {
+        const abs = csImg(url);
+        if (!abs || !width) return abs;
+        return abs + (abs.includes('?') ? '&' : '?') + 'w=' + width;
+    }
+
     function characterSheetHtml(c, plates) {
         const spec = [
             ['Age', c.age_range], ['Gender', c.gender],
@@ -25896,7 +25920,7 @@ ${fountainText.slice(0, 50000)}`;
                   return `<div class="cs-plate ${p ? 'locked' : 'pending'}"
                        onclick="${p ? `openPlateViewer(${jsAttr(csImg(p.image_url))}, ${jsAttr((c.name || '') + ' — ' + v.label)})`
                                     : `generateOfficialViews(${jsAttr(v.id)})`}">
-                    ${p ? `<img src="${esc(csImg(p.image_url))}" alt="">` : ''}
+                    ${p ? `<img src="${esc(plateSrc(p.image_url, 320))}" alt="">` : ''}
                     <span class="vlabel">${esc(v.label)}</span>
                     <span class="vcap">${p ? esc(v.caption) : 'generate →'}</span>
                     ${p ? '<span class="vdot"></span>'
@@ -25981,7 +26005,7 @@ ${fountainText.slice(0, 50000)}`;
                       ? `<div class="cs-ward">${ward.map(w => `
                             <div class="item">
                               ${w.image_url
-                                  ? `<img class="thumb" src="${esc(csImg(w.image_url))}" alt=""
+                                  ? `<img class="thumb" src="${esc(plateSrc(w.image_url, 320))}" alt=""
                                        onclick="openPlateViewer(${jsAttr(csImg(w.image_url))}, ${jsAttr(w.note || 'Wardrobe')})">`
                                   : '<div class="thumb"></div>'}
                               <div style="min-width:0;">
@@ -26018,7 +26042,7 @@ ${fountainText.slice(0, 50000)}`;
             ${shown.map(i => `
               <div class="cs-tile ${i.role === 'concept' ? '' : 'starred'}"
                    onclick="openPlateViewer(${jsAttr(csImg(i.image_url))}, ${jsAttr(c.name || '')})">
-                ${i.image_url ? `<img src="${esc(csImg(i.image_url))}" alt="">` : ''}
+                ${i.image_url ? `<img src="${esc(plateSrc(i.image_url, 320))}" alt="">` : ''}
                 <span class="tl">${esc((i.metadata && i.metadata.ref_category) || i.role)}${i.note ? ' · ' + esc(i.note) : ''}</span>
               </div>`).join('')}
             <div class="cs-tile cs-drop" onclick="addSheetReference()" title="A picture you already have">
@@ -26406,7 +26430,7 @@ ${fountainText.slice(0, 50000)}`;
         <div class="rule"></div>
         <h2>Official views</h2>
         <div class="views">${CS_VIEWS.map(v => plates[v.id]
-            ? `<figure><img src="${esc(csImg(plates[v.id].image_url))}"><figcaption>${esc(v.label)}</figcaption></figure>`
+            ? `<figure><img src="${esc(plateSrc(plates[v.id].image_url, 320))}"><figcaption>${esc(v.label)}</figcaption></figure>`
             : `<figure><div style="aspect-ratio:3/4;border:1px dashed #bbb;"></div><figcaption>${esc(v.label)} — not generated</figcaption></figure>`).join('')}</div>
         ${spec.length ? `<h2>Physical spec</h2><div class="spec">${spec.map(([k, v]) =>
             `<div><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>` : ''}
@@ -26417,10 +26441,10 @@ ${fountainText.slice(0, 50000)}`;
             `<div><div class="sw" style="background:${esc(p.hex)}"></div>
              <div class="cap">${esc(p.name || '')}<br><span class="hex">${esc(p.hex)}</span></div></div>`).join('')}</div>` : ''}
         ${ward.length ? `<h2>Wardrobe &amp; props</h2><div class="ward">${ward.map(w =>
-            `<figure>${w.image_url ? `<img src="${esc(csImg(w.image_url))}">` : '<div class="blank"></div>'}
+            `<figure>${w.image_url ? `<img src="${esc(plateSrc(w.image_url, 320))}">` : '<div class="blank"></div>'}
              <figcaption>${esc(w.note || 'Item')}</figcaption></figure>`).join('')}</div>` : ''}
         ${refs.length ? `<h2>Concept art &amp; references</h2><div class="refs">${refs.slice(0, 15).map(r =>
-            `<img src="${esc(csImg(r.image_url))}">`).join('')}</div>` : ''}
+            `<img src="${esc(plateSrc(r.image_url, 320))}">`).join('')}</div>` : ''}
         <div class="foot">Film Engine · character sheet · ${esc(new Date().toISOString().slice(0, 10))}</div>
         <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 400); };<\/script>
         </body></html>`);
@@ -27270,7 +27294,7 @@ ${fountainText.slice(0, 50000)}`;
                 el.innerHTML = state.locations.map(l => `
                     <div class="entity-card" style="cursor:pointer;" onclick="openSubjectSheet('location', '${l.id}')" title="Open the location sheet">
                         ${l.reference_image_url
-                            ? '<img src="' + API_BASE + l.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;cursor:zoom-in;" title="Click to see the plate full size"'
+                            ? '<img src="' + plateSrc(l.reference_image_url, 480) + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;cursor:zoom-in;" title="Click to see the plate full size"'
                                 + ' onclick="event.stopPropagation(); openPlateViewer(\'' + API_BASE + l.reference_image_url + '\', ' + jsAttr(l.name) + ')"'
                                 + ' onerror="this.style.display=\'none\'">'
                             : ''}
@@ -27411,7 +27435,7 @@ ${fountainText.slice(0, 50000)}`;
                 el.innerHTML = filtered.map(p => `
                     <div class="entity-card" style="cursor:pointer;" onclick="openSubjectSheet('prop', '${p.id}')" title="Open the prop sheet">
                         ${p.reference_image_url
-                            ? '<img src="' + API_BASE + p.reference_image_url + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;cursor:zoom-in;" title="Click to see the plate full size"'
+                            ? '<img src="' + plateSrc(p.reference_image_url, 480) + '" style="width:calc(100% + 24px);height:120px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;cursor:zoom-in;" title="Click to see the plate full size"'
                                 + ' onclick="event.stopPropagation(); openPlateViewer(\'' + API_BASE + p.reference_image_url + '\', ' + jsAttr(p.name) + ')"'
                                 + ' onerror="this.style.display=\'none\'">'
                             : ''}
@@ -32261,7 +32285,7 @@ ${fountainText.slice(0, 50000)}`;
                     <div style="position:relative;background:var(--gl-bg-surface);border-radius:6px;overflow:hidden;margin-bottom:8px;min-height:120px;">
                         ${done
                             ? '<video src="' + videoUrl + '" controls preload="metadata" style="width:100%;display:block;" onerror="this.style.display=\'none\'"></video>'
-                            : '<img src="' + API_BASE + '/film/storyboards/' + pid + '/' + esc(s.shot_code) + '.png" style="width:100%;display:block;" onerror="this.style.display=\'none\';this.parentNode.style.minHeight=\'120px\'">'}
+                            : '<img src="' + API_BASE + '/film/storyboards/' + pid + '/' + esc(s.shot_code) + '.png?w=480" style="width:100%;display:block;" onerror="this.style.display=\'none\';this.parentNode.style.minHeight=\'120px\'">'}
                     </div>
                     <div class="flex-between">
                         <strong style="font-size:13px;">Sc${s.scene_number} / ${esc(s.shot_code)}</strong>
@@ -35800,7 +35824,7 @@ ${fountainText.slice(0, 50000)}`;
                </div>`
             : `<button class="btn btn-secondary" style="padding:0;overflow:hidden;text-align:left;display:block;"
                     onclick="backgroundPickerResolve(BACKGROUND_PICKER_VIEWS[${i}])">
-              <img src="${escapeHtml(API_BASE + v.image_url)}" alt="${escapeHtml(v.label)}"
+              <img src="${escapeHtml(plateSrc(v.image_url, 480))}" alt="${escapeHtml(v.label)}"
                    style="width:100%;display:block;">
               <div style="padding:7px 9px;" class="text-sm">${escapeHtml(v.label)}</div>
             </button>`).join('');
@@ -35874,7 +35898,7 @@ ${fountainText.slice(0, 50000)}`;
                   <div>
                     <label>Keeping this performance</label>
                     ${d.keeping.image_url
-                        ? `<img src="${esc(API_BASE + d.keeping.image_url)}" alt=""
+                        ? `<img src="${esc(plateSrc(d.keeping.image_url, 480))}" alt=""
                                style="width:100%;border-radius:6px;display:block;">`
                         : '<div class="text-muted text-sm">no picture</div>'}
                     <div class="text-sm"><strong>${esc(d.keeping.from)}</strong></div>
@@ -35883,7 +35907,7 @@ ${fountainText.slice(0, 50000)}`;
                   <div>
                     <label>Putting it here</label>
                     ${d.background.image_url
-                        ? `<img src="${esc(API_BASE + d.background.image_url)}" alt=""
+                        ? `<img src="${esc(plateSrc(d.background.image_url, 480))}" alt=""
                                style="width:100%;border-radius:6px;display:block;">`
                         : '<div class="text-muted text-sm">no picture</div>'}
                     <div class="text-sm"><strong>${esc(d.background.location)}</strong></div>
@@ -36846,7 +36870,7 @@ ${fountainText.slice(0, 50000)}`;
                 <button class="btn btn-secondary btn-sm" onclick="closeShotDetail()">&times;</button>
             </div>
             <div style="background:var(--surface-alt,var(--gl-bg-surface));border-radius:8px;min-height:140px;margin-bottom:12px;overflow:hidden;">
-                <img src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(shot.shot_code)}.png"
+                <img src="${API_BASE}/film/storyboards/${state.currentProject.id}/${esc(shot.shot_code)}.png?w=480"
                      style="width:100%;display:block;" onerror="this.parentElement.innerHTML='<p class=\\'text-sm text-muted\\' style=\\'padding:40px;text-align:center;\\'>No storyboard</p>'">
             </div>
             <div class="mb-8">
