@@ -126,6 +126,30 @@ function pending(projectId) {
     } catch (_) { return []; }
 }
 
+/**
+ * Jobs this engine settled as FAILED that the provider may still hold.
+ *
+ * Surfaced because `pending` alone cannot see them, and a failure caused by
+ * this side -- a misread result field, a storage error -- leaves a rendered,
+ * billed clip sitting on the provider's CDN with nothing pointing at it. Free
+ * to ask about and free to collect, so the only cost of listing them is a line
+ * of output; the cost of NOT listing them is re-buying footage that exists.
+ *
+ * Bounded to a week: a handle old enough that the provider has expired its
+ * result is a false promise, and offering it is worse than silence.
+ */
+function recoverable(projectId) {
+    try {
+        const { db } = handle();
+        const sql = `SELECT * FROM film_generation_jobs
+             WHERE status = 'failed' AND request_id IS NOT NULL
+               AND created_at >= datetime('now', '-7 days')`;
+        return projectId
+            ? db.prepare(`${sql} AND project_id = ? ORDER BY created_at DESC`).all(projectId)
+            : db.prepare(`${sql} ORDER BY created_at DESC`).all();
+    } catch (_) { return []; }
+}
+
 function get(jobId) {
     try {
         const { db } = handle();
@@ -175,12 +199,93 @@ function timedOut(info) {
  * whose provider reports failure is settled as failed, because a handle that
  * can never be collected must stop being offered.
  */
+function safeMeta(job) {
+    try { return JSON.parse((job && job.meta) || '{}'); } catch (_) { return {}; }
+}
+
+/**
+ * The plate an untagged handle was bought for, named by the caller.
+ *
+ * `belongs_to: { kind, subject_id, view? }` — for a job recorded before the
+ * engine stamped what it was, which is every plate generated before
+ * `plate-delivery` existed. Those results are not lost; they are unclaimed.
+ */
+function plateBindingOf(opts, meta) {
+    const b = opts && opts.belongs_to;
+    if (b && b.kind && (b.subject_id || b.subjectId)) {
+        return { kind: String(b.kind), subjectId: b.subject_id || b.subjectId, view: b.view || '' };
+    }
+    const stamped = meta && meta[require('./plate-delivery').JOB_META_KEY];
+    if (stamped && stamped.character_id) {
+        return { kind: 'character', subjectId: stamped.character_id, view: stamped.view || 'front',
+                 styleApplied: stamped.style_applied };
+    }
+    return null;
+}
+
+/** File the picture a settled job left on disk as the plate it was bought for. */
+async function adoptPlate(job, plate) {
+    const meta = safeMeta(job);
+    const delivery = require('./plate-delivery');
+    const { PERSIST_EXT, SUBDIR } = require('./media-kinds');
+    const { getFilePath } = require('./file-storage');
+    const ext = (PERSIST_EXT && PERSIST_EXT[job.capability]) || 'bin';
+    const subdir = (SUBDIR && SUBDIR[job.capability]) || 'storyboards';
+    let onDisk = null;
+    try { onDisk = getFilePath(job.project_id, subdir, `collected_${job.id}.${ext}`); } catch (_) { onDisk = null; }
+    const filed = onDisk && await delivery.adoptFile({
+        filePath: onDisk,
+        kind: plate.kind, projectId: job.project_id, subjectId: plate.subjectId, view: plate.view,
+        provider: job.provider, providerModel: (meta.meter && meta.meter.model) || '',
+        providerJobId: job.request_id, collectedFromJob: job.id,
+    });
+    if (filed && filed.ok) {
+        return { ok: true, job_id: job.id, adopted: true, plate: filed,
+            note: 'This job had already been collected but never filed. The picture it left on disk '
+                + 'is now the plate for that subject — nothing was regenerated or re-bought.' };
+    }
+    return { ok: false, status: 409, job_id: job.id,
+        error: `job ${job.id} is ${job.status} and its collected file could not be adopted`
+             + `${filed && filed.error ? ` — ${filed.error}` : ''}` };
+}
+
 async function collect(jobId, opts) {
     const job = get(jobId);
     if (!job) return { ok: false, status: 404, error: `no generation job ${jobId}` };
-    if (job.status !== 'pending') {
-        return { ok: true, already: job.status, job, note: `this job was already ${job.status}` };
+    /*
+     * A COMPLETED job is done: the bytes are filed and re-polling could only
+     * file them twice.
+     *
+     * A FAILED one is not the same thing, and treating it as final is what
+     * turned a rendered clip into a lost one. `failed` here means THIS ENGINE
+     * gave up on the job — including when it gave up because of its own bug:
+     * the poll read `data.output` while MuAPI answers `outputs`, so a finished,
+     * billed clip was settled as a failure and then refused collection forever.
+     * The provider is the source of truth about its own job, and asking it is
+     * FREE. So a failed handle is re-polled: if the provider really did fail,
+     * the same failure comes back and nothing changes; if it holds a result,
+     * the money stops being wasted.
+     */
+    if (job.status === 'completed') {
+        /*
+         * ADOPTION, not a re-buy.
+         *
+         * "The bytes are filed" was an assumption, and it was wrong for every
+         * plate. A plate collected before `plate-delivery` existed was written
+         * to `collected_<job>.png` and registered NOWHERE — nine of those
+         * accumulated in one afternoon on this production, two of them better
+         * than the plates actually in use, and refusing to look at them again
+         * is what turned a filing gap into work bought twice.
+         *
+         * So when the caller NAMES what the job was for, the picture already on
+         * disk becomes that plate. The provider is not asked for bytes this
+         * engine already has: nothing is re-polled and nothing is spent.
+         */
+        const claimed = plateBindingOf(opts, safeMeta(job));
+        if (claimed) return adoptPlate(job, claimed);
+        return { ok: true, already: job.status, job, note: 'this job was already completed' };
     }
+    const retryingFailed = job.status === 'failed';
 
     const providers = require('./providers');
     const adapter = providers.get(job.provider);
@@ -191,6 +296,10 @@ async function collect(jobId, opts) {
 
     let meta = {};
     try { meta = JSON.parse(job.meta || '{}'); } catch (_) { meta = {}; }
+    // A caller may supply what an older handle could not record. The stored
+    // meta still wins: what the engine wrote at the time is evidence, and a
+    // caller's guess must never overwrite it.
+    if (opts && opts.metaPatch) meta = Object.assign({}, opts.metaPatch, meta);
 
     let out;
     try {
@@ -216,15 +325,77 @@ async function collect(jobId, opts) {
      * still nothing in film_assets.
      */
     let stored = null;
+    let assetId = null;
+    let plateFiled = null;
     try {
-        if (out.data) {
+        /*
+         * BYTES OR A URL. Seedance returns a CDN link and no buffer, and this
+         * read `out.data` alone -- so the one adapter most likely to be
+         * collected was the one whose result was silently never filed.
+         */
+        /*
+         * A PLATE IS FILED AS A PLATE.
+         *
+         * Nano Banana Pro takes about two minutes; the host window is one. So
+         * every character plate on that model timed out, was collected here,
+         * and was written to `collected_<job>.png` in the storyboards directory
+         * — a finished, billed reference picture with no film_assets row, no
+         * entry in the character library, and `has_plate` still false. The
+         * director sees "failed", regenerates, and buys it twice.
+         *
+         * The handle now carries what the generation was FOR, so this road can
+         * do what the live road does. Same filing rule, one implementation, in
+         * lib/plate-delivery.js — exactly the arrangement the sequence-leg
+         * branch below already uses for the same reason.
+         */
+        const plateDelivery = require('./plate-delivery');
+        const plate = plateBindingOf(opts, meta);
+        if (plate && (out.data || out.url)) {
+            const filed = await plateDelivery.fileSubjectPlate({
+                kind: plate.kind,
+                projectId: job.project_id,
+                subjectId: plate.subjectId,
+                view: plate.view,
+                data: out.data || out,
+                provider: out.provider || job.provider,
+                providerModel: out.provider_model || (meta.meter && meta.meter.model) || '',
+                providerJobId: job.request_id,
+                styleApplied: plate.styleApplied,
+                collectedFromJob: job.id,
+            });
+            if (!filed.ok) {
+                return { ok: false, status: 500, job_id: job.id,
+                    error: `${job.provider} returned the plate and it could not be filed — ${filed.error}` };
+            }
+            assetId = filed.asset_id;
+            plateFiled = filed;
+            stored = { path: filed.file_path };
+        } else if (out.data || out.url) {
             const { persistCapabilityResult } = require('./capability-payloads');
             // PERSIST_EXT is what the registry actually calls it.
             const { PERSIST_EXT } = require('./media-kinds');
             const ext = (PERSIST_EXT && PERSIST_EXT[job.capability]) || 'bin';
-            const name = `collected_${job.id}.${ext}`;
+            /*
+             * A leg of a sequence is stored under the name that sequence looks
+             * it up by -- never `collected_<job>.mp4`, which is a file on disk
+             * that the sequence it was bought for cannot see.
+             */
+            const leg = meta && meta.sequence_id && meta.from && meta.to ? meta : null;
+            const name = leg
+                ? require('./sequence-delivery').clipFileName(leg.sequence_id, leg.from, leg.to)
+                : `collected_${job.id}.${ext}`;
             stored = await persistCapabilityResult(job.capability, out,
                 { project: { id: job.project_id }, project_id: job.project_id }, name);
+            if (leg) {
+                assetId = require('./sequence-delivery').fileSequenceClip({
+                    projectId: job.project_id,
+                    sequenceId: leg.sequence_id, from: leg.from, to: leg.to,
+                    shotId: leg.from_shot_id || job.shot_id || null,
+                    fileName: name,
+                    filePath: typeof stored === 'string' ? stored : (stored && stored.path) || '',
+                    extra: { collected_from_job: job.id },
+                });
+            }
         }
     } catch (err) {
         // The bytes arrived and could not be filed. Reported rather than
@@ -233,13 +404,55 @@ async function collect(jobId, opts) {
             error: `${job.provider} returned the result and it could not be stored — ${err.message}` };
     }
 
-    complete(job.id, {});
+    /*
+     * POST THE SPEND. This is the other half of the stamp `resolve()` writes at
+     * handle time.
+     *
+     * The live meter fires on a successful result, and a job that reached here
+     * did NOT return one to the caller — it timed out, or it was recorded as
+     * failed. So nothing has been billed on this side yet, and there is no
+     * double-count to guard against: a job that genuinely succeeded live was
+     * settled `completed` and never gets this far.
+     *
+     * Money the provider took and the ledger never saw is worse than no ledger:
+     * a spend report that reads $0 for video is believed.
+     */
+    try {
+        if (meta && meta.meter && Number(meta.meter.quantity) > 0) {
+            require('./usage-meter').recordUsage({
+                provider: job.provider,
+                capability: job.capability,
+                model: meta.meter.model || '',
+                unit: meta.meter.unit,
+                quantity: meta.meter.quantity,
+                parts: meta.meter.parts || null,
+                projectId: job.project_id || null,
+                shotId: meta.from_shot_id || job.shot_id || null,
+                sceneId: job.scene_id || null,
+            });
+        }
+    } catch (err) {
+        // Bookkeeping never fails the delivery it is keeping books on.
+        console.error('[generation-jobs] collected but could not record spend:', err.message);
+    }
+
+    complete(job.id, assetId ? { assetId } : {});
     return { ok: true, job_id: job.id, provider: job.provider, capability: job.capability,
+             ...(retryingFailed ? { recovered: true,
+                 note: 'This job had been settled as failed by this engine. The provider still '
+                     + 'held the result, so it was re-polled and delivered rather than re-bought.' } : {}),
+             ...(assetId ? { asset_id: assetId,
+                 ...(meta.sequence_id ? { sequence_id: meta.sequence_id } : {}) } : {}),
+             ...(plateFiled ? { plate: {
+                 kind: plateFiled.kind, subject_id: plateFiled.subject_id, view: plateFiled.view,
+                 file_name: plateFiled.file_name, image_url: plateFiled.image_url,
+                 filed: 'This plate finished after the call was abandoned and is now the reference '
+                      + 'for that view — it is in the character library, not a loose file.' } } : {}),
              stored: stored ? stored.path : null, url: out.url || null };
 }
 
 module.exports = {
     collect,
-    hostWindowMs, budgetFor, record, complete, fail, pending, get, timedOut,
+    hostWindowMs, budgetFor, record, complete, fail, pending, recoverable, get, timedOut,
     COLLECT_MARGIN_MS,
 };

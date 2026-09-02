@@ -7,7 +7,15 @@
  *   <PROVIDER>_API_KEY  (e.g. OPENAI_API_KEY, ELEVENLABS_API_KEY)
  */
 
-const { db } = require('../../db/database');
+/**
+ * Lazily, because a lib module required by a test that never opens a database
+ * must not open one — the rule `generation-jobs` already follows. Requiring the
+ * database at load time meant importing ANY adapter imported the whole store,
+ * so the pure parts of an adapter (its request builder, its result parser)
+ * could not be tested without one. That is not an inconvenience: the parser bug
+ * that lost a paid clip lived in exactly that untestable region.
+ */
+const database = () => require('../../db/database').db;
 
 /**
  * @param {string} providerId
@@ -37,6 +45,7 @@ function getCredential(providerId) {
     let apiKey = envKey || '';
     let meta = {};
     if (!apiKey || true) {
+        const db = database();
         let row = db.prepare('SELECT api_key, meta FROM film_provider_credentials WHERE provider = ?').get(providerId);
         /*
          * Fall back to a sibling on the same account. Only when this id has no

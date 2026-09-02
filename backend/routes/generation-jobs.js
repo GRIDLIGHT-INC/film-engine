@@ -25,10 +25,22 @@ async function handleGenerationJobs(req, res, parts) {
         const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
         if (!project) return json(res, 404, { error: 'Project not found' });
         const open = jobs.pending(projectId);
+        // Settled as failed by THIS engine, and possibly still sitting finished
+        // at the provider. Collecting one is free; re-buying it is not.
+        const stuck = jobs.recoverable(projectId);
         return json(res, 200, {
             project_id: projectId,
             pending: open,
             count: open.length,
+            ...(stuck.length ? {
+                recoverable: stuck.map(j => ({
+                    id: j.id, provider: j.provider, capability: j.capability,
+                    request_id: j.request_id, error: j.error, created_at: j.created_at,
+                })),
+                recoverable_note: 'These were recorded as FAILED here, but the provider may still hold '
+                    + 'the finished result — a failure on this side does not un-render or refund a '
+                    + 'generation. generation_collect re-polls them and is free.',
+            } : {}),
             note: open.length
                 ? 'These generations were accepted by their provider and have not been delivered here yet. '
                   + 'Collecting is free — the work is already paid for.'
@@ -38,7 +50,15 @@ async function handleGenerationJobs(req, res, parts) {
 
     // /film/generation-jobs/:id/collect
     if (req.method === 'POST' && parts[1] === 'generation-jobs' && parts[3] === 'collect') {
-        const out = await jobs.collect(parts[2], {});
+        /*
+         * `belongs_to` names what the clip IS, for a handle recorded before the
+         * engine stamped that itself. Every job created from now on carries its
+         * own leg meta, so this is for the ones already on disk -- without it a
+         * clip recovered from an older handle is stored and still invisible to
+         * the sequence that bought it.
+         */
+        const b = (req.body && req.body.belongs_to) || null;
+        const out = await jobs.collect(parts[2], b ? { metaPatch: b } : {});
         return json(res, out.ok ? 200 : (out.status || 500), out);
     }
 

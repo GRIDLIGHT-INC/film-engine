@@ -57,6 +57,36 @@ const MAX_KEYFRAMES = 30;
 const POLL_INTERVAL_MS = Number(process.env.SEEDANCE_POLL_INTERVAL_MS || 4000);
 const POLL_TIMEOUT_MS = Number(process.env.SEEDANCE_POLL_TIMEOUT_MS || 900000);
 
+/**
+ * The tier this payload resolves to, AND what it was asked for.
+ *
+ * Separated from `resolutionFor` because snapping has to be REPORTABLE. This
+ * adapter documents four tiers — 480p, 720p, 1080p, 4K — and nothing between
+ * them. A project set to 2K (2560x1440) is a legitimate ask that this provider
+ * cannot serve, and the rule below never rounds UP, so it quietly delivers
+ * 1080p. That is the right call on the bill and the wrong one in silence: a
+ * director who asked for 2K and was shown no objection has every reason to
+ * believe 2K is what rendered.
+ */
+function resolutionDecision(payload) {
+    const p = payload || {};
+    const resolution = resolutionFor(p);
+    const raster = String(p.target_resolution || '');
+    const m = /^(\d+)\s*[x:]\s*(\d+)$/i.exec(raster);
+    const askedLongEdge = m ? Math.max(Number(m[1]), Number(m[2])) : 0;
+    const explicit = String(p.resolution || p.quality || '').toLowerCase();
+    const served = RESOLUTIONS[resolution].longEdge;
+    return {
+        resolution,
+        asked: explicit && RESOLUTIONS[explicit] ? explicit : (askedLongEdge ? raster : null),
+        // Only a RASTER can be snapped. An explicit tier name is either one of
+        // the four or it was ignored, and both are already visible.
+        snapped: !!(askedLongEdge && !explicit && askedLongEdge !== served),
+        asked_long_edge: askedLongEdge || null,
+        served_long_edge: served,
+    };
+}
+
 /** The delivery resolution the project asked for, snapped to what exists. */
 function resolutionFor(payload) {
     const explicit = String(payload.resolution || payload.quality || '').toLowerCase();
@@ -146,6 +176,31 @@ function buildVideoRequest(payload) {
         duration: clamped,
     };
     if (Number.isFinite(Number(p.seed)) && Number(p.seed) >= 0) body.seed = Number(p.seed);
+
+    /*
+     * SILENT BY DEFAULT, AND THAT IS A DELIBERATE DEPARTURE FROM THE PROVIDER.
+     *
+     * Seedance 2.5 generates audio unless told not to: `generate_audio`
+     * defaults to TRUE upstream, and it is not an afterthought -- it synthesises
+     * synced speech, sound effects AND background music, mono, into every clip.
+     * Nothing here ever sent the field, so every generation this engine has
+     * bought came back scored by the model.
+     *
+     * That is wrong for THIS engine specifically. Film Engine owns audio: it
+     * has music cues, ambience, SFX and voice as separate capabilities, a mixer
+     * and a conform stage with LUFS targets. A mono bed the picture arrives
+     * with is a second, unasked-for score competing with the one the director
+     * commissioned, at a level nobody set, on a track the delivery spec does
+     * not account for. A studio ident with its own orchestral cue is the exact
+     * case: the clip would carry ByteDance's idea of the music underneath it.
+     *
+     * So the default is inverted here rather than inherited. `audio: true`
+     * (or `generate_audio: true`) asks for the provider's bed back, for the
+     * case where a director genuinely wants the model's synced diegetic sound.
+     */
+    const wantsAudio = p.generate_audio !== undefined ? p.generate_audio
+        : (p.audio !== undefined ? p.audio : false);
+    body.generate_audio = !!wantsAudio;
 
     const allowed = WORKFLOWS[workflow].images;
     const used = images.slice(0, allowed);
@@ -362,6 +417,25 @@ function describeVideoRequest(payload) {
     if (built.resolution === '4k') {
         notes.push('4K is $1.70 per second — five times 1080p. Change the project delivery resolution to lower it.');
     }
+    /*
+     * SAY IT WHEN THE ASK IS NOT A TIER THIS PROVIDER HAS.
+     *
+     * Never rounding up is correct — a resolution nobody asked for is a bill
+     * nobody expected — but doing it without a word is how a 2K project is
+     * delivered at 1080p and nobody finds out until someone measures a frame.
+     */
+    const tier = resolutionDecision(p);
+    if (tier.snapped) {
+        notes.push(`This asks for ${tier.asked} (${tier.asked_long_edge}px long edge). Seedance `
+            + `documents 480p, 720p, 1080p and 4K only, so it will render `
+            + `${tier.resolution} (${tier.served_long_edge}px) — the nearest tier at or BELOW the ask, `
+            + 'never above it. Finish it up with the post/upscale pass if you need the full raster.');
+    }
+    if (built.body.generate_audio) {
+        notes.push('Audio ON: Seedance will synthesise synced speech, sound effects and a mono '
+            + 'music bed into this clip. Film Engine\'s own cues, ambience and mix are separate — '
+            + 'two scores will arrive on one timeline.');
+    }
     if (p.camera_control && Array.isArray(p.camera_control.path) && p.camera_control.path.length > 1) {
         notes.push('The approved 3D camera path is translated into prompt text; Seedance does not receive Film Engine coordinates.');
     }
@@ -370,6 +444,10 @@ function describeVideoRequest(payload) {
     return {
         provider: 'seedance',
         mode: built.workflow,
+        // What was asked for beside what will render — the two are not always
+        // the same and the difference is the thing worth seeing.
+        resolution_asked: tier.asked,
+        resolution_snapped: tier.snapped,
         model: built.model,
         duration_s: built.duration_s,
         aspect_ratio: built.body.aspect_ratio,
@@ -378,6 +456,10 @@ function describeVideoRequest(payload) {
         prompt_length: built.body.prompt.length,
         reference_count: built.images.length,
         has_image: built.images.length > 0,
+        // Stated because the provider's default is the opposite of this
+        // engine's, and a clip that arrives scored is not obviously wrong until
+        // it is played against the cue it was supposed to carry.
+        audio: !!built.body.generate_audio,
         estimated_usd: Number((perSecond * built.duration_s).toFixed(2)),
         notes,
     };
@@ -399,10 +481,31 @@ async function awaitResult(requestId, apiKey, deadline) {
         if (!data) continue;
         const status = String(data.status || '').toLowerCase();
         if (status === 'completed' || status === 'succeeded') {
-            const out = data.output;
-            const url2 = typeof out === 'string' ? out
-                : (Array.isArray(out) ? out[0] : (out && (out.video_url || out.url)));
-            if (!url2) return { ok: false, status: 502, error: 'seedance: completed with no video' };
+            /*
+             * `outputs`, PLURAL, AND IT IS AN ARRAY OF STRINGS.
+             *
+             * This read `data.output`. MuAPI documents the result as
+             *
+             *   { "id": ..., "status": "completed",
+             *     "outputs": ["https://cdn.muapi.ai/....mp4"], "cost": {...} }
+             *
+             * so the poll saw "completed", looked at a key that does not exist,
+             * and reported "completed with no video" — on a clip that had
+             * rendered and been CHARGED FOR. The worst shape of failure: the
+             * money leaves, the file exists, and the caller is told nothing was
+             * made. The singular form is kept as a fallback because it costs
+             * nothing to accept, and object forms because a URL is a URL.
+             */
+            const pick = v => (typeof v === 'string' ? v : (v && (v.video_url || v.url || v.uri)) || '');
+            const outs = Array.isArray(data.outputs) ? data.outputs
+                : (data.outputs ? [data.outputs] : []);
+            const legacy = Array.isArray(data.output) ? data.output
+                : (data.output ? [data.output] : []);
+            const url2 = [...outs, ...legacy].map(pick).find(Boolean);
+            if (!url2) {
+                return { ok: false, status: 502,
+                    error: `seedance: completed but no output URL in the result — keys: ${Object.keys(data || {}).join(', ') || 'none'}` };
+            }
             return { ok: true, url: url2 };
         }
         if (status === 'failed' || status === 'error' || status === 'cancelled') {
@@ -437,6 +540,25 @@ async function generate(capability, payload, opts) {
         if (!req.body.prompt && !req.images.length) {
             return { ok: false, status: 400, error: 'seedance: nothing to generate from' };
         }
+    }
+
+    /*
+     * THE PICTURES GO UP BEFORE THE REQUEST GOES OUT.
+     *
+     * MuAPI addresses images by URL and refuses a data URI — `url_too_long`,
+     * a 2083-character ceiling — while this engine holds keyframes as local
+     * files and inlines them. So the bytes are uploaded to MuAPI's own free
+     * `upload_file` endpoint and the returned URLs go in the payload.
+     *
+     * HERE, not in buildVideoRequest, because the builder is PURE: the dry run
+     * prints it without a socket, and an uploader inside it would either spend
+     * network on a report or print a payload that is not the one sent.
+     */
+    if (Array.isArray(req.body.images_list) && req.body.images_list.length) {
+        const { hostImages } = require('./muapi-upload');
+        const hosted = await hostImages(req.body.images_list, apiKey);
+        if (!hosted.ok) return { ok: false, status: 422, error: `seedance: ${hosted.error}` };
+        req.body.images_list = hosted.urls;
     }
 
     let res;
@@ -474,6 +596,13 @@ async function generate(capability, payload, opts) {
         provider: 'seedance',
         provider_model: req.model,
         duration_s: req.duration_s,
+        /*
+         * Whether sound was ASKED for, carried on the result so the persist
+         * step does not have to guess. It strips the audio track by default —
+         * because asking this provider for silence does not produce it — and
+         * this is how a caller who genuinely wanted the model's sound keeps it.
+         */
+        audio: !!req.body.generate_audio,
         // The meter prices in seconds at this resolution's rate.
         usage: { seconds: req.duration_s, resolution: req.resolution },
     };
@@ -568,6 +697,36 @@ const seedanceAdapter = {
      */
     asyncGeneration: true,
 
+    /*
+     * WHAT THIS ADAPTER WILL CARRY, in the shape lib/video-reference speaks.
+     *
+     * `CONTRACTS` over there is keyed by RUNWAY's model catalogue — `hailuo3`,
+     * `seedance2_5` — because that is where reference contracts were first
+     * needed. A project on THIS adapter reaches Seedance directly through
+     * MuAPI, so `contractFor()` was handed a null model, fell to KEYFRAME_ONLY,
+     * and dropped every `inbetween` reference on the floor.
+     *
+     * The consequence is not small. The strip — a bundle of stations sent as
+     * references on ONE longer generation instead of N-1 first/last legs — is
+     * the engine's own answer to the defect that every pinned keyframe is a
+     * moment of ZERO MOTION and an approximate landing. Chained legs therefore
+     * freeze and re-pose at every join. The contract written for exactly this
+     * model, with the comment "the only model that documents room for a strip",
+     * could never be selected on the provider it was written about.
+     *
+     * Declared here rather than added to that table because the numbers are
+     * this adapter's own and already stated above: 30 images, 10 videos, 10
+     * audio, from MuAPI's omni-reference workflow.
+     */
+    referenceContract: Object.freeze({
+        roles: Object.freeze(['keyframe', 'inbetween', 'character', 'creature', 'prop',
+                              'location', 'style', 'motion', 'audio']),
+        maxImages: MAX_KEYFRAMES, maxVideos: 10, maxAudio: 10,
+        why: 'MuAPI documents the seedance-2.5-omni-reference workflow at up to 30 images, '
+            + '10 videos and 10 audio clips; the images are free and the VIDEO is billed per '
+            + 'second, so a longer single clip costs the same as the legs it replaces',
+    }),
+
     // Thirty. This is the reason it is here: Runway takes two.
     maxKeyframes: MAX_KEYFRAMES,
     keyframeNote: 'The seedance-2.5-omni-reference endpoint accepts up to 30 reference images '
@@ -595,6 +754,14 @@ const seedanceAdapter = {
     describeVideoRequest,
     generate,
     collect,
+    /*
+     * The poll, exported so it can be TESTED against the shapes MuAPI actually
+     * answers with. It was a private function, and the bug it hid -- reading
+     * `output` where the API returns `outputs` -- cost a rendered clip and was
+     * unreachable from any test. A result parser that both roads depend on
+     * should be assertable without buying a generation.
+     */
+    awaitResult,
 
     connection: {
         instructions: 'This is your MuAPI account key \u2014 the same one the Nano Banana image '
@@ -606,4 +773,4 @@ const seedanceAdapter = {
 
 module.exports = { adapter: seedanceAdapter, seedanceAdapter, buildVideoRequest,
     buildPostRequest, POST_SERVED, describeVideoRequest, RESOLUTIONS, WORKFLOWS,
-    VIDEO_MODELS, POST_MODELS, generate, collect };
+    VIDEO_MODELS, POST_MODELS, generate, collect, awaitResult, resolutionDecision };

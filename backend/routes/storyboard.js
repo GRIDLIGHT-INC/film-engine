@@ -200,11 +200,33 @@ async function callImageGen(prompt, negativePrompt, seed, options, projectConfig
     // (a local checkpoint name, steps 30, guidance 7.5) rather than what ran --
     // provider never received, naming a model it had rejected. A ledger that
     // cannot recreate its own output is worse than none, because it is trusted.
+    /*
+     * CONFORMED HERE, because this is the one funnel.
+     *
+     * Five places in this file write a generated board to disk, and every one
+     * of them gets its bytes from this function. Instrumenting five call sites
+     * is how four end up instrumented — the same reasoning the usage meter
+     * documents for living on `resolve()`.
+     *
+     * What it fixes: the engine asks for a raster and the provider answers on
+     * its own grid. Asked 1368x768, Nano Banana returned 1376x768. A board is
+     * the keyframe a video model is pinned to, and Seedance takes its output
+     * raster from that frame rather than from the aspect_ratio beside it — so
+     * eight pixels here became a sequence whose legs came back in two different
+     * rasters and would not stitch.
+     */
+    const bytes = await imageResultToBuffer(result.data);
+    const { conformBoardBuffer } = require('../lib/board-raster');
+    const fitted = conformBoardBuffer(bytes, { width: requestBody.width, height: requestBody.height });
+
     return {
-        // await matters: imageResultToBuffer is async (it may have to fetch a
-        // provider URL). Returning it unawaited inside an object stores a
-        // Promise where the caller expects bytes.
-        buffer: await imageResultToBuffer(result.data),
+        buffer: fitted.buffer,
+        // Said out loud rather than done silently: "the provider gave me a
+        // different size and I cropped it" is a fact about this frame, and the
+        // caller decides whether to record or surface it.
+        raster: fitted.conformed
+            ? { conformed: true, from: fitted.from, to: fitted.to }
+            : (fitted.reason ? { conformed: false, got: fitted.got || null, reason: fitted.reason } : null),
         provider: result.provider || provider.id,
         model: result.provider_model || requestBody.model,
     };

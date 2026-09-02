@@ -75,6 +75,16 @@ const SETTINGS = {
      * every time. Blank keeps the built-in walk, so nothing changes for anyone
      * who does not set it.
      */
+    llm_subscription_plan: {
+        description: 'Which Claude subscription this install runs on: none (API pay-as-you-go), '
+            + 'pro ($20), max_5x ($100), max_20x ($200) or team ($30/seat). The LLM is billed to '
+            + 'the subscription rather than per call, so spend_report charges the project NOTHING '
+            + 'for it \u2014 setting this adds a separate ATTRIBUTION line: this project\u2019s share of '
+            + 'the monthly fee, by the tokens it actually used against every project this month. '
+            + 'Anthropic publishes plan prices but no token allowance, so the share is measured, '
+            + 'never divided out of an invented quota.',
+        default: 'none',
+    },
     default_image_provider: {
         description: 'Which image generator a project that pins none should use. Blank falls back to '
             + 'the built-in preference order, which is a list of vendors chosen here rather than by you.',
@@ -139,15 +149,27 @@ function putSettings(req, res) {
      * generation, and a switch that needs a restart is one a director flips,
      * watches do nothing, and flips back.
      */
+    /*
+     * A CACHED SETTING MUST BE CLEARED BY ITS OWN KEY.
+     *
+     * This whole block was gated on `gridlight_enabled`, and the comment inside
+     * it correctly explained why the account default must not need a restart —
+     * while sitting behind a condition that could only be true when a DIFFERENT
+     * setting changed. So changing `default_image_provider` cached the old
+     * answer until the process was restarted: the setting appeared not to work,
+     * which is precisely the failure the comment describes.
+     *
+     * Each cache is now cleared by the key that invalidates it.
+     */
     if (changed.includes('gridlight_enabled')) {
-        try {
-            const providers = require('../lib/providers');
-            providers.refreshLocalGateway();
-            // The account default is cached on the generation path for the
-            // same reason the gateway switch is; changing it must not need
-            // a restart, or the setting appears not to work.
-            providers.refreshAccountDefaults();
-        } catch (_) { /* not fatal */ }
+        try { require('../lib/providers').refreshLocalGateway(); } catch (_) { /* not fatal */ }
+    }
+    if (changed.includes('default_image_provider') || changed.includes('default_video_provider')
+        || changed.includes('gridlight_enabled')) {
+        // The account default is read on every generation and cached; a switch
+        // that needs a restart is one a director flips, watches do nothing, and
+        // flips back.
+        try { require('../lib/providers').refreshAccountDefaults(); } catch (_) { /* not fatal */ }
     }
 
     if (!changed.length) {

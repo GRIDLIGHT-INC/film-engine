@@ -52,6 +52,89 @@ const M = 1 / 1_000_000;   // per-million-token rates, expressed per token
  * the table does not name falls back to the parent — never to zero, because a
  * model that prices at nothing is indistinguishable from one nobody used.
  */
+/**
+ * WHAT A SUBSCRIPTION COSTS, AND WHY IT IS NOT A PER-TOKEN RATE.
+ *
+ * Anthropic publishes a PRICE for these plans and does not publish a token
+ * allowance. The limits are expressed as prompts in a rolling five-hour window
+ * and weekly model-hours — the figures circulating for Max 20x (~200-900
+ * prompts per 5h, 240-480 Sonnet hours and 24-40 Opus hours a week) come from
+ * independent testing, not from Anthropic, and they are not token counts.
+ *
+ * So "how many tokens does the plan include" HAS NO PUBLISHED ANSWER, and
+ * inventing one to divide into would be the worst kind of number: precise,
+ * confident and made up. This engine has been burned by exactly that shape
+ * before -- a "2048x1152" plate that arrived 1376x768 because a ceiling was
+ * over-claimed.
+ *
+ * What is true instead, and is worth reporting:
+ *
+ *   1. The subscription is a FIXED monthly cost. It is spent whether this
+ *      project uses it or not.
+ *   2. The MARGINAL cost of a token on a subscription is ZERO. A project that
+ *      runs one more breakdown is billed nothing more.
+ *   3. What an agency actually needs is ATTRIBUTION, not price: this project
+ *      consumed X% of the tokens metered this period, so it carries X% of the
+ *      monthly fee.
+ *
+ * (3) is measured, not assumed -- the engine already counts every token it
+ * sends. It is reported separately from `measured_usd` and never added to it,
+ * because a sunk monthly fee is not a variable cost of a shot and adding it
+ * would make the per-shot figure lie in both directions at once.
+ */
+const SUBSCRIPTION_PLANS = Object.freeze({
+    none:    { label: 'API pay-as-you-go',      usd_per_month: 0 },
+    pro:     { label: 'Claude Pro',             usd_per_month: 20 },
+    max_5x:  { label: 'Claude Max 5x',          usd_per_month: 100 },
+    max_20x: { label: 'Claude Max 20x',         usd_per_month: 200 },
+    team:    { label: 'Claude Team (per seat)', usd_per_month: 30 },
+});
+
+const SUBSCRIPTION_SOURCE = Object.freeze({
+    checked: '2026-09-01',
+    note: 'Anthropic publishes plan PRICES; it does not publish token allowances. Plan limits '
+        + 'are prompts per rolling 5-hour window and weekly model-hours. Any token-per-dollar '
+        + 'figure here is DERIVED from tokens this install actually metered, never from a '
+        + 'published allowance.',
+});
+
+/**
+ * This project's share of a fixed monthly fee, by the tokens it actually used.
+ *
+ * Returns a null share rather than zero when there is nothing to divide by: a
+ * period with no metered tokens gives 0/0, and reporting that as $0.00 would
+ * read as "the subscription cost this project nothing" rather than "there is
+ * not enough information yet".
+ */
+function subscriptionAttribution(o) {
+    const key = String((o && o.plan) || 'none');
+    const plan = SUBSCRIPTION_PLANS[key];
+    if (!plan || !(plan.usd_per_month > 0)) return null;
+    const mine = Number(o && o.project_tokens) || 0;
+    const all = Number(o && o.period_tokens) || 0;
+    if (!(all > 0) || !(mine > 0)) {
+        return { plan: key, plan_label: plan.label, usd_per_month: plan.usd_per_month,
+                 share: null, attributed_usd: null,
+                 note: 'No tokens metered in this period yet, so there is nothing to attribute against.',
+                 ...SUBSCRIPTION_SOURCE };
+    }
+    const share = Math.min(1, mine / all);
+    return {
+        plan: key, plan_label: plan.label, usd_per_month: plan.usd_per_month,
+        project_tokens: mine, period_tokens: all,
+        share: Number(share.toFixed(4)),
+        attributed_usd: Number((plan.usd_per_month * share).toFixed(2)),
+        marginal_usd: 0,
+        inferred: true,
+        note: `This project used ${Math.round(share * 1000) / 10}% of the tokens this install `
+            + `metered in the period, so it carries that share of the ${plan.label} fee. The `
+            + 'MARGINAL cost of these tokens was zero -- the fee is paid whether the project runs '
+            + 'or not -- so this is an attribution for billing a client, not a cost of the shot. '
+            + 'Never added to measured spend.',
+        ...SUBSCRIPTION_SOURCE,
+    };
+}
+
 const RATE_BOOK = {
 
     // ── Anthropic ─────────────────────────────────────────────────────────
@@ -547,4 +630,5 @@ function listRates(overrides) {
     if (gaps.length) throw new Error(`provider-pricing: no rate for ${gaps.join(', ')}`);
 })();
 
-module.exports = { BILLING_UNITS, RATE_BOOK, rateFor, priceUsage, listRates, CAPABILITIES };
+module.exports = { BILLING_UNITS, RATE_BOOK, rateFor, priceUsage, listRates, CAPABILITIES,
+    SUBSCRIPTION_PLANS, subscriptionAttribution, SUBSCRIPTION_SOURCE };

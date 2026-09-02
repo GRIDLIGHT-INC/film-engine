@@ -102,8 +102,122 @@ function resolveMediaUrl(mediaUrl, serveDir) {
  * @param {{serveDir?: string}} [opts] - gateway serving dir for bare filenames
  * @returns {Promise<string>} absolute path to the saved file
  */
+/**
+ * A VIDEO ARRIVES SILENT UNLESS SOMEBODY ASKED FOR SOUND — AND WE ENFORCE IT
+ * OURSELVES.
+ *
+ * The adapter asks the provider for a silent render (`generate_audio: false`),
+ * and MuAPI ignores it: the clip came back carrying a 32kHz stereo AAC track at
+ * -34.7 LUFS of model-generated speech, effects and music. A request is not a
+ * guarantee, and a flag whose effect cannot be verified is not a control.
+ *
+ * So the engine settles it locally, after the download, where the answer is
+ * checkable: strip the audio stream with a stream COPY of the video. No
+ * re-encode — the picture is bit-identical, it costs a fraction of a second,
+ * and the result is certain in a way asking a vendor never is.
+ *
+ * Never throws and never blocks the save. If ffmpeg is not available the file
+ * stays exactly as it arrived, with its audio; a clip that exists with an
+ * unwanted track is recoverable, one that failed to save is not.
+ */
+/**
+ * KEEP THE TAKE THAT IS ABOUT TO BE REPLACED.
+ *
+ * The board has done this since it was written: `archiveExistingFrame` copies
+ * the outgoing picture into `versions/` before a regeneration overwrites it,
+ * because — in `shot_frames`' own words — "generation is a coin flip you
+ * already paid for, so an earlier attempt is often the one you wanted".
+ *
+ * FOOTAGE HAD NO EQUIVALENT. A leg re-shot to the same filename overwrote the
+ * previous take on disk and UPDATEd its asset row in place, so the earlier clip
+ * ceased to exist locally. That is the same coin flip at forty times the price:
+ * a board costs cents and a 1080p leg costs $4.25, and the take you just
+ * destroyed may be the one with the performance you wanted. It happened on this
+ * project — a reshoot of leg 1A-1B replaced a take that then existed only on
+ * the provider's CDN.
+ *
+ * So the outgoing file is copied to `takes/<name>.vN.<ext>` first. Numbered by
+ * what is already there rather than by a database read: the archive has to be
+ * correct even when the row it belongs to is the thing being rewritten.
+ *
+ * Never throws. Failing to keep a copy must not stop the new take from being
+ * saved — losing the old one is bad, losing both is worse.
+ */
+function archivePreviousTake(filePath) {
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        if (!fs.existsSync(filePath)) return null;
+        const dir = path.join(path.dirname(filePath), 'takes');
+        fs.mkdirSync(dir, { recursive: true });
+        const ext = path.extname(filePath);
+        const base = path.basename(filePath, ext);
+        let n = 1;
+        while (fs.existsSync(path.join(dir, `${base}.v${n}${ext}`))) n += 1;
+        const dest = path.join(dir, `${base}.v${n}${ext}`);
+        fs.copyFileSync(filePath, dest);
+        return dest;
+    } catch (_) {
+        return null;
+    }
+}
+
+function stripAudioTrack(filePath) {
+    try {
+        const { resolveFfmpeg } = require('./ffmpeg');
+        const ff = resolveFfmpeg();
+        if (!ff || !ff.available) return { stripped: false, reason: 'ffmpeg is not available here' };
+        const fs = require('fs');
+        const path = require('path');
+        const { execFileSync } = require('child_process');
+        const tmp = path.join(path.dirname(filePath), `.silent.${path.basename(filePath)}`);
+        execFileSync(ff.bin, ['-hide_banner', '-loglevel', 'error', '-y',
+            '-i', filePath, '-map', '0:v', '-c', 'copy', '-an', tmp], { timeout: 120000 });
+        // Only replace once the new file plausibly exists: a truncated remux
+        // over a good clip would destroy footage that was just paid for.
+        const st = fs.statSync(tmp);
+        if (!st || st.size < 1024) { try { fs.unlinkSync(tmp); } catch (_) {} return { stripped: false, reason: 'remux produced nothing' }; }
+        fs.renameSync(tmp, filePath);
+        return { stripped: true };
+    } catch (err) {
+        return { stripped: false, reason: err.message };
+    }
+}
+
 async function persistProviderMedia(projectId, subdir, filename, data, opts) {
-    if (Buffer.isBuffer(data)) return saveFile(projectId, subdir, filename, data);
+    /*
+     * Installed HERE because this is the one funnel every saved video passes
+     * through — the live sequence road, generation_collect, and the per-shot
+     * generators alike. The same reasoning the usage meter documents for
+     * living on `resolve()`: instrumenting each call site is how the one
+     * nobody thought of stays uninstrumented.
+     */
+    // Kept when the CALLER asked for sound: `opts.keepAudio`, or an adapter
+    // result that says audio was requested. Silence is only the default, never
+    // an override of an explicit ask.
+    const asked = !!((opts && opts.keepAudio) || (data && typeof data === 'object' && data.audio === true));
+    const silence = subdir === 'video' && !asked;
+
+    /*
+     * Before the write, not after: `saveFile` overwrites, so by the time we hold
+     * the returned path the previous take is already gone.
+     */
+    let archived = null;
+    if (subdir === 'video') {
+        try {
+            const { getFilePath } = require('./file-storage');
+            archived = archivePreviousTake(getFilePath(projectId, subdir, filename));
+        } catch (_) { /* an archive that cannot be made must not block the save */ }
+    }
+
+    const done = saved => {
+        if (silence) {
+            const p = typeof saved === 'string' ? saved : (saved && saved.path) || '';
+            if (p) stripAudioTrack(p);
+        }
+        return saved;
+    };
+    if (Buffer.isBuffer(data)) return done(saveFile(projectId, subdir, filename, data));
 
     const mediaUrl = extractMediaUrl(data);
     if (!mediaUrl) {
@@ -125,10 +239,11 @@ async function persistProviderMedia(projectId, subdir, filename, data, opts) {
         throw new Error(`failed to download generated media from ${fetchUrl}: ${response.status}`);
     }
 
-    return saveFile(projectId, subdir, filename, Buffer.from(await response.arrayBuffer()));
+    return done(saveFile(projectId, subdir, filename, Buffer.from(await response.arrayBuffer())));
 }
 
-module.exports = { persistProviderMedia, extractMediaUrl, resolveMediaUrl, isGatewayUrl };
+module.exports = { persistProviderMedia, extractMediaUrl, resolveMediaUrl, isGatewayUrl,
+    stripAudioTrack, archivePreviousTake };
 
 /**
  * How much image a data: URI may carry.

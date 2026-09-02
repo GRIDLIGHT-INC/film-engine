@@ -23,7 +23,7 @@
  */
 
 /**
- * THE HOST ABANDONS A TOOL CALL AT SIXTY SECONDS.
+ * HOW LONG A TOOL CALL MAY TAKE BEFORE THE HOST STOPS LISTENING.
  *
  * Declared by this process rather than detected, because this process is the
  * one with the constraint: `backend/server.js` is a different program serving a
@@ -33,10 +33,24 @@
  * comes back as "still running, collect it" instead of being torn down
  * mid-await and reported as "the device did not respond".
  *
+ * SIXTY SECONDS WAS TOO MEAN FOR THE MODELS PEOPLE ACTUALLY USE. It left a 45s
+ * budget, and Nano Banana Pro takes about two minutes for a 1024 plate — so
+ * EVERY plate on the production tier timed out, every one had to be collected
+ * by hand, and the director was shown a failure for a picture that rendered
+ * fine. A budget shorter than the work is not a safety margin, it is a
+ * guaranteed miss.
+ *
+ * Three minutes covers a pro image comfortably and still returns inside the
+ * generous window this host allows. It is not a promise: a 4K mesh or a long
+ * clip will still outrun it, which is exactly what the handle is for — and
+ * since `generation_collect` now FILES a collected plate rather than dropping
+ * it beside the board (see lib/plate-delivery.js), overrunning is no longer
+ * the same as losing the work.
+ *
  * Overridable, because a host with a different window should say so rather than
  * have this number guessed at.
  */
-if (!process.env.FILM_HOST_ABORT_MS) process.env.FILM_HOST_ABORT_MS = '60000';
+if (!process.env.FILM_HOST_ABORT_MS) process.env.FILM_HOST_ABORT_MS = '180000';
 
 const readline = require('readline');
 
@@ -158,7 +172,26 @@ const METHODS = {
         // so it is read defensively.
         const info = params && params.clientInfo;
         if (info && info.name) CLIENT_NAME = String(info.name).slice(0, 120);
-        try { require('./lib/agent-presence').markAgentSeen(CLIENT_NAME || 'mcp'); } catch (_) { /* observing */ }
+        /*
+         * WHAT THE HOST CAN DO, not just what it is called.
+         *
+         * `params.capabilities` is where a client declares `sampling`,
+         * `elicitation` and `roots` — and this read the name beside it and threw
+         * the rest away. That is the one question the engine cannot answer about
+         * its own host: whether the attached model can be ASKED something.
+         *
+         * It matters because of the direction MCP runs. This server can be
+         * called; it cannot call. `sampling/createMessage` is the protocol's
+         * answer — the server asks the client's model to complete something,
+         * on the user's own subscription, spending no API key — and whether it
+         * is available is a property of the HOST, declared right here, once per
+         * connection. Guessing it from documentation is guessing about someone
+         * else's build; this is the connection actually in front of us.
+         */
+        try {
+            require('./lib/agent-presence').markAgentSeen(
+                CLIENT_NAME || 'mcp', params && params.capabilities);
+        } catch (_) { /* observing */ }
         return {
             protocolVersion: SUPPORTED_PROTOCOLS.includes(asked) ? asked : DEFAULT_PROTOCOL,
             capabilities: { tools: { listChanged: false } },

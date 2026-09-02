@@ -53,10 +53,12 @@ function parseIds(row) {
     catch (_) { return []; }
 }
 
-function sequenceFileName(sequenceId, from, to) {
-    const safe = value => String(value || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'shot';
-    return `sequence_${safe(String(sequenceId || '').slice(0, 8))}_${safe(from)}_${safe(to)}.mp4`;
-}
+/*
+ * Read from lib/sequence-delivery rather than stated here: a leg's clip can now
+ * arrive by the live poll below OR by generation_collect, and two definitions
+ * of this name is how a collected leg becomes a file the sequence cannot see.
+ */
+const { clipFileName: sequenceFileName, fileSequenceClip } = require('../lib/sequence-delivery');
 
 /** Validate the ordered shot list at the write boundary, before it can drift projects. */
 function validShotIds(projectId, input) {
@@ -91,6 +93,11 @@ function shotsOf(row) {
            FROM film_shots sh JOIN film_scenes sc ON sc.id = sh.scene_id
           WHERE sh.id IN (${placeholders})`).all(...ids);
     const byId = new Map(found.map(s => [s.id, s]));
+    // Resolved ONCE for the sequence rather than per shot: it is the same
+    // provider for every shot in it, and the answer is what decides how much of
+    // each card survives.
+    const budget = shotPromptBudget(row.project_id || (found[0] && found[0].project_id),
+        row.description);
 
     return ids.map(id => {
         const shot = byId.get(id);
@@ -107,11 +114,142 @@ function shotsOf(row) {
         return {
             id: shot.id,
             shot_code: shot.shot_code,
-            description: String(card.description || card.action || '').slice(0, 300),
+            description: shotDirection(card, budget),
             duration_ms: Number(shot.duration_ms) || Number(card.duration_ms) || 5000,
             keyframe: chosen ? chosen.file_path : null,
         };
     });
+}
+
+/**
+ * What a shot tells the VIDEO generator, which is not what it told the board.
+ *
+ * TWO FAULTS, and the expensive one is silent.
+ *
+ * This read `card.description` alone. The card's `direction` — the field a
+ * director writes precisely because the writing is not enough, carrying "the
+ * camera is BEHIND the people", "keep it dark", "this is a forward dolly, not
+ * a crane up over a parking lot" — was never read on this path at all. It
+ * reaches the storyboard prompt and was dropped from footage, so the half of
+ * the pipeline that costs dollars a second was the half generating without
+ * direction, and nothing said so.
+ *
+ * And the budget was 300 characters with a bare `.slice()`, which cuts
+ * mid-word: real plans went out reading "the half-lowered window g" and "a
+ * fine hori". A generator handed a sentence that stops mid-syllable finishes
+ * the thought itself, and what it invents is not what was asked for.
+ *
+ * So: description and direction both, and the trim falls on a sentence
+ * boundary — a clause the model can act on, rather than a fragment it has to
+ * guess the end of. The budget is per shot and a segment carries two of them,
+ * so it stays bounded.
+ */
+const SHOT_PROMPT_MAX = Number(process.env.SEQUENCE_SHOT_PROMPT_MAX || 1200);
+
+/*
+ * ...AND THE BUDGET IS THE PROVIDER'S, NOT A CONSTANT.
+ *
+ * 1200 characters was a floor invented here. Seedance declares
+ * `promptLimit: 16000`, so this file was discarding more than ninety per cent
+ * of the room the model actually offers — and discarding it from the END, which
+ * is where a director's negative instructions live.
+ *
+ * Measured on this ident's 1D: a 1552-character direction was cut to 853,
+ * losing the third stage of the title build ("PICTURES fades up"), every
+ * anti-warping guard, and the instruction that the logo must NOT come apart.
+ * The prompt that would have been bought described two thirds of an animation
+ * and none of the rules for it. The trim is not the bug — a budget nobody chose
+ * is.
+ *
+ * A segment carries a preamble plus TWO shot blocks, so each shot gets a little
+ * under half of what is left after the preamble. Capped well below the
+ * provider's ceiling anyway: a 16000-character limit is not an invitation to
+ * write a 16000-character prompt, and past a point more words dilute rather
+ * than direct.
+ */
+/*
+ * NO INVENTED CEILING. The only limit is the one the provider states.
+ *
+ * A first pass at this capped a shot at 4000 characters — better than 1200 and
+ * still a number chosen here rather than by the model. There is no reason for
+ * it. The look is carried by the KEYFRAMES, which are pinned to the generation;
+ * what the text has to do is the part a still cannot say — the camera move, the
+ * action, what the people do, what must not happen — and that is precisely the
+ * material that was being cut.
+ *
+ * So the budget is the provider's declared limit, less the preamble that
+ * actually travels with it, less a small margin, split across the two shot
+ * blocks a segment carries. Every number here is either measured or declared;
+ * the only constant is the safety margin.
+ */
+const PROMPT_SAFETY_MARGIN = 200;
+
+/**
+ * @param {string} projectId
+ * @param {string} preamble  The sequence description that leads every segment —
+ *   MEASURED, not reserved. Reserving a guess for it was the same mistake one
+ *   size smaller: a short preamble left room unused and a long one overran.
+ */
+function shotPromptBudget(projectId, preamble) {
+    const floor = { shot: SHOT_PROMPT_MAX, direction: DIRECTION_MAX };
+    try {
+        const adapter = resolve('video', seqConfig(projectId));
+        const limit = Number(adapter && adapter.promptLimit);
+        // A provider that declares nothing keeps the documented floor. Guessing
+        // high on an undeclared limit buys a rejection at full price.
+        if (!(limit > 0)) return floor;
+
+        // The fixed connective buildSegment adds between the two shot blocks.
+        const CONNECTIVE = 240;
+        const room = limit - String(preamble || '').length - CONNECTIVE - PROMPT_SAFETY_MARGIN;
+        const perShot = Math.max(SHOT_PROMPT_MAX, Math.floor(room / 2));
+        // Direction is a reserved FLOOR, not a cap on description: whatever
+        // direction does not use, description gets. At these budgets neither is
+        // realistically reached, which is the point.
+        return { shot: perShot, direction: Math.max(DIRECTION_MAX, Math.floor(perShot * 0.6)) };
+    } catch (_) {
+        // An unresolvable provider must never be the reason a prompt is built
+        // differently — a wiring fault would look like a creative choice.
+        return floor;
+    }
+}
+
+function trimToSentence(text, max) {
+    const t = String(text || '').trim();
+    if (t.length <= max) return t;
+    const cut = t.slice(0, max);
+    // The last sentence that COMPLETED inside the budget; failing that, the
+    // last whole word, so nothing ever ends mid-syllable.
+    const stop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+    if (stop > max * 0.5) return cut.slice(0, stop + 1);
+    const space = cut.lastIndexOf(' ');
+    return (space > 0 ? cut.slice(0, space) : cut).replace(/[,;:\-\u2014]\s*$/, '') + '.';
+}
+
+/*
+ * DIRECTION IS RESERVED, NOT APPENDED.
+ *
+ * Appending it and trimming the whole string drops direction from exactly the
+ * shots that needed it most: a long description eats the budget and the
+ * director's override — "do not orbit, do not crane up, keep it dark" — is cut
+ * off the end, while a short card keeps its direction intact. Backwards, and
+ * silent. The writing describes what the shot IS; the direction says what the
+ * generator must not do with it, and a negative instruction that arrives
+ * truncated is worse than none because the clause it lands on reads as
+ * permission.
+ *
+ * So direction takes its own guaranteed slice first and the description fills
+ * whatever is left.
+ */
+const DIRECTION_MAX = Number(process.env.SEQUENCE_DIRECTION_MAX || 900);
+
+function shotDirection(card, budget) {
+    const b = budget || { shot: SHOT_PROMPT_MAX, direction: DIRECTION_MAX };
+    const written = String((card && (card.description || card.action)) || '').trim();
+    const directed = trimToSentence(String((card && card.direction) || '').trim(), b.direction);
+    const room = Math.max(200, b.shot - (directed ? directed.length + 1 : 0));
+    const body = trimToSentence(written, room);
+    return directed ? `${body} ${directed}` : body;
 }
 
 /**
@@ -544,6 +682,80 @@ function planRoute(res, id, query) {
         maxKeyframes: ceiling.max, description: row.description,
         modelPolicy: runway && runway.RUNWAY_VIDEO_MODELS[model],
     });
+    /*
+     * Priced through the adapter, with the frame the generate loop will use.
+     * Built here rather than restated: a plan that prices a different request
+     * from the one that will be sent is worse than a plan with no price, because
+     * it is believed.
+     */
+    const project_ = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(row.project_id);
+    /*
+     * No `req` here — this route is called as planRoute(res, id, query), the
+     * same reason `keyframeCeiling` above is called without one. An earlier
+     * version passed `req` anyway; the ReferenceError was swallowed by the
+     * catch, `planProvider` came back null, and the plan silently printed no
+     * price at all. A guard that turns a programmer error into missing output
+     * is worse than no guard: the route answered 200 and looked fine.
+     */
+    const planProvider = (() => {
+        try { return resolve('video', seqConfig(row.project_id)); }
+        catch (err) {
+            // A provider that cannot be resolved is a real, reportable state —
+            // `ceiling.unresolved` already carries it. Anything else is a bug
+            // and must not be disguised as one.
+            if (err instanceof ReferenceError || err instanceof TypeError) throw err;
+            return null;
+        }
+    })();
+    const frame_ = sequenceFrame(project_, planProvider);
+    const priced = (planProvider && typeof planProvider.describeVideoRequest === 'function')
+        ? (plan.segments || []).map(seg => {
+            try {
+                return planProvider.describeVideoRequest({
+                    prompt: seg.prompt,
+                    keyframes: seg.keyframes,
+                    duration_s: seg.duration_s,
+                    ...frame_,
+                    ...(project_ && project_.target_fps ? { target_fps: project_.target_fps } : {}),
+                });
+            } catch (_) { return null; }
+        })
+        // NOT filtered: index alignment with `plan.segments` is what lets a
+        // segment carry its own price. A dropped entry would shift every price
+        // after it onto the wrong leg.
+        : [];
+
+    /*
+     * MEASURE THE FRAMES BEFORE THE MONEY GOES.
+     *
+     * Free, and it is the check that would have caught three legs of this
+     * sequence coming back in two rasters: the video model follows the
+     * keyframe's shape, not the aspect_ratio sent beside it.
+     */
+    const rasterReport = (() => {
+        try {
+            const { keyframeRasterReport } = require('../lib/image-raster');
+            const frames = [];
+            for (const seg of (plan.segments || [])) {
+                /*
+                 * A leg's two keyframes belong to DIFFERENT shots — [0] to
+                 * `from` and [1] to `to`. Labelling both with `seg.from`
+                 * reported 1A twice and never named 1D at all, so the one line
+                 * a reader acts on ("which board is off-spec") pointed at the
+                 * wrong board. The measurement was right; the caption was not,
+                 * which is the more dangerous of the two.
+                 */
+                const codes = [seg.from, seg.to];
+                (seg.keyframes || []).forEach((k, i) => {
+                    if (k && k.uri && !frames.some(f => f.uri === k.uri)) {
+                        frames.push({ uri: k.uri, shot_code: codes[i] || seg.from });
+                    }
+                });
+            }
+            return keyframeRasterReport(project_ && project_.aspect_ratio, frames);
+        } catch (_) { return null; }
+    })();
+
     const shotList = shotsOf(row);
     let native = null;
     if (!plan.refused && runway && shotList.length >= 3 && shotList.length <= 5) {
@@ -563,9 +775,41 @@ function planRoute(res, id, query) {
         // The prompts and the frame COUNT travel; the frames themselves do not.
         // A plan is read in a browser and four base64 stills is megabytes spent
         // showing something the page already has thumbnails of.
-        segments: (plan.segments || []).map(s => ({
+        /*
+         * WHAT IT WILL COST, FROM THE ADAPTER THAT WILL BE BILLED.
+         *
+         * `estimated_credits` comes from a RUNWAY credit policy — on a Seedance
+         * project `modelPolicy` is null, so it computed zero and the plan
+         * quoted nothing at all for a road that bills $0.17 to $1.70 a second.
+         * The price and the tier now come from the same adapter, built from the
+         * same frame the generate loop will send, so what the plan says is what
+         * the bill says.
+         */
+        ...(rasterReport ? {
+            keyframe_raster: {
+                rasters: rasterReport.rasters,
+                notes: rasterReport.notes,
+                frames: rasterReport.frames.map(f => ({
+                    shot_code: f.shot_code, width: f.width, height: f.height,
+                })),
+            },
+        } : {}),
+        ...(priced.some(Boolean) ? {
+            resolution: (priced.find(Boolean) || {}).resolution,
+            estimated_usd: Number(priced.reduce((a, b) => a + ((b && b.estimated_usd) || 0), 0).toFixed(2)),
+            ...(frame_ && frame_.draft ? { draft: frame_.draft } : {}),
+            ...(((priced.find(Boolean) || {}).notes || []).length
+                ? { provider_notes: (priced.find(Boolean) || {}).notes } : {}),
+        } : {}),
+        segments: (plan.segments || []).map((s, i) => ({
             from: s.from, to: s.to, prompt: s.prompt, keyframes: s.keyframes.length,
             duration_s: s.duration_s, estimated_credits: s.estimated_credits,
+            ...(priced[i] ? {
+                resolution: priced[i].resolution,
+                ...(priced[i].resolution_asked && priced[i].resolution_snapped
+                    ? { resolution_asked: priced[i].resolution_asked } : {}),
+                estimated_usd: priced[i].estimated_usd,
+            } : {}),
             complete: !!db.prepare(`SELECT 1 FROM film_assets WHERE project_id = ?
                 AND json_extract(metadata, '$.sequence_id') = ?
                 AND json_extract(metadata, '$.from') = ? AND json_extract(metadata, '$.to') = ? LIMIT 1`)
@@ -640,6 +884,58 @@ async function generateNativeSequence(req, res, id) {
     return json(res, 200, { sequence_id: id, asset_id: assetId, url: getFileUrl('video', row.project_id, fileName), mode: 'native_multi_shot' });
 }
 
+/**
+ * The raster every leg of this sequence is generated at.
+ *
+ * Delivery size from the project, then the DRAFT FLOOR for the model that will
+ * actually run -- the same two facts `capability-payloads` uses, read the same
+ * way, because a sequence leg and a single shot must not draft to different
+ * frames. `resolution` travels only when the adapter documents the keyword;
+ * Seedance builds it into the URL and Runway takes no such field, so sending it
+ * blindly is a 404 nobody can see.
+ */
+function sequenceFrame(project, provider) {
+    const raster = String((project && project.target_resolution) || '').match(/^\s*(\d+)\s*x\s*(\d+)\s*$/i);
+    const delivery = raster
+        ? { width: Number(raster[1]), height: Number(raster[2]) }
+        : { width: 1920, height: 1080 };
+    /*
+     * THE RASTER TRAVELS, ALWAYS.
+     *
+     * width/height alone are not an answer to "what resolution": Seedance
+     * resolves its tier from `resolution`, then `model`, then
+     * `target_resolution` — and reads width/height for NOTHING. Sending only
+     * the frame is what made every leg fall through to the unsuffixed 720p
+     * endpoint no matter what the project was set to. A delivery-size project
+     * must never be able to reach a provider default by omission.
+     */
+    const stated = wxh => `${wxh.width}x${wxh.height}`;
+    // Drafting is the default, exactly as it is for a single shot; an explicit
+    // false is the only thing that turns it off.
+    if (project && project.video_draft !== undefined && !project.video_draft) {
+        return { ...delivery, target_resolution: stated(delivery) };
+    }
+    try {
+        const { draftFrameFor } = require('../lib/draft-video');
+        const stated = String((project && project.aspect_ratio) || '')
+            .match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/);
+        const ratioHint = stated ? Number(stated[1]) / Number(stated[2]) : null;
+        // `defaultModel` is the one name an adapter states for this, and the
+        // same one `videoDraftModel` reads for a single shot.
+        const model = (provider && provider.defaultModel) || null;
+        const draft = draftFrameFor(model, delivery, ratioHint);
+        return {
+            width: draft.width, height: draft.height,
+            target_resolution: `${draft.width}x${draft.height}`,
+            ...(draft.resolution ? { resolution: draft.resolution } : {}),
+            draft: { active: true, note: draft.note, why: draft.why },
+        };
+    } catch (_) {
+        // A draft floor that cannot be resolved must never stop a generation.
+        return { ...delivery, target_resolution: stated(delivery) };
+    }
+}
+
 async function generateSequence(req, res, id) {
     const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
     if (!row) return json(res, 404, { error: 'Sequence not found' });
@@ -690,6 +986,7 @@ async function generateSequence(req, res, id) {
 
     const { toDataUri } = require('../lib/reference-images');
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(row.project_id);
+    const videoFrame = sequenceFrame(project, provider);
     const results = [];
 
     db.prepare("UPDATE film_sequences SET status = 'generating', updated_at = datetime('now') WHERE id = ?").run(id);
@@ -712,7 +1009,18 @@ async function generateSequence(req, res, id) {
      * degraded to a plain generation looks exactly like a bundle that worked,
      * and the only way to find out would be to watch the clip.
      */
-    const bundleContract = shape_ === 'bundle' ? contractFor(model) : null;
+    /*
+     * The ADAPTER's own contract first, then Runway's catalogue.
+     *
+     * `contractFor` is keyed by Runway model names, so a project reaching
+     * Seedance directly through MuAPI was handed a null model, fell to
+     * keyframe-only, and had every inbetween reference dropped — silently
+     * degrading a bundle into an ordinary leg on the one provider the strip
+     * exists for.
+     */
+    const bundleContract = shape_ === 'bundle'
+        ? ((provider && provider.referenceContract) || contractFor(model))
+        : null;
     const bundleDropped = [];
     const stationRefs = (segment) => {
         if (!bundleContract || !strip_) return null;
@@ -743,9 +1051,31 @@ async function generateSequence(req, res, id) {
             keyframes,
             ...(refs && refs.length ? { reference_images: refs } : {}),
             duration_s: segment.duration_s,
-            width: 1280, height: 720,
+            /*
+             * THE FRAME IS DECIDED, NOT ASSUMED.
+             *
+             * This sent `width: 1280, height: 720` -- a literal, on the one
+             * path in the engine that spends per second. It bypassed the draft
+             * floor entirely: `draftFrameFor` and the `resolution` keyword it
+             * returns live in the capability builder, and this route builds its
+             * payload by hand, so a project set to draft still bought 720p at
+             * $0.34/s instead of 480p at $0.17 -- double, silently, on every
+             * leg. It also ignored the project's own aspect: a 9:16 sequence
+             * was generated landscape and could not be cropped back.
+             */
+            ...videoFrame,
             ...(project && project.target_fps ? { target_fps: project.target_fps } : {}),
-        }, { timeout: 600000 });
+        }, {
+            timeout: 600000,
+            /*
+             * What this generation IS, written onto its job handle before a
+             * byte comes back. Without it a collected clip knows its provider
+             * and nothing else, and cannot be filed as the leg it was bought
+             * for.
+             */
+            jobMeta: { sequence_id: id, from: segment.from, to: segment.to,
+                       from_shot_id: segment.from_shot_id },
+        });
 
         if (!result.ok) {
             results.push({ from: segment.from, to: segment.to, ok: false, error: result.error });
@@ -755,18 +1085,27 @@ async function generateSequence(req, res, id) {
         }
 
         const fileName = sequenceFileName(id, segment.from, segment.to);
+        /*
+         * `result`, not `result.data`. An adapter that answers with a CDN URL
+         * and no buffer -- which is every MuAPI one -- handed `undefined` here
+         * and threw on a clip that had already been paid for.
+         */
         // eslint-disable-next-line no-await-in-loop
-        const saved = await persistProviderMedia(row.project_id, 'video', fileName, result.data,
+        const saved = await persistProviderMedia(row.project_id, 'video', fileName, result,
             { serveDir: 'videos' });
-        const assetId = generateId();
-        db.prepare(`INSERT INTO film_assets
-            (id, project_id, shot_id, asset_type, file_path, file_name, format, version, metadata)
-            VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 1, ?)`)
-            .run(assetId, row.project_id, segment.from_shot_id,
-                typeof saved === 'string' ? saved : (saved && saved.path) || '',
-                fileName, JSON.stringify({ sequence_id: id, from: segment.from, to: segment.to }));
+        const assetId = fileSequenceClip({
+            projectId: row.project_id, sequenceId: id,
+            from: segment.from, to: segment.to, shotId: segment.from_shot_id,
+            fileName,
+            filePath: typeof saved === 'string' ? saved : (saved && saved.path) || '',
+        });
         results.push({
             from: segment.from, to: segment.to, ok: true, asset_id: assetId,
+            // The tier that was actually BILLED, reported by the adapter that
+            // billed it — never the one this route asked for. Those were the
+            // same number right up until they were not.
+            resolution: (result.usage && result.usage.resolution) || null,
+            provider_model: result.provider_model || null,
             url: getFileUrl('video', row.project_id, fileName),
         });
     }
@@ -775,9 +1114,12 @@ async function generateSequence(req, res, id) {
     db.prepare("UPDATE film_sequences SET status = ?, updated_at = datetime('now') WHERE id = ?")
         .run(failed.length ? 'failed' : 'complete', id);
 
+    const bought = results.find(r => r.ok && r.resolution);
     return json(res, failed.length && !results.some(r => r.ok) ? 502 : 200, {
         sequence_id: id, segments: results,
         shape: shape_,
+        ...(bought ? { resolution: bought.resolution } : {}),
+        ...(videoFrame.draft ? { draft: videoFrame.draft } : {}),
         /*
          * A bundle that quietly degraded to a plain generation looks exactly
          * like a bundle that worked, and the only way to find out would be to

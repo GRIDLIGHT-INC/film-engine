@@ -274,6 +274,18 @@ async function generate(capability, payload, opts) {
 
     const req = buildImageRequest(payload || {});
     if (!req.body.prompt) return { ok: false, status: 400, error: 'muapi: nothing to generate from' };
+    /*
+     * Same rule as the video adapter: MuAPI takes URLs, not bytes. Uploaded
+     * here rather than in buildImageRequest so the builder stays pure and the
+     * dry run keeps printing the request without opening a socket.
+     */
+    if (Array.isArray(req.body.images_list) && req.body.images_list.length) {
+        const { hostImages } = require('./muapi-upload');
+        const hosted = await hostImages(req.body.images_list, apiKey);
+        if (!hosted.ok) return { ok: false, status: 422, error: `muapi: ${hosted.error}` };
+        req.body.images_list = hosted.urls;
+    }
+
 
     let res;
     try {

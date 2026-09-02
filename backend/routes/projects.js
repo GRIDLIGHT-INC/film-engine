@@ -3,7 +3,6 @@
  * POST/GET/PUT/DELETE /film/projects
  */
 const { db, generateId } = require('../db/database');
-const { defaultProviderConfig } = require('../lib/providers');
 const { validateProjectSettings, resolveDeliveryPreset } = require('../lib/project-presets');
 
 // UUID v4 format check
@@ -192,11 +191,32 @@ function createProject(req, res) {
     `).run(id, title, logline, genre, style_preset, status,
         target_resolution, target_fps, aspect_ratio, aspect_ratio_custom,
         color_space, delivery_format, timecode_start,
-        // Written at creation rather than left empty. Resolve-time
-        // preference already makes a blank config work, but a blank column
-        // shows the user nothing in Provider Settings while generation
-        // quietly uses something else.
-        JSON.stringify(defaultProviderConfig()),
+        /*
+         * EMPTY. A NEW PROJECT PINS NOTHING.
+         *
+         * This used to stamp `defaultProviderConfig()` — a full pin for every
+         * capability, frozen at whatever happened to be configured the day the
+         * project was made. The reasoning was that a blank column shows nothing
+         * in Provider Settings. The cost of it is much larger than that: a
+         * per-project pin OUTRANKS the account default, so every project was
+         * born overriding the one global setting that exists, with a choice
+         * nobody made.
+         *
+         * The symptom is a person setting their studio's image provider once,
+         * in Settings, and watching every project keep using the vendor that
+         * was preferred months ago. Which is exactly what happened here: the
+         * boards kept going to Meshy — capped at 1MP, no size control — while
+         * the account and the preference order both pointed elsewhere.
+         *
+         * A pin now means what the resolver already assumes it means: somebody
+         * deliberately chose this provider FOR THIS FILM. Everything else
+         * follows the account default, then the quality tier, then the
+         * preference order — all of which are live, and all of which a
+         * blank config lets through. Provider Settings shows the RESOLVED
+         * provider and where it came from (`resolutionOf`/`describeResolution`),
+         * so the display problem this was solving is solved properly.
+         */
+        JSON.stringify({}),
         now, now);
 
     const row = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(id);
@@ -310,6 +330,29 @@ function updateProject(req, res, id) {
                 values.push(key === 'target_fps' ? Number(body[key]) : String(body[key]));
             }
         }
+    }
+
+    /*
+     * DRAFTING: THE SWITCH THAT HAD NO SWITCH.
+     *
+     * `video_draft` has existed as a column since migration 100 and was
+     * writable from nowhere — not this route, not the SPA, not a tool. It
+     * decides whether footage generates at the model's cheapest tier or at the
+     * project's delivery raster, which on Seedance is the difference between
+     * $0.17 and $1.70 a second. A setting that governs the largest variable
+     * cost in the pipeline and cannot be changed is not a default, it is a
+     * lock.
+     *
+     * Boolean in, INTEGER out: the column is INTEGER NOT NULL DEFAULT 1 and
+     * `!project.video_draft` is how every reader tests it, so a stored 'false'
+     * string would be truthy and drafting would stay on while the settings say
+     * otherwise.
+     */
+    if (body.video_draft !== undefined) {
+        const on = body.video_draft === true || body.video_draft === 1
+            || body.video_draft === 'true' || body.video_draft === '1';
+        fields.push('video_draft = ?');
+        values.push(on ? 1 : 0);
     }
 
     /*

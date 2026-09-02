@@ -142,8 +142,41 @@ function toClause(text) {
     return out.replace(/[,;—-]\s*$/, '').trim();
 }
 
-function fitMusicPrompt(parts) {
-    const { MUSIC_PROMPT_LIMIT, summarise } = require('./scene-score');
+/**
+ * THE LIMIT IS FOR A DERIVED PROMPT. A WRITTEN ONE IS NOT THE SAME THING.
+ *
+ * `MUSIC_PROMPT_LIMIT` is 600 characters and `scene-score` says plainly where
+ * it came from: ElevenLabs documents no character limit for /music, so the
+ * number is OURS, chosen because a prompt DERIVED from `film_scenes.description`
+ * came out over three thousand characters of camera blocking with the musical
+ * words at the very end.
+ *
+ * That reasoning is right about a derivation and wrong about a brief. A cue a
+ * director wrote is already about the music — every sentence of it is the
+ * musical direction — and capping it at 600 cuts the part that matters.
+ *
+ * Measured on this project's ident fanfare, a 1,562-character brief reached the
+ * generator as:
+ *
+ *   "...the moment before a film begins at a drive-in, when the engines are
+ *    off, the light is, in D major, 60 bpm, orchestral..."
+ *
+ * Cut mid-clause at "the light is". Everything after it was lost: the harp and
+ * celeste opening, the horn MELODY on rising fourths and fifths, the earned
+ * resolution, the decay to one vibraphone note, and the guards that say never
+ * static, never ambient, never a pad. The first take of that cue came back
+ * FLAT, the brief was rewritten specifically to fix flatness — and almost none
+ * of the rewrite was ever sent.
+ *
+ * So a written description gets its own, much larger allowance, still ours and
+ * still stated. A derivation keeps 600, because the argument for it there is
+ * sound.
+ */
+const WRITTEN_PROMPT_LIMIT = Number(process.env.MUSIC_WRITTEN_PROMPT_LIMIT || 4000);
+
+function fitMusicPrompt(parts, limitOverride) {
+    const { MUSIC_PROMPT_LIMIT: DERIVED_LIMIT, summarise } = require('./scene-score');
+    const MUSIC_PROMPT_LIMIT = Number(limitOverride) > 0 ? Number(limitOverride) : DERIVED_LIMIT;
     const list = (Array.isArray(parts) ? parts : [])
         .map(p => (typeof p === 'string' ? { text: p, rank: 2 } : p))
         .filter(p => p && String(p.text || '').trim());
@@ -310,9 +343,19 @@ function buildMusicPrompt(musicCue, scene, project, opts) {
         (moodConfig.tempo_range[0] + moodConfig.tempo_range[1]) / 2
     );
 
+    /*
+     * A cue WITH a description was written by someone; one without it is
+     * derived from the scene. Only the first earns the larger allowance — which
+     * is the same rule the ambient builder follows two functions down, and the
+     * one `music_brief` states outright: a cue somebody wrote always beats the
+     * derivation.
+     */
+    const authored = String(cue.description || '').trim().length > 0;
+
     return {
         type: 'score',
-        prompt: fitMusicPrompt(promptParts),
+        prompt: fitMusicPrompt(promptParts, authored ? WRITTEN_PROMPT_LIMIT : 0),
+        prompt_source: authored ? 'written' : 'derived',
         /*
          * The same parts, before they were joined.
          *
@@ -427,42 +470,66 @@ function buildAmbientPrompt(scene, location, opts) {
     const direction = String(options.direction || '').trim();
     if (direction) promptParts.push(direction);
 
-    // Try to match location to known ambient
-    const locationName = (scene.location || '').toLowerCase();
-    let matchedAmbient = null;
-    for (const [key, ambient] of Object.entries(LOCATION_TO_AMBIENT)) {
-        if (locationName.includes(key)) {
-            matchedAmbient = ambient;
-            break;
+    /*
+     * A CUE SOMEBODY WROTE BEATS THE DERIVATION — INCLUDING BY SILENCE.
+     *
+     * This appended the location's generic ambience, the INT/EXT modifier and a
+     * time-of-day modifier on TOP of whatever the director wrote, unconditionally.
+     * For a bed that nobody briefed that is the whole value of the function. For
+     * a written cue it is the derivation arguing with the brief.
+     *
+     * It is not a cosmetic overlap. A diegetic element — a radio playing out of
+     * a drive-in speaker — was briefed as exactly that and sent as
+     *
+     *   "...cone crackle, carrier hiss., ambient sounds of DRIVE-IN THEATRE - LOT,
+     *    outdoor, nighttime atmosphere, quieter, occasional distant sound"
+     *
+     * so the generator was asked for a tinny radio AND for the open-air lot it
+     * is heard in, at once, while the cue's own negative prompt was busy
+     * excluding crickets. The scene already has a separate bed cue for the lot;
+     * this one asked for the lot a second time and diluted the thing it was for.
+     *
+     * It also blew the provider's limit: ElevenLabs documents 450 characters and
+     * a written brief plus this tail reached 461, so the call 400'd on length
+     * for a prompt the author never saw.
+     *
+     * So the derivation now fills a GAP rather than decorating an answer.
+     */
+    if (!direction) {
+        // Try to match location to known ambient
+        const locationName = (scene.location || '').toLowerCase();
+        let matchedAmbient = null;
+        for (const [key, ambient] of Object.entries(LOCATION_TO_AMBIENT)) {
+            if (locationName.includes(key)) {
+                matchedAmbient = ambient;
+                break;
+            }
         }
-    }
 
-    if (matchedAmbient) {
-        promptParts.push(matchedAmbient);
-    } else if (location && location.description) {
-        promptParts.push(`ambient sounds of ${location.description}`);
-    } else if (scene.location) {
-        promptParts.push(`ambient sounds of ${scene.location}`);
-    } else {
-        promptParts.push('quiet room ambiance');
+        if (matchedAmbient) {
+            promptParts.push(matchedAmbient);
+        } else if (location && location.description) {
+            promptParts.push(`ambient sounds of ${location.description}`);
+        } else if (scene.location) {
+            promptParts.push(`ambient sounds of ${scene.location}`);
+        } else {
+            promptParts.push('quiet room ambiance');
+        }
     }
 
     // What the location's own sound notes say. Appended rather than leading:
     // it describes the place in general, and the scene's direction is about
     // this scene.
     const soundNotes = String((location && location.sound_notes) || '').trim();
-    if (soundNotes) promptParts.push(soundNotes);
+    if (!direction && soundNotes) promptParts.push(soundNotes);
 
-    // INT/EXT modifier
-    if (scene.int_ext === 'EXT') {
-        promptParts.push('outdoor');
-    }
-
-    // Time of day modifier
-    const timeKey = (scene.time_of_day || 'day').toLowerCase();
-    const timeMod = TIME_AMBIENT_MODIFIER[timeKey] || '';
-    if (timeMod) {
-        promptParts.push(timeMod.trim().replace(/^,\s*/, ''));
+    // INT/EXT and time-of-day modifiers, on the same terms: they describe the
+    // place in general, and a written cue has already said where it is.
+    if (!direction) {
+        if (scene.int_ext === 'EXT') promptParts.push('outdoor');
+        const timeKey = (scene.time_of_day || 'day').toLowerCase();
+        const timeMod = TIME_AMBIENT_MODIFIER[timeKey] || '';
+        if (timeMod) promptParts.push(timeMod.trim().replace(/^,\s*/, ''));
     }
 
     // An ambient bed is a loop, not a full-length render. Scenes run minutes and
@@ -482,9 +549,25 @@ function buildAmbientPrompt(scene, location, opts) {
     const bedSeconds = bedMs / 1000;
     const loopSeconds = Math.max(AMBIENT_LOOP_MIN_S, Math.min(AMBIENT_LOOP_MAX_S, bedSeconds));
 
+    /*
+     * The provider's documented ceiling, enforced here rather than discovered as
+     * a 400. ElevenLabs takes 450 characters; a prompt assembled past that
+     * failed the whole call, and the author could not have known because the
+     * assembled string is not what they wrote. Trimmed at a boundary so the
+     * tail reads as a sentence rather than a severed word.
+     */
+    const AMBIENT_PROMPT_MAX = 450;
+    let prompt = promptParts.join(', ');
+    if (prompt.length > AMBIENT_PROMPT_MAX) {
+        const cut = prompt.slice(0, AMBIENT_PROMPT_MAX);
+        const at = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf(', '));
+        prompt = (at > AMBIENT_PROMPT_MAX * 0.6 ? cut.slice(0, at) : cut).trim();
+    }
+
     return {
         type: 'ambient',
-        prompt: promptParts.join(', '),
+        prompt,
+        prompt_trimmed: promptParts.join(', ').length > AMBIENT_PROMPT_MAX,
         prompt_parts: promptParts.filter(Boolean),
         negative_prompt: String(options.negative_prompt || '').trim(),
         bed_source: measured ? (options.bed_source || 'measured')

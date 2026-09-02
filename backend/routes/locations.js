@@ -1055,7 +1055,21 @@ function locationFields(body, locId) {
 
     const textFields = {
         name: 300, description: 5000, reference_prompt: 2000,
-        lighting_default: 50, time_of_day_default: 50,
+        /*
+         * `lighting_default` IS PROSE, AND IT WAS CAPPED AT FIFTY CHARACTERS.
+         *
+         * Fifty fits "night, sodium street lamps" and nothing anyone actually
+         * writes. Every location in this project carried 200-300 characters of
+         * it — the light IS the look, and buildPlatePrompt feeds this straight
+         * into the plate — and the cap silently cut each one mid-word on the
+         * next write. Silently: the tool answered 200 OK and echoed the stump.
+         * A director who edits a lighting note and is told it saved has no
+         * reason to go back and check that it did.
+         *
+         * `time_of_day_default` genuinely is a short enum-ish value ("night",
+         * "first light") and keeps its fifty.
+         */
+        lighting_default: 2000, time_of_day_default: 50,
         atmosphere_notes: 2000, sound_notes: 2000,
         location_type: 100,
     };

@@ -314,6 +314,20 @@ async function callNodeTool(nodeTypeId, args) {
  */
 const PRODUCTION_TOOLS = [
     {
+        name: 'agent_presence',
+        handler: require('../routes/agent-presence').handleAgentPresence, method: 'GET',
+        path: () => '/film/agent',
+        description:
+            'What this engine knows about the agent host attached to it, and what that host can '
+            + 'DO. FREE. `can_ask_the_host` is the one to read: MCP runs one direction — a host '
+            + 'calls this server and this server cannot call back — so whether Film Engine can ask '
+            + 'the model you are already talking to, instead of spending the project\u2019s API key on a '
+            + 'server-side one, depends on the host declaring the `sampling` capability at '
+            + 'initialize. Reported from the live connection rather than from documentation about '
+            + 'somebody else\u2019s build.',
+        schema: {}, required: [],
+    },
+    {
         name: 'generation_pending',
         handler: handleGenerationJobs, method: 'GET',
         path: a => `/film/projects/${a.project_id}/generation-jobs`,
@@ -329,12 +343,27 @@ const PRODUCTION_TOOLS = [
         name: 'generation_collect',
         handler: handleGenerationJobs, method: 'POST',
         path: a => `/film/generation-jobs/${a.job_id}/collect`,
+        // Same defect `spend_record` was caught by: a POST tool declaring
+        // neither `body` nor `bodyKeys` posts `{}`, so `belongs_to` never
+        // reached the route and the one handle it exists for could not be
+        // filed as the leg it was bought for.
+        body: a => ((a && a.belongs_to) ? { belongs_to: a.belongs_to } : {}),
         description:
             'Deliver a generation that was accepted earlier, from its handle. FREE \u2014 this polls a '
             + 'job already paid for and never starts a new one. Safe to call repeatedly: a job still '
             + 'running answers "not finished yet" and stays collectable. Use it after a generation tool '
-            + 'reports that the host abandoned the call, and after `generation_pending` lists a job.',
-        schema: { job_id: { type: 'string' } }, required: ['job_id'],
+            + 'reports that the host abandoned the call, and after `generation_pending` lists a job. '
+            + 'Also re-polls a job this engine recorded as FAILED: a failure on this side does not '
+            + 'un-render or refund anything, and the provider is the authority on its own job.',
+        schema: {
+            job_id: { type: 'string' },
+            belongs_to: {
+                type: 'object',
+                description: 'Names what a generation was FOR when the handle does not say. For a PLATE: { kind: character|location|prop, subject_id, view? } \u2014 this also claims a job already settled, filing the picture it left on disk under a job id, with nothing re-polled and nothing re-bought. Otherwise: only for a handle recorded before the engine stamped what it was. '
+                    + 'For a sequence leg: { sequence_id, from, to, from_shot_id }. Without it an '
+                    + 'older clip is stored but not filed as the leg it was bought for.',
+            },
+        }, required: ['job_id'],
     },
     {
         name: 'orientation_plan_brief',
@@ -832,6 +861,21 @@ const PRODUCTION_TOOLS = [
             genre: { type: 'string' },
             style_preset: { type: 'string', description: 'The look applied to every image prompt. Describe a look, not a subject — a style naming a creature puts one in every frame.' },
             aspect_ratio: { type: 'string', description: 'Delivery frame, e.g. "2.39:1", "16:9".' },
+            target_resolution: {
+                type: 'string',
+                description: 'Delivery raster, "WIDTHxHEIGHT" — e.g. "1920x1080", "2560x1440", '
+                    + '"3840x2160". This is what every video generation resolves its tier from. A '
+                    + 'provider serves the nearest tier AT OR BELOW the ask and never above it, so a '
+                    + 'raster it has no tier for (2560x1440 on Seedance) renders one step down — '
+                    + 'sequence_plan says so before anything is bought.',
+            },
+            video_draft: {
+                type: 'boolean',
+                description: 'Generate footage at the model\'s cheapest documented tier instead of '
+                    + 'the delivery raster. ON by default and worth leaving on while blocking: on '
+                    + 'Seedance a draft second is $0.17 against $0.85 at 1080p. Turn it OFF for the '
+                    + 'take you intend to keep. Video only — the board is unaffected.',
+            },
         },
         required: ['title'],
     },
@@ -888,7 +932,10 @@ const PRODUCTION_TOOLS = [
     {
         name: 'project_update',
         handler: handleProjects, method: 'PUT',
-        description: 'Update a project. Use style_preset to set the look for every generated frame, and aspect_ratio to set the delivery frame (e.g. "2.39:1").',
+        description: 'Update a project. Use style_preset to set the look for every generated frame, '
+            + 'and aspect_ratio to set the delivery frame (e.g. "2.39:1"). target_resolution and '
+            + 'video_draft together decide what every second of footage COSTS — read sequence_plan '
+            + 'after changing either; it is free and quotes the tier and the dollars.',
         path: a => `/film/projects/${a.project_id}`,
         body: a => {
             const { project_id, ...rest } = a || {};
@@ -1645,6 +1692,40 @@ const PRODUCTION_TOOLS = [
         path: a => `/film/projects/${a.project_id}/screenplay-drift/baseline`,
         body: () => ({}),
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'spend_record',
+        handler: handleBudget, method: 'POST',
+        path: a => `/film/projects/${a.project_id}/spend/record`,
+        /*
+         * Without this the dispatcher sends an EMPTY body: a route tool that
+         * declares neither `body` nor `bodyKeys` posts `{}`, so every field was
+         * dropped and the route refused its own arguments as missing. The
+         * schema being right is not the same as the arguments arriving.
+         */
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        description:
+            'Record a charge the engine did not observe. Everything else in the ledger is measured '
+            + 'at the moment of a call, which misses real money: a generation that was rendered and '
+            + 'BILLED and then lost on this side (the meter correctly declines to bill refusals, so '
+            + 'it records nothing for a charge that already happened), anything bought before the '
+            + 'metering path covered it, or a charge made outside the engine entirely. ALWAYS '
+            + 'FLAGGED as hand-entered, so it can never be mistaken for something the engine '
+            + 'watched happen. Supply `usd` when you have the provider\u2019s own figure \u2014 an invoice '
+            + 'beats our reconstruction of it; omit it and the rate book prices the quantity.',
+        schema: {
+            project_id: { type: 'string' },
+            provider: { type: 'string', description: 'e.g. seedance, meshy, elevenlabs.' },
+            capability: { type: 'string', description: 'video, image, music, ambient, llm, post\u2026' },
+            model: { type: 'string', description: 'The model actually billed, e.g. seedance-2.5-1080p.' },
+            unit: { type: 'string', description: 'second, call, credit, token. Default call.' },
+            quantity: { type: 'number', description: 'How many units. Required.' },
+            usd: { type: 'number', description: 'The exact charge, when known. Omit to price from the rate book.' },
+            shot_id: { type: 'string' },
+            note: { type: 'string', description: 'Why this is being entered by hand \u2014 it is stored with the row.' },
+            reference: { type: 'string', description: 'The provider\u2019s job or invoice id, so it can be reconciled later.' },
+        },
+        required: ['project_id', 'provider', 'capability', 'quantity'],
     },
     {
         name: 'spend_report',

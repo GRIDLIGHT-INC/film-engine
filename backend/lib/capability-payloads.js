@@ -173,16 +173,58 @@ function preconditionError(message) {
  * wrong frame shape propagates into every clip. A storyboard's whole job is to
  * show what will be in frame, which a square cannot do for a scope film.
  */
-function dimensionsForAspect(aspect, fallbackW, fallbackH) {
-    const ratio = require('./project-presets').aspectValue(aspect);
-    if (!ratio) return { width: fallbackW, height: fallbackH };
+/**
+ * THE SHAPE IS THE POINT, AND ROUNDING EACH EDGE DESTROYED IT.
+ *
+ * This computed each edge from a pixel budget and then rounded it to a multiple
+ * of eight INDEPENDENTLY. Two independent roundings do not preserve a ratio: a
+ * 16:9 project asked for 1368x768, which is 1.781:1. Not 16:9. The function
+ * named for the aspect ratio was the thing breaking it.
+ *
+ * It does not stay a rounding error either. The board frame is what gets sent
+ * to the video model as a keyframe, and Seedance derives its OUTPUT raster from
+ * the keyframe it is given rather than from the `aspect_ratio` field alongside
+ * it — so an off-ratio board becomes off-ratio footage. Measured on this
+ * project: boards at 1376x768 produced clips at 1926x1076, while the two shots
+ * whose frames were uploaded at a true 1920x1080 produced exactly 1920x1080.
+ * Three legs of one sequence came back in two different rasters.
+ *
+ * An 8-pixel grid and an exact ratio are not in conflict — they only look it.
+ * 16:9 lands exactly on the grid at 1280x720, 1408x792, 1920x1080. So instead
+ * of rounding a float, this finds the SMALLEST frame of exactly this ratio that
+ * sits on the grid, and multiplies it up as far as the budget allows.
+ */
+function gridUnitFor(a, b) {
+    const gcd = (x, y) => (y ? gcd(y, x % y) : x);
+    // Whole numbers first: 2.39:1 is 239:100, and a float ratio cannot be
+    // scaled to integers without reintroducing the rounding this exists to
+    // avoid.
+    let scale = 1;
+    while ((!Number.isInteger(a * scale) || !Number.isInteger(b * scale)) && scale <= 1000) scale *= 10;
+    let w = Math.round(a * scale), h = Math.round(b * scale);
+    const g = gcd(w, h) || 1;
+    w /= g; h /= g;
+    // The coarsest grid this ratio can actually sit on, preferring 8.
+    for (const grid of [8, 4, 2, 1]) {
+        for (let k = 1; k <= 64; k++) {
+            if ((w * k) % grid === 0 && (h * k) % grid === 0) return { w: w * k, h: h * k, grid };
+        }
+    }
+    return { w, h, grid: 1 };
+}
 
+function dimensionsForAspect(aspect, fallbackW, fallbackH) {
+    const m = String(aspect || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/i);
+    if (!m) return { width: fallbackW, height: fallbackH };
+    const a = Number(m[1]), b = Number(m[2]);
+    if (!(a > 0) || !(b > 0)) return { width: fallbackW, height: fallbackH };
+
+    const unit = gridUnitFor(a, b);
     const targetPixels = fallbackW * fallbackH;
-    const round8 = n => Math.max(256, Math.round(n / 8) * 8);
-    return {
-        width: round8(Math.sqrt(targetPixels * ratio)),
-        height: round8(Math.sqrt(targetPixels / ratio)),
-    };
+    // The largest whole multiple of the unit that fits the budget — never zero,
+    // because a frame smaller than its own unit is still that unit.
+    const k = Math.max(1, Math.floor(Math.sqrt(targetPixels / (unit.w * unit.h))));
+    return { width: unit.w * k, height: unit.h * k };
 }
 
 /**
@@ -222,11 +264,22 @@ function imageBudget(aspect, resolution, maxPixels) {
     const asked = shaped.width * shaped.height;
     if (!cap || asked <= cap) return { ...shaped, clamped: false };
 
-    // Scale down on the diagonal so the shape survives exactly.
-    const k = Math.sqrt(cap / asked);
-    const round8 = n => Math.max(256, Math.round((n * k) / 8) * 8);
+    /*
+     * Scale down so the shape survives EXACTLY — the comment always said so and
+     * the code did not: two independent round8 calls put the clamped frame back
+     * off-ratio, which is the same defect one line further down.
+     *
+     * `dimensionsForAspect` already returns a whole multiple of the smallest
+     * on-grid frame of this ratio, so stepping DOWN in whole units is the only
+     * move that keeps the ratio and the grid at once.
+     */
+    const unit = gridUnitFor(...(() => {
+        const m = String(aspect || '').match(/^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/i);
+        return m ? [Number(m[1]), Number(m[2])] : [16, 9];
+    })());
+    const k = Math.max(1, Math.floor(Math.sqrt(cap / (unit.w * unit.h))));
     return {
-        width: round8(shaped.width), height: round8(shaped.height),
+        width: unit.w * k, height: unit.h * k,
         clamped: true, asked_width: shaped.width, asked_height: shaped.height,
     };
 }
@@ -1222,7 +1275,18 @@ async function persistCapabilityResult(capability, result, ctx, filename) {
     if (!subdir) throw new Error(`no storage mapping for capability '${capability}'`);
 
     const projectId = projectIdOf(ctx || {});
-    const path = await persistProviderMedia(projectId, subdir, filename, result && result.data, {
+    /*
+     * BYTES IF THERE ARE BYTES, OTHERWISE THE RESULT ITSELF.
+     *
+     * This passed `result.data` and nothing else, which silently assumed every
+     * adapter returns a buffer. Seedance returns `{ ok, url }` and no buffer --
+     * so `persistProviderMedia` received `undefined`, found neither bytes nor a
+     * URL in it, and threw on a clip that had rendered and been billed. Handing
+     * it the result object instead lets `extractMediaUrl` find the `url` that
+     * was there all along; a buffer still takes the buffer path unchanged.
+     */
+    const payload = (result && result.data) || result || null;
+    const path = await persistProviderMedia(projectId, subdir, filename, payload, {
         serveDir: SERVE_DIR[capability],
     });
     return { path, subdir };
@@ -1235,6 +1299,7 @@ module.exports = {
     withTierModel,
     dimensionsForAspect,
     IMAGE_DEFAULTS,
+    gridUnitFor,
     CAPABILITY_BUILDERS,
     preconditionError,
     buildCapabilityPayload,

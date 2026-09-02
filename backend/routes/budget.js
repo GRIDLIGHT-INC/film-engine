@@ -60,6 +60,7 @@ function handleBudget(req, res, urlParts, query) {
         if (!sub && req.method === 'GET') return spendReport(req, res, projectId, query);
         if (sub === 'usage' && req.method === 'GET') return usageLedger(req, res, projectId, query);
         if (sub === 'backfill' && req.method === 'POST') return runBackfill(req, res, projectId);
+        if (sub === 'record' && req.method === 'POST') return recordKnownSpend(req, res, projectId);
     }
 
     // /film/spend/subscription — MCP host traffic against the plan windows.
@@ -333,9 +334,46 @@ function spendReport(req, res, projectId, query) {
           AND NOT EXISTS (SELECT 1 FROM film_usage_events u WHERE u.project_id = film_assets.project_id AND u.source_ref IS NULL)
     `).get(projectId);
 
+    /*
+     * THE SUBSCRIPTION, ATTRIBUTED — never added.
+     *
+     * The LLM runs on a Claude subscription through the MCP host, so its
+     * marginal cost is zero and the ledger correctly charges the project
+     * nothing. But the fee is real money, and an agency billing a client for a
+     * spot has to put a number against the reasoning that went into it.
+     *
+     * So it is reported as a SHARE of a fixed fee, measured from tokens this
+     * install actually metered in the same period — never summed into
+     * `measured_usd`, because a sunk monthly fee is not a variable cost of a
+     * shot and adding it would make cost-per-shot wrong in both directions.
+     */
+    let subscription = null;
+    try {
+        const { subscriptionAttribution } = require('../lib/provider-pricing');
+        const { readSettings } = require('./app-settings');
+        const plan = String((readSettings() || {}).llm_subscription_plan || 'none');
+        if (plan && plan !== 'none') {
+            // The same calendar month the fee covers, across EVERY project:
+            // attributing against this project's own tokens alone would hand it
+            // the whole fee no matter how little of the month it used.
+            const since = new Date(); since.setUTCDate(1); since.setUTCHours(0, 0, 0, 0);
+            const iso = since.toISOString();
+            const tok = q => db.prepare(
+                `SELECT COALESCE(SUM(quantity), 0) AS n FROM film_usage_events
+                  WHERE capability = 'llm' AND unit = 'token' AND created_at >= ?${q}`);
+            const period = tok('').get(iso).n;
+            const mine = tok(' AND project_id = ?').get(iso, projectId).n;
+            subscription = subscriptionAttribution({
+                plan, project_tokens: mine, period_tokens: period,
+            });
+            if (subscription) subscription.period_start = iso;
+        }
+    } catch (_) { /* an attribution that cannot be computed must not fail the report */ }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
         ...spend,
+        ...(subscription ? { subscription } : {}),
         untracked_assets: untracked.n,
         backfill_available: untracked.n > 0,
         note: spend.estimated_usd > 0
@@ -366,6 +404,78 @@ function usageLedger(req, res, projectId, query) {
         events: rows.map(r => ({ ...r, parts: safeJson(r.parts) })),
         count: rows.length, total: total.n, page, limit,
         pages: Math.ceil(total.n / limit),
+    }));
+}
+
+/**
+ * A charge the provider made that this engine did not observe.
+ *
+ * Everything else in this file is measured at the moment of a call. That misses
+ * a whole class of real money, and the class is not rare:
+ *
+ *   - A generation that was accepted, RENDERED and billed, then lost on this
+ *     side. One clip on this install cost $1.70 and was reported as a failure,
+ *     so the meter — which correctly declines to bill refusals — recorded
+ *     nothing for a charge that had already happened.
+ *   - Anything bought before the metering path covered it. Collected
+ *     generations were unmetered until the handle started carrying its price.
+ *   - A charge made outside the engine entirely: a console retry, a plan
+ *     upgrade, a support credit going the other way.
+ *
+ * The alternative to a way in is a director doing arithmetic in a spreadsheet
+ * beside the report, which is how the report stops being read at all.
+ *
+ * ALWAYS FLAGGED. It writes `estimated = 1` and a source_ref of `manual:`, so a
+ * hand-entered figure can never be mistaken for one the engine watched happen —
+ * the report already separates `measured_usd` from `estimated_usd`, and this
+ * lands honestly on the second.
+ */
+function recordKnownSpend(req, res, projectId) {
+    const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) return notFound(res, 'Project not found');
+
+    const b = req.body || {};
+    const provider = String(b.provider || '').trim();
+    const capability = String(b.capability || '').trim();
+    if (!provider || !capability) {
+        return badReq(res, 'provider and capability are required — a charge with no provider '
+            + 'cannot be reconciled against an invoice, which is the only reason to record it');
+    }
+    const quantity = Number(b.quantity);
+    if (!(quantity > 0)) return badReq(res, 'quantity must be greater than zero');
+
+    try {
+        const { recordUsage } = require('../lib/usage-meter');
+        recordUsage({
+            provider, capability,
+            model: String(b.model || ''),
+            unit: String(b.unit || 'call'),
+            quantity,
+            projectId,
+            shotId: b.shot_id || null,
+            sceneId: b.scene_id || null,
+            /*
+             * Priced from the rate book like anything else unless a figure is
+             * given. An explicit `usd` wins, because a provider's own invoice
+             * beats our reconstruction of it — that is the whole point of
+             * `native_charged` elsewhere in this pipeline.
+             */
+            ...(Number(b.usd) > 0 ? { native_charged: Number(b.usd), provider_confirmed: true } : {}),
+            estimated: !(Number(b.usd) > 0),
+            estimate_basis: String(b.note || 'recorded by hand'),
+            source_ref: `manual:${String(b.reference || b.note || 'entry').slice(0, 80)}`,
+        });
+    } catch (err) {
+        return badReq(res, `could not record it: ${err.message}`);
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+        project_id: projectId, recorded: true,
+        provider, capability, quantity, unit: String(b.unit || 'call'),
+        usd: Number(b.usd) > 0 ? Number(b.usd) : null,
+        note: 'Recorded and flagged as hand-entered. It appears in spend_report and, unless an '
+            + 'exact figure was supplied, counts toward estimated rather than measured spend.',
     }));
 }
 

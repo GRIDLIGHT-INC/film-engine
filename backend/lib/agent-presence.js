@@ -25,6 +25,12 @@ const PRESENCE_WINDOW_MS = 20 * 60 * 1000;
 
 const KEY_SEEN = 'agent_last_seen';
 const KEY_CLIENT = 'agent_client';
+/*
+ * What the host declared it can do, verbatim, as JSON. Stored rather than
+ * interpreted: the capability set grows with the protocol, and a boolean
+ * distilled here would answer last year's question.
+ */
+const KEY_CAPS = 'agent_capabilities';
 
 let _db = null;
 function database() {
@@ -39,12 +45,21 @@ function database() {
  * that failed must not fail the tool call it was only observing — the same rule
  * `stampAsset` follows for fingerprints.
  */
-function markAgentSeen(client) {
+function markAgentSeen(client, capabilities) {
     try {
         const db = database();
         const put = db.prepare('INSERT OR REPLACE INTO film_app_settings (key, value) VALUES (?, ?)');
         put.run(KEY_SEEN, new Date().toISOString());
         if (client) put.run(KEY_CLIENT, String(client).slice(0, 120));
+        /*
+         * Only at initialize, which is the only time it is sent. Every other
+         * call passes nothing and must not erase what the handshake recorded —
+         * a tool call is not evidence that the host stopped supporting
+         * sampling.
+         */
+        if (capabilities && typeof capabilities === 'object') {
+            put.run(KEY_CAPS, JSON.stringify(capabilities).slice(0, 4000));
+        }
     } catch (_) { /* observing must not break the thing observed */ }
 }
 
@@ -65,12 +80,22 @@ function readSetting(key) {
  */
 function agentPresence() {
     const seen = readSetting(KEY_SEEN);
+    let caps = null;
+    try { caps = JSON.parse(readSetting(KEY_CAPS) || 'null'); } catch (_) { caps = null; }
     const age = seen ? Date.now() - Date.parse(seen) : null;
     return {
         connected: !!(age !== null && Number.isFinite(age) && age >= 0 && age < PRESENCE_WINDOW_MS),
         last_seen: seen,
         seconds_ago: age === null || !Number.isFinite(age) ? null : Math.round(age / 1000),
         client: readSetting(KEY_CLIENT),
+        capabilities: caps,
+        /*
+         * The actionable one, named rather than left for a reader to dig out.
+         * `sampling` is what decides whether this engine can ask the attached
+         * model a question instead of spending an API key on a server-side one.
+         */
+        can_ask_the_host: !!(caps && caps.sampling),
+        can_elicit: !!(caps && caps.elicitation),
         window_seconds: Math.round(PRESENCE_WINDOW_MS / 1000),
     };
 }

@@ -14,6 +14,9 @@ const { stampSubject } = require('../lib/story-bible');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
 const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
+// Where a character plate goes, known in ONE place so the collect road files
+// one exactly as the live road does. See lib/plate-delivery.js.
+const plateDelivery = require('../lib/plate-delivery');
 const { resolve } = require('../lib/providers');
 const { providerConfigFor } = require('../lib/provider-config');
 
@@ -143,14 +146,36 @@ function listCharacters(req, res, projectId) {
     const refsheetCheck = db.prepare(
         // Front first, for the same reason the prompt gather takes the front:
         // a card showing the back of someone's head identifies nobody.
-        `SELECT file_name, project_id, version, created_at FROM film_assets WHERE asset_type = 'character_sheet'
-           AND metadata LIKE ? ORDER BY ${orderByViewSql()}, created_at DESC LIMIT 1`
+        //
+        /*
+         * MATCHED ON THE COLUMN, NOT ON A SHAPE OF THE JSON.
+         *
+         * This was `metadata LIKE '%"character_id":"…"%"view":"front"%'` — both
+         * keys required, in that order, inside the blob. A GENERATED plate
+         * happens to write them that way. An UPLOADED one does not: it carries
+         * the link in the character_id column and records
+         * {kind, imported, style_applied, view}. So a character whose plate was
+         * uploaded reported has_plate TRUE and showed NO PICTURE on the card —
+         * the same two-queries-disagreeing split this function documents for
+         * the picker below, arrived at from the other side.
+         *
+         * No view filter either. The pattern demanded `front`, so a character
+         * plated only in profile had a plate the card could not show. Ranked
+         * front-first and take the best one there is.
+         *
+         * A demoted plate is skipped: `gallery_promote` writes plate_role, and
+         * a concept is by definition the picture nobody chose.
+         */
+        `SELECT file_name, project_id, version, created_at FROM film_assets
+           WHERE asset_type = 'character_sheet' AND character_id = ?
+             AND COALESCE(json_extract(metadata, '$.plate_role'), 'reference') = 'reference'
+           ORDER BY ${orderByViewSql()}, created_at DESC LIMIT 1`
     );
 
     for (const ch of rows) {
         ch.costume_count = costumeCount.get(ch.id).count;
         ch.has_voice_profile = !!voiceCheck.get(ch.id);
-        const refsheet = refsheetCheck.get(`%"character_id":"${ch.id}"%"view":"front"%`);
+        const refsheet = refsheetCheck.get(ch.id);
         // Keyed to the plate's own row so a regeneration through MCP is visible
         // without a hard refresh.
         ch.reference_image_url = refsheet
@@ -814,7 +839,22 @@ async function generateRefSheet(req, res, charId) {
             require('../lib/capability-payloads').withTierModel(
                 payload, { project: { id: ch.project_id }, tierOverride }, imageProvider);
 
-            let result = await imageProvider.generate('image', payload, { timeout: 300000 });
+            let result = await imageProvider.generate('image', payload, {
+                timeout: 300000,
+                /*
+                 * WHAT THIS GENERATION IS, written onto the handle.
+                 *
+                 * The adapter contributes the capability — `image` — which is
+                 * equally true of a keyframe and a mood board, so it cannot say
+                 * where the bytes belong. A render that outruns the host window
+                 * is delivered later by `generation_collect`, which holds the
+                 * handle and not this payload: without this the plate came back
+                 * as a loose file and the character library never saw it.
+                 */
+                jobMeta: plateDelivery.jobMeta({
+                    projectId: ch.project_id, characterId: charId,
+                    characterName: ch.name, view, styleApplied }),
+            });
 
             // A style written for the FILM can be refused on a reference sheet:
             // it lands beside a full-body physical description, and the pair
@@ -833,7 +873,13 @@ async function generateRefSheet(req, res, charId) {
                 result = await imageProvider.generate('image', {
                     ...styleless,
                     prompt: buildRefSheetPrompt(ch, view, null, ch.project_id),
-                }, { timeout: 300000 });
+                }, {
+                    timeout: 300000,
+                    // The retry is a different handle, and the look is off it.
+                    jobMeta: plateDelivery.jobMeta({
+                        projectId: ch.project_id, characterId: charId,
+                        characterName: ch.name, view, styleApplied: false }),
+                });
                 if (result.ok) styleApplied = false;
             }
 
@@ -842,73 +888,29 @@ async function generateRefSheet(req, res, charId) {
                 continue;
             }
 
-            const safeName = ch.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-            const filename = `${safeName}_${view}.png`;
-            let filePath;
-            try {
-                filePath = await persistProviderMedia(ch.project_id, 'refsheets', filename, result.data, { serveDir: 'images' });
-            } catch (err) {
-                results.push({ view, status: 'failed', error: `reference image generated but could not be stored: ${err.message}` });
+            /*
+             * Filed by lib/plate-delivery, which `generation_collect` also calls.
+             *
+             * This block used to live here in full — persist, drop the stale row
+             * for this view, insert, stamp — and the collect road had no copy of
+             * it. So a plate that came back late was stored and never registered.
+             * Two roads, one filing rule.
+             */
+            const filed = await plateDelivery.fileCharacterPlate({
+                projectId: ch.project_id, characterId: charId, characterName: ch.name, view,
+                data: result.data,
+                provider: result.provider || imageProvider.id,
+                providerModel: result.provider_model || '',
+                providerJobId: result.provider_job_id || '',
+                styleApplied,
+            });
+            if (!filed.ok) {
+                results.push({ view, status: 'failed', error: filed.error });
                 continue;
             }
 
-            /*
-             * A REGENERATED VIEW REPLACES ITS ROW.
-             *
-             * The file is written to the same per-view name and overwrites, so
-             * a second generation produced a NEW asset row pointing at the same
-             * picture. Ray was regenerated once and the views list showed six
-             * entries for three files; every regeneration after that adds three
-             * more, forever.
-             *
-             * It is not only cosmetic. Two rows for one view means "the plate"
-             * is whichever the query happens to return, the fingerprint is
-             * stamped on one of them, and accepting staleness on the visible
-             * row leaves the other still reported as behind.
-             *
-             * Scoped to subject AND view across extensions, the same rule the
-             * upload path follows: an uploaded JPEG lands beside a generated
-             * PNG of the same view otherwise.
-             */
-            const stale = db.prepare(
-                `SELECT id, file_path FROM film_assets
-                  WHERE project_id = ? AND character_id = ?
-                    AND asset_type IN ('character_sheet', 'reference_image')
-                    AND json_extract(metadata, '$.view') = ?`
-            ).all(ch.project_id, charId, view);
-            for (const old of stale) {
-                // The row goes; the FILE does not, because it is the same path
-                // that was just written to. Deleting it here would remove the
-                // picture this generation just produced.
-                db.prepare('DELETE FROM film_assets WHERE id = ?').run(old.id);
-            }
-
-            const assetId = generateId();
-            db.prepare(
-                // character_id goes in its own column, not only in metadata.
-                // The column existed and was left NULL, so anything selecting
-                // "this character's reference plates" found nothing — including
-                // the storyboard route's reference lookup, which would then
-                // silently fall back to prose and lose the continuity the sheet
-                // was generated to provide.
-                `INSERT INTO film_assets (
-                    id, project_id, character_id, asset_type, file_path, file_name, format, mime_type, version, metadata,
-                    provider, provider_model, provider_job_id, license_source, license_status
-                 )
-                 VALUES (?, ?, ?, 'character_sheet', ?, ?, 'png', 'image/png', 1, ?, ?, ?, ?, 'generated', 'generated')`
-            ).run(
-                assetId, ch.project_id, charId, filePath, filename, JSON.stringify({ character_id: charId, view }),
-                result.provider || imageProvider.id, result.provider_model || '', result.provider_job_id || ''
-            );
-
-            // The plate that started all of this: generated in a stock clip-art
-            // style, fixed fourteen hours later, and still referenced by every
-            // frame with this character in it because nothing recorded what it
-            // had been made from.
-            require('../lib/artefact-fingerprint').stampAsset(assetId, 'character_plate', { charId });
-
             results.push({ view, status: 'complete', style_applied: styleApplied,
-                image_url: getFileUrl('refsheets', ch.project_id, filename, Date.now()) });
+                image_url: filed.image_url });
         } catch (err) {
             if (err.message.includes('ECONNREFUSED')) {
                 db.prepare('UPDATE film_refsheet_jobs SET status = ?, error_message = ? WHERE id = ?')
