@@ -74,6 +74,21 @@ async function waitForApp(maxRetries = 40) {
     throw new Error('Film Engine test server did not start');
 }
 
+/*
+ * A `pcm_*` response is raw samples, and its LENGTH is what tells the adapter
+ * how many channels it is in. A fixed-size stub therefore exercises the
+ * refusal path rather than the wrap — so the stub sizes itself the way a real
+ * provider would, mono at the rate and duration that were asked for, with the
+ * marker at the end so the samples can still be shown to have survived.
+ */
+function mockAudio(url, seconds, marker) {
+    const fmt = (url.split('output_format=')[1] || '').split('&')[0];
+    if (!fmt.startsWith('pcm_')) return Buffer.from(marker);
+    const rate = Number(fmt.split('_')[1]) || 48000;
+    const body = Buffer.alloc(Math.max(0, rate * 2 * seconds - marker.length));
+    return Buffer.concat([body, Buffer.from(marker)]);
+}
+
 describe('providers/elevenlabs', () => {
     before(async () => {
         server = http.createServer(async (req, res) => {
@@ -88,19 +103,19 @@ describe('providers/elevenlabs', () => {
 
             if (req.url.startsWith('/v1/text-to-speech/')) {
                 res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'request-id': 'tts-req-1' });
-                res.end(Buffer.from('mock-tts-audio'));
+                res.end(mockAudio(req.url, 1, 'mock-tts-audio'));
                 return;
             }
 
-            if (req.url === '/v1/sound-generation') {
+            if (req.url.split('?')[0] === '/v1/sound-generation') {
                 res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'request-id': 'sfx-req-1' });
-                res.end(Buffer.from('mock-sfx-audio'));
+                res.end(mockAudio(req.url, lastRequest.body.duration_seconds || 3, 'mock-sfx-audio'));
                 return;
             }
 
             if (req.url.startsWith('/v1/music')) {
                 res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'request-id': 'music-req-1' });
-                res.end(Buffer.from('mock-music-audio'));
+                res.end(mockAudio(req.url, (lastRequest.body.music_length_ms || 30000) / 1000, 'mock-music-audio'));
                 return;
             }
 
@@ -166,7 +181,7 @@ describe('providers/elevenlabs', () => {
 
     it('maps sfx prompts to sound-generation requests with bounded duration', () => {
         const request = buildSfxRequest({ prompt: 'metal door slam', duration_s: 60 });
-        assert.equal(request.url, `${baseUrl}/sound-generation`);
+        assert.equal(request.url, `${baseUrl}/sound-generation?output_format=mp3_44100_128`);
         assert.equal(request.body.text, 'metal door slam');
         assert.equal(request.body.duration_seconds, 30);
         assert.equal(request.model, 'elevenlabs-sound-effects');
@@ -230,7 +245,7 @@ describe('providers/elevenlabs', () => {
         // Room tone is a sound effect, not music — and loop:true is only
         // honoured on eleven_text_to_sound_v2, so the model must be explicit.
         const request = buildAmbientRequest({ prompt: 'quiet room ambiance, nighttime', duration_s: 30 });
-        assert.equal(request.url, `${baseUrl}/sound-generation`);
+        assert.equal(request.url, `${baseUrl}/sound-generation?output_format=mp3_44100_128`);
         assert.equal(request.body.loop, true);
         assert.equal(request.body.model_id, 'eleven_text_to_sound_v2');
         assert.equal(request.body.duration_seconds, 30);
@@ -257,7 +272,10 @@ describe('providers/elevenlabs', () => {
 
     it('normalizes output format to a provider-supported audio type', () => {
         assert.equal(normalizeOutputFormat({ output_format: 'mp3_44100_128' }), 'mp3_44100_128');
-        assert.equal(normalizeOutputFormat({ output_format: 'wav' }), 'mp3_44100_128');
+        assert.equal(normalizeOutputFormat({ output_format: 'wav' }), 'pcm_48000');
+        // Never served BELOW the rate asked for: that is the point of asking,
+        // and 44.1k is the CD rate where video runs at 48k.
+        assert.equal(normalizeOutputFormat({ output_format: 'wav', sample_rate: 44100 }), 'pcm_44100');
         assert.equal(normalizeOutputFormat({}), 'mp3_44100_128');
     });
 
@@ -372,12 +390,12 @@ describe('providers/elevenlabs', () => {
         const generated = await appRequest(`/film/shots/${shotId}/voice/generate`, { method: 'POST', body: {} });
         assert.equal(generated.status, 200);
         assert.equal(generated.data.audio_files[0].status, 'complete');
-        assert.match(generated.data.audio_files[0].audio_url, /\.mp3$/);
+        assert.match(generated.data.audio_files[0].audio_url, /\.wav$/);
 
         const status = await appRequest(`/film/shots/${shotId}/voice`);
         assert.equal(status.status, 200);
         const asset = status.data.audio_files[0];
-        assert.match(asset.file_name, /\.mp3$/);
+        assert.match(asset.file_name, /\.wav$/);
         assert.equal(asset.provider, 'elevenlabs');
         assert.equal(asset.provider_model, 'eleven_multilingual_v2');
         assert.equal(asset.license_source, 'generated');
@@ -386,11 +404,12 @@ describe('providers/elevenlabs', () => {
 
         const served = await appRequest(asset.audio_url);
         assert.equal(served.status, 200);
-        assert.match(served.headers['content-type'], /audio\/mpeg/);
-        assert.equal(served.raw, 'mock-tts-audio');
+        assert.match(served.headers['content-type'], /audio\/(wav|x-wav|wave)/);
+        assert.ok(served.raw.startsWith('RIFF'), 'the served dialogue is not a WAV');
+        assert.ok(served.raw.endsWith('mock-tts-audio'), 'the samples did not survive the wrap');
     });
 
-    it('music route resolves ElevenLabs and stores an mp3 with provenance', async () => {
+    it('music route resolves ElevenLabs and stores a WAV with provenance', async () => {
         // Reuses the app server spawned by the voice route test above.
         const proj = await appRequest('/film/projects', { method: 'POST', body: { title: 'ElevenLabs Music Test', logline: 'x' } });
         assert.equal(proj.status, 201);
@@ -418,11 +437,12 @@ describe('providers/elevenlabs', () => {
         assert.equal(generated.data.status, 'complete');
         // The music payload asks for wav; ElevenLabs answers mp3, and the route
         // must name the file for what it actually got.
-        assert.match(generated.data.music_url, /\.mp3$/);
+        assert.match(generated.data.music_url, /\.wav$/);
 
         const served = await appRequest(generated.data.music_url);
         assert.equal(served.status, 200);
-        assert.equal(served.raw, 'mock-music-audio');
+        assert.ok(served.raw.startsWith('RIFF'), 'the served score is not a WAV');
+        assert.ok(served.raw.endsWith('mock-music-audio'), 'the samples did not survive the wrap');
 
         const jobs = await appRequest(`/film/projects/${projectId}/music/jobs`);
         assert.equal(jobs.status, 200);
@@ -450,7 +470,7 @@ describe('providers/elevenlabs', () => {
 
         const generated = await appRequest(`/film/scenes/${sceneId}/ambient/generate`, { method: 'POST', body: {} });
         assert.equal(generated.status, 200);
-        assert.match(generated.data.ambient_url || '', /\.mp3$/);
+        assert.match(generated.data.ambient_url || '', /\.wav$/);
 
         // The bed must be a bounded loop, not a scene-length render.
         assert.ok(lastRequest.body.loop === true, 'ambient asked for a seamless loop');
@@ -458,7 +478,8 @@ describe('providers/elevenlabs', () => {
 
         const served = await appRequest(generated.data.ambient_url);
         assert.equal(served.status, 200);
-        assert.equal(served.raw, 'mock-sfx-audio');
+        assert.ok(served.raw.startsWith('RIFF'), 'the served bed is not a WAV');
+        assert.ok(served.raw.endsWith('mock-sfx-audio'), 'the samples did not survive the wrap');
     });
 
     it('the mix payload actually carries the loop instruction', async () => {

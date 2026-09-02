@@ -480,26 +480,46 @@ async function callElevenLabsOnce(request, apiKey, opts) {
          * honestly as raw.
          */
         let pcmWrapped = false;
+        let storedFormat = request.format;
+        let storedMime = request.mimeType;
         if (String(request.outputFormat || '').startsWith('pcm_')) {
             const rate = Number(String(request.outputFormat).split('_')[1]) || 48000;
             const seconds = Number(request.durationSeconds)
                 || (Number(request.durationMs) > 0 ? Number(request.durationMs) / 1000 : 0);
             const wrapped = wrapPcmAsWav(data, rate, seconds, request.channels);
             if (wrapped) { data = wrapped; pcmWrapped = true; }
+            else {
+                /*
+                 * THE REFUSAL MUST REACH THE FILENAME, not just `meta`.
+                 *
+                 * When the byte count fits neither mono nor stereo the wrapper
+                 * declines to guess, which is right — a file that plays at the
+                 * wrong pitch is worse than one labelled honestly. But the
+                 * request still SAID `format: 'wav'`, and the route names the
+                 * file from that, so the bytes landed as `.wav` while being a
+                 * bare stream: exactly the lie this whole change exists to stop,
+                 * surviving in the one branch nobody looks at.
+                 *
+                 * `.pcm` is honest and unambiguous — the rate is in
+                 * `meta.output_format` for anything that needs to decode it.
+                 */
+                storedFormat = 'pcm';
+                storedMime = 'application/octet-stream';
+            }
         }
 
         return {
             ok: true,
             status: response.status,
             data,
-            contentType: response.headers.get('content-type') || request.mimeType || 'audio/mpeg',
+            contentType: storedMime || response.headers.get('content-type') || 'audio/mpeg',
             provider: 'elevenlabs',
             provider_model: request.model,
             provider_job_id: response.headers.get('request-id') || response.headers.get('x-request-id') || '',
             meta: {
                 voice_id: request.voiceId || '',
                 output_format: request.outputFormat || '',
-                format: request.format,
+                format: storedFormat,
                 // Said out loud: a pcm request whose header could not be
                 // written is raw samples on disk, and the reader has to know.
                 ...(String(request.outputFormat || '').startsWith('pcm_')
