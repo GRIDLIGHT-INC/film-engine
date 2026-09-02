@@ -154,8 +154,16 @@ test('the page renders the served URL, and does not hide a failure in silence', 
      * `image_url` passed with the src reverted to image_path, because the name
      * still appeared in the click handler beside it — a mutation caught that.
      */
-    const img = body.match(/<img src="\$\{API_BASE\}\$\{esc\(e\.([a-z_]+)\)\}"/);
-    assert.ok(img, 'the board no longer renders an <img> built from API_BASE at all');
+    /*
+     * Either shape is accepted, and the FIELD is what is asserted. The board
+     * used to build the src as `${API_BASE}${esc(e.image_url)}`; it now goes
+     * through plateSrc, which prepends the origin via csImg and appends the
+     * width. What must not change is which field it reads.
+     */
+    const img = body.match(/<img src="\$\{API_BASE\}\$\{esc\(e\.([a-z_]+)\)\}"/)
+        || body.match(/<img src="\$\{esc\(plateSrc\(e\.([a-z_]+),/);
+    assert.ok(img, 'the board renders no served <img> at all — neither directly from '
+        + 'API_BASE nor through plateSrc');
     assert.strictEqual(img[1], 'image_url',
         `the board image is drawn from e.${img[1]} — image_path is a filesystem path, so `
         + 'prefixing it with API_BASE asks the server for /Users/... and 404s');
