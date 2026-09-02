@@ -381,7 +381,18 @@ test('both single GETs serve the plates from the shared reader', () => {
         const body = src.slice(at, src.indexOf('\nfunction ', at + 10));
         assert.ok(new RegExp(`plateViewsFor\\([a-zA-Z]+, '${kind}'\\)`).test(body),
             `${fn} does not read the plates, so the sheet opens on "no plate yet"`);
-        assert.ok(/loadGallery\(/.test(body), `${fn} serves no gallery`);
+        /*
+         * Bound to the gallery module's LOADERS, derived, not to one name.
+         * This matched the literal `loadGallery(` and broke the day the routes
+         * moved to `galleryForStrip` — the same shared reader, filtered — and
+         * reported a working route as serving no gallery. A reader family is
+         * what the check is about; which member a route calls is not.
+         */
+        const loaders = Object.keys(require('../lib/subject-gallery'))
+            .filter(k => /^(load|gallery)/i.test(k) && /gallery/i.test(k));
+        assert.ok(loaders.length, 'the gallery module exports no loader to bind to');
+        assert.ok(loaders.some(l => new RegExp(`\\b${l}\\(`).test(body)),
+            `${fn} serves no gallery — calls none of: ${loaders.join(', ')}`);
     }
 });
 

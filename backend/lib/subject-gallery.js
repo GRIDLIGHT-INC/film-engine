@@ -66,6 +66,14 @@ const SUBJECT_SPEC = Object.freeze({
 /** Asset types that are pictures OF a subject. Mirrors the gatherer's list. */
 const PLATE_TYPES = Object.freeze(['reference_image', 'character_sheet']);
 
+/*
+ * Every plate kind is served from one directory. Verified against the live
+ * install rather than assumed: a location's and a prop's gallery URLs both
+ * resolve 200 under `refsheets`, and `routes/subject-gallery.js` has always
+ * used it for all three kinds.
+ */
+const SERVE_DIR = 'refsheets';
+
 function parseMeta(row) {
     const m = row && row.metadata;
     if (!m) return {};
@@ -194,6 +202,8 @@ function inspirationMetadata(fields) {
  * differs between a character, a location and a prop, and three near-identical
  * queries is how one of them acquires a fix the others do not.
  */
+const { getFileUrl } = require('./file-storage');
+
 function loadGallery(db, kind, subjectId) {
     const spec = SUBJECT_SPEC[kind];
     if (!spec) throw new Error(`Unknown subject kind '${kind}'`);
@@ -212,8 +222,52 @@ function loadGallery(db, kind, subjectId) {
             role: roleOf(r),
             sendable: isSendable(r),
             view: viewOf(r) || null,
+            /*
+             * A ROW A SURFACE CAN DRAW, not a row a database returns.
+             *
+             * This used to stop at the storage fields, and only
+             * `routes/subject-gallery.js` mapped them through its own `present()`
+             * before answering. So there were two roads out of one loader and
+             * they gave different answers: the dedicated endpoint was
+             * renderable, and the copies attached inline to the location and
+             * prop payloads were not. `ssRefs()` reads `image_url`, found
+             * undefined, and drew its empty-square placeholder once per
+             * accumulated picture — which reads as the pictures being missing.
+             *
+             * Measured on the live install before this: 7 items on a prop and 1
+             * on a location, every one with a real file on disk and a null URL.
+             *
+             * Computing it HERE means a caller cannot forget. The character
+             * sheet escaped the bug only by fetching the other road.
+             */
+            image_url: meta.source_url
+                || (r.file_name ? getFileUrl(SERVE_DIR, r.project_id, r.file_name, r.created_at) : null),
+            source_url: meta.source_url || null,
+            note: meta.note || null,
         };
     });
+}
+
+/*
+ * The references strip: what the turntable is NOT already showing.
+ *
+ * `loadGallery` selects every plate-type asset for the subject, canonical views
+ * included — so on a prop the "Concept art & references" strip was its own
+ * turntable a second time, the same rows rendered twice on one sheet, smaller.
+ * That was noticed before the missing pictures were: "what is really the
+ * difference between other views and references... feels like overdoing it".
+ *
+ * The registry already answered it. That region is declared as "Explorations
+ * and gathered images", so a canonical view belongs to the turntable and
+ * nothing else. This makes the code agree with its own contract rather than
+ * inventing a new rule.
+ *
+ * A view-less plate is NOT excluded: it is the subject's default plate, it sits
+ * on no turntable slot, and dropping it would hide the one picture some
+ * subjects have.
+ */
+function galleryForStrip(db, kind, subjectId) {
+    return loadGallery(db, kind, subjectId).filter(i => !i.view);
 }
 
 /**
@@ -253,5 +307,5 @@ module.exports = {
     ROLES, ROLE_IDS, DEFAULT_ROLE, SUBJECT_KINDS, SUBJECT_SPEC, PLATE_TYPES,
     roleOf, isSendable, sendableSql, sendableOnly, viewOf, planPromotion,
     explorationFileName, explorationMetadata, inspirationMetadata,
-    loadGallery, byRole,
+    loadGallery, galleryForStrip, byRole, SERVE_DIR,
 };

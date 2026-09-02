@@ -959,8 +959,10 @@ function getLocation(req, res, locId) {
      */
     loc.views = plateViewsFor(locId, 'location').views;
     try {
-        const { loadGallery } = require('../lib/subject-gallery');
-        loc.gallery = loadGallery(db, 'location', locId) || [];
+        // The STRIP, not the whole gallery: the turntable above already
+        // renders every canonical view, larger. See galleryForStrip.
+        const { galleryForStrip } = require('../lib/subject-gallery');
+        loc.gallery = galleryForStrip(db, 'location', locId) || [];
     } catch (_) { loc.gallery = []; }
 
     /*
@@ -1434,8 +1436,10 @@ function getProp(req, res, propId) {
     // The same one-call rule the location follows.
     prop.views = plateViewsFor(propId, 'prop').views;
     try {
-        const { loadGallery } = require('../lib/subject-gallery');
-        prop.gallery = loadGallery(db, 'prop', propId) || [];
+        // The STRIP, not the whole gallery: the turntable above already
+        // renders every canonical view, larger. See galleryForStrip.
+        const { galleryForStrip } = require('../lib/subject-gallery');
+        prop.gallery = galleryForStrip(db, 'prop', propId) || [];
     } catch (_) { prop.gallery = []; }
     // The sets this object could belong to, for the way through the design
     // draws to the location it lives on.
