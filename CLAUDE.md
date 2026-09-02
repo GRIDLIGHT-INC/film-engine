@@ -133,6 +133,10 @@ film-engine/
 │   │   ├── dry-run.js           # Every capability described from its own builder, nothing sent
 │   │   ├── thumbnails.js        # A 260px card should not cost 1.5MB
 │   │   ├── waveform.js         # What a sound LOOKS like, so a card can be read at a glance
+│   │   ├── board-raster.js   # A frame is stored at the size it was ASKED for, not the size it came back
+│   │   ├── image-raster.js   # What size a picture on disk actually IS, read from its own header
+│   │   ├── plate-delivery.js # Filing a plate from either road, and adopting the ones made before this
+│   │   ├── sequence-delivery.js# Where a leg's finished clip goes, said once for both roads it arrives by
 │   │   ├── flow-cost.js          # Projected cost + the budget gate (Phase 3)
 │   │   ├── flow-templates.js     # Six ready-made flows, validated at load (Phase 5)
 │   │   ├── flow-executor.js      # runFlow / executeNode / resolveNodeInputs (Phase 2)
@@ -318,6 +322,8 @@ film-engine/
 │       ├── image-weight.test.js       # A 48px avatar should not cost 824 kilobytes
 │       ├── sound-library.test.js      # A scene has SOUNDS, not one score and one ambient
 │       ├── audio-cards.test.js       # An audio file is a card: what it is, how long, how big
+│       ├── audio-format.test.js  # A file called .wav has to be a WAV
+│       ├── generation-recovery.test.js# The two ways a paid generation gets lost, and what closes them
 │       ├── music-cue-generation.test.js # The cue you wrote is the cue that gets generated
 │       ├── music-cue-fields.test.js  # The fields the cue contract promises must reach the generator
 │       ├── seedance-image-fields.test.js # Each Seedance workflow names its pictures differently
@@ -4144,6 +4150,8 @@ node --test backend/tests/generation-handles.test.js
 node --test backend/tests/image-weight.test.js
 node --test backend/tests/sound-library.test.js
 node --test backend/tests/audio-cards.test.js
+node --test backend/tests/generation-recovery.test.js
+node --test backend/tests/audio-format.test.js
 node --test backend/tests/music-cue-generation.test.js
 node --test backend/tests/music-cue-fields.test.js
 node --test backend/tests/seedance-image-fields.test.js
