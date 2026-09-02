@@ -761,7 +761,19 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         prompt: promptEdit || (buildPlatePrompt(kind, subject, stylePreset, view, anchored)
             + ((sentStyleRefs.length && sentStyleRefs[0].tag)
                 ? `, in the light, palette and colour grade of @${sentStyleRefs[0].tag}` : '')),
-    }, { timeout: timeout || 300000 });
+    }, {
+        timeout: timeout || 300000,
+        /*
+         * WHAT THIS GENERATION IS, written onto the handle.
+         *
+         * The character road has stamped this since plate-delivery existed;
+         * locations and props did not, so a 2K plate that outran the window
+         * could be collected but not FILED without the caller naming the
+         * subject by hand. A plate knows its own subject at the moment it is
+         * asked for. Say so then.
+         */
+        jobMeta: { plate: { kind, subject_id: subject.id, view: view || '', explore: !!explore } },
+    });
 
     // Same refusal path as character sheets: retry once without the style
     // rather than losing the plate entirely.

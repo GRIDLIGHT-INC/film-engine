@@ -50,7 +50,19 @@
  * Overridable, because a host with a different window should say so rather than
  * have this number guessed at.
  */
-if (!process.env.FILM_HOST_ABORT_MS) process.env.FILM_HOST_ABORT_MS = '180000';
+/*
+ * MEASURED, NOT WISHED FOR. Raising this to 180s so a two-minute plate could
+ * finish inside the call was the wrong lever: the host really does abort at
+ * sixty seconds, so a long render stopped returning "still running, collect
+ * it" and started returning "the device did not respond" -- the exact symptom
+ * this budget exists to prevent, reintroduced by widening it.
+ *
+ * Sixty is right. The render that outruns it is not lost and never was: the
+ * handle is written before polling, and `generation_collect` now FILES a plate
+ * rather than dropping it beside the board, which is the half that was
+ * actually missing.
+ */
+if (!process.env.FILM_HOST_ABORT_MS) process.env.FILM_HOST_ABORT_MS = '60000';
 
 const readline = require('readline');
 

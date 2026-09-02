@@ -314,6 +314,40 @@ async function callNodeTool(nodeTypeId, args) {
  */
 const PRODUCTION_TOOLS = [
     {
+        name: 'milestone_list',
+        handler: handleDashboard, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/milestones`,
+        description:
+            'The production timeline for a project: every milestone with its phase, status and '
+            + 'completion. FREE. A project with none gets the nine standard phases seeded on first '
+            + 'read, so this is also how a timeline comes into existence.',
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'milestone_update',
+        handler: handleDashboard, method: 'PUT',
+        path: a => `/film/projects/${a.project_id}/milestones/${a.milestone_id}`,
+        body: a => { const { project_id, milestone_id, ...rest } = a || {}; return rest; },
+        description:
+            'Move one milestone: its status, completion percentage, dates or title. `status` is '
+            + 'pending, in_progress, completed or skipped; `completion_pct` is 0-100 and is clamped. '
+            + 'Setting a milestone complete does NOT set the ones before it — a timeline where the '
+            + 'last box is ticked and the middle ones are not is a real state worth being able to '
+            + 'express, and guessing otherwise would rewrite history the director did not.',
+        schema: {
+            project_id: { type: 'string' },
+            milestone_id: { type: 'string', description: 'From milestone_list.' },
+            status: { type: 'string', description: 'pending | in_progress | completed | skipped' },
+            completion_pct: { type: 'number', description: '0-100.' },
+            actual_date: { type: 'string', description: 'When it actually landed, ISO date.' },
+            target_date: { type: 'string' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            phase: { type: 'string' },
+        },
+        required: ['project_id', 'milestone_id'],
+    },
+    {
         name: 'agent_presence',
         handler: require('../routes/agent-presence').handleAgentPresence, method: 'GET',
         path: () => '/film/agent',
@@ -3304,11 +3338,12 @@ const BATCH_TOOLS = [
     },
     {
         name: 'plate_generate',
-        description: 'Generate the reference plate for ONE subject. SPENDS CREDITS. Use this rather than plate_generate_all when some subjects already have a plate worth keeping \u2014 generating a plate DELETES the existing one for that subject, so a batch run replaces work you may want to keep. kind is character, location or prop.',
+        description: 'Generate the reference plate for ONE subject. SPENDS CREDITS. Use this rather than plate_generate_all when some subjects already have a plate worth keeping \u2014 generating a plate DELETES the existing one for that subject, so a batch run replaces work you may want to keep. kind is character, location or prop. A location or prop can hold SEVERAL named views \u2014 pass `view` to generate one side without touching the others.',
         schema: {
             subject_id: { type: 'string' },
             kind: { type: 'string', description: 'character | location | prop' },
             views: { type: 'array', description: 'Characters only: which of front, side, back. Defaults to all three.' },
+            view: { type: 'string', description: 'Locations and props only: ONE named side, e.g. "rear" or "three-quarter front" for a vehicle, or a compass side for a location. Omit for the subject\u2019s default plate. Each view is its own picture and its own row, so generating one never replaces another.' },
         },
         required: ['subject_id', 'kind'],
         /**
@@ -3333,7 +3368,24 @@ const BATCH_TOOLS = [
             if (!spec) {
                 return { error: `kind must be one of: ${Object.keys(KINDS).join(', ')} (got '${kind}')` };
             }
-            return callRoute('POST', spec.path(a.subject_id), a.views ? { views: a.views } : {}, spec.handler);
+            /*
+             * A PROP HAS SIDES TOO, and this tool could not ask for one.
+             *
+             * The route, `generatePlate` and `plateFileName` have all taken a
+             * `view` for every kind since locations got their compass; only
+             * this dispatcher never passed one, so a prop was stuck with a
+             * single plate. A hero vehicle is the case that proves it: front,
+             * rear and three-quarter are different objects to a model, and one
+             * plate hands every shot the same side of the car.
+             *
+             * `views` (plural) stays what it was -- the character turnaround,
+             * which generates several in one call. `view` (singular) is one
+             * named side of a location or a prop.
+             */
+            const body = kind === 'character'
+                ? (a.views ? { views: a.views } : {})
+                : (a.view ? { view: String(a.view) } : {});
+            return callRoute('POST', spec.path(a.subject_id), body, spec.handler);
         },
     },
     {

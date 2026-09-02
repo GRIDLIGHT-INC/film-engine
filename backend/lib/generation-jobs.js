@@ -215,6 +215,11 @@ function plateBindingOf(opts, meta) {
     if (b && b.kind && (b.subject_id || b.subjectId)) {
         return { kind: String(b.kind), subjectId: b.subject_id || b.subjectId, view: b.view || '' };
     }
+    // A location or prop plate stamps itself under `plate`.
+    const p = meta && meta.plate;
+    if (p && p.kind && p.subject_id && !p.explore) {
+        return { kind: String(p.kind), subjectId: p.subject_id, view: p.view || '' };
+    }
     const stamped = meta && meta[require('./plate-delivery').JOB_META_KEY];
     if (stamped && stamped.character_id) {
         return { kind: 'character', subjectId: stamped.character_id, view: stamped.view || 'front',
