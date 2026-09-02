@@ -233,6 +233,42 @@ test('every modal is shown with the class its own CSS displays', () => {
     for (const m of src.matchAll(/className\s*=\s*'modal-overlay'[\s\S]{0,1200}?classList\.add\('([^']+)'\)/g)) {
         if (m[1] !== SHOW) wrong.push(`a modal built at runtime is shown with "${m[1]}", not "${SHOW}"`);
     }
+    /*
+     * AND THE SHARED HELPER, which is where every modal now goes.
+     *
+     * The three checks above scan for a modal opened at a CALL SITE. After the
+     * stacking work routed all 35 overlays through showModal(), ZERO inline
+     * call sites remained — so all three matched an empty set and this rule
+     * passed while policing nothing, silently, across 49 call sites. That is
+     * the same defect shot-anchor had, except that one failed loudly and got
+     * fixed; this one just stopped protecting.
+     *
+     * The helper is ONE function, so checking it once covers every site that
+     * uses it — which is the whole reason the helper is worth having. Bounded
+     * by its own body rather than a character window: showModal runs 469 chars
+     * to its classList.add, and a fixed window is fragile in the direction
+     * that lies.
+     */
+    const fnAt = src.indexOf('function showModal');
+    let helper = '';
+    if (fnAt >= 0) {
+        let depth = 0;
+        for (let j = src.indexOf('{', fnAt); j < src.length; j++) {
+            if (src[j] === '{') depth++;
+            else if (src[j] === '}') { depth--; if (!depth) { helper = src.slice(fnAt, j + 1); break; } }
+        }
+    }
+    if (!helper) {
+        wrong.push('showModal is gone — the one path every modal is opened through no longer exists');
+    } else {
+        const adds = [...helper.matchAll(/classList\.add\('([^']+)'\)/g)].map(m => m[1]);
+        if (!adds.includes(SHOW)) {
+            wrong.push(`showModal does not add "${SHOW}" — every modal opened through it stays invisible`);
+        }
+        for (const a of adds) {
+            if (a !== SHOW) wrong.push(`showModal also adds "${a}", not "${SHOW}"`);
+        }
+    }
     assert.equal(wrong.length, 0,
         `${wrong.length} modal(s) are shown with a class the stylesheet does not display, so they never `
         + `appear and the control that opens them looks dead:\n  ${wrong.join('\n  ')}`);
