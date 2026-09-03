@@ -349,6 +349,7 @@ film-engine/
 │       ├── style-book-qa.test.js       # The QA case set, derived from the code it audits
 │       ├── plate-viewer.test.js        # A plate you cannot see full size is one you cannot judge
 │       ├── location-plate-resolution.test.js # A location plate is 2K or better, or says why not
+│       ├── orientation-plan-reaches-the-plate.test.js # The plan a director draws must reach the plate prompt
 │       ├── requested-size.test.js       # A resolution that reaches nothing is worse than none
 │       ├── style-book-media.test.js    # A visual arrives as a file or a link, and both must work
 │       ├── headline-plate.test.js      # A compass side is an extra view, never the headline plate
@@ -4179,6 +4180,7 @@ node --test backend/tests/style-book-gaps.test.js
 node --test backend/tests/style-book-path-containment.test.js
 node --test backend/tests/plate-viewer.test.js
 node --test backend/tests/location-plate-resolution.test.js
+node --test backend/tests/orientation-plan-reaches-the-plate.test.js
 node --test backend/tests/requested-size.test.js
 node --test backend/tests/style-book-media.test.js
 node --test backend/tests/headline-plate.test.js
