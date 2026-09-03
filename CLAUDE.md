@@ -49,6 +49,7 @@ film-engine/
 │   │   ├── video-gen.js        # Video generation pipeline (Phase 5)
 │   │   ├── lipsync.js          # Lip-sync pipeline (Phase 6)
 │   │   ├── music-gen.js        # Music, SFX, ambient generation (Phase 7)
+│   │   ├── sounds.js          # Every audio file in the film, one card each, and one prompt to make another
 │   │   ├── post-production.js  # Post-production pipeline (Phase 9)
 │   │   ├── pipeline.js         # Pipeline orchestrator (Phase 12)
 │   │   ├── qa.js               # QA checks & quality gates (Phase 13)
@@ -133,6 +134,7 @@ film-engine/
 │   │   ├── dry-run.js           # Every capability described from its own builder, nothing sent
 │   │   ├── thumbnails.js        # A 260px card should not cost 1.5MB
 │   │   ├── waveform.js         # What a sound LOOKS like, so a card can be read at a glance
+│   │   ├── audio-features.js  # What a sound file actually IS, read from the file
 │   │   ├── board-raster.js   # A frame is stored at the size it was ASKED for, not the size it came back
 │   │   ├── image-raster.js   # What size a picture on disk actually IS, read from its own header
 │   │   ├── plate-delivery.js # Filing a plate from either road, and adopting the ones made before this
@@ -321,6 +323,7 @@ film-engine/
 │       ├── generation-handles.test.js  # A generation the host abandons is not lost
 │       ├── image-weight.test.js       # A 48px avatar should not cost 824 kilobytes
 │       ├── sound-library.test.js      # A scene has SOUNDS, not one score and one ambient
+│       ├── sound-library-files.test.js # EVERY sound file is a card, and one button makes a new one
 │       ├── audio-cards.test.js       # An audio file is a card: what it is, how long, how big
 │       ├── audio-format.test.js  # A file called .wav has to be a WAV
 │       ├── generation-recovery.test.js# The two ways a paid generation gets lost, and what closes them
@@ -4153,6 +4156,7 @@ node --test backend/tests/muapi-models.test.js
 node --test backend/tests/generation-handles.test.js
 node --test backend/tests/image-weight.test.js
 node --test backend/tests/sound-library.test.js
+node --test backend/tests/sound-library-files.test.js
 node --test backend/tests/audio-cards.test.js
 node --test backend/tests/generation-recovery.test.js
 node --test backend/tests/audio-format.test.js

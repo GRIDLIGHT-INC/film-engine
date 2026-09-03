@@ -1482,6 +1482,8 @@
             grid-template-columns:minmax(0,1fr) 300px; gap:30px;
         }
         .ls-footer > .ss-col { display:flex; flex-direction:column; gap:20px; }
+        .snd-warn { font-family:'JetBrains Mono',ui-monospace,monospace; font-size:9.5px;
+            color:#f0a828; margin-top:4px; letter-spacing:0.04em; }
         .kanban-column.drop-target { outline:2px dashed rgba(129,140,248,0.7); outline-offset:-4px; }
         .board-ratio { position:absolute; inset:0; margin:auto; max-width:100%; max-height:100%;
             pointer-events:none; border:2px dashed rgba(129,140,248,0.85); border-radius:2px; }
@@ -6100,7 +6102,75 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <div id="musicProgressBar" style="height:100%;width:0%;background:var(--gl-accent,#6366f1);transition:width .2s;"></div>
                 </div>
             </div>
+            <!--
+                THE LIBRARY. Every audio file in the project, one card each.
+                The cue sheet below is about INTENTIONS — music somebody wrote
+                a brief for. This is about files that exist, which is a
+                different list and, on a real project, a far longer one:
+                dialogue is not a cue, so a cue-shaped page could never show
+                86 of the 95 sounds in the film.
+            -->
+            <div class="flex-between mb-8" style="align-items:flex-end;">
+                <div>
+                    <h3 style="margin:0;">Sound library</h3>
+                    <p class="text-sm text-muted" style="margin:2px 0 0;" id="soundLibCount">&nbsp;</p>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <div id="soundLibFilters" style="display:flex;gap:6px;"></div>
+                    <button class="btn btn-primary" onclick="openSoundGenerator()">+ Generate sound</button>
+                </div>
+            </div>
+            <div class="entity-grid" id="soundLibGrid"
+                 style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));margin-bottom:28px;"></div>
+
+            <h3 style="margin:0 0 2px;">Cues</h3>
+            <p class="text-sm text-muted" style="margin:0 0 10px;">What the music should be, per scene — the brief a score is generated from.</p>
             <div class="entity-grid" id="musicGrid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));"></div>
+        </div>
+
+        <!-- Generate one sound from a prompt, optionally in a shot's context. -->
+        <div class="modal-overlay" id="soundGenModal">
+            <div class="modal" style="max-width:560px;">
+                <div class="modal-header">
+                    <h3>Generate a sound</h3>
+                    <button class="modal-close" onclick="closeModal('soundGenModal')">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <label class="text-sm text-muted">What is the sound?</label>
+                    <textarea id="soundGenPrompt" class="ss-input" rows="3"
+                              placeholder="a screen door two streets over, closing slowly"></textarea>
+
+                    <div style="display:flex;gap:10px;margin-top:12px;">
+                        <div style="flex:1;">
+                            <label class="text-sm text-muted">Kind</label>
+                            <select id="soundGenKind" class="ss-input">
+                                <option value="sfx">Effect</option>
+                                <option value="ambient">Room tone</option>
+                                <option value="music">Score</option>
+                            </select>
+                        </div>
+                        <div style="width:120px;">
+                            <label class="text-sm text-muted">Seconds</label>
+                            <input id="soundGenSeconds" class="ss-input" type="number" min="1" max="30" value="5">
+                        </div>
+                    </div>
+
+                    <label class="text-sm text-muted" style="display:block;margin-top:12px;">
+                        In a shot <span class="text-muted">(optional — adds that shot's location, hour and action to the prompt)</span>
+                    </label>
+                    <select id="soundGenShot" class="ss-input" onchange="soundGenPreview()">
+                        <option value="">&mdash; no shot, just the prompt &mdash;</option>
+                    </select>
+
+                    <p class="text-sm text-muted" style="margin-top:12px;">What will be sent:</p>
+                    <pre id="soundGenPreviewOut" class="text-sm"
+                         style="white-space:pre-wrap;background:var(--gl-bg-surface);padding:10px;border-radius:6px;margin:0;max-height:150px;overflow:auto;">&nbsp;</pre>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="soundGenPreview()">Preview (free)</button>
+                    <button class="btn btn-primary" onclick="runSoundGenerate(this)">Generate</button>
+                </div>
+            </div>
         </div>
 
         <!-- ── 16b. PIPELINE ──────────────────────────────────────── -->
@@ -33010,6 +33080,171 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
 
+    /*
+     * ONE CARD PER FILE.
+     *
+     * The card carries what the row knows AND what only the file knows —
+     * codec, sample rate, channels, bitrate — because those disagree more
+     * often than anyone expects. Every audio file in this project was
+     * requested as wav and arrived as 44.1kHz mp3, and no surface said so.
+     */
+    let SOUND_LIB = { sounds: [], facts: [], kinds: [] };
+    let SOUND_FILTER = '';
+
+    function soundFileCard(s) {
+        const facts = [
+            s.duration_ms ? fmtDuration(s.duration_ms) : null,
+            s.codec ? String(s.codec).toUpperCase() : (s.format ? String(s.format).toUpperCase() : null),
+            s.sample_rate ? (s.sample_rate / 1000).toFixed(1).replace(/\.0$/, '') + ' kHz' : null,
+            s.channels ? (s.channels === 1 ? 'mono' : s.channels === 2 ? 'stereo' : s.channels + 'ch') : null,
+            s.bitrate_kbps ? s.bitrate_kbps + ' kbps' : null,
+            s.size_bytes ? fmtSize(s.size_bytes) : null,
+        ].filter(Boolean);
+
+        // Served composed, so the card and any other reader cannot disagree
+        // about what a file is for.
+        const belongs = s.belongs_to ? esc(s.belongs_to) : '';
+
+        const origin = [s.imported ? 'imported' : (s.provider ? esc(s.provider) : null),
+                        s.created_at ? fmtAge(s.created_at) : null].filter(Boolean).join(' &middot; ');
+
+        return `<div class="snd-card" data-sound="${esc(s.id)}" data-kind="${esc(s.kind)}">
+            <div class="snd-tile">
+                ${s.url ? `<canvas class="snd-wave" data-asset="${esc(s.id)}"></canvas>
+                           <button class="snd-play" onclick="sndPlay(this)" data-src="${esc(s.url)}">&#9654;</button>`
+                        : '<span class="text-sm text-muted">file missing</span>'}
+            </div>
+            <div class="snd-meta">
+                <strong title="${esc(s.file_name || '')}">${esc(s.file_name || '(unnamed)')}</strong>
+                <div class="snd-cat">${esc(s.kind_label || s.kind)}${belongs ? ' &middot; ' + belongs : ''}</div>
+                ${s.line ? `<div class="text-sm text-muted" style="margin-top:2px;">&ldquo;${esc(String(s.line).slice(0, 70))}&rdquo;</div>` : ''}
+                <div class="snd-facts">${facts.join(' &middot; ')}</div>
+                ${origin ? `<div class="snd-origin">${origin}${s.takes > 1 ? ' &middot; ' + s.takes + ' takes' : ''}</div>` : ''}
+                ${s.format_mismatch ? `<div class="snd-warn" title="The name says one container and the bytes are another">filed .${esc(s.format)} &middot; actually ${esc(s.codec)}</div>` : ''}
+            </div>
+        </div>`;
+    }
+
+    async function loadSoundLibrary() {
+        if (!state.currentProject) return;
+        const grid = document.getElementById('soundLibGrid');
+        if (!grid) return;
+        grid.innerHTML = '<p class="text-sm text-muted" style="grid-column:1/-1;">Reading the library&hellip;</p>';
+        try {
+            SOUND_LIB = await api('/projects/' + state.currentProject.id + '/sounds');
+            renderSoundLibrary();
+        } catch (err) {
+            // A renderer that paints a placeholder must have a path that
+            // replaces it: a spinner that never resolves is worse than an error.
+            grid.innerHTML = `<p class="text-sm text-muted" style="grid-column:1/-1;">Could not read the sound library: ${esc(err.message)}</p>`;
+        }
+    }
+
+    function renderSoundLibrary() {
+        const grid = document.getElementById('soundLibGrid');
+        if (!grid) return;
+        const all = SOUND_LIB.sounds || [];
+        const shown = SOUND_FILTER ? all.filter(x => x.kind === SOUND_FILTER) : all;
+
+        const filters = document.getElementById('soundLibFilters');
+        if (filters) {
+            filters.innerHTML = [{ id: '', label: 'All', count: all.length }]
+                .concat((SOUND_LIB.kinds || []).filter(k => k.count))
+                .map(k => `<span class="ss-ref-filter ${SOUND_FILTER === k.id ? 'on' : ''}"
+                                 onclick="SOUND_FILTER='${esc(k.id)}';renderSoundLibrary();"
+                                 style="cursor:pointer;">${esc(k.label)} ${k.count}</span>`).join('');
+        }
+        const count = document.getElementById('soundLibCount');
+        if (count) count.textContent = all.length + ' file(s) in this film';
+
+        grid.innerHTML = shown.length
+            ? shown.map(soundFileCard).join('')
+            : '<p class="text-sm text-muted" style="grid-column:1/-1;">No sound generated or imported yet.</p>';
+        paintWaveforms(grid);
+    }
+
+    /* ── generating one sound from a prompt ─────────────────────────── */
+
+    async function openSoundGenerator() {
+        showModal('soundGenModal');
+        const sel = document.getElementById('soundGenShot');
+        // The shot list is loaded here rather than held, so a shot added since
+        // the page opened is offered.
+        try {
+            const d = await api('/projects/' + state.currentProject.id + '/shotlist');
+            sel.innerHTML = '<option value="">&mdash; no shot, just the prompt &mdash;</option>'
+                + (d.shots || []).map(sh =>
+                    `<option value="${esc(sh.id)}">Sc${esc(String(sh.scene_number || '?'))} / ${esc(sh.shot_code)}</option>`).join('');
+        } catch (_) { /* the prompt alone still works */ }
+        soundGenPreview();
+    }
+
+    async function soundGenPreview() {
+        const out = document.getElementById('soundGenPreviewOut');
+        const prompt = (document.getElementById('soundGenPrompt').value || '').trim();
+        if (!prompt) { out.textContent = 'Say what the sound is.'; return; }
+        const q = new URLSearchParams({
+            preview: '1', prompt,
+            kind: document.getElementById('soundGenKind').value,
+            duration_s: String(Number(document.getElementById('soundGenSeconds').value) || 5),
+        });
+        const shot = document.getElementById('soundGenShot').value;
+        if (shot) q.set('shot_id', shot);
+        out.textContent = 'Reading what would be sent…';
+        setStatus('Reading what would be sent…', true);
+        try {
+            // A GET, because it spends nothing: a free read posting to a
+            // generating URL is indistinguishable from one that pays.
+            const d = await api(`/projects/${state.currentProject.id}/sounds/generate?${q.toString()}`);
+            out.textContent = d.prompt + '\n\n' + d.provider + ' · ' + d.duration_s + 's';
+            setStatus('Preview ready — nothing spent');
+        } catch (err) {
+            out.textContent = 'Could not preview: ' + err.message;
+            setStatus('Could not preview: ' + err.message);
+        }
+    }
+
+    async function runSoundGenerate(btn) {
+        const prompt = (document.getElementById('soundGenPrompt').value || '').trim();
+        if (!prompt) { setStatus('Say what the sound is first'); return; }
+
+        const kind = document.getElementById('soundGenKind').value;
+        const shotId = document.getElementById('soundGenShot').value || '';
+        const seconds = Number(document.getElementById('soundGenSeconds').value) || 5;
+        const q = new URLSearchParams({ preview: '1', prompt, kind, duration_s: String(seconds) });
+        if (shotId) q.set('shot_id', shotId);
+
+        /*
+         * Through the ONE shared confirmation, like every other paid button.
+         * The modal's own preview is a convenience while composing; this is the
+         * gate that spends, and it reads the SAME handler over GET, so what it
+         * shows cannot differ from what is sent.
+         */
+        return confirmPaidImage({
+            title: 'Before we spend a credit',
+            capability: kind === 'music' ? 'music' : kind,
+            previewUrl: `/projects/${state.currentProject.id}/sounds/generate?${q.toString()}`,
+            note: shotId
+                ? 'The shot adds its location, hour and action to what you wrote.'
+                : 'Just the prompt — pick a shot to add its details.',
+            editable: false,
+            notEditableWhy: 'Edit the wording in the box behind this dialog.',
+            send: async choices => {
+                setStatus('Generating the sound…', true);
+                try {
+                    const d = await api('/projects/' + state.currentProject.id + '/sounds/generate', {
+                        method: 'POST',
+                        body: JSON.stringify({ prompt, kind, duration_s: seconds,
+                            shot_id: shotId || undefined, ...(choices || {}) }),
+                    });
+                    setStatus('Generated ' + d.file_name);
+                    closeModal('soundGenModal');
+                    await loadSoundLibrary();
+                } catch (err) { setStatus('Error: ' + err.message); }
+            },
+        });
+    }
+
     function soundCueCard(cue, asset) {
         const url = asset && asset.url ? API_BASE + asset.url : '';
         const cat = SOUND_CATEGORIES.find(c => c.type === cue.cue_type) || { label: cue.cue_type };
@@ -33113,6 +33348,9 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     async function loadMusic() {
+        // The file library and the cue sheet are two different questions;
+        // both load when the page opens.
+        loadSoundLibrary();
         if (!state.currentProject) return;
         setStatus('Loading music...');
         const pid = state.currentProject.id;

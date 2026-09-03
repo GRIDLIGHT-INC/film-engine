@@ -385,6 +385,22 @@ const server = http.createServer(async (req, res) => {
          * dispatch for the same reason media-import is: the domain handlers
          * match on their own third segment and would swallow these.
          */
+        /*
+         * The sound library. Registered BEFORE the project catch-alls, on the
+         * trap `/film/locations/:id` already cost once: a handler that exists
+         * and is never reached looks exactly like a missing feature.
+         */
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'sounds') {
+            const sounds = require('./routes/sounds');
+            if (parts[4] === 'generate') {
+                // GET is the free preview the shared confirmation reads; POST spends.
+                return await sounds.generateSound(req, res, parts[2]);
+            }
+            if (!parts[4] && req.method === 'GET') {
+                return await sounds.listSounds(req, res, parts[2]);
+            }
+        }
+
         if ((parts[1] === 'projects' && parts[2] && parts[3] === 'sequences')
             || (parts[1] === 'sequences' && parts[2])) {
             const handled = await handleSequences(req, res, parts, query);
