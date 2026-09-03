@@ -252,10 +252,28 @@ function characterFields(body) {
     const fields = [];
     const values = [];
 
+    /*
+     * THE SHEET FIELDS ARE PROMPT INPUT, AND THEY WERE CAPPED LIKE LABELS.
+     *
+     * build, hair, distinguishing and ethnicity are pushed straight into the
+     * character plate prompt a few hundred lines below -- they are not
+     * captions on a card. At 100 characters `build` held "Tall and lean at
+     * 1.85m, long-limbed, narrow through the hips, shoulders square without
+     * bulk -- a fram", cut there, silently, with a 200 OK and the stump echoed
+     * back. Every one of these fields was written at 300-900 characters for
+     * Northline and every one was stumped on save.
+     *
+     * Same failure as lighting_default at fifty and the orientation plan at
+     * two hundred: a cap set to the width of the thing that DISPLAYS the field
+     * rather than to the length of the thing that is written into it. The
+     * sheet is what clamps what it draws.
+     *
+     * `age_range` and `gender` keep their fifty -- they really are short.
+     */
     const textFields = {
         name: 200, description: 5000, appearance_prompt: 2000,
         personality_notes: 2000, age_range: 50, gender: 50,
-        ethnicity: 100, build: 100, hair: 200, distinguishing: 500,
+        ethnicity: 300, build: 800, hair: 800, distinguishing: 1500,
         lora_id: 200, ti_token: 200
     };
 
