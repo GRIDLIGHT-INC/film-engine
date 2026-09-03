@@ -25204,6 +25204,28 @@ ${fountainText.slice(0, 50000)}`;
 
     /* ── location ──────────────────────────────────────────────────────── */
 
+    /*
+     * THE DIAGRAM IS A DIAGRAM, AND THE FIELD BEHIND IT IS PROSE.
+     *
+     * The compass grid draws its edges as labels -- east and west vertically,
+     * in 62px gutters -- so it was built assuming "harbour window + door" and
+     * the store capped every edge at 200 characters to keep that true. But
+     * this field is what buildPlatePrompt now reads to generate each side, so
+     * it has to be able to say what is on that side at length. The store
+     * keeps the whole text; the diagram shows the head of it, hovering shows
+     * the rest, and the editor has all of it.
+     */
+    function ssPlanLabel(text, max = 46) {
+        const s = String(text || '').trim();
+        if (!s) return '—';
+        if (s.length <= max) return s;
+        // Cut on a word, and prefer a clause end if there is one in range.
+        const head = s.slice(0, max);
+        const stop = Math.max(head.lastIndexOf(' — '), head.lastIndexOf(', '), head.lastIndexOf('. '));
+        const cut = stop > max * 0.5 ? head.slice(0, stop) : head.slice(0, head.lastIndexOf(' ') + 1 || max);
+        return cut.replace(/[\s,.;:—-]+$/, '') + '…';
+    }
+
     function renderLocationSheet() {
         const l = SS.data || {};
         const S = SS.sections;
@@ -25261,13 +25283,13 @@ ${fountainText.slice(0, 50000)}`;
                     alt="Orientation plan for ${esc(l.name || 'location')}"
                     onclick="openPlateViewer('${esc(API_BASE + l.orientation_plan_image_url)}', ${jsAttr((l.name || 'Location') + ' — orientation plan')})">` : ''}
                  <div class="ss-plan-grid">
-                    <span></span><span class="ss-plan-edge n">North · ${esc(plan.north || '—')}</span><span></span>
-                    <span class="ss-plan-edge w">West · ${esc(plan.west || '—')}</span>
+                    <span></span><span class="ss-plan-edge n" title="${esc(plan.north || '')}">North · ${esc(ssPlanLabel(plan.north))}</span><span></span>
+                    <span class="ss-plan-edge w" title="${esc(plan.west || '')}">West · ${esc(ssPlanLabel(plan.west))}</span>
                     <div class="ss-plan-room">${[0,1,2].map((_, i) =>
-                        `<span class="ss-plan-zone">${esc((plan.interior || [])[i] || '—')}</span>`).join('')}</div>
-                    <span class="ss-plan-edge e">East · ${esc(plan.east || '—')}</span>
-                    <span></span><span class="ss-plan-edge s">South · ${esc(plan.south || '—')}</span><span></span>
-                 </div>${plan.marker ? `<p class="ss-plan-marker">&#9650; ${esc(plan.marker)}</p>` : ''}</div>
+                        `<span class="ss-plan-zone" title="${esc((plan.interior || [])[i] || '')}">${esc(ssPlanLabel((plan.interior || [])[i]))}</span>`).join('')}</div>
+                    <span class="ss-plan-edge e" title="${esc(plan.east || '')}">East · ${esc(ssPlanLabel(plan.east))}</span>
+                    <span></span><span class="ss-plan-edge s" title="${esc(plan.south || '')}">South · ${esc(ssPlanLabel(plan.south))}</span><span></span>
+                 </div>${plan.marker ? `<p class="ss-plan-marker" title="${esc(plan.marker)}">&#9650; ${esc(ssPlanLabel(plan.marker, 160))}</p>` : ''}</div>
                  <div class="btn-row" style="margin-top:8px;">
                    <button class="btn btn-secondary btn-sm" onclick="ssEditPlan()">Edit the plan</button>
                    ${uploadControl('orientation-plan', `/locations/${SS.id}/orientation-plan/import`, {

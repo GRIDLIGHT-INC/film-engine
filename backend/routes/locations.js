@@ -1177,10 +1177,26 @@ function locationFields(body, locId) {
             return errorOf('orientation_plan must be an object with compass edges');
         }
         const { PLAN_EDGES } = require('../lib/subject-sheets');
-        const clean = { interior: [], marker: String(obj.marker || '').slice(0, 200) };
-        for (const edge of PLAN_EDGES) clean[edge] = String(obj[edge] || '').slice(0, 200);
+        /*
+         * TWO HUNDRED CHARACTERS PER EDGE, FOR THE ONE FIELD THAT FEEDS FOUR
+         * PLATES.
+         *
+         * The cap was set to the length of the label the compass diagram
+         * draws -- "North . harbour window + door" -- and the diagram is not
+         * what this field is for. buildPlatePrompt now reads the facing edge
+         * when it generates a side, so the edge has to say what is actually
+         * on that side: the materials, the storeys, the one thing that must
+         * appear. Every edge written for this project ran 400-900 characters
+         * and was cut mid-word on save, silently, with a 200 OK and the stump
+         * echoed back -- the same failure lighting_default had.
+         *
+         * The diagram clamps what it draws instead, and keeps the whole text
+         * in its tooltip and its editor.
+         */
+        const clean = { interior: [], marker: String(obj.marker || '').slice(0, 400) };
+        for (const edge of PLAN_EDGES) clean[edge] = String(obj[edge] || '').slice(0, 700);
         if (Array.isArray(obj.interior)) clean.interior = obj.interior
-            .slice(0, 3).map(x => String(x || '').slice(0, 120));
+            .slice(0, 3).map(x => String(x || '').slice(0, 300));
         while (clean.interior.length < 3) clean.interior.push('');
         fields.push('orientation_plan = ?');
         values.push(JSON.stringify(clean));

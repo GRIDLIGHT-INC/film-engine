@@ -119,6 +119,52 @@ function compassView(name) {
 }
 
 /**
+ * What the orientation plan says about the side being photographed.
+ *
+ * THE PLAN WAS WRITTEN FOR THE PLATES AND NEVER REACHED THEM.
+ *
+ * `orientation_plan` is documented, on its own tool, as "what keeps four
+ * plates of one room describing the same room" -- and buildPlatePrompt read
+ * `description`, `lighting_default` and `time_of_day_default` and stopped.
+ * So the field a director fills in to say what is on the north side was
+ * stored, drawn as a compass diagram, and then not consulted by the one
+ * process it exists to constrain: each side went on being generated from the
+ * same paragraph as every other side, which is exactly how four views of one
+ * street come back as four different streets.
+ *
+ * Only the FACING edge is pushed. Naming the other three would put them in
+ * frame -- an image model has no way to act on "and behind you is the harbour"
+ * except to paint the harbour. The marker rides with the anchor plate alone,
+ * for the same reason: the sides inherit it by being photographed FROM that
+ * picture, and stating it on a side that faces away from it would summon a
+ * second copy of the one landmark the plan exists to keep singular.
+ */
+function orientationEdge(subject, view) {
+    let plan = subject && subject.orientation_plan;
+    if (typeof plan === 'string') { try { plan = JSON.parse(plan); } catch (_) { plan = null; } }
+    if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return '';
+
+    // No view means the default plate, and the default plate IS the anchor
+    // side -- the same equivalence planCompassSweep makes.
+    const compass = compassView(view) || COMPASS_VIEWS.find(v => v.isAnchor);
+    if (!compass) return '';
+
+    const said = [];
+    const here = String(plan[compass.name] || '').trim();
+    if (here) said.push(`on this side: ${here}`);
+    // Interior zones are in frame from every side, so they travel with all of
+    // them; a plan with none is an exterior and says nothing.
+    const zones = (Array.isArray(plan.interior) ? plan.interior : [])
+        .map(x => String(x || '').trim()).filter(Boolean);
+    if (zones.length) said.push(`the space holds ${zones.join(', ')}`);
+    if (compass.isAnchor && !compassView(view)) {
+        const marker = String(plan.marker || '').trim();
+        if (marker) said.push(marker);
+    }
+    return said.join(', ');
+}
+
+/**
  * Which sides a sweep would buy, and which it already has.
  *
  * Pure, so the button, the route and the agent tool all price the same sweep —
@@ -311,6 +357,10 @@ function buildPlatePrompt(kind, subject, stylePreset, view, anchored) {
     if (kind === 'location') {
         if (subject.lighting_default) parts.push(subject.lighting_default);
         if (subject.time_of_day_default) parts.push(subject.time_of_day_default);
+        // What the orientation plan says about THIS side. See orientationEdge:
+        // the field exists for this and was never read here.
+        const edge = orientationEdge(subject, view);
+        if (edge) parts.push(edge);
     }
     if (kind === 'prop' && subject.category) parts.push(subject.category);
 
@@ -902,6 +952,6 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
 
 module.exports = {
     LOCATION_MIN_EDGE, sizeIsHonoured,
-    COMPASS_VIEWS, compassView, planCompassSweep, plateImageSize,
+    COMPASS_VIEWS, compassView, orientationEdge, planCompassSweep, plateImageSize,
     buildPlateRefinePrompt, REFINE_NEGATIVE,
     plateFileName, PLATE_KINDS, buildPlatePrompt, generatePlate, styleReferencesFor, NEGATIVE };
