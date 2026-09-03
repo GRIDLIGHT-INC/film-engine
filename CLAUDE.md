@@ -425,6 +425,7 @@ film-engine/
 │       ├── subject-gallery.test.js  # A sketch must never condition a frame
 │       ├── gallery-thumbnails.test.js # A reference you cannot see is an empty square
 │       ├── sheet-counters.test.js   # A progress counter cannot exceed its own total
+│       ├── sheet-and-board-affordances.test.js # Sections that breathe, a ratio you can see, a shot you can move
 │       ├── dialogue-audition.test.js # Hearing a line before anything is shot
 │       ├── dialogue-playback.test.js # Watching the scene AND hearing it
 │       ├── dialogue-delivery.test.js # How a line is said, and what makes it regenerate
@@ -4203,6 +4204,7 @@ node --test backend/tests/screenplay-analysis.test.js
 node --test backend/tests/subject-gallery.test.js
 node --test backend/tests/gallery-thumbnails.test.js
 node --test backend/tests/sheet-counters.test.js
+node --test backend/tests/sheet-and-board-affordances.test.js
 node --test backend/tests/dialogue-audition.test.js
 node --test backend/tests/dialogue-playback.test.js
 node --test backend/tests/dialogue-delivery.test.js

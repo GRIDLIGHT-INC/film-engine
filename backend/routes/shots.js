@@ -102,6 +102,15 @@ function mergeBlock(existing, incoming) {
  * skipped validation would be the one way to get a broken card into the
  * database.
  */
+/*
+ * The statuses `film_shots.status` actually permits, mirroring migration 004's
+ * CHECK. `tests/sheet-and-board-affordances.test.js` holds the two to each
+ * other: a value this list allows and the CHECK refuses arrives as a SQLite
+ * 500, which reads as the server being broken rather than the request being
+ * wrong.
+ */
+const SHOT_STATUSES = Object.freeze(['pending', 'generating', 'complete', 'failed', 'approved']);
+
 function updateShotCard(req, res, shotId) {
     const shot = db.prepare('SELECT id, scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) {
@@ -121,18 +130,37 @@ function updateShotCard(req, res, shotId) {
         card[key] = MERGED_BLOCKS.has(key) ? mergeBlock(card[key], body[key]) : body[key];
         changed.push(key);
     }
-    if (!changed.length) {
+    /*
+     * A COLUMN-ONLY EDIT IS STILL AN EDIT.
+     *
+     * This gate counted card fields alone, and `aspect_ratio` and `status` are
+     * columns handled further down — so `PUT /shots/:id {aspect_ratio:'9:16'}`,
+     * which is exactly what the board's ratio picker sends, was refused here
+     * with "Nothing to change" and never reached the UPDATE. The picker
+     * appeared to work, stored nothing, and the board showed nothing: reported
+     * as "selecting an aspect ratio doesn't show anything on the image", which
+     * is true and was never a display problem.
+     */
+    const COLUMN_FIELDS = ['aspect_ratio', 'status'];
+    const columnEdits = COLUMN_FIELDS.filter(k => body[k] !== undefined);
+    if (!changed.length && !columnEdits.length) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: `Nothing to change. Editable: ${EDITABLE.join(', ')}` }));
+        return res.end(JSON.stringify({
+            error: `Nothing to change. Editable: ${EDITABLE.concat(COLUMN_FIELDS).join(', ')}`,
+        }));
     }
 
-    const validation = validateSceneCards([card]);
+    // A column-only edit does not touch the card, so it is not re-validated
+    // and does not mark anything stale — nothing a prompt reads has moved.
+    const validation = changed.length ? validateSceneCards([card]) : { valid: true };
     if (!validation.valid) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'That would make the scene card invalid', details: validation.errors }));
     }
 
-    db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?').run(JSON.stringify(card), shotId);
+    if (changed.length) {
+        db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?').run(JSON.stringify(card), shotId);
+    }
 
     /*
      * A shot's own aspect ratio is a COLUMN, not a card field.
@@ -160,21 +188,51 @@ function updateShotCard(req, res, shotId) {
         changed.push('aspect_ratio');
     }
 
+    /*
+     * Status is a column too, and until now nothing could set it: not this
+     * route, not any control, not the board — whose cards are draggable but
+     * whose drop handler only REORDERS. Only the pipeline ever wrote it, so a
+     * director could not mark a shot approved or reopen a failed one.
+     *
+     * Refused against the vocabulary rather than passed through, so a typo
+     * comes back naming the legal set instead of surfacing as a CHECK
+     * violation from SQLite.
+     */
+    if (body.status !== undefined) {
+        const want = String(body.status || '').trim();
+        if (!SHOT_STATUSES.includes(want)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: `Invalid status "${want}"`, valid: SHOT_STATUSES }));
+        }
+        db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run(want, shotId);
+        changed.push('status');
+    }
+
     // Editing a card by hand is how a director answers a screenplay revision,
     // so this is where the drift warning clears. A warning that cannot be
     // cleared by doing the work it asks for is noise within a day.
     let rewrittenAgainst = null;
-    try {
-        const row = db.prepare('SELECT scene_id FROM film_shots WHERE id = ?').get(shotId);
-        if (row && row.scene_id) rewrittenAgainst = stampShot(shotId, row.scene_id);
-    } catch (_) { /* never fail an edit that already succeeded */ }
+    // Only a CARD edit re-stamps. Moving a shot to `approved` or picking its
+    // ratio changes nothing a prompt reads, and marking the shot rewritten for
+    // it would raise a drift warning against work nobody touched.
+    const cardEdited = changed.some(k => !COLUMN_FIELDS.includes(k));
+    if (cardEdited) {
+        try {
+            const row = db.prepare('SELECT scene_id FROM film_shots WHERE id = ?').get(shotId);
+            if (row && row.scene_id) rewrittenAgainst = stampShot(shotId, row.scene_id);
+        } catch (_) { /* never fail an edit that already succeeded */ }
+    }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
         shot_id: shotId, changed, card,
         scene_fingerprint: rewrittenAgainst,
-        // Said plainly: anything generated from the old words no longer matches.
-        note: 'Anything generated from this card is now stale. Check staleness before generating.',
+        // Said plainly, and only when it is true: a column-only edit changes
+        // nothing a prompt reads, so claiming staleness would send a director
+        // to regenerate work that is perfectly current.
+        note: cardEdited
+            ? 'Anything generated from this card is now stale. Check staleness before generating.'
+            : `Changed ${changed.join(', ')}. Nothing a prompt reads has moved, so nothing is stale.`,
     }));
 }
 
@@ -337,6 +395,11 @@ function getShot(req, res, shotId) {
         id: shot.id, shot_code: shot.shot_code, scene_id: shot.scene_id,
         scene_number: shot.scene_number, location: shot.location, time_of_day: shot.time_of_day,
         status: shot.status, duration_ms: shot.duration_ms, sort_order: shot.sort_order,
+        // The shot's OWN ratio, and empty meaning it inherits the project's.
+        // The row carried it and this response did not, so an agent could set a
+        // ratio through this route and never read it back — a stored value with
+        // no way to see it, which is the same fault the board had.
+        aspect_ratio: shot.aspect_ratio || '',
         card,
         // The screenplay this shot came from, alongside the card it became.
         //
@@ -737,4 +800,5 @@ function setShotTransition(req, res, shotId) {
     res.end(JSON.stringify(row));
 }
 
-module.exports = { handleShots, VALID_TRANSITIONS };
+module.exports = {
+    SHOT_STATUSES, handleShots, VALID_TRANSITIONS };
