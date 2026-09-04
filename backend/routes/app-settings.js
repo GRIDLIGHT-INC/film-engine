@@ -140,12 +140,40 @@ function json(res, status, data) {
     res.end(JSON.stringify(data));
 }
 
+/*
+ * A SETTING MUST COME BACK THE TYPE IT WENT IN AS.
+ *
+ * film_app_settings stores TEXT, and every value went through String(). A
+ * boolean written as `false` therefore came back as the STRING "false" — which
+ * is truthy, so a flag switched OFF read as ON everywhere. Measured: with
+ * world_engine set to false the console still rendered, because `!!'false'` is
+ * true. A switch a director flips and watches do nothing is the failure this
+ * file already records for the gateway; this is the same one, in the store.
+ *
+ * The default declares the type, so nothing has to be listed twice.
+ */
+function serialiseLike(def, value) {
+    if (typeof def === 'boolean') {
+        const s = String(value).trim().toLowerCase();
+        return (value === true || s === 'true' || s === '1' || s === 'on') ? '1' : '';
+    }
+    return String(value);
+}
+
+function castLike(def, stored) {
+    if (typeof def === 'boolean') {
+        const s = String(stored == null ? '' : stored).trim().toLowerCase();
+        return !(s === '' || s === '0' || s === 'false' || s === 'off');
+    }
+    return stored;
+}
+
 function readSettings() {
     const out = {};
     for (const [key, def] of Object.entries(SETTINGS)) out[key] = def.default;
     try {
         for (const row of db.prepare('SELECT key, value FROM film_app_settings').all()) {
-            if (key_known(row.key)) out[row.key] = row.value;
+            if (key_known(row.key)) out[row.key] = castLike(SETTINGS[row.key].default, row.value);
         }
     } catch (_) { /* table not migrated yet; the defaults are the honest answer */ }
     return out;
@@ -173,7 +201,7 @@ function putSettings(req, res) {
 
     for (const key of Object.keys(SETTINGS)) {
         if (body[key] === undefined) continue;      // merge, so an absent key is "leave it"
-        upsert.run(key, String(body[key]));
+        upsert.run(key, serialiseLike(SETTINGS[key].default, body[key]));
         changed.push(key);
     }
 

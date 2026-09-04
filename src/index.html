@@ -4735,6 +4735,90 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 
 /* media wells stay the darkest thing on screen */
 .entity-card img, .storyboard-img, .shot-thumb, video { border-radius:8px; background:#08080a; }
+/* ══ World Engine console ═════════════════════════════════════════════════
+ *
+ * Values are the design handoff's own. The camera frame carries the BRIGHTEST
+ * border on the screen (0.12 against 0.08 everywhere else) — deliberate: it is
+ * the hero, and every other panel exists to support it.
+ */
+.we-console { background:#050505; padding:14px 16px 18px; margin-bottom:14px;
+              border:1px solid rgba(255,255,255,0.07); border-radius:8px; }
+.we-head { display:flex; align-items:baseline; justify-content:space-between;
+           gap:18px; padding-bottom:14px; border-bottom:1px solid rgba(255,255,255,0.09); }
+.we-title { font-size:22px; font-weight:300; letter-spacing:0.2em; color:#ecece9; }
+.we-meta { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
+           letter-spacing:0.14em; color:#8f8f8a; margin-left:14px; }
+.we-chip { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10.5px;
+           letter-spacing:0.14em; padding:5px 10px; margin-left:12px;
+           border:1px solid rgba(95,211,196,0.45); border-radius:5px; color:#5fd3c4; }
+.we-btn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10.5px;
+          letter-spacing:0.14em; padding:8px 12px; background:transparent;
+          border:1px solid rgba(255,255,255,0.16); border-radius:5px; color:#c9c9c4;
+          cursor:pointer; margin-left:8px; }
+.we-btn:hover { border-color:rgba(255,255,255,0.4); color:#fff; }
+.we-amber { border-color:rgba(224,172,82,0.55); color:#e0ac52; }
+.we-amber:hover { background:rgba(224,172,82,0.13); border-color:#e0ac52; }
+
+/* Center 1.62 / right 452px, exactly as the design lays it out. Below 1200px
+ * the right column drops under the frame rather than crushing it. */
+.we-main { display:flex; gap:14px; align-items:flex-start; margin-top:14px; }
+.we-center { flex:1.62; min-width:0; }
+.we-right { width:452px; flex:none; display:flex; flex-direction:column; gap:12px; }
+@media (max-width: 1200px) { .we-main { flex-direction:column; } .we-right { width:100%; } }
+
+.we-panel { border:1px solid rgba(255,255,255,0.08); border-radius:8px;
+            background:#0a0a0a; padding:14px 16px 16px; }
+.we-camera { border-color:rgba(255,255,255,0.12); background:#070707; }
+.we-panel-head { display:flex; align-items:center; gap:10px; padding-bottom:12px;
+                 border-bottom:1px solid rgba(255,255,255,0.08); flex-wrap:wrap; }
+.we-label { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px;
+            letter-spacing:0.2em; color:#ecece9; }
+.we-live { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
+           letter-spacing:0.14em; color:#5fd3c4; margin-left:6px; }
+
+.we-ov-menu { position:relative; margin-top:10px; padding:10px; width:238px;
+              border:1px solid rgba(255,255,255,0.16); border-radius:7px;
+              background:#0d0d0d; box-shadow:0 18px 40px rgba(0,0,0,0.7); z-index:20; }
+.we-ov-row { display:flex; align-items:center; gap:10px; padding:7px 6px;
+             border-radius:4px; font-size:12px; color:#c9c9c4; cursor:pointer; }
+.we-ov-row:hover { background:rgba(255,255,255,0.04); }
+
+/* The frame is capped by HEIGHT as well as shape: aspect-ratio alone on a full
+ * width column produced a frame taller than the viewport, which is the same
+ * defeat the playback stage already paid for. */
+/* The height cap is applied to the WIDTH inline, derived from the ratio.
+ * `max-height` here clamps the height and the box stops conforming to
+ * aspect-ratio — the frame silently stops being the shape of the film. */
+.we-frame { position:relative; width:100%; margin:16px auto 0;
+            overflow:hidden; border:1px solid rgba(255,255,255,0.14); border-radius:3px;
+            background-color:#0c0c0c;
+            background-image:repeating-linear-gradient(45deg,
+              rgba(255,255,255,0.028) 0 6px, transparent 6px 12px); }
+.we-frame canvas { position:absolute; inset:0; width:100%; height:100%; }
+.we-plate-note { position:absolute; right:10px; bottom:8px;
+                 font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+                 font-size:10.5px; color:#7a7a74; }
+.we-readout { position:absolute; left:10px; bottom:8px;
+              font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+              font-size:11px; letter-spacing:0.14em; color:#b5b5b0; }
+
+.we-lenses { display:flex; flex-wrap:wrap; gap:5px; margin-top:12px; }
+.we-lens { min-width:58px; padding:11px 8px; text-align:center; cursor:pointer;
+           font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px;
+           letter-spacing:0.12em; border-radius:4px; background:transparent;
+           border:1px solid rgba(255,255,255,0.13); color:#a5a5a0; }
+.we-lens:hover { border-color:rgba(255,255,255,0.34); color:#ecece9; }
+.we-lens.active { border-color:#5fd3c4; color:#5fd3c4; background:rgba(95,211,196,0.12); }
+
+.we-modes { display:flex; gap:8px; margin-top:14px; padding-top:12px;
+            border-top:1px solid rgba(255,255,255,0.07); }
+.we-mode { flex:1; padding:9px 10px; cursor:pointer; border-radius:4px;
+           font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10.5px;
+           letter-spacing:0.14em; background:transparent;
+           border:1px solid rgba(255,255,255,0.13); color:#a5a5a0; }
+.we-mode.active { border-color:#5fd3c4; color:#5fd3c4; background:rgba(95,211,196,0.12); }
+.we-hint { font-size:12px; color:#8f8f8a; margin:10px 0 0; line-height:1.5; }
+.we-rows { margin-top:10px; display:flex; flex-direction:column; gap:7px; }
 </style>
 </head>
 <body>
@@ -14347,6 +14431,14 @@ THREE.GLTFLoader = GLTFLoader;
     }
 
     async function loadPrevisPage() {
+        /*
+         * The console is built here or not at all. Flags are read once and
+         * cached; with world_engine off worldConsoleRender() returns
+         * immediately and the screen below is exactly the screen it was.
+         */
+        await worldLoadFlags();
+        worldConsoleRender();
+
         // The stage's model picker needs to know what exists before a mesh
         // can be pointed at anything.
         if (!state.currentProject) return;
@@ -16013,7 +16105,16 @@ THREE.GLTFLoader = GLTFLoader;
      */
     function previsProject(point, eye, target, vFovDeg, view) {
         const forward = pNorm(pSub(target, eye));
-        const right = pNorm(pCross(forward, [0, 1, 0]));
+        /*
+         * The near-vertical fallback the SERVER's basis() and this file's own
+         * previsGroundPoint both carry, and this — the forward projection —
+         * did not. Looking straight down makes forward parallel to the up
+         * reference, the cross product collapses, and every projected point
+         * comes back NaN. It degenerated on the client only, which is exactly
+         * the case the TOP view preset asks for.
+         */
+        const reference = Math.abs(forward[1]) > 0.999 ? [0, 0, 1] : [0, 1, 0];
+        const right = pNorm(pCross(forward, reference));
         const up = pCross(right, forward);
 
         const d = pSub(point, eye);
@@ -17122,6 +17223,361 @@ THREE.GLTFLoader = GLTFLoader;
      * PROJECT_PHASES the status machine advances a project through — so the
      * menu and the phase a project reports itself in cannot disagree.
      */
+    /* ══ World Engine console (phase 2) ══════════════════════════════════════
+     *
+     * The previs screen, redesigned around the question a director is actually
+     * asking: how does this change the shot I am looking at. The camera frame
+     * is the hero; everything else supports it.
+     *
+     * INJECTED, never shipped as hidden markup. With WORLD_ENGINE off this
+     * builds nothing at all, so the existing previs screen — and every test
+     * that reads it — is untouched. A console that shipped as display:none
+     * would still change the page, and "byte-identical with the flag off"
+     * would stop being true the day it landed.
+     */
+
+    let WORLD_FLAGS = null;
+
+    async function worldLoadFlags() {
+        if (WORLD_FLAGS) return WORLD_FLAGS;
+        try {
+            const res = await api('/settings');
+            WORLD_FLAGS = (res && res.settings) || {};
+        } catch (_) { WORLD_FLAGS = {}; }
+        return WORLD_FLAGS;
+    }
+
+    /*
+     * `!!value` is not enough. film_app_settings stores TEXT, so a flag written
+     * as `false` came back as the STRING "false" — truthy — and the console
+     * rendered with the switch off. Fixed at the store too; this stays because
+     * rows written before that fix are still strings.
+     */
+    function worldFlagOn(name) {
+        const v = WORLD_FLAGS && WORLD_FLAGS[name];
+        const s = String(v == null ? '' : v).trim().toLowerCase();
+        return !(s === '' || s === '0' || s === 'false' || s === 'off');
+    }
+
+    function worldEngineOn() { return worldFlagOn('world_engine'); }
+
+    /*
+     * The eleven composition overlays the design draws. Thirds and Horizon are
+     * on by default and the other nine are off: an overlay drawn over a frame
+     * nobody asked to have marked up is noise, and noise is what makes a real
+     * guide unreadable.
+     */
+    function worldOverlays() {
+        return [
+            { id: 'thirds',    label: 'Thirds',            on: true },
+            { id: 'center',    label: 'Center',            on: false },
+            { id: 'horizon',   label: 'Horizon',           on: true },
+            { id: 'vanishing', label: 'Vanishing points',  on: false },
+            { id: 'eyelines',  label: 'Eyelines',          on: false },
+            { id: 'line180',   label: '180° line',         on: false },
+            { id: 'headroom',  label: 'Headroom',          on: false },
+            { id: 'leadroom',  label: 'Lead room',         on: false },
+            { id: 'silhouette',label: 'Silhouette',        on: false },
+            { id: 'grayscale', label: 'Grayscale / value', on: false },
+            { id: 'layers',    label: 'FG / MG / BG',      on: false },
+        ];
+    }
+
+    function worldToggleOverlay(id) {
+        if (!WORLD.overlays) WORLD.overlays = {};
+        WORLD.overlays[id] = !WORLD.overlays[id];
+        worldPaintFrame();
+    }
+
+    /** The twelve primes the design puts on the panel. */
+    function worldLenses() {
+        return [12, 14, 18, 21, 24, 28, 35, 40, 50, 65, 85, 135];
+    }
+
+    /*
+     * DERIVED from the sensor, not looked up. A table agrees with
+     * previs-camera today and drifts the first time a sensor is added — and the
+     * console would then disagree with the stage about what the same lens sees.
+     * Same formula, stated once on each side and held equal by test.
+     */
+    function worldFovFor(focalMm, sensorWidthMm, sensorHeightMm) {
+        const f = Number(focalMm) || 50;
+        const deg = (rad) => rad * 180 / Math.PI;
+        return {
+            hDeg: deg(2 * Math.atan((Number(sensorWidthMm) || 24.89) / (2 * f))),
+            vDeg: deg(2 * Math.atan((Number(sensorHeightMm) || 18.66) / (2 * f))),
+        };
+    }
+
+    /*
+     * The two framing modes, and they are opposites.
+     *
+     * KEEP POSITION — the camera holds and the subject's size follows the lens,
+     * which is what actually happens when you change a prime and stand still.
+     * MAINTAIN SIZE — occupancy is PINNED at the value in effect when the mode
+     * was engaged, and the camera dollies instead. The relation is the optics:
+     * doubling the focal length doubles the distance that holds a subject the
+     * same size. Not a fudge factor.
+     */
+    function worldApplyLens(state, newFocalMm) {
+        const from = Number(state.focalMm) || 50;
+        const to = Number(newFocalMm) || from;
+        const ratio = to / from;
+        if (state.mode === 'maintain') {
+            const pinned = state.pinned == null ? state.occupancy : state.pinned;
+            return { focalMm: to, distanceM: (Number(state.distanceM) || 0) * ratio,
+                     occupancy: pinned, pinned, mode: 'maintain' };
+        }
+        return {
+            focalMm: to,
+            distanceM: Number(state.distanceM) || 0,
+            occupancy: Math.min(1, (Number(state.occupancy) || 0) * ratio),
+            pinned: null, mode: 'keep',
+        };
+    }
+
+    /*
+     * How much of the delivered frame a subject actually fills, from its
+     * PROJECTED bounding box.
+     *
+     * The design's `58 x lens / 18` is demo data: a plausible number that
+     * describes nothing. Shipping it would give the console confident occupancy
+     * figures for a subject it never measured, which is worse than showing none.
+     */
+    function worldOccupancy(frame, box) {
+        const fw = Number(frame.w) || 1, fh = Number(frame.h) || 1;
+        const clamp = (n) => Math.max(0, Math.min(1, n));
+        // Area is the INTERSECTION with the gate: a subject overflowing the
+        // frame fills all of it, not four times it.
+        const x0 = Math.max(0, box.x), y0 = Math.max(0, box.y);
+        const x1 = Math.min(fw, box.x + box.w), y1 = Math.min(fh, box.y + box.h);
+        const inter = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+        return {
+            width: clamp(box.w / fw),
+            height: clamp(box.h / fh),
+            area: clamp(inter / (fw * fh)),
+        };
+    }
+
+    /** The shape of the frame, from the project — never a constant. */
+    function worldFrameRatio(project) {
+        const raw = String((project && project.aspect_ratio) || '').trim();
+        const m = /^(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)$/.exec(raw);
+        if (m && Number(m[2]) > 0) return Number(m[1]) / Number(m[2]);
+        return 16 / 9;
+    }
+
+    /*
+     * Distances come from the world, and say so when they cannot.
+     *
+     * An uncalibrated reconstruction has no metres to give: `metres` is null
+     * rather than the raw world units dressed up as a measurement, which is the
+     * same rule lib/world-scale.js holds on the server.
+     */
+    function worldMeasurements(version, subjects) {
+        const f = version && Number(version.scale_factor);
+        const usable = Number.isFinite(f) && f > 0 ? f : null;
+        return {
+            state: usable ? 'SCALE CALIBRATED' : 'APPROXIMATE SCALE',
+            factor: usable,
+            subjects: (subjects || []).map(s => ({
+                name: s.name,
+                units: s.distance,
+                metres: usable == null ? null : s.distance * usable,
+            })),
+        };
+    }
+
+    const WORLD = { overlays: null, lens: 35, mode: 'keep', pinned: null, world: null, version: null };
+
+    function worldOverlayMenuHtml() {
+        const st = WORLD.overlays || {};
+        return worldOverlays().map(o => {
+            const on = st[o.id] === undefined ? o.on : st[o.id];
+            return `<label class="we-ov-row"><input type="checkbox" data-overlay="${o.id}"
+                ${on ? 'checked' : ''} onchange="worldToggleOverlay('${o.id}')">
+                <span>${esc(o.label)}</span></label>`;
+        }).join('');
+    }
+
+    function worldConsoleHtml(project, world, version) {
+        const ratio = worldFrameRatio(project);
+        const m = worldMeasurements(version, []);
+        const lenses = worldLenses().map(mm =>
+            `<button class="we-lens${mm === WORLD.lens ? ' active' : ''}"
+                     onclick="worldSetLens(${mm})">${mm}</button>`).join('');
+        return `
+        <div class="we-console">
+          <div class="we-head">
+            <div>
+              <span class="we-title">${esc((world && world.name) || 'No world yet')}</span>
+              <span class="we-meta">${esc(version ? 'v' + version.version : 'no version')} · ${esc(m.state)}</span>
+              ${world && world.locked ? '<span class="we-chip">WORLD LOCKED</span>' : ''}
+            </div>
+            <div>
+              <button class="we-btn" onclick="worldOpenCreate()">NEW WORLD</button>
+            </div>
+          </div>
+          <div class="we-main">
+            <div class="we-center">
+              <div class="we-panel we-camera">
+                <div class="we-panel-head">
+                  <span class="we-label">CAMERA VIEW</span>
+                  <span class="we-live" id="weCamSpec"></span>
+                  <button class="we-btn" onclick="worldToggleOverlayMenu()">OVERLAYS · <span id="weOvCount">0</span></button>
+                  <button class="we-btn we-amber" onclick="worldOpenMatchReference()">MATCH REFERENCE</button>
+                </div>
+                <div class="we-ov-menu" id="weOverlayMenu" style="display:none;">${worldOverlayMenuHtml()}</div>
+                <div class="we-frame" id="weFrame"
+                     style="aspect-ratio:${ratio}; max-width:min(100%, calc(52vh * ${ratio}));">
+                  <canvas id="weFrameCanvas"></canvas>
+                  <div class="we-readout" id="weReadout"></div>
+                  <div class="we-plate-note">GEOMETRIC PLATE — NOT FINAL</div>
+                </div>
+              </div>
+            </div>
+            <div class="we-right">
+              <div class="we-panel">
+                <div class="we-label">LENS <span class="we-live" id="weLensNow">${WORLD.lens}mm</span></div>
+                <div class="we-lenses">${lenses}</div>
+                <div class="we-modes">
+                  <button class="we-mode${WORLD.mode === 'maintain' ? '' : ' active'}" data-mode="keep"
+                          onclick="worldSetMode('keep')">KEEP POSITION</button>
+                  <button class="we-mode${WORLD.mode === 'maintain' ? ' active' : ''}" data-mode="maintain"
+                          onclick="worldSetMode('maintain')">MAINTAIN SIZE</button>
+                </div>
+                <p class="we-hint" id="weModeHint"></p>
+              </div>
+              <div class="we-panel">
+                <div class="we-label">MEASUREMENTS <span class="we-live">${esc(m.state)}</span></div>
+                <div id="weMeasure" class="we-rows"></div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function worldToggleOverlayMenu() {
+        const el = document.getElementById('weOverlayMenu');
+        if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function worldSetLens(mm) {
+        const next = worldApplyLens(
+            { focalMm: WORLD.lens, distanceM: WORLD.distanceM || 10,
+              occupancy: WORLD.occupancy || 0.3, pinned: WORLD.pinned, mode: WORLD.mode }, mm);
+        WORLD.lens = next.focalMm;
+        WORLD.distanceM = next.distanceM;
+        WORLD.occupancy = next.occupancy;
+        WORLD.pinned = next.pinned;
+        worldPaintFrame();
+        worldConsoleRender();
+    }
+
+    function worldSetMode(mode) {
+        WORLD.mode = mode;
+        // Engaging maintain-size PINS whatever the subject fills right now.
+        WORLD.pinned = mode === 'maintain' ? (WORLD.occupancy || 0.3) : null;
+        worldConsoleRender();
+    }
+
+    function worldPaintFrame() {
+        const c = document.getElementById('weFrameCanvas');
+        if (!c) return;
+        const box = c.parentElement.getBoundingClientRect();
+        c.width = Math.max(1, Math.round(box.width));
+        c.height = Math.max(1, Math.round(box.height));
+        const ctx = c.getContext('2d');
+        ctx.clearRect(0, 0, c.width, c.height);
+        const st = WORLD.overlays || {};
+        const on = (id) => (st[id] === undefined
+            ? (worldOverlays().find(o => o.id === id) || {}).on : st[id]);
+        ctx.save();
+        if (on('thirds')) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.11)'; ctx.lineWidth = 1;
+            for (const f of [1 / 3, 2 / 3]) {
+                ctx.beginPath(); ctx.moveTo(c.width * f, 0); ctx.lineTo(c.width * f, c.height); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, c.height * f); ctx.lineTo(c.width, c.height * f); ctx.stroke();
+            }
+        }
+        if (on('horizon')) {
+            ctx.strokeStyle = 'rgba(224,172,82,0.6)';
+            ctx.beginPath(); ctx.moveTo(0, c.height * 0.46); ctx.lineTo(c.width, c.height * 0.46); ctx.stroke();
+        }
+        if (on('center')) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+            ctx.beginPath(); ctx.arc(c.width / 2, c.height / 2, 13, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.restore();
+        const n = worldOverlays().filter(o => on(o.id)).length;
+        const badge = document.getElementById('weOvCount');
+        if (badge) badge.textContent = String(n);
+    }
+
+    function worldOpenCreate() {
+        showModalHtml('worldCreateModal', `
+            <h3>Create spatial world</h3>
+            <p class="text-sm text-muted">A world is a persistent set many shots are framed inside.
+               Creating it is free; generating it is not.</p>
+            <div class="form-group"><label>Name</label>
+                <input id="worldCreateName" type="text" placeholder="e.g. the cul-de-sac"></div>
+            <div class="btn-row">
+              <button class="btn btn-primary" onclick="worldCreate()">Create</button>
+              <button class="btn btn-secondary" onclick="closeModal('worldCreateModal')">Cancel</button>
+            </div>`);
+        showModal('worldCreateModal');
+    }
+
+    function worldOpenMatchReference() {
+        showModalHtml('worldMatchModal', `
+            <h3>Match reference composition</h3>
+            <p class="text-sm text-muted">Mark the horizon and the subject box on a reference frame.
+               This is a manual-assist solve and an approximation — it carries a confidence, and
+               applying it is a deliberate act.</p>
+            <div class="btn-row">
+              <button class="btn btn-secondary" onclick="closeModal('worldMatchModal')">Close</button>
+            </div>`);
+        showModal('worldMatchModal');
+    }
+
+    async function worldCreate() {
+        const name = (document.getElementById('worldCreateName') || {}).value || '';
+        if (!name.trim()) return setStatus('A world needs a name', true);
+        try {
+            const res = await api(`/projects/${state.currentProject.id}/worlds`,
+                { method: 'POST', body: JSON.stringify({ name: name.trim() }) });
+            WORLD.world = res.world;
+            closeModal('worldCreateModal');
+            worldConsoleRender();
+            setStatus(`World "${res.world.name}" created — generating it is a separate, paid step`);
+        } catch (err) { setStatus(err.message, true); }
+    }
+
+    /*
+     * Builds the console, or nothing at all. The container is created HERE
+     * rather than sitting in the page, so with the flag off the previs screen
+     * is exactly the screen it was.
+     */
+    function worldConsoleRender() {
+        if (!worldEngineOn()) return;
+        const page = document.getElementById('page-previs');
+        if (!page) return;
+        let host = document.getElementById('worldConsole');
+        if (!host) {
+            host = document.createElement('div');
+            host.id = 'worldConsole';
+            page.insertBefore(host, page.firstChild);
+        }
+        host.innerHTML = worldConsoleHtml(state.currentProject || {}, WORLD.world, WORLD.version);
+        const hint = document.getElementById('weModeHint');
+        if (hint) {
+            hint.textContent = WORLD.mode === 'maintain'
+                ? `Camera dollies automatically to hold the subject at ${Math.round((WORLD.pinned || 0) * 100)}% of frame.`
+                : 'Camera holds. Subject size follows the lens.';
+        }
+        worldPaintFrame();
+    }
+
     async function applyNavFlow() {
         const host = document.querySelector('#sidebarProjectNav .sidebar-content');
         if (!host || host.dataset.flowApplied) return;
@@ -21879,6 +22335,9 @@ THREE.GLTFLoader = GLTFLoader;
             display: none;
         }
     
+
+
+
 </style>
 </head>
 <body>

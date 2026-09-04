@@ -249,6 +249,7 @@ film-engine/
 │       ├── glb-parser.test.js          # A synthetic .glb parses, transforms apply, decimation bounds hold
 │       ├── world-spike.test.js     # The Marble request this engine would actually send
 │       ├── world-engine.test.js    # A world exists, is versioned, is pinned — and knows it has no scale
+│       ├── world-console.test.js   # The console renders what the design draws, and nothing when the flag is off
 │       ├── handover-commands.js    # Every command in the handover, executed — a doc nobody runs is typos
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale

@@ -44,13 +44,35 @@ function call(method, body) {
     });
 }
 
-test('every known setting reads back as it was written', async () => {
-    for (const key of Object.keys(SETTINGS)) {
-        const value = `value-for-${key}`;
+test('every known setting reads back as it was written, in its own type', async () => {
+    /*
+     * The probe follows the setting's DECLARED type. Writing a string to every
+     * key was right while every setting was free text, and became wrong the day
+     * boolean flags arrived: a boolean stored as the string "false" is truthy,
+     * so a flag switched off read as on. The default is what declares the type,
+     * so nothing is listed twice here.
+     */
+    for (const [key, def] of Object.entries(SETTINGS)) {
+        const value = typeof def.default === 'boolean' ? true : `value-for-${key}`;
         const put = await call('PUT', { [key]: value });
         assert.strictEqual(put.status, 200, JSON.stringify(put.body));
         const got = await call('GET');
         assert.strictEqual(got.body.settings[key], value, `${key} did not survive the round trip`);
+    }
+});
+
+test('a boolean setting turned OFF reads as off, not as the string "false"', async () => {
+    // The bug this replaces: `false` was stored via String(), came back as
+    // "false", and every truthiness check read the flag as ON. Measured in a
+    // browser — the console rendered with world_engine switched off.
+    const bools = Object.entries(SETTINGS).filter(([, d]) => typeof d.default === 'boolean').map(([k]) => k);
+    assert.ok(bools.length >= 6, `only ${bools.length} boolean settings found — the scan is broken`);
+    for (const key of bools) {
+        await call('PUT', { [key]: true });
+        await call('PUT', { [key]: false });
+        const got = await call('GET');
+        assert.strictEqual(got.body.settings[key], false,
+            `${key} came back as ${JSON.stringify(got.body.settings[key])} after being switched off`);
     }
 });
 
@@ -59,7 +81,9 @@ test('an unset setting reads as its default, not as missing', async () => {
     // once per caller and gets it wrong somewhere.
     const got = await call('GET');
     for (const key of Object.keys(SETTINGS)) {
-        assert.ok(typeof got.body.settings[key] === 'string', `${key} is not always a string`);
+        const want = typeof SETTINGS[key].default;
+        assert.strictEqual(typeof got.body.settings[key], want,
+            `${key} is not always a ${want}`);
     }
 });
 
