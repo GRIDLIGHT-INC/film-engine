@@ -1299,6 +1299,30 @@ function start() {
 
     try {
         ensureSchema();
+
+        /*
+         * A PROFILE THAT MOVED REPAIRS ITSELF, HERE, ONCE.
+         *
+         * Every path column held an absolute path, so moving the data
+         * directory broke 458 rows at once — and broke them SILENTLY: plates
+         * reported "unavailable", takes reported "no longer on disk", and the
+         * reference gatherer returned less than the shot named. Nothing threw.
+         *
+         * This only ever rewrites a row whose stored path does NOT resolve and
+         * whose tail DOES under the current data directory, so it cannot touch
+         * a working path and cannot invent one. On an install that has not
+         * moved it is a few hundred existsSync calls and no writes.
+         */
+        const { repairPaths } = require('./lib/data-paths');
+        const repair = repairPaths(require('./db/database').db);
+        if (repair.repaired) {
+            console.log(`  Repaired ${repair.repaired} file path(s) after a data-directory move.`);
+        }
+        if (repair.unresolvable) {
+            // NAMED, not silent: these are files this engine can no longer
+            // find, and a count is the only honest thing to say about them.
+            console.log(`  ${repair.unresolvable} stored path(s) resolve nowhere — the files are missing, not moved.`);
+        }
     } catch (err) {
         console.error('Failed to initialize database:', err.message);
         process.exit(1);
