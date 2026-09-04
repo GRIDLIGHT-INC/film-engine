@@ -32,6 +32,9 @@ const { serveFile } = require('../lib/file-storage');
 const cine = require('../lib/cinematography');
 const validateCam = require('../lib/camera-validate');
 const genPlate = require('../lib/generation-plate');
+const refMatch = require('../lib/reference-match');
+const complexity = require('../lib/shot-complexity');
+const worldExport = require('../lib/world-export');
 
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -105,6 +108,112 @@ function directingContext(shotId) {
         axis: director.axis || null,
         establishedSide: director.established_side || null,
     };
+}
+
+/*
+ * The complexity inputs, DERIVED from what the engine already holds.
+ *
+ * Three of the seven can be read honestly and four cannot, and saying which is
+ * the whole integrity of the number. Counting subjects from the blocking is a
+ * fact; deciding that a description contains "four independent actions" is a
+ * reading, and a regex that guessed would put a confident grade on a guess.
+ *
+ * So the derived ones come with their source named and the rest default to 0
+ * and are marked `ask`, which is what the surface prompts for. A zero that is
+ * declared as unknown is honest; a zero presented as measured is not.
+ */
+function complexityInputs(shotId, ctx) {
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId) || {};
+    let card = {};
+    try { card = JSON.parse(shot.scene_card_yaml || '{}') || {}; } catch (_) { card = {}; }
+
+    const staged = (ctx.blocking && ctx.blocking.subjects) || [];
+    const named = new Set([
+        ...staged.map(x => String((x && x.name) || '').trim().toUpperCase()).filter(Boolean),
+        ...(Array.isArray(card.characters) ? card.characters : [])
+            .map(c => String(typeof c === 'string' ? c : (c && c.name) || '').trim().toUpperCase())
+            .filter(Boolean),
+    ]);
+
+    const row = db.prepare('SELECT moves_json, movement FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    let legs = 0;
+    if (row) {
+        try { const m = JSON.parse(row.moves_json || '[]'); legs = Array.isArray(m) ? m.length : 0; }
+        catch (_) { legs = 0; }
+        if (!legs && row.movement && row.movement !== 'static') legs = 1;
+    }
+    if (!legs && card.camera && card.camera.movement && card.camera.movement !== 'static') legs = 1;
+
+    const durationS = Number(shot.duration_ms) > 0 ? Number(shot.duration_ms) / 1000 : 0;
+
+    return {
+        values: {
+            subjects: named.size,
+            moving_subjects: 0,
+            camera_movement: legs,
+            environment_interactions: 0,
+            occlusion: 0,
+            duration_s: durationS,
+            distinct_actions: 0,
+        },
+        sources: {
+            subjects: 'the shot\'s blocking and its scene card',
+            moving_subjects: 'ask — nothing here records which staged subjects move',
+            camera_movement: 'the saved blocking\'s legs, else the card\'s movement',
+            environment_interactions: 'ask — contact with the set is not modelled',
+            occlusion: 'ask — staged boxes cannot say what passes behind what over time',
+            duration_s: durationS ? 'the shot\'s own duration' : 'ask — this shot has no duration set',
+            distinct_actions: 'ask — reading actions out of a description is a judgement, not a count',
+        },
+    };
+}
+
+/*
+ * The bytes each export output would carry.
+ *
+ * Newest first per kind, because a plate is re-rendered against the same shot
+ * and a package must carry the one on screen rather than the first ever made.
+ */
+function exportAssets(db_, shotId, version) {
+    const out = {};
+    const shotRows = db_.prepare(
+        `SELECT id, file_path, metadata FROM film_assets
+          WHERE shot_id = ? AND json_valid(metadata)
+          ORDER BY created_at DESC`).all(shotId);
+    for (const r of shotRows) {
+        let kind = null;
+        try { kind = (JSON.parse(r.metadata) || {}).kind || null; } catch (_) { kind = null; }
+        if (kind && !out[kind]) out[kind] = { file_path: r.file_path };
+    }
+    // The shot's current storyboard frame, which is a plain asset type rather
+    // than a metadata kind.
+    if (!out.storyboard) {
+        const f = db_.prepare(
+            `SELECT file_path FROM film_assets
+              WHERE shot_id = ? AND asset_type = 'storyboard'
+              ORDER BY version DESC, created_at DESC LIMIT 1`).get(shotId);
+        if (f) out.storyboard = { file_path: f.file_path };
+    }
+    if (version) {
+        /*
+         * A world asset is EITHER copied or recorded — `asset_id` for the three
+         * heavy kinds we hold, `remote_url` for the splats we deliberately do
+         * not. Joining to film_assets is what turns the first into a path; the
+         * second has none, and giving it one would put a broken file reference
+         * in a manifest handed to another department.
+         */
+        const rows = db_.prepare(
+            `SELECT wa.kind, wa.remote_url, a.file_path
+               FROM film_world_assets wa
+               LEFT JOIN film_assets a ON a.id = wa.asset_id
+              WHERE wa.world_version_id = ?`).all(version.id);
+        for (const r of rows) {
+            if (out[r.kind]) continue;
+            if (!r.file_path && !r.remote_url) continue;
+            out[r.kind] = { file_path: r.file_path || null, url: r.remote_url || null };
+        }
+    }
+    return out;
 }
 
 async function handleWorlds(req, res, urlParts, query) {
@@ -285,6 +394,150 @@ async function handleWorlds(req, res, urlParts, query) {
         return json(res, 405, { error: 'Method not allowed' });
     }
 
+    /*
+     * ── /film/shots/:id/match-reference ─────────────────────────────────
+     *
+     * FREE, and manual-assist only. It takes the MARKS a director drew on a
+     * reference frame — never the frame — so there is nothing here that could
+     * detect anything, which is what makes "V1 claims no computer vision" a
+     * property of the route rather than a sentence in its docs.
+     *
+     * Applying is a SEPARATE, deliberate act, and it goes through the same
+     * proposal validator every other camera goes through: a composition copied
+     * from a still can still put the camera inside a wall, and a second apply
+     * path is how one of them comes to skip the checks.
+     */
+    if (urlParts[1] === 'shots' && urlParts[3] === 'match-reference') {
+        const shotId = urlParts[2];
+        if (req.method !== 'POST' && req.method !== 'GET') {
+            return json(res, 405, { error: 'Method not allowed' });
+        }
+        let ctx;
+        try { ctx = directingContext(shotId); }
+        catch (err) { return fail(res, err); }
+
+        if (req.method === 'GET') {
+            // What can be marked and what each mark buys — so a surface can be
+            // built from the registry rather than from a screenshot.
+            return json(res, 200, {
+                marks: refMatch.MARKS, estimates: refMatch.ESTIMATES,
+                applies: refMatch.APPLIES, never_applies: refMatch.NEVER_APPLIES,
+                free: true,
+            });
+        }
+
+        const solved = refMatch.solveMatch(body.marks || body, {
+            sensor: body.sensor || null,
+        });
+        const proposal = refMatch.proposalFrom(solved, { pinOccupancy: body.pin_occupancy === true });
+
+        if (body.apply !== true) {
+            return json(res, 200, { match: solved, proposal, applied: false, free: true });
+        }
+
+        // Nothing to apply is refused rather than reported as an apply that
+        // did nothing — the two look identical afterwards.
+        if (!Object.keys(proposal.changes).length) {
+            return json(res, 400, {
+                error: 'this solve determined no camera field, so there is nothing to apply',
+                match: solved,
+            });
+        }
+        const check = cine.validateProposal(proposal, cine.buildBrief(ctx));
+        if (!check.ok) return json(res, 400, { error: check.errors.join(' · '), errors: check.errors });
+
+        const camera = cine.applyProposal(ctx.blocking.camera, proposal, ctx.world);
+        if (camera === null) {
+            return json(res, 409, {
+                error: 'this world has no scale, so a camera height in metres cannot be placed',
+                remedy: 'calibrate the world version first: POST /film/world-versions/:id/calibrate',
+                match: solved,
+            });
+        }
+        const blocking = Object.assign({}, ctx.blocking, { camera });
+        const verdict = validateCam.validateCamera(camera, ctx.world, blocking,
+            { axis: ctx.axis, establishedSide: ctx.establishedSide, strict: body.strict === true });
+        if (verdict.blocking) {
+            return json(res, 409, { error: 'this camera cannot be shot', failures: verdict.failures, match: solved });
+        }
+        worlds.saveCamera(db, shotId, camera);
+        return json(res, 200, {
+            match: solved, proposal, camera, applied: true,
+            warnings: verdict.failures, checked: verdict.checked, not_checked: verdict.skipped,
+        });
+    }
+
+    /*
+     * ── /film/shots/:id/complexity ──────────────────────────────────────
+     *
+     * FREE, and it belongs before a generation rather than after it — the
+     * whole value is that the remedy is to SPLIT THE SHOT, which no amount of
+     * prompt wording achieves and which nobody does once the money is spent.
+     *
+     * Inputs are DERIVED from what the engine already holds and every one can
+     * be overridden, because the engine cannot read "she pushes the door while
+     * he turns away" out of a description and pretending otherwise would put a
+     * confident number on a guess.
+     */
+    if (urlParts[1] === 'shots' && urlParts[3] === 'complexity') {
+        const shotId = urlParts[2];
+        if (req.method !== 'GET' && req.method !== 'POST') {
+            return json(res, 405, { error: 'Method not allowed' });
+        }
+        let ctx;
+        try { ctx = directingContext(shotId); }
+        catch (err) { return fail(res, err); }
+
+        const derived = complexityInputs(shotId, ctx);
+        const given = (req.method === 'POST' ? (body.inputs || body) : q) || {};
+        const merged = Object.assign({}, derived.values);
+        for (const spec of complexity.INPUTS) {
+            if (given[spec.id] !== undefined && given[spec.id] !== '') {
+                merged[spec.id] = Number(given[spec.id]);
+            }
+        }
+        const scored = complexity.scoreShot(merged);
+        return json(res, 200, Object.assign(scored, {
+            derived_from: derived.sources,
+            free: true,
+        }));
+    }
+
+    /*
+     * ── /film/shots/:id/world-export ────────────────────────────────────
+     *
+     * The manifest, not the bytes. Whether each output EXISTS is the question
+     * a director needs answered before handing anything over, and it can be
+     * answered without copying 25 MB of splat.
+     */
+    if (urlParts[1] === 'shots' && urlParts[3] === 'world-export') {
+        const shotId = urlParts[2];
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        let ctx;
+        try { ctx = directingContext(shotId); }
+        catch (err) { return fail(res, err); }
+
+        const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+        if (!shot) return json(res, 404, { error: 'Shot not found' });
+
+        const version = ctx.worldVersionId ? worlds.getVersion(db, ctx.worldVersionId) : null;
+        const world = version ? worlds.getWorld(db, version.world_id) : null;
+        let bounds = null, size = null;
+        if (version) {
+            try {
+                const geo = worlds.worldGeometry(db, version.id, { budget: 50 });
+                bounds = geo.bounds; size = geo.size;
+            } catch (_) { bounds = null; size = null; }
+        }
+        return json(res, 200, Object.assign(
+            worldExport.buildExport({
+                world, version, shot, bounds, size,
+                blocking: ctx.blocking,
+                assets: exportAssets(db, shotId, version),
+            }),
+            { free: true }));
+    }
+
     // ── /film/shots/:id/generation-plate — the bridge to generation ─────────
     //
     // FREE. It records what the plate WOULD be rendered from and what it will
@@ -337,24 +590,49 @@ async function handleWorlds(req, res, urlParts, query) {
             const projectId = shot && shot.project_id;
             if (!projectId) return json(res, 404, { error: 'Shot not found' });
 
-            const fileName = `plate_${shotId}.png`;
-            const filePath = saveFile(projectId, 'refsheets', fileName, decoded.bytes);
+            /*
+             * ONE STORE PATH FOR EVERY PLATE OUTPUT.
+             *
+             * `PLATE_OUTPUTS` declares image, depth and segmentation, and for
+             * a while only the image existed — a registry naming three things
+             * where one is real is how the export came to report a file nobody
+             * could produce. The depth pass arrives on the same request,
+             * because it is the same render read a different way and posting
+             * it separately is how the two come to describe different cameras.
+             */
+            const store = (kind, dec) => {
+                const outSpec = genPlate.PLATE_OUTPUTS.find(x => x.assetKind === kind);
+                const name = `${kind}_${shotId}${(outSpec && outSpec.ext) || '.png'}`;
+                const path_ = saveFile(projectId, 'refsheets', name, dec.bytes);
+                // REPLACES rather than accumulating: two plates for one shot
+                // means "the plate" is whichever row the query returns.
+                const prior = db.prepare(`SELECT id FROM film_assets
+                    WHERE shot_id = ? AND json_valid(metadata)
+                      AND json_extract(metadata, '$.kind') = ?`).all(shotId, kind);
+                for (const old_ of prior) db.prepare('DELETE FROM film_assets WHERE id = ?').run(old_.id);
 
-            const prior = db.prepare(`SELECT id FROM film_assets
-                WHERE shot_id = ? AND json_valid(metadata)
-                  AND json_extract(metadata, '$.kind') = 'plate_image'`).all(shotId);
-            for (const old_ of prior) db.prepare('DELETE FROM film_assets WHERE id = ?').run(old_.id);
+                const id = generateId();
+                db.prepare(`INSERT INTO film_assets
+                    (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type,
+                     size_bytes, version, metadata)
+                    VALUES (?, ?, ?, 'other', ?, ?, 'png', 'image/png', ?, 1, ?)`)
+                    .run(id, projectId, shotId, path_, name, dec.bytes.length,
+                         JSON.stringify(Object.assign({ kind }, record)));
+                return { kind, asset_id: id, file_name: name, bytes: dec.bytes.length };
+            };
 
-            const assetId = generateId();
-            db.prepare(`INSERT INTO film_assets
-                (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type,
-                 size_bytes, version, metadata)
-                VALUES (?, ?, ?, 'other', ?, ?, 'png', 'image/png', ?, 1, ?)`)
-                .run(assetId, projectId, shotId, filePath, fileName, decoded.bytes.length,
-                     JSON.stringify(Object.assign({ kind: 'plate_image' }, record)));
+            const stored = [store('plate_image', decoded)];
+
+            if (body.depth) {
+                const dep = genPlate.decodePlateImage(body.depth);
+                // A bad depth pass must not lose the plate that decoded fine.
+                if (dep.ok) stored.push(store('plate_depth', dep));
+                else return json(res, 400, { error: `depth: ${dep.error}`, stored });
+            }
 
             return json(res, 200, {
-                stored: { asset_id: assetId, file_name: fileName, bytes: decoded.bytes.length },
+                stored: stored[0],
+                outputs: stored,
                 plate: record,
                 state: genPlate.plateState(record, world),
                 free: true,
@@ -389,4 +667,19 @@ async function handleWorlds(req, res, urlParts, query) {
     return json(res, 404, { error: 'Unknown world route' });
 }
 
-module.exports = { handleWorlds };
+/*
+ * The shot tails this module answers, DECLARED rather than re-typed in
+ * server.js.
+ *
+ * That list was hand-written, and adding a route here without adding it there
+ * produces a handler that exists and is never reached — which looks exactly
+ * like a missing feature and answers 405. It cost this phase once already:
+ * match-reference, complexity and world-export were all live and unreachable.
+ * Derived, the seventh arrives wired with nothing to remember.
+ */
+const SHOT_TAILS = Object.freeze([
+    'world', 'direct', 'generation-plate',
+    'match-reference', 'complexity', 'world-export',
+]);
+
+module.exports = { handleWorlds, SHOT_TAILS };

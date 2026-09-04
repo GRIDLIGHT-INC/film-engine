@@ -204,6 +204,9 @@ film-engine/
 │   │   ├── cinematography.js    # Facts out, proposal in, validated — the engine never decides
 │   │   ├── camera-validate.js   # Can this camera be shot? Six checks, and one that only warns
 │   │   ├── generation-plate.js  # Geometry truth handed over; the model owns everything else
+│   │   ├── reference-match.js  # A composition you want, from marks you made — never from pixels
+│   │   ├── shot-complexity.js # How likely is this shot to come back wrong, before it is paid for
+│   │   ├── world-export.js    # Seven files, and every one names the geometry it came from
 │   │   ├── llm-client.js         # Shared LLM call helper
 │   │   ├── budget-estimator.js   # Pre-flight cost estimation
 │   │   ├── provider-pricing.js  # What a generation costs, in the provider's own units
@@ -256,6 +259,7 @@ film-engine/
 │       ├── cinematography.test.js  # The model directs; the engine hands over facts and refuses the impossible
 │       ├── world-timeline.test.js  # A surface over the move model that already existed, driving no second one
 │       ├── generation-plate.test.js # The plate leads, travels as bytes, and spends nothing
+│       ├── reference-match.test.js # Marks not pixels, a confidence that is earned, and seven traceable exports
 │       ├── handover-commands.js    # Every command in the handover, executed — a doc nobody runs is typos
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale
@@ -4172,6 +4176,7 @@ node --test backend/tests/storyboard-prerequisites.test.js
 node --test backend/tests/previs-explore-ui.test.js
 node --test backend/tests/glb-parser.test.js
 node --test backend/tests/world-spike.test.js
+node --test backend/tests/reference-match.test.js
 node --test backend/tests/spec-consumption.test.js
 node --test backend/tests/shot-card-edit.test.js
 node --test backend/tests/script-revision.test.js

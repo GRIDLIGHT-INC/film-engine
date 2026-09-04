@@ -114,7 +114,7 @@ const { handleMusicGen } = require('./routes/music-gen');
 const { handlePostProduction } = require('./routes/post-production');
 const { handlePipeline } = require('./routes/pipeline');
 const { handleThreeD } = require('./routes/threed');
-const { handleWorlds } = require('./routes/worlds');
+const { handleWorlds, SHOT_TAILS: WORLD_SHOT_TAILS } = require('./routes/worlds');
 const { handleProviders } = require('./routes/providers');
 const { handleConsistency } = require('./routes/consistency');
 const { handleQA } = require('./routes/qa');
@@ -860,8 +860,9 @@ const server = http.createServer(async (req, res) => {
          */
         if (parts[1] === 'worlds' || parts[1] === 'world-versions'
             || (parts[1] === 'projects' && parts[3] === 'worlds')
-            || (parts[1] === 'shots' && (parts[3] === 'world' || parts[3] === 'direct'
-                                        || parts[3] === 'generation-plate'))) {
+            // The tails come from the route module itself, so one added there
+            // is reachable here with nothing to remember.
+            || (parts[1] === 'shots' && WORLD_SHOT_TAILS.includes(parts[3]))) {
             return await handleWorlds(req, res, parts, query);
         }
 

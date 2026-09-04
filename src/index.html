@@ -4819,6 +4819,11 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 .we-mode.active { border-color:#5fd3c4; color:#5fd3c4; background:rgba(95,211,196,0.12); }
 .we-hint { font-size:12px; color:#8f8f8a; margin:10px 0 0; line-height:1.5; }
 .we-rows { margin-top:10px; display:flex; flex-direction:column; gap:7px; }
+/* One line of a rows panel: a label, its value, and what it contributes. */
+.we-row { display:flex; align-items:center; justify-content:space-between; gap:8px;
+          font-size:12px; line-height:1.5; }
+.we-row input { width:64px; background:#0d0d0d; color:inherit;
+                border:1px solid var(--border); padding:2px 5px; font-size:12px; }
 /* The ONLY solid-filled button on the screen — it is the terminal action. */
 .we-actions { display:flex; gap:10px; padding:14px 0 2px; }
 .we-render { flex:1; padding:16px; cursor:pointer; border-radius:6px;
@@ -17492,6 +17497,22 @@ THREE.GLTFLoader = GLTFLoader;
                 <div class="we-label">MEASUREMENTS <span class="we-live">${esc(m.state)}</span></div>
                 <div id="weMeasure" class="we-rows"></div>
               </div>
+
+              <div class="we-panel">
+                <div class="we-label">GENERATION RISK
+                  <span class="we-live" id="weRiskGrade">—</span></div>
+                <div id="weRisk" class="we-rows">
+                  <button class="we-btn" onclick="worldScoreComplexity()">Score this shot — free</button>
+                </div>
+              </div>
+
+              <div class="we-panel">
+                <div class="we-label">HANDOVER
+                  <span class="we-live" id="weExportState">—</span></div>
+                <div id="weExport" class="we-rows">
+                  <button class="we-btn" onclick="worldCheckExport()">What can be exported — free</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>`;
@@ -17734,18 +17755,50 @@ THREE.GLTFLoader = GLTFLoader;
         if (!src || !WORLD.shotId) return setStatus('Open a shot first', true);
         try {
             // Re-paint without the overlays, then restore what the director had.
+            // Thirds and a horizon line baked into a plate are composition
+            // guides an image model would faithfully reproduce IN the frame.
             const showing = WORLD.overlays;
             WORLD.overlays = Object.fromEntries(worldOverlays().map(o => [o.id, false]));
             worldPaintFrame();
             const png = src.toDataURL('image/png');
+
+            /*
+             * The depth pass, from the SAME camera in the same breath.
+             * `PLATE_OUTPUTS` has declared depth since the bridge shipped and
+             * nothing rendered it, so the export named a file that could not
+             * exist. Painted into an offscreen canvas so the pane the director
+             * is looking at never flashes grey.
+             */
+            let depth = null;
+            try {
+                /*
+                 * Painted into the SAME canvas, not an offscreen one.
+                 *
+                 * The view rect comes from `canvas.parentElement`, so a
+                 * detached canvas has no rect and the pass threw — silently,
+                 * into a catch, which is exactly how the export went on
+                 * reporting a depth file that was never produced. Using this
+                 * canvas also makes it structurally impossible for the depth
+                 * to be a different camera or a different crop from the plate
+                 * it accompanies. `toDataURL` is synchronous, so the grey pass
+                 * never reaches the screen.
+                 */
+                const dctx = src.getContext('2d');
+                dctx.clearRect(0, 0, src.width, src.height);
+                worldPaintGeometry(dctx, src, 'depth');
+                depth = src.toDataURL('image/png');
+            } catch (_) { depth = null; }
+
             WORLD.overlays = showing;
             worldPaintFrame();
 
             const res = await api(`/shots/${WORLD.shotId}/generation-plate`, {
                 method: 'POST',
-                body: JSON.stringify({ image: png, move: WORLD.moveForPlate || {} }),
+                body: JSON.stringify({ image: png, depth, move: WORLD.moveForPlate || {} }),
             });
-            setStatus(`Plate stored — ${Math.round(res.stored.bytes / 1024)} KB. `
+            const kb = (res.outputs || [res.stored]).map(o =>
+                `${o.kind === 'plate_depth' ? 'depth' : 'plate'} ${Math.round(o.bytes / 1024)} KB`).join(', ');
+            setStatus(`Stored — ${kb}. `
                 + 'It now leads this shot\'s references on every generation path.');
             worldConsoleRender();
         } catch (err) { setStatus(err.message, true); }
@@ -17784,7 +17837,7 @@ THREE.GLTFLoader = GLTFLoader;
      * is how the camera pane and the stage come to disagree about where the
      * subject is, which this codebase has already paid for with a mirrored yaw.
      */
-    function worldPaintGeometry(ctx, canvas) {
+    function worldPaintGeometry(ctx, canvas, mode) {
         const geo = WORLD.geometry;
         if (!geo || !Array.isArray(geo.vertices) || !Array.isArray(geo.triangles)) return;
 
@@ -17876,8 +17929,21 @@ THREE.GLTFLoader = GLTFLoader;
             // Near is bright, far falls away — the only depth cue an untextured
             // solid has, and what stops the room reading as one flat mass.
             const t = 1 - Math.min(1, Math.max(0, (f.z - near) / span));
-            const v = Math.round(34 + t * 150);
-            ctx.fillStyle = `rgb(${v},${v + 6},${v + 12})`;
+            /*
+             * DEPTH IS THE SAME RENDER READ AS DISTANCE.
+             *
+             * A separate depth renderer is how the two come to describe
+             * different cameras — it is one pass with the value taken from z
+             * instead of from a shading ramp. Neutral grey across the whole
+             * range, because a depth map with a colour cast is one a compositor
+             * has to correct before using.
+             */
+            const v = mode === 'depth'
+                ? Math.round(t * 255)
+                : Math.round(34 + t * 150);
+            ctx.fillStyle = mode === 'depth'
+                ? `rgb(${v},${v},${v})`
+                : `rgb(${v},${v + 6},${v + 12})`;
             ctx.beginPath();
             ctx.moveTo(f.pa.x, f.pa.y); ctx.lineTo(f.pb.x, f.pb.y); ctx.lineTo(f.pd.x, f.pd.y);
             ctx.closePath();
@@ -17962,16 +18028,340 @@ THREE.GLTFLoader = GLTFLoader;
         showModal('worldCreateModal');
     }
 
+    /*
+     * Generation risk, before the money rather than after it.
+     *
+     * Three of the seven inputs are derived and four are readings the engine
+     * cannot make — so those are OFFERED as fields rather than silently scored
+     * as zero. A grade computed from four undeclared zeroes and presented as a
+     * measurement is the "confident number on a guess" this whole phase is
+     * written against.
+     */
+    async function worldScoreComplexity() {
+        if (!WORLD.shotId) return setStatus('Open a shot first', true);
+        try {
+            const r = await api(`/shots/${WORLD.shotId}/complexity`);
+            WORLD.risk = r;
+            worldPaintRisk(r);
+        } catch (err) { setStatus(err.message, true); }
+    }
+
+    function worldPaintRisk(r) {
+        const grade = document.getElementById('weRiskGrade');
+        if (grade) {
+            grade.textContent = `${r.grade} · ${r.score}`;
+            grade.style.color = r.grade === 'HIGH' ? '#e06a52'
+                : r.grade === 'MEDIUM' ? '#e0ac52' : '#5fd6c4';
+        }
+        const host = document.getElementById('weRisk');
+        if (!host) return;
+        const rows = r.inputs.map(l => {
+            const ask = /^ask/.test(r.derived_from[l.id] || '');
+            return `<div class="we-row">
+                <span>${esc(l.label)}${ask ? ' <span style="opacity:.5;">· you</span>' : ''}</span>
+                <input type="number" step="${l.id === 'occlusion' ? '0.1' : '1'}" min="0"
+                       value="${l.value}" data-risk="${esc(l.id)}"
+                       onchange="worldRescore()" style="width:64px;">
+                <span style="opacity:.55;">+${l.points}</span>
+              </div>`;
+        }).join('');
+        host.innerHTML = rows
+            + (r.suggestion
+                ? `<p class="text-sm" style="margin:8px 0 0;color:#e06a52;">${esc(r.suggestion.text)}</p>`
+                : '<p class="text-sm text-muted" style="margin:8px 0 0;">No split suggested at this grade.</p>')
+            + `<p class="text-sm text-muted" style="margin:6px 0 0;">Marked <em>· you</em> are readings the
+                 engine cannot make from a scene card — they start at zero and are yours to set.</p>`;
+    }
+
+    async function worldRescore() {
+        const inputs = {};
+        for (const el of document.querySelectorAll('[data-risk]')) {
+            inputs[el.dataset.risk] = Number(el.value) || 0;
+        }
+        try {
+            const r = await api(`/shots/${WORLD.shotId}/complexity`, {
+                method: 'POST', body: JSON.stringify({ inputs }),
+            });
+            // The derivation sources come back with every response, so the
+            // "· you" marks survive a rescore rather than vanishing after the
+            // first edit.
+            WORLD.risk = r;
+            worldPaintRisk(r);
+        } catch (err) { setStatus(err.message, true); }
+    }
+
+    /*
+     * What could be handed over, and what is missing from it.
+     *
+     * The manifest rather than the bytes: whether each of the seven outputs
+     * exists is the question worth answering before packaging a 25 MB splat,
+     * and an output that does not exist yet is named with its reason.
+     */
+    async function worldCheckExport() {
+        if (!WORLD.shotId) return setStatus('Open a shot first', true);
+        try {
+            const x = await api(`/shots/${WORLD.shotId}/world-export`);
+            const state = document.getElementById('weExportState');
+            if (state) {
+                const ready = x.outputs.filter(o => o.available).length;
+                state.textContent = `${ready} of ${x.outputs.length}`;
+                state.style.color = x.complete ? '#5fd6c4' : '#e0ac52';
+            }
+            const host = document.getElementById('weExport');
+            if (host) {
+                host.innerHTML = x.outputs.map(o => `
+                    <div class="we-row" title="${esc(o.why)}">
+                      <span style="${o.available ? '' : 'opacity:.55;'}">${esc(o.filename)}</span>
+                      <span style="opacity:.6;">${esc(o.kind)}</span>
+                      <span style="color:${o.available ? '#5fd6c4' : '#e0ac52'};">${o.available ? 'ready' : 'missing'}</span>
+                    </div>`).join('')
+                  + (x.complete ? ''
+                     : `<p class="text-sm text-muted" style="margin:8px 0 0;">`
+                       + x.outputs.filter(o => !o.available)
+                           .map(o => `${esc(o.filename)} — ${esc(o.reason)}`).join('<br>')
+                       + `</p>`)
+                  + `<p class="text-sm text-muted" style="margin:6px 0 0;">Every file names world
+                       <strong>${esc(x.provenance.world_name || '—')}</strong> v${esc(String(x.provenance.world_version))}
+                       · ${esc(x.provenance.scale_state)}.</p>`;
+            }
+        } catch (err) { setStatus(err.message, true); }
+    }
+
+    /*
+     * Match Reference Composition — V1, manual assist.
+     *
+     * The director loads the frame they want and MARKS it: two points on the
+     * horizon, a box round the subject. Nothing is detected — spec §30 puts
+     * detection in V2 and solving against the reconstruction in V3 — so the
+     * surface asks for exactly the marks the solver takes, and shows what each
+     * one buys, because a mark whose value is invisible does not get made.
+     */
+    const WMATCH = { tool: 'horizon', img: null, horizon: null, box: null, drag: null, solved: null };
+
     function worldOpenMatchReference() {
+        WMATCH.horizon = null; WMATCH.box = null; WMATCH.solved = null; WMATCH.tool = 'horizon';
         showModalHtml('worldMatchModal', `
             <h3>Match reference composition</h3>
-            <p class="text-sm text-muted">Mark the horizon and the subject box on a reference frame.
-               This is a manual-assist solve and an approximation — it carries a confidence, and
-               applying it is a deliberate act.</p>
-            <div class="btn-row">
+            <p class="text-sm text-muted">Load the frame you want and mark it. This is a
+               <strong>manual-assist</strong> solve — nothing is detected for you — and it is an
+               approximation of the camera, not a reconstruction of it. Everything it cannot
+               work out from your marks is named rather than guessed.</p>
+
+            <div class="btn-row" style="margin-bottom:8px;">
+              <input type="file" id="wmFile" accept="image/*" onchange="wmLoadImage(this)"
+                     style="max-width:230px;">
+              <button class="btn btn-secondary" id="wmToolHorizon" onclick="wmSetTool('horizon')">Horizon</button>
+              <button class="btn btn-secondary" id="wmToolBox" onclick="wmSetTool('box')">Subject box</button>
+              <button class="btn btn-secondary" onclick="wmClearMarks()">Clear marks</button>
+            </div>
+            <p class="text-sm text-muted" id="wmHint" style="margin:0 0 6px;"></p>
+
+            <div style="position:relative;background:#111;border:1px solid var(--border);
+                        min-height:200px;display:flex;align-items:center;justify-content:center;">
+              <canvas id="wmCanvas" width="720" height="405"
+                      style="max-width:100%;cursor:crosshair;"></canvas>
+            </div>
+
+            <div class="btn-row" style="margin-top:10px;align-items:center;">
+              <label class="text-sm">Subject height
+                <input type="number" id="wmHeight" step="0.01" min="0" placeholder="1.75"
+                       style="width:90px;"> m</label>
+              <label class="text-sm">Lens (if known)
+                <input type="number" id="wmFocal" step="1" min="0" placeholder="—"
+                       style="width:80px;"> mm</label>
+            </div>
+
+            <div class="btn-row" style="margin-top:10px;">
+              <button class="btn btn-primary" onclick="wmSolve()">Solve — free</button>
+              <button class="btn btn-secondary" id="wmApplyBtn" disabled onclick="wmApply()">Apply to camera</button>
               <button class="btn btn-secondary" onclick="closeModal('worldMatchModal')">Close</button>
-            </div>`);
+            </div>
+
+            <div id="wmReport" style="margin-top:10px;"></div>`);
         showModal('worldMatchModal');
+        wmSetTool('horizon');
+        wmBindCanvas();
+        wmPaint();
+    }
+
+    function wmSetTool(t) {
+        WMATCH.tool = t;
+        for (const [id, name] of [['wmToolHorizon', 'horizon'], ['wmToolBox', 'box']]) {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('btn-primary', name === t);
+        }
+        const hint = document.getElementById('wmHint');
+        if (hint) {
+            hint.textContent = t === 'horizon'
+                ? 'Drag along the horizon — or along anything you know is level. This alone gives the camera roll exactly.'
+                : 'Drag a box round the subject. With their real height it also gives the camera height, because the horizon crosses a standing figure at eye level.';
+        }
+    }
+
+    function wmLoadImage(input) {
+        const file = input && input.files && input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            const img = new Image();
+            img.onload = () => { WMATCH.img = img; wmPaint(); };
+            // A reference that will not decode says so rather than leaving an
+            // empty canvas that looks like the tool is broken.
+            img.onerror = () => setStatus('That file could not be read as an image', true);
+            img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function wmClearMarks() {
+        WMATCH.horizon = null; WMATCH.box = null; WMATCH.solved = null;
+        const btn = document.getElementById('wmApplyBtn');
+        if (btn) btn.disabled = true;
+        const rep = document.getElementById('wmReport');
+        if (rep) rep.innerHTML = '';
+        wmPaint();
+    }
+
+    function wmBindCanvas() {
+        const c = document.getElementById('wmCanvas');
+        if (!c || c.dataset.bound === '1') return;
+        c.dataset.bound = '1';
+        // Normalised against the canvas's own rect, so a mark lands where it
+        // was drawn whatever size the modal is showing the image at.
+        const at = (e) => {
+            const r = c.getBoundingClientRect();
+            return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
+                    Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+        };
+        c.addEventListener('mousedown', (e) => { WMATCH.drag = { from: at(e), to: at(e) }; wmPaint(); });
+        c.addEventListener('mousemove', (e) => { if (WMATCH.drag) { WMATCH.drag.to = at(e); wmPaint(); } });
+        const finish = (e) => {
+            if (!WMATCH.drag) return;
+            const from = WMATCH.drag.from, to = at(e);
+            WMATCH.drag = null;
+            // A click rather than a drag is not a mark — it would be a
+            // zero-length horizon, which has no angle at all.
+            if (Math.abs(to[0] - from[0]) < 0.01 && Math.abs(to[1] - from[1]) < 0.01) return wmPaint();
+            if (WMATCH.tool === 'horizon') WMATCH.horizon = { a: from, b: to };
+            else WMATCH.box = { x: Math.min(from[0], to[0]), y: Math.min(from[1], to[1]),
+                                w: Math.abs(to[0] - from[0]), h: Math.abs(to[1] - from[1]) };
+            wmPaint();
+        };
+        c.addEventListener('mouseup', finish);
+        c.addEventListener('mouseleave', () => { if (WMATCH.drag) { WMATCH.drag = null; wmPaint(); } });
+    }
+
+    function wmPaint() {
+        const c = document.getElementById('wmCanvas');
+        if (!c) return;
+        const ctx = c.getContext('2d');
+        ctx.clearRect(0, 0, c.width, c.height);
+        if (WMATCH.img) {
+            ctx.drawImage(WMATCH.img, 0, 0, c.width, c.height);
+        } else {
+            ctx.fillStyle = '#161616'; ctx.fillRect(0, 0, c.width, c.height);
+            ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '13px system-ui'; ctx.textAlign = 'center';
+            ctx.fillText('Load the frame you want to match', c.width / 2, c.height / 2);
+        }
+        const X = (n) => n * c.width, Y = (n) => n * c.height;
+
+        if (WMATCH.horizon) {
+            ctx.strokeStyle = '#e0ac52'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(X(WMATCH.horizon.a[0]), Y(WMATCH.horizon.a[1]));
+            ctx.lineTo(X(WMATCH.horizon.b[0]), Y(WMATCH.horizon.b[1])); ctx.stroke();
+        }
+        if (WMATCH.box) {
+            ctx.strokeStyle = '#5fd6c4'; ctx.lineWidth = 2;
+            ctx.strokeRect(X(WMATCH.box.x), Y(WMATCH.box.y), X(WMATCH.box.w), Y(WMATCH.box.h));
+        }
+        if (WMATCH.drag) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+            const f = WMATCH.drag.from, t = WMATCH.drag.to;
+            if (WMATCH.tool === 'horizon') {
+                ctx.beginPath(); ctx.moveTo(X(f[0]), Y(f[1])); ctx.lineTo(X(t[0]), Y(t[1])); ctx.stroke();
+            } else {
+                ctx.strokeRect(X(Math.min(f[0], t[0])), Y(Math.min(f[1], t[1])),
+                               X(Math.abs(t[0] - f[0])), Y(Math.abs(t[1] - f[1])));
+            }
+            ctx.setLineDash([]);
+        }
+    }
+
+    function wmMarks() {
+        const marks = {};
+        if (WMATCH.horizon) marks.horizon = WMATCH.horizon;
+        if (WMATCH.box) marks.subject_box = WMATCH.box;
+        const h = Number((document.getElementById('wmHeight') || {}).value);
+        if (h > 0) marks.subject_height_m = h;
+        const f = Number((document.getElementById('wmFocal') || {}).value);
+        if (f > 0) marks.focal_mm = f;
+        return marks;
+    }
+
+    async function wmSolve() {
+        if (!WORLD.shotId) return setStatus('Open a shot first', true);
+        const btn = document.getElementById('wmApplyBtn');
+        // Disarmed BEFORE the request: a gate whose purpose is inspection
+        // before applying must never stay armed across a failed inspection.
+        if (btn) btn.disabled = true;
+        try {
+            const res = await api(`/shots/${WORLD.shotId}/match-reference`, {
+                method: 'POST', body: JSON.stringify({ marks: wmMarks() }),
+            });
+            WMATCH.solved = res;
+            document.getElementById('wmReport').innerHTML = wmReportHtml(res);
+            if (btn) btn.disabled = !Object.keys(res.proposal.changes || {}).length;
+        } catch (err) { setStatus(err.message, true); }
+    }
+
+    function wmReportHtml(res) {
+        const m = res.match || {};
+        const pct = Math.round((m.confidence || 0) * 100);
+        const rows = Object.entries(m.estimates || {}).map(([id, e]) => {
+            const label = id.replace(/_/g, ' ');
+            if (e.value === null) {
+                return `<tr><td style="opacity:.65;">${esc(label)}</td>
+                        <td style="opacity:.5;">— needs ${esc((e.blocked_by || []).join(', '))}</td></tr>`;
+            }
+            const v = Array.isArray(e.value) ? e.value.map(n => n.toFixed(2)).join(', ')
+                : typeof e.value === 'number'
+                    ? (e.unit === 'fraction' ? Math.round(e.value * 100) + '%' : e.value.toFixed(2) + ' ' + (e.unit === 'class' ? '' : e.unit))
+                    : String(e.value);
+            return `<tr><td>${esc(label)}</td><td><strong>${esc(v)}</strong></td></tr>`;
+        }).join('');
+        return `
+          <div style="border:1px solid var(--border);padding:10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <strong>MATCH REFERENCE</strong>
+              <span class="text-sm">Confidence <strong>${pct}%</strong></span>
+            </div>
+            <div style="height:4px;background:#222;margin-bottom:8px;">
+              <div style="height:4px;width:${pct}%;background:${pct >= 60 ? '#5fd6c4' : '#e0ac52'};"></div>
+            </div>
+            <table class="text-sm" style="width:100%;">${rows}</table>
+            <p class="text-sm text-muted" style="margin:8px 0 0;">${esc(m.note || '')}</p>
+          </div>`;
+    }
+
+    async function wmApply() {
+        if (!WORLD.shotId || !WMATCH.solved) return;
+        const changes = (WMATCH.solved.proposal || {}).changes || {};
+        const pct = Math.round(((WMATCH.solved.match || {}).confidence || 0) * 100);
+        if (!confirm(`Apply this camera to the shot?\n\n`
+            + Object.entries(changes).map(([k, v]) =>
+                `  ${k}: ${typeof v === 'number' ? v.toFixed(2) : v}`).join('\n')
+            + `\n\nConfidence ${pct}%. This is an approximation, and it writes camera fields only — `
+            + `the blocking, the subjects and the world are untouched.`)) return;
+        try {
+            const res = await api(`/shots/${WORLD.shotId}/match-reference`, {
+                method: 'POST',
+                body: JSON.stringify({ marks: wmMarks(), apply: true }),
+            });
+            setStatus(`Camera matched at ${pct}% confidence — an approximation, not a reconstruction.`);
+            closeModal('worldMatchModal');
+            if (typeof previsOpenShot === 'function') await previsOpenShot(WORLD.shotId);
+            else worldConsoleRender();
+        } catch (err) { setStatus(err.message, true); }
     }
 
     /*

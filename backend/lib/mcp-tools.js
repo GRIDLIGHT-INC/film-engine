@@ -511,6 +511,72 @@ const PRODUCTION_TOOLS = [
         }, required: ['shot_id'],
     },
     {
+        name: 'match_reference',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/match-reference`,
+        body: a => { const { shot_id, ...rest } = a || {}; return rest; },
+        description:
+            'Turn marks made on a reference frame — a Framed Ink panel, a storyboard, a movie '
+            + 'still — into a camera. FREE. THIS IS MANUAL-ASSIST AND SEES NO IMAGE: it takes only '
+            + 'the marks, so nothing here detects a horizon, a subject or a vanishing point, and it '
+            + 'claims none. Every estimate it cannot make is returned NULL with the marks that were '
+            + 'missing, and the confidence is derived from what you actually marked rather than '
+            + 'asserted — an approximation, never a reconstruction of the original camera. '
+            + 'The horizon alone gives roll exactly; add a subject box and that subject\'s real '
+            + 'height and it gives camera height, because the horizon crosses a standing figure at '
+            + 'the camera\'s own eye level. Applying is separate and goes through the same '
+            + 'validator every camera goes through: it writes CAMERA fields only, never the '
+            + 'blocking, the subjects or the world.',
+        schema: {
+            shot_id: { type: 'string' },
+            marks: { type: 'object', description:
+                'What you marked, in fractions of the frame (0..1, y down): '
+                + '{ horizon: {a:[x,y], b:[x,y]}, subject_box: {x,y,w,h}, subject_height_m: number, '
+                + 'vanishing_lines: [{a:[x,y], b:[x,y]}, ...], focal_mm: number }' },
+            sensor: { type: 'object', description: 'Optional { widthMm, heightMm }. Defaults to Super 35.' },
+            pin_occupancy: { type: 'boolean', description: 'Also carry the subject occupancy across as a framing target.' },
+            apply: { type: 'boolean', description: 'Write the camera onto the shot. Default false — solve, read the confidence, then apply.' },
+            strict: { type: 'boolean', description: 'Refuse a line crossing as well.' },
+        }, required: ['shot_id'],
+    },
+    {
+        name: 'shot_complexity',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/complexity`,
+        body: a => ({ inputs: a.inputs || {} }),
+        description:
+            'How likely is this shot to come back wrong, BEFORE anything is generated. FREE. '
+            + 'Returns LOW, MEDIUM or HIGH over seven inputs, with each input\'s contribution, so '
+            + 'the grade can be argued with. HIGH carries a split suggestion naming what to cut on '
+            + '— the remedy for a crowded shot is to split it, which no amount of prompt wording '
+            + 'achieves. Three inputs are DERIVED from what the engine holds (subjects, camera '
+            + 'movement, duration) and four are marked `ask` in derived_from because they are '
+            + 'readings rather than counts: which subjects move, contact with the set, occlusion, '
+            + 'and how many distinct actions the shot contains. Supply those — you have read the '
+            + 'scene; the engine has not.',
+        schema: {
+            shot_id: { type: 'string' },
+            inputs: { type: 'object', description:
+                'Any of: subjects, moving_subjects, camera_movement, environment_interactions, '
+                + 'occlusion (0..1), duration_s, distinct_actions. Anything omitted uses the '
+                + 'derived value.' },
+        }, required: ['shot_id'],
+    },
+    {
+        name: 'world_export',
+        handler: handleWorlds, method: 'GET',
+        path: a => `/film/shots/${a.shot_id}/world-export`,
+        description:
+            'The manifest for handing this shot\'s geometry to somebody else. FREE, and it is a '
+            + 'manifest rather than the bytes: whether each output exists is the question to answer '
+            + 'before packaging 25 MB of splat. Seven outputs — camera JSON, world metadata JSON, '
+            + 'the collider GLB, the splat as a URL rather than a file, the generation plate, the '
+            + 'depth pass, and the shot thumbnail. EVERY ONE NAMES THE WORLD VERSION IT CAME FROM, '
+            + 'because a camera JSON without it is a set of numbers in an unnamed space. An output '
+            + 'that does not exist yet is named with the reason rather than omitted.',
+        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+    },
+    {
         name: 'world_delete',
         handler: handleWorlds, method: 'DELETE',
         path: a => `/film/worlds/${a.world_id}`,

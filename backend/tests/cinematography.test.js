@@ -367,10 +367,25 @@ test('WE-3.12b every directing route is actually dispatched', () => {
     const server = fs.readFileSync(path.join(ROOT, 'backend', 'server.js'), 'utf8');
     const at = server.indexOf('handleWorlds(req, res, parts, query)');
     assert.notStrictEqual(at, -1, 'server.js never dispatches to handleWorlds');
+
+    /*
+     * Bound to REACHABILITY, not to the literal guard.
+     *
+     * The first version matched the string `'direct'` inside server.js's own
+     * `if`, and failed the day that hand-written tail list was replaced by one
+     * derived from the route module — reporting the routes as unreachable at
+     * the exact moment they became impossible to forget. Which tails reach
+     * this handler is now the route module's own answer, so that is what is
+     * asserted, plus that server.js consults it.
+     */
+    const { SHOT_TAILS } = require('../routes/worlds');
+    for (const tail of ['direct', 'world']) {
+        assert.ok(SHOT_TAILS.includes(tail),
+            `/film/shots/:id/${tail} is not in SHOT_TAILS, so server.js never routes to it`);
+    }
     const guard = server.slice(server.lastIndexOf('if (', at), at);
-    assert.match(guard, /'direct'/,
-        'the world dispatch does not match /film/shots/:id/direct — the directing routes are unreachable');
-    assert.match(guard, /'world'/, 'the world pin route is no longer matched');
+    assert.match(guard, /WORLD_SHOT_TAILS\.includes\(parts\[3\]\)/,
+        'server.js no longer derives the world shot tails from the route module');
 });
 
 test('WE-3.12 the brief/propose pair is on the MCP surface, and neither spends', () => {

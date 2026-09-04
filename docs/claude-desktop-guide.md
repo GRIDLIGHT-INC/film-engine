@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**256 tools, 65 families.** Everything the app can do, you can ask for in a
+**259 tools, 66 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -626,6 +626,55 @@ will not accept and names the check that caught it.
 
 Crossing the 180° line is a **warning, not a refusal**. It is a real creative
 choice, and a tool that blocked it would be one nobody leaves switched on.
+
+### Matching a frame you already have
+
+`match_reference`
+
+You have the shot in your hand — a Framed Ink panel, a storyboard, a still from
+another film — and you want this camera to sit where that one did. **Free**, and
+**manual assist**: the tool takes the marks a director drew, never the picture,
+so there is nothing here that could detect a horizon and it claims none. Two
+points along the horizon give the roll exactly; add a box round the subject and
+that subject's real height and it gives the camera height too, because the
+horizon crosses a standing figure at the camera's own eye level.
+
+Everything it cannot work out is returned **null with the marks that were
+missing** — a lens needs converging lines, a tilt needs a focal length — and the
+confidence is derived from what was actually marked rather than asserted. It is
+an approximation of a camera, not a reconstruction of one, and the payload says
+so. Applying is separate, writes **camera fields only**, and goes through the
+same validator every other camera does: a composition copied from a still can
+still put the lens inside a wall.
+
+### Whether the shot will survive generation
+
+`shot_complexity`
+
+**Free, and it belongs before the spend.** Seven inputs, one grade — LOW, MEDIUM
+or HIGH — with every input's contribution shown, so the grade can be argued
+with. HIGH carries a split suggestion naming what to cut on, because the remedy
+for a crowded shot is to split it and no amount of prompt wording achieves that.
+
+Three inputs are derived from what the engine holds: how many subjects, how much
+the camera moves, how long the shot is. **Four are marked `ask`** — which
+subjects move, contact with the set, occlusion, and how many distinct actions
+the shot contains. Those are readings rather than counts, and the engine will
+not guess them: you have read the scene, it has not.
+
+### Handing the geometry to somebody else
+
+`world_export`
+
+The manifest, not the bytes — whether each output exists is the question worth
+answering before packaging 25 MB of splat. Seven outputs: camera JSON, world
+metadata JSON, the collider GLB, the splat **as a URL rather than a file**, the
+generation plate, the depth pass, and the shot thumbnail.
+
+**Every one names the world version it came from.** A camera JSON without it is
+a set of numbers in an unnamed space, and on an uncalibrated world the export
+says outright that its distances are not metres. An output that does not exist
+yet is named with its reason rather than quietly left out of the list.
 
 ### Where the production stands
 
