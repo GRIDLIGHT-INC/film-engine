@@ -63,6 +63,7 @@ JSON SCHEMA per shot:
 {
   "shot_code": "1A",
   "description": "visual description of the shot",
+  "environment_motion": "what the WORLD does during this shot: only things that MOVE and are not the characters -- rain falling, a door swinging shut, flames, traffic, smoke, debris, a curtain lifting. Take it from the screenplay's own action lines. OMIT THE KEY ENTIRELY if nothing in the environment moves, which is most shots. This is NOT a description of the place: the storyboard frame already shows what the place looks like, and repeating it here wastes the video prompt.",
   "camera": {
     "shot_type": "medium",
     "movement": "static",

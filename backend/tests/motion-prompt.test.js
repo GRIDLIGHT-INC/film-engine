@@ -292,3 +292,82 @@ test('every path that generates video records the attempt', () => {
         'these generate video and record no attempt, so there is nothing to learn adherence from: '
         + silent.join(', '));
 });
+
+/**
+ * A field with no writer is a field that is blank forever.
+ *
+ * Measured on the real library: `environment_motion` was filled on 0 of 70
+ * shots. Not because directors declined to write it — because nothing asked.
+ * The breakdown composes every scene card from the screenplay and its JSON
+ * schema never mentioned the field, so "flames erupt from the struck house",
+ * which is written in the screenplay already, reached no card and therefore no
+ * prompt.
+ *
+ * Set-based over every path that COMPOSES a card, because the failure is
+ * per-path: teaching the breakdown alone leaves an agent composing a card by
+ * hand with no idea the field exists.
+ */
+test('every path that composes a scene card knows about environment_motion', () => {
+    const fs = require('fs'), path = require('path');
+    const root = path.join(__dirname, '..');
+
+    // The LLM path: the breakdown's own JSON schema.
+    const breakdown = fs.readFileSync(path.join(root, 'routes/breakdown.js'), 'utf8');
+    assert.match(breakdown, /"environment_motion"/,
+        'the breakdown never asks for it, so it stays blank on every shot it creates — which is '
+        + 'every shot in a normal project');
+    /*
+     * Bound to the field's OWN value, not a window around its name. A 400-char
+     * window passed with the instruction replaced by "anything you like",
+     * because `camera.movement` sits a few lines below and supplied the word
+     * the scan was looking for.
+     */
+    const instruction = (/"environment_motion":\s*"((?:[^"\\]|\\.)*)"/.exec(breakdown) || [])[1] || '';
+    assert.ok(instruction.length > 80,
+        'the breakdown asks for environment_motion with no instruction, so it will be filled with '
+        + 'scenery — which the keyframe already shows and is the exact thing this must not be');
+    assert.match(instruction, /\bMOVE\b|moves?\b/,
+        'the instruction never says the thing must MOVE');
+    assert.match(instruction, /not a description of the place|already shows/i,
+        'the instruction never warns against describing the place, which is the failure mode');
+
+    /*
+     * The agent paths that compose a SHOT card. Two obvious-looking candidates
+     * are deliberately NOT here, and naming them is the point:
+     *
+     *   scene_card_write writes SCENE metadata — whose point of view, what the
+     *   conflict is — not a shot card, so the field has no meaning there.
+     *
+     *   shot_tag turns a screenplay line into a shot description VERBATIM,
+     *   "nothing is paraphrased on the way". Inferring environmental motion
+     *   there would contradict the one guarantee that tool makes.
+     *
+     * The first version of this test demanded all four and would have pushed
+     * the field into both.
+     */
+    const mcp = fs.readFileSync(path.join(root, 'lib/mcp-tools.js'), 'utf8');
+    for (const tool of ['shot_create', 'shot_update']) {
+        const at = mcp.indexOf(`name: '${tool}'`);
+        assert.notStrictEqual(at, -1, `${tool} is gone`);
+        assert.ok(mcp.slice(at, at + 3000).includes('environment_motion'),
+            `${tool} cannot set environment_motion, so an agent composing a card leaves it blank`);
+    }
+});
+
+test('creating a card accepts what updating one accepts', () => {
+    /*
+     * The rule this codebase already paid for once: "create(body) must equal
+     * create({name}) then update(body)". shot_update took the three motion
+     * fields and shot_create did not, which is the same asymmetry that dropped
+     * twenty fields across characters, locations and props.
+     */
+    const fs = require('fs'), path = require('path');
+    const mcp = fs.readFileSync(path.join(__dirname, '..', 'lib/mcp-tools.js'), 'utf8');
+    const block = t => mcp.slice(mcp.indexOf(`name: '${t}'`), mcp.indexOf(`name: '${t}'`) + 3000);
+    const create = block('shot_create');
+    for (const f of ['environment_motion', 'end_state', 'beats']) {
+        assert.ok(create.includes(f),
+            `shot_create cannot set ${f} but shot_update can — a card created by an agent can never `
+            + 'carry it without a second call');
+    }
+});

@@ -1568,7 +1568,7 @@ const PRODUCTION_TOOLS = [
     {
         name: 'shot_create',
         handler: handleShots, method: 'POST',
-        description: 'Create shots for one scene from an array of scene cards. Each card needs shot_code plus camera {shot_type, movement, lens}, lighting {type}, description, duration_seconds, and characters/dialogue where present. Name every character that appears — that is how their appearance reaches the prompt.',
+        description: 'Create shots for one scene from an array of scene cards. Each card needs shot_code plus camera {shot_type, movement, lens}, lighting {type}, description, duration_seconds, and characters/dialogue where present. Name every character that appears \u2014 that is how their appearance reaches the prompt. A card may also carry environment_motion (what the WORLD does during the shot: rain, a swinging door, flames, debris \u2014 taken from the screenplay\u2019s action lines, omitted unless something actually moves, and never a description of the place, which the frame already shows), end_state (where things must be when the clip ends) and beats (ordered stages, only for a shot that genuinely evolves). All three reach the VIDEO prompt; a still cannot show any of them.',
         path: () => '/film/shots',
         body: a => ({ scene_id: a.scene_id, cards: a.cards }),
         schema: {
