@@ -115,6 +115,8 @@ const { handlePostProduction } = require('./routes/post-production');
 const { handlePipeline } = require('./routes/pipeline');
 const { handleThreeD } = require('./routes/threed');
 const { handleWorlds, SHOT_TAILS: WORLD_SHOT_TAILS } = require('./routes/worlds');
+const approvalGuard = require('./lib/approval-guard');
+const { handleApprovals } = require('./routes/approvals');
 const { handleProviders } = require('./routes/providers');
 const { handleConsistency } = require('./routes/consistency');
 const { handleQA } = require('./routes/qa');
@@ -341,6 +343,30 @@ const server = http.createServer(async (req, res) => {
                 res.end(JSON.stringify({ error: err.message }));
             }
             return;
+        }
+    }
+
+    /*
+     * AN APPROVAL IS RE-CHECKED HERE, ONCE, BEFORE ANY ROUTE SEES IT.
+     *
+     * A request that carries `approval_fingerprint` is claiming somebody
+     * already said yes to a specific set of inputs. Between that yes and this
+     * request a plate can have been regenerated or a card edited, and without
+     * a re-check "I approved that" and "that is what ran" become two different
+     * claims that nothing afterwards can separate.
+     *
+     * It lives at the dispatch rather than in each paid route on purpose. A
+     * guard wired per endpoint gets wired into most of them, and the one it
+     * misses is the one that runs unapproved work — the same reasoning that
+     * put metering in `resolve()` and the body limit in the URL shape. Here it
+     * covers every route, present and future, with nothing to remember, and it
+     * costs nothing at all on the ordinary path where the field is absent.
+     */
+    if (req.body && req.body[approvalGuard.FIELD]) {
+        const verdict = approvalGuard.checkApproval(req.body, approvalGuard.subjectOf(parts));
+        if (!verdict.ok) {
+            res.writeHead(verdict.status || 409, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify(verdict));
         }
     }
 
@@ -864,6 +890,14 @@ const server = http.createServer(async (req, res) => {
             // is reachable here with nothing to remember.
             || (parts[1] === 'shots' && WORLD_SHOT_TAILS.includes(parts[3]))) {
             return await handleWorlds(req, res, parts, query);
+        }
+
+        // Route: /film/shots/:id/{approval-envelope,take-candidates} — decision
+        // packets. Both FREE: a packet that spent money to produce itself could
+        // not be raised speculatively, which is the only way it gets used.
+        if (parts[1] === 'shots' && parts[2]
+            && (parts[3] === 'approval-envelope' || parts[3] === 'take-candidates')) {
+            return await handleApprovals(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/models[/batch[/stream]] — 3D asset generation

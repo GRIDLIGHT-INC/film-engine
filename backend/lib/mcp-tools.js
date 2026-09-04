@@ -36,6 +36,7 @@ const { handleProviders } = require('../routes/providers');
 const { handleContinuity } = require('../routes/continuity');
 const { handleMarketing } = require('../routes/marketing');
 const { handleWorlds } = require('../routes/worlds');
+const { handleApprovals } = require('../routes/approvals');
 const { handleDashboard } = require('../routes/dashboard');
 const { handleStoryStructure } = require('../routes/story-structure');
 const { handleStoryDevelopment } = require('../routes/story-development');
@@ -100,6 +101,23 @@ function callRoute(method, urlPath, body, handler) {
         const parts = urlPath.split('?')[0].split('/').filter(Boolean);
         const req = { method, body: body || {}, url: urlPath, headers: {} };
 
+        /*
+         * THE QUERY STRING HAS TO ARRIVE.
+         *
+         * This shim built `parts` from the path and then handed every handler
+         * an EMPTY query object, so a tool whose options travel in the URL got
+         * defaults and said nothing: `run_plan?order=shot` planned model-major,
+         * `sequence_plan?expand=inbetweens` planned without them,
+         * `voice_catalogue?refresh=true` served the cache. Twelve tools build a
+         * query string, and for all of them the control reached nothing — which
+         * is worse than not offering it, because it gets relied on.
+         */
+        const query = {};
+        const qs = urlPath.split('?')[1];
+        if (qs) {
+            for (const [k, v] of new URLSearchParams(qs)) query[k] = v;
+        }
+
         let settled = false;
         const finish = (status, payload) => {
             if (settled) return;
@@ -124,7 +142,7 @@ function callRoute(method, urlPath, body, handler) {
             // (req, res, parts, query) shape, which is what makes one shim
             // enough -- see ADR-002.
             const route = handler || handleFlows;
-            const returned = route(req, res, parts, {});
+            const returned = route(req, res, parts, query);
             // Several handlers are async; an unhandled rejection would hang the
             // tool call rather than fail it.
             if (returned && typeof returned.catch === 'function') {
@@ -508,6 +526,60 @@ const PRODUCTION_TOOLS = [
             shot_id: { type: 'string' },
             aspect: { type: 'string', description: 'Override the delivery shape, e.g. "9:16" for a vertical cut.' },
             move: { type: 'object', description: 'The camera move, so it can travel to video as prose: { movement, amountM, durationMs, rotate }' },
+        }, required: ['shot_id'],
+    },
+    {
+        name: 'approval_envelope',
+        handler: handleApprovals, method: 'GET',
+        path: a => `/film/shots/${a.shot_id}/approval-envelope`
+            + `?action=${encodeURIComponent(a.action || 'image')}`
+            + (a.tier ? `&tier=${encodeURIComponent(a.tier)}` : ''),
+        description:
+            'Everything needed to decide whether to run this, as one packet. FREE, and nothing '
+            + 'is generated. It is ASSEMBLED from the previews that already answer these '
+            + 'questions rather than recomputing them, so it cannot disagree with what actually '
+            + 'runs: the prompt that will really be sent with its ceiling and the tail that will '
+            + 'not fit, which references are attached and in what role, the tier, model and '
+            + 'provider, and the credit estimate. '
+            + 'The `warnings` array is what turns a yes/no into an informed one — a stale input, '
+            + 'a subject with no plate or no declared size, a provider nobody chose: none of that '
+            + 'is visible in a picture and all of it changes the answer. '
+            + 'Media travels as ABSOLUTE PATHS and the packet says so in media.transport, because '
+            + 'a serving URL only resolves on the machine\'s own network. '
+            + 'It carries a `fingerprint` of the inputs; hand that back as `approval_fingerprint` '
+            + 'on the run and the engine re-derives it and REFUSES with 409 STALE_APPROVAL if '
+            + 'anything changed in between — so "I approved that" and "that is what ran" cannot '
+            + 'become different claims.',
+        schema: {
+            shot_id: { type: 'string' },
+            action: { type: 'string', description: '"image" (default) or "video".' },
+            tier: { type: 'string', description: 'For video: draft | production | hero, to price the tier you are considering.' },
+        }, required: ['shot_id'],
+    },
+    {
+        name: 'take_candidates',
+        handler: handleApprovals, method: 'GET',
+        path: a => `/film/shots/${a.shot_id}/take-candidates`
+            + `?limit=${encodeURIComponent(a.limit || 6)}`
+            + (a.proxy_max_bytes ? `&proxy_max_bytes=${encodeURIComponent(a.proxy_max_bytes)}` : ''),
+        description:
+            'Which archived attempt is the take. FREE. Every generation is already kept, and this '
+            + 'hands them out newest-first with the thing that actually separates two '
+            + 'near-identical frames: WHY each one exists — refined from which version, on what '
+            + 'instruction, restored, sent from another shot, or generated. An attempt whose own '
+            + 'picture was never archived is listed as not selectable WITH THE REASON rather than '
+            + 'omitted, because it is real history. '
+            + 'Pass `proxy_max_bytes` for video candidates and each gets a 720p proxy under that '
+            + 'ceiling plus a still; a clip that cannot be brought under it returns no proxy and '
+            + 'says why rather than handing back something oversized. '
+            + 'Resolving goes back through the selection that already exists — POST '
+            + '/film/versions/:version_id/select — never a second idea of what a take is.',
+        schema: {
+            shot_id: { type: 'string' },
+            limit: { type: 'number', description: 'How many attempts to return, newest first. Default 6.' },
+            proxy_max_bytes: { type: 'number', description:
+                'Build a review proxy for video candidates under this many bytes. This engine has '
+                + 'no opinion about any particular ceiling — name the one you are transferring into.' },
         }, required: ['shot_id'],
     },
     {
@@ -2157,17 +2229,23 @@ const PRODUCTION_TOOLS = [
     {
         name: 'run_plan',
         handler: handleProductionReports, method: 'GET',
-        description: 'What a generation run would do, in what order, and what it would cost \u2014 BEFORE spending anything. Skips work that is already current, so re-running after a small edit costs a small amount. order=model loads each model once (cheapest, nothing finished until the end); order=shot walks one shot through every step (a finished shot early, at the cost of reloading models per shot). Returns HTTP 402 and refused:true when the projected cost would exceed the project budget.',
+        description: 'What a generation run would do, in what order, and what it would cost \u2014 BEFORE spending anything. Skips work that is already current, so re-running after a small edit costs a small amount. order=model loads each model once (cheapest, nothing finished until the end); order=shot walks one shot through every step (a finished shot early, at the cost of reloading models per shot). Returns HTTP 402 and refused:true when the projected cost would exceed the project budget, or a `max_credits` ceiling given for this run.',
         path: a => {
             const q = [];
             if (a.order) q.push(`order=${encodeURIComponent(a.order)}`);
             if (a.ignore_budget) q.push('ignore_budget=true');
+            if (a.max_credits) q.push(`max_credits=${encodeURIComponent(a.max_credits)}`);
             return `/film/projects/${a.project_id}/run-plan${q.length ? '?' + q.join('&') : ''}`;
         },
         schema: {
             project_id: { type: 'string' },
             order: { type: 'string', description: '"model" (default) or "shot".' },
             ignore_budget: { type: 'boolean', description: 'Plan anyway when it would exceed the budget.' },
+            max_credits: { type: 'number', description:
+                'A ceiling for THIS run. The project budget refuses the last call that would take '
+                + 'the production past its total; this bounds one run before its first generation, '
+                + 'which is what stops a loop rather than a single request. `ignore_budget` does '
+                + 'not lift it — a run that could wave away the limit it was given would be given none.' },
         },
         required: ['project_id'],
     },

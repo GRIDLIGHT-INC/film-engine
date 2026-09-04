@@ -124,6 +124,24 @@ function buildRunPlan(projectId, options) {
     const projected = Number(strips.reduce((n, s) => n + s.projected_cost, 0).toFixed(6));
     const budget = budgetStatus(db, projectId, projected);
 
+    /*
+     * The caller's own ceiling for THIS run, in the same unit the projection
+     * is in. Absent means no per-run ceiling — never a ceiling of zero, which
+     * would refuse every run the moment the field was added.
+     */
+    const ceiling = Number(opts.max_credits);
+    const runCeiling = Number.isFinite(ceiling) && ceiling > 0
+        ? {
+            max: ceiling,
+            projected,
+            exceeded: projected > ceiling,
+            reason: projected > ceiling
+                ? `this run projects ${projected} against a ceiling of ${ceiling} — refused before `
+                    + 'the first generation, so nothing has been spent'
+                : null,
+        }
+        : null;
+
     // A swap happens whenever consecutive strips need different models.
     // Counted over the flattened item sequence, not over strips: a shot-major
     // strip reloads a model per step inside itself, and counting only strip
@@ -194,9 +212,28 @@ function buildRunPlan(projectId, options) {
         projected_cost: projected,
         model_switches: switches,
         budget,
+        /*
+         * A PER-RUN CEILING, which the project budget is not.
+         *
+         * `budgetStatus` refuses when this run would take the project past its
+         * lifetime total — that stops the last runaway call, not a loop of
+         * them, and a project with no budget set has no ceiling at all. A run
+         * initiated from outside carries its own `max_credits`, checked
+         * against this projection BEFORE the first generation, so a caller can
+         * bound one run without committing the whole production to a figure.
+         *
+         * `ignore_budget` deliberately does NOT lift it. That flag exists so a
+         * director can overrule their own project budget; a ceiling handed in
+         * with the request is the caller's own bound on the caller's own run,
+         * and a request that could wave away the limit it just set would be
+         * setting no limit.
+         */
+        run_ceiling: runCeiling,
         // Refused BEFORE anything generates, which is the whole point of
         // projecting cost rather than discovering it on the ledger.
-        refused: (!opts.ignore_budget && budget.wouldExceed) || blockedByCompliance,
+        refused: (!opts.ignore_budget && budget.wouldExceed)
+            || blockedByCompliance
+            || (runCeiling ? runCeiling.exceeded : false),
         // Said out loud: work skipped is money saved, and a plan that hides it
         // looks more expensive than it is.
         skipped,

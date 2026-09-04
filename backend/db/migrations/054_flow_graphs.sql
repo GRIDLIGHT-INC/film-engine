@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS film_flow_nodes (
     label       TEXT NOT NULL DEFAULT '',
     config      TEXT NOT NULL DEFAULT '{}',
 
-    -- Canvas coordinates live on the row, following NeonCore's WorkflowStep.
+    -- Canvas coordinates live on the row, as a workflow step does elsewhere.
     -- Cosmetic: graphFingerprint deliberately ignores them, so dragging a node
     -- does not invalidate a render-ledger entry.
     position_x  REAL NOT NULL DEFAULT 0,

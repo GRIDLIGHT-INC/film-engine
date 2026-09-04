@@ -271,7 +271,14 @@ function handleProductionReports(req, res, urlParts, query) {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
         const q = query || {};
-        const plan = buildRunPlan(urlParts[2], { order: q.order, ignore_budget: q.ignore_budget === 'true' });
+        const plan = buildRunPlan(urlParts[2], {
+            order: q.order,
+            ignore_budget: q.ignore_budget === 'true',
+            // A ceiling for THIS run, bounding a loop of calls rather than the
+            // last one. Deliberately not liftable by ignore_budget — see the
+            // reasoning beside run_ceiling in lib/run-plan.js.
+            max_credits: q.max_credits,
+        });
         // 402 when refused, matching the flow budget guard: a plan that would
         // overspend must not read as a successful plan you happened not to run.
         return json(res, plan.refused ? 402 : 200, plan);

@@ -87,6 +87,7 @@ film-engine/
 │   │   ├── sequences.js        # Several shots, one continuous move: plan free, generate, or upload
 │   │   ├── deliverables.js     # The output list, and which ratios must be shot rather than cropped
 │   │   ├── brands.js           # The brand library, the claims register, and the free compliance report
+│   │   ├── approvals.js        # Decision packets: may I run this, and which of these is the take
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
@@ -205,6 +206,9 @@ film-engine/
 │   │   ├── camera-validate.js   # Can this camera be shot? Six checks, and one that only warns
 │   │   ├── generation-plate.js  # Geometry truth handed over; the model owns everything else
 │   │   ├── reference-match.js  # A composition you want, from marks you made — never from pixels
+│   │   ├── approval-envelope.js # Everything needed to decide, as free data — warnings included
+│   │   ├── approval-guard.js  # An approval must not outlive the inputs it was given for
+│   │   ├── review-proxy.js    # A clip small enough to look at, or nothing at all
 │   │   ├── shot-complexity.js # How likely is this shot to come back wrong, before it is paid for
 │   │   ├── world-export.js    # Seven files, and every one names the geometry it came from
 │   │   ├── llm-client.js         # Shared LLM call helper
@@ -260,6 +264,9 @@ film-engine/
 │       ├── world-timeline.test.js  # A surface over the move model that already existed, driving no second one
 │       ├── generation-plate.test.js # The plate leads, travels as bytes, and spends nothing
 │       ├── reference-match.test.js # Marks not pixels, a confidence that is earned, and seven traceable exports
+│       ├── approval-envelope.test.js # A packet you can decide from, and an approval that cannot outlive its inputs
+│       ├── take-candidates.test.js # Which attempt is the take, newest first, and why each exists
+│       ├── review-proxy.test.js  # Null rather than oversized, and never re-encoding what has not changed
 │       ├── handover-commands.js    # Every command in the handover, executed — a doc nobody runs is typos
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale
@@ -4177,6 +4184,9 @@ node --test backend/tests/previs-explore-ui.test.js
 node --test backend/tests/glb-parser.test.js
 node --test backend/tests/world-spike.test.js
 node --test backend/tests/reference-match.test.js
+node --test backend/tests/approval-envelope.test.js
+node --test backend/tests/take-candidates.test.js
+node --test backend/tests/review-proxy.test.js
 node --test backend/tests/spec-consumption.test.js
 node --test backend/tests/shot-card-edit.test.js
 node --test backend/tests/script-revision.test.js

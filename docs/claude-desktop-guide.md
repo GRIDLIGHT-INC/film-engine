@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**259 tools, 66 families.** Everything the app can do, you can ask for in a
+**261 tools, 67 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -675,6 +675,44 @@ generation plate, the depth pass, and the shot thumbnail.
 a set of numbers in an unnamed space, and on an uncalibrated world the export
 says outright that its distances are not metres. An output that does not exist
 yet is named with its reason rather than quietly left out of the list.
+
+### Handing somebody a decision
+
+`approval_envelope` · `take_candidates`
+
+Two moments need a decision and they are not the same one. **Before** the
+spend, no picture exists and what decides it is numbers and words. **After**
+it, the pictures exist and *are* the decision, and every attempt is already
+archived and sitting there unjudged.
+
+`approval_envelope` is the first. **Free**, and assembled from the previews that
+already answer these questions rather than recomputing them — so it cannot
+disagree with what actually runs. It carries the prompt that will really be
+sent with its ceiling and the tail that will not fit, which references are
+attached and in what role, the tier, model and provider, and the estimate.
+
+Its `warnings` array is what turns a yes/no into an informed one. A stale
+input, a subject with no plate, a subject with no declared size, a provider
+nobody chose — none of that is visible in a picture and all of it changes the
+answer.
+
+It also carries a **fingerprint** of the inputs. Hand that back as
+`approval_fingerprint` on the run and the engine re-derives it and refuses with
+**409 STALE_APPROVAL** if anything moved in between. Without that, "I approved
+that" and "that is what ran" are two claims nothing afterwards can separate.
+
+`take_candidates` is the second. Newest first, each carrying the thing that
+actually separates two near-identical frames: *why it exists* — refined from
+which version on what instruction, restored, sent from another shot, or simply
+generated. An attempt whose own picture was never archived is listed as **not
+selectable with the reason** rather than dropped, because it is real history.
+Pass a proxy byte ceiling and video candidates get a 720p proxy under it,
+plus a still; a clip that cannot be brought under it returns no proxy and says
+why rather than handing back something oversized. Resolving goes back through
+the selection that already exists.
+
+Media in both travels as **absolute paths**, and the packet says so in
+`media.transport` — a serving URL only resolves on this machine's own network.
 
 ### Where the production stands
 

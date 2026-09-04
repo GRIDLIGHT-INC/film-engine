@@ -1,7 +1,7 @@
 -- Phase 2: executing a flow.
 --
 -- Mirrors film_pipeline_runs so the two orchestrators report the same shapes,
--- and borrows NeonCore's WorkflowStep persistence: per-node status, result and
+-- and borrows the workflow-step persistence shape: per-node status, result and
 -- routing note on the row.
 
 CREATE TABLE IF NOT EXISTS film_flow_runs (
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS film_flow_node_runs (
     error        TEXT NOT NULL DEFAULT '',
 
     -- Why a node ran somewhere other than where it was pinned. Borrowed
-    -- verbatim from NeonCore: a provider fallback is NOT an error, and painting
+    -- from prior art elsewhere: a provider fallback is NOT an error, and painting
     -- it as one trains users to ignore red.
     routing_note TEXT NOT NULL DEFAULT '',
 
