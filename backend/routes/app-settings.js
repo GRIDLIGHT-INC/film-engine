@@ -99,6 +99,40 @@ const SETTINGS = {
         description: 'A Pro-plan 5-hour baseline. Set this instead of the above and the published plan multipliers (Max 5x, Max 20x) scale it for you, so one measurement calibrates every plan.',
         default: '',
     },
+
+    /*
+     * WORLD ENGINE — six flags, every one OFF.
+     *
+     * They belong to the machine rather than to a project because they gate
+     * whether the feature EXISTS, not how a film is made — the same reasoning
+     * that put `author` and the subscription baseline here. Defaulting off is
+     * what makes the feature shippable in phases against a live install: with
+     * all six clear, the app is byte-identical to the one running today.
+     */
+    world_engine: {
+        description: 'Show the World Engine console on the Previs page. Off leaves the existing previs screen exactly as it is.',
+        default: false,
+    },
+    marble_generation: {
+        description: 'Allow generating spatial worlds through World Labs Marble. This is the only World Engine flag that unlocks spending.',
+        default: false,
+    },
+    cinematography_ai: {
+        description: 'Offer Direct the Shot. The proposal is written by the connected model over MCP; the engine only computes the facts and validates the result.',
+        default: false,
+    },
+    reference_match: {
+        description: 'Offer Match Reference Composition — a manual-assist solve from a marked horizon and subject box, not automatic detection.',
+        default: false,
+    },
+    camera_explore: {
+        description: 'Offer Explore Shot: six alternative cameras in one world, each validated against the geometry before it is shown.',
+        default: false,
+    },
+    world_splats: {
+        description: 'Download and render Gaussian splats. Off records the splat URLs and fetches nothing — full_res is 25 MB per world.',
+        default: false,
+    },
 };
 
 function json(res, status, data) {

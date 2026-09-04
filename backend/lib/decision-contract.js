@@ -67,6 +67,26 @@ const EXCEPTIONS = [
       why: 'Video-only by design: a still has no time. Emitted only when written, because imposing beats on every shot is the micromanagement that makes some models less reliable.' },
 
     {
+        /*
+         * A WORLD PIN IS A BINDING, NOT A DECISION SEEN TWICE.
+         *
+         * Every other entry in the contract is one creative choice with two
+         * surfaces — write it on the board, stage it in previs, and the two must
+         * agree. A world pin has only one meaning and one place to express it:
+         * which reconstruction this shot is framed inside. There is no board
+         * half to disagree with, and inventing one would create a second answer
+         * to a question that has exactly one.
+         *
+         * It also must never be projected onto the scene card. The card is what
+         * the shot IS; the world is where it is shot. Writing the pin into the
+         * card would make a screenplay revision able to silently repoint a shot
+         * at different geometry, which is the class of bug versioning exists to
+         * prevent.
+         */
+        id: 'world.pin', covers: ['world_version_id', 'world_pinned_at'],
+        why: 'The world pin binds a shot to one reconstruction. It is single-surface by design: there is no board-side half, and projecting it onto the scene card would let a rewrite repoint a shot at geometry nobody chose.',
+    },
+    {
         id: 'previs.director-storage', covers: ['director_json'],
         why: 'director_json is the Previs storage envelope for the direction, lighting and location-view decisions above; the semantic fields, not the envelope name, reach prompts.',
     },

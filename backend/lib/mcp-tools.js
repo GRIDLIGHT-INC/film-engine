@@ -35,6 +35,7 @@ const { handleProjects } = require('../routes/projects');
 const { handleProviders } = require('../routes/providers');
 const { handleContinuity } = require('../routes/continuity');
 const { handleMarketing } = require('../routes/marketing');
+const { handleWorlds } = require('../routes/worlds');
 const { handleDashboard } = require('../routes/dashboard');
 const { handleStoryStructure } = require('../routes/story-structure');
 const { handleStoryDevelopment } = require('../routes/story-development');
@@ -313,6 +314,130 @@ async function callNodeTool(nodeTypeId, args) {
  * against one of them fails immediately.
  */
 const PRODUCTION_TOOLS = [
+    /*
+     * WORLD ENGINE. A world is the persistent SET many shots are framed inside
+     * — not a shot, and not a subject. Everything here is free except
+     * `world_generate`, which is the only tool in this group that resolves a
+     * provider and bills.
+     */
+    {
+        name: 'world_create',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/projects/${a.project_id}/worlds`,
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        description:
+            'Create a spatial world — a persistent set that many shots can be framed inside. FREE: '
+            + 'this makes the record, it does not reconstruct anything. Generating is a separate, '
+            + 'paid step. A world usually corresponds to a LOCATION, so pass location_id where one '
+            + 'exists; that is what lets its compass plates become the reconstruction input.',
+        schema: {
+            project_id: { type: 'string' }, name: { type: 'string' },
+            description: { type: 'string' }, scene_id: { type: 'string' }, location_id: { type: 'string' },
+        }, required: ['project_id', 'name'],
+    },
+    {
+        name: 'world_list',
+        handler: handleWorlds, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/worlds`,
+        description: 'Every world in a project, each with its versions. FREE.',
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'world_get',
+        handler: handleWorlds, method: 'GET',
+        path: a => `/film/worlds/${a.world_id}`,
+        description:
+            'One world: its versions, which is active, and whether it is locked. FREE. Each version '
+            + 'reports scale_state — APPROXIMATE SCALE until somebody calibrates it, because Marble '
+            + 'promises no unit and an unmeasured world has no metres to give you.',
+        schema: { world_id: { type: 'string' } }, required: ['world_id'],
+    },
+    {
+        name: 'world_plan',
+        handler: handleWorlds, method: 'GET',
+        path: a => `/film/world-versions/${a.world_version_id}/plan${a.model ? `?model=${encodeURIComponent(a.model)}` : ''}`,
+        description:
+            'What generating this world version would cost, in credits. FREE, and priced through the '
+            + 'same rate table the run bills from — so the number here is the number charged. Read '
+            + 'this before world_generate.',
+        schema: { world_version_id: { type: 'string' }, model: { type: 'string' } },
+        required: ['world_version_id'],
+    },
+    {
+        name: 'world_generate',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/world-versions/${a.world_version_id}/generate`,
+        body: a => { const { world_version_id, ...rest } = a || {}; return rest; },
+        description:
+            'Reconstruct a world. SPENDS MONEY — 250 credits on the draft model, up to 3100 on the '
+            + 'largest. Call world_plan first. `images` are the location plates: several views of one '
+            + 'place reconstruct far better than one, and up to four are used with their compass '
+            + 'bearing. If the call is abandoned mid-generation the result is reported as pending '
+            + 'with an operation id rather than failed — the world is collectable, not lost.',
+        schema: {
+            world_version_id: { type: 'string' }, prompt: { type: 'string' },
+            images: { type: 'array', description: 'Plates: [{ data (base64) or uri, extension, view }]' },
+            video: { type: 'object', description: 'A walkthrough: { data or uri, extension }' },
+            include_splats: { type: 'boolean', description: 'Also download the Gaussian splats (25 MB at full res). Off by default.' },
+        }, required: ['world_version_id'],
+    },
+    {
+        name: 'world_calibrate',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/world-versions/${a.world_version_id}/calibrate`,
+        body: a => { const { world_version_id, ...rest } = a || {}; return rest; },
+        description:
+            'Give a world a scale, by naming one thing inside it whose real size is known. FREE. '
+            + 'Until this is done every distance and focal length computed in the world is '
+            + 'meaningless, because Marble reconstructs geometry without a unit. Both operands are '
+            + 'stored beside the factor so the calibration can be re-derived and argued with.',
+        schema: {
+            world_version_id: { type: 'string' },
+            source: { type: 'string', description: 'character_height | door_height | car_length | distance | custom' },
+            known_meters: { type: 'number' },
+            measured_units: { type: 'number', description: 'How many world units that thing spans.' },
+        }, required: ['world_version_id', 'source', 'known_meters', 'measured_units'],
+    },
+    {
+        name: 'world_lock',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/worlds/${a.world_id}/lock`,
+        description:
+            'Lock a world so it cannot be regenerated or rescaled. FREE. Blocking shots, pinning them '
+            + 'and rendering plates all still work — a lock that froze the work would be one nobody '
+            + 'switches on. Unlock with world_unlock.',
+        schema: { world_id: { type: 'string' } }, required: ['world_id'],
+    },
+    {
+        name: 'world_unlock',
+        handler: handleWorlds, method: 'DELETE',
+        path: a => `/film/worlds/${a.world_id}/lock`,
+        description: 'Unlock a world so it can be regenerated or rescaled again. FREE.',
+        schema: { world_id: { type: 'string' } }, required: ['world_id'],
+    },
+    {
+        name: 'world_delete',
+        handler: handleWorlds, method: 'DELETE',
+        path: a => `/film/worlds/${a.world_id}`,
+        description:
+            'Delete a world and every version, asset and source under it. FREE. Blocking authored '
+            + 'inside it is KEPT — deleting a set must not take the camera work a director staged in '
+            + 'it; the shots simply lose their world pin. The generated worlds themselves cost money '
+            + 'and cannot be re-fetched from the provider, so this is not reversible.',
+        schema: { world_id: { type: 'string' } }, required: ['world_id'],
+    },
+    {
+        name: 'world_pin_shot',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/world`,
+        body: a => ({ world_version_id: a.world_version_id }),
+        description:
+            'Pin a shot to one version of a world, so it is always framed inside the geometry it was '
+            + 'approved against. FREE. A newer version never migrates a pinned shot automatically — '
+            + 'the pin reports that a newer one exists and leaves the decision to the director.',
+        schema: { shot_id: { type: 'string' }, world_version_id: { type: 'string' } },
+        required: ['shot_id', 'world_version_id'],
+    },
     {
         name: 'milestone_list',
         handler: handleDashboard, method: 'GET',

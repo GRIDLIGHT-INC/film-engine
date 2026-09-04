@@ -86,6 +86,24 @@ function buildWorldPrompt(payload) {
             dropped: Math.max(0, images.length - MAX_INPUT_IMAGES),
         };
     }
+    /*
+     * VIDEO is the fourth documented type and the only one that is not built
+     * from plates. Its field name was read from the API's own 422 rather than
+     * guessed: world_prompt.video.video_prompt.
+     *
+     * It is checked BEFORE the single-image branch on purpose — a caller that
+     * supplies footage means the walkthrough, not one frame of it.
+     */
+    const video = p.video ? mediaRef(p.video) : null;
+    if (video) {
+        return {
+            prompt: {
+                type: 'video', video_prompt: video,
+                ...(p.prompt ? { text_prompt: String(p.prompt) } : {}),
+            },
+            dropped: 0,
+        };
+    }
     if (images.length === 1) {
         return {
             prompt: {
@@ -219,6 +237,15 @@ const adapter = {
     id: 'worldlabs',
     name: 'World Labs Marble',
     capabilities: ['world'],
+    /*
+     * Part of the adapter contract base.js documents, and DERIVED from the
+     * array above rather than written out — two answers to "do you serve this"
+     * is how an adapter comes to be preferred for a capability it refuses.
+     * Omitting it entirely was worse: `providers.get(id).supports(cap)` is what
+     * the readiness check calls, so the preference table reported this adapter
+     * as not serving the one capability it exists for.
+     */
+    supports(capability) { return this.capabilities.includes(capability); },
     requiresKey: true,
     // Polls an operation to completion, so the handle is written before polling
     // and a host teardown leaves the world collectable rather than lost.
@@ -236,4 +263,4 @@ const adapter = {
     meter: meterWorldLabs,
 };
 
-module.exports = { adapter, buildRequest, meterWorldLabs, buildWorldPrompt, MODELS, AZIMUTH, MAX_INPUT_IMAGES };
+module.exports = { adapter, buildRequest, meterWorldLabs, buildWorldPrompt, MODELS, DEFAULT_MODEL, AZIMUTH, MAX_INPUT_IMAGES };

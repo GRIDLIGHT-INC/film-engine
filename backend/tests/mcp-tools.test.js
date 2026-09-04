@@ -353,6 +353,7 @@ const CREATE_DELETE_PAIRS = [
     // A poster an agent can plan, it must be able to unplan. Deleting the
     // record deliberately leaves the artwork file: it cost money to generate.
     { create: 'marketing_create',  remove: 'marketing_delete' },
+    { create: 'world_create',      remove: 'world_delete' },
 ];
 
 test('the pair list covers every create tool on the surface', () => {

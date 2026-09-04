@@ -114,6 +114,7 @@ const { handleMusicGen } = require('./routes/music-gen');
 const { handlePostProduction } = require('./routes/post-production');
 const { handlePipeline } = require('./routes/pipeline');
 const { handleThreeD } = require('./routes/threed');
+const { handleWorlds } = require('./routes/worlds');
 const { handleProviders } = require('./routes/providers');
 const { handleConsistency } = require('./routes/consistency');
 const { handleQA } = require('./routes/qa');
@@ -849,6 +850,18 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/projects/:id/qa[/run|/latest|/continuity|/rubric]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'qa') {
             return handleQA(req, res, parts, query);
+        }
+
+        /*
+         * World Engine — registered BEFORE the project and shot catch-alls.
+         *
+         * A handler that exists and is never reached looks exactly like a
+         * missing feature: the /film/locations/:id trap that already cost once.
+         */
+        if (parts[1] === 'worlds' || parts[1] === 'world-versions'
+            || (parts[1] === 'projects' && parts[3] === 'worlds')
+            || (parts[1] === 'shots' && parts[3] === 'world')) {
+            return await handleWorlds(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/models[/batch[/stream]] — 3D asset generation

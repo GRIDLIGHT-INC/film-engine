@@ -27,7 +27,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (98 migrations)
+│   │   └── migrations/     # SQL migration files (99 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -64,6 +64,7 @@ film-engine/
 │   │   ├── backups.js          # Auto-backup system (Phase 18)
 │   │   ├── flows.js            # Flow CRUD + graph validation (Phase 1)
 │   │   ├── previs.js           # Previs blocking CRUD + framing solve (Phase 2)
+│   │   ├── worlds.js           # Worlds, versions, calibration, pinning, lock
 │   │   ├── generation-jobs.js  # Outstanding generations, and collecting them
 │   │   ├── production-reports.js # Staleness, sides, DOOD, run plan, breakdown summary (reports)
 │   │   ├── mood-board.js       # Look development: references → style preset
@@ -197,6 +198,9 @@ film-engine/
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
 │   │   ├── providers/worldlabs.js # World Labs Marble: a location's plates become a navigable world
+│   │   ├── worlds.js            # A world, its versions, and which one a shot is framed inside
+│   │   ├── world-scale.js       # A reconstruction has no unit until somebody measures one thing in it
+│   │   ├── world-assets.js      # What a world ships, and which parts we keep rather than link
 │   │   ├── llm-client.js         # Shared LLM call helper
 │   │   ├── budget-estimator.js   # Pre-flight cost estimation
 │   │   ├── provider-pricing.js  # What a generation costs, in the provider's own units
@@ -244,6 +248,7 @@ film-engine/
 │       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
 │       ├── glb-parser.test.js          # A synthetic .glb parses, transforms apply, decimation bounds hold
 │       ├── world-spike.test.js     # The Marble request this engine would actually send
+│       ├── world-engine.test.js    # A world exists, is versioned, is pinned — and knows it has no scale
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale
 │       ├── script-revision.test.js     # Revising a story does not cascade the production away
@@ -4012,7 +4017,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (98 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (99 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status

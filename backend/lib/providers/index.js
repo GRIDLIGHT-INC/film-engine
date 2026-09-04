@@ -132,6 +132,15 @@ const PREFERRED_WHEN_CONFIGURED = {
     sfx: 'elevenlabs',
     ambient: 'elevenlabs',
     model3d: 'meshy',
+    /*
+     * Spatial worlds have exactly one adapter, and Gridlight — the default
+     * everything else falls back to — does not serve `world` at all. Without an
+     * entry here the capability resolved to NOTHING: the credential could be
+     * set, the node listed and the tool exposed, and gen.world could never run.
+     * A capability nothing resolves to is indistinguishable from one that was
+     * never wired, which is the whole reason this table exists.
+     */
+    world: 'worldlabs',
 };
 
 /**

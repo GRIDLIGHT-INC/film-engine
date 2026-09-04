@@ -1120,8 +1120,16 @@ function fromCard(req, res, shotId) {
     }
 
     const camera = {
-        position: [0, heightM, solution.distanceM],
-        rotation: [0, 0, 0],
+        /*
+         * The SOLVED pose, not a hardcoded one.
+         *
+         * This used to persist [0, heightM, distanceM] with a zero rotation,
+         * which threw away both the azimuth solveShot had just computed and any
+         * camera the card itself carried — only distanceM survived. Seeding
+         * therefore always faced one way however the shot was written.
+         */
+        position: solution.position,
+        rotation: solution.rotation,
         focalMm,
         sensorId,
         fStop,

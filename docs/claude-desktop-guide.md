@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**241 tools, 63 families.** Everything the app can do, you can ask for in a
+**251 tools, 64 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -503,7 +503,8 @@ These resolve a provider and bill you:
 
 `node_gen_llm` · `node_gen_image` · `node_gen_video` · `node_gen_voice` ·
 `node_gen_music` · `node_gen_sfx` · `node_gen_ambient` · `node_gen_lipsync` ·
-`node_gen_post` · `node_gen_model3d` · `node_gen_world` · `storyboard_generate` ·
+`node_gen_post` · `node_gen_model3d` · `node_gen_world` · `world_generate` ·
+`storyboard_generate` ·
 `storyboard_regenerate` · `storyboard_refine` · `plate_generate` ·
 `plate_generate_all` · `flow_run`
 
@@ -576,6 +577,25 @@ entirely in another scene.
 Visuals attached to an entry are reference for a person. A style still is the
 lowest-ranked reference kind and is dropped before the request is built on any
 shot with a cast and a location; a clip reaches no generator at all.
+
+### The world a shot is framed inside
+
+`world_create` · `world_list` · `world_get` · `world_plan` · `world_generate` ·
+`world_calibrate` · `world_lock` · `world_unlock` · `world_pin_shot` ·
+`world_delete`
+
+A world is the persistent SET — a place reconstructed from a location's own
+plates, that many shots are framed inside. It is not a shot and not a subject.
+
+`world_generate` is the only one here that spends; `world_plan` prices it first,
+for free, through the same rate table the run bills from.
+
+Two things worth knowing before you use them. A world has **no scale** until
+`world_calibrate` is given one known measurement — Marble reconstructs geometry
+without a unit, so until then every distance in it is decorative, and the world
+says `APPROXIMATE SCALE` rather than guessing. And a version is **never**
+overwritten: improving a world makes a new one, and a shot pinned to the old
+version stays there until somebody moves it deliberately.
 
 ### Where the production stands
 
