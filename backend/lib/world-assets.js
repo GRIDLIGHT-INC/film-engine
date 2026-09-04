@@ -70,16 +70,86 @@ function servedUrlFor(projectId, versionId, kind) {
     return `/film/worlds/media/${projectId}/${fileNameFor(versionId, kind)}`;
 }
 
+/*
+ * A WORLD'S ASSET URLS ARE UNTRUSTED INPUT.
+ *
+ * They arrive in a provider response, this server fetches them, and the bytes
+ * are then stored where /film/worlds/media/... serves them back. That chain
+ * turns a fetch of an internal address into read-and-exfiltrate: point it at
+ * 169.254.169.254 and cloud credentials become a file the API will hand out.
+ *
+ * The same conclusion provider-media reached about gateway URLs, and for the
+ * same stated reason — "the URL comes from a provider's response". A response
+ * is not trusted merely because we asked for it.
+ *
+ * Two things are checked and one is honestly out of reach:
+ *   · scheme must be https. Marble's CDN is https; file:, data: and ftp: have
+ *     no legitimate use here, and plain http invites a downgrade.
+ *   · the host must not be a loopback, link-local, private or unique-local
+ *     address, by literal.
+ *   · a hostname that RESOLVES to a private address is not caught. Pinning the
+ *     resolved IP is not expressible through Node's fetch, so this is stated
+ *     rather than pretended: it narrows the attack to DNS the attacker also
+ *     controls, and does not close it.
+ */
+const PRIVATE_HOST = [
+    /^localhost$/i,
+    /^127\./, /^0\.0\.0\.0$/, /^\[?::1\]?$/,
+    /^169\.254\./,                                  // link-local, incl. cloud metadata
+    /^10\./,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^192\.168\./,
+    /^\[?f[cd][0-9a-f]{2}:/i,                        // unique-local v6
+    /^\[?fe80:/i,                                    // link-local v6
+    /\.internal$/i, /\.local$/i,
+];
+
+/** 64 MB. Above full_res (25 MB measured) and well below anything that OOMs. */
+const MAX_ASSET_BYTES = 64 * 1024 * 1024;
+
+/** Throws unless `url` is a public https address we are willing to fetch. */
+function assertFetchableUrl(url) {
+    let u;
+    try { u = new URL(String(url)); } catch (_) { throw new Error(`world asset URL is not a URL: ${url}`); }
+    if (u.protocol !== 'https:') {
+        throw new Error(`world asset URL must be https, got '${u.protocol}' — refused before fetching`);
+    }
+    const host = u.hostname;
+    for (const re of PRIVATE_HOST) {
+        if (re.test(host)) {
+            throw new Error(`world asset URL points at a non-public host (${host}) — refused: `
+                + 'fetching it would store an internal response where the media route serves it back');
+        }
+    }
+    return u;
+}
+
 /** Node's fetch, wrapped so a test can hand in its own without a network. */
 async function defaultFetch(url) {
-    const res = await fetch(url);
+    assertFetchableUrl(url);
+    const res = await fetch(url, { redirect: 'error' });
     if (!res || !res.ok) throw new Error(`world asset fetch failed: ${res && res.status} ${url}`);
     return res;
 }
 
-async function bodyOf(res) {
-    if (typeof res.buffer === 'function') return Buffer.from(await res.buffer());
-    return Buffer.from(await res.arrayBuffer());
+async function bodyOf(res, kind) {
+    // Refuse on the declared length first — cheap, and stops the common case
+    // before a byte is buffered.
+    const declared = res && res.headers && typeof res.headers.get === 'function'
+        ? Number(res.headers.get('content-length')) : NaN;
+    if (Number.isFinite(declared) && declared > MAX_ASSET_BYTES) {
+        throw new Error(`world asset ${kind || ''} is too large: ${declared} bytes exceeds the `
+            + `${MAX_ASSET_BYTES}-byte cap`);
+    }
+    const buf = typeof res.buffer === 'function'
+        ? Buffer.from(await res.buffer())
+        : Buffer.from(await res.arrayBuffer());
+    // And again on what actually arrived: a declared length can lie.
+    if (buf.length > MAX_ASSET_BYTES) {
+        throw new Error(`world asset ${kind || ''} is too large: ${buf.length} bytes exceeds the `
+            + `${MAX_ASSET_BYTES}-byte cap`);
+    }
+    return buf;
 }
 
 /**
@@ -109,7 +179,7 @@ async function ingestAssets(db, versionId, world, opts) {
         let assetId = null, bytes = null;
 
         if (copy) {
-            const buf = await bodyOf(await fetchImpl(url));
+            const buf = await bodyOf(await fetchImpl(url), kind);
             const fileName = fileNameFor(versionId, kind);
             const filePath = saveFile(projectId, SUBDIR, fileName, buf);
             bytes = buf.length;
@@ -147,5 +217,6 @@ function localBytes(db, versionId, kind) {
 
 module.exports = {
     WORLD_ASSET_KINDS, COPIED_KINDS, SOURCE_OF, SUBDIR,
+    assertFetchableUrl, MAX_ASSET_BYTES,
     ingestAssets, localBytes, assetPath, servedUrlFor, fileNameFor,
 };

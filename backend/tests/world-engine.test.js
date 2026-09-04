@@ -598,3 +598,73 @@ test('WE-1.21 previs/from-card persists the camera it solved', () => {
     assert.match(body, /position:\s*solution\.position/, 'the solved position is not what gets stored');
     assert.match(body, /rotation:\s*solution\.rotation/, 'the solved rotation is not what gets stored');
 });
+
+// ══ Ingestion safety — the URL comes from a PROVIDER, not from us ═══════════
+
+/*
+ * A world's asset URLs arrive in a provider response and are fetched by this
+ * server, then STORED where /film/worlds/media/... will serve them back. That
+ * chain turns any fetch of an internal address into read-and-exfiltrate, so the
+ * URL is untrusted input even though it did not come from a user.
+ *
+ * This codebase already reached that conclusion once: provider-media's
+ * isGatewayUrl compares parsed origins precisely "because the URL comes from a
+ * provider's response", and a prefix check there would have turned a malicious
+ * provider into gateway-key exfiltration.
+ *
+ * Set-based over the address classes an SSRF actually targets, because a guard
+ * that blocks localhost and lets 169.254.169.254 through is the one that
+ * matters and the one an example-based test misses.
+ */
+test('SEC · a world asset URL that is not a public https address is refused', async () => {
+    const { assertFetchableUrl } = require('../lib/world-assets');
+
+    const HOSTILE = [
+        ['file:///etc/passwd',                      'file scheme'],
+        ['ftp://example.com/x.glb',                 'ftp scheme'],
+        ['data:text/plain;base64,AAAA',             'data scheme'],
+        ['http://example.com/x.glb',                'plain http'],
+        ['https://127.0.0.1/x.glb',                 'loopback v4'],
+        ['https://localhost/x.glb',                 'loopback by name'],
+        ['https://[::1]/x.glb',                     'loopback v6'],
+        ['https://169.254.169.254/latest/meta-data/', 'cloud metadata'],
+        ['https://10.0.0.5/x.glb',                  'private 10/8'],
+        ['https://172.16.4.4/x.glb',                'private 172.16/12'],
+        ['https://192.168.1.9/x.glb',               'private 192.168/16'],
+        ['https://[fd00::1]/x.glb',                 'unique-local v6'],
+        ['https://0.0.0.0/x.glb',                   'unspecified'],
+    ];
+    const allowed = [];
+    for (const [url, why] of HOSTILE) {
+        let refused = false;
+        try { assertFetchableUrl(url); } catch (_) { refused = true; }
+        if (!refused) allowed.push(`${why}: ${url}`);
+    }
+    assert.deepStrictEqual(allowed, [],
+        `these would be fetched and then served back by /film/worlds/media:\n  ${allowed.join('\n  ')}`);
+
+    // And a real one still works, or the guard is just an outage.
+    assert.doesNotThrow(() => assertFetchableUrl('https://cdn.marble.worldlabs.ai/abc/collider.glb'),
+        'the guard refuses the provider it exists to fetch from');
+});
+
+test('SEC · a world asset download is capped', async () => {
+    const { MAX_ASSET_BYTES, ingestAssets } = require('../lib/world-assets');
+    assert.ok(MAX_ASSET_BYTES > 25 * 1024 * 1024,
+        'the cap is below full_res (25 MB measured) — it would refuse a legitimate world');
+    assert.ok(MAX_ASSET_BYTES < 512 * 1024 * 1024, 'the cap is too loose to bound memory');
+
+    const { version, projectId } = await seedWorld();
+    // A body that lies about its size, then streams past the cap.
+    const huge = Buffer.alloc(MAX_ASSET_BYTES + 1024, 0x41);
+    const fetchImpl = async () => ({
+        ok: true, status: 200,
+        headers: { get: () => String(huge.length) },
+        buffer: async () => huge,
+        arrayBuffer: async () => huge.buffer.slice(huge.byteOffset, huge.byteOffset + huge.byteLength),
+    });
+    await assert.rejects(
+        () => ingestAssets(db, version.id, providerWorld(), { projectId, fetchImpl }),
+        /too large|cap|bytes/i,
+        'an oversize asset is written to disk rather than refused');
+});
