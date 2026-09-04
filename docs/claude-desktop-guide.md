@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**251 tools, 64 families.** Everything the app can do, you can ask for in a
+**255 tools, 65 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -596,6 +596,21 @@ without a unit, so until then every distance in it is decorative, and the world
 says `APPROXIMATE SCALE` rather than guessing. And a version is **never**
 overwritten: improving a world makes a new one, and a shot pinned to the old
 version stays there until somebody moves it deliberately.
+
+### Directing the shot
+
+`cinematography_brief` · `camera_propose` · `camera_explore_brief` ·
+`camera_explore_accept`
+
+All four are free, and none of them calls a model — **you are the model**. The
+brief hands you the geometry and deliberately returns no answer: the camera as
+it stands, where each subject is and which way they read in frame, the world
+bounds and whether it has a real scale, the 180° axis and which side the scene
+was established on. You decide; `camera_propose` refuses a camera the world
+will not accept and names the check that caught it.
+
+Crossing the 180° line is a **warning, not a refusal**. It is a real creative
+choice, and a tool that blocked it would be one nobody leaves switched on.
 
 ### Where the production stands
 

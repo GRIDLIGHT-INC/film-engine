@@ -363,11 +363,32 @@ async function generateVersion(db, versionId, payload, opts) {
     return { pending: false, world_version_id: versionId, usage: result.usage || null, ...ingested };
 }
 
+/**
+ * Write an applied camera back onto the shot's blocking.
+ *
+ * The camera lives in film_previs_blocking and nowhere else — D1. A directing
+ * proposal that created its own store would be the second answer to "where is
+ * the camera for this shot" that this whole design exists to avoid.
+ */
+function saveCamera(db, shotId, camera) {
+    const existing = db.prepare('SELECT id FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    const json = JSON.stringify(camera || {});
+    if (existing) {
+        db.prepare("UPDATE film_previs_blocking SET camera_json = ?, updated_at = datetime('now') WHERE shot_id = ?")
+            .run(json, shotId);
+    } else {
+        const { generateId } = ids();
+        db.prepare('INSERT INTO film_previs_blocking (id, shot_id, camera_json) VALUES (?, ?, ?)')
+            .run(generateId(), shotId, json);
+    }
+    return camera;
+}
+
 module.exports = {
     WORLD_ASSET_KINDS, COPIED_KINDS,
     createWorld, getWorld, worldsFor, updateWorld, deleteWorld, lockWorld,
     newVersion, getVersion, versionsFor, worldOf, calibrateVersion,
     ingestWorld, worldGeometry, rawGeometry,
     pinShot, unpinShot, pinFor,
-    planVersion, generateVersion,
+    planVersion, generateVersion, saveCamera,
 };

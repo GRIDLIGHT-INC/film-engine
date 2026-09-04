@@ -201,6 +201,8 @@ film-engine/
 │   │   ├── worlds.js            # A world, its versions, and which one a shot is framed inside
 │   │   ├── world-scale.js       # A reconstruction has no unit until somebody measures one thing in it
 │   │   ├── world-assets.js      # What a world ships, and which parts we keep rather than link
+│   │   ├── cinematography.js    # Facts out, proposal in, validated — the engine never decides
+│   │   ├── camera-validate.js   # Can this camera be shot? Six checks, and one that only warns
 │   │   ├── llm-client.js         # Shared LLM call helper
 │   │   ├── budget-estimator.js   # Pre-flight cost estimation
 │   │   ├── provider-pricing.js  # What a generation costs, in the provider's own units
@@ -250,6 +252,7 @@ film-engine/
 │       ├── world-spike.test.js     # The Marble request this engine would actually send
 │       ├── world-engine.test.js    # A world exists, is versioned, is pinned — and knows it has no scale
 │       ├── world-console.test.js   # The console renders what the design draws, and nothing when the flag is off
+│       ├── cinematography.test.js  # The model directs; the engine hands over facts and refuses the impossible
 │       ├── handover-commands.js    # Every command in the handover, executed — a doc nobody runs is typos
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale

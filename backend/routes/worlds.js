@@ -29,6 +29,8 @@ const { db } = require('../db/database');
 const worlds = require('../lib/worlds');
 const worldAssets = require('../lib/world-assets');
 const { serveFile } = require('../lib/file-storage');
+const cine = require('../lib/cinematography');
+const validateCam = require('../lib/camera-validate');
 
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -63,6 +65,44 @@ function worldPayload(w) {
         versions: versions.map(versionPayload),
         version_count: versions.length,
     });
+}
+
+/**
+ * Everything the directing layer reasons over, gathered once.
+ *
+ * The world comes from the shot's PIN, not from the newest version: a director
+ * directing inside v3 must be told about v3's geometry, whatever has been
+ * generated since.
+ */
+function directingContext(shotId) {
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) { const e = new Error('shot not found'); throw e; }
+    const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    /*
+     * JSON.parse('null') SUCCEEDS and returns null, so a try/catch fallback
+     * never fires for it — and `director_json` is null on every shot nobody has
+     * written a director intent for, which is most of them. The coalesce is the
+     * fix; the catch only ever covered malformed JSON.
+     */
+    const parse = (v, d) => {
+        try { const out = JSON.parse(v); return out == null ? d : out; }
+        catch (_) { return d; }
+    };
+    const blocking = {
+        camera: row ? parse(row.camera_json, {}) : {},
+        subjects: row ? parse(row.subjects_json, []) : [],
+    };
+    let world = null;
+    if (row && row.world_version_id) {
+        const v = worlds.getVersion(db, row.world_version_id);
+        if (v) world = { bounds: parse(v.bounds_json, null), scale_factor: v.scale_factor };
+    }
+    const director = row ? parse(row.director_json, {}) : {};
+    return {
+        shotId, blocking, world: world || { bounds: null, scale_factor: null },
+        axis: director.axis || null,
+        establishedSide: director.established_side || null,
+    };
 }
 
 async function handleWorlds(req, res, urlParts, query) {
@@ -184,6 +224,50 @@ async function handleWorlds(req, res, urlParts, query) {
                 }, { includeSplats: body.include_splats === true });
                 return json(res, out.pending ? 202 : 200, out);
             } catch (err) { return fail(res, err); }
+        }
+        return json(res, 405, { error: 'Method not allowed' });
+    }
+
+    // ── /film/shots/:id/direct[/explore] — the directing layer ──────────────
+    //
+    // FREE, and it never calls a model. `brief` hands the facts to whoever
+    // asked; `propose` takes their camera back and refuses what the geometry
+    // will not accept. The judgement in between is the connected model's.
+    if (urlParts[1] === 'shots' && urlParts[3] === 'direct') {
+        const shotId = urlParts[2];
+        const tail = urlParts[4];
+        let ctx;
+        try { ctx = directingContext(shotId); }
+        catch (err) { return fail(res, err); }
+
+        if (!tail && req.method === 'GET') {
+            return json(res, 200, cine.buildBrief(Object.assign({}, ctx, { intent: q.intent })));
+        }
+        if (tail === 'explore' && req.method === 'GET') {
+            return json(res, 200, cine.exploreBrief(ctx));
+        }
+        if (!tail && req.method === 'POST') {
+            const check = cine.validateProposal(body, cine.buildBrief(ctx));
+            if (!check.ok) return json(res, 400, { error: check.errors.join(' · '), errors: check.errors });
+            const camera = cine.applyProposal(ctx.blocking.camera, body);
+            const blocking = Object.assign({}, ctx.blocking, { camera });
+            const verdict = validateCam.validateCamera(camera, ctx.world, blocking,
+                { axis: ctx.axis, establishedSide: ctx.establishedSide, strict: body.strict === true });
+            // A camera that cannot be shot is REFUSED with the check that
+            // caught it; an advisory one is applied and reported.
+            if (verdict.blocking) {
+                return json(res, 409, { error: 'this camera cannot be shot', failures: verdict.failures });
+            }
+            if (body.apply === true) worlds.saveCamera(db, shotId, camera);
+            return json(res, 200, {
+                camera, applied: body.apply === true,
+                warnings: verdict.failures,
+                // A check that could not run is reported, never folded into a pass.
+                checked: verdict.checked, not_checked: verdict.skipped,
+            });
+        }
+        if (tail === 'explore' && req.method === 'POST') {
+            return json(res, 200, cine.acceptCandidates(body.candidates || [], ctx));
         }
         return json(res, 405, { error: 'Method not allowed' });
     }

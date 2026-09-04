@@ -415,6 +415,80 @@ const PRODUCTION_TOOLS = [
         description: 'Unlock a world so it can be regenerated or rescaled again. FREE.',
         schema: { world_id: { type: 'string' } }, required: ['world_id'],
     },
+    /*
+     * DIRECT THE SHOT — a brief/propose pair, never a server-side model.
+     *
+     * The connected model IS the model here. `cinematography_brief` hands over
+     * the geometry and returns no answer; the model reasons; `camera_propose`
+     * takes the camera back and refuses what the world will not accept. All
+     * three are FREE — nothing here generates an image.
+     */
+    {
+        name: 'cinematography_brief',
+        handler: handleWorlds, method: 'GET',
+        path: a => `/film/shots/${a.shot_id}/direct${a.intent ? `?intent=${encodeURIComponent(a.intent)}` : ''}`,
+        description:
+            'Everything needed to judge a shot: the camera as it stands, where each subject is and '
+            + 'which way they read in frame, the world bounds and whether it has a real scale, the '
+            + '180-degree axis and which side the scene was established on. FREE. It returns FACTS '
+            + 'AND NO CONCLUSION — no camera is proposed here, because deciding what the shot should '
+            + 'be is what you are being asked for. Pass an `intent` (heroic, vulnerable, oppressive, '
+            + 'intimate, chaotic, isolated, cinematic_depth) and it also returns what that intention '
+            + 'tends to mean cinematographically, as a bias to reason with rather than a formula.',
+        schema: {
+            shot_id: { type: 'string' },
+            intent: { type: 'string', description: 'One of the seven director intentions. Optional.' },
+        }, required: ['shot_id'],
+    },
+    {
+        name: 'camera_propose',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/direct`,
+        body: a => { const { shot_id, ...rest } = a || {}; return rest; },
+        description:
+            'Hand back the camera you decided on. FREE. The engine validates it against the world '
+            + 'and REFUSES one that cannot be shot — inside geometry, subject behind the lens, '
+            + 'clipping, an impossible focus, or occluded — naming the check that caught it so you '
+            + 'can correct it. Crossing the 180-degree line is reported as a warning and allowed, '
+            + 'because it is a real creative choice. You may change the CAMERA only: lens, height, '
+            + 'dolly/truck/pedestal, pan/tilt/roll, framing target, occupancy target, rig. Changing '
+            + 'the world, the blocking, who is in the shot or the look is refused by name. '
+            + 'Nothing is written unless you pass apply: true.',
+        schema: {
+            shot_id: { type: 'string' },
+            rationale: { type: 'string', description: 'Why this camera. Required — a change nobody can argue with is one nobody can learn from.' },
+            changes: { type: 'object', description: 'focalLengthMm, cameraHeightM, dollyM, truckM, pedestalM, panDeg, tiltDeg, rollDeg, targetOccupancy, framingTarget, rig' },
+            apply: { type: 'boolean', description: 'Write it onto the shot. Default false — propose first, look, then apply.' },
+            strict: { type: 'boolean', description: 'Refuse a line crossing as well, for a sequence where continuity is the point.' },
+        }, required: ['shot_id', 'rationale', 'changes'],
+    },
+    {
+        name: 'camera_explore_brief',
+        handler: handleWorlds, method: 'GET',
+        path: a => `/film/shots/${a.shot_id}/direct/explore`,
+        description:
+            'The same facts, plus the six coverage categories to propose against: Neutral Wide, '
+            + 'Heroic Low, Long Lens Compression, Extreme Foreground, Over the Shoulder, and '
+            + 'Dutch / Unstable. FREE, and again no cameras are proposed. Send your six back to '
+            + 'camera_explore_accept, which drops any that cannot be shot and says why rather than '
+            + 'padding the set — a coverage grid containing an impossible camera is worse than a '
+            + 'short one.',
+        schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
+    },
+    {
+        name: 'camera_explore_accept',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/direct/explore`,
+        body: a => ({ candidates: a.candidates }),
+        description:
+            'Validate the six cameras you proposed against the world. FREE. Returns the ones that '
+            + 'can be shot, the ones that cannot with the check that caught each, and how far short '
+            + 'of six the usable set falls.',
+        schema: {
+            shot_id: { type: 'string' },
+            candidates: { type: 'array', description: 'One per category: [{ key, rationale, changes }]' },
+        }, required: ['shot_id', 'candidates'],
+    },
     {
         name: 'world_delete',
         handler: handleWorlds, method: 'DELETE',
