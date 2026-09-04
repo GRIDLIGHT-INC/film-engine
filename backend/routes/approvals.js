@@ -167,31 +167,58 @@ function fromPromptPreview(p) {
     };
 }
 
-/** The video path: the preview already prices it and names what is attached. */
+/**
+ * The video path: the preview already prices it and names what is attached.
+ *
+ * MAPPED AGAINST THE ROUTE'S REAL SHAPE, not a plausible one. The first
+ * version read `cost`, `keyframe_attached`, `minimum_applies` and treated
+ * `references` as an array — the route returns `estimate`, a boolean
+ * `init_image`, `minimumApplied`, and `references` as an OBJECT. Every one of
+ * those produced a field that was quietly null, which on a decision packet is
+ * worse than an error: it reads as "no cost" and "nothing attached".
+ */
 function fromVideoPreview(p) {
     const b = p || {};
-    const cost = b.cost || b.estimate || {};
-    const media = [];
-    if (b.keyframe_path) media.push({ role: 'keyframe', path: b.keyframe_path });
+    const est = b.estimate || {};
+    const refs = b.references || {};
+    const dropped = Array.isArray(refs.dropped) ? refs.dropped : [];
+
     return {
-        action: { tier: b.tier || null, model: b.model || null, provider: b.provider || null },
+        action: {
+            tier: b.tier || null,
+            model: b.model || est.model || null,
+            provider: b.provider || null,
+        },
         prompt: {
-            text: b.prompt || '', chars: (b.prompt || '').length,
+            text: b.prompt || '',
+            chars: (b.prompt || '').length,
             ceiling: b.prompt_limit !== undefined ? b.prompt_limit : null,
             truncated_tail: b.prompt_truncated || null,
         },
-        references: (b.references || []).map(r => ({
-            role: r.role || null, subject_name: r.name || r.subject || null,
-            weight: r.weight !== undefined ? r.weight : null, path: r.path || null,
+        /*
+         * `roles` is a list of role NAMES — the preview does not carry a
+         * subject or a path per reference. Reported as what it is rather than
+         * padded with nulls that look like missing data.
+         */
+        references: (refs.roles || []).map(role => ({
+            role, subject_name: null, weight: null, path: null,
         })),
         cost: {
-            credits: cost.credits !== undefined ? cost.credits : null,
-            usd: cost.usd !== undefined ? cost.usd : null,
-            minimum_applies: cost.minimum_applies === true || cost.minimum === true,
+            credits: est.credits !== undefined ? est.credits
+                : (b.estimated_credits !== undefined ? b.estimated_credits : null),
+            usd: est.usd !== undefined ? est.usd
+                : (b.estimated_usd !== undefined ? b.estimated_usd : null),
+            minimum_applies: est.minimumApplied === true,
         },
-        media,
-        keyframeAttached: b.keyframe_attached !== undefined ? !!b.keyframe_attached : undefined,
+        // The preview reports whether the keyframe is attached, not where it
+        // is; the path comes from the asset row so the packet can carry bytes.
+        keyframeAttached: b.init_image === undefined ? undefined : !!b.init_image,
         styleApplied: b.style_applied,
+        // A reference the provider would not take is REPORTED. It is exactly
+        // the kind of thing that is invisible in a picture and changes the
+        // answer, which is what the warnings array is for.
+        droppedReferences: dropped.map(d => `${d.role || 'a reference'}${d.subject ? ` (${d.subject})` : ''}: ${d.reason || 'dropped'}`),
+        previewWarnings: Array.isArray(b.warnings) ? b.warnings : [],
     };
 }
 

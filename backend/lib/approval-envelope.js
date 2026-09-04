@@ -88,6 +88,11 @@ const WARNINGS = Object.freeze([
         why: 'nobody chose this provider — it is where resolution fell through to',
     },
     {
+        id: 'reference_dropped', severity: 'warn',
+        why: 'a reference will not travel — the provider takes fewer than this shot wants, or '
+            + 'refused one — so the frame is conditioned on less than the shot names',
+    },
+    {
         id: 'over_budget', severity: 'block',
         why: 'this run\'s projection exceeds the ceiling it was given, and it will be refused',
     },
@@ -163,9 +168,27 @@ function preSpendEnvelope(input) {
         warnings.push(warning('fallback_provider',
             `resolved to ${o.action.provider}, which this project does not pin`));
     }
+    const dropped = (o.droppedReferences || []).filter(Boolean);
+    if (dropped.length) warnings.push(warning('reference_dropped', dropped.join('; ')));
     if (o.overBudget) {
         warnings.push(warning('over_budget',
             `projected ${o.overBudget.projected} against a ceiling of ${o.overBudget.ceiling}`));
+    }
+
+    /*
+     * The source preview's own warnings, carried through verbatim.
+     *
+     * It already computes things this cannot — an unverified model, a duration
+     * clamped by the provider. Dropping them here would make the packet LESS
+     * informed than the tool it summarises, which is the one thing it must
+     * never be.
+     */
+    for (const w of (o.previewWarnings || [])) {
+        if (typeof w === 'string' && w.trim()) {
+            warnings.push({ id: 'from_preview', severity: 'warn', why: 'reported by the free preview this packet is built from', detail: w });
+        } else if (w && w.message) {
+            warnings.push({ id: 'from_preview', severity: 'warn', why: 'reported by the free preview this packet is built from', detail: String(w.message) });
+        }
     }
 
     const items = (o.media || [])

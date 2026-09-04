@@ -137,6 +137,73 @@ test('warnings come from the registry and each says what it means', () => {
         'an undeclared warning id was accepted');
 });
 
+/*
+ * `cost` MATCHES `video_preview` FOR THE SAME TIER.
+ *
+ * The envelope is assembled from that preview precisely so the two cannot
+ * disagree — a packet somebody says yes to must report the number that will
+ * actually be charged. This is the assertion that keeps it assembled: the day
+ * anybody recomputes the estimate here, the two drift and this fails.
+ *
+ * It caught a real mis-mapping on its first run. The preview returns
+ * `estimate.credits` and `minimumApplied`; this module was reading `cost` and
+ * `minimum_applies`, so every video envelope reported a null cost — which on a
+ * pre-spend decision reads as "free".
+ */
+test('cost matches video_preview for the same tier', async () => {
+    const { shotId } = makeShot({ code: '6A' });
+    db.prepare('UPDATE film_shots SET duration_ms = ? WHERE id = ?').run(5000, shotId);
+    const { handleVideoGen } = require('../routes/video-gen');
+
+    for (const tier of ['draft', 'production']) {
+        const direct = await callRoute('GET',
+            `/film/shots/${shotId}/video/preview?tier=${tier}`, {}, handleVideoGen);
+        assert.strictEqual(direct._status, 200, `video_preview refused for ${tier}`);
+        const est = direct.body.estimate || {};
+
+        const env = await get(`/film/shots/${shotId}/approval-envelope?action=video&tier=${tier}`);
+        assert.strictEqual(env._status, 200, JSON.stringify(env.body).slice(0, 200));
+
+        assert.strictEqual(env.body.cost.credits, est.credits === undefined ? null : est.credits,
+            `${tier}: the envelope's credits disagree with video_preview`);
+        assert.strictEqual(env.body.cost.usd, est.usd === undefined ? null : est.usd,
+            `${tier}: the envelope's usd disagrees with video_preview`);
+        assert.strictEqual(env.body.cost.minimum_applies, est.minimumApplied === true,
+            `${tier}: the envelope disagrees about whether a minimum applies`);
+        // A cost of null on a pre-spend packet reads as free. If the preview
+        // priced it, the envelope must carry the number.
+        if (est.credits !== undefined && est.credits !== null) {
+            assert.notStrictEqual(env.body.cost.credits, null,
+                `${tier}: video_preview priced this and the envelope reported nothing`);
+        }
+        assert.strictEqual(env.body.action.tier, direct.body.tier,
+            `${tier}: the envelope names a different tier than it priced`);
+    }
+});
+
+/* And the fields it maps come from the shape the route really returns. */
+test('the envelope maps video_preview\'s real fields, not plausible ones', async () => {
+    const { shotId } = makeShot({ code: '6B' });
+    db.prepare('UPDATE film_shots SET duration_ms = ? WHERE id = ?').run(4000, shotId);
+    const { handleVideoGen } = require('../routes/video-gen');
+
+    const direct = await callRoute('GET', `/film/shots/${shotId}/video/preview`, {}, handleVideoGen);
+    const env = await get(`/film/shots/${shotId}/approval-envelope?action=video`);
+
+    assert.strictEqual(env.body.action.provider, direct.body.provider,
+        'the envelope names a different provider than the preview');
+    // `init_image` is a BOOLEAN on the preview; reading a `keyframe_path` that
+    // does not exist made every envelope claim no keyframe.
+    const attached = !!direct.body.init_image;
+    const warned = env.body.warnings.some(w => w.id === 'no_keyframe');
+    assert.strictEqual(warned, !attached,
+        'the envelope disagrees with the preview about whether the keyframe is attached');
+    // `references` is an OBJECT on the preview; treating it as an array
+    // silently produced none.
+    assert.strictEqual(env.body.references.length, (direct.body.references.roles || []).length,
+        'the envelope reports a different number of references than the preview');
+});
+
 // ══ the fingerprint ═════════════════════════════════════════════════════════
 
 /*
@@ -333,3 +400,72 @@ function walk(dir) {
     }
     return out;
 }
+
+/*
+ * THE "DO NOT" THE BUILD ORDER IS MOST WORRIED ABOUT:
+ * do not let a scheduler's convenience turn a free tool into one that writes.
+ *
+ * A packet that wrote anything could not be raised speculatively, and raising
+ * it speculatively is the only way it gets used. Behavioural: snapshot every
+ * table the packet touches, raise both packets, and require the database to be
+ * byte-identical afterwards.
+ */
+test('raising a decision packet writes nothing', async () => {
+    const ctx = makeShot({ code: '7A' });
+    frame(ctx.shotId, ctx.projectId, 1, {});
+
+    const TABLES = ['film_assets', 'film_shots', 'film_scenes', 'film_projects',
+                    'film_usage_events', 'film_cost_entries', 'film_previs_blocking'];
+    const snapshot = () => TABLES.map(t => {
+        try { return `${t}:${db.prepare(`SELECT count(*) n FROM ${t}`).get().n}`; }
+        catch (_) { return `${t}:absent`; }
+    }).join(' ');
+
+    const before = snapshot();
+    await get(`/film/shots/${ctx.shotId}/approval-envelope?action=image`);
+    await get(`/film/shots/${ctx.shotId}/approval-envelope?action=video`);
+    await get(`/film/shots/${ctx.shotId}/take-candidates`);
+    assert.strictEqual(snapshot(), before,
+        'raising a decision packet changed the database — a packet that writes cannot be raised speculatively');
+});
+
+/* And both are GET-only on the wire, so no caller can turn one into a write. */
+test('both decision packets are GET, and refuse anything else', async () => {
+    const ctx = makeShot({ code: '7B' });
+    for (const tail of ['approval-envelope', 'take-candidates']) {
+        for (const method of ['POST', 'PUT', 'DELETE']) {
+            const r = await callRoute(method, `/film/shots/${ctx.shotId}/${tail}`, {}, handleApprovals);
+            assert.strictEqual(r._status, 405,
+                `${method} /${tail} was not refused — a free tool must not be writable`);
+        }
+    }
+    const { ALL_ROUTE_TOOLS } = require('../lib/mcp-tools');
+    for (const name of ['approval_envelope', 'take_candidates']) {
+        const t = ALL_ROUTE_TOOLS.find(x => x.name === name);
+        assert.strictEqual(t.method, 'GET', `${name} is not a GET tool`);
+        assert.match(t.description, /FREE/, `${name} does not say it is free`);
+    }
+});
+
+/*
+ * And no field is shaped for one particular consumer. Every key must be
+ * useful in the CLI and on the page — a consumer-specific field is how a
+ * general packet quietly becomes that consumer's private format.
+ */
+test('no envelope field is shaped for a particular consumer', () => {
+    const CONSUMER_SHAPED = /(embed|attachment|thread_ts|channel|blocks|components|button|emoji|webhook)/i;
+    const walkKeys = (o, seen) => {
+        if (!o || typeof o !== 'object') return seen;
+        for (const k of Object.keys(o)) {
+            seen.push(k);
+            if (o[k] && typeof o[k] === 'object') walkKeys(Array.isArray(o[k]) ? o[k][0] : o[k], seen);
+        }
+        return seen;
+    };
+    const pre = envelope.preSpendEnvelope({ media: [], references: [{ role: 'plate' }] });
+    const take = envelope.takeEnvelope({ versions: [{ version: 1 }] });
+    for (const key of [...walkKeys(pre, []), ...walkKeys(take, [])]) {
+        assert.ok(!CONSUMER_SHAPED.test(key),
+            `"${key}" is shaped for one consumer — the packet must be useful in the CLI and the page too`);
+    }
+});
