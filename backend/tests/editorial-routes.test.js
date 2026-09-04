@@ -17,7 +17,7 @@ const crypto = require('crypto');
 const http = require('http');
 
 const TEST_DIR = path.join(os.tmpdir(), 'film-engine-editorial-' + crypto.randomUUID().slice(0, 8));
-const TEST_PORT = 14100 + Math.floor(Math.random() * 800);
+const TEST_PORT = 14000 + Math.floor(Math.random() * 900);
 const BASE_URL = `http://localhost:${TEST_PORT}`;
 
 let serverProcess;

@@ -311,8 +311,26 @@ test('W5 · bundle sends the strip as references; legs does not, and both say wh
     // legs must NOT attach them: it is N-1 first/last generations, and a strip
     // sent as references beside its own endpoints asks the model which picture
     // is the truth.
-    assert.ok(/shape_ === 'bundle' \? contractFor\(model\) : null/.test(gen),
+    /*
+     * Bound to the RULE, not to an exact call shape.
+     *
+     * This used to match the literal `shape_ === 'bundle' ? contractFor(model)
+     * : null`, and it broke the day the call improved — the true branch now
+     * prefers the provider's own declared contract before falling back to the
+     * model table. A correct change read as a regression, which is how an
+     * assertion coupled to a call shape earns itself a green-by-deletion.
+     *
+     * The rule is: the contract is resolved ONLY for a bundle, and is null for
+     * anything else. Bounded by the statement itself rather than a character
+     * window.
+     */
+    const at = gen.indexOf('const bundleContract =');
+    assert.notStrictEqual(at, -1, 'the bundle contract gate is gone');
+    const stmt = gen.slice(at, gen.indexOf(';', at));
+    assert.match(stmt, /shape_ === 'bundle'/,
         'the reference path is not gated on the bundle shape — legs would attach the strip too');
+    assert.match(stmt, /:\s*null\s*$/,
+        'a non-bundle shape still resolves a contract, so legs would attach the strip too');
 
     // And what the model refused is named. A bundle silently degraded to a
     // plain generation looks exactly like one that worked.

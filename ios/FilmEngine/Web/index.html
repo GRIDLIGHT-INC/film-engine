@@ -6631,6 +6631,20 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <div id="settingsStyleWarning"></div>
                 </div>
                 <div class="form-group">
+                    <label>Draft video while working</label>
+                    <label style="display:flex;align-items:center;gap:8px;font-weight:400;">
+                        <input type="checkbox" id="settingsVideoDraft" data-field="video_draft">
+                        <span>Generate clips at the provider's smallest raster, and finish at delivery size later</span>
+                    </label>
+                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                        Most generated clips are thrown away, so paying delivery rates for them is the
+                        largest avoidable cost here. The floor is the <em>model's</em>, not a setting:
+                        on Seedance that is 480p and roughly a fifth of the price; on Runway the
+                        smallest ratio is 720p, so drafting there makes the request honest rather than
+                        cheaper. Turn it off to generate at delivery size from the start.
+                    </p>
+                </div>
+                <div class="form-group">
                     <label>Status</label>
                     <select id="settingsStatus" data-field="status">
                         <option value="concept">Concept</option>
@@ -28265,6 +28279,10 @@ ${fountainText.slice(0, 50000)}`;
             document.getElementById('settingsTitle').value = state.currentProject.title || '';
             document.getElementById('settingsLogline').value = state.currentProject.logline || '';
             document.getElementById('settingsStylePreset').value = state.currentProject.style_preset || '';
+            // Defaults ON, matching the server: an unset project drafts.
+            document.getElementById('settingsVideoDraft').checked =
+                state.currentProject.video_draft === undefined || state.currentProject.video_draft === null
+                    ? true : !!state.currentProject.video_draft;
             document.getElementById('settingsStyleWarning').innerHTML = '';
             document.getElementById('settingsGenre').value = state.currentProject.genre || '';
             document.getElementById('settingsStatus').value = state.currentProject.status || 'concept';
@@ -28731,6 +28749,7 @@ ${fountainText.slice(0, 50000)}`;
             genre: document.getElementById('settingsGenre').value.trim(),
             status: document.getElementById('settingsStatus').value,
             style_preset: document.getElementById('settingsStylePreset').value.trim(),
+            video_draft: document.getElementById('settingsVideoDraft').checked ? 1 : 0,
             client: document.getElementById('settingsClient').value.trim(),
             campaign: document.getElementById('settingsCampaign').value.trim(),
             // Typed in seconds and stored in milliseconds, which is how a

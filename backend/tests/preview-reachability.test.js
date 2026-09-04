@@ -111,7 +111,7 @@ test('every preview URL the page builds is a route shape the server dispatches',
 test('every preview ANSWERS with something the dialog can show', async () => {
     const dir = path.join(os.tmpdir(), 'fe-prev-' + crypto.randomUUID().slice(0, 8));
     fs.mkdirSync(dir, { recursive: true });
-    const port = 3800 + Math.floor(Math.random() * 150);
+    const port = 23500 + Math.floor(Math.random() * 400);
     const proc = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')],
         { env: { ...process.env, PORT: String(port), FILM_DATA_DIR: dir }, stdio: 'pipe' });
     proc.stdout.on('data', () => {}); proc.stderr.on('data', () => {});

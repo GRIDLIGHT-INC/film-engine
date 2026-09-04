@@ -31,6 +31,16 @@ const { describe, it, before, after } = require('node:test');
 // provider registry, which caches the answer.
 process.env.GRIDLIGHT_ENABLED = '1';
 
+/*
+ * Retries are REAL SLEEPS — 5s, 10s, 20s per failing step. In production that
+ * backoff is right; here it meant this file spent 35 of its 46 seconds asleep,
+ * and a 46-second file resets connections under the full suite's parallelism.
+ * That reported a scope gate which passes perfectly in isolation as four
+ * separate product failures. Set before the server is spawned, so the child
+ * inherits it.
+ */
+process.env.FILM_RETRY_BACKOFF_MS = process.env.FILM_RETRY_BACKOFF_MS || '1';
+
 const assert = require('node:assert/strict');
 const { spawn } = require('child_process');
 const path = require('path');
@@ -44,8 +54,10 @@ const { ASSET_TYPE } = require('../lib/media-kinds');
 const { STEP_CAPABILITY } = require('../routes/pipeline');
 
 const TEST_DIR = path.join(os.tmpdir(), 'film-engine-scope-' + crypto.randomUUID().slice(0, 8));
-const TEST_PORT = 18400 + Math.floor(Math.random() * 500);
+const TEST_PORT = 21000 + Math.floor(Math.random() * 900);
 const BASE_URL = `http://localhost:${TEST_PORT}`;
+let serverLog = '';
+let serverExit = null;
 let serverProcess, mockGateway;
 
 /**
@@ -83,7 +95,17 @@ function request(urlPath, opts = {}) {
             res.on('data', c => data += c);
             res.on('end', () => { let p; try { p = JSON.parse(data); } catch { p = data; } resolve({ status: res.statusCode, data: p }); });
         });
-        req.on('error', reject);
+            /*
+         * A socket error is reported WITH what the server said. "read
+         * ECONNRESET" alone sends the reader to the network; the child's last
+         * words say whether it crashed, was killed, or simply closed.
+         */
+        req.on('error', (err) => {
+            const tail = (serverLog || '').trim().split('\n').slice(-6).join('\n');
+            reject(new Error(`${err.message} — ${method} ${urlPath}\n`
+                + `  server: ${serverExit || 'still running'}\n`
+                + (tail ? `  last output:\n    ${tail.replace(/\n/g, '\n    ')}` : '  (no server output)')));
+        });
         if (body) req.write(body);
         req.end();
     });
@@ -149,8 +171,15 @@ describe('scene-scoped steps run once per scene, not once per shot', () => {
             },
             stdio: 'pipe',
         });
-        serverProcess.stderr.on('data', () => {});
-        serverProcess.stdout.on('data', () => {});
+        /*
+         * KEEP the child's output. It used to be discarded, so when this file
+         * failed under the full suite's parallelism the error was a bare
+         * ECONNRESET and the server's own account of why it closed the socket
+         * was thrown away — four tests accusing a scope gate that works.
+         */
+        serverProcess.stderr.on('data', c => { serverLog += c.toString(); });
+        serverProcess.stdout.on('data', c => { serverLog += c.toString(); });
+        serverProcess.on('exit', (code, sig) => { serverExit = `exit=${code} signal=${sig}`; });
         await waitForServer();
 
         const proj = await request('/film/projects', { method: 'POST', body: { title: 'Scope Film', logline: 'x' } });

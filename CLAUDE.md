@@ -4126,7 +4126,15 @@ Create numbered SQL file in `backend/db/migrations/` (e.g., `020_add_new_table.s
 ### Testing
 ```bash
 # Run all unit tests
-node --test backend/tests/*.test.js
+#
+# --test-concurrency=4 is NOT optional on a many-core machine. The default is
+# one worker per core (48 here), which spawns dozens of API servers and
+# synchronous ffmpeg processes at once; the event loop of a blocked server
+# stalls long enough for the TCP backlog to reset an in-flight poll, and the
+# suite then reports four to twenty failures in DIFFERENT files each run —
+# accusing code that passes perfectly in isolation. Capped, it is deterministic
+# and costs nothing: 87s against 83s.
+node --test --test-concurrency=4 backend/tests/*.test.js
 
 # Run individual test files
 node --test backend/tests/nle-export.test.js

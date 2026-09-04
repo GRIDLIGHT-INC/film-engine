@@ -398,10 +398,28 @@ test('regenerating a view replaces its row rather than adding one', () => {
     assert.match(before, /character_id = \?/,
         'the replacement is not scoped to the character');
 
-    // The FILE must survive: it is the same path this generation just wrote.
+    /*
+     * The PLATE FILE must survive. Bound to the destination path, not to any
+     * unlink at all: the decline branch legitimately removes its own scratch
+     * cut, and forbidding every unlink reported that correct cleanup as the
+     * bug. What must never happen is unlinking `filePath` — the per-view name
+     * the approved plate already occupies.
+     */
     const deleteBlock = before.slice(before.indexOf('const stale'));
-    assert.ok(!/unlinkSync/.test(deleteBlock),
-        'the replacement deletes the file it just wrote');
+    assert.ok(!/unlinkSync\(\s*filePath\s*\)/.test(deleteBlock),
+        'the replacement deletes the plate file at the per-view path');
+
+    /*
+     * And the cut must not land on the plate's own name before the decision is
+     * made. ffmpeg -y over `filePath` destroys an approved plate's pixels
+     * BEFORE mayOverwrite() is consulted, so declining to replace it was the
+     * one operation that reliably destroyed it.
+     */
+    const cutBlock = src.slice(Math.max(0, insertAt - 4000), insertAt);
+    const cut = /execFileSync\([\s\S]{0,400}?'-frames:v', '1', '-q:v', '2', (\w+)\]/.exec(cutBlock);
+    assert.ok(cut, 'the orbit frame cut is gone — the scan is broken');
+    assert.notStrictEqual(cut[1], 'filePath',
+        'the orbit cuts straight over the per-view plate, before deciding whether it may replace it');
 });
 
 test('clicking a character shows the whole turnaround, not one picture', () => {

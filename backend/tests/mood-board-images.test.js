@@ -49,7 +49,7 @@ const PNG_1PX = 'data:image/png;base64,'
 async function withServer(fn) {
     const dir = path.join(os.tmpdir(), 'fe-mood-' + crypto.randomUUID().slice(0, 8));
     fs.mkdirSync(dir, { recursive: true });
-    const port = 3700 + Math.floor(Math.random() * 250);
+    const port = 23000 + Math.floor(Math.random() * 400);
     const proc = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')],
         { env: { ...process.env, PORT: String(port), FILM_DATA_DIR: dir }, stdio: 'pipe' });
     proc.stdout.on('data', () => {});

@@ -169,3 +169,44 @@ test('db/database still resolves its path at import time, so require order matte
         `FILM_DATA_DIR must be bound to a module-scope const; found: "${line.trim()}"`
     );
 });
+
+
+/**
+ * No two test files may gamble on the same port range.
+ *
+ * `pipeline-scope` drew from 18400-18900, `consistency-routes` from 18100-18700
+ * and `providers-elevenlabs` from 18100-18800 — three overlapping ranges, so
+ * under the full suite's parallelism two servers periodically raced for one
+ * port and the loser's client read ECONNRESET. That surfaced as FOUR product
+ * failures in a scope gate which passes perfectly in isolation: the most
+ * expensive kind of flake, because it accuses working code.
+ *
+ * Derived from the source rather than a list, so a file added later is in the
+ * denominator with nothing to remember.
+ */
+test('no two test files can draw the same port', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const dir = __dirname;
+    const ranges = [];
+    for (const name of fs.readdirSync(dir).filter(f => f.endsWith('.test.js'))) {
+        const src = fs.readFileSync(path.join(dir, name), 'utf8');
+        for (const m of src.matchAll(/(\d{4,5}) \+ Math\.floor\(Math\.random\(\) \* (\d+)\)/g)) {
+            ranges.push({ name, lo: Number(m[1]), hi: Number(m[1]) + Number(m[2]) - 1 });
+        }
+    }
+    assert.ok(ranges.length >= 5,
+        `the port scan found ${ranges.length} ranges — it is broken, not the suite`);
+
+    const clashes = [];
+    for (let i = 0; i < ranges.length; i++) {
+        for (let j = i + 1; j < ranges.length; j++) {
+            const a = ranges[i], b = ranges[j];
+            if (a.name === b.name) continue;
+            if (a.lo <= b.hi && b.lo <= a.hi) {
+                clashes.push(`${a.name} [${a.lo}-${a.hi}] overlaps ${b.name} [${b.lo}-${b.hi}]`);
+            }
+        }
+    }
+    assert.deepStrictEqual(clashes, [], `overlapping port ranges:\n  ${clashes.join('\n  ')}`);
+});

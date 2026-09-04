@@ -23,7 +23,17 @@ const PIPELINE_STEPS = [
 const STEP_IDS = PIPELINE_STEPS.map(s => s.id);
 
 const MAX_RETRIES = 3;
-const RETRY_BACKOFF_MS = 5000;
+/*
+ * Five seconds, doubling — 5s, 10s, 20s. Right in production: a provider that
+ * just refused is not ready again immediately, and hammering it earns a 429.
+ *
+ * Overridable because a TEST should not be dominated by real sleeping. A run
+ * with three legitimately-failing steps spent 35 of its 46 seconds asleep, and
+ * a 46-second test is what made this file reset connections under the full
+ * suite's parallelism — reporting a scope gate that works perfectly in
+ * isolation as four separate product failures.
+ */
+const RETRY_BACKOFF_MS = Number(process.env.FILM_RETRY_BACKOFF_MS || 5000);
 
 /**
  * Get the list of steps that can execute next given what's already completed.

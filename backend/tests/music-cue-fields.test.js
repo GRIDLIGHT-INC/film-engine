@@ -135,11 +135,20 @@ test('the musical facts survive a long description', () => {
 });
 
 test('the prompt honours its own ceiling', () => {
-    const { MUSIC_PROMPT_LIMIT } = require('../lib/scene-score');
-    const p = buildMusicPrompt(fullCue(), SCENE, PROJECT, {});
-    assert.ok(p.prompt.length <= MUSIC_PROMPT_LIMIT,
-        `the prompt is ${p.prompt.length} characters against a ${MUSIC_PROMPT_LIMIT} ceiling — `
-        + 'the trim returned the tail whole because the reference, not the description, was parts[0]');
+    /*
+     * The ceiling that APPLIES to this cue, read from the one function that
+     * decides it — not a typed 600. A cue somebody wrote earns the larger
+     * written allowance; a derivation does not. Asserting the derived ceiling
+     * against an authored cue is asserting the wrong rule, which is what this
+     * test did until the two-ceiling design landed and it was not updated.
+     */
+    const { promptLimitFor } = require('../lib/music-prompt');
+    const cue = fullCue();
+    const limit = promptLimitFor(cue);
+    const p = buildMusicPrompt(cue, SCENE, PROJECT, {});
+    assert.ok(p.prompt.length <= limit,
+        `the prompt is ${p.prompt.length} characters against its own ${limit} ceiling`);
+    assert.strictEqual(p.prompt_source, 'written', 'a cue with a written description read as derived');
 });
 
 test('what gets cut is the description, never a musical fact', () => {
@@ -285,10 +294,12 @@ test('a facts-heavy cue keeps its description, and stays inside the ceiling', ()
      * ceiling on their own, and the old fallback returned them and dropped the
      * description — the field the contract calls the one that matters most.
      */
-    const { MUSIC_PROMPT_LIMIT } = require('../lib/scene-score');
-    const p = buildMusicPrompt(factsHeavyCue(), SCENE, PROJECT, {});
-    assert.ok(p.prompt.length <= MUSIC_PROMPT_LIMIT,
-        `${p.prompt.length} characters against a ${MUSIC_PROMPT_LIMIT} ceiling`);
+    const { promptLimitFor } = require('../lib/music-prompt');
+    const cue = factsHeavyCue();
+    const limit = promptLimitFor(cue);
+    const p = buildMusicPrompt(cue, SCENE, PROJECT, {});
+    assert.ok(p.prompt.length <= limit,
+        `${p.prompt.length} characters against its own ${limit} ceiling`);
     assert.match(p.prompt, /studio ident fanfare that starts almost silent/i,
         `the description was squeezed out by the facts:\n  ${p.prompt}`);
     assert.match(p.prompt, /in D major/, 'the key was lost');
@@ -317,7 +328,7 @@ test('a cue with every field written at length still carries its description', (
      * first sentence, and without a reserved minimum the description is dropped
      * entirely. Proven by mutation: floor 0 loses it on exactly this cue.
      */
-    const { MUSIC_PROMPT_LIMIT } = require('../lib/scene-score');
+    const { promptLimitFor } = require('../lib/music-prompt');
     const maximal = factsHeavyCue({
         mood: 'delicate becoming grand, warm, hopeful, unhurried, nostalgic, intimate at the '
             + 'start and full-hearted at the close, never triumphal, never martial',
@@ -327,9 +338,10 @@ test('a cue with every field written at length still carries its description', (
             'solo French horn', 'timpani', 'harp', 'suspended cymbal (brushed)', 'upright bass',
             'glockenspiel', 'tremolo strings', 'muted trumpet', 'bass clarinet', 'pizzicato cellos'],
     });
+    const limit = promptLimitFor(maximal);
     const p = buildMusicPrompt(maximal, SCENE, PROJECT, {});
-    assert.ok(p.prompt.length <= MUSIC_PROMPT_LIMIT,
-        `${p.prompt.length} characters against a ${MUSIC_PROMPT_LIMIT} ceiling`);
+    assert.ok(p.prompt.length <= limit,
+        `${p.prompt.length} characters against its own ${limit} ceiling`);
     assert.match(p.prompt, /studio ident fanfare that starts almost silent/i,
         `the description was dropped entirely for the facts:\n  ${p.prompt}`);
 });

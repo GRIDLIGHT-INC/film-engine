@@ -174,6 +174,33 @@ function toClause(text) {
  */
 const WRITTEN_PROMPT_LIMIT = Number(process.env.MUSIC_WRITTEN_PROMPT_LIMIT || 4000);
 
+/**
+ * Was this cue WRITTEN by somebody, or derived from the scene?
+ *
+ * Only a written one earns the larger allowance. The rule used to be "it has a
+ * description, so a person wrote it" — and that read presence as provenance.
+ * `scene-score.cueFromBrief` derives a cue and fills in `description` from the
+ * scene, so every derived cue quietly claimed the 4000-character budget and
+ * shipped a whole scene of camera blocking to a music model. That is precisely
+ * the failure the 600 ceiling exists to prevent, arriving through the door
+ * built to protect a director's own words.
+ *
+ * A derivation now says so, and this is the ONE place the question is answered
+ * — the builder and its tests read the same function, so they cannot come to
+ * disagree about which ceiling applies.
+ */
+function isAuthored(cue) {
+    const c = cue || {};
+    if (c.derived === true) return false;
+    return String(c.description || '').trim().length > 0;
+}
+
+/** The ceiling that actually applies to this cue. */
+function promptLimitFor(cue) {
+    const { MUSIC_PROMPT_LIMIT } = require('./scene-score');
+    return isAuthored(cue) ? WRITTEN_PROMPT_LIMIT : MUSIC_PROMPT_LIMIT;
+}
+
 function fitMusicPrompt(parts, limitOverride) {
     const { MUSIC_PROMPT_LIMIT: DERIVED_LIMIT, summarise } = require('./scene-score');
     const MUSIC_PROMPT_LIMIT = Number(limitOverride) > 0 ? Number(limitOverride) : DERIVED_LIMIT;
@@ -350,7 +377,7 @@ function buildMusicPrompt(musicCue, scene, project, opts) {
      * one `music_brief` states outright: a cue somebody wrote always beats the
      * derivation.
      */
-    const authored = String(cue.description || '').trim().length > 0;
+    const authored = isAuthored(cue);
 
     return {
         type: 'score',
@@ -591,4 +618,7 @@ module.exports = {
     MOOD_TO_MUSIC,
     LOCATION_TO_AMBIENT,
     TIME_AMBIENT_MODIFIER,
+    isAuthored,
+    promptLimitFor,
+    WRITTEN_PROMPT_LIMIT,
 };

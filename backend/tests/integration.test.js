@@ -15,7 +15,7 @@ const http = require('http');
 
 // Test data directory
 const TEST_DIR = path.join(os.tmpdir(), 'film-engine-test-' + crypto.randomUUID().slice(0, 8));
-const TEST_PORT = 13100 + Math.floor(Math.random() * 1000);
+const TEST_PORT = 13000 + Math.floor(Math.random() * 900);
 const BASE_URL = `http://localhost:${TEST_PORT}`;
 
 let serverProcess;

@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "migrate": "node db/migrate.js"
+    "migrate": "node db/migrate.js",
+    "test": "node --test --test-concurrency=4 tests/*.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",

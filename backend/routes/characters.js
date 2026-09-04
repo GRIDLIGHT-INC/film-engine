@@ -1217,12 +1217,26 @@ async function generateOrbit(req, res, charId) {
     for (const frame of plan.frames) {
         const filename = `${safeName}_${frame.view}.png`;
         const filePath = require('../lib/file-storage').getFilePath(ch.project_id, 'refsheets', filename);
+
+        /*
+         * CUT TO A SCRATCH PATH, NOT OVER THE PLATE.
+         *
+         * `filename` is exactly what plateFileName() gives a character view, so
+         * cutting straight to it meant ffmpeg -y had already destroyed the
+         * approved plate's pixels BEFORE mayOverwrite() was consulted — and the
+         * decline path then unlinked the file outright, leaving the approved
+         * row pointing at nothing. Declining to replace a plate was the one
+         * operation that reliably destroyed it.
+         *
+         * The frame is only moved into place once we know we may take the view.
+         */
+        const scratchPath = filePath + '.orbit-cut';
         try {
             require('child_process').execFileSync(bin.bin,
-                ['-y', '-ss', String(frame.atSeconds), '-i', clipPath, '-frames:v', '1', '-q:v', '2', filePath],
+                ['-y', '-ss', String(frame.atSeconds), '-i', clipPath, '-frames:v', '1', '-q:v', '2', scratchPath],
                 { stdio: 'ignore', timeout: 30000 });
         } catch (_) { continue; }
-        if (!fsx.existsSync(filePath)) continue;
+        if (!fsx.existsSync(scratchPath)) continue;
 
         /*
          * A BOOTSTRAP, not the identity source.
@@ -1249,9 +1263,13 @@ async function generateOrbit(req, res, charId) {
             // thing the director asked for and did not get.
             kept.push({ view: frame.view, reason: 'an approved identity anchor already exists — '
                 + 'an orbit frame is a bootstrap and will not replace it' });
-            try { fsx.unlinkSync(filePath); } catch (_) { /* the frame we just cut */ }
+            // Only the scratch cut is removed. The approved plate is untouched:
+            // it was never written over.
+            try { fsx.unlinkSync(scratchPath); } catch (_) { /* the frame we just cut */ }
             continue;
         }
+        // Taken: the cut becomes the plate for this view.
+        try { fsx.renameSync(scratchPath, filePath); } catch (_) { continue; }
         for (const old of stale) db.prepare('DELETE FROM film_assets WHERE id = ?').run(old.id);
 
         const assetId = generateId();
@@ -1263,6 +1281,15 @@ async function generateOrbit(req, res, charId) {
         ).run(assetId, ch.project_id, charId, filePath, filename,
             JSON.stringify({ character_id: charId, view: frame.view, from: 'orbit', at_seconds: frame.atSeconds }),
             provider.id, result.provider_model || '');
+        /*
+         * Stamped like every other generated plate. An orbit frame that
+         * persists without a fingerprint carries NULL, and NULL means "outside
+         * the workflow" — so a character whose appearance is rewritten would
+         * never report the turnaround cut from the old description as behind.
+         * stampAsset never throws: a fingerprint that cannot be computed must
+         * not fail a generation that already succeeded and cost money.
+         */
+        require('../lib/artefact-fingerprint').stampAsset(assetId, 'character_plate', { charId });
         made.push({ view: frame.view, file: filename, at_seconds: frame.atSeconds });
     }
 

@@ -339,7 +339,7 @@ describe('providers/elevenlabs', () => {
     });
 
     it('voice route uses the configured ElevenLabs provider and stamps asset provenance', async () => {
-        const appPort = 18100 + Math.floor(Math.random() * 700);
+        const appPort = 22000 + Math.floor(Math.random() * 900);
         appBaseUrl = `http://127.0.0.1:${appPort}`;
         appProcess = require('child_process').spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
             env: {

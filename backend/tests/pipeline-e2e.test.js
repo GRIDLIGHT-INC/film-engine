@@ -21,7 +21,7 @@ const crypto = require('crypto');
 const http = require('http');
 
 const TEST_DIR = path.join(os.tmpdir(), 'film-engine-e2e-' + crypto.randomUUID().slice(0, 8));
-const TEST_PORT = 17700 + Math.floor(Math.random() * 600);
+const TEST_PORT = 18000 + Math.floor(Math.random() * 900);
 const BASE_URL = `http://localhost:${TEST_PORT}`;
 let serverProcess, mockGateway;
 

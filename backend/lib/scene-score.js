@@ -196,6 +196,13 @@ function scoreBrief(scene, context, project) {
 function cueFromBrief(brief) {
     if (!brief) return null;
     return {
+        /*
+         * Marked as a DERIVATION, so it takes the 600-character ceiling rather
+         * than the allowance written for a director's own brief. Without this
+         * flag the description below — the scene's action, summarised — reads
+         * as somebody having written the cue.
+         */
+        derived: true,
         description: brief.description,
         mood: brief.mood || undefined,
         genre: brief.genre || undefined,
