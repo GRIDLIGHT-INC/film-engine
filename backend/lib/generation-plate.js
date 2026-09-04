@@ -174,7 +174,35 @@ function moveProse(move) {
     return out + '.';
 }
 
+/**
+ * Decode a rendered plate, and refuse anything that is not a PNG.
+ *
+ * A plate exists to be geometrically exact. Accepting whatever arrives is how a
+ * JPEG's compression artefacts end up in the one reference whose whole job is
+ * to fix the framing — and the MIME label is not the evidence: it is checked
+ * against the PNG signature in the bytes, because a file called .png that is
+ * not one is a lie a decoder eventually calls.
+ */
+const PNG_MAGIC = Buffer.from('89504e470d0a1a0a', 'hex');
+
+function decodePlateImage(dataUri) {
+    const m = /^data:([^;,]+);base64,(.+)$/.exec(String(dataUri || ''));
+    if (!m) return { ok: false, error: 'a plate must be posted as a base64 data URI' };
+    if (!/^image\/png$/i.test(m[1])) {
+        return { ok: false, error: `a plate must be a PNG, not ${m[1]} — compression artefacts in `
+            + 'the reference that fixes the framing are the last thing to condition a model on' };
+    }
+    let bytes;
+    try { bytes = Buffer.from(m[2], 'base64'); }
+    catch (_) { return { ok: false, error: 'the plate could not be decoded' }; }
+    if (bytes.length < 8 || !bytes.subarray(0, 8).equals(PNG_MAGIC)) {
+        return { ok: false, error: 'the bytes are not a PNG, whatever the data URI claims' };
+    }
+    return { ok: true, bytes };
+}
+
 module.exports = {
     SPENDS, PLATE_OUTPUTS, WHY_NOT_FINGERPRINTED, DIRECTION_WORDS,
     platePromptLead, plateSizeFor, buildPlateRecord, plateState, moveProse,
+    decodePlateImage, PNG_MAGIC,
 };

@@ -463,6 +463,16 @@ const CAPABILITY_BUILDERS = {
                 // read a tag (which decides how it is addressed).
                 anchorAttached: ctx.anchorAttached || undefined,
                 anchorTag: ctx.anchorTag || undefined,
+                /*
+                 * Whether a generation plate is in the payload.
+                 *
+                 * The picture alone is not enough: a flat grey render arriving
+                 * as reference 0 with nothing said about it reads as a STYLE
+                 * reference, and the model returns a grey frame. It ranks
+                 * first, so — exactly as the anchor does — it is addressed by
+                 * position where the provider cannot read a tag.
+                 */
+                plateAttached: (ctx.references || []).some(r => r && r.kind === 'plate') || undefined,
             });
 
         const payload = imageRequestPayload({
@@ -1218,6 +1228,17 @@ function loadShotContext(shotId, opts) {
             keepPlates,
             // Which view of the location this shot is pointed at.
             locationView: sceneCard.location_view || '',
+            /*
+             * The generation plate, which ranks FIRST when one exists.
+             *
+             * Passed HERE and not only from the board routes, because this is
+             * the shared path: `shot_prompt`, the orchestrator and the flow
+             * canvas all build through it. Wiring the three storyboard call
+             * sites and leaving this one is exactly the divergence this module
+             * exists to prevent — the board would generate against the plate
+             * and every other path would silently generate without it.
+             */
+            shotId,
         });
         anchorCovers = anchor.shot
             ? [...require('./shot-anchor').subjectsCoveredBy(db, anchor, keepPlates)] : [];

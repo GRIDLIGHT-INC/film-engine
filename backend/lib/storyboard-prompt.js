@@ -137,6 +137,17 @@ const DEFAULT_NEGATIVE_PROMPT = 'blurry, low quality, distorted, deformed, ugly,
 const PROMPT_PRIORITY = [
     { id: 'camera_note', protected: true,
       why: 'a short, deliberate instruction about where the camera is — the last thing that should be lost' },
+    /*
+     * The geometric plate, when previs rendered one.
+     *
+     * Ranked ahead of the anchor because it outranks it in KIND_RANK for the
+     * same reason: the anchor says what the world looks like, the plate says
+     * where the camera IS. Protected — a plate travelling as an unexplained
+     * flat grey picture is read as a style reference, which is worse than not
+     * attaching it at all.
+     */
+    { id: 'plate', protected: true,
+      why: 'names the geometric plate; without it reference 0 is an unexplained grey render' },
     { id: 'anchor', protected: true,
       why: 'names the scene being re-shot; without it the attached frame is an unexplained picture' },
     { id: 'direction', protected: true,
@@ -481,6 +492,19 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     //
     // Present only when the caller attached the frame AND can address it, so a
     // project with no anchor builds byte-identically.
+    /*
+     * The geometric plate leads everything, including the anchor.
+     *
+     * It ranks 0 in KIND_RANK because it is the one reference that fixes where
+     * the camera is rather than what the world looks like — so it is named
+     * first, and the anchor that follows is described as what it is. Without
+     * this sentence the plate travels as an unexplained grey picture and the
+     * model averages it into the look.
+     */
+    if (opts.plateAttached) {
+        add('plate', require('./generation-plate').platePromptLead({ tag: null }));
+    }
+
     if (opts.anchorAttached) {
         add('anchor', require('./shot-anchor').anchorLeadPhrase(opts.anchorTag));
     }

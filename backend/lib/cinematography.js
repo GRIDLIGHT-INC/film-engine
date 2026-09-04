@@ -205,17 +205,60 @@ function validateProposal(proposal, brief) {
  * pedestal are relative because they are moves. Pan, tilt and roll are relative
  * for the same reason.
  */
-function applyProposal(camera, proposal) {
+function applyProposal(camera, proposal, world) {
     const c = camera || {};
     const ch = (proposal && proposal.changes) || {};
     const pos = (c.position || [0, 0, 0]).slice();
     const rot = (c.rotation || [0, 0, 0]).slice();
 
-    if (ch.cameraHeightM !== undefined) pos[1] = Number(ch.cameraHeightM);
-    if (ch.pedestalM !== undefined) pos[1] += Number(ch.pedestalM);
+    /*
+     * METRES IN, WORLD UNITS OUT.
+     *
+     * Every field here is named `...M` and every one of them was written
+     * straight into `camera.position`, which is in the reconstruction's own
+     * units. Marble promises no unit, so on a real diner calibrated at 1.75
+     * units per metre an ordinary 1.6 m eye-height camera landed at 1.6 world
+     * units — 2.8 m up, through the ceiling — and `inside_geometry` refused the
+     * most ordinary camera in film.
+     *
+     * `toMetres` already exists for the other direction; this is its inverse,
+     * and it obeys the same rule the scale module is built around: a NULL
+     * factor is not 1.0. An uncalibrated world cannot convert a metric
+     * instruction, so `metric()` returns null and the caller REFUSES rather
+     * than quietly reinterpreting metres as world units — which is the silent
+     * wrong answer this whole module is written against.
+     */
+    const factor = Number(world && world.scale_factor);
+    const calibrated = Number.isFinite(factor) && factor > 0;
+    const units = (m) => (calibrated ? Number(m) / factor : null);
+
+    /*
+     * AND HEIGHT IS MEASURED FROM THE FLOOR, not from the origin.
+     *
+     * A reconstruction's origin sits wherever Marble put it — on this diner the
+     * floor is at Y = -0.967 — so "put the camera at 1.6 m" means 1.6 m above
+     * the floor, which is the only reading a director means. Writing an
+     * absolute Y makes the same instruction mean something different in every
+     * world.
+     */
+    const floor = world && world.bounds && Array.isArray(world.bounds.min)
+        ? Number(world.bounds.min[1]) : 0;
+
+    if (ch.cameraHeightM !== undefined) {
+        const u = units(ch.cameraHeightM);
+        if (u === null) return null;
+        pos[1] = (Number.isFinite(floor) ? floor : 0) + u;
+    }
+    if (ch.pedestalM !== undefined) {
+        const u = units(ch.pedestalM); if (u === null) return null; pos[1] += u;
+    }
     // Camera-local: -Z is forward, so a negative dolly moves toward the subject.
-    if (ch.dollyM !== undefined) pos[2] += Number(ch.dollyM);
-    if (ch.truckM !== undefined) pos[0] += Number(ch.truckM);
+    if (ch.dollyM !== undefined) {
+        const u = units(ch.dollyM); if (u === null) return null; pos[2] += u;
+    }
+    if (ch.truckM !== undefined) {
+        const u = units(ch.truckM); if (u === null) return null; pos[0] += u;
+    }
 
     if (ch.panDeg !== undefined) rot[0] += Number(ch.panDeg);
     if (ch.tiltDeg !== undefined) rot[1] += Number(ch.tiltDeg);
@@ -239,7 +282,14 @@ function acceptCandidates(candidates, ctx) {
     const o = ctx || {};
     const accepted = [], rejected = [];
     for (const cand of candidates || []) {
-        const camera = applyProposal((o.blocking && o.blocking.camera) || {}, cand);
+        const camera = applyProposal((o.blocking && o.blocking.camera) || {}, cand, o.world);
+        // A metric candidate against an uncalibrated world cannot be placed.
+        // Rejected with the remedy, never silently read as world units.
+        if (camera === null) {
+            rejected.push(Object.assign({}, cand, { failures: [{ check: 'uncalibrated_world',
+                detail: 'this camera is given in metres and the world has no scale — calibrate it first' }] }));
+            continue;
+        }
         const blocking = Object.assign({}, o.blocking, { camera });
         const out = validate.validateCamera(camera, o.world, blocking, {
             axis: o.axis, establishedSide: o.establishedSide, strict: false,

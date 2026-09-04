@@ -284,6 +284,106 @@ test('WE-5.10 rendering a plate spends nothing', () => {
     assert.strictEqual(plate.SPENDS, false, 'the module does not declare itself free');
 });
 
+// ══ WE-5.12 · the pixels ════════════════════════════════════════════════════
+
+test('WE-5.12 a rendered plate is stored, and the gatherer then finds it', async () => {
+    /*
+     * The round trip. Until this existed the route described a plate it had no
+     * way to receive: the record, the size and the prompt lead were all correct
+     * and no picture ever reached a request. A bridge that is documented and
+     * unbuilt is the "capability with no control" failure, and it is invisible
+     * because everything upstream reads perfectly.
+     */
+    const { db, generateId } = require('../db/database');
+    require('../db/schema').ensureSchema();
+    const { handleWorlds } = require('../routes/worlds');
+    const { gatherShotReferences } = require('../lib/shot-references');
+
+    const projectId = generateId(), sceneId = generateId(), shotId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Plate Store');
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, ?)').run(sceneId, projectId, '1');
+    db.prepare('INSERT INTO film_shots (id, scene_id, shot_code) VALUES (?, ?, ?)').run(shotId, sceneId, '1A');
+
+    const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
+        + 'AAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+    const call = (method, url, body) => new Promise(resolve => {
+        const chunks = [];
+        const res = {
+            statusCode: 200,
+            writeHead(s2) { this.statusCode = s2; },
+            end(c) { if (c) chunks.push(c); let d; try { d = JSON.parse(chunks.join('')); } catch { d = chunks.join(''); }
+                     resolve({ status: this.statusCode, data: d }); },
+        };
+        Promise.resolve(handleWorlds({ method, body: body || {} },
+            res, url.split('/').filter(Boolean), {}))
+            .catch(e => resolve({ status: 500, data: { error: e.message } }));
+    });
+
+    const stored = await call('POST', `/film/shots/${shotId}/generation-plate`, { image: PNG });
+    assert.strictEqual(stored.status, 200, JSON.stringify(stored.data));
+    assert.ok(stored.data.stored, 'the route accepted a rendered plate and stored nothing');
+    assert.strictEqual(stored.data.free, true, 'storing a plate reported a cost');
+
+    // The bytes are on disk and the gatherer picks them up with nothing else changed.
+    const ref = gatherShotReferences(projectId, [], null, [], null, { shotId })
+        .find(r => r && r.kind === 'plate');
+    assert.ok(ref, 'a plate was stored and the gatherer does not see it');
+    assert.match(String(ref.uri), /^data:image\/png;base64,iVBORw0KGgo/,
+        'the stored plate did not come back as image bytes');
+
+    // Re-rendering REPLACES rather than accumulating: two plates for one shot
+    // means "the plate" is whichever row the query happens to return.
+    await call('POST', `/film/shots/${shotId}/generation-plate`, { image: PNG });
+    const n = db.prepare(`SELECT COUNT(*) n FROM film_assets
+        WHERE shot_id = ? AND json_valid(metadata)
+          AND json_extract(metadata, '$.kind') = 'plate_image'`).get(shotId).n;
+    assert.strictEqual(n, 1, `${n} plate rows for one shot — re-rendering accumulated`);
+});
+
+test('WE-5.12b a plate that is not a PNG is refused', () => {
+    /*
+     * A plate exists to be geometrically exact. Accepting whatever arrives is
+     * how a JPEG's compression artefacts end up in the one reference whose job
+     * is to fix the framing — and a file called .png that is not one is a lie a
+     * decoder eventually calls.
+     */
+    assert.strictEqual(plate.decodePlateImage('data:image/jpeg;base64,/9j/4AAQ').ok, false);
+    assert.match(plate.decodePlateImage('data:image/jpeg;base64,/9j/4AAQ').error, /PNG/i);
+    assert.strictEqual(plate.decodePlateImage('not a data uri').ok, false);
+
+    const good = plate.decodePlateImage('data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==');
+    assert.strictEqual(good.ok, true, good.error);
+    assert.ok(Buffer.isBuffer(good.bytes), 'the decoded plate is not bytes');
+});
+
+test('WE-5.13 the console can render a plate, and does not bake the overlays in', () => {
+    const UI = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+    const at = UI.indexOf('function worldRenderPlate(');
+    assert.notStrictEqual(at, -1, 'there is no way to render a plate — the bridge is documented and unbuilt');
+    let depth = 0, end = at;
+    for (let i = UI.indexOf('{', at); i < UI.length; i++) {
+        if (UI[i] === '{') depth++;
+        else if (UI[i] === '}' && --depth === 0) { end = i + 1; break; }
+    }
+    const body = UI.slice(at, end);
+
+    assert.match(body, /toDataURL\('image\/png'\)/, 'the plate is not rendered as a PNG');
+    assert.match(body, /generation-plate/, 'the render is never posted anywhere');
+    /*
+     * Composition overlays are for a person reading the frame. Baked into a
+     * plate they become marks an image model faithfully reproduces — thirds
+     * lines drawn across the finished shot.
+     */
+    assert.match(body, /WORLD\.overlays\s*=/,
+        'the overlays are not cleared before capture — they would be baked into the plate');
+
+    // And the button exists, wired to it.
+    assert.match(UI, /onclick="worldRenderPlate\(\)"/,
+        'the renderer is defined and nothing calls it');
+    assert.match(UI, /RENDER GENERATION PLATE/, 'the action has no label');
+});
+
 // ══ the surface ═════════════════════════════════════════════════════════════
 
 test('WE-5.11 the plate is reachable from an agent, and named as free', () => {

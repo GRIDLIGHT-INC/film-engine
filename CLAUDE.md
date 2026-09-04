@@ -302,6 +302,8 @@ film-engine/
 │       ├── provider-prompt-limit.test.js # Each provider's own ceiling; allowances scale with it
 │       ├── image-prompt-ceiling.test.js  # The ceiling every image prompt is built against, pinned to evidence
 │       ├── prompt-quality.test.js       # Is the request we send a good one: fallback ceilings, one resolver, full accounting, priority, negatives
+│       ├── prompt-contributors.test.js  # A contributor collected and never emitted, dropped in silence
+│       ├── camera-units.test.js        # "1.6 metres" must mean 1.6 metres above the floor, in any world
 │       ├── media-imports.test.js        # Registry-derived persistent Storyboard, Previs image, and GLB import contract
 │       ├── plate-upload.test.js         # Every kind of reference can be uploaded, not only generated
 │       ├── video-sequence.test.js       # Keyframe ceilings per adapter; N shots plan N-1 segments in order
@@ -4319,6 +4321,8 @@ node --test backend/tests/prompt-budget.test.js
 node --test backend/tests/provider-prompt-limit.test.js
 node --test backend/tests/image-prompt-ceiling.test.js
 node --test backend/tests/prompt-quality.test.js
+node --test backend/tests/prompt-contributors.test.js
+node --test backend/tests/camera-units.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
 node --test backend/tests/motion-prompt.test.js

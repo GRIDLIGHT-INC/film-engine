@@ -251,7 +251,18 @@ async function handleWorlds(req, res, urlParts, query) {
         if (!tail && req.method === 'POST') {
             const check = cine.validateProposal(body, cine.buildBrief(ctx));
             if (!check.ok) return json(res, 400, { error: check.errors.join(' · '), errors: check.errors });
-            const camera = cine.applyProposal(ctx.blocking.camera, body);
+            const camera = cine.applyProposal(ctx.blocking.camera, body, ctx.world);
+            /*
+             * A metric proposal needs a calibrated world to land in. Refused
+             * with the remedy rather than reinterpreted: metres read as world
+             * units is a camera in the wrong place that looks deliberate.
+             */
+            if (camera === null) {
+                return json(res, 409, {
+                    error: 'this world has no scale, so a camera given in metres cannot be placed',
+                    remedy: 'calibrate the world version first: POST /film/world-versions/:id/calibrate',
+                });
+            }
             const blocking = Object.assign({}, ctx.blocking, { camera });
             const verdict = validateCam.validateCamera(camera, ctx.world, blocking,
                 { axis: ctx.axis, establishedSide: ctx.establishedSide, strict: body.strict === true });
@@ -307,6 +318,49 @@ async function handleWorlds(req, res, urlParts, query) {
         // you cannot re-render against geometry that no longer exists.
         const world = record.world_version_id
             ? { exists: !!worlds.getVersion(db, record.world_version_id) } : { exists: false };
+
+        /*
+         * A RENDERED plate arrives here. The pixels are drawn client-side from
+         * the previs stage — there is nothing for a server route to generate —
+         * so this stores what it is given and stays free.
+         *
+         * It REPLACES rather than accumulating: two plates for one shot means
+         * "the plate" is whichever row the query happens to return, which is
+         * the six-rows-for-three-files bug plate views already paid for.
+         */
+        if (req.method === 'POST' && body.image) {
+            const decoded = genPlate.decodePlateImage(body.image);
+            if (!decoded.ok) return json(res, 400, { error: decoded.error });
+
+            const { generateId } = require('../db/database');
+            const { saveFile } = require('../lib/file-storage');
+            const projectId = shot && shot.project_id;
+            if (!projectId) return json(res, 404, { error: 'Shot not found' });
+
+            const fileName = `plate_${shotId}.png`;
+            const filePath = saveFile(projectId, 'refsheets', fileName, decoded.bytes);
+
+            const prior = db.prepare(`SELECT id FROM film_assets
+                WHERE shot_id = ? AND json_valid(metadata)
+                  AND json_extract(metadata, '$.kind') = 'plate_image'`).all(shotId);
+            for (const old_ of prior) db.prepare('DELETE FROM film_assets WHERE id = ?').run(old_.id);
+
+            const assetId = generateId();
+            db.prepare(`INSERT INTO film_assets
+                (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type,
+                 size_bytes, version, metadata)
+                VALUES (?, ?, ?, 'other', ?, ?, 'png', 'image/png', ?, 1, ?)`)
+                .run(assetId, projectId, shotId, filePath, fileName, decoded.bytes.length,
+                     JSON.stringify(Object.assign({ kind: 'plate_image' }, record)));
+
+            return json(res, 200, {
+                stored: { asset_id: assetId, file_name: fileName, bytes: decoded.bytes.length },
+                plate: record,
+                state: genPlate.plateState(record, world),
+                free: true,
+                note: 'Stored. It now leads this shot\'s reference list on every generation path.',
+            });
+        }
 
         return json(res, 200, {
             plate: record,

@@ -158,13 +158,17 @@ test('WE-3.4 only the declared fields are accepted, and the rest are refused BY 
 
 test('WE-3.5 applying a proposal returns a new camera and never mutates the old one', () => {
     const before = JSON.parse(JSON.stringify(BLOCKING.camera));
+    // The world is required: the `...M` fields are METRES, and placing them
+    // needs the reconstruction's scale. See tests/camera-units.test.js.
     const next = cine.applyProposal(BLOCKING.camera,
-        { changes: { focalLengthMm: 21, cameraHeightM: 0.42, tiltDeg: 17, dollyM: -2 } });
+        { changes: { focalLengthMm: 21, cameraHeightM: 0.42, tiltDeg: 17, dollyM: -2 } }, WORLD);
 
     assert.deepStrictEqual(BLOCKING.camera, before, 'the original camera was mutated — undo is now impossible');
     assert.notStrictEqual(next, BLOCKING.camera);
     assert.strictEqual(next.focalMm, 21);
-    assert.strictEqual(next.position[1], 0.42, 'the height was not applied');
+    // 0.42 m above the floor, converted out of metres — not a bare 0.42.
+    assert.ok(Math.abs((next.position[1] - WORLD.bounds.min[1]) * WORLD.scale_factor - 0.42) < 1e-9,
+        'the height was not applied as 0.42 m above the floor');
     assert.ok(Math.abs(next.rotation[1] - (before.rotation[1] + 17)) < 1e-9, 'tilt is not relative');
     assert.ok(next.position[2] < before.position[2], 'a negative dolly did not move the camera forward');
 });

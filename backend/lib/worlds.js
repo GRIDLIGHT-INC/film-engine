@@ -201,7 +201,22 @@ function worldGeometry(db, versionId, opts) {
     const o = opts || {};
     const geo = rawGeometry(db, versionId);
 
-    const budget = Math.max(50, Math.min(20000, Number(o.budget) || 2500));
+    /*
+     * TWO CONSUMERS, TWO BUDGETS.
+     *
+     * The stage is interactive — repainted on every drag — so it takes a small
+     * even sample and 2500 is the right default. The GENERATION PLATE is
+     * rendered once and must be SOLID, and a solid render of an evenly
+     * decimated mesh is not a room with fewer triangles: it is a field of
+     * disconnected shards, because the survivors no longer share edges.
+     * Measured on the Glass Harbour diner, 20000 of 111649 filled as confetti
+     * while the same 20000 stroked as wireframe was legible.
+     *
+     * So the ceiling admits the whole mesh when a caller explicitly asks for
+     * it. The default is unchanged, which is what keeps the stage exactly as
+     * fast as it was.
+     */
+    const budget = Math.max(50, Math.min(250000, Number(o.budget) || 2500));
     const drawn = require('./glb-parser').decimate(geo, budget);
 
     const f = Number(v.scale_factor);
