@@ -79,6 +79,56 @@ function validateSceneCard(card) {
     }
 
     /*
+     * Optional: environment_motion — what the WORLD does while the subject acts.
+     *
+     * It was read by `buildVideoPrompt` and declared in no schema, so nothing
+     * validated it and no editor knew about it: "flames erupt from the struck
+     * house" reached Runway's compiler and no other provider, and could only be
+     * set by an agent or curl. A field read by a prompt builder and owned by no
+     * schema is the shape of bug this pair of fields exists to close.
+     */
+    if (card.environment_motion !== undefined && card.environment_motion !== null) {
+        if (typeof card.environment_motion !== 'string') {
+            errors.push('environment_motion must be a string');
+        } else if (card.environment_motion.length > 2000) {
+            errors.push('environment_motion must be 2000 characters or less');
+        }
+    }
+
+    /*
+     * Optional: end_state — where things must be when the clip ENDS.
+     *
+     * Held internally as start (the keyframe) → movement → required end, and
+     * compiled into a closing clause rather than sent as a labelled
+     * "END STATE:" section, because a provider is given prose and not a form.
+     */
+    if (card.end_state !== undefined && card.end_state !== null) {
+        if (typeof card.end_state !== 'string') {
+            errors.push('end_state must be a string');
+        } else if (card.end_state.length > 1000) {
+            errors.push('end_state must be 1000 characters or less');
+        }
+    }
+
+    /*
+     * Optional: beats — ordered subject beats for a shot that evolves.
+     *
+     * Emitted ONLY when written. Dividing every shot into fixed time slices is
+     * exactly the micromanagement that makes some models less reliable, so
+     * this stays a thing a director opts into per shot rather than a structure
+     * the engine imposes on all of them.
+     */
+    if (card.beats !== undefined && card.beats !== null) {
+        if (!Array.isArray(card.beats)) {
+            errors.push('beats must be an array of strings, in order');
+        } else if (card.beats.some(b => typeof b !== 'string')) {
+            errors.push('every beat must be a string');
+        } else if (card.beats.length > 8) {
+            errors.push('beats must be 8 or fewer — more than that is a shot that should be split');
+        }
+    }
+
+    /*
      * Optional: location_view — WHICH view of the scene's location this shot
      * sees. A location owns a growing set of plates (from the entrance looking
      * in, from the far kerb looking back); the shot says which one it is

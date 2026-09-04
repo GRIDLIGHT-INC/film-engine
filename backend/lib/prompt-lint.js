@@ -28,6 +28,35 @@
  * switched off within a day and then protects nothing — the same asymmetry the
  * style-preset check is built around.
  */
+/*
+ * INTERPRETIVE LANGUAGE — technique 4, the half that was missing.
+ *
+ * The rules below this block catch what a model cannot DRAW ("off frame", "we
+ * never see"). These catch what a model cannot ACT ON: a feeling with no
+ * physical form. "Maya is terrified" gives a diffusion model nothing to move;
+ * "Maya freezes beside the car, shoulders tense, eyes fixed on the dragon"
+ * gives it four things.
+ *
+ * Whole words against a short, concrete list, on the precedent the style-subject
+ * check already set: substring matching turns "scared" into "scarred" and a
+ * detector that fires on ordinary description gets switched off within a day —
+ * taking the real rules with it. And these WARN, never block: a director may
+ * mean exactly what they wrote.
+ */
+const INTERPRETIVE = [
+    'terrified', 'frightened', 'scared', 'afraid', 'furious', 'angry', 'enraged',
+    'sad', 'devastated', 'heartbroken', 'nervous', 'anxious', 'relieved',
+    'happy', 'delighted', 'confused', 'suspicious', 'menacing', 'ominous',
+    'beautiful', 'ugly', 'tense', 'awkward', 'romantic', 'dramatic',
+];
+
+const INTERPRETIVE_RULES = INTERPRETIVE.map(word => ({
+    id: `interpretive_${word}`,
+    pattern: new RegExp(`\\b${word}\\b`, 'gi'),
+    why: `"${word}" is a feeling, not a movement — a video model has nothing to animate`,
+    fix: 'say what the body DOES: "freezes beside the car, shoulders tense, eyes fixed on the dragon"',
+}));
+
 const RULES = [
     {
         id: 'off_frame',
@@ -72,7 +101,7 @@ function offFrameFindings(text) {
     const src = String(text || '');
     if (!src.trim()) return [];
     const out = [];
-    for (const rule of RULES) {
+    for (const rule of RULES.concat(INTERPRETIVE_RULES)) {
         rule.pattern.lastIndex = 0;
         let m;
         while ((m = rule.pattern.exec(src))) {
@@ -94,4 +123,5 @@ function offFrameFindings(text) {
     return out;
 }
 
-module.exports = { offFrameFindings, RULES };
+module.exports = {
+    INTERPRETIVE, INTERPRETIVE_RULES, offFrameFindings, RULES };

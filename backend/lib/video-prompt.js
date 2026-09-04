@@ -114,8 +114,30 @@ function buildVideoPrompt(sceneCard, characters, location, stylePreset, options)
 
     const action = sceneCard && (sceneCard.action || sceneCard.description || sceneCard.direction);
     const environment = sceneCard && (sceneCard.environment_motion || sceneCard.atmosphere_motion);
+    /*
+     * THE COMPILED MOTION PROMPT — what a video model is actually told.
+     *
+     * The `prompt` above is the STORYBOARD prompt: it describes appearance,
+     * location, style and lens, because it exists to paint a frame from
+     * nothing. For image-to-video that frame is already attached, so 81% of it
+     * re-describes the picture the model was handed — measured at 347 of 429
+     * characters on a real shot — while `environment_motion` reached nothing.
+     *
+     * `motion_prompt` is motion plus the spatial locks, compiled per provider.
+     * The old `prompt` stays on the payload: a provider that has no compiler
+     * and no keyframe still needs something to generate from, and removing it
+     * would break text-to-video.
+     */
+    let motion_prompt = '';
+    try {
+        motion_prompt = require('./motion-prompt').buildMotionPrompt({
+            card: sceneCard, previs: opts.previs, durationS: opts.duration_s || opts.durationS,
+            limit: opts.promptLimit,
+        }).prompt;
+    } catch (_) { motion_prompt = ''; }   // never fail a generation over a prompt shape
+
     return {
-        prompt, negative_prompt, camera_control,
+        prompt, negative_prompt, camera_control, motion_prompt,
         /*
          * WHOLE. Trimmed only if it does not fit, and by whoever knows the
          * ceiling.
@@ -279,13 +301,15 @@ function calculateVideoParams(sceneCard, project) {
  */
 function buildVideoPayload(sceneCard, characters, location, stylePreset, options) {
     const opts = options || {};
-    const { prompt, negative_prompt, camera_control, motion } = buildVideoPrompt(
+    const { prompt, negative_prompt, camera_control, motion, motion_prompt } = buildVideoPrompt(
         sceneCard, characters, location, stylePreset, opts
     );
     const params = calculateVideoParams(sceneCard, opts.project);
 
     const payload = {
         prompt,
+        // Compiled motion, which is what an image-to-video provider should read.
+        motion_prompt,
         negative_prompt,
         /*
          * NO DEFAULT MODEL.

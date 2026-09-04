@@ -406,6 +406,9 @@ function buildVideoRequest(payload) {
     const body = {
         model,
         promptText: p.motion_prompt
+            // The shared compiler wins when it ran: it carries the spatial locks
+            // and the pace, which this adapter's own builder does not.
+            || p.motion_prompt
             || ((p.motion || p.camera_control) ? buildRunwayMotionPrompt(p) : (p.promptText || p.prompt || '')),
         ratio: pickRatio(p.width, p.height, mode, model),
         duration: durationForModel(p.duration_s !== undefined ? p.duration_s : p.duration, model),

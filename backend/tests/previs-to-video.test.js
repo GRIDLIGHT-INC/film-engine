@@ -88,7 +88,15 @@ test('an unblocked shot produces byte-identical output to before phase 3', () =>
          * the provider, so this field is the one thing in these payloads that
          * is SUPPOSED to have moved. Everything else stays pinned byte for byte.
          */
-        const strip = o => { const { prompt, model, ...rest } = o; return rest; };
+        /*
+         * `motion_prompt` is stripped for the same reason as `prompt`, and the
+         * fixture is again NOT regenerated. It is the compiled motion sentence
+         * introduced when the video path stopped sending a still-image prompt —
+         * a deliberate change to a STRING, with nothing to do with whether
+         * previs leaks into an unblocked shot, which is the only thing these 54
+         * payloads exist to guarantee. Split rather than regenerated.
+         */
+        const strip = o => { const { prompt, motion_prompt, model, ...rest } = o; return rest; };
         if (JSON.stringify(strip(actual)) !== JSON.stringify(strip(expected))) {
             drift.push({ key, expected: expected.camera_control, actual: actual.camera_control });
         }

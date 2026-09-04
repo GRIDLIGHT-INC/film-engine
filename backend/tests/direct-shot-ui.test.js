@@ -190,8 +190,23 @@ test('the screenplay half is editable, and stays a separate half', () => {
 
     // A blank one is omitted, not sent: the route merges, and sending '' would
     // erase the shot's own account of itself.
-    const save = html.slice(html.indexOf('const blocking = readBlockingPanel('),
-        html.indexOf('const blocking = readBlockingPanel(') + 700);
+    /*
+     * Bounded by the enclosing function, not by a character count.
+     *
+     * This was `+ 700`, and adding three fields to the save pushed the check it
+     * looks for outside the window — so it reported that a blank description
+     * was being sent when the guard was still there, four lines further down.
+     * This codebase has paid for a bounded scan four times ([^)], [^\]], a
+     * 600-char window, and now this): the failure mode is that it silently
+     * stops matching and then blames the code it can no longer see.
+     */
+    const saveStart = html.indexOf('const blocking = readBlockingPanel(');
+    let depth = 0, saveEnd = saveStart;
+    for (let i = saveStart; i < html.length; i++) {
+        if (html[i] === '{') depth++;
+        else if (html[i] === '}') { if (depth === 0) { saveEnd = i; break; } depth--; }
+    }
+    const save = html.slice(saveStart, saveEnd);
     assert.match(save, /if \(blocking\.description\)/,
         'a blank description is sent, which would erase what the screenplay said');
 });

@@ -121,6 +121,7 @@ film-engine/
 │   │   ├── running-order.js       # The order the film plays in, said once for all five assemblies
 │   │   ├── dialogue-builder.js    # Dialogue extraction + voice payloads
 │   │   ├── video-prompt.js        # Video prompt builder + camera control
+│   │   ├── motion-prompt.js    # A video model is sent MOTION, not a description of the picture it was given
 │   │   ├── music-prompt.js        # Music/SFX/ambient prompt builder
 │   │   ├── pipeline-engine.js     # Pipeline step sequencing + dependency resolution
 │   │   ├── viseme-builder.js     # Phoneme-to-viseme mapping (MPEG-4)
@@ -365,6 +366,7 @@ film-engine/
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
+│       ├── motion-prompt.test.js    # Motion, the spatial locks, and the eight techniques
 │       ├── video-model-contracts.test.js # Rates, reference contracts, tiers, and the picture an agent can see
 │       ├── seedance-post.test.js       # The 4K finishing pass: a provider for post at all
 │       ├── seedance-tiers.test.js      # 480p draft and 4K finish, traced to a real Seedance 2.5 URL
@@ -4235,6 +4237,7 @@ node --test backend/tests/image-prompt-ceiling.test.js
 node --test backend/tests/prompt-quality.test.js
 node --test backend/tests/dialogue-builder.test.js
 node --test backend/tests/video-prompt.test.js
+node --test backend/tests/motion-prompt.test.js
 node --test backend/tests/video-model-contracts.test.js
 node --test backend/tests/seedance-post.test.js
 node --test backend/tests/seedance-tiers.test.js

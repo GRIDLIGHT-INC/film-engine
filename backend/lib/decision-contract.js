@@ -46,6 +46,26 @@ const DECISIONS = [
 ];
 
 const EXCEPTIONS = [
+    /*
+     * MOTION FIELDS — single-surface BY DESIGN, not by omission.
+     *
+     * A keyframe is a still. It cannot show what the world DOES while the
+     * subject acts, where the shot must END, or the order things happen in — so
+     * none of the three changes an image payload, and claiming otherwise would
+     * be a promise the image builder does not keep.
+     *
+     * They are board-only for the same kind of reason: previs is where a CAMERA
+     * is staged, and "flames erupt from the struck house" is not a camera
+     * decision. Putting it on the stage would create a second place to write it
+     * and a second answer to what the shot is.
+     */
+    { id: 'motion.environment', covers: ['environment_motion'],
+      why: 'Video-only and board-only by design: a still cannot show what the world does, and it is not a camera decision, so it has no previs surface and no image payload.' },
+    { id: 'motion.end_state', covers: ['end_state'],
+      why: 'Video-only by design: a keyframe IS the start state, so an end state is meaningless to the image payload; compiled into a closing clause for video.' },
+    { id: 'motion.beats', covers: ['beats'],
+      why: 'Video-only by design: a still has no time. Emitted only when written, because imposing beats on every shot is the micromanagement that makes some models less reliable.' },
+
     {
         id: 'previs.director-storage', covers: ['director_json'],
         why: 'director_json is the Previs storage envelope for the direction, lighting and location-view decisions above; the semantic fields, not the envelope name, reach prompts.',

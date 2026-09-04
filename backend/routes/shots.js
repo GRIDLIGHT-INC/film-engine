@@ -123,7 +123,9 @@ function updateShotCard(req, res, shotId) {
 
     const body = req.body || {};
     const EDITABLE = ['description', 'direction', 'action', 'camera', 'lighting', 'characters', 'props',
-        'dialogue', 'sfx_cues', 'duration_seconds', 'notes', 'location_view'];
+        'dialogue', 'sfx_cues', 'duration_seconds', 'notes', 'location_view',
+        // Motion fields: read by the video compiler, so a person must be able to type them.
+        'environment_motion', 'end_state', 'beats'];
     const changed = [];
     for (const key of EDITABLE) {
         if (body[key] === undefined) continue;

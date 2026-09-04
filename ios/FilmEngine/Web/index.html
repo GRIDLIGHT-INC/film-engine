@@ -34228,6 +34228,22 @@ ${fountainText.slice(0, 50000)}`;
             <div class="form-group"><label>Movement</label>
                 <select id="${p}Movement"></select>
                 <div class="text-sm text-muted" id="${p}MovementHint"></div></div>
+            <!--
+                MOTION. These reach the VIDEO prompt, not the frame — the
+                keyframe already carries the look, so what a clip needs from
+                words is what MOVES. environment_motion was read by the prompt
+                builder and typeable nowhere, so "flames erupt from the struck
+                house" could only be set by an agent or curl.
+            -->
+            <div class="form-group"><label>What the world does <span class="text-muted">(video)</span></label>
+                <textarea id="${p}EnvMotion" data-field="environment_motion" rows="2"
+                    placeholder="Flames erupt from the struck house; debris falls into the street."></textarea></div>
+            <div class="form-group"><label>Where it ends <span class="text-muted">(video)</span></label>
+                <textarea id="${p}EndState" data-field="end_state" rows="2"
+                    placeholder="The dragon fills the near foreground; Maya is small at the far kerb."></textarea></div>
+            <div class="form-group"><label>Beats <span class="text-muted">(one per line, only if the shot has stages)</span></label>
+                <textarea id="${p}Beats" data-field="beats" rows="3"
+                    placeholder="the dragon closes half the distance&#10;the house is struck&#10;Maya turns"></textarea></div>
             <div class="form-group"><label>Lighting</label>
                 <select id="${p}Lighting"></select>
                 <div class="text-sm text-muted" id="${p}LightingHint"></div></div>
@@ -35814,6 +35830,14 @@ ${fountainText.slice(0, 50000)}`;
                         : 'No anchor set — pick a frame you like on the board and press ⚓ to use camera mode.');
             }
             fillDirectingPanel('shotCard', vocab, cam, SHOT_CARD.card.lighting, directingFallbacks(specs));
+            // The motion fields are card-level, so they are filled here rather
+            // than by fillDirectingPanel, which deals in camera facets.
+            {
+                const put = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : v; };
+                put('shotCardEnvMotion', SHOT_CARD.card.environment_motion);
+                put('shotCardEndState', SHOT_CARD.card.end_state);
+                put('shotCardBeats', Array.isArray(SHOT_CARD.card.beats) ? SHOT_CARD.card.beats.join('\n') : '');
+            }
 
             document.getElementById('shotCardWarning').style.display = 'none';
             document.getElementById('shotCardPreview').innerHTML = '';
@@ -35863,6 +35887,26 @@ ${fountainText.slice(0, 50000)}`;
          */
         const blocking = readBlockingPanel('shotCard');
         const body = { camera, lighting };
+
+        /*
+         * The motion fields, read straight off the panel. They are CARD-level
+         * rather than camera-level: what the world does and where the shot ends
+         * are facts about the shot, not about the lens.
+         *
+         * Empty clears, which is why each is sent even when blank — the two
+         * states ("no environment motion" and "don't change it") are genuinely
+         * different and the route merges, so an omitted field would be
+         * unclearable from this panel.
+         */
+        {
+            const txt = id => { const el = document.getElementById(id); return el ? String(el.value).trim() : null; };
+            const env = txt('shotCardEnvMotion');
+            const end = txt('shotCardEndState');
+            const bts = txt('shotCardBeats');
+            if (env !== null) body.environment_motion = env;
+            if (end !== null) body.end_state = end;
+            if (bts !== null) body.beats = bts.split('\n').map(x => x.trim()).filter(Boolean);
+        }
         if (blocking.direction !== undefined) body.direction = blocking.direction;
         if (blocking.description) body.description = blocking.description;
         if (blocking.location_view !== undefined) body.location_view = blocking.location_view;

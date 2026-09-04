@@ -2707,6 +2707,14 @@ const PRODUCTION_TOOLS = [
             dialogue: { type: 'array', items: { type: 'object' } },
             sfx_cues: { type: 'array', description: 'Sound effects this shot needs.' },
             location_view: { type: 'string', description: 'Which SIDE of the scene’s location this shot looks at — read plate_view_list first, because a name matching no view falls back to the default plate silently, and the default is a photograph of what is behind this camera.' },
+            /*
+             * The motion fields. Read by the video prompt compiler, so an agent
+             * that cannot set them cannot direct a clip — and this pipeline's
+             * reasoning happens in an agent host.
+             */
+            environment_motion: { type: 'string', description: 'What the WORLD does while the subject acts \u2014 "flames erupt from the struck house; debris falls into the street". Reaches the video prompt on every provider; it is NOT the subject\u2019s action and NOT scenery, which the keyframe already shows.' },
+            end_state: { type: 'string', description: 'Where things must BE when the clip ends \u2014 "the dragon fills the near foreground; Maya is small at the far kerb". Compiled into a closing clause, never sent as a labelled section.' },
+            beats: { type: 'array', items: { type: 'string' }, description: 'Ordered subject beats for a shot that evolves, compiled as "First X, then Y". Write these ONLY when the shot genuinely has stages \u2014 micromanaging every second makes some models less reliable, and a shot needing more than a few beats is usually one that should be split.' },
             duration_seconds: { type: 'number' },
             notes: { type: 'string' },
         },

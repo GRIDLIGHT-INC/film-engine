@@ -171,7 +171,14 @@ function buildVideoRequest(payload) {
     const clamped = Math.min(MAX_DURATION, Math.max(MIN_DURATION, Math.round(duration)));
 
     const body = {
-        prompt: String(p.prompt || p.motion_prompt || '').trim(),
+        /*
+         * MOTION FIRST. This took `p.prompt` — the STORYBOARD prompt, which
+         * describes appearance, location, style and lens because it exists to
+         * paint a frame from nothing. With a keyframe attached that is 81% a
+         * re-description of the picture the model was just handed, and it
+         * omitted environment_motion entirely.
+         */
+        prompt: String(p.motion_prompt || p.prompt || '').trim(),
         aspect_ratio: aspectFor(p),
         duration: clamped,
     };
