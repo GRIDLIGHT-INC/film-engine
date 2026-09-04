@@ -253,6 +253,7 @@ film-engine/
 │       ├── world-engine.test.js    # A world exists, is versioned, is pinned — and knows it has no scale
 │       ├── world-console.test.js   # The console renders what the design draws, and nothing when the flag is off
 │       ├── cinematography.test.js  # The model directs; the engine hands over facts and refuses the impossible
+│       ├── world-timeline.test.js  # A surface over the move model that already existed, driving no second one
 │       ├── handover-commands.js    # Every command in the handover, executed — a doc nobody runs is typos
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale

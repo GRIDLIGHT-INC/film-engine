@@ -163,9 +163,11 @@ test('WE-2.3 Keep Position and Maintain Size behave oppositely', () => {
      * with itself about which mode is engaged.
      */
     const html = (mode) => build(['worldConsoleHtml', 'worldFrameRatio', 'worldMeasurements',
-                                  'worldLenses', 'worldOverlays', 'worldOverlayMenuHtml'],
+                                  'worldLenses', 'worldOverlays', 'worldOverlayMenuHtml',
+                                  'worldTimelineHtml', 'worldEases'],
         'worldConsoleHtml({}, null, null)',
-        `const WORLD = { lens: 35, overlays: null, mode: '${mode}' };\n`
+        `const PREVIS = { taxonomy: null };\n`
+        + `const WORLD = { lens: 35, overlays: null, mode: '${mode}', moves: [], keys: [], t: 0, ease: 'ease-out', durationMs: 4000 };\n`
         + 'const esc = (v) => String(v == null ? "" : v);');
     assert.match(html('keep'), /we-mode active" data-mode="keep"/, 'Keep Position is not shown as active in keep mode');
     assert.match(html('maintain'), /we-mode active" data-mode="maintain"/, 'Maintain Size is not shown as active in maintain mode');
@@ -235,9 +237,13 @@ test('WE-2.6 the frame follows the project aspect, not a constant', () => {
      * project. The cap has to be applied to the width, derived from the ratio.
      */
     const html = build(['worldConsoleHtml', 'worldFrameRatio', 'worldMeasurements',
-                        'worldLenses', 'worldOverlays', 'worldOverlayMenuHtml'],
+                        'worldLenses', 'worldOverlays', 'worldOverlayMenuHtml',
+                        'worldTimelineHtml', 'worldEases'],
         "worldConsoleHtml({ aspect_ratio: '2.39:1' }, null, null)",
-        'const WORLD = { lens: 35, overlays: null };\nconst esc = (v) => String(v == null ? "" : v);');
+        'const PREVIS = { taxonomy: null };\n'
+        + 'const WORLD = { lens: 35, overlays: null, moves: [], keys: [], t: 0, '
+        + 'ease: "ease-out", durationMs: 4000 };\n'
+        + 'const esc = (v) => String(v == null ? "" : v);');
     assert.match(html, /aspect-ratio:\s*2\.39/, 'the frame does not carry the project ratio');
     assert.match(html, /max-width:\s*min\(100%,\s*calc\(52vh \* 2\.39\)\)/,
         'the height cap is not derived from the ratio, so the frame loses its shape');

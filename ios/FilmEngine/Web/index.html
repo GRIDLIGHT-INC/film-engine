@@ -4819,6 +4819,33 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 .we-mode.active { border-color:#5fd3c4; color:#5fd3c4; background:rgba(95,211,196,0.12); }
 .we-hint { font-size:12px; color:#8f8f8a; margin:10px 0 0; line-height:1.5; }
 .we-rows { margin-top:10px; display:flex; flex-direction:column; gap:7px; }
+
+/* ── camera movement ─────────────────────────────────────────────────────── */
+.we-timeline { margin-top:12px; }
+.we-ruler { display:flex; justify-content:space-between; padding-left:92px; margin-top:12px;
+            font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; color:#7a7a74; }
+.we-lane { display:flex; gap:12px; margin-top:8px; align-items:stretch; }
+.we-lane-l { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10.5px;
+             letter-spacing:0.12em; color:#b5b5b0; width:80px; flex:none; padding-top:16px; }
+.we-track { position:relative; flex:1; min-height:48px; display:flex;
+            border:1px solid rgba(255,255,255,0.07); border-radius:5px; background:#0d0d0d; }
+.we-clip { padding:9px 12px; overflow:hidden; cursor:pointer; }
+.we-clip-pos { background:rgba(95,211,196,0.10); border-right:1px solid rgba(95,211,196,0.5); }
+.we-clip-rot { background:rgba(224,172,82,0.09); border-right:1px solid rgba(224,172,82,0.5); }
+.we-clip-t { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; color:#5fd3c4; }
+.we-clip-rot .we-clip-t { color:#e0ac52; }
+.we-clip-s { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; color:#7a7a74; }
+.we-clip-empty { padding:16px 12px; font-size:12px; color:#7a7a74; }
+.we-key { position:absolute; top:-5px; width:9px; height:9px; padding:0; transform:rotate(45deg);
+          background:#5fd3c4; border:none; cursor:pointer; }
+.we-playhead { position:absolute; top:0; bottom:0; width:1px; background:#ecece9; pointer-events:none; }
+.we-eases { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.we-ease { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10.5px;
+           letter-spacing:0.1em; padding:7px 11px; border-radius:4px; cursor:pointer;
+           background:transparent; border:1px solid rgba(255,255,255,0.13); color:#a5a5a0; }
+.we-ease.active { border-color:#5fd3c4; color:#5fd3c4; background:rgba(95,211,196,0.12); }
+.we-path { width:100%; height:110px; margin-top:12px; display:block;
+           border:1px solid rgba(255,255,255,0.07); border-radius:5px; background:#080808; }
 </style>
 </head>
 <body>
@@ -17435,6 +17462,7 @@ THREE.GLTFLoader = GLTFLoader;
                   <div class="we-plate-note">GEOMETRIC PLATE — NOT FINAL</div>
                 </div>
               </div>
+              ${worldTimelineHtml()}
             </div>
             <div class="we-right">
               <div class="we-panel">
@@ -17455,6 +17483,226 @@ THREE.GLTFLoader = GLTFLoader;
             </div>
           </div>
         </div>`;
+    }
+
+    /* ── Camera movement (phase 4) ────────────────────────────────────────
+     *
+     * A surface over the move model that already exists. `previs-blocking`
+     * samples compound moves, composes concurrent legs and interpolates a pose
+     * at any moment; this panel writes `moves_json` and `camera_keys_json` and
+     * nothing else. A timeline with its own store would be a second answer to
+     * what move a shot has.
+     */
+
+    /*
+     * The four curves plus HOLD. Hold is not a curve — it is the absence of
+     * travel — which is why it is listed here and not in the library's EASINGS,
+     * whose set the viewer is pinned to.
+     *
+     * HANDHELD is deliberately NOT here. The design draws it as a fifth ease
+     * chip, but handheld is a RIG in this engine and already carries its own
+     * noise amplitude; offering it in two places would be two ways to say one
+     * thing, and they would drift.
+     */
+    function worldEases() {
+        return [
+            { id: 'linear',      label: 'LINEAR' },
+            { id: 'ease-in',     label: 'EASE IN' },
+            { id: 'ease-out',    label: 'EASE OUT' },
+            { id: 'ease-in-out', label: 'EASE BOTH' },
+            { id: 'hold',        label: 'HOLD' },
+        ];
+    }
+
+    function worldTimelineHtml() {
+        const dur = (WORLD.durationMs || 4000) / 1000;
+        const ticks = [];
+        for (let i = 0; i <= Math.round(dur); i++) ticks.push(`<span>${i.toFixed(1)}s</span>`);
+
+        /*
+         * A LANE SHOWS ONLY WHAT IT CARRIES.
+         *
+         * Both lanes rendered every leg, so the ROTATION lane announced
+         * "DOLLY IN" — a translation. The panel was stating something false
+         * about the move, which is worse than showing nothing.
+         *
+         * Derived from the movement taxonomy the server already serves, never
+         * from a list here: a movement added later lands in the right lane with
+         * nothing to remember.
+         */
+        const affects = (lane, movement) => {
+            const tax = (PREVIS.taxonomy && PREVIS.taxonomy.movements) || {};
+            const def = tax[movement] || tax[String(movement)];
+            if (!def) return true;                       // unknown: show it rather than hide it
+            const some = (v) => Array.isArray(v) && v.some(n => Math.abs(Number(n) || 0) > 1e-9);
+            if (lane === 'pos') return some(def.translate) || (def.focalScale && def.focalScale !== 1);
+            return some(def.rotate) || def.space === 'subject';   // an orbit turns the camera
+        };
+
+        const legRow = (lane, allLegs) => (allLegs.filter(l => affects(lane, l.movement))).map((l, i) => {
+            const pct = Math.max(4, Math.round((l.weight || 1) / Math.max(1, allLegs.reduce((a, x) => a + (x.weight || 1), 0)) * 100));
+            return `<div class="we-clip we-clip-${lane}" style="width:${pct}%;"
+                         onclick="worldSelectLeg(${i})" title="${esc(l.movement || 'static')}">
+                      <div class="we-clip-t">${esc((l.movement || 'static').replace(/-/g, ' ').toUpperCase())}</div>
+                      <div class="we-clip-s">${esc(l.ease || WORLD.ease || 'ease-out')}</div>
+                    </div>`;
+        }).join('') || (allLegs.length
+            // The design's own label for a lane with nothing in it.
+            ? '<div class="we-clip-empty">HOLD</div>'
+            : '<div class="we-clip-empty">no legs — add one to build a move</div>');
+
+        const keys = (WORLD.keys || []).map((k, i) =>
+            `<button class="we-key" style="left:${Math.round((k.t || 0) * 100)}%;"
+                     onclick="worldSeekTo(${k.t || 0})" title="key ${i + 1}"></button>`).join('');
+
+        const eases = worldEases().map(e =>
+            `<button class="we-ease${(WORLD.ease || 'ease-out') === e.id ? ' active' : ''}"
+                     onclick="worldSetEase('${e.id}')">${e.label}</button>`).join('');
+
+        return `
+        <div class="we-panel we-timeline">
+          <div class="we-panel-head">
+            <span class="we-label">CAMERA MOVEMENT</span>
+            <span class="we-live">${dur.toFixed(1)}s</span>
+            <button class="we-btn" onclick="worldPlayMove()">▶ PLAY MOVE</button>
+            <button class="we-btn" onclick="worldAddKey()">+ KEY</button>
+            <button class="we-btn" onclick="worldAddLeg()">+ LEG</button>
+          </div>
+          <div class="we-ruler">${ticks.join('')}</div>
+          <div class="we-lane"><span class="we-lane-l">POSITION</span>
+            <div class="we-track">${legRow('pos', WORLD.moves || [])}${keys}
+              <div class="we-playhead" style="left:${Math.round((WORLD.t || 0) * 100)}%;"></div></div></div>
+          <div class="we-lane"><span class="we-lane-l">ROTATION</span>
+            <div class="we-track">${legRow('rot', WORLD.moves || [])}
+              <div class="we-playhead" style="left:${Math.round((WORLD.t || 0) * 100)}%;"></div></div></div>
+          <div class="we-lane"><span class="we-lane-l">EASE</span>
+            <div class="we-eases">${eases}</div></div>
+          <canvas id="wePathCanvas" class="we-path"></canvas>
+        </div>`;
+    }
+
+    function worldSetEase(id) {
+        WORLD.ease = id;
+        if (WORLD.selectedLeg != null && WORLD.moves[WORLD.selectedLeg]) {
+            WORLD.moves[WORLD.selectedLeg].ease = id;
+        }
+        worldTimelineSave();
+        worldConsoleRender();
+    }
+
+    function worldSelectLeg(i) { WORLD.selectedLeg = i; worldConsoleRender(); }
+
+    function worldAddLeg() {
+        WORLD.moves = (WORLD.moves || []).concat([{ movement: 'dolly-in', weight: 1, ease: WORLD.ease || 'ease-out' }]);
+        worldTimelineSave();
+        worldConsoleRender();
+    }
+
+    /** Snapshot the camera as it stands now, at the playhead. */
+    function worldAddKey() {
+        const cam = (WORLD.camera || {});
+        const key = {
+            t: WORLD.t || 0,
+            position: (cam.position || [0, 1.6, 8]).slice(),
+            rotation: (cam.rotation || [0, 0, 0]).slice(),
+            focalMm: WORLD.lens || cam.focalMm || 35,
+            // The persisted unit is always degrees — a radian/degree confusion
+            // at this boundary silently rewrites every authored move.
+            rotationUnit: 'degrees',
+        };
+        WORLD.keys = (WORLD.keys || []).concat([key]).sort((a, b) => a.t - b.t);
+        worldTimelineSave();
+        worldConsoleRender();
+    }
+
+    function worldSeekTo(t) {
+        WORLD.t = Math.max(0, Math.min(1, Number(t) || 0));
+        worldDrawPath();
+        const heads = document.querySelectorAll('.we-playhead');
+        for (const h of heads) h.style.left = Math.round(WORLD.t * 100) + '%';
+    }
+
+    /*
+     * Plays the INTERPOLATED path. Snapping to the nearest key made a 24-key
+     * path repainted at 60fps move 24 times and stand still between — how
+     * densely a path was sampled is a storage decision and must not be visible
+     * in the shot.
+     */
+    function worldPlayMove() {
+        if (WORLD.playing) { WORLD.playing = false; return; }
+        WORLD.playing = true;
+        const started = Date.now();
+        const dur = WORLD.durationMs || 4000;
+        const step = () => {
+            if (!WORLD.playing) return;
+            /*
+             * A BACKGROUNDED TAB STOPS PLAYING, IT DOES NOT STALL.
+             *
+             * requestAnimationFrame does not fire in a hidden tab, so switching
+             * away mid-move left `playing` true forever — and the next press of
+             * Play then read as the toggle and turned it OFF. A director would
+             * press Play, see nothing, and press it again to no effect.
+             */
+            if (typeof document !== 'undefined' && document.hidden) { WORLD.playing = false; return; }
+            const t = Math.min(1, (Date.now() - started) / dur);
+            worldSeekTo(t);
+            if (t < 1) requestAnimationFrame(step); else WORLD.playing = false;
+        };
+        requestAnimationFrame(step);
+    }
+
+    /** The sampled path, drawn top-down with its keyframes and the playhead. */
+    function worldDrawPath() {
+        const c = document.getElementById('wePathCanvas');
+        if (!c) return;
+        const rect = c.getBoundingClientRect();
+        c.width = Math.max(1, Math.round(rect.width));
+        c.height = Math.max(1, Math.round(rect.height));
+        const ctx = c.getContext('2d');
+        ctx.clearRect(0, 0, c.width, c.height);
+        const keys = (WORLD.path && WORLD.path.length ? WORLD.path : WORLD.keys) || [];
+        if (keys.length < 2) return;
+
+        const xs = keys.map(k => k.position[0]), zs = keys.map(k => k.position[2]);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minZ = Math.min(...zs), maxZ = Math.max(...zs);
+        const pad = 12;
+        const sx = (v) => pad + (maxX - minX < 1e-6 ? 0.5 : (v - minX) / (maxX - minX)) * (c.width - pad * 2);
+        const sy = (v) => pad + (maxZ - minZ < 1e-6 ? 0.5 : (v - minZ) / (maxZ - minZ)) * (c.height - pad * 2);
+
+        ctx.strokeStyle = 'rgba(95,211,196,0.65)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        keys.forEach((k, i) => (i ? ctx.lineTo(sx(k.position[0]), sy(k.position[2]))
+                                  : ctx.moveTo(sx(k.position[0]), sy(k.position[2]))));
+        ctx.stroke();
+
+        ctx.fillStyle = '#5fd3c4';
+        for (const k of (WORLD.keys || [])) {
+            ctx.beginPath();
+            ctx.arc(sx(k.position[0]), sy(k.position[2]), 3.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    /*
+     * Writes the EXISTING columns. `moves_json` holds the legs and
+     * `camera_keys_json` the authored poses — the same two the previs screen
+     * and the video payload already read.
+     */
+    async function worldTimelineSave() {
+        if (!WORLD.shotId) return;
+        try {
+            await api(`/shots/${WORLD.shotId}/previs`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    camera: WORLD.camera || {},
+                    moves: WORLD.moves || [],
+                    camera_keys: WORLD.keys || [],
+                    duration_ms: WORLD.durationMs || 4000,
+                }),
+            });
+        } catch (err) { setStatus(err.message, true); }
     }
 
     function worldToggleOverlayMenu() {
@@ -17576,6 +17824,7 @@ THREE.GLTFLoader = GLTFLoader;
                 : 'Camera holds. Subject size follows the lens.';
         }
         worldPaintFrame();
+        worldDrawPath();
     }
 
     async function applyNavFlow() {

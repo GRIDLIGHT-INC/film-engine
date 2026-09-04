@@ -575,7 +575,23 @@ const EASINGS = {
     'ease-in-out': t => (t < 0.5) ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2,
 };
 
+/*
+ * HOLD is the absence of travel, not a curve.
+ *
+ * EASINGS is the set of ways a value moves BETWEEN two poses; a held leg does
+ * not move at all, so it has no curve to be. Keeping it out of EASINGS is what
+ * lets previs-routes go on pinning the viewer's curve set to this one — the
+ * guarantee that stops the preview and the stored path describing different
+ * moves — and it is also just true.
+ *
+ * An UNKNOWN name still falls back to linear rather than holding. Silently
+ * freezing a camera because somebody mistyped an easing is a worse failure than
+ * ignoring the typo, and much harder to see.
+ */
+const HOLD = 'hold';
+
 function easeT(name, t) {
+    if (name === HOLD) return 0;
     const curve = EASINGS[name] || EASINGS.linear;
     return curve(Math.max(0, Math.min(1, t)));
 }
@@ -996,7 +1012,7 @@ module.exports = {
     yawVector,
     shortestAngleDeltaDegrees, analyzePath, moveAmount, resolveTarget,
     rigCanPerform, toCameraControl, legTimings, movePace, groupLegs, DEFAULT_MOVE_MS,
-    poseAt, EASINGS, easeT,
+    poseAt, EASINGS, HOLD, easeT,
     previsFacets,
     effectiveCamera,
 };
