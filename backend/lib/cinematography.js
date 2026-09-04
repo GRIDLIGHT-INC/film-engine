@@ -27,6 +27,7 @@
  */
 
 const validate = require('./camera-validate');
+const { DEFAULT_SENSOR } = require('./previs-camera');
 
 /** The seven intentions the design puts on the panel. */
 const INTENTS = Object.freeze([
@@ -205,7 +206,8 @@ function validateProposal(proposal, brief) {
  * pedestal are relative because they are moves. Pan, tilt and roll are relative
  * for the same reason.
  */
-function applyProposal(camera, proposal, world) {
+function applyProposal(camera, proposal, world, opts) {
+    const o = opts || {};
     const c = camera || {};
     const ch = (proposal && proposal.changes) || {};
     const pos = (c.position || [0, 0, 0]).slice();
@@ -264,10 +266,27 @@ function applyProposal(camera, proposal, world) {
     if (ch.tiltDeg !== undefined) rot[1] += Number(ch.tiltDeg);
     if (ch.rollDeg !== undefined) rot[2] += Number(ch.rollDeg);
 
+    /*
+     * A FOCAL LENGTH WITHOUT A SENSOR IS HALF A CAMERA.
+     *
+     * A focal length only defines an angle of view relative to a sensor, so a
+     * camera carrying one and not the other cannot be read back — and a real
+     * shot directed through this path was written that way, with a lens and no
+     * sensor, which then threw on the storyboard's optics and returned a 500
+     * for the whole board.
+     *
+     * The film's own sensor when the caller supplied one, else the default the
+     * rest of previs already opens on. Never invented beyond that: this fills
+     * in what a camera needs to be legible, it does not decide the format.
+     */
+    const focal = ch.focalLengthMm === undefined ? c.focalMm : Number(ch.focalLengthMm);
+    const sensorId = c.sensorId || (o.sensorId) || (Number(focal) > 0 ? DEFAULT_SENSOR : undefined);
+
     return Object.assign({}, c, {
         position: pos,
         rotation: rot,
-        focalMm: ch.focalLengthMm === undefined ? c.focalMm : Number(ch.focalLengthMm),
+        sensorId,
+        focalMm: focal,
         rig: ch.rig === undefined ? c.rig : ch.rig,
         framingTarget: ch.framingTarget === undefined ? c.framingTarget : ch.framingTarget,
     });

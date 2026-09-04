@@ -29,7 +29,7 @@
  * here, where they would render identically if magnitude and rig did not differ.
  */
 
-const { SENSORS, sensorFor, framingDistance, framingDistanceForWidth, frameCoverage } = require('./previs-camera');
+const { SENSORS, sensorFor, DEFAULT_SENSOR, framingDistance, framingDistanceForWidth, frameCoverage } = require('./previs-camera');
 
 // ── Rigs ────────────────────────────────────────────────────────────────────
 //
@@ -919,7 +919,24 @@ function previsFacets(blocking) {
     // the vertical coverage it means, so the nearest one is the honest name for
     // what this camera sees.
     if (facets.distance_m && facets.focal_mm) {
-        const sensor = sensorFor(camera.sensorId || camera.sensor);
+        /*
+         * A MISSING SENSOR MUST NOT BLANK THE BOARD.
+         *
+         * `sensorFor` throws on an unknown id — deliberately, because silently
+         * defaulting hides a typo. But this is the READ path: every other
+         * sensor use in this function is guarded, and this one was not, so a
+         * single shot whose blocking carried a focal length and no sensor took
+         * out the whole project's storyboard with a 500. That happened for
+         * real: a camera written by the directing layer, which set a focal
+         * length without a sensor.
+         *
+         * Framing derived from the default sensor is a mild approximation.
+         * Losing every frame on the board is not.
+         */
+        const sensorId = camera.sensorId || camera.sensor;
+        const sensor = (sensorId && SENSORS[sensorId])
+            ? sensorFor(sensorId)
+            : sensorFor(DEFAULT_SENSOR);
         const coverage = frameCoverage(facets.distance_m, facets.focal_mm, sensor);
         if (coverage && Number.isFinite(coverage.heightM)) {
             facets.coverage_height_m = coverage.heightM;
