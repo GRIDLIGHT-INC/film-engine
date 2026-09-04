@@ -880,6 +880,20 @@ async function generateNativeSequence(req, res, id) {
         VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 1, ?, 'runway', ?, ?)`)
         .run(assetId, row.project_id, shots[0].id, typeof saved === 'string' ? saved : saved.path, fileName,
             JSON.stringify({ sequence_id: id, kind: 'native_multi_shot' }), result.provider_model || 'multi_shot_video', result.provider_job_id || null);
+
+    // The multi-shot recipe is a generation too, and is the LESS deterministic
+    // of the two paths — so it is the one whose outcomes are most worth having.
+    try {
+        let nativeCard = {};
+        try { nativeCard = JSON.parse(shots[0].scene_card_yaml || '{}'); } catch (_) { nativeCard = {}; }
+        require('../lib/video-attempt').recordVideoAttempt(db, {
+            shotId: shots[0].id, projectId: row.project_id,
+            provider: provider.id, model: result.provider_model || 'multi_shot_video',
+            tier: 'native_multi_shot', durationSeconds: payload && payload.duration_s,
+            referenceImages: shots.length,
+            sceneCard: nativeCard, assetId,
+        });
+    } catch (_) { /* never fail a clip that already cost money */ }
     db.prepare("UPDATE film_sequences SET output_asset_id = ?, status = 'complete', updated_at = datetime('now') WHERE id = ?").run(assetId, id);
     return json(res, 200, { sequence_id: id, asset_id: assetId, url: getFileUrl('video', row.project_id, fileName), mode: 'native_multi_shot' });
 }
@@ -1099,6 +1113,35 @@ async function generateSequence(req, res, id) {
             fileName,
             filePath: typeof saved === 'string' ? saved : (saved && saved.path) || '',
         });
+        /*
+         * RECORD THE ATTEMPT. `recordVideoAttempt` was called by
+         * routes/video-gen.js and by nothing else, so film_video_attempts held
+         * 0 rows after five real clips — three of which came through THIS path.
+         * The table was empty not for want of generation but for want of a
+         * caller, which makes "record now, learn later" a plan that recorded
+         * nothing.
+         *
+         * Never throws, by contract: bookkeeping must not fail a clip that has
+         * already been paid for.
+         */
+        try {
+            const fromShot = db.prepare('SELECT id, scene_card_yaml, current_frame_version FROM film_shots WHERE id = ?')
+                .get(segment.from_shot_id) || {};
+            let segCard = {};
+            try { segCard = JSON.parse(fromShot.scene_card_yaml || '{}'); } catch (_) { segCard = {}; }
+            require('../lib/video-attempt').recordVideoAttempt(db, {
+                shotId: segment.from_shot_id, projectId: row.project_id,
+                shotVersion: fromShot.current_frame_version,
+                provider: provider.id, model: result.provider_model || '',
+                tier: (result.usage && result.usage.resolution) || '',
+                durationSeconds: segment.duration_s,
+                resolution: (result.usage && result.usage.resolution) || '',
+                referenceImages: (segment.keyframes || []).length,
+                referenceRoles: (refs || []).map(r => r.role).filter(Boolean),
+                generationMs: null, sceneCard: segCard, assetId,
+            });
+        } catch (_) { /* never fail a clip that already cost money */ }
+
         results.push({
             from: segment.from, to: segment.to, ok: true, asset_id: assetId,
             // The tier that was actually BILLED, reported by the adapter that

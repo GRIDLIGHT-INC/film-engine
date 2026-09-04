@@ -116,6 +116,25 @@ async function executeGenerator(node, inputs, ctx) {
         let result;
         try {
             result = await provider.generate(capability, request, { timeout: 300000 });
+
+            /*
+             * A flows `gen.video` node is a generation like any other, and was
+             * the third path recording nothing. The attempt is recorded here
+             * rather than in out.asset, because a node run on its own stores no
+             * asset at all — and an attempt with no asset id is still a record
+             * that this model was asked for this shape of shot.
+             */
+            if (capability === 'video') {
+                try {
+                    const db = require('../../db/database').db;
+                    require('../video-attempt').recordVideoAttempt(db, {
+                        shotId: ctx && ctx.shotId, projectId: ctx && ctx.projectId,
+                        provider: provider.id, model: result && result.provider_model,
+                        durationSeconds: request && (request.duration_s || request.duration),
+                        sceneCard: (ctx && ctx.sceneCard) || {},
+                    });
+                } catch (_) { /* never fail a node that already cost money */ }
+            }
         } catch (err) {
             return { ok: false, error: err.message, providerId: provider.id };
         }

@@ -256,3 +256,39 @@ test('an over-long subject gives way; the camera and the staging do not', () => 
         'the spatial locks were cut to fit — they are short, and they are the thing most worth keeping');
     assert.match(out.prompt, /dragon banks hard/i, 'the subject was cut away entirely');
 });
+
+/**
+ * Every path that generates a clip records the attempt.
+ *
+ * `recordVideoAttempt` was called by routes/video-gen.js and by nothing else,
+ * so `film_video_attempts` held 0 rows after five real clips — three of which
+ * came through the sequence path. The table was empty not for want of
+ * generation but for want of a caller, which makes "record now, learn later" a
+ * plan that recorded nothing and a prediction that can never be built.
+ *
+ * Derived from the source: any module that asks a provider for `video` is a
+ * generating path and must record. A hand-written list is exactly what let
+ * three of four go unwired.
+ */
+test('every path that generates video records the attempt', () => {
+    const fs = require('fs'), path = require('path');
+    const root = path.join(__dirname, '..');
+    const files = [
+        'routes/video-gen.js', 'routes/sequences.js', 'routes/pipeline.js',
+        'lib/node-handlers/generate.js',
+    ];
+    const generating = [];
+    for (const f of files) {
+        const src = fs.readFileSync(path.join(root, f), 'utf8');
+        // Asks a provider for video, one way or another.
+        if (/generate\(\s*'video'|generate\(capability|capability === 'video'/.test(src)) {
+            generating.push({ f, records: /recordVideoAttempt\s*\(/.test(src) });
+        }
+    }
+    assert.ok(generating.length >= 4,
+        `only ${generating.length} generating paths found; the scan is not reading the tree`);
+    const silent = generating.filter(g => !g.records).map(g => g.f);
+    assert.deepStrictEqual(silent, [],
+        'these generate video and record no attempt, so there is nothing to learn adherence from: '
+        + silent.join(', '));
+});

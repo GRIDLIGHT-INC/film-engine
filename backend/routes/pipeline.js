@@ -275,6 +275,27 @@ async function executeStep(stepId, shot, scene, project) {
                 return { ok: false, error: saved.error, results };
             }
             result.assetId = saved.assetId;
+
+            /*
+             * RECORD A VIDEO ATTEMPT. The orchestrator generated clips and
+             * recorded none, which is one of the three paths that left
+             * film_video_attempts empty after real generation. Only `video`:
+             * the table is about which model rendered which SHAPE of shot, and
+             * a music cue has no shot shape.
+             */
+            if (capability === 'video') {
+                try {
+                    let vCard = {};
+                    try { vCard = JSON.parse((shot && shot.scene_card_yaml) || '{}'); } catch (_) { vCard = {}; }
+                    require('../lib/video-attempt').recordVideoAttempt(db, {
+                        shotId: shot && shot.id, projectId: project && project.id,
+                        shotVersion: shot && shot.current_frame_version,
+                        provider: result.provider || '', model: result.provider_model || '',
+                        durationSeconds: vCard.duration_seconds || null,
+                        sceneCard: vCard, assetId: saved.assetId,
+                    });
+                } catch (_) { /* never fail a step that already cost money */ }
+            }
         }
 
         return requests.length === 1
