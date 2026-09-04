@@ -788,6 +788,19 @@
       ]
     },
     {
+      "node": "gen.world",
+      "handler": "backend/lib/node-handlers/generate.js",
+      "capability": "world",
+      "inputs": [
+        "text",
+        "image",
+        "subject"
+      ],
+      "outputs": [
+        "model3d"
+      ]
+    },
+    {
       "node": "tf.mix",
       "handler": "backend/lib/node-handlers/transform.js",
       "capability": null,

@@ -132,6 +132,20 @@ const NODE_TYPES = {
         capability: 'model3d',
         pipelineSteps: [],
     },
+    'gen.world': {
+        label: "Spatial World",
+        kind: 'generator',
+        inputs: ['text', 'image', 'subject'],
+        /*
+         * A world is more than its geometry — it carries splats, and the poses
+         * a camera can stand in. What an EDGE can carry today is the collider
+         * mesh previs already loads, so that is the honest output type; the
+         * rest travels as an asset, which is where a downstream node reads it.
+         */
+        outputs: ['model3d'],
+        capability: 'world',
+        pipelineSteps: [],
+    },
     'in.stock': {
         label: "Licensed Catalog",
         kind: 'input',

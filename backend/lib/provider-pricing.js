@@ -422,6 +422,35 @@ const RATE_BOOK = {
         note: 'Text-to-3D and image-to-3D: 20 credits on Meshy 6/7, 10 on Meshy 5. Remesh, rigging and animation are free.',
     },
 
+    /*
+     * World Labs Marble — spatial worlds for previs.
+     *
+     * $1.00 per 1,250 credits, so a credit is $0.0008. Draft is the previs
+     * model and the one this engine defaults to: 250 credits is $0.20, which is
+     * about what ONE storyboard frame costs here, and the whole point is that
+     * camera exploration must be cheaper than re-rolling frames.
+     *
+     * Verified against a live generation rather than the price list alone: a
+     * two-plate draft world billed exactly 250 credits and returned in 37s.
+     */
+    'worldlabs:world': {
+        // One call, one world — the same unit meshy bills 3D in. There is no
+        // 'world' billing unit and inventing one would put a value in the ledger
+        // that nothing else can compare against.
+        unit: 'call', native_unit: 'credit', native_per_unit: 250, usd_per_native: 0.0008,
+        models: {
+            'marble-1.0-draft': { native_per_unit: 250 },
+            'marble-1.0': { native_per_unit: 1600 },
+            'marble-1.1': { native_per_unit: 1600 },
+            'marble-1.1-plus': { native_per_unit: 3100 },
+        },
+        source: 'https://docs.worldlabs.ai/api/pricing',
+        checked: '2026-09-04',
+        note: 'Draft 150-250 credits by input type, standard 1,500-1,600, plus up to 3,100. '
+            + 'Splat and collider-mesh artefacts are included; HQ mesh export is 3,500 extra. '
+            + 'The operation returns cost.total_credits, so the metered figure is the billed one.',
+    },
+
     // ── ElevenLabs ────────────────────────────────────────────────────────
     // Speech bills per character; sound and music bill per second of output.
     'elevenlabs:voice': {

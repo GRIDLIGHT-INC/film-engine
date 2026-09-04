@@ -32,7 +32,14 @@
  */
 
 // Capabilities the pipeline resolves a provider for.
-const CAPABILITIES = ['llm', 'image', 'video', 'music', 'voice', 'sfx', 'ambient', 'lipsync', 'post', 'model3d', 'stock'];
+/*
+ * `world` is spatial reconstruction — a navigable environment built from a
+ * location's own plates. It is NOT `model3d`: that turns one SUBJECT into a
+ * mesh, while this turns a PLACE into somewhere a camera can stand. Folding
+ * them would put a dragon and a street behind one provider choice, and they are
+ * different purchases from different vendors.
+ */
+const CAPABILITIES = ['llm', 'image', 'video', 'music', 'voice', 'sfx', 'ambient', 'lipsync', 'post', 'model3d', 'world', 'stock'];
 
 // Default provider per capability when a project/env sets nothing. Gridlight is
 // the safe default so behavior is unchanged until a project opts into another.

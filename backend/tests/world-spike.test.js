@@ -24,11 +24,18 @@ const path = require('path');
 
 const SPIKE = fs.readFileSync(path.join(__dirname, '..', 'spike-world.js'), 'utf8');
 
+/*
+ * The rules are asserted against the ADAPTER, which is what ships, and the
+ * spike is then held to carrying no copy of them. Pinning the spike alone was
+ * the first version and it was vacuous the moment the adapter was extracted:
+ * mutating the adapter's own compass map from 90 to 0 — every world built
+ * facing the wrong way — left the whole file green.
+ */
+const WL = require('../lib/providers/worldlabs');
+
 test('the compass maps onto Marble azimuths, north as front', () => {
-    const m = /const AZIMUTH = \{([^}]*)\}/.exec(SPIKE);
-    assert.ok(m, 'the compass mapping is gone');
-    const map = {};
-    for (const pair of m[1].matchAll(/'?([a-z]*)'?\s*:\s*(\d+)/g)) map[pair[1]] = Number(pair[2]);
+    const map = WL.AZIMUTH;
+    assert.ok(map && typeof map === 'object', 'the compass mapping is gone');
 
     // Documented: 0/90/180/270 = front/right/back/left.
     assert.strictEqual(map.north, 0, 'north is the plate the others turn from, so it is front (0)');
@@ -43,8 +50,31 @@ test('the compass maps onto Marble azimuths, north as front', () => {
 });
 
 test('it sends no more images than Direction Control accepts', () => {
-    assert.match(SPIKE, /slice\(0, 4\)/,
+    assert.strictEqual(WL.MAX_INPUT_IMAGES, 4,
         'Direction Control takes at most four images; sending more is a refusal that costs a request');
+
+    // And a real request must honour it rather than merely declaring it.
+    const plates = ['north', 'east', 'south', 'west', 'north-east', 'up'].map(view => ({
+        view, data_base64: 'AA==', extension: 'png',
+    }));
+    const req = WL.buildRequest({ prompt: 'a street', plates });
+    const sent = (req.world_prompt && req.world_prompt.multi_image_prompt) || [];
+    assert.ok(sent.length <= WL.MAX_INPUT_IMAGES,
+        `the request carries ${sent.length} images against a ceiling of ${WL.MAX_INPUT_IMAGES}`);
+
+    // Neither file may keep a second copy of either rule.
+    assert.ok(!/const AZIMUTH\s*=\s*\{/.test(SPIKE),
+        'the spike keeps its own compass map — two copies is how they come to disagree');
+    /*
+     * Bound to the CEILING, not to any slice: the spike truncates error bodies
+     * with slice(0, 300) and a response dump with slice(0, 2000), and a scan
+     * for "a slice by a literal" reported both as second copies of the image
+     * cap. A check that cries wolf twice is one nobody runs a third time.
+     */
+    assert.ok(/MAX_INPUT_IMAGES/.test(SPIKE),
+        'the spike never reads the adapter ceiling');
+    assert.ok(!new RegExp(`slice\\(0,\\s*${WL.MAX_INPUT_IMAGES}\\b`).test(SPIKE),
+        'the spike hardcodes its own image ceiling instead of reading the adapter');
 });
 
 test('the request matches the documented contract', () => {

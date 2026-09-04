@@ -33,7 +33,13 @@ const MODEL = process.env.WORLDLABS_MODEL || 'marble-1.0-draft';
 /* Film Engine names its location sides by compass; Marble takes an azimuth,
  * documented as 0/90/180/270 for front/right/back/left. North is the plate the
  * others turn from, so it is front. */
-const AZIMUTH = { north: 0, east: 90, south: 180, west: 270, '': 0 };
+/*
+ * The compass mapping and the image ceiling come from the ADAPTER, never from a
+ * copy here. Both were written twice — once in each file — which is how the
+ * spike and the thing that ships come to disagree about which way north faces,
+ * and the disagreement is invisible: every world still generates, facing wrong.
+ */
+const { AZIMUTH, MAX_INPUT_IMAGES } = require('./lib/providers/worldlabs');
 
 function arg(name, fallback) {
     const i = process.argv.indexOf('--' + name);
@@ -75,7 +81,7 @@ function platesFor(locationId) {
         if (p && fs.existsSync(p)) out.push({ view, file: p });
     }
     // Direction Control takes at most four.
-    return out.slice(0, 4);
+    return out.slice(0, MAX_INPUT_IMAGES);
 }
 
 async function call(pathname, init) {
@@ -151,7 +157,9 @@ async function call(pathname, init) {
 
     const world = op.response || {};
     const assets = world.assets || {};
-    const collider = assets.collider_mesh_url || assets.collider || (assets.mesh && assets.mesh.collider_url);
+    // Measured against a real response: it is nested under `mesh`.
+    const collider = (assets.mesh && assets.mesh.collider_mesh_url)
+        || assets.collider_mesh_url || assets.collider;
     console.log('  artefacts  :', Object.keys(assets).join(', ') || '(none named)');
 
     if (!collider) {

@@ -21,6 +21,9 @@ const OUTPUT_PORT = {
     llm: 'text', image: 'image', video: 'video', voice: 'audio',
     music: 'audio', sfx: 'audio', ambient: 'audio', lipsync: 'video',
     post: 'video', model3d: 'model3d',
+    // A world leaves on the wire its collider mesh travels on; the splat and
+    // the camera poses are read from the asset, not carried by an edge.
+    world: 'model3d',
 };
 
 /** First value on a port, whether it arrived alone or in a collector array. */
@@ -160,11 +163,18 @@ async function executeGenerator(node, inputs, ctx) {
     };
 }
 
-// Every gen.* node type shares the one implementation.
+/*
+ * Every gen.* node type shares the one implementation, and the SET is derived
+ * from the registry rather than typed here. It was a hand-written list, which
+ * is the second-list shape this codebase keeps paying for: a node type added to
+ * NODE_TYPES and forgotten here is listed on the canvas, exposed as an MCP
+ * tool, and dispatches to nothing — which reads as the node being broken rather
+ * than unregistered.
+ */
+const { NODE_TYPES } = require('../flow-node-types');
 const handlers = {};
-for (const id of ['gen.llm', 'gen.image', 'gen.video', 'gen.voice', 'gen.music',
-                  'gen.sfx', 'gen.ambient', 'gen.lipsync', 'gen.post', 'gen.model3d']) {
-    handlers[id] = { execute: executeGenerator };
+for (const [id, def] of Object.entries(NODE_TYPES)) {
+    if (def.kind === 'generator') handlers[id] = { execute: executeGenerator };
 }
 
 module.exports = { handlers, executeGenerator, contextFromInputs };

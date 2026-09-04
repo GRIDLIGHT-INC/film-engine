@@ -2,7 +2,7 @@
   "$comment": "Proposed node palette for a Flows-style visual canvas in Film Engine. Research artifact accompanying docs/plans/flows-canvas-research.md. Coverage is enforced by backend/tests/flows-node-taxonomy.test.js, which iterates the live CAPABILITIES and PIPELINE_STEPS registries \u2014 add a capability or a pipeline step and this file must grow with it.",
   "version": 1,
   "covers": {
-    "capabilities": 11,
+    "capabilities": 12,
     "pipeline_steps": 9
   },
   "port_types": [
@@ -259,6 +259,25 @@
       ],
       "pipeline_steps": [],
       "backed_by": "providers.resolve('model3d'); payload via lib/threed-prompt.js"
+    },
+    {
+      "id": "gen.world",
+      "label": "Spatial World",
+      "kind": "generator",
+      "inputs": [
+        "text",
+        "image",
+        "subject"
+      ],
+      "outputs": [
+        "model3d"
+      ],
+      "capabilities": [
+        "world"
+      ],
+      "pipeline_steps": [],
+      "backed_by": "providers.resolve('world'); payload via lib/providers/worldlabs.js",
+      "notes": "A place a camera can stand in, reconstructed from a location's own plates. NOT gen.model3d: that turns one SUBJECT into a mesh, this turns a PLACE into somewhere to shoot."
     },
     {
       "id": "in.stock",

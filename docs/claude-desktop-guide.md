@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**236 tools, 57 families.** Everything the app can do, you can ask for in a
+**241 tools, 63 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -503,7 +503,7 @@ These resolve a provider and bill you:
 
 `node_gen_llm` · `node_gen_image` · `node_gen_video` · `node_gen_voice` ·
 `node_gen_music` · `node_gen_sfx` · `node_gen_ambient` · `node_gen_lipsync` ·
-`node_gen_post` · `node_gen_model3d` · `storyboard_generate` ·
+`node_gen_post` · `node_gen_model3d` · `node_gen_world` · `storyboard_generate` ·
 `storyboard_regenerate` · `storyboard_refine` · `plate_generate` ·
 `plate_generate_all` · `flow_run`
 
@@ -577,9 +577,28 @@ Visuals attached to an entry are reference for a person. A style still is the
 lowest-ranked reference kind and is dropped before the request is built on any
 shot with a cast and a location; a clip reaches no generator at all.
 
+### Where the production stands
+
+`milestone_list` · `milestone_update`
+
+The production timeline: every milestone with its phase, status and completion.
+`milestone_update` moves one — its status, percentage, dates or title. These
+describe the SCHEDULE, not the work: marking a milestone complete generates
+nothing and does not change what a report says about the shots underneath it.
+
+### What is on the other end of this connection
+
+`agent_presence`
+
+What the engine knows about the agent host attached to it, and what that host
+can do. It exists because the connected model IS the language model here — there
+is no server-side one — so which host is attached decides which work can happen
+in the conversation rather than being paid for at a provider.
+
 ### What it actually cost
 
-`spend_report` · `spend_usage` · `spend_backfill` · `spend_rates` · `spend_compare`
+`spend_report` · `spend_usage` · `spend_backfill` · `spend_rates` · `spend_compare` ·
+`spend_record`
 
 Every provider call is metered automatically — nothing to enter by hand.
 `spend_report` gives dollars *and* the provider's own units (credits at Meshy
@@ -587,6 +606,11 @@ and Runway, characters and seconds at ElevenLabs, tokens at Anthropic), broken
 down by capability, provider, model, day and shot, with cost per minute of
 footage. `spend_usage` is the raw meter, one row per call, for when you want to
 know *why* a number is what it is.
+
+`spend_record` is the exception to "nothing to enter by hand": a charge the
+engine did not observe — a clip bought on a provider's own website, a plan fee —
+has no call to meter, so it is the one way the ledger can be told about money
+that was really spent.
 
 `spend_rates` shows where every price comes from, with the source URL and the
 date it was checked. Meshy publishes what an operation costs in credits and not

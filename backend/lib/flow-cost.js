@@ -32,6 +32,10 @@ const COST_PER_CALL = {
     lipsync: 0.20,
     post: 0.08,
     model3d: 0.35,
+    // High-side on purpose, like every figure here: Marble's cheapest draft is
+    // ~$0.20 and its most expensive model ~$2.48, and a gate that quotes the
+    // draft would wave through a fan-out of the one that costs twelve times it.
+    world: 2.50,
     stock: 0.00,
 };
 

@@ -60,6 +60,11 @@ test('there are several places that inline image bytes', () => {
  */
 const NOT_AN_IMAGE = Object.freeze({
     'providers/oauth.js': 'base64url for a PKCE verifier — never sent as media',
+    // World Labs documents `data_base64` as RAW base64 with a separate
+    // `extension` field — a data: URI in it is refused. This is the one
+    // provider here whose contract wants the bare blob, which is why the
+    // exemption names the field rather than the file alone.
+    'providers/worldlabs.js': 'data_base64 is the documented media source and takes RAW base64 — the file type travels in a separate `extension` field, and a data: URI in it is refused',
 });
 
 test('the exemptions are real and reasoned', () => {

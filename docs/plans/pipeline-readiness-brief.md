@@ -81,6 +81,7 @@ Current resolution with the credentials on this machine:
 | `voice`, `music`, `sfx`, `ambient` | `elevenlabs` | keyed |
 | `model3d` | `meshy` | keyed |
 | `lipsync`, `post` | `gridlight` | no hosted adapter; handed to the NLE |
+| `world` | `worldlabs` | keyed — World Labs Marble, spatial worlds for previs. Draft (`marble-1.0-draft`) is the default and costs 250 credits ≈ $0.20; a standard world is 1,600 ≈ $1.28. Async like `meshy`: the operation id is written through `onHandle` before polling, so a world the host abandons is collectable. Verified live — a two-plate draft world returned in 37s and its collider mesh parsed with the existing `glb-parser` at 53,841 triangles across 39.6 × 9.0 × 47.9 world units |
 | `stock` | — | no adapter at all; nothing writes `licensed_catalog` |
 
 **Quality tiers.** Image generation is chosen as **Draft / Standard / Precision** rather than by provider name, resolved by `lib/quality-tiers.js` inside `resolveId()` so every path inherits it. Draft routes to FLUX.2 Klein, Standard to Nano Banana 2 (`google`), Precision to Nano Banana Pro; each tier names an ordered fallback so a tier whose preferred provider holds no key still generates rather than failing at spend time. An explicit per-project provider, and an explicit `image_model`, both outrank the table.

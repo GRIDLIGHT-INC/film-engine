@@ -196,6 +196,7 @@ film-engine/
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
+│   │   ├── providers/worldlabs.js # World Labs Marble: a location's plates become a navigable world
 │   │   ├── llm-client.js         # Shared LLM call helper
 │   │   ├── budget-estimator.js   # Pre-flight cost estimation
 │   │   ├── provider-pricing.js  # What a generation costs, in the provider's own units
@@ -1250,6 +1251,65 @@ hand, recording the number.
 The full retrospective, written for retrieval by failure mode rather than by
 feature, is [`docs/solutions/sheet-fidelity-and-generation-feedback.md`](docs/solutions/sheet-fidelity-and-generation-feedback.md)
 — the first entry in that directory.
+
+### A Capability Is Twelve Registries, Not a String in a List
+
+Spatial reconstruction — a place a camera can stand in, built from a location's
+own plates — needed a provider, and World Labs' Marble is it. The adapter was
+the easy half. The instructive half is what happened when `world` was added to
+`CAPABILITIES`: **the server stopped booting.**
+
+`lib/flow-cost.js` asserts at module load that every capability has a projected
+cost, and threw *"no cost estimate for capability 'world'"* — taking `run-plan`,
+then `server.js`, then **71 integration tests** down with it. The suite went
+from 17 failures to 88, and almost none of them named the cause: they said
+*health check returns ok* and *creates a project*.
+
+**That guard is the feature, not the obstacle.** A capability with no cost
+estimate would be silently free, and the budget gate would wave through exactly
+the fan-outs it exists to stop. Failing at load — loudly, on the first import —
+is what turned a silent hole into a five-minute fix. `CAPABILITIES` is read by
+**twelve** registries (the cost gate, the canvas node types, the taxonomy and
+interfaces manifests, the rate book, the readiness brief, provider resolution,
+the settings payload, dry-run, and four derived test denominators), and the ones
+that fail at load are the ones that cannot be half-added.
+
+**`world` is deliberately not `model3d`.** That capability turns one SUBJECT
+into a mesh; this turns a PLACE into somewhere to shoot. Folding them would put
+a dragon and a street behind one provider choice, and they are different
+purchases from different vendors. It is also deliberately **not** an
+orchestrated pipeline step: a world is built once per location, not once per
+shot, which is why `phase0-payload-parity` — keyed on the steps rather than the
+capabilities — correctly does not demand a payload builder for it.
+
+**A hand-written list of `gen.*` ids was the real defect found on the way.**
+`lib/node-handlers/generate.js` registered its ten generators by name, beside a
+comment saying every `gen.*` node shares one implementation. A node type added
+to `NODE_TYPES` and forgotten there is listed on the canvas, exposed as an MCP
+tool, and dispatches to nothing — which reads as the node being broken rather
+than unregistered. The set is derived from the registry now, so the eleventh
+arrives wired with nothing to remember.
+
+**And the pins were vacuous the moment the adapter was extracted.** The spike
+script and the adapter each held their own compass→azimuth map and their own
+four-image ceiling, and the tests read the *spike*. Mutating the **adapter's**
+own map from 90 to 0 — which builds every world facing the wrong way, silently,
+because every world still generates — left the whole file green. The adapter is
+the single statement of both rules now, the spike reads them, and the test
+asserts *neither file keeps a second copy*.
+
+Its first version of that copy check matched `slice(0, 300)` and
+`slice(0, 2000)` — the spike truncating an error body and a response dump — and
+reported both as second copies of the image cap. **A check that cries wolf twice
+is one nobody runs a third time**; it is bound to the ceiling's own value now.
+
+`spike-world.js` answered the three unknowns for **$0.20 and 37 seconds** on a
+real location: the collider mesh is **53,841 triangles**, parses with the
+existing `glb-parser`, decimates to the stage's 20,000 budget, and its extent is
+**39.6 × 9.0 × 47.9** — a street, not a bubble. The scale is reported as
+uncalibrated rather than in metres, because Marble promises no unit and a size
+stated confidently in the wrong unit is worse than one that says it does not
+know.
 
 ### Each Seedance Workflow Names Its Pictures Differently
 
