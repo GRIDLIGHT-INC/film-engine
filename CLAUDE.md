@@ -23,6 +23,7 @@ film-engine/
 │   ├── mcp-server.js       # MCP stdio server (JSON-RPC, no SDK)
 │   ├── preflight.js        # End-to-end readiness report (CLI, exits 1 if blocked)
 │   ├── dry-run.js          # What every service would be sent, without sending it (CLI)
+│   ├── spike-world.js     # Is a Marble world usable as a previs stage? Three answers, $0.20 (CLI)
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
@@ -241,6 +242,7 @@ film-engine/
 │       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
 │       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
 │       ├── glb-parser.test.js          # A synthetic .glb parses, transforms apply, decimation bounds hold
+│       ├── world-spike.test.js     # The Marble request this engine would actually send
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale
 │       ├── script-revision.test.js     # Revising a story does not cascade the production away
@@ -4086,6 +4088,7 @@ node --test backend/tests/screenplay-to-entities.test.js
 node --test backend/tests/storyboard-prerequisites.test.js
 node --test backend/tests/previs-explore-ui.test.js
 node --test backend/tests/glb-parser.test.js
+node --test backend/tests/world-spike.test.js
 node --test backend/tests/spec-consumption.test.js
 node --test backend/tests/shot-card-edit.test.js
 node --test backend/tests/script-revision.test.js
