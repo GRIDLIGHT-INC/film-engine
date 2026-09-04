@@ -490,6 +490,27 @@ const PRODUCTION_TOOLS = [
         }, required: ['shot_id', 'candidates'],
     },
     {
+        name: 'generation_plate',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/generation-plate`,
+        body: a => { const { shot_id, ...rest } = a || {}; return rest; },
+        description:
+            'What a geometric plate for this shot would carry: the camera and blocking it renders '
+            + 'from, the raster it renders at (the shot\'s own delivery shape, so a vertical shot is '
+            + 'rendered vertical rather than cropped later), the three outputs — image, depth and '
+            + 'subject masks — and the sentence that names it in the prompt. FREE: this is a local '
+            + 'render, and it is the free step that precedes every paid generation. '
+            + 'A plate leads the reference list: it fixes the camera, the framing and where each '
+            + 'subject stands, and the image model supplies everything else. A plate whose world '
+            + 'version has been deleted reports as DETACHED rather than stale, because you cannot '
+            + 're-render against geometry that no longer exists.',
+        schema: {
+            shot_id: { type: 'string' },
+            aspect: { type: 'string', description: 'Override the delivery shape, e.g. "9:16" for a vertical cut.' },
+            move: { type: 'object', description: 'The camera move, so it can travel to video as prose: { movement, amountM, durationMs, rotate }' },
+        }, required: ['shot_id'],
+    },
+    {
         name: 'world_delete',
         handler: handleWorlds, method: 'DELETE',
         path: a => `/film/worlds/${a.world_id}`,

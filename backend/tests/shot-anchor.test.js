@@ -246,7 +246,24 @@ test('the anchor leads every plate, because it is not one', () => {
     // already answered that for every subject in it — in situ, at the right
     // scale, lit the way the scene is lit — so ranking it behind the plates
     // would spend the slots re-establishing what the first reference fixed.
-    assert.strictEqual(KIND_RANK.anchor, 0, 'a plate outranks the scene itself');
+    /*
+     * Expressed as the RULE rather than as the number 0, because the number was
+     * only ever shorthand for it. The anchor must outrank every SUBJECT plate —
+     * that is what the reasoning above is about.
+     *
+     * Exactly one thing may precede it: the generation plate, which is not a
+     * plate of a subject at all but the geometry the anchor's dressing is
+     * placed INTO. Nothing else may, and this asserts that as a closed set
+     * rather than leaving it to whoever adds the next kind.
+     */
+    for (const subject of ['character', 'location', 'prop', 'style']) {
+        assert.ok(KIND_RANK.anchor < KIND_RANK[subject],
+            `${subject} outranks the scene itself`);
+    }
+    const above = Object.keys(KIND_RANK).filter(k => KIND_RANK[k] < KIND_RANK.anchor);
+    assert.deepStrictEqual(above, ['plate'],
+        `these now precede the anchor: ${above.join(', ')} — only the geometric plate may`);
+
     assert.ok(KIND_RANK.character < KIND_RANK.location, 'a face is worth less than a porch');
     assert.ok(KIND_RANK.location < KIND_RANK.prop);
     assert.ok(KIND_RANK.prop < KIND_RANK.style);

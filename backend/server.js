@@ -860,7 +860,8 @@ const server = http.createServer(async (req, res) => {
          */
         if (parts[1] === 'worlds' || parts[1] === 'world-versions'
             || (parts[1] === 'projects' && parts[3] === 'worlds')
-            || (parts[1] === 'shots' && (parts[3] === 'world' || parts[3] === 'direct'))) {
+            || (parts[1] === 'shots' && (parts[3] === 'world' || parts[3] === 'direct'
+                                        || parts[3] === 'generation-plate'))) {
             return await handleWorlds(req, res, parts, query);
         }
 

@@ -188,7 +188,18 @@ function resolveUri(ref) {
  * Relative order among the plates is untouched, so a project with no anchor
  * selects exactly the references it selected before.
  */
-const KIND_RANK = { anchor: 0, character: 1, location: 2, prop: 3, style: 4 };
+/*
+ * The GENERATION PLATE leads, and the five that follow keep their order.
+ *
+ * A plate fixes the camera, the framing and where every subject stands — it is
+ * the geometry the rest of the references are dressed onto, so anything ranked
+ * above it would be competing with the composition rather than filling it in.
+ *
+ * Inserting at 0 and renumbering the rest preserves their RELATIVE order
+ * exactly, which is the property that makes this safe: a project with no plate
+ * selects precisely the references it selected before.
+ */
+const KIND_RANK = { plate: 0, anchor: 1, character: 2, location: 3, prop: 4, style: 5 };
 
 /**
  * Where each kind of reference comes from.
@@ -204,6 +215,13 @@ const KIND_RANK = { anchor: 0, character: 1, location: 2, prop: 3, style: 4 };
  *                mood-board images. No table of its own by design.
  */
 const KIND_SOURCE = {
+    /*
+     * A fourth source class. A plate is not an entity, not a generated frame and
+     * not the project's look — it is a render of previs geometry, and saying so
+     * here is what stops a test deriving "every subject kind" from KIND_RANK and
+     * then demanding a table and a plate generator for it.
+     */
+    plate: 'previs',
     character: 'entity',
     anchor: 'frame',
     location: 'entity',

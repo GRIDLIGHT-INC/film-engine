@@ -48,6 +48,28 @@ function database() {
  *   higher number produces a rejection at the provider, which is worse than
  *   sending fewer plates.
  */
+/**
+ * This shot's most recent generation plate, as a rank-0 reference.
+ *
+ * Reads the NEWEST: a plate is re-rendered whenever the blocking moves, and the
+ * current geometry is the only one worth conditioning on. Returns null rather
+ * than throwing when a shot has no plate — which is every shot until somebody
+ * renders one — because a plate that cannot be read must never take down a
+ * generation that would otherwise have succeeded.
+ */
+function plateReferenceFor(shotId) {
+    try {
+        const row = database().prepare(
+            `SELECT id, file_path FROM film_assets
+              WHERE shot_id = ? AND asset_type = 'other'
+                AND json_valid(metadata)
+                AND json_extract(metadata, '$.kind') = 'plate_image'
+              ORDER BY created_at DESC LIMIT 1`).get(shotId);
+        if (!row || !row.file_path) return null;
+        return { name: 'PLATE', kind: 'plate', file_path: row.file_path, assetId: row.id };
+    } catch (_) { return null; }
+}
+
 function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCardProps, anchor, opts) {
     // Subjects whose plate must travel even though the anchor names them: the
     // director's explicit choice, plus whatever this shot's own framing demands.
@@ -60,6 +82,18 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
     // than a fresh assembly of the same ingredients.
     const sceneAnchor = require('./shot-anchor');
     const anchorRef = sceneAnchor.anchorCandidate(anchor);
+    /*
+     * THE GENERATION PLATE, gathered HERE so every path gets it.
+     *
+     * Four call sites reach this function — the shared payload path and three
+     * in the storyboard routes — and attaching the plate at any one of them
+     * would leave the other three conditioning on no geometry while their
+     * prompts still read perfectly. That is the divergence this module exists
+     * to end.
+     */
+    const plateRef = opts && opts.shotId ? plateReferenceFor(opts.shotId) : null;
+    if (plateRef) candidates.push(plateRef);
+
     if (anchorRef) candidates.push(anchorRef);
 
     // Whatever the anchor already shows needs no plate. Three slots is the
@@ -276,7 +310,7 @@ function shotReferencesFor(db, opts) {
         // The ceiling of the provider this config resolves to, so the shared
         // path agrees with the per-route ones about how many plates fit.
         { limit: support.maxReferenceImages, keepPlates: o.keepPlates || [],
-          locationView: o.locationView || '' });
+          locationView: o.locationView || '', shotId: o.shotId || null });
     const anchorRef = references.find(r => r && r.kind === 'anchor');
     return {
         references,
@@ -336,6 +370,7 @@ function platedSubjects(db, projectId) {
 module.exports = {
     platedSubjects,
     gatherShotReferences,
+    plateReferenceFor,
     matchProps,
     matchCharacters,
     matchLocation,

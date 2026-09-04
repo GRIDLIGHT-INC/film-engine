@@ -89,6 +89,7 @@ const IMPORTS = {
     prop: { target: 'prop-plate', handler: 'locations', url: i => `/film/props/${i.prop}/plate/import`, extra: {} },
     style: { target: 'mood-board-image', handler: 'moodBoard', url: i => `/film/projects/${i.projectId}/mood-board/import`, extra: {} },
     anchor: { target: 'storyboard-image', handler: null, url: null, extra: {} },
+
 };
 
 const HANDLERS = () => ({
@@ -101,7 +102,17 @@ const HANDLERS = () => ({
 
 test('every kind of reference can be uploaded, not only generated', () => {
     const { MEDIA_IMPORTS } = require('../lib/media-imports');
-    const kinds = Object.keys(KIND_SOURCE);
+    /*
+     * Only an ENTITY kind is uploadable-as-a-reference. A generation plate is
+     * RENDERED from geometry, not photographed or drawn — there is no version
+     * of it a director could supply, so demanding an import route for it would
+     * be demanding a way to hand-draw a camera solve.
+     *
+     * Derived from KIND_SOURCE rather than excluded by name, which is what that
+     * map exists for: the sixth kind arrived and this list did not have to be
+     * remembered.
+     */
+    const kinds = Object.keys(KIND_SOURCE).filter(k => KIND_SOURCE[k] !== 'previs');
     assert.ok(kinds.length >= 5, `the reference kind registry collapsed (${kinds.length})`);
 
     const missing = [];
@@ -121,7 +132,7 @@ test('every kind of reference can be uploaded, not only generated', () => {
 
 test('a JPEG is accepted, or the target states why it cannot be', () => {
     const { validateBytes, MEDIA_IMPORTS, decodeDataUri } = require('../lib/media-imports');
-    for (const kind of Object.keys(KIND_SOURCE)) {
+    for (const kind of Object.keys(KIND_SOURCE).filter(k => KIND_SOURCE[k] !== 'previs')) {
         const spec = MEDIA_IMPORTS[IMPORTS[kind].target];
         if (!spec || spec.kind !== 'image') continue;
         /*
@@ -261,7 +272,7 @@ test('the page offers an upload wherever it offers a generate', () => {
     // eslint-disable-next-line no-new-func
     const uploadControl = new Function('esc', `${body}; return uploadControl;`)(x => String(x));
 
-    for (const kind of Object.keys(KIND_SOURCE)) {
+    for (const kind of Object.keys(KIND_SOURCE).filter(k => KIND_SOURCE[k] !== 'previs')) {
         const target = IMPORTS[kind].target;
         const built = uploadControl(target, '/x', {});
         assert.ok(built.includes(`data-import-target="${target}"`),

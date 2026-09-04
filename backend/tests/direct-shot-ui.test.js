@@ -50,10 +50,20 @@ function runFn(name, ...args) {
 
 /** What a director PICKS for a shot: who is in it, where it is, what is in it. */
 const BLOCKING_KINDS = (() => {
-    const { KIND_RANK } = require('../lib/reference-images');
-    // `anchor` has its own button by design and `style` is the film's look,
-    // not a per-shot choice. Everything else is a thing you select for a shot.
-    return Object.keys(KIND_RANK).filter(k => k !== 'anchor' && k !== 'style');
+    const { KIND_RANK, KIND_SOURCE } = require('../lib/reference-images');
+    /*
+     * DERIVED from KIND_SOURCE rather than a list of names.
+     *
+     * Only an `entity` kind is a thing a director PICKS for a shot — a subject
+     * with a table and a plate. `anchor` is a frame and has its own button,
+     * `style` is the film's look, and `plate` is a render of geometry: none of
+     * them is something you choose from a list of cast and props.
+     *
+     * This was `filter(k => k !== 'anchor' && k !== 'style')`, and the sixth
+     * kind arrived and demanded a picker for a previs render. KIND_SOURCE
+     * exists precisely so that question has a mechanical answer.
+     */
+    return Object.keys(KIND_RANK).filter(k => KIND_SOURCE[k] === 'entity');
 })();
 
 /** Every camera facet the validator accepts — the cinematography set. */

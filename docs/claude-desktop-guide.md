@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**255 tools, 65 families.** Everything the app can do, you can ask for in a
+**256 tools, 65 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -596,6 +596,21 @@ without a unit, so until then every distance in it is decorative, and the world
 says `APPROXIMATE SCALE` rather than guessing. And a version is **never**
 overwritten: improving a world makes a new one, and a shot pinned to the old
 version stays there until somebody moves it deliberately.
+
+### The geometric plate
+
+`generation_plate`
+
+What a plate for this shot would carry: the camera and blocking it renders from,
+the raster it renders at — the shot's own delivery shape, so a vertical shot is
+rendered vertical rather than cropped later — the three outputs (image, depth,
+subject masks) and the sentence that names it in the prompt. **Free**: it is a
+local render, and it is the step that precedes every paid generation.
+
+A plate **leads** the reference list. It fixes the camera, the framing and where
+each subject stands; the image model supplies appearance, identity, light and
+polish. A plate whose world version has been deleted reports as **detached**
+rather than stale — you cannot re-render against geometry that no longer exists.
 
 ### Directing the shot
 

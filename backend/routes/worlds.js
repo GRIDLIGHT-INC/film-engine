@@ -31,6 +31,7 @@ const worldAssets = require('../lib/world-assets');
 const { serveFile } = require('../lib/file-storage');
 const cine = require('../lib/cinematography');
 const validateCam = require('../lib/camera-validate');
+const genPlate = require('../lib/generation-plate');
 
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -100,6 +101,7 @@ function directingContext(shotId) {
     const director = row ? parse(row.director_json, {}) : {};
     return {
         shotId, blocking, world: world || { bounds: null, scale_factor: null },
+        worldVersionId: (row && row.world_version_id) || null,
         axis: director.axis || null,
         establishedSide: director.established_side || null,
     };
@@ -270,6 +272,52 @@ async function handleWorlds(req, res, urlParts, query) {
             return json(res, 200, cine.acceptCandidates(body.candidates || [], ctx));
         }
         return json(res, 405, { error: 'Method not allowed' });
+    }
+
+    // ── /film/shots/:id/generation-plate — the bridge to generation ─────────
+    //
+    // FREE. It records what the plate WOULD be rendered from and what it will
+    // carry; the browser renders the pixels from the stage it already draws,
+    // and posts them back through the existing media-import path. Nothing here
+    // resolves a provider.
+    if (urlParts[1] === 'shots' && urlParts[3] === 'generation-plate') {
+        const shotId = urlParts[2];
+        if (req.method !== 'GET' && req.method !== 'POST') {
+            return json(res, 405, { error: 'Method not allowed' });
+        }
+        let ctx;
+        try { ctx = directingContext(shotId); }
+        catch (err) { return fail(res, err); }
+
+        const shot = db.prepare(`SELECT s.*, sc.project_id FROM film_shots s
+            JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?`).get(shotId);
+        const project = shot
+            ? db.prepare('SELECT * FROM film_projects WHERE id = ?').get(shot.project_id) : {};
+
+        const record = genPlate.buildPlateRecord({
+            shotId,
+            worldVersionId: ctx.blocking && ctx.worldVersionId,
+            camera: ctx.blocking.camera,
+            subjects: ctx.blocking.subjects,
+            project: project || {},
+            aspectOverride: body.aspect || (shot && shot.aspect_ratio) || null,
+        });
+
+        // A plate whose world version has been deleted is DETACHED, not stale:
+        // you cannot re-render against geometry that no longer exists.
+        const world = record.world_version_id
+            ? { exists: !!worlds.getVersion(db, record.world_version_id) } : { exists: false };
+
+        return json(res, 200, {
+            plate: record,
+            state: genPlate.plateState(record, world),
+            outputs: genPlate.PLATE_OUTPUTS,
+            prompt_lead: genPlate.platePromptLead({ tag: null }),
+            move: genPlate.moveProse(body.move || {}),
+            free: true,
+            note: 'Rendering a plate spends nothing. Post the rendered PNG back through '
+                + '/film/shots/:id/media/image/import to attach it.',
+        });
     }
 
     // ── /film/shots/:id/world ───────────────────────────────────────────────

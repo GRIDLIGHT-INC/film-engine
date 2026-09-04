@@ -203,6 +203,7 @@ film-engine/
 │   │   ├── world-assets.js      # What a world ships, and which parts we keep rather than link
 │   │   ├── cinematography.js    # Facts out, proposal in, validated — the engine never decides
 │   │   ├── camera-validate.js   # Can this camera be shot? Six checks, and one that only warns
+│   │   ├── generation-plate.js  # Geometry truth handed over; the model owns everything else
 │   │   ├── llm-client.js         # Shared LLM call helper
 │   │   ├── budget-estimator.js   # Pre-flight cost estimation
 │   │   ├── provider-pricing.js  # What a generation costs, in the provider's own units
@@ -254,6 +255,7 @@ film-engine/
 │       ├── world-console.test.js   # The console renders what the design draws, and nothing when the flag is off
 │       ├── cinematography.test.js  # The model directs; the engine hands over facts and refuses the impossible
 │       ├── world-timeline.test.js  # A surface over the move model that already existed, driving no second one
+│       ├── generation-plate.test.js # The plate leads, travels as bytes, and spends nothing
 │       ├── handover-commands.js    # Every command in the handover, executed — a doc nobody runs is typos
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale
