@@ -56,9 +56,12 @@ const CLAIMS = [
           return /usdPerSecond:\s*0\.17/.test(s) && /usdPerSecond:\s*0\.85/.test(s)
               && /usdPerSecond:\s*1\.70/.test(s);
       } },
-    { id: 'frame extraction at 3 sites', why: 'the consolidation task',
-      holds: () => ['backend/routes/characters.js', 'backend/lib/review-proxy.js',
-                    'backend/lib/mcp-tools.js'].filter(f => /'-frames:v'/.test(src(f))).length >= 3 },
+    /* Was "extraction at 3 sites" — RBF-003 consolidated it, so this now pins
+     * the helper and fails if a fourth local copy appears. */
+    { id: 'frame extraction is one helper', why: 'the consolidation task, done',
+      holds: () => /function extractFrame/.test(src('backend/lib/ffmpeg.js'))
+          && ['backend/routes/characters.js', 'backend/lib/review-proxy.js',
+              'backend/lib/mcp-tools.js'].every(f => !/'-frames:v'/.test(src(f)) && /extractFrame/.test(src(f))) },
     { id: 'playback scrubs, cannot mark', why: 'the surface task',
       holds: () => { const p = src('src/index.html');
                      return /pbScrub/.test(p) && !/pbMarkIn|pbMarkOut/.test(p); } },

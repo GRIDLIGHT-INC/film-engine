@@ -22,7 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { resolveFfmpeg } = require('./ffmpeg');
+const { resolveFfmpeg, extractFrame } = require('./ffmpeg');
 
 /** Where derived review files live: beside the asset, out of the way. */
 const CACHE_DIR = '.review';
@@ -78,13 +78,6 @@ function stillFor(videoPath, opts) {
     }
     ensureDir(out);
     const at = Number(o.atSeconds) >= 0 ? Number(o.atSeconds) : 1;
-    try {
-        execFileSync(ff.bin, [
-            '-y', '-loglevel', 'error',
-            '-ss', String(at), '-i', videoPath,
-            '-frames:v', '1', out,
-        ], { stdio: 'pipe' });
-    } catch (err) { /* handled by the existence check below */ }
 
     /*
      * SEEKING PAST THE END SUCCEEDS AND WRITES NOTHING.
@@ -93,15 +86,13 @@ function stillFor(videoPath, opts) {
      * file, so a retry gated on the throw never fired — and a short clip
      * reported as unreadable when it was merely short. The presence of the
      * file is the only honest test of whether a frame was taken.
+     *
+     * That rule and its retry now live in `extractFrame`, because this file
+     * was the only one of three that had learned it: the other two silently
+     * lost the frame. Shared, the lesson reaches them.
      */
-    if (!fs.existsSync(out)) {
-        try {
-            execFileSync(ff.bin, ['-y', '-loglevel', 'error', '-i', videoPath,
-                                  '-frames:v', '1', out], { stdio: 'pipe' });
-        } catch (err2) {
-            return unavailable('the encoder could not read a frame from this file');
-        }
-    }
+    const got = extractFrame(videoPath, { atSeconds: at, out, ffmpeg: ff, quality: null });
+    if (!got.ok) return unavailable(got.reason);
     if (!fs.existsSync(out)) return unavailable('no frame was produced');
     return { ok: true, path: out, bytes: fs.statSync(out).size, cached: false };
 }

@@ -3608,31 +3608,47 @@ const BATCH_TOOLS = [
                   ORDER BY CASE asset_type WHEN 'video_final' THEN 0 WHEN 'video_synced' THEN 1 ELSE 2 END,
                            created_at DESC LIMIT 1`).get(a.shot_id);
             if (clip) {
-                const { resolveFfmpeg, probe } = require('./ffmpeg');
+                const { resolveFfmpeg, extractFrame } = require('./ffmpeg');
                 const bin = resolveFfmpeg();
                 if (!bin || !bin.available) {
                     notes.push('a clip exists but no encoder is available to sample frames from it');
                 } else {
                     const src = getFilePath('video', shot.project_id, clip.file_name);
+                    /*
+                     * THE DURATION WAS ALWAYS ZERO, SO EVERY SAMPLE WAS FRAME 0.
+                     *
+                     * This read `(probe(src) || {}).durationSeconds` — but
+                     * `probe(bin, args, opts)` takes two arguments and RETURNS A
+                     * PROMISE, so the property was undefined, `seconds` fell to
+                     * 0, and every `at` computed from it was 0. The tool handed
+                     * back five copies of the first frame captioned 0%, 25%,
+                     * 50%, 75% and 100% with a timestamp on each — the caption
+                     * was the only thing that varied, which is why it read as
+                     * working. `measureDurationMs` is the reader that actually
+                     * measures a file, and is what the media importer uses.
+                     */
                     let seconds = 0;
-                    try { seconds = (probe(src) || {}).durationSeconds || 0; } catch (_) { seconds = 0; }
+                    try {
+                        seconds = (require('./media-imports').measureDurationMs(src) || 0) / 1000;
+                    } catch (_) { seconds = 0; }
                     const n = Math.min(10, Math.max(2, Number(a.samples) || 5));
                     const dir = fsx.mkdtempSync(pathx.join(require('os').tmpdir(), 'fe-frames-'));
                     for (let i = 0; i < n; i++) {
                         const at = seconds ? (seconds * i) / (n - 1 || 1) : 0;
-                        const out = pathx.join(dir, `f${i}.png`);
-                        try {
-                            require('child_process').execFileSync(bin.bin,
-                                ['-y', '-ss', String(Math.max(0, at - 0.001)), '-i', src,
-                                    '-frames:v', '1', '-q:v', '2', out],
-                                { stdio: 'ignore', timeout: 20000 });
-                            const uri = asDataUri(out, 'image/png');
-                            if (uri) images.push({ data_uri: uri,
-                                label: `clip ${Math.round((i / (n - 1 || 1)) * 100)}% (${at.toFixed(1)}s)` });
-                        } catch (_) { /* one missing sample is not a failed call */ }
+                        const got = extractFrame(src, { atSeconds: at, out: pathx.join(dir, `f${i}.png`),
+                            ffmpeg: bin, timeoutMs: 20000 });
+                        if (!got.ok) continue;      // one missing sample is not a failed call
+                        const uri = asDataUri(got.path, 'image/png');
+                        // A frame taken from the start because the seek ran past
+                        // the end must not be captioned with the time it asked for.
+                        if (uri) images.push({ data_uri: uri,
+                            label: got.fellBack
+                                ? `clip start (${at.toFixed(1)}s was past the end)`
+                                : `clip ${Math.round((i / (n - 1 || 1)) * 100)}% (${got.atSeconds.toFixed(1)}s)` });
                     }
                     try { fsx.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* temp */ }
                     if (images.length <= 1) notes.push('the clip could not be sampled');
+                    if (!seconds) notes.push('the clip\'s duration could not be read, so frames were sampled from the start');
                 }
             } else {
                 notes.push('no clip generated for this shot yet');

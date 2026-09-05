@@ -52,7 +52,7 @@ becomes the second.
 | Generate between two stills | **Shipped** — `lib/video-sequence.js`, N shots → N−1 segments, each pinned to a first and last frame |
 | Densify a shot into stations | **Shipped** — `lib/inbetweens.js`, `lib/inbetween-run.js`, with approval and chain semantics |
 | Provider first/last frame | **Shipped** — `seedance-2.5-first-last-frame`, `images_list` ordered `[start, end]` |
-| Extract a frame at a timestamp | **Shipped, three times** — `routes/characters.js`, `lib/review-proxy.js`, `lib/mcp-tools.js` |
+| Extract a frame at a timestamp | **Shipped once** — `lib/ffmpeg.js` `extractFrame`, reached by `routes/characters.js`, `lib/review-proxy.js` and `lib/mcp-tools.js`. Was three copies; RBF-003 promoted them, which carried review-proxy's past-the-end retry to the two sites that were silently losing frames |
 | Join whole clips | **Shipped** — `buildConcatArgs` / `stitchClips` in `lib/ffmpeg.js` |
 | Cut a range out of a clip | **Absent** — no trim or splice helper exists |
 | Mark in / mark out | **Absent** — playback has a scrubber (`pbScrub`) and a single playhead |

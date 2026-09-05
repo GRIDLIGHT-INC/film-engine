@@ -1214,6 +1214,14 @@ async function generateOrbit(req, res, charId) {
     const safeName = String(ch.name).replace(/[^\w.-]/g, '_');
     const made = [];
     const kept = [];
+    /*
+     * A VIEW THAT COULD NOT BE CUT IS NAMED, not silently absent. This loop used
+     * to `continue` on any extraction failure, so a director asking for four
+     * views could be handed three with nothing saying which was missing or why
+     * — indistinguishable from the model having produced a poor orbit. Same
+     * rule as SHOTS_DROPPED in the export preflight.
+     */
+    const skipped = [];
     for (const frame of plan.frames) {
         const filename = `${safeName}_${frame.view}.png`;
         const filePath = require('../lib/file-storage').getFilePath(ch.project_id, 'refsheets', filename);
@@ -1231,12 +1239,17 @@ async function generateOrbit(req, res, charId) {
          * The frame is only moved into place once we know we may take the view.
          */
         const scratchPath = filePath + '.orbit-cut';
-        try {
-            require('child_process').execFileSync(bin.bin,
-                ['-y', '-ss', String(frame.atSeconds), '-i', clipPath, '-frames:v', '1', '-q:v', '2', scratchPath],
-                { stdio: 'ignore', timeout: 30000 });
-        } catch (_) { continue; }
-        if (!fsx.existsSync(scratchPath)) continue;
+        /*
+         * Through the shared helper, which retries at frame zero when the seek
+         * runs past the end. This route used to `continue` on any failure, so a
+         * short orbit clip silently produced FEWER VIEWS THAN IT WAS ASKED FOR
+         * — on the one route whose entire job is producing views, and with no
+         * note saying which angle went missing or why.
+         */
+        const cut = require('../lib/ffmpeg').extractFrame(clipPath, {
+            atSeconds: frame.atSeconds, out: scratchPath, ffmpeg: bin, timeoutMs: 30000,
+        });
+        if (!cut.ok) { skipped.push({ view: frame.view, reason: cut.reason }); continue; }
 
         /*
          * A BOOTSTRAP, not the identity source.
@@ -1298,11 +1311,14 @@ async function generateOrbit(req, res, charId) {
         clip: clipName,
         views: made,
         kept_existing: kept,
+        skipped,
         estimate: { credits: plan.credits, usd: plan.usd },
         note: made.length
             ? `Turnaround cut from one orbit — ${made.length} views that cannot disagree with each other.`
                 + (kept.length ? ` ${kept.length} left alone: an orbit bootstraps a turnaround, it does not replace an approved identity anchor.` : '')
-            : 'The orbit generated but no frames could be cut from it.',
+                + (skipped.length ? ` ${skipped.length} could not be cut: ${skipped.map(x => `${x.view} (${x.reason})`).join('; ')}.` : '')
+            : 'The orbit generated but no frames could be cut from it.'
+                + (skipped.length ? ` ${skipped.map(x => `${x.view}: ${x.reason}`).join('; ')}.` : ''),
     });
 }
 

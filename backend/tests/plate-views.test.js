@@ -415,8 +415,17 @@ test('regenerating a view replaces its row rather than adding one', () => {
      * BEFORE mayOverwrite() is consulted, so declining to replace it was the
      * one operation that reliably destroyed it.
      */
+    /*
+     * Bound to the DESTINATION, not to the call shape. This matched the literal
+     * `execFileSync(... '-frames:v', '1', '-q:v', '2', <var>]` and went stale
+     * the day the cut improved: RBF-003 routed it through the shared
+     * `extractFrame`, and the scan then reported the safety it was protecting
+     * as GONE while it was intact. The invariant is where the frame lands, so
+     * either form is accepted and the destination is what is checked.
+     */
     const cutBlock = src.slice(Math.max(0, insertAt - 4000), insertAt);
-    const cut = /execFileSync\([\s\S]{0,400}?'-frames:v', '1', '-q:v', '2', (\w+)\]/.exec(cutBlock);
+    const cut = /extractFrame\([\s\S]{0,300}?\bout:\s*(\w+)/.exec(cutBlock)
+        || /execFileSync\([\s\S]{0,400}?'-frames:v', '1', '-q:v', '2', (\w+)\]/.exec(cutBlock);
     assert.ok(cut, 'the orbit frame cut is gone — the scan is broken');
     assert.notStrictEqual(cut[1], 'filePath',
         'the orbit cuts straight over the per-view plate, before deciding whether it may replace it');

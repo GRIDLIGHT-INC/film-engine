@@ -106,6 +106,102 @@ function probe(bin, args, opts) {
 }
 
 /**
+ * ONE FRAME, AT ONE MOMENT, FROM ONE CLIP.
+ *
+ * `-ss <t> -i clip -frames:v 1` was written out four times across three files,
+ * and they had already diverged — which is the whole argument for this
+ * function rather than a style preference. review-proxy had learned that
+ * SEEKING PAST THE END EXITS 0 AND WRITES NOTHING and retried at frame zero;
+ * mcp-tools and characters had not, so a sample past the end was silently lost
+ * in one and an orbit view silently skipped in the other. The site that learned
+ * the lesson could not teach the other two while each kept its own copy.
+ *
+ * NEVER THROWS, and returns a REASON on failure. Every caller here is doing
+ * something else at the time — sampling a clip for review, cutting an orbit
+ * view, building a still for a proxy — and a sampling failure that takes down
+ * the operation that asked for it is worse than a missing frame. The same rule
+ * `stampAsset` and `resolveFfmpeg` already follow.
+ *
+ * THE PRESENCE OF THE FILE IS THE ONLY HONEST TEST. The exit code is not
+ * evidence: ffmpeg reports success for a seek beyond the last frame and simply
+ * produces nothing, so a caller gated on the throw sees success and finds an
+ * empty path.
+ *
+ * A FALLBACK IS REPORTED, never silent. Handing back frame zero for a seek to
+ * 30s is the right answer — a short clip is not a broken one — but a caller
+ * told nothing will label that picture "30.0s", which is exactly what
+ * shot_review's sample captions do.
+ */
+function extractFrame(clipPath, opts) {
+    const o = opts || {};
+    const out = o.out;
+    if (typeof out !== 'string' || !out) {
+        return { ok: false, reason: 'no output path was given for the frame' };
+    }
+    if (typeof clipPath !== 'string' || !clipPath) {
+        return { ok: false, reason: 'no clip path was given to take a frame from' };
+    }
+
+    /*
+     * The encoder may be passed in by a caller that has already resolved it —
+     * review-proxy resolves it to answer a different question first — so this
+     * does not resolve twice. An absent encoder and an unreadable file are
+     * DIFFERENT ANSWERS with different remedies, and folding them together is
+     * what made a missing ffmpeg read as corrupt footage.
+     */
+    const ff = o.ffmpeg || resolveFfmpeg();
+    if (!ff || !ff.available) {
+        return { ok: false, reason: ff && ff.reason ? ff.reason : 'no encoder is available on this machine' };
+    }
+
+    let stat = null;
+    try { stat = fs.statSync(clipPath); } catch (_) { stat = null; }
+    if (!stat) return { ok: false, reason: `there is no file at ${clipPath}` };
+    if (stat.isDirectory()) return { ok: false, reason: `${clipPath} is a directory, not a clip` };
+    if (stat.size === 0) return { ok: false, reason: 'that file is empty, so it holds no frames' };
+
+    try { fs.mkdirSync(path.dirname(out), { recursive: true }); } catch (_) { /* the write below reports it */ }
+    try { if (fs.existsSync(out)) fs.unlinkSync(out); } catch (_) { /* a stale frame is caught below */ }
+
+    const at = Number(o.atSeconds) > 0 ? Number(o.atSeconds) : 0;
+    const timeout = Number(o.timeoutMs) > 0 ? Number(o.timeoutMs) : 30000;
+    /*
+     * The quality flag is the callers' own: two of them passed `-q:v 2` and one
+     * did not, so a proxy still and an orbit cut came off the same clip at
+     * different quality. Defaulted to the stricter of the two rather than
+     * dropped, since the looser one was the accident.
+     */
+    const quality = o.quality === null ? [] : ['-q:v', String(o.quality || 2)];
+
+    const run = (args) => {
+        try {
+            execFileSync(ff.bin, args, { stdio: 'pipe', timeout });
+        } catch (_) { /* the presence check below is the real test */ }
+        try { return fs.existsSync(out) && fs.statSync(out).size > 0; } catch (_) { return false; }
+    };
+
+    /*
+     * The nudge mcp-tools already applied: seeking to exactly the last frame
+     * boundary lands past it often enough to matter, and a millisecond back is
+     * the same picture.
+     */
+    if (at > 0) {
+        const seek = Math.max(0, at - 0.001);
+        if (run(['-y', '-loglevel', 'error', '-ss', String(seek), '-i', clipPath,
+                 '-frames:v', '1', ...quality, out])) {
+            return { ok: true, path: out, atSeconds: at, fellBack: false };
+        }
+    }
+
+    // Past the end, or a seek this container will not honour: take the first frame.
+    if (run(['-y', '-loglevel', 'error', '-i', clipPath, '-frames:v', '1', ...quality, out])) {
+        return { ok: true, path: out, atSeconds: 0, fellBack: at > 0 };
+    }
+
+    return { ok: false, reason: 'the encoder could not read a frame from this file' };
+}
+
+/**
  * The arguments that join an ordered list of clips into one file.
  *
  * ONE implementation, shared by the sequence stitch and the whole-film conform.
@@ -217,4 +313,4 @@ async function stitchClips(clips, outputPath, opts) {
     };
 }
 
-module.exports = { resolveFfmpeg, probe, buildConcatArgs, stitchClips };
+module.exports = { resolveFfmpeg, probe, extractFrame, buildConcatArgs, stitchClips };

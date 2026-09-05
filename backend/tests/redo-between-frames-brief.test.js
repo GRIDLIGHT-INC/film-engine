@@ -70,15 +70,24 @@ const CLAIMS = [
               && /usdPerSecond:\s*1\.70/.test(s);
       } },
 
-    { id: 'frame extraction exists at >= 3 sites',
-      why: 'the brief says extraction is shipped and should be promoted to one helper',
+    /*
+     * WAS "extraction exists at >= 3 sites". RBF-003 promoted it, so the claim
+     * the brief rests on is no longer the duplication — it is the helper. Kept
+     * rather than deleted, and pointed the other way: it now fails if anyone
+     * writes a fourth local copy, which is the regression the consolidation
+     * exists to prevent.
+     */
+    { id: 'frame extraction is one helper, reached by its former sites',
+      why: 'the brief said extraction should be promoted to one helper; RBF-003 did it',
       holds: () => {
-          let n = 0;
+          if (!/function extractFrame/.test(src('backend/lib/ffmpeg.js'))) return false;
           for (const f of ['backend/routes/characters.js', 'backend/lib/review-proxy.js',
                            'backend/lib/mcp-tools.js']) {
-              if (/'-frames:v'/.test(src(f))) n++;
+              const s2 = src(f);
+              if (/'-frames:v'/.test(s2)) return false;   // grew its own copy again
+              if (!/extractFrame/.test(s2)) return false;  // or lost the capability
           }
-          return n >= 3;
+          return true;
       } },
 
     { id: 'concat exists',
