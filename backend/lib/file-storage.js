@@ -248,8 +248,45 @@ function serveFile(res, projectId, subdir, filename, opts) {
     const m = range && /^bytes=(\d*)-(\d*)$/.exec(String(range));
 
     if (m) {
-        const start = m[1] ? parseInt(m[1], 10) : 0;
-        const end = m[2] ? parseInt(m[2], 10) : stat.size - 1;
+        /*
+         * A SUFFIX RANGE IS THE END OF THE FILE, NOT THE START.
+         *
+         * `bytes=-20000` means the LAST 20000 bytes (RFC 7233). This read the
+         * empty first group as 0 and served the FIRST 20001, labelled
+         * `bytes 0-20000/…` — and that is fatal for exactly the files this
+         * engine produces. ffmpeg writes the `moov` atom at the END unless
+         * asked for +faststart, measured at 99% of every clip here, so a
+         * player's first move is a suffix range to go and find it. Handed the
+         * head instead, it cannot parse the container and WAITS: a valid 206
+         * full of real bytes is not an error, so nothing is ever reported.
+         *
+         * That was the black screen in playback — every clip, with the file
+         * serving perfectly to curl the whole time.
+         */
+        let start, end;
+        if (!m[1] && m[2]) {
+            const wanted = parseInt(m[2], 10);
+            /*
+             * `bytes=-0` is unsatisfiable. Stated explicitly, though a mutation
+             * proved it is behaviourally invisible: without it start becomes
+             * size and the general start > end check below refuses it anyway.
+             * Kept because the reader should not have to derive that.
+             */
+            if (!Number.isNaN(wanted) && wanted === 0) {
+                res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` });
+                res.end();
+                return;
+            }
+            // A suffix longer than the file is the whole file, never a negative offset.
+            start = Math.max(0, stat.size - wanted);
+            end = stat.size - 1;
+        } else {
+            start = m[1] ? parseInt(m[1], 10) : 0;
+            end = m[2] ? parseInt(m[2], 10) : stat.size - 1;
+        }
+        // A range past the end is clamped rather than refused; a player asking
+        // for more than exists is asking for what exists.
+        if (end >= stat.size) end = stat.size - 1;
         if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= stat.size) {
             res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` });
             res.end();
