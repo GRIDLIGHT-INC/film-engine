@@ -11,16 +11,29 @@ production; what displays them and who decides is not its concern.
 
 ## State
 
+*Updated 2026-09-04 after F1–F5 shipped. The table below was the state when this
+plan was written; leaving it saying "Not started" against shipped work sent two
+people back to rebuild it.*
+
 | | |
 |---|---|
 | In-between strips | **Shipped.** `lib/inbetweens.js`, `lib/inbetween-run.js`, 3 test files, `routes/sequences.js` wired, migrations at 102. |
-| `approval_envelope` | Not started. |
-| `take_candidates` | Not started. |
-| `lib/review-proxy.js` | Not started. |
-| Remote-approval staleness guard | Not started. |
-| Per-run credit ceiling | Not started. |
+| `approval_envelope` | **Shipped** (F1) — `lib/approval-envelope.js`, `routes/approvals.js`, MCP tool `approval_envelope`, GET and free. |
+| `take_candidates` | **Shipped** (F2) — same route module, MCP tool `take_candidates`, GET and free. |
+| `lib/review-proxy.js` | **Shipped** (F3) — `stillFor`, `proxyFor`, mtime+size cache. `maxBytes` is an argument; oversized returns null. |
+| Remote-approval staleness guard | **Shipped** (F4) — `lib/approval-guard.js`, re-checked once at the `server.js` dispatch so no route can be forgotten. 409 `STALE_APPROVAL`. |
+| Per-run credit ceiling | **Shipped** (F5) — `run_ceiling` in `lib/run-plan.js`, refused before the first generation. `ignore_budget` does not lift it. |
 
-`docs/plans/remote-approvals.md` is untracked — commit it first.
+Commits: `4ae2991` (F1–F5), `6fdd18c` (the eighth named test assertion and the
+four-field mis-mapping it caught).
+
+`docs/plans/remote-approvals.md` was untracked and is now committed.
+
+**Two stale duplicates of this file exist untracked** — `./build-order.md` and
+`./Claude outputs/build-order.md`, both byte-identical to this plan as first
+written. They are what a reader finds first and they still say "Not started".
+Delete them; a plan that exists three times is a plan that disagrees with
+itself.
 
 Run tests **on this Mac**: `better-sqlite3` here is a macOS build, and DB-touching tests fail
 elsewhere with `invalid ELF header`.
