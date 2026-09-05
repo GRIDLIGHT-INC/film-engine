@@ -60,6 +60,49 @@ function callRoute(method, url, handler) {
     return require('../lib/mcp-tools').callRoute(method, url, {}, handler);
 }
 
+/**
+ * What repairing this range would do, and what it would cost.
+ *
+ * FREE, like every other packet in this file. It resolves no provider and
+ * generates nothing — `planRepair` is synchronous precisely so it cannot — and
+ * that is what lets a director try three different ranges before committing to
+ * one. A plan that spent could not be raised speculatively, and one that cannot
+ * be raised speculatively does not get raised.
+ *
+ * It takes CLIP-RELATIVE seconds. Converting the timeline's absolute
+ * milliseconds is `resolveMarks`' job, shared with the page, because doing it
+ * in two places is how a mark at 00:41 of the film becomes 41 seconds into a
+ * six-second shot.
+ */
+function repairPlan(req, res, shotId, q) {
+    const { planRepair } = require('../lib/repair-plan');
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+
+    const clip = db.prepare(
+        `SELECT * FROM film_assets WHERE shot_id = ?
+            AND asset_type IN ('video_final','video_synced','video_raw')
+          ORDER BY CASE asset_type WHEN 'video_final' THEN 0 WHEN 'video_synced' THEN 1 ELSE 2 END,
+                   created_at DESC LIMIT 1`).get(shotId);
+    if (!clip) {
+        return json(res, 200, {
+            refused: true, code: 'no_source',
+            reason: 'This shot has no footage yet, so there is nothing to repair. Generate the clip first.',
+        });
+    }
+
+    const plan = planRepair({
+        sourcePath: getFilePath(shot.project_id, 'video', clip.file_name),
+        startSec: Number(q.start_sec),
+        endSec: Number(q.end_sec),
+        ...(q.resolution ? { resolution: String(q.resolution) } : {}),
+    });
+    // A refusal is a 200 carrying a reason, not an error: "this range is too
+    // short" is an ANSWER to the question that was asked, and a 4xx would make
+    // the page report it as a failure to reach the engine.
+    return json(res, 200, { shot_id: shotId, shot_code: shot.shot_code, ...plan });
+}
+
 async function handleApprovals(req, res, urlParts, query) {
     const q = query || {};
 
@@ -71,6 +114,11 @@ async function handleApprovals(req, res, urlParts, query) {
     if (urlParts[1] === 'shots' && urlParts[3] === 'take-candidates') {
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
         return takeCandidates(req, res, urlParts[2], q);
+    }
+
+    if (urlParts[1] === 'shots' && urlParts[3] === 'repair-plan') {
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        return repairPlan(req, res, urlParts[2], q);
     }
 
     return json(res, 404, { error: 'Unknown approvals route' });

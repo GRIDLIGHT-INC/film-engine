@@ -69,9 +69,14 @@ const CLAIMS = [
       holds: () => /function extractFrame/.test(src('backend/lib/ffmpeg.js'))
           && ['backend/routes/characters.js', 'backend/lib/review-proxy.js',
               'backend/lib/mcp-tools.js'].every(f => !/'-frames:v'/.test(src(f)) && /extractFrame/.test(src(f))) },
-    { id: 'playback scrubs, cannot mark', why: 'the surface task',
-      holds: () => { const p = src('src/index.html');
-                     return /pbScrub/.test(p) && !/pbMarkIn|pbMarkOut/.test(p); } },
+    /* Was "playback scrubs, cannot mark", asserted ABSENT so it self-retires.
+     * RBF-007 built the marking, so it now pins the surface. */
+    { id: 'playback scrubs AND marks', why: 'the surface task, done',
+      holds: () => {
+          const p = src('src/index.html');
+          return /pbScrub/.test(p) && /function pbMarkIn/.test(p) && /function pbMarkOut/.test(p)
+              && /function pbResolveMarks/.test(p);
+      } },
     { id: 'video-edit sends no images', why: 'what the probe task changes',
       holds: () => /images:\s*\[\]/.test(src('backend/lib/providers/seedance.js')) },
     { id: 'color-match exists', why: 'the remedy named for the colour open question',

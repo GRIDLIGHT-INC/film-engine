@@ -5712,10 +5712,14 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         <div class="pb-scrub-fill" id="pbScrubFill"></div>
                         <div class="pb-shot-ticks" id="pbShotTicks"></div>
                         <div class="pb-note-markers" id="pbNoteMarkers"></div>
+                        <div class="pb-mark-range" id="pbMarkRange" style="display:none;"></div>
                     </div>
                     <div class="flex-between mt-8">
                         <div class="pb-transport">
                             <button class="btn btn-secondary btn-sm" onclick="pbTogglePlay()" id="pbPlayBtn">Play</button>
+                            <button class="btn btn-secondary btn-sm" onclick="pbMarkIn()" title="Mark the point a repair starts from">Mark in</button>
+                            <button class="btn btn-secondary btn-sm" onclick="pbMarkOut()" title="Mark the point a repair must arrive at">Mark out</button>
+                            <button class="btn btn-secondary btn-sm" onclick="pbClearMarks()" id="pbClearMarksBtn" style="display:none;">Clear marks</button>
                             <button class="btn btn-secondary btn-sm" onclick="pbStep(-1)" title="Previous shot">&#9664;&#9664;</button>
                             <button class="btn btn-secondary btn-sm" onclick="pbStep(1)" title="Next shot">&#9654;&#9654;</button>
                             <label class="text-sm" style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;cursor:pointer;"
@@ -40309,6 +40313,132 @@ ${fountainText.slice(0, 50000)}`;
 
         updatePlayhead();
         pb.raf = requestAnimationFrame(pbTick);
+    }
+
+    /*
+     * ── Mark in / mark out ────────────────────────────────────────────────
+     *
+     * MIRRORED FROM backend/lib/playback-marks.js. The page ships as one file
+     * with no bundler, so it cannot require that module — and the two copies
+     * are held equal by tests/playback-marks.test.js over a case table, because
+     * a drifted mirror looks identical in source and differs only in an offset.
+     *
+     * Playback thinks in TIMELINE-ABSOLUTE milliseconds; every repair takes
+     * CLIP-RELATIVE seconds, because ffmpeg seeks within one file. A mark at
+     * 00:41 of the film is 3.2s into shot 2B, and sending 41 cuts entirely
+     * different footage — a valid, playable, wrong repair.
+     */
+    const PB_MARK_FLOOR_S = 4;
+
+    function pbResolveMarks(entries, inMs, outMs) {
+        const refuse = (code, reason) => ({ ok: false, code, reason });
+        const secs = (ms) => Math.round(ms) / 1000;
+        const list = Array.isArray(entries) ? entries.filter(e => e && Number.isFinite(Number(e.start_ms))) : [];
+        if (!list.length) return refuse('no_timeline', 'there is no timeline loaded to mark against');
+        const a = Number(inMs); const b = Number(outMs);
+        if (!Number.isFinite(a) || !Number.isFinite(b)) {
+            return refuse('marks_empty', 'both marks must be positions on the timeline');
+        }
+        if (b < a) return refuse('marks_reversed',
+            'the out-mark is before the in-mark — reversed, the repair would run backwards');
+        if (b === a) return refuse('marks_empty',
+            'the two marks are at the same point, so there is nothing between them to replace');
+        const total = Math.max(...list.map(e => Number(e.end_ms) || 0));
+        if (a < 0 || b > total) {
+            return refuse('marks_outside',
+                `the marks run from ${secs(a)}s to ${secs(b)}s and the film is ${secs(total)}s long`);
+        }
+        const touched = list.filter(e => Number(e.end_ms) > a && Number(e.start_ms) < b);
+        if (!touched.length) return refuse('marks_outside', 'the marks fall between clips, on no footage at all');
+        if (touched.length > 2) {
+            return refuse('marks_too_far',
+                `the marks span ${touched.length} shots (${touched.map(e => e.shot_code).join(', ')}). `
+                + 'A repair covers one shot or two; more than that is a re-cut rather than a repair.');
+        }
+        const spans = touched.map(e => {
+            const from = Math.max(a, Number(e.start_ms));
+            const to = Math.min(b, Number(e.end_ms));
+            return {
+                shot_id: e.shot_id || null,
+                shot_code: e.shot_code || null,
+                startSec: secs(from - Number(e.start_ms)),
+                endSec: secs(to - Number(e.start_ms)),
+                seconds: secs(to - from),
+            };
+        });
+        const seconds = secs(b - a);
+        return { ok: true, spans, crossClip: spans.length > 1, seconds,
+                 floor: PB_MARK_FLOOR_S, meetsFloor: seconds >= PB_MARK_FLOOR_S, inMs: a, outMs: b };
+    }
+
+    const pbMarks = { inMs: null, outMs: null, plan: null };
+
+    function pbMarkIn() { pbMarks.inMs = pbAbsoluteMs(); pbMarks.plan = null; pbRenderMarks(); }
+    function pbMarkOut() { pbMarks.outMs = pbAbsoluteMs(); pbMarks.plan = null; pbRenderMarks(); }
+    function pbClearMarks() { pbMarks.inMs = null; pbMarks.outMs = null; pbMarks.plan = null; pbRenderMarks(); }
+
+    /**
+     * What the marks mean, and what redoing that section would cost.
+     *
+     * THE COST IS THE ENGINE'S ANSWER, never computed here. A second rate card
+     * in the page is how the number a director is shown and the number they are
+     * billed come to disagree — so this paints what the free plan route says.
+     */
+    async function pbRenderMarks() {
+        const el = document.getElementById('pbMarkRange');
+        const clear = document.getElementById('pbClearMarksBtn');
+        if (!el) return;
+        const has = pbMarks.inMs !== null || pbMarks.outMs !== null;
+        if (clear) clear.style.display = has ? '' : 'none';
+        if (!has) { el.style.display = 'none'; el.innerHTML = ''; return; }
+        el.style.display = '';
+
+        if (pbMarks.inMs === null || pbMarks.outMs === null) {
+            el.innerHTML = `<span class="text-sm text-muted">Marked ${pbMarks.inMs === null ? 'out' : 'in'} only — set the other mark.</span>`;
+            return;
+        }
+        const r = pbResolveMarks((pb.timeline && pb.timeline.entries) || [], pbMarks.inMs, pbMarks.outMs);
+        if (!r.ok) {
+            el.innerHTML = `<span class="text-sm" style="color:var(--warn,#c88);">${esc(r.reason)}</span>`;
+            return;
+        }
+        /*
+         * The length against the floor is shown BEFORE the cost is fetched,
+         * because it is already known and the fetch takes a moment. A director
+         * marking a two-second fault learns immediately that it cannot be
+         * regenerated at its own length.
+         */
+        const floorNote = r.meetsFloor
+            ? ''
+            : ` <strong style="color:var(--warn,#c88);">under the ${r.floor}s minimum</strong>`;
+        const where = r.crossClip
+            ? `across ${r.spans.map(s => s.shot_code).join(' and ')}`
+            : `in ${r.spans[0].shot_code}`;
+        el.innerHTML = `<span class="text-sm">Marked <strong>${r.seconds.toFixed(2)}s</strong> ${esc(where)}${floorNote}`
+            + ` · <span id="pbMarkCost" class="text-muted">costing…</span></span>`;
+
+        /*
+         * Cross-clip is REPORTED rather than planned. planRepair takes one
+         * source, so a range spanning a cut is two repairs — and quietly
+         * planning the first half would show a cost for less work than the
+         * director marked.
+         */
+        const cost = document.getElementById('pbMarkCost');
+        if (r.crossClip) {
+            cost.textContent = 'spans a cut — repair each shot separately';
+            return;
+        }
+        const span = r.spans[0];
+        try {
+            const plan = await api(`/shots/${span.shot_id}/repair-plan`
+                + `?start_sec=${span.startSec}&end_sec=${span.endSec}`);
+            pbMarks.plan = plan;
+            cost.textContent = plan.refused
+                ? plan.reason
+                : `$${plan.cost.usd.toFixed(2)} at ${plan.cost.resolution} — nothing spent yet`;
+        } catch (err) {
+            cost.textContent = `could not price this range: ${err.message}`;
+        }
     }
 
     function pbSeekFromClick(event) {

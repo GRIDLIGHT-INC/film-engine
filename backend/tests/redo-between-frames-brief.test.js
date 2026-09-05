@@ -113,11 +113,18 @@ const CLAIMS = [
               && /SPLICE_REFUSALS/.test(f);
       } },
 
-    { id: 'playback scrubs but does not mark in/out',
-      why: 'the surface exists and the marking does not',
+    /*
+     * WAS "playback scrubs but does not mark in/out", asserted ABSENT so it
+     * would self-retire the day somebody built it. RBF-007 built it, so the
+     * claim flips: the brief no longer rests on the gap, it rests on the
+     * surface, and this now fails if the marking is removed.
+     */
+    { id: 'playback scrubs AND marks in/out',
+      why: 'the brief called this the missing surface; RBF-007 added it',
       holds: () => {
           const page = src('src/index.html');
-          return /pbScrub/.test(page) && !/pbMarkIn|pbMarkOut/.test(page);
+          return /pbScrub/.test(page) && /function pbMarkIn/.test(page)
+              && /function pbMarkOut/.test(page) && /function pbResolveMarks/.test(page);
       } },
 
     { id: 'video-edit sends no images',

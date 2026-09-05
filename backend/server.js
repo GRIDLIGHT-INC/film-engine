@@ -896,7 +896,8 @@ const server = http.createServer(async (req, res) => {
         // packets. Both FREE: a packet that spent money to produce itself could
         // not be raised speculatively, which is the only way it gets used.
         if (parts[1] === 'shots' && parts[2]
-            && (parts[3] === 'approval-envelope' || parts[3] === 'take-candidates')) {
+            && (parts[3] === 'approval-envelope' || parts[3] === 'take-candidates'
+                || parts[3] === 'repair-plan')) {
             return await handleApprovals(req, res, parts, query);
         }
 

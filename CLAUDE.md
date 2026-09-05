@@ -187,6 +187,7 @@ film-engine/
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── repair-plan.js        # Marks in, plan out — and a floor that is named before it is met
+│   │   ├── playback-marks.js     # A mark on the film is an offset in a file, and they are not the same number
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
 │   │   ├── board-grouping.js      # Board groups for reading, setups for working
 │   │   ├── conform.js             # Shots → one film: pure plan, probed executors
@@ -276,6 +277,7 @@ film-engine/
 │       ├── splice.test.js           # Head, new, tail — and a join that must not move every cut after it
 │       ├── media-inspect.test.js    # What a clip actually IS, read from the file rather than the row
 │       ├── repair-plan.test.js      # A plan that spends cannot be raised speculatively
+│       ├── playback-marks.test.js   # Two marks, two units, and a mirror that must not drift
 │       ├── approval-envelope.test.js # A packet you can decide from, and an approval that cannot outlive its inputs
 │       ├── take-candidates.test.js # Which attempt is the take, newest first, and why each exists
 │       ├── review-proxy.test.js  # Null rather than oversized, and never re-encoding what has not changed
@@ -4243,6 +4245,7 @@ node --test backend/tests/frame-extraction.test.js
 node --test backend/tests/splice.test.js
 node --test backend/tests/media-inspect.test.js
 node --test backend/tests/repair-plan.test.js
+node --test backend/tests/playback-marks.test.js
 node --test backend/tests/approval-envelope.test.js
 node --test backend/tests/take-candidates.test.js
 node --test backend/tests/review-proxy.test.js
