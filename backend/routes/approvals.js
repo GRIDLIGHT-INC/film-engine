@@ -26,6 +26,7 @@ const envelope = require('../lib/approval-envelope');
 const reviewProxy = require('../lib/review-proxy');
 const { fingerprintFor, staleInputs } = require('../lib/artefact-fingerprint');
 const { getFilePath } = require('../lib/file-storage');
+const { inspectMedia } = require('../lib/ffmpeg');
 
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -100,6 +101,44 @@ function repairPlan(req, res, shotId, q) {
         });
     }
 
+    /*
+     * ACROSS A CUT IS A DIFFERENT OPERATION. When the fault is the TRANSITION,
+     * neither shot is individually wrong — so repairing either one cannot fix
+     * it, and the answer is a bridge that replaces the tail of the first and
+     * the head of the second. The planner is separate because the deliverable
+     * is separate: a new piece of footage plus two trim points, not a rewritten
+     * clip.
+     */
+    if (q.bridge && q.next_shot_id) {
+        const { planBridge } = require('../lib/repair-bridge');
+        const next = db.prepare(`SELECT s.*, sc.project_id FROM film_shots s
+            JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?`).get(String(q.next_shot_id));
+        if (!next) return json(res, 404, { error: 'The shot on the far side of the cut was not found' });
+        const nextClip = db.prepare(
+            `SELECT * FROM film_assets WHERE shot_id = ?
+                AND asset_type IN ('video_final','video_synced','video_raw')
+              ORDER BY CASE asset_type WHEN 'video_final' THEN 0 WHEN 'video_synced' THEN 1 ELSE 2 END,
+                       created_at DESC LIMIT 1`).get(next.id);
+        if (!nextClip) {
+            return json(res, 200, { refused: true, code: 'no_source',
+                reason: `${next.shot_code} has no footage yet, so there is nothing to bridge to.` });
+        }
+        const first = getFilePath(shot.project_id, 'video', clip.file_name);
+        const second = getFilePath(next.project_id, 'video', nextClip.file_name);
+        const dur = (p2) => { const m = inspectMedia(p2); return m.ok ? m.durationSeconds : 0; };
+        const plan2 = planBridge({
+            spans: [
+                { shotId, shotCode: shot.shot_code, sourcePath: first,
+                  startSec: Number(q.start_sec), endSec: dur(first), durationSeconds: dur(first) },
+                { shotId: next.id, shotCode: next.shot_code, sourcePath: second,
+                  startSec: 0, endSec: Number(q.next_end_sec), durationSeconds: dur(second) },
+            ],
+            ...(q.resolution ? { resolution: String(q.resolution) } : {}),
+        });
+        return json(res, 200, { shot_id: shotId, shot_code: shot.shot_code,
+            marked: { start_sec: Number(q.start_sec), end_sec: Number(q.next_end_sec) }, ...plan2 });
+    }
+
     const plan = planRepair({
         sourcePath: getFilePath(shot.project_id, 'video', clip.file_name),
         startSec: Number(q.start_sec),
@@ -109,7 +148,8 @@ function repairPlan(req, res, shotId, q) {
     // A refusal is a 200 carrying a reason, not an error: "this range is too
     // short" is an ANSWER to the question that was asked, and a 4xx would make
     // the page report it as a failure to reach the engine.
-    return json(res, 200, { shot_id: shotId, shot_code: shot.shot_code, ...plan });
+    return json(res, 200, { shot_id: shotId, shot_code: shot.shot_code,
+        marked: { start_sec: Number(q.start_sec), end_sec: Number(q.end_sec) }, ...plan });
 }
 
 async function handleApprovals(req, res, urlParts, query) {

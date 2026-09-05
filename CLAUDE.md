@@ -192,6 +192,7 @@ film-engine/
 │   │   ├── playback-marks.js     # A mark on the film is an offset in a file, and they are not the same number
 │   │   ├── frame-handles.js      # A frame a provider can fetch: opaque, scoped, expiring
 │   │   ├── repair-run.js         # Extract, host, generate, splice, register — and every failure names its stage
+│   │   ├── repair-bridge.js      # A fault that lives BETWEEN two shots: a bridge, not a splice
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
 │   │   ├── board-grouping.js      # Board groups for reading, setups for working
 │   │   ├── conform.js             # Shots → one film: pure plan, probed executors
@@ -285,6 +286,9 @@ film-engine/
 │       ├── frame-handles.test.js    # Handing a local file to the internet, and everything that must not be
 │       ├── repair-run.test.js       # A repair is an attempt; the take it improves must survive it
 │       ├── repair-tools.test.js     # A capability with no MCP surface is one the model cannot use
+│       ├── range-requests.test.js   # A suffix range is the END of the file — the black screen in playback
+│       ├── repair-bridge.test.js    # Across a cut, neither shot is the one at fault
+│       ├── editor-transport.test.js # A mark you cannot place on the frame you meant is not a mark
 │       ├── approval-envelope.test.js # A packet you can decide from, and an approval that cannot outlive its inputs
 │       ├── take-candidates.test.js # Which attempt is the take, newest first, and why each exists
 │       ├── review-proxy.test.js  # Null rather than oversized, and never re-encoding what has not changed
@@ -4256,6 +4260,9 @@ node --test backend/tests/playback-marks.test.js
 node --test backend/tests/frame-handles.test.js
 node --test backend/tests/repair-run.test.js
 node --test backend/tests/repair-tools.test.js
+node --test backend/tests/range-requests.test.js
+node --test backend/tests/repair-bridge.test.js
+node --test backend/tests/editor-transport.test.js
 node --test backend/tests/approval-envelope.test.js
 node --test backend/tests/take-candidates.test.js
 node --test backend/tests/review-proxy.test.js

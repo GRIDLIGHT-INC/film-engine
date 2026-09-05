@@ -5717,9 +5717,12 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <div class="flex-between mt-8">
                         <div class="pb-transport">
                             <button class="btn btn-secondary btn-sm" onclick="pbTogglePlay()" id="pbPlayBtn">Play</button>
-                            <button class="btn btn-secondary btn-sm" onclick="pbMarkIn()" title="Mark the point a repair starts from">Mark in</button>
+                            <button class="btn btn-secondary btn-sm" onclick="pbFrameStep(-1)" title="One frame back (←)">&#8249;|</button>
+                            <button class="btn btn-secondary btn-sm" onclick="pbFrameStep(1)" title="One frame forward (→)">|&#8250;</button>
+                            <button class="btn btn-secondary btn-sm" onclick="pbMarkIn()" title="Mark the point a repair starts from (I)">Mark in</button>
                             <button class="btn btn-secondary btn-sm" onclick="pbMarkOut()" title="Mark the point a repair must arrive at">Mark out</button>
                             <button class="btn btn-secondary btn-sm" onclick="pbClearMarks()" id="pbClearMarksBtn" style="display:none;">Clear marks</button>
+                            <button class="btn btn-primary btn-sm" onclick="pbRunRepair()" id="pbRepairBtn" style="display:none;">Repair this</button>
                             <button class="btn btn-secondary btn-sm" onclick="pbStep(-1)" title="Previous shot">&#9664;&#9664;</button>
                             <button class="btn btn-secondary btn-sm" onclick="pbStep(1)" title="Next shot">&#9654;&#9654;</button>
                             <label class="text-sm" style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;cursor:pointer;"
@@ -40373,6 +40376,91 @@ ${fountainText.slice(0, 50000)}`;
 
     const pbMarks = { inMs: null, outMs: null, plan: null };
 
+    /**
+     * ONE FRAME, AT THE TIMELINE'S OWN RATE.
+     *
+     * A repair is defined by two frames, and the scrubber cannot place them: a
+     * thousand-pixel bar across a sixty-second cut moves about 60ms per pixel —
+     * one and a half frames — so a dragged mark lands wherever the mouse
+     * happened to be. Reported as "the slider is a bit clunky"; it is worse
+     * than clunky, it makes the marks approximate when the whole operation is
+     * defined by exactly which frame you meant.
+     *
+     * The rate comes from the timeline, never a constant: a 25fps production
+     * stepped at 24 drifts a frame a second.
+     */
+    function pbFrameRate() {
+        return (pb.timeline && Number(pb.timeline.fps) > 0) ? Number(pb.timeline.fps) : 24;
+    }
+
+    function pbFrameStep(frames) {
+        if (!pb.timeline || !pb.timeline.total_duration_ms) return;
+        const step = (1000 / pbFrameRate()) * (Number(frames) || 0);
+        const at = Math.max(0, Math.min(pb.timeline.total_duration_ms - 1, pbAbsoluteMs() + step));
+        pbSeekAbsolute(at);
+    }
+
+    /**
+     * The keyboard, because an editor does not reach for the mouse to step a
+     * frame. Arrows for a frame, shift for a second, I and O for the marks —
+     * what every NLE binds them to.
+     *
+     * GUARDED AGAINST TYPING. The note field sits on this same page, and a
+     * shortcut that eats the left arrow while somebody is writing a note is
+     * worse than no shortcut at all.
+     */
+    function pbKeydown(e) {
+        const t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        const page = document.getElementById('page-playback');
+        if (!page || getComputedStyle(page).display === 'none') return;
+        const k = e.key;
+        if (k === 'ArrowLeft')  { e.preventDefault(); pbFrameStep(e.shiftKey ? -pbFrameRate() : -1); return; }
+        if (k === 'ArrowRight') { e.preventDefault(); pbFrameStep(e.shiftKey ? pbFrameRate() : 1); return; }
+        if (k === 'i' || k === 'I') { e.preventDefault(); pbMarkIn(); return; }
+        if (k === 'o' || k === 'O') { e.preventDefault(); pbMarkOut(); return; }
+        if (k === ' ') { e.preventDefault(); pbTogglePlay(); }
+    }
+    window.addEventListener('keydown', pbKeydown);
+
+    /**
+     * Run the repair the marks describe.
+     *
+     * THE ONLY CONTROL ON THIS PAGE THAT SPENDS, so it goes through the same
+     * confirmation every other paid button does and states the cost the free
+     * plan already worked out — never a number computed here, which is how a
+     * page and a bill come to disagree.
+     */
+    async function pbRunRepair() {
+        const plan = pbMarks.plan;
+        if (!plan || plan.refused) { setStatus('Nothing to repair yet — set both marks.', true); return; }
+        const isBridge = plan.delivery && plan.delivery.kind === 'bridge';
+        const what = isBridge
+            ? `Generate a ${plan.cost.seconds.toFixed(2)}s bridge across the cut between `
+              + `${plan.delivery.between.join(' and ')}, and hand it back with the two trim points.`
+            : `Regenerate ${plan.cost.seconds.toFixed(2)}s inside ${plan.shot_code || 'this shot'} `
+              + 'and splice it back in as a new version. The take you have now survives.';
+        const ok = await confirmGen({
+            title: isBridge ? 'Bridge this cut' : 'Repair this shot',
+            body: `${what}\n\nCost: $${plan.cost.usd.toFixed(2)} at ${plan.cost.resolution} `
+                + `(${plan.cost.basis}).\n\nNothing has been spent yet.`,
+        });
+        if (!ok) return;
+        try {
+            setStatus('Repairing…', true);
+            const r = await api(`/shots/${plan.shot_id}/repair`, {
+                method: 'POST',
+                body: JSON.stringify({ start_sec: plan.marked.start_sec, end_sec: plan.marked.end_sec,
+                    resolution: plan.cost.resolution, bridge: isBridge }),
+            });
+            if (!r.ok) { setStatus(`Repair failed at ${r.stage}: ${r.reason}`, true); return; }
+            setStatus(`Repaired — version ${r.version}. Reloading the cut.`, true);
+            pbClearMarks();
+            await loadPlayback();
+        } catch (err) { setStatus(`Repair failed: ${err.message}`, true); }
+    }
+
     function pbMarkIn() { pbMarks.inMs = pbAbsoluteMs(); pbMarks.plan = null; pbRenderMarks(); }
     function pbMarkOut() { pbMarks.outMs = pbAbsoluteMs(); pbMarks.plan = null; pbRenderMarks(); }
     function pbClearMarks() { pbMarks.inMs = null; pbMarks.outMs = null; pbMarks.plan = null; pbRenderMarks(); }
@@ -40424,18 +40512,38 @@ ${fountainText.slice(0, 50000)}`;
          * director marked.
          */
         const cost = document.getElementById('pbMarkCost');
-        if (r.crossClip) {
-            cost.textContent = 'spans a cut — repair each shot separately';
-            return;
-        }
+        const btn = document.getElementById('pbRepairBtn');
+        if (btn) btn.style.display = 'none';        // armed only by a plan that costs something
+
+        /*
+         * ACROSS A CUT IS A BRIDGE, NOT TWO REPAIRS.
+         *
+         * This used to say "spans a cut — repair each shot separately", which
+         * is the wrong advice: when the TRANSITION is the fault neither shot is
+         * individually wrong, so repairing either one cannot fix it. The bridge
+         * replaces the tail of the first and the head of the second and comes
+         * back as its own piece of footage plus two trim points.
+         */
         const span = r.spans[0];
+        const query = r.crossClip
+            ? `/shots/${span.shot_id}/repair-plan?bridge=1`
+                + `&start_sec=${span.startSec}&end_sec=${span.endSec}`
+                + `&next_shot_id=${encodeURIComponent(r.spans[1].shot_id)}`
+                + `&next_end_sec=${r.spans[1].endSec}`
+            : `/shots/${span.shot_id}/repair-plan?start_sec=${span.startSec}&end_sec=${span.endSec}`;
         try {
-            const plan = await api(`/shots/${span.shot_id}/repair-plan`
-                + `?start_sec=${span.startSec}&end_sec=${span.endSec}`);
+            const plan = await api(query);
             pbMarks.plan = plan;
-            cost.textContent = plan.refused
-                ? plan.reason
-                : `$${plan.cost.usd.toFixed(2)} at ${plan.cost.resolution} — nothing spent yet`;
+            if (plan.refused) { cost.textContent = plan.reason; return; }
+            const kind = plan.delivery && plan.delivery.kind === 'bridge'
+                ? `bridge across ${plan.delivery.between.join('/')}` : 'repair';
+            cost.textContent = `${kind} · $${plan.cost.usd.toFixed(2)} at ${plan.cost.resolution}`
+                + ' — nothing spent yet';
+            if (btn) {
+                btn.style.display = '';
+                btn.textContent = plan.delivery && plan.delivery.kind === 'bridge'
+                    ? 'Bridge this cut' : 'Repair this';
+            }
         } catch (err) {
             cost.textContent = `could not price this range: ${err.message}`;
         }
