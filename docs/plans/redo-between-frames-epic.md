@@ -66,7 +66,7 @@ becomes the second.
 | Marked range | Two timestamps, in one clip or across two, expressed as stations on the existing model |
 | Frame extraction | One shared helper, used by all callers |
 | Trim and splice | `buildTrimArgs` and a substitution-splice helper beside `buildConcatArgs` |
-| Planner | Pure: marks in, plan and projected cost out, spending nothing — mirroring `lib/video-sequence.js` |
+| Planner | **Shipped** — `lib/repair-plan.js` `planRepair`: SYNCHRONOUS, so it cannot have awaited a provider. Refusals derived as a superset of the splice's own. RBF-006 |
 | Generation | `first-last-frame` with the two extracted stills. **Not** `video-edit`: RBF-001 measured its `images_list` as style references, so it cannot substitute a section |
 | Encoding parameters | **Shipped** — `lib/ffmpeg.js` `inspectMedia`, read from the FILE (`ffmpeg -i`; there is no ffprobe and adding one is a new dependency). RBF-005 |
 | Surface | Mark in / mark out in playback, showing the floor and the cost before spending |

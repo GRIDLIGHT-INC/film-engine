@@ -779,5 +779,6 @@ const seedanceAdapter = {
 };
 
 module.exports = { adapter: seedanceAdapter, seedanceAdapter, buildVideoRequest,
+    MIN_DURATION, MAX_DURATION,
     buildPostRequest, POST_SERVED, describeVideoRequest, RESOLUTIONS, WORKFLOWS,
     VIDEO_MODELS, POST_MODELS, generate, collect, awaitResult, resolutionDecision };
