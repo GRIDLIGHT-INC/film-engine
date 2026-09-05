@@ -155,7 +155,7 @@ removed by the probe; one task was added.
 | Task | Title | Description | Size | Dependencies |
 |------|-------|-------------|------|--------------|
 | RBF-009 | MCP tools for the repair | **Done** — `repair_plan` (free, GET) and `repair_run` (SPENDS, POST) at **263 tools**. The denominator is derived from the ROUTES the server dispatches, so a repair route with no tool fails rather than being invisible. Also wired the real first-last-frame generator, without which `repair_run` would have been listed and incapable. | M | RBF-006, RBF-008 |
-| RBF-010 | Prove it on real footage | Run a repair end to end on a real clip in a real project, at 480p, and record the before/after plus the actual spend. Measure whether the seam needs `post/color-match`. | M | RBF-008 |
+| RBF-010 | Prove it on real footage | **Done** — Wingfall 1A, 22.08s 2206x946 hevc, marked 8-13s, generated at 480p through MuAPI, spliced, registered as version 2, source byte-identical. Estimated $0.85, spent $0.85. Seam measured at 5 and 1 mean-RGB against 1 and 1 in the original: **colour-match NOT required** for this repair. Found three defects no injected-fake test could: a function name that exists only in a comment, `shot.project_id` on a table that has no such column, and a provider ignoring the requested raster so the join wrote a zero-byte file after billing. | M | RBF-008 |
 
 ---
 
