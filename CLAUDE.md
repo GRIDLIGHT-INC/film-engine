@@ -268,6 +268,7 @@ film-engine/
 │       ├── data-paths.test.js   # Every path column, a real move, and a registry that cannot go stale
 │       ├── redo-between-frames-brief.test.js # A plan whose facts drifted is worse than no plan
 │       ├── redo-between-frames-epic.test.js # Every task well formed, every claim still true
+│       ├── epic-scoping-copy.test.js # A scoped epic that is not the epic is worse than no copy
 │       ├── approval-envelope.test.js # A packet you can decide from, and an approval that cannot outlive its inputs
 │       ├── take-candidates.test.js # Which attempt is the take, newest first, and why each exists
 │       ├── review-proxy.test.js  # Null rather than oversized, and never re-encoding what has not changed
@@ -4191,6 +4192,7 @@ node --test backend/tests/reference-match.test.js
 node --test backend/tests/data-paths.test.js
 node --test backend/tests/redo-between-frames-brief.test.js
 node --test backend/tests/redo-between-frames-epic.test.js
+node --test backend/tests/epic-scoping-copy.test.js
 node --test backend/tests/approval-envelope.test.js
 node --test backend/tests/take-candidates.test.js
 node --test backend/tests/review-proxy.test.js
