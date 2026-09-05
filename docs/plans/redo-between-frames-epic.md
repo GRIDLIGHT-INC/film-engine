@@ -148,7 +148,7 @@ removed by the probe; one task was added.
 |------|-------|-------------|------|--------------|
 | RBF-006 | Pure repair planner | Marks in, plan out: which frames are extracted, what will be generated, at what duration and resolution, and what it will cost. Spends nothing and refuses a sub-floor range with both remedies named. Mirrors the planner/executor split in `lib/video-sequence.js`. | L | RBF-004, RBF-005 |
 | RBF-007 | Mark in / mark out in playback | Two marks on the existing scrubber, in one clip or across two, showing the marked length against the 4-second floor and the projected cost before anything is spent. | M | RBF-006 |
-| RBF-008 | Execute the repair | Run the plan: extract, generate, splice, register the result as a new version of the shot rather than overwriting — a repair is an attempt, and the previous take must survive it. | L | RBF-006, RBF-011 |
+| RBF-008 | Execute the repair | **Done** — `lib/repair-run.js`. Seven stages, each naming itself on failure; the budget gate sits BEFORE the generator; extracted frames live in the data tree because only stored media is mintable, and are removed on both paths; the result is a new file and a new version row. | L | RBF-006, RBF-011 |
 
 ### Phase 4: Reach and proof
 
