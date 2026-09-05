@@ -1,0 +1,16 @@
+{
+ "id": "b3fab89f-32e2-4c97-9672-f3ba716629fb",
+ "model": "unknown",
+ "status": "completed",
+ "outputs": [
+  "https://cdn.muapi.ai/outputs/generated/72666e3d2ddf417999fa6817e5f199aa.mp4"
+ ],
+ "executionTime": 178177.429,
+ "cost": {
+  "amount_usd": 1.547,
+  "amount_credits": 122,
+  "bonus_credits_used": 0,
+  "refunded": false
+ },
+ "error": ""
+}

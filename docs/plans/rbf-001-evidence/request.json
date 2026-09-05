@@ -1,0 +1,9 @@
+{
+  "prompt": "keep the scene exactly as it is",
+  "video_url": "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/720/Big_Buck_Bunny_720_10s_1MB.mp4",
+  "images_list": [
+    "https://placehold.co/1280x720/FF0000/FFFFFF.png?text=START",
+    "https://placehold.co/1280x720/0000FF/FFFFFF.png?text=END"
+  ],
+  "duration": 4
+}
