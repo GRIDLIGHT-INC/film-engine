@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**263 tools, 68 families.** Everything the app can do, you can ask for in a
+**264 tools, 68 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -678,7 +678,7 @@ yet is named with its reason rather than quietly left out of the list.
 
 ### Redoing the video between two chosen frames
 
-`repair_plan` · `repair_run`
+`repair_plan` · `repair_run` · `bridge_list`
 
 A fault in the middle of a shot — a hand through a table, two seconds of drift —
 used to mean re-rolling the whole clip and losing everything that was right
@@ -700,6 +700,19 @@ shorter clip, and a fault is very often shorter — so the commonest range you
 will mark is refused. Both remedies come back priced: widen the marks, which
 changes what you marked, or generate four seconds and trim back, which pays for
 footage nobody sees. Neither is chosen for you.
+
+**Across a cut is a BRIDGE, not two repairs.** When the *transition* between two
+shots reads wrong, neither shot is individually at fault — so repairing either
+one cannot fix it. Mark out in the first and in in the second, pass `bridge`,
+and what comes back replaces the tail of one and the head of the other: its own
+piece of footage plus two trim points.
+
+A bridge is **deliberately not in the timeline, the conform or any NLE export**.
+One that placed itself would be making the edit you opened your editor to make.
+`bridge_list` is therefore the only way to find one — **free**, and each row
+carries the two shots it sits between, where to trim each of them, its length
+and a servable URL. Without those trim points a bridge is a clip nobody knows
+where to put.
 
 `repair_run` **spends**, and registers the result as a **new version** — the
 take being repaired was paid for and survives the attempt. Every failure names

@@ -32,7 +32,38 @@ async function readBody(req) {
     });
 }
 
+/**
+ * Every bridge this project has, and where each one goes.
+ *
+ * FREE, and a read. It exists because a bridge is deliberately NOT in the cut —
+ * the editor takes it to Premiere — and a deliverable nobody can list is one
+ * nobody receives. Selected by `metadata.kind`, never by asset_type, so it
+ * stays invisible to the timeline, the conform and the three exporters, which
+ * is the property that keeps it from appearing in the film twice.
+ */
+function listBridges(req, res, projectId) {
+    const { bridgeRow } = require('../lib/repair-bridge');
+    const rows = db.prepare(
+        `SELECT * FROM film_assets WHERE project_id = ? AND asset_type = 'other'
+          ORDER BY created_at DESC`).all(projectId);
+    const bridges = rows.map(r => bridgeRow({ ...r, project_id: projectId })).filter(Boolean);
+    return json(res, 200, {
+        project_id: projectId,
+        bridges,
+        note: bridges.length
+            ? 'A bridge replaces the tail of one shot and the head of the next. It is deliberately '
+              + 'not in the timeline or the exports — trim the two shots as each row says and lay '
+              + 'the bridge between them in your editor.'
+            : 'No bridges yet. Mark across a cut in Playback and press Bridge this cut.',
+    });
+}
+
 async function handleRepair(req, res, urlParts) {
+    if (urlParts[1] === 'projects' && urlParts[3] === 'bridges') {
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        return listBridges(req, res, urlParts[2]);
+    }
+
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
 
     const shotId = urlParts[2];

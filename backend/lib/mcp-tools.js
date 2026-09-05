@@ -630,6 +630,23 @@ const PRODUCTION_TOOLS = [
         }, required: ['shot_id', 'start_sec', 'end_sec'],
     },
     {
+        name: 'bridge_list',
+        handler: handleRepair, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/bridges`,
+        description:
+            'Every bridge generated for this project, and where each one goes. FREE — this is a '
+            + 'read and spends nothing. '
+            + 'A bridge is what repair_run produces across a cut: a piece of footage that replaces '
+            + 'the TAIL of one shot and the HEAD of the next. It is DELIBERATELY NOT in the '
+            + 'timeline, the conform or any NLE export — a bridge that placed itself would be '
+            + 'making the edit the editor opened Premiere to make — so this listing is the only '
+            + 'way to find one. '
+            + 'Each row carries the two shots it sits between, the trim point for each of them, '
+            + 'its length and a servable URL. Without the trim points a bridge is a clip nobody '
+            + 'knows where to put.',
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
         name: 'take_candidates',
         handler: handleApprovals, method: 'GET',
         path: a => `/film/shots/${a.shot_id}/take-candidates`

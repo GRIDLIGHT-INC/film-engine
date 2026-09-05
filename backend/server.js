@@ -907,6 +907,11 @@ const server = http.createServer(async (req, res) => {
             return handleFrameHandles(req, res, parts);
         }
 
+        // Route: /film/projects/:id/bridges — free listing of bridge deliverables.
+        if (parts[1] === 'projects' && parts[2] && parts[3] === 'bridges') {
+            return await handleRepair(req, res, parts);
+        }
+
         // Route: /film/shots/:id/repair — run it. This one SPENDS, which is why
         // it is a POST and lives apart from the free packets below.
         if (parts[1] === 'shots' && parts[3] === 'repair') {

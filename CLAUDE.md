@@ -290,6 +290,7 @@ film-engine/
 │       ├── repair-bridge.test.js    # Across a cut, neither shot is the one at fault
 │       ├── editor-transport.test.js # A mark you cannot place on the frame you meant is not a mark
 │       ├── repair-dispatch.test.js  # Every path that starts a repair must tell a bridge from a splice
+│       ├── bridge-retrieval.test.js # A deliverable nobody can list is one nobody receives
 │       ├── approval-envelope.test.js # A packet you can decide from, and an approval that cannot outlive its inputs
 │       ├── take-candidates.test.js # Which attempt is the take, newest first, and why each exists
 │       ├── review-proxy.test.js  # Null rather than oversized, and never re-encoding what has not changed
@@ -4265,6 +4266,7 @@ node --test backend/tests/range-requests.test.js
 node --test backend/tests/repair-bridge.test.js
 node --test backend/tests/editor-transport.test.js
 node --test backend/tests/repair-dispatch.test.js
+node --test backend/tests/bridge-retrieval.test.js
 node --test backend/tests/approval-envelope.test.js
 node --test backend/tests/take-candidates.test.js
 node --test backend/tests/review-proxy.test.js

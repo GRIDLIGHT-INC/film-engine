@@ -166,4 +166,47 @@ function planBridge(input) {
     };
 }
 
-module.exports = { planBridge, BRIDGE_REFUSALS, tierFor };
+/**
+ * One filed bridge, shaped for whoever is going to place it.
+ *
+ * A PATH ALONE IS NOT A HANDOFF. The bridge came back in a tool result that
+ * scrolls away, and an editor left with a clip and no idea where it goes has
+ * been handed nothing — my peer found this in cross-review and was right that
+ * intent ("it is for Premiere") does not excuse unreachable.
+ *
+ * Returns null for anything that is not a bridge, including malformed metadata:
+ * a row misread as a bridge would offer an editor trim points for a cut that
+ * does not exist.
+ */
+function bridgeRow(asset) {
+    if (!asset) return null;
+    let meta = null;
+    try { meta = JSON.parse(asset.metadata || 'null'); } catch (_) { return null; }
+    if (!meta || meta.kind !== 'bridge') return null;
+
+    const between = Array.isArray(meta.between) ? meta.between : [];
+    const trim = Array.isArray(meta.trim) ? meta.trim : [];
+    const secs = Number(asset.duration_ms) > 0 ? Number(asset.duration_ms) / 1000 : null;
+    const cut = (t) => (t && (t.new_out_sec !== undefined ? t.new_out_sec : t.new_in_sec));
+
+    return {
+        id: asset.id || null,
+        file_name: asset.file_name || null,
+        // Served through the ordinary video route, so it plays where every
+        // other clip plays rather than needing a second serving path.
+        url: asset.file_name && asset.project_id
+            ? `/film/video/${asset.project_id}/${asset.file_name}`
+            : (asset.file_name ? `/film/video/${asset.file_name}` : null),
+        seconds: secs,
+        between,
+        trim,
+        created_at: asset.created_at || null,
+        note: trim.length === 2
+            ? `Trim ${trim[0].shot_code} to end at ${Number(cut(trim[0])).toFixed(2)}s, trim `
+              + `${trim[1].shot_code} to start at ${Number(cut(trim[1])).toFixed(2)}s, and lay this `
+              + 'between them. Total running time is unchanged.'
+            : `A bridge across ${between.join(' and ') || 'a cut'}.`,
+    };
+}
+
+module.exports = { planBridge, BRIDGE_REFUSALS, tierFor, bridgeRow };
