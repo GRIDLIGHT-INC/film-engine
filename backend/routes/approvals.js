@@ -76,7 +76,16 @@ function callRoute(method, url, handler) {
  */
 function repairPlan(req, res, shotId, q) {
     const { planRepair } = require('../lib/repair-plan');
-    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    /*
+     * JOINED TO THE SCENE. `film_shots` HAS NO project_id — a shot belongs to a
+     * scene and the scene belongs to the project. A bare SELECT * reads
+     * undefined, which then resolves a file path under the directory "undefined"
+     * and fails as a missing clip rather than as the schema mistake it is.
+     * Every other handler in this file already joins; these two did not, and
+     * only running against a real database found it.
+     */
+    const shot = db.prepare(`SELECT s.*, sc.project_id
+        FROM film_shots s JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?`).get(shotId);
     if (!shot) return json(res, 404, { error: 'Shot not found' });
 
     const clip = db.prepare(

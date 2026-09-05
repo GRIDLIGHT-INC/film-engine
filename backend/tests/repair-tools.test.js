@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 /**
  * RBF-009 — the repair, reachable from an agent.
@@ -18,6 +19,15 @@ const path = require('path');
  * every repair route the server dispatches must have a covering tool. A tool
  * list can only confirm what somebody remembered.
  */
+
+/*
+ * FILM_DATA_DIR IS SET BEFORE ANY REQUIRE. db/database resolves its path at
+ * IMPORT time, so a test that requires it without this opens the operator's
+ * REAL database — which is exactly what happened: this file recreated
+ * ~/.gridlight and left three unrelated audio tests failing with SQLITE_ERROR.
+ * tests/test-isolation.test.js exists for precisely this and caught it.
+ */
+process.env.FILM_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fe-repairtools-'));
 
 const BACKEND = path.join(__dirname, '..');
 const SERVER = fs.readFileSync(path.join(BACKEND, 'server.js'), 'utf8');
@@ -154,6 +164,30 @@ test('a real generator is wired, so repair_run is not a tool that cannot run', (
         'nothing supplies a real generator, so repair_run cannot execute anything');
 });
 
+test('the generator can resolve a real provider, not only an injected one', () => {
+    /*
+     * WRITTEN AFTER A LIVE RUN FOUND THIS. Every other test here injects a
+     * provider, so the real resolution path was never walked — and it was
+     * broken: it called `parseProjectConfig`, a name that exists only in a
+     * COMMENT in usage-meter.js, so it threw on every real call and the runner
+     * reported "no video provider could be resolved". That reads as a
+     * configuration problem, not a typo, which is why nothing pointed at it.
+     *
+     * Asserted against the module's SOURCE rather than by resolving, because
+     * resolving needs a real project and credentials — but a name that is not
+     * exported can be checked for nothing.
+     */
+    const conf = require('../lib/provider-config');
+    const src = fs.readFileSync(path.join(BACKEND, 'lib', 'repair-run.js'), 'utf8');
+    const used = [...src.matchAll(/require\(['"]\.\/provider-config['"]\)/g)].length;
+    assert.ok(used >= 1, 'the generator no longer reads a project\'s provider config');
+    for (const m of src.matchAll(/const \{ (\w+) \} = require\(['"]\.\/provider-config['"]\)/g)) {
+        assert.ok(typeof conf[m[1]] === 'function',
+            `repair-run destructures ${m[1]} from provider-config, which does not export it — `
+            + `it exports ${Object.keys(conf).join(', ')}`);
+    }
+});
+
 test('the generator sends the two frames as ORDERED keyframes', async () => {
     /*
      * `images_list` is ordered and the order IS the meaning: [0] the frame it
@@ -190,6 +224,42 @@ test('a provider refusal comes back as a reason, never a throw', async () => {
     }, 'a provider refusal threw out of the generator');
     assert.strictEqual(r.ok, false);
     assert.match(r.reason, /credits|402|refus/i, `the refusal is not carried through: ${r.reason}`);
+});
+
+test('no handler reads shot.project_id without joining the scene', () => {
+    /*
+     * FOUND BY RUNNING AGAINST A REAL DATABASE, not by reading. `film_shots` has
+     * NO project_id — a shot belongs to a scene and the scene to the project —
+     * so a bare `SELECT * FROM film_shots` followed by `shot.project_id` reads
+     * undefined. It then resolves a media path under a directory literally
+     * named "undefined" and fails as a MISSING CLIP, which sends you looking
+     * for the footage rather than at the query. Every other handler in
+     * approvals.js already joined; the two I added did not.
+     *
+     * Bound by FUNCTION, never by a character window — the window is the
+     * anti-pattern this codebase has paid for four times.
+     */
+    const { db } = require('../db/database');
+    const cols = db.prepare('PRAGMA table_info(film_shots)').all().map(c => c.name);
+    assert.ok(!cols.includes('project_id'),
+        'film_shots now HAS project_id; this whole check is obsolete and should be deleted');
+
+    const dir = path.join(BACKEND, 'routes');
+    const offenders = [];
+    for (const f of fs.readdirSync(dir).filter(x => x.endsWith('.js'))) {
+        const src = fs.readFileSync(path.join(dir, f), 'utf8');
+        for (const fn of src.split(/\n(?=(?:async )?function )/)) {
+            if (!/\bshot\.project_id\b/.test(fn)) continue;
+            const q = /db\.prepare\(([\s\S]*?)\)\s*\.get\(/.exec(fn);
+            if (!q) continue;                       // the shot came from elsewhere
+            if (!/FROM film_shots/i.test(q[1])) continue;
+            if (!/JOIN film_scenes/i.test(q[1])) {
+                offenders.push(`${f}: ${(/(?:async )?function (\w+)/.exec(fn) || [, '?'])[1]}`);
+            }
+        }
+    }
+    assert.deepStrictEqual(offenders, [],
+        `these read shot.project_id from a query that never selects it: ${offenders.join(', ')}`);
 });
 
 test('no repair tool hands the reasoning back to a server-side LLM', () => {

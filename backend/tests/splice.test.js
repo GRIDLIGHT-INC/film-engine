@@ -195,6 +195,36 @@ test('the head and tail come from their own offsets, not from the start of the c
         `the tail was cut from the wrong offset — expected the source's second half (green), got rgb(${tail})`);
 });
 
+test('a replacement at a different raster than the source still splices', async () => {
+    /*
+     * FOUND BY RUNNING IT FOR REAL. The plan computes a target raster and the
+     * PROVIDER IGNORES IT: asked for 854x366 against a 2206x946 source,
+     * Seedance returned 1000x428. The concat filter requires every input to
+     * share width, height and SAR, so the join produced
+     * "at least one of its streams received no packets" and wrote a zero-byte
+     * file — after the generation had been billed.
+     *
+     * The replacement is therefore conformed to the SOURCE's raster before the
+     * join, not to the plan's: the surrounding footage is what it has to match,
+     * and the plan's number is a request the provider is free to ignore.
+     */
+    const src = makeClip('ras-src.mp4', 'red', 6);          // 32x32 by default
+    const rep = path.join(TMP, 'ras-rep.mp4');
+    execFileSync(ff().bin, ['-y', '-loglevel', 'error',
+        '-f', 'lavfi', '-i', 'color=c=blue:s=64x48:d=3',    // deliberately a different shape
+        '-frames:v', '48', '-c:v', 'mpeg4', '-r', '24', rep], { stdio: 'pipe', timeout: 60000 });
+
+    const out = path.join(TMP, 'ras-out.mp4');
+    const r = await spliceClip({ sourcePath: src, replacementPath: rep,
+        startSec: 2, endSec: 4, outputPath: out, fps: 24 });
+    assert.strictEqual(r.ok, true, `a mismatched raster broke the join: ${r.error || r.reason}`);
+
+    const d = durationOf(out);
+    assert.ok(d !== null && Math.abs(d - 6) < 0.4, `expected ~6s, read ${d}`);
+    assert.ok(isBlue(colourAt(out, 3)), 'the replacement is not on screen after conforming');
+    assert.ok(isRed(colourAt(out, 1)) && isRed(colourAt(out, 5)), 'the original footage was disturbed');
+});
+
 /* ── refusals ──────────────────────────────────────────────────────────── */
 
 test('every declared refusal is reachable and returns its own code', () => {

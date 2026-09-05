@@ -256,8 +256,17 @@ async function repairGenerator(request, opts) {
     if (!provider) {
         try {
             const { resolve } = require('./providers');
-            const { parseProjectConfig } = require('./provider-config');
-            provider = resolve('video', parseProjectConfig(gen.projectId));
+            /*
+             * `providerConfigOf`, NOT `parseProjectConfig`. The latter is a
+             * stale name that survives only in a COMMENT in usage-meter.js, and
+             * I copied it from there — so this threw on every real call and the
+             * runner reported "no video provider could be resolved", which
+             * reads as a configuration problem rather than a typo. The unit
+             * test injected a provider and never walked this path; only running
+             * it against a real project found it.
+             */
+            const { providerConfigOf } = require('./provider-config');
+            provider = resolve('video', providerConfigOf(gen.projectId));
         } catch (err) {
             return { ok: false, reason: `no video provider could be resolved: ${err.message}` };
         }

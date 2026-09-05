@@ -614,8 +614,42 @@ async function spliceClip(input) {
     const work = fs.mkdtempSync(path.join(require('os').tmpdir(), 'fe-splice-'));
     const made = [];
     try {
+        /*
+         * THE REPLACEMENT IS CONFORMED TO THE SOURCE'S RASTER.
+         *
+         * The plan states a target size and the PROVIDER IS FREE TO IGNORE IT —
+         * measured on a real repair, Seedance was asked for 854x366 against a
+         * 2206x946 source and returned 1000x428. The concat filter requires
+         * every input to share width, height and SAR, so the join wrote a
+         * ZERO-BYTE FILE and reported "at least one of its streams received no
+         * packets", after the generation had already been billed.
+         *
+         * Scaled and PADDED rather than stretched: the aspect is preserved and
+         * any difference becomes bars, because a repaired section that is
+         * subtly the wrong shape is a seam nobody can name.
+         */
+        const srcInfo = inspectMedia(o.sourcePath);
+        const repInfo = inspectMedia(o.replacementPath);
+        let replacement = o.replacementPath;
+        if (srcInfo.ok && repInfo.ok && srcInfo.width > 0
+            && (repInfo.width !== srcInfo.width || repInfo.height !== srcInfo.height)) {
+            const conformed = path.join(work, 'replacement-conformed.mp4');
+            const vf = `scale=${srcInfo.width}:${srcInfo.height}:force_original_aspect_ratio=decrease,`
+                + `pad=${srcInfo.width}:${srcInfo.height}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+            const run = await probe(found.bin, ['-y', '-loglevel', 'error', '-i', o.replacementPath,
+                '-vf', vf, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac',
+                '-r', String(plan.fps), conformed], { timeoutMs: 10 * 60 * 1000 });
+            if (run.code !== 0 || !fs.existsSync(conformed)) {
+                return { ok: false, state: 'failed',
+                    error: `the replacement is ${repInfo.width}x${repInfo.height} against a `
+                        + `${srcInfo.width}x${srcInfo.height} source and could not be conformed: `
+                        + run.stderr.split('\n').filter(Boolean).slice(-2).join(' ').slice(0, 300) };
+            }
+            replacement = conformed;
+        }
+
         for (const seg of plan.segments) {
-            if (seg.role === 'replacement') { made.push({ file_path: o.replacementPath }); continue; }
+            if (seg.role === 'replacement') { made.push({ file_path: replacement }); continue; }
             const cut = path.join(work, `${seg.role}.mp4`);
             const t = await trimClip(seg.path, cut, { startSec: seg.startSec, endSec: seg.endSec, fps: plan.fps });
             if (!t.ok) return { ok: false, state: 'failed', error: `the ${seg.role} could not be cut: ${t.error}` };
