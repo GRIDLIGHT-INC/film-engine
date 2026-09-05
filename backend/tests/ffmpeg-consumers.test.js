@@ -80,11 +80,15 @@ test('no consumer reads a field the resolver does not return', () => {
         + [...new Set(bad)].join(' | '));
 });
 
-test('the encoder actually spawns from what the resolver hands back', () => {
+test('the encoder actually spawns from what the resolver hands back', (t) => {
     // Behavioural: the field is not merely present, it names a runnable binary.
     const { resolveFfmpeg } = require('../lib/ffmpeg');
     const r = resolveFfmpeg();
-    if (!r.available) return;                       // an install with no encoder is legitimate
+    // An install with no encoder is legitimate — but a bare `return` REPORTS
+    // PASS, so this would claim to prove the binary runs while proving nothing.
+    // Skipped visibly instead, so the suite total cannot hide a check that
+    // never executed.
+    if (!r.available) return t.skip('no encoder on this install, so nothing here was verified');
     const out = require('child_process').execFileSync(r.bin, ['-hide_banner', '-version'],
         { encoding: 'utf8', timeout: 15000 });
     assert.match(out, /ffmpeg version/i, 'the resolver pointed at something that is not ffmpeg');

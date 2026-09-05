@@ -128,7 +128,10 @@ test('a size TIER is not a pixel pair, and is not claimed to be', () => {
     // Google's image_size is 512px/1K/2K/4K. Declaring that `exact` would
     // promise pixels it does not reproduce — the test caught exactly that.
     const google = imageAdapters().find(a => a.id === 'google');
-    if (!google) return;
+    // Adapters are listed from the registry regardless of credentials, so a
+    // missing one is a broken registry rather than an unconfigured install —
+    // and bailing quietly would report pass for a check that never ran.
+    assert.ok(google, 'no google image adapter in the registry; this check never ran');
     assert.strictEqual(google.sizeControl, 'snapped',
         'google sends a size tier, not a pixel pair');
 });
@@ -189,7 +192,7 @@ test('a declared ceiling is what the provider returns, not what its models could
      * 1376x768.
      */
     const meshy = imageAdapters().find(a => a.id === 'meshy');
-    if (!meshy) return;
+    assert.ok(meshy, 'no meshy image adapter in the registry; this check never ran');
 
     assert.ok(meshy.maxImagePixels <= 1376 * 768 * 1.02,
         `meshy declares ${meshy.maxImagePixels} pixels; every image it has returned is `
@@ -214,7 +217,7 @@ test('a model that cannot reach 2K is not sold on its provider reaching it', () 
      */
     const { compareGenerators } = require('../lib/generator-costs');
     const google = compareGenerators('image').rows.filter(r => r.provider === 'google');
-    if (!google.length) return;
+    assert.ok(google.length, 'no google rows in the generator comparison; this check never ran');
 
     const draft = google.find(r => r.tier && r.tier.id === 'draft');
     assert.ok(draft, 'no draft-tier google row to check');

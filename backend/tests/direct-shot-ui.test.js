@@ -240,7 +240,11 @@ test('the pose facets the board excludes are authored on the previs stage', () =
      * authors them, so previs has to actually author them — otherwise a
      * director can set a camera position nowhere at all.
      */
-    if (!POSE_FACETS.length) return;
+    // Absence is not an empty case here, it is a broken registry: with no pose
+    // facets this test asserts nothing and reports pass, which is how the
+    // exclusion it guards goes missing from every surface at once.
+    assert.ok(POSE_FACETS.length,
+        'POSE_FACETS is empty, so every assertion below would pass over nothing');
     const ui = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
     const reader = ui.slice(ui.indexOf('function previsReadInspector()'),
         ui.indexOf('function previsReadInspector()') + 1600);
