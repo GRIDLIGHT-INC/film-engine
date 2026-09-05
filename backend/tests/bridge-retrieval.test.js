@@ -122,9 +122,29 @@ test('no cut-builder can select a bridge', () => {
      * shots it replaces part of.
      */
     const builders = cutBuilders();
-    assert.ok(builders.length >= 10,
-        `only ${builders.length} files select on video asset types; this scan is wrong and every `
-        + 'assertion below would pass over too small a set');
+    /*
+     * MEASURED 21 on 2026-09-05. The floor sits just under it, not at a round
+     * number, because a round number is how a guard comes to permit exactly the
+     * failure it is named for: at 10 this scan could have lost ELEVEN of its
+     * twenty-one files and still reported the leak check as covered.
+     *
+     * That is the bounded-character-window mistake wearing its fifth costume in
+     * this codebase — a bound chosen for looking reasonable rather than derived
+     * from what it measures. A floor cannot be derived from the thing it guards
+     * without becoming circular, so it is pinned to the measurement instead and
+     * the measurement is written down.
+     *
+     * A floor rather than an equality on purpose: files that select video asset
+     * types get ADDED as the engine grows, and an exact count would fail on
+     * ordinary growth and be relaxed within a day. Shrinkage is the failure —
+     * the regex stops matching, `strip` eats more than it should, the literals
+     * are renamed — and shrinkage is what this fires on. Three of tolerance is
+     * for legitimate deletion, not for a scan quietly rotting.
+     */
+    assert.ok(builders.length >= 18,
+        `only ${builders.length} files select on video asset types, against 21 measured when this `
+        + 'was written; the scan has stopped seeing most of them and every assertion below would '
+        + 'pass over too small a set');
     // The three that assemble the film must be in the derived set, or the
     // derivation has silently dropped the ones that matter most.
     for (const must of ['lib/conform.js', 'lib/timeline.js', 'lib/nle-export.js']) {
