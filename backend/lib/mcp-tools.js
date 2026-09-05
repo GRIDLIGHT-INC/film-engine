@@ -37,6 +37,7 @@ const { handleContinuity } = require('../routes/continuity');
 const { handleMarketing } = require('../routes/marketing');
 const { handleWorlds } = require('../routes/worlds');
 const { handleApprovals } = require('../routes/approvals');
+const { handleRepair } = require('../routes/repair');
 const { handleDashboard } = require('../routes/dashboard');
 const { handleStoryStructure } = require('../routes/story-structure');
 const { handleStoryDevelopment } = require('../routes/story-development');
@@ -555,6 +556,60 @@ const PRODUCTION_TOOLS = [
             action: { type: 'string', description: '"image" (default) or "video".' },
             tier: { type: 'string', description: 'For video: draft | production | hero, to price the tier you are considering.' },
         }, required: ['shot_id'],
+    },
+    {
+        name: 'repair_plan',
+        handler: handleApprovals, method: 'GET',
+        path: a => `/film/shots/${a.shot_id}/repair-plan`
+            + `?start_sec=${encodeURIComponent(a.start_sec)}&end_sec=${encodeURIComponent(a.end_sec)}`
+            + (a.resolution ? `&resolution=${encodeURIComponent(a.resolution)}` : ''),
+        description:
+            'What redoing the section between two marks would do, and what it would cost. '
+            + 'FREE and side-effect-free: nothing is extracted, generated or written, so raise it '
+            + 'as often as you like and try three ranges before committing to one. '
+            + 'The marks are CLIP-RELATIVE SECONDS — offsets into this shot\'s own footage, not '
+            + 'positions in the finished film. '
+            + 'It reports the two frames that would be extracted and at which timestamps, what '
+            + 'would be generated and at what duration and raster, how the result goes back in, '
+            + 'and the cost from the provider\'s own rate table. '
+            + 'A range under the model\'s four-second floor is REFUSED with both remedies priced — '
+            + 'widen the marks, which changes what you marked, or generate four seconds and trim '
+            + 'back, which pays for footage nobody sees. Neither is chosen for you. '
+            + 'The resolution follows the source clip unless you name one, because a repair '
+            + 'generated at a different raster from the footage around it is a visible seam.',
+        schema: {
+            shot_id: { type: 'string' },
+            start_sec: { type: 'number', description: 'Seconds into THIS shot\'s clip where the repair starts.' },
+            end_sec: { type: 'number', description: 'Seconds into THIS shot\'s clip where it must arrive.' },
+            resolution: { type: 'string', description: 'Optional: 480p | 720p | 1080p | 4k. Defaults to the source\'s own.' },
+        }, required: ['shot_id', 'start_sec', 'end_sec'],
+    },
+    {
+        name: 'repair_run',
+        handler: handleRepair, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/repair`,
+        body: a => ({ start_sec: a.start_sec, end_sec: a.end_sec,
+            ...(a.resolution ? { resolution: a.resolution } : {}),
+            ...(a.ignore_budget ? { ignore_budget: true } : {}) }),
+        description:
+            'SPENDS CREDITS — one generation for the marked range, priced by repair_plan. '
+            + 'Run repair_plan first and read the cost; this does not ask again. '
+            + 'It extracts the two frames, exposes them at a URL the provider can fetch, '
+            + 'generates between them, splices head + new + tail back into one clip at the '
+            + 'source\'s own frame rate, and registers the result as a NEW VERSION. '
+            + 'THE PREVIOUS TAKE SURVIVES: a repair is an attempt, and the footage it improves '
+            + 'was paid for, so nothing is overwritten. '
+            + 'Every failure names the STAGE it happened at — plan, budget, extract, host, '
+            + 'generate, splice or register — so "it failed" is never the whole answer. '
+            + 'Over budget it refuses with 402 before anything is generated; pass ignore_budget '
+            + 'to override that deliberately.',
+        schema: {
+            shot_id: { type: 'string' },
+            start_sec: { type: 'number', description: 'Seconds into THIS shot\'s clip where the repair starts.' },
+            end_sec: { type: 'number', description: 'Seconds into THIS shot\'s clip where it must arrive.' },
+            resolution: { type: 'string', description: 'Optional: 480p | 720p | 1080p | 4k.' },
+            ignore_budget: { type: 'boolean', description: 'Run even if the projected cost exceeds the project budget.' },
+        }, required: ['shot_id', 'start_sec', 'end_sec'],
     },
     {
         name: 'take_candidates',

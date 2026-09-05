@@ -118,6 +118,7 @@ const { handleWorlds, SHOT_TAILS: WORLD_SHOT_TAILS } = require('./routes/worlds'
 const approvalGuard = require('./lib/approval-guard');
 const { handleApprovals } = require('./routes/approvals');
 const { handleFrameHandles } = require('./routes/frame-handles');
+const { handleRepair } = require('./routes/repair');
 const { handleProviders } = require('./routes/providers');
 const { handleConsistency } = require('./routes/consistency');
 const { handleQA } = require('./routes/qa');
@@ -904,6 +905,12 @@ const server = http.createServer(async (req, res) => {
          */
         if (parts[1] === 'frame-handle' && parts[2]) {
             return handleFrameHandles(req, res, parts);
+        }
+
+        // Route: /film/shots/:id/repair — run it. This one SPENDS, which is why
+        // it is a POST and lives apart from the free packets below.
+        if (parts[1] === 'shots' && parts[3] === 'repair') {
+            return await handleRepair(req, res, parts);
         }
 
         // Route: /film/shots/:id/{approval-envelope,take-candidates} — decision

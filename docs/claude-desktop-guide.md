@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**261 tools, 67 families.** Everything the app can do, you can ask for in a
+**263 tools, 68 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -675,6 +675,35 @@ generation plate, the depth pass, and the shot thumbnail.
 a set of numbers in an unnamed space, and on an uncalibrated world the export
 says outright that its distances are not metres. An output that does not exist
 yet is named with its reason rather than quietly left out of the list.
+
+### Redoing the video between two chosen frames
+
+`repair_plan` · `repair_run`
+
+A fault in the middle of a shot — a hand through a table, two seconds of drift —
+used to mean re-rolling the whole clip and losing everything that was right
+about it. Mark an in-point and an out-point and regenerate only what lies
+between them.
+
+**The marks are CLIP-RELATIVE SECONDS**, offsets into that shot's own footage,
+not positions in the finished film. A mark at 00:41 of the cut is 3.2 seconds
+into shot 2B, and the two numbers are not interchangeable: sending the wrong one
+produces a valid, playable repair of somewhere else.
+
+`repair_plan` is **free** and spends nothing, so try three ranges before
+committing to one. It reports the two frames it would extract, what it would
+generate and at what raster, how the result goes back in, and the cost from the
+provider's own table.
+
+**The four-second floor is the thing to expect.** The model will not generate a
+shorter clip, and a fault is very often shorter — so the commonest range you
+will mark is refused. Both remedies come back priced: widen the marks, which
+changes what you marked, or generate four seconds and trim back, which pays for
+footage nobody sees. Neither is chosen for you.
+
+`repair_run` **spends**, and registers the result as a **new version** — the
+take being repaired was paid for and survives the attempt. Every failure names
+the stage it happened at, so "it failed" is never the whole answer.
 
 ### Handing somebody a decision
 

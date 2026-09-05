@@ -224,4 +224,83 @@ async function runRepair(input) {
     }
 }
 
-module.exports = { runRepair, REPAIR_STAGES };
+/**
+ * THE GENERATOR THAT MAKES A REPAIR ABLE TO SPEND.
+ *
+ * `runRepair` takes this injected, and until something supplied a real one no
+ * path in this codebase could actually generate a repair — `repair_run` would
+ * have been listed, callable, and incapable of the one thing it names. That is
+ * the `plate_generate` failure: in the registry, described, schema'd, and dead.
+ *
+ * `first-last-frame` is the workflow, because a repair travels between two
+ * pictures the director has already approved. The frames go as ORDERED
+ * keyframes — [0] the frame it starts on, [1] the frame it ends on — and the
+ * order IS the meaning: reversed, the move runs backwards and reads as a model
+ * fault rather than a field-order one.
+ *
+ * `provider` and `persist` are injectable so this can be exercised without
+ * spending. Everything else about the call is the same shape the per-shot video
+ * road already uses, deliberately: a second way of asking for a clip is how the
+ * two come to disagree about what they asked for.
+ */
+async function repairGenerator(request, opts) {
+    const o = opts || {};
+    const gen = request || {};
+    const spec = (gen.plan && gen.plan.generate) || {};
+    const images = Array.isArray(gen.images) ? gen.images : [];
+    if (images.length !== 2) {
+        return { ok: false, reason: `a repair travels between exactly two frames; ${images.length} were given` };
+    }
+
+    let provider = o.provider;
+    if (!provider) {
+        try {
+            const { resolve } = require('./providers');
+            const { parseProjectConfig } = require('./provider-config');
+            provider = resolve('video', parseProjectConfig(gen.projectId));
+        } catch (err) {
+            return { ok: false, reason: `no video provider could be resolved: ${err.message}` };
+        }
+    }
+
+    const payload = {
+        workflow: 'first-last-frame',
+        // Ordered. [0] starts, [1] arrives.
+        keyframes: images.map((uri, i) => ({ uri, position: i === 0 ? 'first' : 'last' })),
+        duration: spec.durationSeconds,
+        resolution: spec.resolution,
+        ...(spec.width ? { width: spec.width, height: spec.height } : {}),
+        prompt: gen.prompt || 'Continue the action between these two frames, matching the surrounding shot.',
+    };
+
+    let result;
+    try {
+        result = await provider.generate('video', payload, { timeout: 900000 });
+    } catch (err) {
+        /*
+         * A REASON, NEVER A THROW. The runner names the stage that failed, and
+         * a provider exception escaping here would surface as a generic error
+         * from whichever stage happened to be on the stack.
+         */
+        return { ok: false, reason: `the provider refused: ${err.message}` };
+    }
+    if (!result || (result.ok === false)) {
+        return { ok: false, reason: (result && (result.reason || result.error)) || 'the provider returned nothing' };
+    }
+
+    try {
+        const persist = o.persist || (async (data) => {
+            const { persistProviderMedia } = require('./provider-media');
+            return persistProviderMedia(gen.projectId, 'video',
+                `repair_${Date.now().toString(36)}.mp4`, data, { serveDir: 'videos' });
+        });
+        const stored = await persist(result.data || result, result);
+        return { ok: true, path: stored, jobId: result.jobId || result.id || null };
+    } catch (err) {
+        // The generation SUCCEEDED and was billed; failing to store it is a
+        // different problem and must say so, or the spend looks like a refusal.
+        return { ok: false, reason: `the repair generated but could not be stored: ${err.message}` };
+    }
+}
+
+module.exports = { runRepair, REPAIR_STAGES, repairGenerator };

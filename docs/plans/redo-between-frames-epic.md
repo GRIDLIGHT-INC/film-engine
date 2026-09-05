@@ -154,7 +154,7 @@ removed by the probe; one task was added.
 
 | Task | Title | Description | Size | Dependencies |
 |------|-------|-------------|------|--------------|
-| RBF-009 | MCP tools for the repair | `repair_plan` (free) and `repair_run`, so an agent can drive it. A capability with no MCP surface is one the connected model cannot use — the goal's stated rabbit hole. | M | RBF-006, RBF-008 |
+| RBF-009 | MCP tools for the repair | **Done** — `repair_plan` (free, GET) and `repair_run` (SPENDS, POST) at **263 tools**. The denominator is derived from the ROUTES the server dispatches, so a repair route with no tool fails rather than being invisible. Also wired the real first-last-frame generator, without which `repair_run` would have been listed and incapable. | M | RBF-006, RBF-008 |
 | RBF-010 | Prove it on real footage | Run a repair end to end on a real clip in a real project, at 480p, and record the before/after plus the actual spend. Measure whether the seam needs `post/color-match`. | M | RBF-008 |
 
 ---

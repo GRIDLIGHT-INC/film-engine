@@ -88,6 +88,7 @@ film-engine/
 │   │   ├── deliverables.js     # The output list, and which ratios must be shot rather than cropped
 │   │   ├── brands.js           # The brand library, the claims register, and the free compliance report
 │   │   ├── approvals.js        # Decision packets: may I run this, and which of these is the take
+│   │   ├── repair.js          # Run a repair — the half that spends, kept apart from the free plan
 │   │   ├── frame-handles.js    # One frame, to whoever holds the id — the id IS the credential
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
@@ -283,6 +284,7 @@ film-engine/
 │       ├── playback-marks.test.js   # Two marks, two units, and a mirror that must not drift
 │       ├── frame-handles.test.js    # Handing a local file to the internet, and everything that must not be
 │       ├── repair-run.test.js       # A repair is an attempt; the take it improves must survive it
+│       ├── repair-tools.test.js     # A capability with no MCP surface is one the model cannot use
 │       ├── approval-envelope.test.js # A packet you can decide from, and an approval that cannot outlive its inputs
 │       ├── take-candidates.test.js # Which attempt is the take, newest first, and why each exists
 │       ├── review-proxy.test.js  # Null rather than oversized, and never re-encoding what has not changed
@@ -4253,6 +4255,7 @@ node --test backend/tests/repair-plan.test.js
 node --test backend/tests/playback-marks.test.js
 node --test backend/tests/frame-handles.test.js
 node --test backend/tests/repair-run.test.js
+node --test backend/tests/repair-tools.test.js
 node --test backend/tests/approval-envelope.test.js
 node --test backend/tests/take-candidates.test.js
 node --test backend/tests/review-proxy.test.js
