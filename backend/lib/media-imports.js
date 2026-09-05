@@ -583,52 +583,18 @@ function importCapabilityMedia(spec, target, input) {
  * than none — it silently truncates a clip in the cut.
  */
 function measureDurationMs(filePath) {
-    const { resolveFfmpeg } = require('./ffmpeg');
-    const found = resolveFfmpeg();
-    if (!found.available) return 0;
     /*
-     * spawnSync, and stderr read on BOTH paths.
-     *
-     * The first version ran `-f null -` inside a try/catch and read stderr only
-     * from the thrown error — but that command SUCCEEDS, exits 0, and never
-     * throws, so the duration was silently 0 every time and every clip fell
-     * back to the card's guess: the exact fault this function exists to fix.
-     * It passed the suite because no test measured a real file.
-     *
-     * `-i <file>` with no output is the idiom: ffmpeg prints the container's
-     * duration and exits non-zero for want of an output file. Reading stderr
-     * regardless of the exit code means neither outcome can hide it again.
+     * THROUGH THE ONE INSPECTOR (RBF-005). This carried its own copy of the
+     * `Duration:` parse — one of four in lib/ at the time — and the lesson its
+     * old comment records is now enforced there instead: `ffmpeg -i` with no
+     * output SUCCEEDS on some paths and fails on others, so stderr is read
+     * regardless of the exit code. A fourth copy is how one of them acquires a
+     * fix the others do not, which RBF-003 spent a dispatch undoing for frames.
      */
-    const { spawnSync } = require('child_process');
-
-    /*
-     * A FAILED SPAWN IS NOT A DURATION OF ZERO.
-     *
-     * Under load — several imports at once, or a machine already running
-     * encodes — spawnSync can come back with an error and no output at all
-     * (EAGAIN when the process table is under pressure). Reading stderr from
-     * that gives '', the regex finds nothing, and the clip silently falls back
-     * to the card's guess: exactly the fault this function exists to fix,
-     * reappearing only when the machine is busy.
-     *
-     * Found because the test passed alone and failed roughly one run in two in
-     * the full suite. Retried rather than trusted, and the two outcomes are
-     * kept distinct: a file with genuinely no duration measures 0 on the first
-     * try, while a spawn that did not happen is tried again.
-     */
-    const probeOnce = () => spawnSync(found.bin, ['-hide_banner', '-i', filePath], {
-        encoding: 'utf8', timeout: 60000, maxBuffer: 8 * 1024 * 1024,
-    });
-    let run = probeOnce();
-    for (let attempt = 0; attempt < 2 && run && run.error && !run.stderr; attempt += 1) {
-        // A short synchronous pause: this runs during an import, not in a loop.
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
-        run = probeOnce();
-    }
-    const out = String((run && run.stderr) || '');
-    const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(out);
-    if (!m) return 0;
-    return Math.round((Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) * 1000);
+    const { inspectMedia } = require('./ffmpeg');
+    const seen = inspectMedia(filePath);
+    if (!seen.ok || !(seen.durationSeconds > 0)) return 0;
+    return Math.round(seen.durationSeconds * 1000);
 }
 
 /** The extension the bytes actually justify. */

@@ -268,6 +268,139 @@ function buildConcatArgs(clips, outputPath, opts) {
  * a director needs and a stack trace is not — the rule runConform already sets.
  */
 /**
+ * WHAT A CLIP ACTUALLY IS, read from the file.
+ *
+ * THE ROW CANNOT ANSWER IT. Measured on the live database: every video asset
+ * carries no `provider_model`, no `width` and no `height` — including the ones
+ * generated in-engine — and imported footage never had them at all. Imported
+ * footage is also exactly what a director is most likely to be repairing, so a
+ * reader that leaned on those columns would work only where it is least needed.
+ *
+ * AND THERE IS NO FFPROBE. `ffmpeg-static` ships a single binary and this
+ * machine has no system ffprobe, so reading these with one means a new runtime
+ * dependency — which ADR-002 and this epic's own constraints both refuse. The
+ * idiom is the one `stitchClips` already documents: `ffmpeg -i <file>` with no
+ * output exits non-zero and prints the container's own description to stderr.
+ * That non-zero exit is the normal path, not a failure.
+ */
+const MEDIA_FIELDS = Object.freeze([
+    { id: 'durationSeconds', why: 'the splice computes the tail from it, and the row stores none' },
+    { id: 'width', why: 'the raster a repair must match, or the join silently rescales the section' },
+    { id: 'height', why: 'the other half of the raster; a mismatch is a visible seam' },
+    { id: 'fps', why: 'the concat defaults to 24, so a 25fps production is otherwise conformed wrong' },
+    { id: 'codec', why: 'what the source was encoded with, which decides whether a join can be clean' },
+    { id: 'pixFmt', why: 'yuv420p against anything else is a seam that plays here and fails in the NLE' },
+    { id: 'hasAudio', why: 'silence must be synthesised for a segment carrying none, or the join fails outright' },
+]);
+
+/**
+ * Parse the stream line for the first REAL video stream.
+ *
+ * "Real" matters: an audio file with cover art carries a `Video: mjpeg` stream,
+ * so a reader that takes the first thing calling itself video returns the
+ * ARTWORK's dimensions as the clip's raster. A picture stream with no frame
+ * rate is not the picture.
+ */
+function parseVideoStream(text) {
+    const lines = String(text || '').split('\n')
+        .filter(l => /Stream\s+#\d+:\d+/.test(l) && /:\s*Video:/.test(l));
+    for (const line of lines) {
+        /*
+         * The raster is matched with a boundary on both sides. The line reads
+         * `640x480 [SAR 1:1 DAR 4:3]`, and a looser pattern takes the SAR or
+         * the DAR just as happily — a repair built at 4x3 pixels fails at the
+         * encoder with something that reads as a codec fault.
+         */
+        const size = /(?:^|[\s,])(\d{2,5})x(\d{2,5})(?=[\s,\]]|$)/.exec(line);
+        const rate = /(\d+(?:\.\d+)?)\s+fps/.exec(line) || /(\d+(?:\.\d+)?)\s+tbr/.exec(line);
+        /*
+         * ATTACHED PICTURES ARE NOT THE PICTURE. An audio file with cover art
+         * carries `Video: mjpeg ... 300x300 ... 90k tbr (attached pic)`, which
+         * has BOTH a raster and a rate — so a guard requiring one or the other
+         * accepts it happily and reports a 300x300, 90000fps "clip". Measured:
+         * it did exactly that until this line existed. ffmpeg marks the stream
+         * itself, and that mark is the only reliable signal.
+         */
+        if (/\(attached pic\)/i.test(line)) continue;
+        if (!size && !rate) continue;              // a stream we cannot use
+        const after = /:\s*Video:\s*([^\s,(]+)/.exec(line);
+        return {
+            width: size ? Number(size[1]) : null,
+            height: size ? Number(size[2]) : null,
+            /*
+             * Reported as ffmpeg reports it — 29.97, never rounded to 30, since
+             * a nominal rate is how a repaired section drifts against the cut.
+             * A value in the thousands is a container TIMEBASE that reached the
+             * tbr fallback, not a frame rate; no camera or model produces one.
+             */
+            fps: rate && Number(rate[1]) > 0 && Number(rate[1]) <= 1000 ? Number(rate[1]) : null,
+            codec: after ? after[1] : null,
+            pixFmt: (/,\s*(yuv\w+|rgb\w+|gbr\w+|gray|nv12|p010\w*)/.exec(line) || [])[1] || null,
+        };
+    }
+    return null;
+}
+
+/**
+ * Everything the repair needs to know about a file. Never throws; a reason on
+ * failure, because a clip that cannot be read must not take down the operation
+ * that was inspecting it.
+ */
+function inspectMedia(filePath, opts) {
+    const o = opts || {};
+    if (typeof filePath !== 'string' || !filePath) {
+        return { ok: false, reason: 'no file path was given to inspect' };
+    }
+    const ff = o.ffmpeg || resolveFfmpeg();
+    if (!ff || !ff.available) {
+        return { ok: false, reason: ff && ff.reason ? ff.reason : 'no encoder is available on this machine' };
+    }
+    let stat = null;
+    try { stat = fs.statSync(filePath); } catch (_) { stat = null; }
+    if (!stat) return { ok: false, reason: `there is no file at ${filePath}` };
+    if (stat.isDirectory()) return { ok: false, reason: `${filePath} is a directory, not a media file` };
+    if (stat.size === 0) return { ok: false, reason: 'that file is empty, so it describes nothing' };
+
+    // Exits non-zero for want of an output file and prints what we want to
+    // stderr, so stderr is read on BOTH paths — the mistake measureDurationMs
+    // records having made once, where the success path was never read.
+    let text = '';
+    try {
+        const out = execFileSync(ff.bin, ['-i', filePath],
+            { stdio: 'pipe', timeout: Number(o.timeoutMs) > 0 ? Number(o.timeoutMs) : 30000 });
+        text = String(out || '');
+    } catch (err) {
+        text = `${(err && err.stderr) || ''}${(err && err.stdout) || ''}`;
+    }
+
+    const d = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(text);
+    if (!d) {
+        return { ok: false, reason: `the encoder could not read ${path.basename(filePath)} as a media file` };
+    }
+    const v = parseVideoStream(text);
+    return {
+        ok: true,
+        durationSeconds: Number(d[1]) * 3600 + Number(d[2]) * 60 + Number(d[3]),
+        width: v ? v.width : null,
+        height: v ? v.height : null,
+        fps: v ? v.fps : null,
+        codec: v ? v.codec : null,
+        pixFmt: v ? v.pixFmt : null,
+        /*
+         * ANYTHING between the stream index and the kind. This ffmpeg prints
+         * `Stream #0:0[0x1](und): Audio:` and the previous pattern allowed only
+         * an optional `(...)`, so it matched NOTHING on any real file — see the
+         * note on stitchClips below for what that cost.
+         */
+        hasAudio: /Stream\s+#\d+:\d+[^:\n]*:\s*Audio:/i.test(text),
+        // Named rather than left as a bare null: "no raster" and "we could not
+        // find one" send a reader to different places.
+        videoReason: v ? null : 'this file carries no usable video stream — it is audio only, '
+            + 'or its only picture stream is cover art rather than footage',
+    };
+}
+
+/**
  * WHY THE SPLICE IS OURS.
  *
  * RBF-001 established that Seedance `video-edit`'s `images_list` is style
@@ -459,7 +592,20 @@ async function spliceClip(input) {
         } catch (_) { replacementDuration = 0; }
     }
 
-    const plan = planSplice({ ...o, sourceDuration, replacementDuration });
+    /*
+     * THE RATE COMES FROM THE FILE. buildConcatArgs falls back to 24 when
+     * nobody says otherwise, so a 25fps production repaired without this reads
+     * its source at 25, re-encodes the join at 24 and drifts against every cut
+     * around it — the seam this epic names as its main risk, produced by a
+     * default rather than by any model.
+     */
+    let fps = Number(o.fps) > 0 ? Number(o.fps) : 0;
+    if (!fps) {
+        const seen = inspectMedia(o.sourcePath);
+        if (seen.ok && seen.fps > 0) fps = seen.fps;
+    }
+
+    const plan = planSplice({ ...o, sourceDuration, replacementDuration, fps: fps || undefined });
     if (!plan.ok) return { ok: false, state: 'refused', code: plan.code, error: plan.reason, reason: plan.reason };
     if (!o.replacementPath || !fs.existsSync(o.replacementPath)) {
         return { ok: false, state: 'missing_clip', error: 'the replacement clip is not on disk' };
@@ -506,19 +652,26 @@ async function stitchClips(clips, outputPath, opts) {
     if (!found.available) return { ok: false, state: 'no_executor', error: found.reason, encoder: found };
 
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    /*
+     * THROUGH THE ONE INSPECTOR. This parsed the diagnostic itself, and its
+     * audio pattern required the stream index to be followed by nothing or by
+     * `(...)`. Real output from this ffmpeg is `Stream #0:0[0x1](und): Audio:`,
+     * so it matched NOTHING — `hasAudio` was false for every clip ever joined,
+     * and buildConcatArgs duly synthesised anullsrc silence for all of them.
+     *
+     * Measured: two clips carrying a 440Hz tone at -21.2 dB joined to a file
+     * at -91 dB, which is digital silence. Every sequence stitch and every
+     * whole-film conform has been dropping its audio, and nothing failed —
+     * the output plays, with a silent track that reads as a creative choice.
+     * The AUDIO_LANES note in CLAUDE.md warns about exactly this shape of loss.
+     */
     const clipInfo = [];
     for (const clip of list) {
-        // ffmpeg exits non-zero when asked only to inspect an input, but its
-        // diagnostic is the portable stream probe bundled with ffmpeg-static.
-        const inspected = await probe(found.bin, ['-i', clip.file_path], { timeoutMs: 30000 });
-        const duration = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(inspected.stderr);
-        if (!duration) {
+        const seen = inspectMedia(clip.file_path, { ffmpeg: found });
+        if (!seen.ok) {
             return { ok: false, state: 'invalid_clip', error: `Cannot read ${path.basename(clip.file_path)}.` };
         }
-        clipInfo.push({
-            hasAudio: /Stream\s+#\d+:\d+(?:\([^)]*\))?:\s+Audio:/i.test(inspected.stderr),
-            duration: Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3]),
-        });
+        clipInfo.push({ hasAudio: seen.hasAudio, duration: seen.durationSeconds });
     }
     const cmd = buildConcatArgs(list, outputPath, { ...(opts || {}), clipInfo });
     const run = await probe(found.bin, cmd.args, opts);
@@ -535,4 +688,5 @@ async function stitchClips(clips, outputPath, opts) {
 }
 
 module.exports = { resolveFfmpeg, probe, extractFrame, buildConcatArgs, stitchClips,
-    buildTrimArgs, planSplice, trimClip, spliceClip, SPLICE_REFUSALS };
+    buildTrimArgs, planSplice, trimClip, spliceClip, SPLICE_REFUSALS,
+    inspectMedia, MEDIA_FIELDS };

@@ -68,7 +68,7 @@ becomes the second.
 | Trim and splice | `buildTrimArgs` and a substitution-splice helper beside `buildConcatArgs` |
 | Planner | Pure: marks in, plan and projected cost out, spending nothing — mirroring `lib/video-sequence.js` |
 | Generation | `first-last-frame` with the two extracted stills. **Not** `video-edit`: RBF-001 measured its `images_list` as style references, so it cannot substitute a section |
-| Encoding parameters | Read from the FILE by probe, not from the row |
+| Encoding parameters | **Shipped** — `lib/ffmpeg.js` `inspectMedia`, read from the FILE (`ffmpeg -i`; there is no ffprobe and adding one is a new dependency). RBF-005 |
 | Surface | Mark in / mark out in playback, showing the floor and the cost before spending |
 | Refusals | A sub-floor range is refused with both remedies named |
 

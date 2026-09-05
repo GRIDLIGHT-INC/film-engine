@@ -273,6 +273,7 @@ film-engine/
 │       ├── rbf-002-verdict-recorded.test.js # A question answered in one file and still asked in three
 │       ├── frame-extraction.test.js  # One frame, one moment, one clip — and one implementation
 │       ├── splice.test.js           # Head, new, tail — and a join that must not move every cut after it
+│       ├── media-inspect.test.js    # What a clip actually IS, read from the file rather than the row
 │       ├── approval-envelope.test.js # A packet you can decide from, and an approval that cannot outlive its inputs
 │       ├── take-candidates.test.js # Which attempt is the take, newest first, and why each exists
 │       ├── review-proxy.test.js  # Null rather than oversized, and never re-encoding what has not changed
@@ -2817,6 +2818,43 @@ A refused coverage is reported **alongside a successful upload**, never instead 
 
 Served on the upload control, at `POST …/media/video/import` with `covers`, and through `media_upload`.
 
+### Every Join Was Silent
+
+`stitchClips` decided whether a clip carried audio with
+
+```
+/Stream\s+#\d+:\d+(?:\([^)]*\))?:\s+Audio:/i
+```
+
+and this ffmpeg prints `Stream #0:0[0x1](und): Audio:`. The `[0x1]` is not
+optional-parenthesis and not a colon, so the pattern matched **nothing on any
+real file**. `hasAudio` was false for every clip ever joined, and
+`buildConcatArgs` — doing exactly what it was told — synthesised `anullsrc`
+silence for all of them.
+
+**Measured: two clips carrying a 440Hz tone at −21.2 dB joined to a file at
+−91 dB, which is digital silence.** Every sequence stitch and every whole-film
+conform has been dropping its audio.
+
+**Nothing failed.** The output plays, and it has a perfectly good audio stream —
+the synthesised one — so every check that asks *is there audio* passes. That is
+why it survived: the only honest test is **measuring the volume**, and the
+`AUDIO_LANES` note above records the same shape of loss one layer up, where a
+missing lane read as a creative choice.
+
+Found while building `inspectMedia` for RBF-005, by copying that pattern into a
+new reader and having a test assert against a real audio file. It is now one
+reader: `stitchClips` and `measureDurationMs` both consult `inspectMedia`, which
+matches anything between the stream index and the kind, and the regression is
+pinned by **volume**, never by the presence of a stream.
+
+The same reader also refuses **attached pictures**. An audio file with cover art
+carries `Video: mjpeg ... 300x300 ... 90k tbr (attached pic)` — a raster *and* a
+rate — so a guard requiring one or the other accepts it: measured, an audio file
+reported a 300×300 raster at 90000fps. A mutation surviving is what exposed
+that; the first fixture had no video stream at all, so the guard it was written
+for was never exercised.
+
 ### One File
 *"Wire the stitcher so I get one file."*
 
@@ -4201,6 +4239,7 @@ node --test backend/tests/rbf-001-video-edit-probe.test.js
 node --test backend/tests/rbf-002-verdict-recorded.test.js
 node --test backend/tests/frame-extraction.test.js
 node --test backend/tests/splice.test.js
+node --test backend/tests/media-inspect.test.js
 node --test backend/tests/approval-envelope.test.js
 node --test backend/tests/take-candidates.test.js
 node --test backend/tests/review-proxy.test.js
