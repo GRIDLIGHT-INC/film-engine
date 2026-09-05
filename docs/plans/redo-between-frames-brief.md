@@ -75,10 +75,13 @@ regenerated at its own length, and nothing in the product says so today.
 4. **Probe `video-edit`'s `images_list` before building the splice.**
    *What:* `video-edit` requires `prompt` + `video_url` and **also accepts
    `images_list`**, which our adapter never sends (`images: []`).
-   *Why:* if those images act as keyframes, the provider may do the substitution
-   itself, and a whole class of trim-and-splice work disappears.
-   *Apply:* one cheap 480p generation answers it. This is the highest
-   information-per-dollar experiment available.
+   *Why:* if those images acted as keyframes, the provider would do the
+   substitution itself and a whole class of trim-and-splice work would disappear.
+   *Apply:* **done — RBF-001, 2026-09-05. They are style references.** Both
+   stills were composited into the scene at once, for the whole clip. The class
+   of work does not disappear: **the splice is ours**. It remained the highest
+   information-per-dollar experiment available even so, because it was the only
+   thing that could have removed two of the three largest tasks in the plan.
 
 5. **Promote frame extraction to one helper.**
    *What:* `-ss <t> -i clip -frames:v 1` exists in three places
@@ -106,9 +109,15 @@ splice   head = clipA[0 .. in]   +   new   +   tail = clipB[out .. end]
 Ordered `images_list` — `[0]` is the frame it starts on, `[1]` the frame it ends
 on. Reversed, the move runs backwards and reads as a generation fault.
 
-**B · `video-edit` with images** *(unproven, cheap to test)*
-`{ prompt, video_url, images_list, duration }`. If the images act as keyframes,
-the provider substitutes internally and approach A's splice is unnecessary.
+**B · `video-edit` with images** *(tested and rejected — RBF-001)*
+`{ prompt, video_url, images_list, duration }`. The images are **style
+references**, not keyframes: sent a solid red START card and a solid blue END
+card, the output opened and closed on the source scene with **both cards
+composited into it**. The provider does not substitute internally, so approach
+A's splice is required. Three further findings came out of the same probe:
+`images_list` refuses data URIs and needs fetchable http(s) URLs; the source
+must be at least ≈854×480; and `duration` is ignored while billing follows the
+**source** clip's length — a failed request billed too.
 
 **C · Interpolation (RIFE/FILM)** *(rejected for this use case)*
 Cheap and local, but only smooths. Cannot fix content. Useful later for frame
@@ -123,9 +132,10 @@ timestamp capture and an `overlay` with `-itsoffset`.
 
 ## Open Questions
 
-1. **Does `video-edit`'s `images_list` act as keyframes or as style references?**
-   Unresolved — telling them apart needs one paid generation. Decides whether
-   approach B removes the splice entirely.
+1. ~~**Does `video-edit`'s `images_list` act as keyframes or as style
+   references?**~~ **Answered — RBF-001, 2026-09-05: style references.**
+   Approach B does not remove the splice; **the splice is ours**. Evidence and
+   spend: `docs/plans/rbf-001-video-edit-probe.md`.
 2. **Is there an undocumented time-range parameter?** Cannot be proven either
    way by probing: FastAPI ignores unknown fields, so an unknown key is silently
    dropped rather than refused. The vendor page documents none, which is weaker
@@ -162,5 +172,10 @@ Build order:
 4. Playback marking, showing the floor and the cost before spending.
 5. Inherit model/resolution/fps from the source asset.
 
-**What would make me change this:** if the probe shows `video-edit` accepts
-keyframes and honours them, steps 2 and 3 shrink to the cross-clip case only.
+**What would have changed this:** if the probe had shown `video-edit` accepting
+and honouring keyframes, steps 2 and 3 would have shrunk to the cross-clip case
+only. **It did not — RBF-001 returned `style-references`, so the direction below
+stands unchanged and nothing shrinks.** In the epic's terms, **RBF-004 and
+RBF-006 do not shrink**; both are needed in full for the within-a-clip case as
+well. The probe also added work rather than removing it: frames must be exposed
+at a URL the provider can fetch, which is now RBF-011.

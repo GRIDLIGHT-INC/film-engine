@@ -67,7 +67,7 @@ becomes the second.
 | Frame extraction | One shared helper, used by all callers |
 | Trim and splice | `buildTrimArgs` and a substitution-splice helper beside `buildConcatArgs` |
 | Planner | Pure: marks in, plan and projected cost out, spending nothing — mirroring `lib/video-sequence.js` |
-| Generation | `first-last-frame` with the two extracted stills; `video-edit` if the probe shows it honours keyframes |
+| Generation | `first-last-frame` with the two extracted stills. **Not** `video-edit`: RBF-001 measured its `images_list` as style references, so it cannot substitute a section |
 | Encoding parameters | Read from the FILE by probe, not from the row |
 | Surface | Mark in / mark out in playback, showing the floor and the cost before spending |
 | Refusals | A sub-floor range is refused with both remedies named |
@@ -82,10 +82,26 @@ becomes the second.
 - **No provider-side time range.** Seedance `video-edit` / `video-extend` take a
   whole clip plus a prompt; the vendor documents no start/end. Trim and splice
   are ours.
-- **`images_list` is ordered.** `[0]` is the frame it starts on, `[1]` the frame
-  it ends on. Reversed, the move runs backwards and reads as a model fault.
+- **`images_list` means two different things per workflow.** On
+  `first-last-frame` it is **ordered keyframes** — `[0]` the frame it starts on,
+  `[1]` the frame it ends on; reversed, the move runs backwards and reads as a
+  model fault. On `video-edit` it is **style references**: RBF-001 sent a red
+  START card and a blue END card and got both composited into the scene
+  simultaneously, for the whole clip. One field name, two contracts.
+- **Frames must be fetchable by the provider.** `images_list` refuses data URIs
+  (`URL scheme should be 'http' or 'https'`), and Film Engine serves media on
+  **localhost only**. Nothing in this plan can hand the provider a frame until
+  something exposes one at a URL MuAPI can reach — RBF-011.
+- **`video-edit` has a minimum source size.** `video pixel count ... must be
+  greater than or equal to 407696` (≈854×480). A 640×360 source is refused, and
+  the refusal is billed.
 - **Cost is per second**: $0.17 at 480p, $0.34 at 720p, $0.85 at 1080p, $1.70 at
-  4K. Cheapest possible repair $0.68; the same repair at 1080p is $3.40.
+  4K. On `first-last-frame` that prices the clip requested. On `video-edit` it
+  does **not**: RBF-001 measured billing against the **source** clip's length,
+  `duration` ignored entirely, and a failed request billed anyway. The epic's
+  own $0.68 estimate was wrong for that reason — the measured spend was
+  **$3.205, 4.7×** — so any `video-edit` costing must price the clip handed in,
+  never the clip wanted back.
 - **The seam is the risk.** Mismatched model, resolution, frame rate or codec
   produces a visible join. Constant frame rate is materially easier than
   variable.
@@ -105,7 +121,13 @@ becomes the second.
 | Task | Title | Description | Size | Dependencies |
 |------|-------|-------------|------|--------------|
 | RBF-001 | Probe `video-edit` with `images_list` | Send one 480p generation to `seedance-2.5-video-edit` carrying `video_url` plus two stills in `images_list`, and inspect the result: are the stills honoured as start and end keyframes, or treated as style references? Record the answer with the request and the output. Roughly $0.68. | S | None |
-| RBF-002 | Record the verdict and branch the plan | Write the probe's answer into the epic and the brief, and state which downstream tasks shrink. If `video-edit` honours keyframes, the within-a-clip case needs no splice and RBF-004 narrows to the cross-clip case. | S | RBF-001 |
+| RBF-002 | Record the verdict and branch the plan | Write the probe's answer into the epic and the brief, and state which downstream tasks shrink. **Done:** the verdict is `style-references`, so the antecedent failed — the within-a-clip case still needs the splice, RBF-004 and RBF-006 do not shrink, and the probe's own findings added RBF-011. | S | RBF-001 |
+
+**What RBF-001 decided about the tasks below.** Approach B is dead: the
+provider will not substitute a middle section for us, so **the splice is ours**.
+**RBF-004 does not shrink** and **RBF-006 does not shrink** — both are required
+in full, for the within-a-clip case as well as the cross-clip one. Nothing was
+removed by the probe; one task was added.
 
 ### Phase 2: The plumbing that involves no model
 
@@ -113,6 +135,7 @@ becomes the second.
 |------|-------|-------------|------|--------------|
 | RBF-003 | One frame-extraction helper | Promote `-ss <t> -i clip -frames:v 1` from its three call sites into a single shared helper that returns a path and a reason on failure, and route all three through it. Three copies is how one acquires a fix the others do not. | M | None |
 | RBF-004 | `buildTrimArgs` and a substitution splice | Add a trim/segment builder and a `head + new + tail` splice beside `buildConcatArgs`, re-encoding consistently. Test by producing real files and reading back their durations — asserting an argument array proves nothing about whether the output plays. | L | RBF-002 |
+| RBF-011 | Expose a frame at a URL the provider can fetch | Serve an extracted frame at an http(s) URL MuAPI can reach, since `images_list` refuses data URIs and Film Engine binds localhost. Discovered by RBF-001, scheduled by nothing before it. Must not open the whole media tree to the internet: a scoped, expiring handle for the frames of one plan, and a stated answer for the operator who is not reachable from outside at all. | M | RBF-002 |
 | RBF-005 | Probe the source clip's real parameters | Read width, height, frame rate and codec from the FILE with ffprobe, since the columns are empty and imported footage never had them. Returns a reason rather than throwing when the file is unreadable. | M | RBF-003 |
 
 ### Phase 3: The decision surface
@@ -121,7 +144,7 @@ becomes the second.
 |------|-------|-------------|------|--------------|
 | RBF-006 | Pure repair planner | Marks in, plan out: which frames are extracted, what will be generated, at what duration and resolution, and what it will cost. Spends nothing and refuses a sub-floor range with both remedies named. Mirrors the planner/executor split in `lib/video-sequence.js`. | L | RBF-004, RBF-005 |
 | RBF-007 | Mark in / mark out in playback | Two marks on the existing scrubber, in one clip or across two, showing the marked length against the 4-second floor and the projected cost before anything is spent. | M | RBF-006 |
-| RBF-008 | Execute the repair | Run the plan: extract, generate, splice, register the result as a new version of the shot rather than overwriting — a repair is an attempt, and the previous take must survive it. | L | RBF-006 |
+| RBF-008 | Execute the repair | Run the plan: extract, generate, splice, register the result as a new version of the shot rather than overwriting — a repair is an attempt, and the previous take must survive it. | L | RBF-006, RBF-011 |
 
 ### Phase 4: Reach and proof
 
@@ -134,8 +157,11 @@ becomes the second.
 
 ## Open Questions
 
-1. **Does `video-edit`'s `images_list` act as keyframes or style references?**
-   RBF-001 answers it. Decides whether the within-a-clip case needs a splice.
+1. ~~**Does `video-edit`'s `images_list` act as keyframes or style references?**~~
+   **Answered by RBF-001 (2026-09-05): style references.** Both stills are
+   composited into the scene at once and for the whole clip, not honoured as a
+   start and an end frame. The within-a-clip case therefore still needs the
+   splice. Evidence: `docs/plans/rbf-001-video-edit-probe.md`.
 2. **Is there an undocumented time-range parameter?** Cannot be proven either
    way: FastAPI silently drops unknown fields, so the absence of documentation
    is weaker evidence than a refusal would be.

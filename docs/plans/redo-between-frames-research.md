@@ -91,7 +91,10 @@ seedance-2.5-first-last-frame  required: prompt, images_list
 ```
 
 Two things follow. **`video-edit` accepts `images_list` and our adapter never
-sends it** (`images: []` in `buildVideoEditRequest`) — an unexplored control.
+sends it** (`images: []` in `buildVideoEditRequest`) — a control nobody had
+tried at the time of writing. **Explored since: RBF-001, 2026-09-05 — they are
+style references, not keyframes.** Annotated rather than rewritten, so this
+stays a record of what the free field-probe could and could not establish.
 And FastAPI ignores unknown fields, so a probe **cannot prove the absence** of a
 time-range parameter; the vendor page not documenting one is the evidence, and
 it is weaker than a refusal. Stated rather than glossed.
@@ -144,9 +147,14 @@ Everything needed exists except the trim and the surface.
    starts from a storyboard keyframe. This one starts from a timestamp in
    footage the director is watching — which is why it belongs in playback.
 
-8. **`video-edit` taking `images_list` is unexplored** and may be a shorter road
-   for "fix this part": a source clip plus reference stills. Worth one probe
-   before building the trim-and-splice path.
+8. **`video-edit` taking `images_list`** looked like a shorter road for "fix
+   this part": a source clip plus reference stills. Worth one probe before
+   building the trim-and-splice path.
+   → **Probed. RBF-001, 2026-09-05: `style-references`, not keyframes** — the
+   road does not exist and the splice is ours. This entry is left as it was
+   written, because a dated research record that is quietly rewritten stops
+   being evidence of what was known when. See
+   `docs/plans/rbf-001-video-edit-probe.md`.
 
 ## What a build would need
 
