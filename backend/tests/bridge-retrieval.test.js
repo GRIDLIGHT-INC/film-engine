@@ -31,14 +31,72 @@ const strip = (s) => s.split('\n').map(l => (/^\s*(\/\/|\/\*|\*)/.test(l) ? '' :
  * two-directional property looks like coverage and is half of it.
  */
 
-/** Everything that turns assets into a cut. A bridge must appear in none of them. */
+/**
+ * Everything that SELECTS on a video asset type. A bridge must appear in none.
+ *
+ * DERIVED, after my peer caught this being a hand-written list of three
+ * filenames — the exact thing I had spent the confer objecting to elsewhere.
+ * They grepped and found ten files selecting on video types where my comment
+ * named five, and three of the extras (clip-coverage, routes/approvals,
+ * routes/qa) really do select with the video precedence list. None leaks today;
+ * my test simply would never have noticed if one widened.
+ *
+ * Bound to a SELECTION — `asset_type IN (...)` or `asset_type = '...'` — not to
+ * mentioning a type. media-kinds.js maps a capability to 'other' legitimately,
+ * and a looser scan reports that registry as a cut-builder leaking bridges.
+ */
+/*
+ * A file is a candidate if it SELECTS on asset_type and mentions video types.
+ * Inline literals alone are not enough: conform.js, timeline.js and
+ * nle-export.js build `asset_type IN (${...})` from a VIDEO_PRECEDENCE
+ * constant, so a scan for literal lists misses exactly the three that matter
+ * most — my first derivation returned 13 files and NONE of them were those.
+ */
 function cutBuilders() {
     const out = [];
-    for (const f of ['lib/conform.js', 'lib/timeline.js', 'lib/nle-export.js']) {
-        const p = path.join(BACKEND, f);
-        if (fs.existsSync(p)) out.push({ id: f, src: strip(fs.readFileSync(p, 'utf8')) });
+    for (const dir of ['lib', 'routes']) {
+        const d = path.join(BACKEND, dir);
+        for (const f of fs.readdirSync(d).filter(x => x.endsWith('.js'))) {
+            const src = strip(fs.readFileSync(path.join(d, f), 'utf8'));
+            if (/asset_type/.test(src) && /'video_(final|synced|raw)'/.test(src)) {
+                out.push({ id: `${dir}/${f}`, src });
+            }
+        }
     }
     return out;
+}
+
+/*
+ * A LEAK IS PER-QUERY, NOT PER-FILE, and that distinction is the whole check.
+ * routes/repair.js legitimately does both: it looks up shot footage by video
+ * type AND lists bridges with `asset_type = 'other'`. A file-level test flagged
+ * my own retrieval query as a cut-builder leaking bridges — a true positive for
+ * the pattern and a false one for the intent.
+ *
+ * What actually puts a bridge in the film is ONE selection returning both: an
+ * IN-list, or a precedence array feeding one, carrying video types AND 'other'.
+ */
+function mixedSelections(src) {
+    const bad = [];
+    for (const m of src.matchAll(/asset_type\s*IN\s*\(([^)]*)\)/gi)) {
+        if (/'video_(final|synced|raw)'/.test(m[1]) && /'other'/.test(m[1])) bad.push(m[0].trim());
+    }
+    for (const m of src.matchAll(/\[((?:\s*'[a-z_0-9]+'\s*,?\s*)+)\]/g)) {
+        const list = m[1];
+        if (!/'video_(final|synced|raw)'/.test(list) || !/'other'/.test(list)) continue;
+        /*
+         * A VOCABULARY IS NOT A SELECTION. routes/assets.js holds every valid
+         * asset_type — keyframe, storyboard, audio_dialogue, model, other — and
+         * a scan for "video types plus other" reports that registry as a
+         * cut-builder leaking bridges. A precedence list that actually picks
+         * footage contains ONLY video types; the moment audio or image types
+         * appear beside them it is an enumeration of what exists, not a choice
+         * of what to play.
+         */
+        if (/'(audio_|image|storyboard|keyframe|model|subtitle|character|export)/.test(list)) continue;
+        bad.push(m[0].trim());
+    }
+    return bad;
 }
 
 /** Everything that can hand a bridge back. Derived, so a second one is covered. */
@@ -64,7 +122,15 @@ test('no cut-builder can select a bridge', () => {
      * shots it replaces part of.
      */
     const builders = cutBuilders();
-    assert.ok(builders.length >= 3, `only ${builders.length} cut-builders found; this scan is wrong`);
+    assert.ok(builders.length >= 10,
+        `only ${builders.length} files select on video asset types; this scan is wrong and every `
+        + 'assertion below would pass over too small a set');
+    // The three that assemble the film must be in the derived set, or the
+    // derivation has silently dropped the ones that matter most.
+    for (const must of ['lib/conform.js', 'lib/timeline.js', 'lib/nle-export.js']) {
+        assert.ok(builders.some(x => x.id === must),
+            `${must} assembles the film and is not in the derived set`);
+    }
     /*
      * Reads the SELECTION LIST, not lines mentioning asset_type. conform.js
      * builds its query from a VIDEO_PRECEDENCE constant, so the type literals
@@ -73,13 +139,7 @@ test('no cut-builder can select a bridge', () => {
      */
     const leaking = [];
     for (const b of builders) {
-        for (const m of b.src.matchAll(/\[((?:\s*'[a-z_0-9]+'\s*,?)+)\]/g)) {
-            const list = m[1];
-            if (/'video_(final|synced|raw)'/.test(list) && /'other'/.test(list)) {
-                leaking.push(`${b.id}: ${m[0]}`);
-            }
-        }
-        if (/asset_type\s*(=|IN)[^\n]*'other'/.test(b.src)) leaking.push(`${b.id}: direct select`);
+        for (const sel of mixedSelections(b.src)) leaking.push(`${b.id}: ${sel}`);
     }
     assert.deepStrictEqual(leaking, [],
         `these would select a bridge into the cut: ${leaking.join(', ')}`);
