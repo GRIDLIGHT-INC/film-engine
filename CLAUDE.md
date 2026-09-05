@@ -88,6 +88,7 @@ film-engine/
 │   │   ├── deliverables.js     # The output list, and which ratios must be shot rather than cropped
 │   │   ├── brands.js           # The brand library, the claims register, and the free compliance report
 │   │   ├── approvals.js        # Decision packets: may I run this, and which of these is the take
+│   │   ├── frame-handles.js    # One frame, to whoever holds the id — the id IS the credential
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
@@ -188,6 +189,7 @@ film-engine/
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── repair-plan.js        # Marks in, plan out — and a floor that is named before it is met
 │   │   ├── playback-marks.js     # A mark on the film is an offset in a file, and they are not the same number
+│   │   ├── frame-handles.js      # A frame a provider can fetch: opaque, scoped, expiring
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
 │   │   ├── board-grouping.js      # Board groups for reading, setups for working
 │   │   ├── conform.js             # Shots → one film: pure plan, probed executors
@@ -278,6 +280,7 @@ film-engine/
 │       ├── media-inspect.test.js    # What a clip actually IS, read from the file rather than the row
 │       ├── repair-plan.test.js      # A plan that spends cannot be raised speculatively
 │       ├── playback-marks.test.js   # Two marks, two units, and a mirror that must not drift
+│       ├── frame-handles.test.js    # Handing a local file to the internet, and everything that must not be
 │       ├── approval-envelope.test.js # A packet you can decide from, and an approval that cannot outlive its inputs
 │       ├── take-candidates.test.js # Which attempt is the take, newest first, and why each exists
 │       ├── review-proxy.test.js  # Null rather than oversized, and never re-encoding what has not changed
@@ -4246,6 +4249,7 @@ node --test backend/tests/splice.test.js
 node --test backend/tests/media-inspect.test.js
 node --test backend/tests/repair-plan.test.js
 node --test backend/tests/playback-marks.test.js
+node --test backend/tests/frame-handles.test.js
 node --test backend/tests/approval-envelope.test.js
 node --test backend/tests/take-candidates.test.js
 node --test backend/tests/review-proxy.test.js

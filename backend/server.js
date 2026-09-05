@@ -117,6 +117,7 @@ const { handleThreeD } = require('./routes/threed');
 const { handleWorlds, SHOT_TAILS: WORLD_SHOT_TAILS } = require('./routes/worlds');
 const approvalGuard = require('./lib/approval-guard');
 const { handleApprovals } = require('./routes/approvals');
+const { handleFrameHandles } = require('./routes/frame-handles');
 const { handleProviders } = require('./routes/providers');
 const { handleConsistency } = require('./routes/consistency');
 const { handleQA } = require('./routes/qa');
@@ -890,6 +891,19 @@ const server = http.createServer(async (req, res) => {
             // is reachable here with nothing to remember.
             || (parts[1] === 'shots' && WORLD_SHOT_TAILS.includes(parts[3]))) {
             return await handleWorlds(req, res, parts, query);
+        }
+
+        /*
+         * Route: /film/frame-handle/:id — one frame, to whoever holds the id.
+         *
+         * Registered BEFORE the project catch-alls, on the trap /film/locations/:id
+         * already cost once: a handler that exists and is never reached looks
+         * exactly like a missing feature. It is deliberately unauthenticated —
+         * the consumer is a provider's fetcher, which carries none of our
+         * credentials, so the id is the credential.
+         */
+        if (parts[1] === 'frame-handle' && parts[2]) {
+            return handleFrameHandles(req, res, parts);
         }
 
         // Route: /film/shots/:id/{approval-envelope,take-candidates} — decision
