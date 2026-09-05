@@ -70,7 +70,8 @@ function tierFor(longEdge) {
     return best.id;
 }
 
-const usd = (seconds, tier) => Math.round(seconds * RESOLUTIONS[tier].usdPerSecond * 1e6) / 1e6;
+/* Money is rounded to the cent: a plan quoting $5.168 is not quoting a price. */
+const usd = (seconds, tier) => Math.round(seconds * RESOLUTIONS[tier].usdPerSecond * 100) / 100;
 
 /**
  * What repairing this range would do. Free, and never throws.

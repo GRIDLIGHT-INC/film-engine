@@ -37,7 +37,8 @@ const BRIDGE_REFUSALS = Object.freeze([
 ]);
 
 const refuse = (code, reason, extra) => ({ refused: true, code, reason, ...(extra || {}) });
-const usd = (seconds, tier) => Math.round(seconds * RESOLUTIONS[tier].usdPerSecond * 1e6) / 1e6;
+/* Money is rounded to the cent: $5.168 is not a price anybody quotes. */
+const usd = (seconds, tier) => Math.round(seconds * RESOLUTIONS[tier].usdPerSecond * 100) / 100;
 
 function tierFor(longEdge) {
     if (!(longEdge > 0)) return '480p';
@@ -95,8 +96,12 @@ function planBridge(input) {
             + 'Mark out at the end of the first shot and in at the start of the second.');
     }
 
-    // Everything the marks remove, from both shots together.
-    const seconds = (aDur - aStart) + bEnd;
+    /*
+     * Everything the marks remove, from both shots together — ROUNDED TO THE
+     * FRAME. Two float subtractions give 6.079999999999998, which reaches a
+     * director as a duration nobody typed and a cost of $5.168.
+     */
+    const seconds = Math.round(((aDur - aStart) + bEnd) * fps) / fps;
     const tier = RESOLUTIONS[o.resolution] ? o.resolution
         : tierFor(Math.max(seen.width || 0, seen.height || 0));
 
