@@ -91,7 +91,11 @@ becomes the second.
 - **Frames must be fetchable by the provider.** `images_list` refuses data URIs
   (`URL scheme should be 'http' or 'https'`), and Film Engine serves media on
   **localhost only**. Nothing in this plan can hand the provider a frame until
-  something exposes one at a URL MuAPI can reach — RBF-011.
+  something exposes one at a URL MuAPI can reach. **Shipped by RBF-011:**
+  `lib/frame-handles.js` mints an OPAQUE, scoped, expiring handle served at
+  `GET /film/frame-handle/:id`. With `FILM_ENGINE_PUBLIC_URL` unset it REFUSES
+  and names the remedy rather than handing out a localhost URL, because a
+  provider-side fetch failure reads as a credential fault.
 - **`video-edit` has a minimum source size.** `video pixel count ... must be
   greater than or equal to 407696` (≈854×480). A 640×360 source is refused, and
   the refusal is billed.
