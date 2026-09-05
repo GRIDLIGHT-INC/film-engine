@@ -225,6 +225,54 @@ test('a replacement at a different raster than the source still splices', async 
     assert.ok(isRed(colourAt(out, 1)) && isRed(colourAt(out, 5)), 'the original footage was disturbed');
 });
 
+test('the source\'s own sound runs under the repair, unbroken', async () => {
+    /*
+     * MEASURED ON THE REAL REPAIR AND WRONG. Wingfall 1A carries dialogue and
+     * room tone at about -34 dB throughout. The repair replaced the picture
+     * between 8s and 13s AND PUNCHED A SILENT HOLE THROUGH THE SOUND: head
+     * -34.4 dB, middle -91.0 dB (digital silence), tail -33.6 dB — while the
+     * original at that exact moment was -34.1 dB.
+     *
+     * A REPAIR REPLACES PICTURE. The audio was never the fault, so it must run
+     * underneath the whole clip untouched. That is not merely a fix, it is
+     * better than anything the model could return: dialogue and room tone
+     * continue with no seam at all, because they were never cut.
+     *
+     * The provider CAN generate audio and this engine deliberately asks it not
+     * to — `generate_audio` defaults off because Film Engine owns dialogue,
+     * music, SFX and ambient. That house rule is right, and it is exactly why
+     * the source's audio has to be carried: nothing else is going to supply it.
+     */
+    const src = path.join(TMP, 'snd-src.mp4');
+    execFileSync(ff().bin, ['-y', '-loglevel', 'error',
+        '-f', 'lavfi', '-i', 'color=c=red:s=32x32:d=7',
+        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=6',
+        '-c:v', 'mpeg4', '-r', '24', '-c:a', 'aac', '-shortest', src],
+        { stdio: 'pipe', timeout: 60000 });
+    const rep = makeClip('snd-rep.mp4', 'blue', 2);          // silent, like a real generation
+
+    const out = path.join(TMP, 'snd-out.mp4');
+    const r = await spliceClip({ sourcePath: src, replacementPath: rep,
+        startSec: 2, endSec: 4, outputPath: out, fps: 24 });
+    assert.strictEqual(r.ok, true, r.error || r.reason);
+
+    const meanVolume = (f, at, dur) => {
+        const p2 = require('child_process').spawnSync(ff().bin,
+            ['-hide_banner', '-ss', String(at), '-t', String(dur), '-i', f,
+             '-af', 'volumedetect', '-f', 'null', '-'], { encoding: 'utf8', timeout: 60000 });
+        const m = /mean_volume:\s*(-?[\d.]+)/.exec(String(p2.stderr || ''));
+        return m ? Number(m[1]) : null;
+    };
+
+    const head = meanVolume(out, 0, 2);
+    const middle = meanVolume(out, 2, 2);
+    assert.ok(head !== null && head > -60, `the fixture itself is silent (${head} dB)`);
+    assert.ok(middle !== null && middle > -60,
+        `the repaired section is silent (${middle} dB) while the audio either side is ${head} dB — `
+        + 'the repair punched a hole through sound that was never faulty');
+    assert.ok(isBlue(colourAt(out, 3)), 'the new picture is not on screen');
+});
+
 /* ── refusals ──────────────────────────────────────────────────────────── */
 
 test('every declared refusal is reachable and returns its own code', () => {

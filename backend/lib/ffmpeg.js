@@ -655,7 +655,30 @@ async function spliceClip(input) {
             if (!t.ok) return { ok: false, state: 'failed', error: `the ${seg.role} could not be cut: ${t.error}` };
             made.push({ file_path: cut });
         }
-        const joined = await stitchClips(made, o.outputPath, { fps: plan.fps });
+        /*
+         * THE SOURCE'S OWN SOUND RUNS UNDER THE WHOLE CLIP.
+         *
+         * A repair replaces PICTURE. Measured on a real one before this
+         * existed: Wingfall 1A carries room tone at about -34 dB throughout,
+         * and the repair left head -34.4, MIDDLE -91.0 (digital silence), tail
+         * -33.6 — while the original at that moment was -34.1. It punched a
+         * hole through audio that was never faulty.
+         *
+         * Carrying the source's track is also better than any alternative:
+         * dialogue and room tone continue with NO SEAM AT ALL, because they
+         * were never cut. And nothing else would supply it — this engine asks
+         * the provider NOT to generate audio (`generate_audio` defaults off,
+         * because Film Engine owns dialogue, music, SFX and ambient), so a
+         * generated section arrives silent by design.
+         *
+         * `buildConcatArgs` already does exactly this when handed an audio
+         * bed: it concatenates video only and maps the supplied track.
+         */
+        const carriesAudio = srcInfo.ok && srcInfo.hasAudio;
+        const joined = await stitchClips(made, o.outputPath, {
+            fps: plan.fps,
+            ...(carriesAudio ? { audio: { file_path: o.sourcePath } } : {}),
+        });
         if (!joined.ok) return joined;
         return { ...joined, shape: plan.shape, segments: plan.segments.length,
                  expectedDuration: plan.outputDuration };
