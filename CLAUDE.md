@@ -286,6 +286,7 @@ film-engine/
 │       ├── frame-handles.test.js    # Handing a local file to the internet, and everything that must not be
 │       ├── repair-run.test.js       # A repair is an attempt; the take it improves must survive it
 │       ├── repair-tools.test.js     # A capability with no MCP surface is one the model cannot use
+│       ├── repair-audio.test.js     # A repaired master that lost its sound is a broken deliverable
 │       ├── range-requests.test.js   # A suffix range is the END of the file — the black screen in playback
 │       ├── repair-bridge.test.js    # Across a cut, neither shot is the one at fault
 │       ├── editor-transport.test.js # A mark you cannot place on the frame you meant is not a mark
@@ -4262,6 +4263,7 @@ node --test backend/tests/playback-marks.test.js
 node --test backend/tests/frame-handles.test.js
 node --test backend/tests/repair-run.test.js
 node --test backend/tests/repair-tools.test.js
+node --test backend/tests/repair-audio.test.js
 node --test backend/tests/range-requests.test.js
 node --test backend/tests/repair-bridge.test.js
 node --test backend/tests/editor-transport.test.js
