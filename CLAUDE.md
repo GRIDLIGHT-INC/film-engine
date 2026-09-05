@@ -266,6 +266,7 @@ film-engine/
 │       ├── generation-plate.test.js # The plate leads, travels as bytes, and spends nothing
 │       ├── reference-match.test.js # Marks not pixels, a confidence that is earned, and seven traceable exports
 │       ├── data-paths.test.js   # Every path column, a real move, and a registry that cannot go stale
+│       ├── redo-between-frames-brief.test.js # A plan whose facts drifted is worse than no plan
 │       ├── approval-envelope.test.js # A packet you can decide from, and an approval that cannot outlive its inputs
 │       ├── take-candidates.test.js # Which attempt is the take, newest first, and why each exists
 │       ├── review-proxy.test.js  # Null rather than oversized, and never re-encoding what has not changed
@@ -4187,6 +4188,7 @@ node --test backend/tests/glb-parser.test.js
 node --test backend/tests/world-spike.test.js
 node --test backend/tests/reference-match.test.js
 node --test backend/tests/data-paths.test.js
+node --test backend/tests/redo-between-frames-brief.test.js
 node --test backend/tests/approval-envelope.test.js
 node --test backend/tests/take-candidates.test.js
 node --test backend/tests/review-proxy.test.js
