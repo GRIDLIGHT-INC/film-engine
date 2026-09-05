@@ -88,6 +88,13 @@ function meanVolumeDb(file, window) {
     return m ? Number(m[1]) : null;
 }
 
+/**
+ * The measured span, held just inside the join so a frame of encoder bleed at
+ * either boundary cannot decide the result. Derived from the marks it is given
+ * — the window is never stated twice.
+ */
+const inset = (from, to, pad = 0.2) => [from + pad, to - pad];
+
 /** Body of a top-level function, bounded by BRACE DEPTH — never a character window. */
 function bodyOf(src, name) {
     const re = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`);
@@ -123,23 +130,38 @@ function joinPaths() {
  */
 const DRIVERS = {
     async stitchClips() {
-        const a = clipWithTone('st-a.mp4');
-        const b = silentClip('st-b.mp4');
+        /*
+         * The span is DERIVED from the clip lengths, never written a second
+         * time. A literal window beside the thing it describes is two
+         * statements of one fact, and the day the first moves the window
+         * measures somewhere the join no longer is — going quiet exactly as
+         * the whole-file mean did.
+         */
+        const SECS = 2;
+        const a = clipWithTone('st-a.mp4', SECS);
+        const b = silentClip('st-b.mp4', SECS);
         const out = path.join(TMP, 'stitched.mp4');
         const r = await stitchClips([{ file_path: a }, { file_path: b }], out,
             { fps: 24, audio: { file_path: a } });
-        // the second clip is the silent one: that span is where a dropped bed shows
-        return { r, out, window: [2, 3.5] };
+        /*
+         * MEASURED INSIDE THE BED, not inside the silent half. The bed here is
+         * clip a's own track, so it spans [0, SECS] over a join twice that
+         * long — pointing the window at the second clip measured past the end
+         * of the audio entirely and reported "could not measure", which this
+         * test correctly treats as a failure rather than a pass.
+         */
+        return { r, out, window: inset(0, SECS) };
     },
     async spliceClip() {
         const source = clipWithTone('sp-src.mp4', 6);
         const replacement = silentClip('sp-new.mp4', 2);
         const out = path.join(TMP, 'spliced.mp4');
+        // ONE statement of where the splice is; the measured window follows it.
+        const marks = { startSec: 2, endSec: 4 };
         const r = await spliceClip({
-            sourcePath: source, replacementPath: replacement, outputPath: out,
-            startSec: 2, endSec: 4,
+            sourcePath: source, replacementPath: replacement, outputPath: out, ...marks,
         });
-        return { r, out, window: [2.2, 3.8] };
+        return { r, out, window: inset(marks.startSec, marks.endSec) };
     },
 };
 
@@ -153,8 +175,19 @@ test('every join path in the module is exercised — a new one cannot arrive unc
         `these join clips into a deliverable and nothing here proves they keep the sound: ${undriven.join(', ')}`);
 });
 
-test('a joined deliverable is not digitally silent when the source had sound', async () => {
-    if (!resolveFfmpeg().available) return; // no encoder: nothing to assert about
+test('a joined deliverable is not digitally silent when the source had sound', async (t) => {
+    /*
+     * SKIPPED, NEVER SILENTLY PASSED. A bare `return` here reports PASS while
+     * asserting nothing, so on a machine with no encoder this file would claim
+     * to pin that a repair keeps its sound and pin nothing — indistinguishable
+     * from a real pass in the output. That is the same defect this pair of
+     * repos already paid for once, where an absent directory produced
+     * "10 passed, 0 failed, 1 skipped, exit 0" and the load-bearing claim went
+     * unchecked. It degrades exactly when it matters most: the machine that
+     * cannot run ffmpeg is the machine where nobody can check the audio by ear
+     * either.
+     */
+    if (!resolveFfmpeg().available) return t.skip('no encoder available, so nothing here was verified');
     const failures = [];
     for (const name of joinPaths()) {
         const { r, out, window } = await DRIVERS[name]();
@@ -182,8 +215,8 @@ test('a joined deliverable is not digitally silent when the source had sound', a
         `a repaired or stitched master lost its sound: ${failures.join(' | ')}`);
 });
 
-test('the source is what decides — a silent source stays silent rather than gaining a fake track', async () => {
-    if (!resolveFfmpeg().available) return;
+test('the source is what decides — a silent source stays silent rather than gaining a fake track', async (t) => {
+    if (!resolveFfmpeg().available) return t.skip('no encoder available, so nothing here was verified');
     /*
      * The other direction, and it is not symmetry for its own sake: a splice
      * that always attached the source's audio would produce a mapping failure
