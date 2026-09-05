@@ -272,6 +272,7 @@ film-engine/
 │       ├── rbf-001-video-edit-probe.test.js # A paid answer nobody can re-read will be paid for twice
 │       ├── rbf-002-verdict-recorded.test.js # A question answered in one file and still asked in three
 │       ├── frame-extraction.test.js  # One frame, one moment, one clip — and one implementation
+│       ├── splice.test.js           # Head, new, tail — and a join that must not move every cut after it
 │       ├── approval-envelope.test.js # A packet you can decide from, and an approval that cannot outlive its inputs
 │       ├── take-candidates.test.js # Which attempt is the take, newest first, and why each exists
 │       ├── review-proxy.test.js  # Null rather than oversized, and never re-encoding what has not changed
@@ -4199,6 +4200,7 @@ node --test backend/tests/epic-scoping-copy.test.js
 node --test backend/tests/rbf-001-video-edit-probe.test.js
 node --test backend/tests/rbf-002-verdict-recorded.test.js
 node --test backend/tests/frame-extraction.test.js
+node --test backend/tests/splice.test.js
 node --test backend/tests/approval-envelope.test.js
 node --test backend/tests/take-candidates.test.js
 node --test backend/tests/review-proxy.test.js

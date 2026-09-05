@@ -97,9 +97,21 @@ const CLAIMS = [
     /* THE TWO GAPS. Asserted as ABSENT, so the brief stops claiming a gap the
      * moment somebody closes it — a plan that still lists finished work as
      * missing is the failure this file exists to prevent. */
-    { id: 'no trim helper yet',
-      why: 'the first thing a build must add; the brief says it is missing',
-      holds: () => !/function (buildTrimArgs|buildSpliceArgs|trimClip)/.test(src('backend/lib/ffmpeg.js')) },
+    /*
+     * WAS "no trim helper yet", asserted ABSENT so it would self-retire the day
+     * somebody closed it. RBF-004 closed it, so the claim flips: the brief no
+     * longer rests on the gap, it rests on the helper. Pointed this way it
+     * fails if the trim or the splice is removed, which is the regression that
+     * matters now.
+     */
+    { id: 'the trim and splice helpers exist',
+      why: 'the brief called this the first thing a build must add; RBF-004 added it',
+      holds: () => {
+          const f = src('backend/lib/ffmpeg.js');
+          return /function buildTrimArgs/.test(f) && /function planSplice/.test(f)
+              && /function spliceClip|async function spliceClip/.test(f)
+              && /SPLICE_REFUSALS/.test(f);
+      } },
 
     { id: 'playback scrubs but does not mark in/out',
       why: 'the surface exists and the marking does not',

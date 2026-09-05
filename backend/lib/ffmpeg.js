@@ -267,6 +267,227 @@ function buildConcatArgs(clips, outputPath, opts) {
  * Returns a RESULT, never throws: "nothing installed can do this" is an answer
  * a director needs and a stack trace is not — the rule runConform already sets.
  */
+/**
+ * WHY THE SPLICE IS OURS.
+ *
+ * RBF-001 established that Seedance `video-edit`'s `images_list` is style
+ * references rather than keyframes — a red START card and a blue END card came
+ * back composited into the scene together, for the whole clip. There is no
+ * start/end anywhere in the vendor's surface, so substituting a section is
+ * something this codebase does or nobody does.
+ */
+
+/**
+ * The arguments that cut one range out of a clip.
+ *
+ * RE-ENCODED, not stream-copied. `-c copy` can only cut on keyframes, so it
+ * silently moves the cut to the nearest one — up to a couple of seconds away on
+ * a generated clip — and a director who marked a two-second fault gets a
+ * different two seconds. The seam is already the stated risk in this epic;
+ * paying an encode to land on the frame that was marked is the cheaper half of
+ * that trade.
+ */
+function buildTrimArgs(clipPath, outputPath, opts) {
+    const o = opts || {};
+    const start = Math.max(0, Number(o.startSec) || 0);
+    const length = Math.max(0, (Number(o.endSec) || 0) - start);
+    const args = ['-y', '-loglevel', 'error'];
+    // Seek BEFORE -i: the decoder skips rather than decoding and discarding,
+    // which on a long source is the difference between instant and a minute.
+    if (start > 0) args.push('-ss', String(start));
+    args.push('-i', clipPath, '-t', String(length));
+    args.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac');
+    if (o.fps) args.push('-r', String(o.fps));
+    args.push(outputPath);
+    return { bin: null, args, output: outputPath };
+}
+
+/**
+ * Every way a substitution can be refused, and why each one exists.
+ *
+ * A REGISTRY RATHER THAN SCATTERED RETURNS, so a rule that is declared and can
+ * never fire is visible. This codebase has shipped that twice — `NEVER_WRITES`
+ * exported and consumed by nothing, `describeResolution` with zero callers —
+ * and both times the protection read as present while doing nothing at all.
+ */
+const SPLICE_REFUSALS = Object.freeze([
+    { code: 'no_source', why: 'a plan naming a file that is not there is worthless; stitchClips refuses the same way' },
+    { code: 'range_negative', why: 'a clip has no footage before zero' },
+    { code: 'range_reversed', why: 'out before in reads as a model fault later, not as a bad mark' },
+    { code: 'range_empty', why: 'replacing nothing is not a repair, and would spend on a generation nobody sees' },
+    { code: 'range_past_end', why: 'the tail would be negative, and the join would silently drop footage' },
+    { code: 'length_mismatch', why: 'the 4-second floor makes this the COMMON case, and splicing anyway shifts every cut after it' },
+]);
+
+const refuse = (code, reason) => ({ ok: false, code, reason });
+
+/**
+ * What a substitution would do, decided without spending or encoding anything.
+ *
+ * Pure and free, mirroring the planner/executor split `lib/video-sequence.js`
+ * already follows: the plan is what a director is shown before any generation
+ * is paid for, so it cannot be the thing that costs money to raise.
+ */
+function planSplice(input) {
+    const o = input || {};
+    const sourcePath = typeof o.sourcePath === 'string' ? o.sourcePath : '';
+    if (!sourcePath) return refuse('no_source', 'no source clip was given to splice into');
+    if (!fs.existsSync(sourcePath)) {
+        return refuse('no_source', `there is no clip at ${sourcePath} to splice into`);
+    }
+
+    let sourceDuration = Number(o.sourceDuration);
+    if (!(sourceDuration > 0) || !Number.isFinite(sourceDuration)) {
+        return refuse('no_source',
+            'the source clip\'s duration is not known, and it must be measured from the file '
+            + 'rather than taken from the row — every existing video asset stores none');
+    }
+
+    const startSec = Number(o.startSec);
+    const endSec = Number(o.endSec);
+    if (!Number.isFinite(startSec) || !Number.isFinite(endSec)) {
+        return refuse('range_empty', 'the marked range is not two numbers, so there is nothing to replace');
+    }
+    if (startSec < 0) return refuse('range_negative', `the range starts at ${startSec}s, and a clip has no footage before zero`);
+    if (endSec < startSec) {
+        return refuse('range_reversed',
+            `the range ends at ${endSec}s before it starts at ${startSec}s — reversed, the repair would run backwards`);
+    }
+    if (endSec === startSec) {
+        return refuse('range_empty', `the range is zero-length at ${startSec}s, so there is nothing to replace`);
+    }
+
+    /*
+     * The tolerance is ONE FRAME, derived from the rate rather than a constant.
+     * Encoders land a few milliseconds either side of an exact duration, and a
+     * check that fires on every correct splice is one that gets switched off,
+     * taking the real refusal with it.
+     */
+    const fps = Number(o.fps) > 0 ? Number(o.fps) : 24;
+    const frame = 1 / fps;
+    if (endSec > sourceDuration + frame) {
+        return refuse('range_past_end',
+            `the range ends at ${endSec.toFixed(2)}s but the clip is ${sourceDuration.toFixed(2)}s long`);
+    }
+
+    const rangeLength = endSec - startSec;
+    const replacementDuration = Number(o.replacementDuration);
+    if (Number.isFinite(replacementDuration) && replacementDuration > 0
+        && Math.abs(replacementDuration - rangeLength) > frame) {
+        /*
+         * THE COMMON CASE, not an edge one. MIN_DURATION is 4, so a two-second
+         * fault comes back as a four-second clip; splicing it in regardless
+         * lengthens the film and shifts every cut after it — visible only to
+         * somebody who watches the whole thing. Which way to resolve it is the
+         * epic's open question 3 and belongs to a director, so both remedies
+         * are named rather than one being chosen here.
+         */
+        return refuse('length_mismatch',
+            `the marked range is ${rangeLength.toFixed(2)}s and the replacement is `
+            + `${replacementDuration.toFixed(2)}s. Splicing it in would move every cut after it by `
+            + `${Math.abs(replacementDuration - rangeLength).toFixed(2)}s. Either widen the marks to `
+            + `${replacementDuration.toFixed(2)}s, or trim the replacement back to the range.`);
+    }
+
+    /*
+     * Which pieces exist follows from where the range sits, and both ends can
+     * legitimately be absent — replacing from frame zero has no head, replacing
+     * to the last frame has no tail. An empty segment handed to the concat is
+     * an invalid input, so it is never built rather than built and skipped.
+     */
+    const segments = [];
+    if (startSec > frame) {
+        segments.push({ role: 'head', path: sourcePath, startSec: 0, endSec: startSec, duration: startSec });
+    }
+    segments.push({ role: 'replacement', path: o.replacementPath || null,
+        startSec: null, endSec: null, duration: replacementDuration > 0 ? replacementDuration : rangeLength });
+    if (sourceDuration - endSec > frame) {
+        segments.push({ role: 'tail', path: sourcePath, startSec: endSec, endSec: sourceDuration,
+            duration: sourceDuration - endSec });
+    }
+
+    return {
+        ok: true, segments, fps,
+        outputDuration: segments.reduce((n, s2) => n + s2.duration, 0),
+        shape: `${segments.some(x => x.role === 'head') ? 'head+' : ''}new`
+            + `${segments.some(x => x.role === 'tail') ? '+tail' : ''}`,
+    };
+}
+
+/** Cut one range to a real file. Never throws; a reason on failure. */
+async function trimClip(clipPath, outputPath, opts) {
+    const found = resolveFfmpeg();
+    if (!found.available) return { ok: false, state: 'no_executor', error: found.reason };
+    if (!fs.existsSync(clipPath)) return { ok: false, state: 'missing_clip', error: `no clip at ${clipPath}` };
+    try { fs.mkdirSync(path.dirname(outputPath), { recursive: true }); } catch (_) { /* reported below */ }
+    const cmd = buildTrimArgs(clipPath, outputPath, opts);
+    const run = await probe(found.bin, cmd.args, { timeoutMs: 10 * 60 * 1000 });
+    if (run.code !== 0 || !fs.existsSync(outputPath)) {
+        return { ok: false, state: 'failed',
+            error: `Encoder failed: ${run.stderr.split('\n').filter(Boolean).slice(-3).join(' ').slice(0, 400)}` };
+    }
+    return { ok: true, state: 'produced', output: outputPath, bytes: fs.statSync(outputPath).size };
+}
+
+/**
+ * Head, new, tail — one file.
+ *
+ * The JOIN IS `stitchClips`, not a second concat. This module's own header
+ * records why there is one: two concat filters is how one acquires the pix_fmt
+ * fix and the other does not, and the one that misses it plays everywhere
+ * except the NLE the director actually uses. A splice that grew its own would
+ * be the third.
+ */
+async function spliceClip(input) {
+    const o = input || {};
+    const found = resolveFfmpeg();
+    if (!found.available) return { ok: false, state: 'no_executor', error: found.reason };
+
+    // Measured from the FILE. Every existing video asset carries no width, no
+    // height and no provider_model, and imported footage never had them — which
+    // is also the footage a director is most likely to be repairing.
+    let sourceDuration = Number(o.sourceDuration);
+    if (!(sourceDuration > 0)) {
+        try {
+            sourceDuration = (require('./media-imports').measureDurationMs(o.sourcePath) || 0) / 1000;
+        } catch (_) { sourceDuration = 0; }
+    }
+    let replacementDuration = Number(o.replacementDuration);
+    if (!(replacementDuration > 0)) {
+        try {
+            replacementDuration = (require('./media-imports').measureDurationMs(o.replacementPath) || 0) / 1000;
+        } catch (_) { replacementDuration = 0; }
+    }
+
+    const plan = planSplice({ ...o, sourceDuration, replacementDuration });
+    if (!plan.ok) return { ok: false, state: 'refused', code: plan.code, error: plan.reason, reason: plan.reason };
+    if (!o.replacementPath || !fs.existsSync(o.replacementPath)) {
+        return { ok: false, state: 'missing_clip', error: 'the replacement clip is not on disk' };
+    }
+
+    const work = fs.mkdtempSync(path.join(require('os').tmpdir(), 'fe-splice-'));
+    const made = [];
+    try {
+        for (const seg of plan.segments) {
+            if (seg.role === 'replacement') { made.push({ file_path: o.replacementPath }); continue; }
+            const cut = path.join(work, `${seg.role}.mp4`);
+            const t = await trimClip(seg.path, cut, { startSec: seg.startSec, endSec: seg.endSec, fps: plan.fps });
+            if (!t.ok) return { ok: false, state: 'failed', error: `the ${seg.role} could not be cut: ${t.error}` };
+            made.push({ file_path: cut });
+        }
+        const joined = await stitchClips(made, o.outputPath, { fps: plan.fps });
+        if (!joined.ok) return joined;
+        return { ...joined, shape: plan.shape, segments: plan.segments.length,
+                 expectedDuration: plan.outputDuration };
+    } finally {
+        try { fs.rmSync(work, { recursive: true, force: true }); } catch (_) { /* temp */ }
+    }
+}
+
+/* The trim is part of the splice's surface, so it is reachable from it as well
+ * as on its own — one import for a caller doing both. */
+spliceClip.trim = trimClip;
+
 async function stitchClips(clips, outputPath, opts) {
     const list = (clips || []).filter(c => c && c.file_path);
     if (!list.length) return { ok: false, state: 'no_clips', error: 'No clips to join.' };
@@ -313,4 +534,5 @@ async function stitchClips(clips, outputPath, opts) {
     };
 }
 
-module.exports = { resolveFfmpeg, probe, extractFrame, buildConcatArgs, stitchClips };
+module.exports = { resolveFfmpeg, probe, extractFrame, buildConcatArgs, stitchClips,
+    buildTrimArgs, planSplice, trimClip, spliceClip, SPLICE_REFUSALS };

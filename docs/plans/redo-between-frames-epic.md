@@ -54,7 +54,7 @@ becomes the second.
 | Provider first/last frame | **Shipped** — `seedance-2.5-first-last-frame`, `images_list` ordered `[start, end]` |
 | Extract a frame at a timestamp | **Shipped once** — `lib/ffmpeg.js` `extractFrame`, reached by `routes/characters.js`, `lib/review-proxy.js` and `lib/mcp-tools.js`. Was three copies; RBF-003 promoted them, which carried review-proxy's past-the-end retry to the two sites that were silently losing frames |
 | Join whole clips | **Shipped** — `buildConcatArgs` / `stitchClips` in `lib/ffmpeg.js` |
-| Cut a range out of a clip | **Absent** — no trim or splice helper exists |
+| Cut a range out of a clip | **Shipped** — `lib/ffmpeg.js` `buildTrimArgs`, `planSplice`, `spliceClip`, joining through the one existing concat. RBF-004 |
 | Mark in / mark out | **Absent** — playback has a scrubber (`pbScrub`) and a single playhead |
 | Source clip's model / resolution | **Columns exist, values do not** — measured 2026-09-05: all 5 video assets carry no `provider_model` and no `width`/`height`, including the 3 generated in-engine |
 | Colour matching a repair | **Shipped but unapplied** — `post/color-match` exists per shot and per project |

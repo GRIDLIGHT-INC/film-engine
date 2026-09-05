@@ -110,7 +110,7 @@ Everything needed exists except the trim and the surface.
 | First/last frame at the provider | `backend/lib/providers/seedance.js` — `WORKFLOWS['first-last-frame'] = { images: 2 }`, `IMAGE_FIELD` → `images_list`, ordered | **shipped** |
 | Extract a frame at a timestamp | `routes/characters.js:1236` (`-ss <t> -i clip -frames:v 1`), `lib/review-proxy.js:85`, `lib/mcp-tools.js:3627` (`shot_review`) | **shipped, three times** |
 | Join whole clips | `lib/ffmpeg.js` `buildConcatArgs` / `stitchClips` | **shipped** |
-| **Trim / cut a range out of a clip** | — | **MISSING**. `atrim` appears only to pad silent audio |
+| **Trim / cut a range out of a clip** | — | **MISSING at the time of writing**. `atrim` appears only to pad silent audio. → Shipped since by RBF-004: `lib/ffmpeg.js` `buildTrimArgs` / `planSplice` / `spliceClip` |
 | Scrub a clip in playback | `src/index.html` `#pbScrub`, `pbSeekFromClick` | **shipped** — single playhead only |
 | **Mark in / mark out, across two clips** | — | **MISSING** |
 

@@ -40,8 +40,15 @@ const CLAIMS = [
       holds: () => fs.existsSync(path.join(REPO, 'backend/lib/inbetweens.js')) },
     { id: 'concat exists', why: 'joining is shipped; only trimming is not',
       holds: () => /function buildConcatArgs/.test(src('backend/lib/ffmpeg.js')) },
-    { id: 'no trim helper yet', why: 'the first build task; asserted ABSENT so it self-retires',
-      holds: () => !/function (buildTrimArgs|buildSpliceArgs|trimClip)/.test(src('backend/lib/ffmpeg.js')) },
+    /* Was "no trim helper yet", asserted ABSENT so it self-retires. RBF-004
+     * closed it, so it now pins the helper instead of the gap. */
+    { id: 'the trim and splice helpers exist', why: 'the first build task, done',
+      holds: () => {
+          const f = src('backend/lib/ffmpeg.js');
+          return /function buildTrimArgs/.test(f) && /function planSplice/.test(f)
+              && /function spliceClip|async function spliceClip/.test(f)
+              && /SPLICE_REFUSALS/.test(f);
+      } },
     { id: 'first-last-frame takes 2 images', why: 'the mechanism the epic is built on',
       holds: () => /'first-last-frame':\s*\{\s*images:\s*2\s*\}/.test(src('backend/lib/providers/seedance.js')) },
     { id: 'first-last-frame uses images_list', why: 'the field name; MuAPI is not uniform',
