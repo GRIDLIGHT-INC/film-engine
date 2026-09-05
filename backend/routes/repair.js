@@ -17,7 +17,7 @@
 
 const { db } = require('../db/database');
 const { getFilePath } = require('../lib/file-storage');
-const { runRepair, repairGenerator } = require('../lib/repair-run');
+const { runRepair, runBridge, repairGenerator } = require('../lib/repair-run');
 
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -59,6 +59,48 @@ async function handleRepair(req, res, urlParts) {
             ok: false, stage: 'plan',
             reason: 'This shot has no footage yet, so there is nothing to repair.',
         });
+    }
+
+    /*
+     * A BRIDGE IS DISPATCHED BEFORE THE SPLICE, and that order is the fix.
+     * The page has been sending `bridge: true` since the marking surface
+     * shipped and this route never read it, so "Bridge this cut" ran a
+     * WITHIN-CLIP repair: it succeeded, returned a version, spliced generated
+     * footage into the first shot and left the second untouched. Nothing
+     * errored. That is the expensive shape — a plausible paid result that is
+     * not the operation the editor asked for.
+     */
+    if (body.bridge && body.next_shot_id) {
+        const next = db.prepare(`SELECT s.*, sc.project_id FROM film_shots s
+            JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?`).get(String(body.next_shot_id));
+        if (!next) return json(res, 404, { error: 'The shot on the far side of the cut was not found' });
+        const nextClip = db.prepare(
+            `SELECT * FROM film_assets WHERE shot_id = ?
+                AND asset_type IN ('video_final','video_synced','video_raw')
+              ORDER BY CASE asset_type WHEN 'video_final' THEN 0 WHEN 'video_synced' THEN 1 ELSE 2 END,
+                       created_at DESC LIMIT 1`).get(next.id);
+        if (!nextClip) {
+            return json(res, 200, { ok: false, stage: 'plan',
+                reason: `${next.shot_code} has no footage yet, so there is nothing to bridge to.` });
+        }
+        const firstPath = getFilePath(shot.project_id, 'video', clip.file_name);
+        const secondPath = getFilePath(next.project_id, 'video', nextClip.file_name);
+        const dur = (p2) => { const m = inspectMedia(p2); return m.ok ? m.durationSeconds : 0; };
+        const bridged = await runBridge({
+            db,
+            projectId: shot.project_id,
+            spans: [
+                { shotId, shotCode: shot.shot_code, sourcePath: firstPath,
+                  startSec: Number(body.start_sec), endSec: dur(firstPath), durationSeconds: dur(firstPath) },
+                { shotId: next.id, shotCode: next.shot_code, sourcePath: secondPath,
+                  startSec: 0, endSec: Number(body.end_sec), durationSeconds: dur(secondPath) },
+            ],
+            ...(body.resolution ? { resolution: String(body.resolution) } : {}),
+            ignoreBudget: !!body.ignore_budget,
+            generate: repairGenerator,
+        });
+        if (!bridged.ok && bridged.code === 'over_budget') return json(res, 402, bridged);
+        return json(res, 200, bridged);
     }
 
     const result = await runRepair({

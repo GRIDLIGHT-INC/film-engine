@@ -20,7 +20,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const { planRepair } = require('./repair-plan');
-const { extractFrame, spliceClip } = require('./ffmpeg');
+const { extractFrame, spliceClip, inspectMedia, resolveFfmpeg, probe } = require('./ffmpeg');
 const { mintHandle, revokeScope } = require('./frame-handles');
 const { budgetStatus } = require('./flow-cost');
 const { getFilePath, ensureDir } = require('./file-storage');
@@ -133,6 +133,7 @@ async function runRepair(input) {
             scratch.push(got.path);
         }
 
+        at = 'host';
         /* 4 · host — the provider cannot read our disk. */
         const urls = [];
         for (const f of frames) {
@@ -142,6 +143,7 @@ async function runRepair(input) {
             urls.push(h.url);
         }
 
+        at = 'generate';
         /* 5 · generate — the only step that spends. */
         const gen = o.generate;
         if (typeof gen !== 'function') {
@@ -312,4 +314,187 @@ async function repairGenerator(request, opts) {
     }
 }
 
-module.exports = { runRepair, REPAIR_STAGES, repairGenerator };
+/**
+ * RUN A BRIDGE ACROSS A CUT.
+ *
+ * Deliberately NOT runRepair with a flag. The two produce different artefacts:
+ * a repair rewrites one shot, a bridge produces a piece of footage that sits
+ * BETWEEN two and rewrites neither. Threading a boolean through the splice
+ * runner is exactly how "Bridge this cut" came to run a within-clip repair —
+ * it succeeded, returned a version, spliced into the first shot, and told
+ * nobody it had done the wrong operation.
+ *
+ * THE BRIDGE IS NOT SHOT FOOTAGE. It is registered as `other` with
+ * `metadata.kind = 'bridge'`, the same shape the 3D work uses, and that is
+ * load-bearing rather than tidy: `video_raw`/`video_final` are what the
+ * timeline, the conform and all three NLE exporters select on, so a bridge
+ * filed as one would appear in the cut IN ADDITION to the two shots it is
+ * meant to replace part of. `other` is in the asset_type CHECK; a value the
+ * CHECK refuses turns a paid generation into a failed step.
+ *
+ * NEITHER SOURCE IS TOUCHED. What comes back is the bridge plus two trim
+ * points — where to cut each shot — because deciding which of the two shots to
+ * absorb it into is a claim about which one was at fault, and the premise is
+ * that neither was.
+ */
+const BRIDGE_STAGES = Object.freeze([
+    { id: 'plan', why: 'the geometry, the floor and the cost, before anything is spent' },
+    { id: 'budget', why: 'the gate belongs with the thing that spends' },
+    { id: 'extract', why: 'one frame from EACH shot — the only stage that reads two different files' },
+    { id: 'host', why: 'the provider fetches over http(s) and refuses data URIs' },
+    { id: 'generate', why: 'the only step that costs money' },
+    { id: 'deliver', why: 'conform the result to the shots it sits between, and say where to cut them' },
+]);
+
+async function runBridge(input) {
+    const o = input || {};
+    const scope = o.scope || `bridge-${crypto.randomBytes(8).toString('hex')}`;
+    const minted = [];
+    const scratch = [];
+    /*
+     * The stage currently running, so a THROWN error names where it happened.
+     * Reporting everything as 'plan' would break the one promise this runner
+     * makes — that a failure tells you which of six steps went wrong — and it
+     * did: an undefined import in `deliver` came back as a plan failure.
+     */
+    let at = 'plan';
+    const fail = (stage, reason, extra) =>
+        ({ ok: false, stage, reason, handles: minted.slice(), ...(extra || {}) });
+
+    try {
+        /* 1 · plan — owns every rule about a span across a cut. */
+        const { planBridge } = require('./repair-bridge');
+        const plan = planBridge({ spans: o.spans, resolution: o.resolution, fps: o.fps });
+        if (plan.refused) return fail('plan', plan.reason, { code: plan.code });
+
+        at = 'budget';
+        /* 2 · budget — BEFORE the generator, never after. */
+        if (!o.ignoreBudget && o.db && o.projectId) {
+            let status = null;
+            try { status = budgetStatus(o.db, o.projectId, plan.cost.usd); } catch (_) { status = null; }
+            if (status && status.wouldExceed) {
+                return fail('budget',
+                    `This bridge projects $${plan.cost.usd.toFixed(2)} and the project has `
+                    + `$${status.remaining.toFixed(2)} left. Raise the budget, mark closer to the cut, `
+                    + 'or pass ignore_budget.', { code: 'over_budget', budget: status });
+            }
+        }
+
+        const work = fs.mkdtempSync(path.join(require('os').tmpdir(), 'fe-bridge-'));
+
+        at = 'extract';
+        /* 3 · extract — ONE FRAME FROM EACH SHOT. The only stage that reads two files. */
+        const cut = o.extractFrame || extractFrame;
+        const frames = [];
+        for (const f of plan.extract) {
+            const out = o.projectId
+                ? (ensureDir(o.projectId, 'repairs'),
+                   getFilePath(o.projectId, 'repairs', `${scope}-${f.role}.png`))
+                : path.join(work, `${f.role}.png`);
+            const got = cut(f.sourcePath, { atSeconds: f.atSeconds, out });
+            if (!got.ok) {
+                return fail('extract',
+                    `the ${f.role} frame of ${f.shot_code} at ${f.atSeconds}s could not be taken: ${got.reason}`);
+            }
+            if (got.fellBack) {
+                return fail('extract',
+                    `the ${f.role} frame of ${f.shot_code} at ${f.atSeconds}s is past the end of that `
+                    + 'clip, so the frame taken would be its start. Re-mark against its real length.');
+            }
+            frames.push(got.path);
+            scratch.push(got.path);
+        }
+
+        /* 4 · host — the provider cannot read our disk. */
+        const urls = [];
+        for (const p2 of frames) {
+            const h = mintHandle(p2, { scope, publicBase: o.publicBase });
+            if (!h.ok) return fail('host', h.reason, { code: h.code });
+            minted.push(h.id);
+            urls.push(h.url);
+        }
+
+        /* 5 · generate — the only step that spends. */
+        if (typeof o.generate !== 'function') return fail('generate', 'no generator was supplied');
+        let made;
+        try {
+            made = await o.generate({ images: urls, plan, scope, projectId: o.projectId });
+        } catch (err) { return fail('generate', `the provider call failed: ${err.message}`); }
+        if (!made || !made.ok || !made.path || !fs.existsSync(made.path)) {
+            return fail('generate', (made && made.reason) || 'the provider returned no clip');
+        }
+
+        at = 'deliver';
+        /* 6 · deliver — conform to the shots it sits between; rewrite neither. */
+        const first = (o.spans && o.spans[0]) || {};
+        const srcInfo = inspectMedia(first.sourcePath || '');
+        const name = `bridge_${(first.shotCode || first.shot_code || 'cut')}_${Date.now().toString(36)}.mp4`;
+        const outPath = o.projectId
+            ? (ensureDir(o.projectId, 'video'), getFilePath(o.projectId, 'video', name))
+            : path.join(o.outputDir || work, name);
+
+        const found = resolveFfmpeg();
+        if (!found.available) return fail('deliver', found.reason);
+        const repInfo = inspectMedia(made.path);
+        if (srcInfo.ok && repInfo.ok
+            && (repInfo.width !== srcInfo.width || repInfo.height !== srcInfo.height)) {
+            // Same reason the splice conforms: the provider is free to ignore
+            // the raster we asked for, and a bridge that does not match the
+            // shots either side is a seam you cannot cut around.
+            const vf = `scale=${srcInfo.width}:${srcInfo.height}:force_original_aspect_ratio=decrease,`
+                + `pad=${srcInfo.width}:${srcInfo.height}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+            const run = await probe(found.bin, ['-y', '-loglevel', 'error', '-i', made.path,
+                '-vf', vf, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac',
+                '-r', String(plan.fps), outPath], { timeoutMs: 10 * 60 * 1000 });
+            if (run.code !== 0 || !fs.existsSync(outPath)) {
+                return fail('deliver', `the bridge could not be conformed to ${srcInfo.width}x${srcInfo.height}`);
+            }
+        } else {
+            fs.copyFileSync(made.path, outPath);
+        }
+
+        if (o.db && o.projectId) {
+            try {
+                o.db.prepare(
+                    `INSERT INTO film_assets (
+                        id, project_id, asset_type, file_path, file_name, format, mime_type,
+                        duration_ms, version, license_source, license_status, metadata
+                     ) VALUES (?, ?, 'other', ?, ?, 'mp4', 'video/mp4', ?, 1, 'generated', 'generated', ?)`
+                ).run(crypto.randomUUID(), o.projectId, outPath, name,
+                    Math.round(plan.cost.seconds * 1000),
+                    JSON.stringify({ kind: 'bridge', between: plan.delivery.between,
+                        trim: plan.delivery.trim, scope }));
+            } catch (err) {
+                return fail('deliver', `the bridge was produced at ${outPath} but could not be `
+                    + `registered: ${err.message}`, { output: outPath });
+            }
+        }
+
+        return {
+            ok: true, output: outPath, scope, handles: minted,
+            assetType: 'other', kind: 'bridge',
+            between: plan.delivery.between,
+            trim: plan.delivery.trim,
+            note: plan.delivery.note,
+            cost: plan.cost,
+            stages: BRIDGE_STAGES.map(s2 => s2.id),
+        };
+    } catch (err) {
+        /*
+         * DEFENCE IN DEPTH, and stated as such because mutation proved it: every
+         * stage that can fail in a foreseeable way returns fail(<its own stage>)
+         * explicitly and is covered, so this catch only ever sees an UNEXPECTED
+         * throw. Removing the `at` tracking changes nothing any test can see —
+         * which is exactly the kind of thing that gets quietly dressed up as
+         * coverage. It is kept because it already earned its place once: an
+         * undefined import in the delivery stage came back reported as a
+         * PLANNING failure, sending a reader to the marks instead of the code.
+         */
+        return fail(at, `the bridge could not be run: ${err.message}`);
+    } finally {
+        try { revokeScope(scope); } catch (_) { /* expires anyway */ }
+        for (const p2 of scratch) { try { fs.unlinkSync(p2); } catch (_) { /* already gone */ } }
+    }
+}
+
+module.exports = { runRepair, REPAIR_STAGES, repairGenerator, runBridge, BRIDGE_STAGES };

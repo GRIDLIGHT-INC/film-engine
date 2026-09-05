@@ -562,7 +562,9 @@ const PRODUCTION_TOOLS = [
         handler: handleApprovals, method: 'GET',
         path: a => `/film/shots/${a.shot_id}/repair-plan`
             + `?start_sec=${encodeURIComponent(a.start_sec)}&end_sec=${encodeURIComponent(a.end_sec)}`
-            + (a.resolution ? `&resolution=${encodeURIComponent(a.resolution)}` : ''),
+            + (a.resolution ? `&resolution=${encodeURIComponent(a.resolution)}` : '')
+            + (a.bridge ? `&bridge=1&next_shot_id=${encodeURIComponent(a.next_shot_id || '')}`
+                + `&next_end_sec=${encodeURIComponent(a.next_end_sec)}` : ''),
         description:
             'What redoing the section between two marks would do, and what it would cost. '
             + 'FREE and side-effect-free: nothing is extracted, generated or written, so raise it '
@@ -582,6 +584,14 @@ const PRODUCTION_TOOLS = [
             start_sec: { type: 'number', description: 'Seconds into THIS shot\'s clip where the repair starts.' },
             end_sec: { type: 'number', description: 'Seconds into THIS shot\'s clip where it must arrive.' },
             resolution: { type: 'string', description: 'Optional: 480p | 720p | 1080p | 4k. Defaults to the source\'s own.' },
+            bridge: { type: 'boolean', description:
+                'Set when the fault is the TRANSITION between two shots rather than anything inside one. '
+                + 'Then start_sec is the out-point in THIS shot, next_shot_id is the shot on the far side '
+                + 'of the cut, and next_end_sec is the in-point in that one. The result is a BRIDGE — its '
+                + 'own piece of footage plus two trim points — because when a cut reads wrong neither shot '
+                + 'is individually at fault, so repairing either one cannot fix it.' },
+            next_shot_id: { type: 'string', description: 'With bridge: the shot on the far side of the cut.' },
+            next_end_sec: { type: 'number', description: 'With bridge: the in-point in that shot, in its own seconds.' },
         }, required: ['shot_id', 'start_sec', 'end_sec'],
     },
     {
@@ -590,6 +600,7 @@ const PRODUCTION_TOOLS = [
         path: a => `/film/shots/${a.shot_id}/repair`,
         body: a => ({ start_sec: a.start_sec, end_sec: a.end_sec,
             ...(a.resolution ? { resolution: a.resolution } : {}),
+            ...(a.bridge ? { bridge: true, next_shot_id: a.next_shot_id, end_sec: a.next_end_sec } : {}),
             ...(a.ignore_budget ? { ignore_budget: true } : {}) }),
         description:
             'SPENDS CREDITS — one generation for the marked range, priced by repair_plan. '
@@ -609,6 +620,13 @@ const PRODUCTION_TOOLS = [
             end_sec: { type: 'number', description: 'Seconds into THIS shot\'s clip where it must arrive.' },
             resolution: { type: 'string', description: 'Optional: 480p | 720p | 1080p | 4k.' },
             ignore_budget: { type: 'boolean', description: 'Run even if the projected cost exceeds the project budget.' },
+            bridge: { type: 'boolean', description:
+                'SPENDS CREDITS. Bridge the cut between two shots rather than repairing inside one. '
+                + 'The result is registered as a BRIDGE, not as shot footage, and NEITHER shot is '
+                + 'rewritten — you get the new piece plus where to trim each of them. Run repair_plan '
+                + 'with bridge first and read the cost.' },
+            next_shot_id: { type: 'string', description: 'With bridge: the shot on the far side of the cut.' },
+            next_end_sec: { type: 'number', description: 'With bridge: the in-point in that shot, in its own seconds.' },
         }, required: ['shot_id', 'start_sec', 'end_sec'],
     },
     {
