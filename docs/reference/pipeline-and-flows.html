@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!--
+  Saved from the published artifact so it can be reviewed inside the repo:
+  https://claude.ai/code/artifact/78a12781-6f5b-4836-8579-496a20fb55be
+
+  The hosting runtime has been stripped; the authored content and styling are
+  unchanged. Open this file directly in a browser. The artifact URL remains the
+  canonical published copy — edit there, then re-save here, rather than editing
+  both.
+-->
+<title>Pipeline and Flows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap">
+
+<style>
+  :root {
+    --paper:      #f6f7fa;
+    --surface:    #ffffff;
+    --sunk:       #eceef4;
+    --ink:        #15161c;
+    --ink-soft:   #4a4d5c;
+    --ink-faint:  #7b7f90;
+    --rule:       #dcdfe8;
+    --accent:     #4f46e5;
+    --accent-bg:  #eceafd;
+    --warn:       #b45309;
+    --warn-bg:    #fdf3e3;
+
+    --serif: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+    --mono:  "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --measure: 66ch;
+    --step-0: 1.0625rem;
+    --step-1: 1.1875rem;
+    --step-2: 1.5rem;
+    --step-3: 2rem;
+    --step-4: 2.75rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:     #101218;
+      --surface:   #171a22;
+      --sunk:      #1d2029;
+      --ink:       #e7e9f0;
+      --ink-soft:  #a7abbb;
+      --ink-faint: #767c8f;
+      --rule:      #2a2e3a;
+      --accent:    #949cf9;
+      --accent-bg: #1e2140;
+      --warn:      #e3a44e;
+      --warn-bg:   #2c2313;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:     #101218;
+    --surface:   #171a22;
+    --sunk:      #1d2029;
+    --ink:       #e7e9f0;
+    --ink-soft:  #a7abbb;
+    --ink-faint: #767c8f;
+    --rule:      #2a2e3a;
+    --accent:    #949cf9;
+    --accent-bg: #1e2140;
+    --warn:      #e3a44e;
+    --warn-bg:   #2c2313;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: var(--step-0);
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 78rem;
+    margin: 0 auto;
+    padding: clamp(2rem, 5vw, 4.5rem) clamp(1.1rem, 4vw, 3rem) 6rem;
+  }
+
+  /* One reading column; breakouts opt out of it. */
+  .col { max-width: var(--measure); }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  h1 {
+    font-size: var(--step-4);
+    line-height: 1.08;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0.5rem 0 0;
+  }
+  h2 {
+    font-size: var(--step-3);
+    line-height: 1.15;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h3 {
+    font-size: var(--step-2);
+    line-height: 1.25;
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0;
+  }
+  p { margin: 0; }
+  strong { font-weight: 600; }
+
+  .lede {
+    font-size: var(--step-1);
+    color: var(--ink-soft);
+    margin-top: 1.1rem;
+  }
+
+  header.masthead {
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 2.25rem;
+    margin-bottom: 3.5rem;
+  }
+
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding-top: 3.25rem;
+    margin-top: 3.25rem;
+    border-top: 1px solid var(--rule);
+  }
+  section:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
+
+  .sec-head { display: flex; flex-direction: column; gap: 0.45rem; }
+
+  code, .m { font-family: var(--mono); font-size: 0.86em; }
+  code {
+    background: var(--sunk);
+    padding: 0.1em 0.36em;
+    border-radius: 3px;
+  }
+
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* ── the nine steps: order is real, so they are numbered ── */
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .step {
+    background: var(--surface);
+    padding: 1rem 1.1rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .step-n {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+  }
+  .step-id {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .step-meta {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    color: var(--ink-faint);
+    line-height: 1.5;
+  }
+  .scope {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    color: var(--ink-soft);
+  }
+  .scope.scene { border-color: var(--accent); color: var(--accent); }
+
+  /* ── tables ── */
+  .scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9375rem;
+    min-width: 34rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-bottom-color: var(--ink-faint);
+  }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: 0; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── the flow vocabulary: a set, not a sequence — no numbers ── */
+  .families {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 1.25rem;
+  }
+  .fam { display: flex; flex-direction: column; gap: 0.4rem; }
+  .fam-name {
+    font-family: var(--mono);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .fam ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .fam li {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--ink-soft);
+    background: var(--sunk);
+    padding: 0.12rem 0.4rem;
+    border-radius: 3px;
+  }
+
+  .callout {
+    border-left: 2px solid var(--accent);
+    background: var(--accent-bg);
+    padding: 1rem 1.2rem;
+    border-radius: 0 4px 4px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .callout .eyebrow { color: var(--accent); }
+
+  .traps { display: flex; flex-direction: column; gap: 1.4rem; }
+  .trap {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0 1rem;
+    align-items: start;
+  }
+  .trap-mark {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--warn);
+    background: var(--warn-bg);
+    border-radius: 3px;
+    padding: 0.15rem 0.45rem;
+    white-space: nowrap;
+  }
+  .trap h4 {
+    margin: 0 0 0.3rem;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+  .trap p { color: var(--ink-soft); }
+
+  ol.week { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 1.5rem; }
+  ol.week > li { display: grid; grid-template-columns: auto 1fr; gap: 0 1.1rem; }
+  .week-n {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    padding-top: 0.32rem;
+  }
+  .week h4 { margin: 0 0 0.35rem; font-size: 1.0625rem; font-weight: 600; }
+  .week p { color: var(--ink-soft); }
+
+  footer {
+    margin-top: 4.5rem;
+    padding-top: 1.75rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.03em;
+    color: var(--ink-faint);
+    line-height: 1.7;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="col">
+      <p class="eyebrow">Film Engine · working guide</p>
+      <h1>Pipeline and Flows</h1>
+      <p class="lede">
+        Two things that look similar on the menu and answer different questions.
+        The Pipeline runs the film you have already planned. A Flow builds something
+        the Pipeline does not do.
+      </p>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head col">
+      <p class="eyebrow">The distinction</p>
+      <h2>One is a road. The other is a workshop.</h2>
+    </div>
+    <div class="col" style="display:flex;flex-direction:column;gap:1rem;">
+      <p>
+        The <strong>Pipeline</strong> is a fixed sequence of nine steps that every shot goes
+        through, in the same order, every time. You do not design it and you cannot
+        rearrange it — that is the point. It is the thing you run when the shots exist
+        and you want footage out of them.
+      </p>
+      <p>
+        A <strong>Flow</strong> is a graph you draw yourself: boxes that generate something,
+        wired together. You reach for one when you want a shot rendered by three different
+        video models to compare, or a character sheet built four views at once, or any
+        shape of work the nine steps do not have a slot for.
+      </p>
+      <p>
+        If you never touch Flows, you can still finish a film. If you only touch Flows,
+        you will rebuild the Pipeline badly.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head col">
+      <p class="eyebrow">Pipeline</p>
+      <h2>The nine steps, and what waits for what</h2>
+      <p class="lede" style="font-size:var(--step-0);">
+        Numbered because the order is real: each step names what it depends on, and the
+        orchestrator will not start one before its inputs exist.
+      </p>
+    </div>
+
+    <div class="steps">
+      <div class="step"><span class="step-n">01</span><span class="step-id">keyframe</span><span class="step-meta">The storyboard frame.<br>Depends on nothing.</span><span class="scope">shot</span></div>
+      <div class="step"><span class="step-n">02</span><span class="step-id">video</span><span class="step-meta">The clip, generated from that frame.<br>Needs <span class="m">keyframe</span>.</span><span class="scope">shot</span></div>
+      <div class="step"><span class="step-n">03</span><span class="step-id">voice</span><span class="step-meta">The dialogue, spoken.<br>Depends on nothing.</span><span class="scope">shot</span></div>
+      <div class="step"><span class="step-n">04</span><span class="step-id">lipsync</span><span class="step-meta">Mouth to the words.<br>Needs <span class="m">video</span> + <span class="m">voice</span>.</span><span class="scope">shot</span></div>
+      <div class="step"><span class="step-n">05</span><span class="step-id">music</span><span class="step-meta">The scene's score.<br>Depends on nothing.</span><span class="scope scene">scene</span></div>
+      <div class="step"><span class="step-n">06</span><span class="step-id">sfx</span><span class="step-meta">Effects written on the card.<br>Depends on nothing.</span><span class="scope">shot</span></div>
+      <div class="step"><span class="step-n">07</span><span class="step-id">ambient</span><span class="step-meta">The room the scene sits in.<br>Depends on nothing.</span><span class="scope scene">scene</span></div>
+      <div class="step"><span class="step-n">08</span><span class="step-id">post</span><span class="step-meta">Upscale, grade, finish.<br>Needs <span class="m">lipsync</span>.</span><span class="scope">shot</span></div>
+      <div class="step"><span class="step-n">09</span><span class="step-id">assembly</span><span class="step-meta">Everything into one clip.<br>Needs <span class="m">post · music · sfx · ambient</span>.</span><span class="scope">shot</span></div>
+    </div>
+
+    <div class="col" style="display:flex;flex-direction:column;gap:1rem;">
+      <p>
+        Two of the nine are marked <strong>scene</strong>. A score and a room tone belong to a
+        whole scene, not to one shot in it — so on a run covering several shots they are
+        generated <em>once per scene</em>, not once per shot. That distinction is worth
+        knowing because it is where money leaks: run them per shot and a three-shot scene
+        buys three scores it will throw two of away.
+      </p>
+      <p>
+        Steps skip themselves when there is nothing to do. A shot with no dialogue does not
+        run <span class="m">voice</span>, and therefore does not run <span class="m">lipsync</span>.
+        A failed step retries up to three times with a growing gap before it gives up, because
+        most provider failures are transient.
+      </p>
+    </div>
+
+    <div class="col">
+      <h3 style="margin-bottom:0.6rem;">Where to start it</h3>
+    </div>
+    <div class="col scroll">
+      <table>
+        <thead>
+          <tr><th>Run it on</th><th>What happens</th><th>Use it when</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>A shot</td>
+            <td>The nine steps for that one shot. Scene-scoped steps are skipped unless you ask for them.</td>
+            <td>Fixing or finishing a single shot.</td>
+          </tr>
+          <tr>
+            <td>A scene</td>
+            <td>Every shot in the scene, with the score and room tone generated once.</td>
+            <td>The normal unit of work. Start here.</td>
+          </tr>
+          <tr>
+            <td>The project</td>
+            <td>Every scene, in order, sequentially.</td>
+            <td>An overnight run once the board is signed off.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col">
+      <p>
+        A run can be <strong>paused, resumed or cancelled</strong> while it is going. Pausing is
+        the useful one: it stops before the next step rather than mid-generation, so you do not
+        pay for work you then throw away.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head col">
+      <p class="eyebrow">Before you run it</p>
+      <h2>The run plan is the part people miss</h2>
+    </div>
+    <div class="col" style="display:flex;flex-direction:column;gap:1rem;">
+      <p>
+        The Pipeline orders <em>steps within one shot</em>. It has no opinion about which shot
+        to do first. The run plan does — and it is free, so there is no reason not to read it
+        before a big run.
+      </p>
+      <p>
+        It skips work that is already current, reports what it skipped, and refuses outright if
+        the projected cost is over the project's budget. Two orderings, and the trade is real:
+      </p>
+    </div>
+    <div class="col scroll">
+      <table>
+        <thead>
+          <tr><th>Order</th><th>Model loads</th><th>What you get</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>By model</td>
+            <td class="num">Every model loads once</td>
+            <td>Fastest overall. Nothing is finished until near the end.</td>
+          </tr>
+          <tr>
+            <td>By shot</td>
+            <td class="num">Models reload per shot</td>
+            <td>A finished shot early, to look at. Slower overall.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <p>
+        On an eight-shot run those come out as <strong>5 model switches against 47</strong>, for
+        identical work at identical cost. Shot-major buys you something to watch after the first
+        shot instead of after the last; that is the whole difference, and on a long run it is a
+        real amount of time.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head col">
+      <p class="eyebrow">Flows</p>
+      <h2>Twenty-three boxes and a wire</h2>
+    </div>
+    <div class="col">
+      <p>
+        A flow is a graph. Each box takes typed inputs and produces typed outputs, and the
+        canvas refuses a wire that would not make sense — you cannot feed text into a video
+        input. There are four families:
+      </p>
+    </div>
+
+    <div class="families">
+      <div class="fam">
+        <span class="fam-name">in — where material comes from</span>
+        <ul><li>prompt</li><li>asset</li><li>subject</li><li>scene</li><li>stock</li></ul>
+      </div>
+      <div class="fam">
+        <span class="fam-name">gen — what costs money</span>
+        <ul><li>image</li><li>video</li><li>voice</li><li>music</li><li>sfx</li><li>ambient</li><li>lipsync</li><li>post</li><li>model3d</li><li>llm</li></ul>
+      </div>
+      <div class="fam">
+        <span class="fam-name">tf — shaping and branching</span>
+        <ul><li>mix</li><li>stitch</li><li>encode</li><li>fanout</li><li>select</li></ul>
+      </div>
+      <div class="fam">
+        <span class="fam-name">out — what is kept</span>
+        <ul><li>asset</li><li>assembly</li><li>timeline</li></ul>
+      </div>
+    </div>
+
+    <div class="col" style="display:flex;flex-direction:column;gap:1rem;">
+      <p>
+        The two that make flows worth learning are <span class="m">tf.fanout</span> and
+        <span class="m">tf.select</span>. Fan-out runs everything downstream of it once per
+        branch — the same shot through three video models, or four views of one character.
+        Select then <em>pauses the run</em> and waits for you to pick one. Nothing downstream
+        of the gate spends until you have chosen.
+      </p>
+      <p>
+        Every <span class="m">gen</span> box can also override the provider and model just for
+        itself. That is all "multi-model" means here: one node pinned to a different generator
+        than the project's default.
+      </p>
+      <p>
+        Six flows ship ready to run — prompt&nbsp;→&nbsp;image, multi-model video, character
+        sheet, shot&nbsp;→&nbsp;clip, dialogue&nbsp;→&nbsp;lip-sync, and scene soundscape.
+        There is also a built-in flow that mirrors the nine Pipeline steps exactly; it is
+        <strong>read-only</strong>, and duplicating it is the sane way to start a custom graph.
+      </p>
+    </div>
+
+    <div class="callout col">
+      <p class="eyebrow">Cost, before anything runs</p>
+      <p style="margin:0;">
+        A flow projects its cost before it generates, and multiplies rather than adds through
+        nested fan-outs — a fan-out of four across a two-hundred-shot feature is eight hundred
+        calls. If the projection is over budget the run is refused up front, not discovered on
+        the ledger afterwards. You can override that deliberately; you cannot do it by accident.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head col">
+      <p class="eyebrow">Choosing</p>
+      <h2>Which one, for the thing in front of you</h2>
+    </div>
+    <div class="col scroll">
+      <table>
+        <thead>
+          <tr><th>You want to</th><th>Use</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Finish a scene</td><td>Pipeline, on the scene</td><td>The nine steps in order, score once.</td></tr>
+          <tr><td>Redo one shot's clip</td><td>Pipeline, on the shot</td><td>Dependencies still enforced.</td></tr>
+          <tr><td>Shoot the whole film</td><td>Run plan, then Pipeline</td><td>Read the cost and ordering first.</td></tr>
+          <tr><td>Compare three video models</td><td>Flow — fanout + select</td><td>Pipeline has one slot per step.</td></tr>
+          <tr><td>Four views of a character</td><td>Flow — character sheet</td><td>One graph, four consistent outputs.</td></tr>
+          <tr><td>Try a prompt idea</td><td>Flow — prompt → image</td><td>Cheapest way to look at something.</td></tr>
+          <tr><td>Build a repeatable house recipe</td><td>Flow, saved to the library</td><td>A library flow works in every project.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head col">
+      <p class="eyebrow">In practice</p>
+      <h2>A week, in the order it actually happens</h2>
+    </div>
+    <ol class="week col">
+      <li>
+        <span class="week-n">01</span>
+        <div>
+          <h4>Get the board right first</h4>
+          <p>Screenplay, shots, plates, storyboard. Nothing below this is worth spending on until the frames are what you want — every later step is generated <em>from</em> them.</p>
+        </div>
+      </li>
+      <li>
+        <span class="week-n">02</span>
+        <div>
+          <h4>Try the awkward shot as a Flow</h4>
+          <p>One or two shots in a film are unclear — a move nobody can picture, a look nobody agrees on. Fan out across models or prompts, put a select gate after it, and decide by looking. This is exploration, and it is the cheapest hour of the week.</p>
+        </div>
+      </li>
+      <li>
+        <span class="week-n">03</span>
+        <div>
+          <h4>Read the run plan</h4>
+          <p>Free. It tells you what is already current, what it will cost, and refuses if you are over budget. Choose model order for an overnight run, shot order if you want something to watch by lunch.</p>
+        </div>
+      </li>
+      <li>
+        <span class="week-n">04</span>
+        <div>
+          <h4>Run the Pipeline scene by scene</h4>
+          <p>The scene is the right unit: it is where score and room tone are generated once, and it is small enough that a bad result costs one scene rather than a film.</p>
+        </div>
+      </li>
+      <li>
+        <span class="week-n">05</span>
+        <div>
+          <h4>Watch it, then conform and export</h4>
+          <p>Playback for the cut, then the master and the NLE handover. Finishing happens in the editor — the export carries dialogue, music, effects and ambience out on their own tracks so it can.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="sec-head col">
+      <p class="eyebrow">Traps</p>
+      <h2>Six things that will cost you if nobody says them</h2>
+    </div>
+    <div class="traps col">
+      <div class="trap">
+        <span class="trap-mark">scope</span>
+        <div>
+          <h4>A single-shot run buys no score</h4>
+          <p>Score and ambience are scene-scoped, so a run on one shot skips them deliberately — otherwise running five shots one at a time would buy five scores for one scene. If you genuinely want them, ask for scene steps explicitly.</p>
+        </div>
+      </div>
+      <div class="trap">
+        <span class="trap-mark">order</span>
+        <div>
+          <h4>Assembly is last for a reason</h4>
+          <p>It waits on post, music, effects and ambience. If assembly is not running, something above it has not finished — read the run report rather than re-running the whole thing.</p>
+        </div>
+      </div>
+      <div class="trap">
+        <span class="trap-mark">stale</span>
+        <div>
+          <h4>It will refuse to build on something out of date</h4>
+          <p>If a keyframe changed after the clip was made from it, the next step is refused rather than run. That refusal is the feature: generating from known-stale inputs spends money to produce something already known to be wrong. You can override it once you have looked.</p>
+        </div>
+      </div>
+      <div class="trap">
+        <span class="trap-mark">flows</span>
+        <div>
+          <h4>A generator box on its own keeps nothing</h4>
+          <p>In a graph, saving is <span class="m">out.asset</span>'s job. Run a <span class="m">gen</span> box with nothing downstream and the result comes back to you and reaches the project's asset list never — a paid generation that exists only in a transcript.</p>
+        </div>
+      </div>
+      <div class="trap">
+        <span class="trap-mark">flows</span>
+        <div>
+          <h4>The built-in flow cannot be edited</h4>
+          <p>The one mirroring the nine steps is read-only on purpose, so it stays a true picture of what the Pipeline does. Duplicate it and edit the copy.</p>
+        </div>
+      </div>
+      <div class="trap">
+        <span class="trap-mark">cost</span>
+        <div>
+          <h4>Fan-outs multiply, they do not add</h4>
+          <p>A fan-out inside a fan-out is the product of both. Read the estimate before running a graph you have just edited, every time — it is free, and it is the only warning you get.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="col">
+    Written against Film Engine as it stands — nine pipeline steps, twenty-three flow node
+    types, six templates. Where this guide and the app disagree, the app is right and this is
+    out of date.
+  </footer>
+
+</div>
+</body>
+</html>

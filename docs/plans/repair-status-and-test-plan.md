@@ -329,3 +329,17 @@ the phone is a **viewfinder** for a world already generated or a **capture
 device** whose plates build one.
 
 Both are unstarted. Nothing has been spent on either.
+
+---
+
+# Related reference
+
+- **[Pipeline and Flows](../reference/pipeline-and-flows.html)** — the nine
+  pipeline steps and what waits for what, the run plan, the twenty-three flow
+  nodes, and which of the two to reach for. Saved from the published artifact
+  (https://claude.ai/code/artifact/78a12781-6f5b-4836-8579-496a20fb55be) so it
+  can be read without leaving the repo. Open it in a browser. The artifact URL
+  is the canonical copy — edit there and re-save here, rather than editing both.
+- **`design_handoff_world_engine_previz/`** — the previz console design bundle
+  (untracked, on disk). Its `README.md` states the fidelity contract and that
+  the 3D viewports are a layout and overlay spec, not art to reproduce.
