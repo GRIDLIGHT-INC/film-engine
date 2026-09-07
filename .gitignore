@@ -6,3 +6,6 @@ data/
 # Xcode per-user UI state — window positions, not source
 xcuserdata/
 *.xcuserstate
+
+# Xcode archive and export output — the .ipa is a build artefact, not source
+build/
