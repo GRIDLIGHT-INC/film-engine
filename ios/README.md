@@ -56,7 +56,7 @@ cp src/index.html ios/FilmEngine/Web/index.html
 Everything buildable is built and verified: the project compiles, the app runs
 on a simulator against the live API, and every Info.plist key and build setting
 an upload requires is set (team `3AXRJ22S9P`, bundle id `ai.gridlight.filmengine`,
-version 1.0 build 1, icon, `ExportOptions.plist` with `app-store-connect`).
+version 1.0 build 2, icon, `ExportOptions.plist` with `app-store-connect`).
 
 **The archive and the export both work.** This section previously said Xcode had
 no signed-in Apple ID and that archiving failed with `No Accounts`. That is no
@@ -94,6 +94,25 @@ no app-specific password in the keychain. Two ways:
 1. **Xcode Organizer** — Window → Organizer → the FilmEngine archive →
    *Distribute App* → App Store Connect. It signs in with the Apple ID already
    configured and needs no extra secret.
+
+   **THE ARCHIVE ABOVE WILL NOT APPEAR THERE.** Organizer lists only what is
+   under `~/Library/Developer/Xcode/Archives/<date>/`; `-archivePath
+   build/FilmEngine.xcarchive` puts it in the repo, where Organizer never
+   looks — so the window comes up with the app missing from the list and
+   nothing says why. Either archive from Xcode instead (**Product → Archive**,
+   which files it correctly), or move the one you built:
+
+   ```
+   D=~/Library/Developer/Xcode/Archives/$(date +%Y-%m-%d)
+   mkdir -p "$D"
+   cp -R build/FilmEngine.xcarchive "$D/FilmEngine $(date '+%d-%m-%Y, %H.%M').xcarchive"
+   ```
+
+   The comma in that name is Xcode's own convention, and the archive's own
+   `SigningIdentity` reads *Apple Development* — that is correct and not a
+   problem: Xcode archives with a development identity and **re-signs with
+   distribution when you distribute**, which is why the exported `.ipa` comes
+   out signed `Apple Distribution`.
 2. **Command line**, with an app-specific password or an ASC API key:
 
 ```
