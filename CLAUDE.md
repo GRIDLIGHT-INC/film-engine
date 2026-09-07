@@ -287,6 +287,7 @@ film-engine/
 │       ├── location-plate-provider.test.js # Reaching the floor is a provider choice, not a setting
 │       ├── view-anchoring.test.js   # An edit cannot move the camera, and the director should learn that first
 │       ├── capture-to-world.test.js # Three kinds of capture, and they do not map the same way
+│       ├── aleph-contract.test.js  # A reseller's description of somebody else's API is a secondary source
 │       ├── redo-between-frames-epic.test.js # Every task well formed, every claim still true
 │       ├── epic-scoping-copy.test.js # A scoped epic that is not the epic is worse than no copy
 │       ├── rbf-001-video-edit-probe.test.js # A paid answer nobody can re-read will be paid for twice
@@ -4275,6 +4276,7 @@ node --test backend/tests/capture-policy.test.js
 node --test backend/tests/location-plate-provider.test.js
 node --test backend/tests/view-anchoring.test.js
 node --test backend/tests/capture-to-world.test.js
+node --test backend/tests/aleph-contract.test.js
 node --test backend/tests/redo-between-frames-epic.test.js
 node --test backend/tests/epic-scoping-copy.test.js
 node --test backend/tests/rbf-001-video-edit-probe.test.js

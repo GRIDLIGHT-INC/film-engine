@@ -1,0 +1,159 @@
+{
+ "source": "https://docs.dev.runwayml.com/openapi.json",
+ "also": [
+  "https://docs.dev.runwayml.com/api-details/api_changelog/",
+  "https://docs.dev.runwayml.com/guides/pricing/"
+ ],
+ "checked": "2026-09-07",
+ "how": "Read from Runway's OWN OpenAPI specification, its changelog and its pricing page — NOT PROBED and no request was sent. The aleph2 variant was resolved out of the discriminated oneOf on POST /v1/video_to_video (the model property is a const, not an enum). Re-derive by fetching the spec and selecting the variant whose model const is aleph2.",
+ "probe_note": "A free probe was deliberately NOT attempted. Marble validates before it starts a world, so its contract could be read from refusals for nothing — but that is a property of a provider, not a law. RBF-001 measured a FAILED Seedance job still charging $1.658. Whether Runway refuses an invalid body without billing is unestablished, and establishing it costs a request that may be charged. The documentation is authoritative enough for an adapter; a probe would only add confidence about error shapes.",
+ "schema": {
+  "endpoint": "POST /v1/video_to_video",
+  "model": "aleph2",
+  "deprecated_alias": "aleph2_alpha",
+  "required": [
+   "videoUri",
+   "model"
+  ],
+  "fields": [
+   {
+    "name": "videoUri",
+    "required": true,
+    "note": "The input video to edit. Must be 30 seconds or shorter. HTTPS URL, Runway upload URI, or a base64 data URI capped at 5MB."
+   },
+   {
+    "name": "promptText",
+    "required": false,
+    "max_length": 1000,
+    "note": "OPTIONAL — the aggregator presented it as required."
+   },
+   {
+    "name": "keyframes",
+    "required": false,
+    "min_items": 1,
+    "max_items": 5
+   },
+   {
+    "name": "seed",
+    "required": false,
+    "range": [
+     0,
+     4294967295
+    ]
+   },
+   {
+    "name": "ratio",
+    "required": false,
+    "deprecated": true,
+    "note": "superseded by targetAspectRatio"
+   },
+   {
+    "name": "targetAspectRatio",
+    "required": false,
+    "enum": [
+     "16:9",
+     "4:3",
+     "3:2",
+     "1:1",
+     "2:3",
+     "3:4",
+     "9:16",
+     "21:9"
+    ]
+   },
+   {
+    "name": "contentModeration",
+    "required": false,
+    "note": "publicFigureThreshold and related settings"
+   },
+   {
+    "name": "outputFormat",
+    "required": false,
+    "enum": [
+     "mp4",
+     "prores",
+     "png_sequence",
+     "sdr_rec709_10bit"
+    ]
+   },
+   {
+    "name": "proresProfile",
+    "required": false,
+    "enum": [
+     "422",
+     "4444",
+     "422 Proxy",
+     "422 LT",
+     "422 HQ",
+     "4444 XQ"
+    ]
+   }
+  ],
+  "source": "Runway OpenAPI spec, /v1/video_to_video, the oneOf variant whose model const is aleph2"
+ },
+ "duration": {
+  "min_seconds": 2,
+  "max_seconds": 30,
+  "is_request_field": false,
+  "note": "There is NO duration field on the aleph2 variant. The bound is a property of the SOURCE video — videoUri says \"Must be 30 seconds or shorter\" and the changelog says 2-30s. An estimate must therefore price the clip handed in, not a clip length requested, which is the same trap RBF-001 measured on Seedance.",
+  "source": "videoUri description in the spec, plus the Aleph 2.0 changelog entry"
+ },
+ "references": {
+  "field": "keyframes",
+  "max": 5,
+  "min": 1,
+  "positions": [
+   "seconds",
+   "at"
+  ],
+  "positions_note": "Two mutually exclusive shapes: { uri, seconds } where seconds is an absolute timestamp 0-30 from the start, or { uri, at } where at is a fraction 0.0-1.0 of the input duration. THERE IS NO \"first\"/\"last\" KEYWORD — the aggregator described one. An optional `range` narrows the edit window, and all keyframes must either set a range or none may.",
+  "uri_note": "HTTPS URL, Runway upload URI, or base64 data URI capped at 5MB.",
+  "source": "Keyframe schema in the spec (anyOf of the seconds- and at-shaped variants)"
+ },
+ "pricing": {
+  "credits_per_second": 28,
+  "minimum_credits": 56,
+  "unit": "credits per second of INPUT video",
+  "usd_per_credit": 0.01,
+  "usd_per_second": 0.28,
+  "source": "Runway pricing guide: \"28 credits per second (56 credit minimum per generation)\"; one credit costs $0.01 in the developer portal"
+ },
+ "differences_from_aggregator": [
+  {
+   "field": "videoUri",
+   "aggregator_said": "inputs.video",
+   "runway_says": "videoUri, at the top level — there is no inputs object on this endpoint"
+  },
+  {
+   "field": "promptText",
+   "aggregator_said": "positivePrompt, and required",
+   "runway_says": "promptText, and OPTIONAL — only videoUri and model are required"
+  },
+  {
+   "field": "keyframes",
+   "aggregator_said": "inputs.frameImages, pinned with frame: \"first\" | \"last\" | timestamp",
+   "runway_says": "keyframes, pinned by an absolute `seconds` (0-30) or a fractional `at` (0.0-1.0). No first/last keyword exists."
+  },
+  {
+   "field": "duration",
+   "aggregator_said": "a 2-30s window presented as a request constraint",
+   "runway_says": "no duration field on this variant at all; 30s is a bound on the SOURCE video"
+  },
+  {
+   "field": "data URI size",
+   "aggregator_said": "not mentioned",
+   "runway_says": "a base64 data URI is capped at 5MB for both videoUri and a keyframe uri — far below this engine's ~112MB upload path, so a source clip CANNOT travel inline and must be hosted (lib/frame-handles.js) or uploaded to Runway first"
+  },
+  {
+   "field": "ratio",
+   "aggregator_said": "not mentioned",
+   "runway_says": "ratio is DEPRECATED on this endpoint; targetAspectRatio supersedes it with an eight-value enum"
+  },
+  {
+   "field": "outputFormat / proresProfile / contentModeration / seed",
+   "aggregator_said": "not mentioned",
+   "runway_says": "all four exist; outputFormat includes prores and png_sequence, which matters for a finishing pass"
+  }
+ ],
+ "differences_note": "SEVEN differences, and three of them would have produced a broken adapter: the video field is videoUri and not inputs.video, references are keyframes pinned by time rather than frameImages pinned to first/last, and a 5MB data-URI cap means a source clip cannot be sent inline at all. The credit rate and the 1000-character prompt cap were the two things the aggregator got right."
+}
