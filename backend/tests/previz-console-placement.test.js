@@ -156,6 +156,18 @@ function locate(region, html) {
         const hit = opener.find(o => words.some(w => o.toLowerCase().includes(w)));
         return hit && html.includes(hit) ? { column: 'modal', how: hit } : null;
     }
+    /*
+     * THE EXPLICIT ANCHOR FIRST. A region that declares `data-region` says
+     * unambiguously which region it is; the label heuristic below cannot see
+     * a rail whose label reads SHOTS, a strip that is a container of three
+     * quiet panels with no label of its own, or an ADVANCED strip whose slug
+     * carries a word its heading does not. It is the same anchor the subject
+     * sheets use, and console-regions.test.js holds every one of them to
+     * naming a region the design actually draws.
+     */
+    const anchored = html.indexOf(`data-region="${region.slug}"`);
+    if (anchored > -1) return { column: columnAt(html, anchored), how: `data-region=${region.slug}` };
+
     if (/^Header bar$/.test(region.heading)) {
         const at = html.indexOf('we-head');
         return at > -1 ? { column: 'full', how: 'we-head' } : null;
@@ -176,12 +188,6 @@ function locate(region, html) {
  * list a lie. ICP-017..021 promote these one at a time by building them.
  */
 const NOT_BUILT = {
-    'left-rail': 'ICP-020 builds the rail of shots',
-    'spatial-world': 'ICP-020 builds it; the splat viewport itself is deferred to ICP-022',
-    'camera-operate': 'ICP-020 builds the six-axis nudge controls',
-    'blocking': 'ICP-020 builds it from the shot\'s real staged subjects',
-    'secondary-strip': 'ICP-020 builds lighting, camera body and plate output',
-    'advanced-strip': 'ICP-020 builds the collapsed disclosure chips',
 };
 
 /* ── the tests ──────────────────────────────────────────────────────────── */

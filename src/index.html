@@ -4789,6 +4789,47 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 /* The height cap is applied to the WIDTH inline, derived from the ratio.
  * `max-height` here clamps the height and the box stops conforming to
  * aspect-ratio — the frame silently stops being the shape of the film. */
+/* ── The remaining regions ─ rail, spatial world, operate, blocking, strips ─
+   Geometry from the handoff: the rail is a fixed 206px, the strips are full
+   width. Every class the console emits must have a rule — one without lays
+   out in normal flow and overprints its neighbour. */
+.we-rail { width:206px; flex:none; }
+.we-rail-panel { background:#0a0a0a; }
+.we-shots { display:flex; flex-direction:column; gap:4px; }
+.we-shot { display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:5px;
+  border:1px solid transparent; background:#0d0d0d; color:#c9c9c4; cursor:pointer;
+  text-align:left; width:100%; }
+.we-shot:hover { border-color:rgba(255,255,255,0.18); }
+.we-shot.active { border-color:rgba(95,211,196,0.5); background:rgba(95,211,196,0.09); color:#5fd3c4; }
+.we-shot-id { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
+  letter-spacing:0.1em; }
+.we-shot-name { font-size:12px; color:#8f8f8a; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+.we-rail-foot { margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; letter-spacing:0.1em;
+  color:#7a7a74; line-height:1.8; }
+.we-opgroup { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px;
+  letter-spacing:0.18em; color:#8f8f8a; margin:10px 0 6px; }
+.we-oprow { display:flex; align-items:center; gap:8px; padding:3px 0; }
+.we-oplabel { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
+  color:#c9c9c4; width:110px; }
+.we-opval { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
+  color:#a5a5a0; }
+.we-blockrow { display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:11px 12px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.08);
+  border-radius:6px; background:#0d0d0d; }
+.we-secondary { display:flex; gap:12px; margin-top:12px; }
+.we-quiet { flex:1; min-width:0; border:1px solid rgba(255,255,255,0.055); border-radius:8px;
+  background:#080808; padding:13px 14px 15px; }
+.we-advanced { margin-top:12px; border:1px solid rgba(255,255,255,0.055); border-radius:8px;
+  background:#070707; padding:12px 14px 13px; }
+.we-advgrid { display:grid; grid-template-columns:repeat(4,1fr); gap:9px 26px; margin-top:10px;
+  padding-top:10px; border-top:1px solid rgba(255,255,255,0.06); }
+@media (max-width: 1200px) {
+  .we-rail { width:100%; }
+  .we-secondary { flex-direction:column; }
+  .we-advgrid { grid-template-columns:repeat(2,1fr); }
+}
 /* ── Explore Shot ─ six tiles, and a three-column comparison ─────────────
    A class the console renders with no rule lays out in normal flow and
    overprints its neighbour; reference-match.test.js holds every we-* class
@@ -17574,7 +17615,7 @@ THREE.GLTFLoader = GLTFLoader;
                   <div class="we-direct-l">
                     <div class="we-chips">${chips}</div>
                     <input id="weDirectCustom" class="we-input" type="text"
-                           placeholder="Custom direction — e.g. hold the dragon in the near foreground and let Maya read small"
+                           placeholder="Custom direction — e.g. hold the creature in the near foreground and let the figure read small"
                            onchange="worldDirectIntent(null)">
                   </div>
                   <div class="we-direct-r" id="weDirectOut">
@@ -17916,6 +17957,275 @@ THREE.GLTFLoader = GLTFLoader;
                 proposes a camera.</p>` : ''}`;
     }
 
+    /* ── THE REMAINING REGIONS, EACH FED FROM REAL STATE ────────────────────
+     *
+     * The handoff says it twice: "All numeric data is demo data. Wire to real
+     * state." Maple Street, Maya, the Dragon, 25.7m, COOKE S4. A console wired
+     * to those renders perfectly in a screenshot and describes nothing.
+     *
+     * So every panel here reads WORLD — the shots, the pinned world version,
+     * the saved blocking, the project's own delivery settings — and a panel
+     * with nothing to read SAYS SO rather than showing a plausible number. An
+     * invented 1.55m is indistinguishable from a real one and wrong in every
+     * project that has not been blocked.
+     */
+
+    /** A metre value, or a dash. Never a default: a default is a lie with units. */
+    function weM(v) { return Number.isFinite(Number(v)) ? Number(v).toFixed(2) + 'm' : '—'; }
+    function weDeg(v) { return Number.isFinite(Number(v)) ? Number(v).toFixed(1) + '°' : '—'; }
+
+    /* ── Left rail: the project's shots ──────────────────────────────────── */
+
+    function worldRailHtml() {
+        const shots = WORLD.shots || [];
+        const rows = shots.map(sh => `
+                <button class="we-shot${sh.id === WORLD.shotId ? ' active' : ''}"
+                        onclick="worldRailSelect('${sh.id}')">
+                  <span class="we-shot-id">${esc(sh.shot_code || '')}</span>
+                  <span class="we-shot-name">${esc(sh.location || sh.description || '')}</span>
+                </button>`).join('');
+        return `
+            <div class="we-panel we-rail-panel" data-region="left-rail">
+              <div class="we-label">SHOTS</div>
+              ${shots.length ? `<div class="we-shots">${rows}</div>`
+                : '<p class="we-hint">No shots in this project yet — break the screenplay down first.</p>'}
+              ${shots.length ? `<div class="we-rail-foot">${shots.length} SHOT(S)${
+                  WORLD.world ? ' · ONE WORLD' : ''}</div>` : ''}
+            </div>`;
+    }
+
+    /** The project's shots, once. */
+    async function worldLoadShots(projectId) {
+        try {
+            const r = await api(`/projects/${projectId}/shotlist`);
+            WORLD.shots = (r && (r.shots || r)) || [];
+        } catch (_) { WORLD.shots = []; }
+    }
+
+    /*
+     * Selecting a shot loads what that shot ALREADY HAS — its saved blocking,
+     * its pinned world version — and updates the console IN PLACE. The design
+     * is explicit that it does not navigate away, and that is what makes
+     * moving between six shots cheap.
+     */
+    async function worldRailSelect(shotId) {
+        WORLD.shotId = shotId;
+        WORLD.blocking = null;
+        WORLD.pin = null;
+        try { WORLD.blocking = await api(`/shots/${shotId}/previs`); } catch (_) { /* never blocked */ }
+        try { WORLD.pin = await api(`/shots/${shotId}/world`); } catch (_) { /* never pinned */ }
+        worldConsoleRender();
+    }
+
+    /* ── Spatial World: the world's own geometry, not a splat ────────────── */
+
+    function worldSpatialHtml(world, version) {
+        const b = version && version.bounds_json ? parse_(version.bounds_json) : (version && version.bounds);
+        const subjects = ((WORLD.blocking && WORLD.blocking.blocking
+            && WORLD.blocking.blocking.subjects) || []);
+        const scaled = version && Number(version.scale_factor) > 0;
+        return `
+            <div class="we-panel" data-region="spatial-world">
+              <div class="we-panel-head">
+                <span class="we-label">SPATIAL WORLD</span>
+                ${['PERSP', 'TOP', 'SIDE'].map(v =>
+                  `<button class="we-btn${WORLD.view === v ? ' we-amber' : ''}"
+                           onclick="worldSetView('${v}')">${v}</button>`).join('')}
+              </div>
+              ${world ? `
+                <div class="we-rows">
+                  <div class="we-row"><span>STATE</span><span>${
+                    esc(scaled ? 'SCALE CALIBRATED' : 'APPROXIMATE SCALE')}</span></div>
+                  ${b && b.length === 3 ? `<div class="we-row"><span>EXTENT</span><span>${
+                    b.map(x => weM(x)).join(' × ')}</span></div>` : ''}
+                  ${subjects.map(su => `<div class="we-row"><span>${esc(su.name || 'unnamed')}</span>`
+                    + `<span>${su.position ? weM(Math.hypot(su.position[0] || 0, su.position[2] || 0)) : '—'}</span></div>`).join('')}
+                </div>
+                <p class="we-hint">The splat viewport is not rendered here — see the ADR on Spark.
+                What is shown is the geometry this world actually reports.</p>`
+                : '<p class="we-hint">No world generated for this location yet.</p>'}
+            </div>`;
+    }
+    function parse_(v) { try { return typeof v === 'string' ? JSON.parse(v) : v; } catch (_) { return null; } }
+    function worldSetView(v) { WORLD.view = v; worldConsoleRender(); }
+
+    /* ── Camera Operate: six nudges, every one a PROPOSAL FIELD ──────────── */
+
+    /*
+     * Each axis is a field the proposal contract permits, so a nudge travels
+     * the SAME validated road as an intention and a coverage camera — one
+     * apply path, and a nudge that would put the camera inside a wall is
+     * refused by the same check.
+     *
+     * Raw X/Y/Z is deliberately absent: the design puts it in Advanced.
+     */
+    const OPERATE_AXES = Object.freeze([
+        { group: 'TRANSLATION', field: 'dollyM',     label: 'Dolly',    step: 0.25, unit: 'm' },
+        { group: 'TRANSLATION', field: 'truckM',     label: 'Truck',    step: 0.25, unit: 'm' },
+        { group: 'TRANSLATION', field: 'pedestalM',  label: 'Pedestal', step: 0.10, unit: 'm' },
+        { group: 'ROTATION',    field: 'panDeg',     label: 'Pan',      step: 2,    unit: '°' },
+        { group: 'ROTATION',    field: 'tiltDeg',    label: 'Tilt',     step: 2,    unit: '°' },
+        { group: 'ROTATION',    field: 'rollDeg',    label: 'Roll',     step: 2,    unit: '°' },
+    ]);
+
+    function worldOperateHtml() {
+        /*
+         * THE AXES ALWAYS RENDER. Hiding them until a camera is saved would
+         * leave a shot nobody has blocked — which is most of them — with no
+         * way to move the camera at all, and a nudge IS meaningful there: the
+         * route builds the proposal from the shot's blocking and validates it
+         * either way.
+         *
+         * The step is shown on the BUTTON and the unit on the LABEL, so the
+         * panel carries no value that looks like a measurement of this shot.
+         * A control's own step is not state, and rendering it as "0.25m"
+         * beside real distances is how the two become indistinguishable.
+         */
+        const groups = ['TRANSLATION', 'ROTATION'].map(g => `
+                <div class="we-opgroup">${g}</div>
+                ${OPERATE_AXES.filter(a => a.group === g).map(a => `
+                  <div class="we-oprow">
+                    <span class="we-oplabel">${esc(a.label)} (${esc(a.unit)})</span>
+                    <button class="we-btn" onclick="worldNudge('${a.field}', ${-a.step})">&minus;${a.step}</button>
+                    <button class="we-btn" onclick="worldNudge('${a.field}', ${a.step})">+${a.step}</button>
+                  </div>`).join('')}`).join('');
+        return `
+            <div class="we-panel" data-region="camera-operate">
+              <div class="we-label">CAMERA OPERATE</div>
+              ${groups}
+              <p class="we-hint">Every move is checked against the geometry before it is kept.
+              Exact X / Y / Z lives in Advanced.</p>
+            </div>`;
+    }
+
+    /** A nudge is a PROPOSAL, validated like every other camera change. */
+    async function worldNudge(field, amount) {
+        if (!WORLD.shotId) return;
+        try {
+            await api(`/shots/${WORLD.shotId}/direct`,
+                { method: 'POST', body: JSON.stringify({ [field]: amount, apply: true }) });
+            WORLD.blocking = await api(`/shots/${WORLD.shotId}/previs`);
+        } catch (err) { setStatus('That move was refused: ' + err.message); }
+        worldConsoleRender();
+    }
+
+    /* ── Blocking: what is actually staged ───────────────────────────────── */
+
+    const BLOCKING_REPS = Object.freeze(['CARD', 'PROXY', 'MESH']);
+
+    function worldBlockingHtml() {
+        const subjects = ((WORLD.blocking && WORLD.blocking.blocking
+            && WORLD.blocking.blocking.subjects) || []);
+        return `
+            <div class="we-panel" data-region="blocking">
+              <div class="we-label">BLOCKING</div>
+              ${subjects.length ? subjects.map((su, i) => `
+                <div class="we-blockrow">
+                  <span>
+                    <span class="we-shot-name">${esc(su.name || 'unnamed')}</span>
+                    <span class="we-tile-spec">${su.height != null ? weM(su.height) : ''}</span>
+                  </span>
+                  <span>${BLOCKING_REPS.map(r =>
+                    `<button class="we-btn${(su.rep || 'PROXY') === r ? ' we-amber' : ''}"
+                             onclick="worldSetRep(${i}, '${r}')">${r}</button>`).join('')}</span>
+                </div>`).join('')
+                : '<p class="we-hint">Nothing is staged in this shot yet.</p>'}
+            </div>`;
+    }
+    function worldSetRep(i, rep) {
+        const subs = ((WORLD.blocking && WORLD.blocking.blocking
+            && WORLD.blocking.blocking.subjects) || []);
+        if (subs[i]) subs[i].rep = rep;
+        worldConsoleRender();
+    }
+
+    /* ── The two strips ──────────────────────────────────────────────────── */
+
+    function worldSecondaryHtml(project) {
+        const cam = (WORLD.blocking && WORLD.blocking.blocking && WORLD.blocking.blocking.camera) || {};
+        const scene = WORLD.scene || {};
+        const panel = (title, aside, rows) => `
+                <div class="we-quiet">
+                  <div class="we-panel-head"><span class="we-label">${esc(title)}</span>
+                    <span class="we-live">${esc(aside || '—')}</span></div>
+                  ${rows.map(([k, v]) => `<div class="we-row"><span>${esc(k)}</span>`
+                    + `<span>${esc(v == null || v === '' ? '—' : String(v))}</span></div>`).join('')}
+                </div>`;
+        return `
+            <div class="we-secondary" data-region="secondary-strip">
+              ${panel('LIGHTING', scene.time_of_day, [
+                  ['Key', scene.lighting_default], ['Notes', scene.sound_notes ? '' : ''],
+              ])}
+              ${panel('CAMERA BODY & RIG', cam.sensorId, [
+                  ['Sensor', cam.sensorId], ['Rig', WORLD.blocking && WORLD.blocking.blocking
+                      ? WORLD.blocking.blocking.rig : null],
+              ])}
+              ${panel('PLATE & OUTPUT', project && project.aspect_ratio, [
+                  ['Plate size', project && project.target_resolution],
+                  ['Frame rate', project && project.frame_rate],
+              ])}
+            </div>`;
+    }
+
+    /*
+     * ONE OPEN AT A TIME, from the design. Two open at once renders the
+     * four-column grid twice and the strip is no longer collapsed.
+     */
+    const ADVANCED_CHIPS = Object.freeze([
+        { key: 'xyz',    label: 'Exact X / Y / Z' },
+        { key: 'curves', label: 'Movement curves' },
+        { key: 'focus',  label: 'Focus & DOF' },
+        { key: 'lens',   label: 'Lens family & distortion' },
+        { key: 'ai',     label: 'AI parameters' },
+    ]);
+
+    function worldAdvancedRows(key) {
+        const cam = (WORLD.blocking && WORLD.blocking.blocking && WORLD.blocking.blocking.camera) || {};
+        const rows = {
+            xyz: cam.position ? [['X', weM(cam.position[0])], ['Y', weM(cam.position[1])],
+                                 ['Z', weM(cam.position[2])],
+                                 ['ROT', (cam.rotation || []).map(r => weDeg(r)).join(' / ')]] : [],
+            curves: ((WORLD.blocking && WORLD.blocking.blocking
+                && WORLD.blocking.blocking.moves) || []).map((mv, i) =>
+                    [`LEG ${String(i + 1).padStart(2, '0')}`, mv.ease || 'linear']),
+            focus: [['FOCUS', cam.focusDistanceM != null ? weM(cam.focusDistanceM) : null],
+                    ['APERTURE', cam.fStop != null ? 'f' + cam.fStop : null]]
+                    .filter(r => r[1] != null),
+            lens: [['FOCAL', cam.focalMm != null ? cam.focalMm + 'mm' : null],
+                   ['SENSOR', cam.sensorId || null]].filter(r => r[1] != null),
+            /*
+             * NOT a model name typed here. The design's "dp-agent v4" is demo
+             * data for a product that does not exist; what is true is which
+             * path an AI request takes, which the engine already reports.
+             */
+            ai: [['PATH', AI_PATH.connected ? (AI_PATH.client || 'agent host over MCP') : 'no agent connected'],
+                 ['PROPOSALS', 'written by the connected model, validated here']],
+        };
+        return rows[key] || [];
+    }
+
+    function worldAdvancedHtml() {
+        const open = WORLD.adv || null;
+        const rows = open ? worldAdvancedRows(open) : [];
+        return `
+            <div class="we-advanced" data-region="advanced-strip">
+              <div class="we-label">ADVANCED</div>
+              <div class="we-chips">${ADVANCED_CHIPS.map(c =>
+                `<button class="we-chip-btn${open === c.key ? ' active' : ''}"
+                         onclick="worldToggleAdvanced('${c.key}')">${
+                  open === c.key ? '▾' : '▸'} ${esc(c.label)}</button>`).join('')}</div>
+              ${open ? (rows.length
+                ? `<div class="we-advgrid">${rows.map(([k, v]) =>
+                    `<div class="we-row"><span>${esc(k)}</span><span>${esc(String(v))}</span></div>`).join('')}</div>`
+                : '<p class="we-hint">Nothing recorded for this shot yet.</p>') : ''}
+            </div>`;
+    }
+
+    function worldToggleAdvanced(key) {
+        WORLD.adv = WORLD.adv === key ? null : key;
+        worldConsoleRender();
+    }
+
     function worldConsoleHtml(project, world, version) {
         const ratio = worldFrameRatio(project);
         const m = worldMeasurements(version, []);
@@ -17936,6 +18246,7 @@ THREE.GLTFLoader = GLTFLoader;
             </div>
           </div>
           <div class="we-main">
+            <div class="we-rail">${worldRailHtml()}</div>
             <div class="we-center">
               <div class="we-panel we-camera">
                 <div class="we-panel-head">
@@ -17961,6 +18272,7 @@ THREE.GLTFLoader = GLTFLoader;
               ${worldTimelineHtml()}
             </div>
             <div class="we-right">
+              ${worldRegionOn('spatial-world') ? worldSpatialHtml(world, version) : ''}
               <div class="we-panel">
                 <div class="we-label">LENS <span class="we-live" id="weLensNow">${WORLD.lens}mm</span></div>
                 <div class="we-lenses">${lenses}</div>
@@ -17985,6 +18297,8 @@ THREE.GLTFLoader = GLTFLoader;
                 </div>
               </div>
 
+              ${worldOperateHtml()}
+              ${worldBlockingHtml()}
               <div class="we-panel">
                 <div class="we-label">HANDOVER
                   <span class="we-live" id="weExportState">—</span></div>
@@ -17994,6 +18308,8 @@ THREE.GLTFLoader = GLTFLoader;
               </div>
             </div>
           </div>
+          ${worldSecondaryHtml(project)}
+          ${worldAdvancedHtml()}
         </div>`;
     }
 
@@ -36300,10 +36616,10 @@ ${fountainText.slice(0, 50000)}`;
                     placeholder="Flames erupt from the struck house; debris falls into the street."></textarea></div>
             <div class="form-group"><label>Where it ends <span class="text-muted">(video)</span></label>
                 <textarea id="${p}EndState" data-field="end_state" rows="2"
-                    placeholder="The dragon fills the near foreground; Maya is small at the far kerb."></textarea></div>
+                    placeholder="The creature fills the near foreground; the figure is small at the far kerb."></textarea></div>
             <div class="form-group"><label>Beats <span class="text-muted">(one per line, only if the shot has stages)</span></label>
                 <textarea id="${p}Beats" data-field="beats" rows="3"
-                    placeholder="the dragon closes half the distance&#10;the house is struck&#10;Maya turns"></textarea></div>
+                    placeholder="the creature closes half the distance&#10;the wall is struck&#10;the figure turns"></textarea></div>
             <div class="form-group"><label>Lighting</label>
                 <select id="${p}Lighting"></select>
                 <div class="text-sm text-muted" id="${p}LightingHint"></div></div>

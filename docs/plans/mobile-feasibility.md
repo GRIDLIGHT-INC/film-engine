@@ -25,7 +25,7 @@ What changed, and the measurements that replaced the ones above:
 | Phase track on a phone | unreachable | **moved** into the drawer, one node |
 | API base | literal `http://localhost:3100` | follows `location.hostname` |
 | Page server | `127.0.0.1`, no opt-out | `FILM_ENGINE_HOST`, **default still loopback** |
-| Shell-aware media queries | 0 of 6 | **1 of 14 media queries** — the phone breakpoint |
+| Shell-aware media queries | 0 of 6 | **1 of 15 media queries** — the phone breakpoint |
 
 Verified in a real browser at both widths: at 1920px the panel is still 232px, `.main`
 still starts at 262px and the burger is hidden — **not one computed value above 700px
@@ -68,7 +68,7 @@ something. That is the single most useful thing to copy.
 | SPA size | **2.01 MB** | one file, `build.target: single-html` |
 | Non-print media queries | **7** | six incidental + the phone breakpoint Option B added; see below |
 
-**The responsive layout did not exist.** There are 14 media queries that are not `print` (12 at
+**The responsive layout did not exist.** There are 15 media queries that are not `print` (12 at
 the time of this assessment, plus the one the character sheet's two-up block
 added when its layout was brought back to the reference design), and it
 is easy to read that as "already responsive". Not one of them touches the **app shell**. They

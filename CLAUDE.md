@@ -275,6 +275,7 @@ film-engine/
 │       ├── world-flags.test.js   # A flag turned off hides its region, instead of being declared and ignored
 │       ├── direct-the-shot-panel.test.js # An intention is stated, the MODEL proposes, the engine validates
 │       ├── explore-shot-panel.test.js # Six cameras, one world, and a comparison the page does not compute
+│       ├── console-regions.test.js # Every region the design draws, fed from real state rather than demo data
 │       ├── cinematography.test.js  # The model directs; the engine hands over facts and refuses the impossible
 │       ├── world-timeline.test.js  # A surface over the move model that already existed, driving no second one
 │       ├── generation-plate.test.js # The plate leads, travels as bytes, and spends nothing
@@ -4307,6 +4308,7 @@ node --test backend/tests/previz-console-placement.test.js
 node --test backend/tests/world-flags.test.js
 node --test backend/tests/direct-the-shot-panel.test.js
 node --test backend/tests/explore-shot-panel.test.js
+node --test backend/tests/console-regions.test.js
 node --test backend/tests/seedance-video-edit-retired.test.js
 node --test backend/tests/repair-bridge.test.js
 node --test backend/tests/editor-transport.test.js
