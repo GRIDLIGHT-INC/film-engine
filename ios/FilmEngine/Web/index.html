@@ -4789,6 +4789,26 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 /* The height cap is applied to the WIDTH inline, derived from the ratio.
  * `max-height` here clamps the height and the box stops conforming to
  * aspect-ratio — the frame silently stops being the shape of the film. */
+/* ── Direct the Shot ─ geometry from the design handoff's own spec ───────
+   Body flex 1.15 / 1, the right side separated by a hairline, chips wrapping
+   at 6px. A class the console renders with no rule is the `.cs-up` failure:
+   it lays out in normal flow and overprints whatever is beside it. */
+.we-direct { display:flex; gap:14px; align-items:flex-start; margin-top:10px; }
+.we-direct-l { flex:1.15; min-width:0; }
+.we-direct-r { flex:1; min-width:0; border-left:1px solid rgba(255,255,255,0.08); padding-left:16px; }
+.we-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.we-chip-btn { font-size:12px; letter-spacing:0.04em; padding:10px 13px; border-radius:4px;
+  border:1px solid rgba(255,255,255,0.13); color:#a5a5a0; background:transparent; cursor:pointer; }
+.we-chip-btn:hover { border-color:rgba(255,255,255,0.32); color:#e6e6e2; }
+.we-chip-btn.active { border-color:#5fd3c4; color:#5fd3c4; background:rgba(95,211,196,0.12); }
+.we-input { width:100%; background:#0e0e0e; border:1px solid rgba(255,255,255,0.12);
+  border-radius:6px; padding:12px 13px; font-size:13px; color:#ecece9; outline:none;
+  font-family:inherit; }
+.we-input::placeholder { color:#6f6f6a; }
+.we-row { display:flex; justify-content:space-between; gap:20px; font-size:11px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; padding:4px 0; }
+.we-row span:first-child { color:#8f8f8a; }
+.we-row span:last-child { color:#5fd3c4; }
 .we-frame { position:relative; width:100%; margin:16px auto 0;
             overflow:hidden; border:1px solid rgba(255,255,255,0.14); border-radius:3px;
             background-color:#0c0c0c;
@@ -17486,6 +17506,175 @@ THREE.GLTFLoader = GLTFLoader;
         }).join('');
     }
 
+    /* ── DIRECT THE SHOT ────────────────────────────────────────────────────
+     *
+     * The director states an INTENTION; the connected model proposes a camera;
+     * the engine validates it. Nothing here decides, and that ordering is the
+     * whole design rather than a nicety.
+     *
+     * THE DESIGN SHIPS A DELTA TABLE AND IT IS DEMO DATA — it says so twice.
+     * "More heroic -> 21mm, h 0.42m, tilt +17" looks exactly like an
+     * implementation, and baking it in would make every heroic shot in every
+     * film the same angle, computed by a formula nobody can argue with. The
+     * codebase already records what that costs for style presets: a rigid rule
+     * gets switched off the first time it overrules a director, and takes the
+     * useful part with it. So the panel shows the FACTS and the BIAS and asks.
+     *
+     * The chips are built from the engine's own INTENTS, fetched with the
+     * brief, so an eighth intention appears here with nothing to remember and
+     * the page can never offer one the route would refuse.
+     */
+    const DIRECT = { intent: null, brief: null, proposal: null, result: null };
+
+    /** `cinematic_depth` is a key; a director should not be reading snake_case. */
+    function directIntentLabel(id) {
+        return 'More ' + String(id).replace(/_/g, ' ');
+    }
+
+    function worldDirectPanelHtml() {
+        const intents = (DIRECT.brief && DIRECT.brief.intents) || WORLD_INTENTS_FALLBACK;
+        const chips = intents.map(i =>
+            `<button class="we-chip-btn${DIRECT.intent === i ? ' active' : ''}"
+                     onclick="worldDirectIntent('${i}')">${esc(directIntentLabel(i))}</button>`).join('');
+        return `
+              <div class="we-panel" data-region="direct-the-shot">
+                <div class="we-panel-head">
+                  <span class="we-label">DIRECT THE SHOT</span>
+                  <span class="we-live">CHANGES THE CAMERA, NOT THE IMAGE</span>
+                </div>
+                <div class="we-direct">
+                  <div class="we-direct-l">
+                    <div class="we-chips">${chips}</div>
+                    <input id="weDirectCustom" class="we-input" type="text"
+                           placeholder="Custom direction — e.g. hold the dragon in the near foreground and let Maya read small"
+                           onchange="worldDirectIntent(null)">
+                  </div>
+                  <div class="we-direct-r" id="weDirectOut">
+                    <p class="we-hint">Choose an intention. The facts this shot offers are handed
+                    to your connected model over MCP, which proposes the camera — the engine never
+                    proposes one, so nothing here decides for you.</p>
+                  </div>
+                </div>
+                <div class="we-actions">
+                  <textarea id="weDirectProposal" class="we-input" rows="2"
+                            placeholder='The proposal, as the model returns it — the keys are listed in the brief under you_may_change'></textarea>
+                  <button class="we-btn" onclick="worldDirectCheck()">CHECK — FREE</button>
+                  <button class="we-btn we-amber" onclick="worldDirectApply()">APPLY CAMERA CHANGE</button>
+                </div>
+              </div>`;
+    }
+
+    /* The seven the engine declares, mirrored only for the first paint before
+     * a brief has been fetched. The BRIEF is the source; this is what the panel
+     * draws while it is still being asked for. */
+    const WORLD_INTENTS_FALLBACK = ['heroic', 'vulnerable', 'oppressive', 'intimate',
+                                    'chaotic', 'isolated', 'cinematic_depth'];
+
+    /*
+     * FREE. Fetches the brief for this intention — the facts about the shot as
+     * it stands, plus the bias description — and shows what to ask for. It
+     * proposes nothing, which is what buildBrief's own note says.
+     */
+    async function worldDirectIntent(intent) {
+        DIRECT.intent = intent;
+        DIRECT.result = null;
+        const out = document.getElementById('weDirectOut');
+        const shotId = WORLD.shotId;
+        if (!shotId) { if (out) out.innerHTML = '<p class="we-hint">Open a shot first.</p>'; return; }
+        if (out) out.innerHTML = '<p class="we-hint">Reading the facts&hellip;</p>';
+        try {
+            const q = intent ? `?intent=${encodeURIComponent(intent)}` : '';
+            DIRECT.brief = await api(`/shots/${shotId}/direct${q}`);
+            worldDirectShowResult();
+        } catch (err) {
+            // A renderer that paints a placeholder must have a path that
+            // replaces it; a spinner that never resolves is worse than an error.
+            if (out) out.innerHTML = `<p class="we-hint">Could not read the shot: ${esc(err.message)}</p>`;
+        }
+    }
+
+    /** The proposal the model returned, as the model returned it. */
+    function worldDirectProposal() {
+        const box = document.getElementById('weDirectProposal');
+        const raw = ((box && box.value) || '').trim();
+        if (!raw) return { error: 'Paste the proposal your model returned.' };
+        try {
+            const p = JSON.parse(raw);
+            /*
+             * Every field the CONTRACT permits travels. Narrowing the set here
+             * would silently drop a roll or a truck the model deliberately
+             * asked for, and it has no way to discover that.
+             */
+            const allowed = ['focalLengthMm', 'cameraHeightM', 'dollyM', 'truckM', 'pedestalM',
+                             'panDeg', 'tiltDeg', 'rollDeg', 'targetOccupancy', 'framingTarget', 'rig'];
+            const out = {};
+            for (const k of allowed) if (p[k] !== undefined) out[k] = p[k];
+            // Anything else is left in so the ROUTE refuses it by name — the
+            // page silently dropping an unknown field would hide the mistake.
+            for (const k of Object.keys(p)) if (!(k in out)) out[k] = p[k];
+            return { proposal: out };
+        } catch (err) {
+            return { error: 'That is not valid JSON: ' + err.message };
+        }
+    }
+
+    async function worldDirectSend(apply) {
+        const shotId = WORLD.shotId;
+        const out = document.getElementById('weDirectOut');
+        if (!shotId) return;
+        const got = worldDirectProposal();
+        if (got.error) { if (out) out.innerHTML = `<p class="we-hint">${esc(got.error)}</p>`; return; }
+        if (out) out.innerHTML = '<p class="we-hint">Checking against the geometry&hellip;</p>';
+        try {
+            DIRECT.result = await api(`/shots/${shotId}/direct`,
+                { method: 'POST', body: JSON.stringify({ ...got.proposal, ...(apply ? { apply: true } : {}) }) });
+            DIRECT.result.applied = !!apply;
+        } catch (err) {
+            /*
+             * A REFUSAL IS AN ANSWER, and it belongs here rather than on the
+             * status bar at the bottom of the screen: this is where the choice
+             * was made. The route names the checks that caught it, and the
+             * remedy when a world has no scale to place a metric camera in.
+             */
+            DIRECT.result = { error: err.message, failures: err.failures || [], remedy: err.remedy };
+        }
+        worldDirectShowResult();
+    }
+    const worldDirectCheck = () => worldDirectSend(false);
+    const worldDirectApply = () => worldDirectSend(true);
+
+    /** The deltas, from the camera the ROUTE returned — never computed here. */
+    function worldDirectShowResult() {
+        const out = document.getElementById('weDirectOut');
+        if (!out) return;
+        const b = DIRECT.brief;
+        const r = DIRECT.result;
+        const rows = [];
+        if (r && r.camera && b && b.facts && b.facts.camera) {
+            const was = b.facts.camera;
+            const now = r.camera;
+            const pair = (k, a, c, u) => (a == null && c == null) ? null
+                : `<div class="we-row"><span>${k}</span><span>${esc(String(a))} → ${esc(String(c))}${u || ''}</span></div>`;
+            rows.push(pair('LENS', was.focal_mm, now.focalMm, 'mm'));
+            rows.push(pair('HEIGHT', was.height, now.position ? now.position[1] : null, 'm'));
+            rows.push(pair('TILT', was.rotation_deg ? was.rotation_deg[0] : null,
+                           now.rotation ? now.rotation[0] : null, '°'));
+        }
+        const failures = (r && r.failures) || [];
+        out.innerHTML = `
+            ${DIRECT.intent ? `<div class="we-label">${esc(directIntentLabel(DIRECT.intent).toUpperCase())} — PROPOSED CAMERA</div>` : ''}
+            ${b && b.bias ? `<p class="we-hint">${esc(b.bias)}</p>` : ''}
+            ${b ? `<p class="we-hint">${esc(b.note || '')} ${AI_PATH.connected
+                    ? 'Ask ' + esc(AI_PATH.client || 'your agent') + ' for a camera — it can call cinematography_brief and camera_propose directly.'
+                    : 'Connect an agent host (Claude Desktop) to the MCP server and ask it for a camera; nothing here will propose one.'}</p>` : ''}
+            ${rows.filter(Boolean).join('') || ''}
+            ${r && r.error ? `<p class="we-hint" style="color:var(--gl-danger,#ef4444);">${esc(r.error)}</p>` : ''}
+            ${failures.length ? `<ul class="we-hint">${failures.map(f =>
+                `<li>${esc(typeof f === 'string' ? f : (f.why || f.check || JSON.stringify(f)))}</li>`).join('')}</ul>` : ''}
+            ${r && r.remedy ? `<p class="we-hint">${esc(r.remedy)}</p>` : ''}
+            ${r && r.applied && !r.error ? '<p class="we-hint">Applied to the shot.</p>' : ''}`;
+    }
+
     function worldConsoleHtml(project, world, version) {
         const ratio = worldFrameRatio(project);
         const m = worldMeasurements(version, []);
@@ -17526,6 +17715,7 @@ THREE.GLTFLoader = GLTFLoader;
                   <button class="we-render" onclick="worldRenderPlate()">RENDER GENERATION PLATE</button>
                 </div>
               </div>
+              ${worldRegionOn('direct-the-shot') ? worldDirectPanelHtml() : ''}
               ${worldTimelineHtml()}
             </div>
             <div class="we-right">

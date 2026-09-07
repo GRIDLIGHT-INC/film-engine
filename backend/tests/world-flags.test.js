@@ -86,7 +86,6 @@ const allOn = () => Object.fromEntries(booleanFlags().map(f => [f, true]));
  * work, and a stale entry fails below the moment its region appears.
  */
 const REGION_NOT_BUILT = {
-    'direct-the-shot': 'ICP-018 builds it; the gate is already in place for when it lands',
     'explore-shot': 'ICP-019 builds it; the gate is already in place',
     'spatial-world': 'ICP-020 builds the panel, ICP-022 decides the splat viewport',
 };

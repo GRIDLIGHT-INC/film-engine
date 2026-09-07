@@ -27,10 +27,18 @@ function declSource(name) {
         const at = UI.indexOf(start);
         if (at < 0) continue;
         if (start.startsWith('function')) {
+            /*
+             * INCLUDE A PRECEDING `async`. Slicing from `function name(` drops
+             * it, and the extracted source is then a syntax error the moment
+             * the body contains an await — "await is only valid in async
+             * functions", reported against a function that is perfectly
+             * correct in the page.
+             */
+            const from = /\basync\s+$/.test(UI.slice(Math.max(0, at - 8), at)) ? at - 6 : at;
             let depth = 0;
             for (let i = UI.indexOf('{', at); i < UI.length; i++) {
                 if (UI[i] === '{') depth++;
-                else if (UI[i] === '}' && --depth === 0) return UI.slice(at, i + 1);
+                else if (UI[i] === '}' && --depth === 0) return UI.slice(from, i + 1);
             }
             return null;
         }
