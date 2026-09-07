@@ -1,0 +1,370 @@
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+
+const REPO = path.join(__dirname, '..', '..');
+const EPIC = path.join(REPO, 'docs', 'plans', 'ios-capture-and-previz-epic.md');
+
+const src = (p) => fs.readFileSync(path.join(REPO, p), 'utf8');
+const has = (p) => fs.existsSync(path.join(REPO, p));
+const epic = () => fs.readFileSync(EPIC, 'utf8');
+
+/**
+ * AN EPIC IS A REGISTRY, AND IT MUST BE HELD TO ITSELF AND TO THE CODE.
+ *
+ * Same reasoning as redo-between-frames-epic.test.js. Two independent ways this
+ * document can be wrong, and both have been paid for here before:
+ *
+ *   1. It drifts from the code. Every number in it — 7 of 14 regions, 11 video
+ *      models, a 150MB body ceiling — was measured. A task written against a
+ *      fact that has since moved sends somebody to build the wrong thing.
+ *   2. It is internally malformed. A task with no size, or a dependency naming
+ *      a task that does not exist, reads as a plan and cannot be executed.
+ *
+ * Set-based over FOUR registries: the sections the template mandates, the tasks
+ * the epic itself declares, the five milestones the user ratified, and the code
+ * claims the tasks rest on. An example-based check passes on an epic with one
+ * malformed row and one stale ceiling, which is exactly the state to catch.
+ */
+
+/** The eight sections this step's template mandates. */
+const REQUIRED_SECTIONS = [
+    'Overview',
+    'Business Goals',
+    'Current State',
+    'Target State',
+    'Constraints',
+    'Task Breakdown',
+    'Open Questions',
+    'Success Metrics',
+];
+
+/**
+ * The five milestones the user ratified by choosing "Follow the brief's order".
+ * Each must be reachable in the epic — a sequence the user approved and the
+ * epic silently drops a leg of is worse than no sequence.
+ */
+const RATIFIED = [
+    { id: 'M1 capture unblock', probe: /NSMicrophoneUsageDescription/ },
+    { id: 'M2 capture plumbing', probe: /is_pano/ },
+    { id: 'M3 register Aleph', probe: /aleph2|Aleph/ },
+    { id: 'M4 console wiring', probe: /Direct the Shot/ },
+    { id: 'M5 Spark deferred behind an ADR', probe: /Spark/ },
+];
+
+function fnBody(text, name) {
+    const at = text.indexOf(`function ${name}(`);
+    if (at < 0) return null;
+    let d = 0;
+    for (let i = text.indexOf('{', at); i < text.length; i++) {
+        if (text[i] === '{') d++;
+        else if (text[i] === '}' && --d === 0) return text.slice(at, i + 1);
+    }
+    return null;
+}
+
+function consoleSource(UI) {
+    const names = [...UI.matchAll(/function (world[A-Za-z0-9_]*)\(/g)].map((m) => m[1]);
+    assert.ok(names.length >= 20,
+        `the world* builder scan found ${names.length} — the scan is broken, not the page`);
+    return names.map((n) => fnBody(UI, n) || '').join('\n');
+}
+
+function designRegions(D) {
+    const r = [...D.matchAll(/^### (.+)$/gm)].map((m) => m[1]).filter((x) => !/^Screen:/.test(x));
+    assert.ok(r.length >= 10, `the design heading scan found ${r.length} — it is broken`);
+    return r;
+}
+
+/** Claims the TASKS rest on. Each returns true when it holds, else a reason. */
+const CLAIMS = [
+    {
+        id: 'console-short-of-design',
+        why: 'Phase 4 exists because the console does not render every design region',
+        holds() {
+            const body = consoleSource(src('src/index.html'));
+            const regions = designRegions(src('design_handoff_world_engine_previz/README.md'));
+            const present = regions.filter((r) => {
+                const k = r.replace(/ *\(.*\)| *—.*$/, '').replace(/^Modal: /, '').trim();
+                return new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(body);
+            });
+            return present.length < regions.length
+                || `all ${regions.length} regions are now present — Phase 4 is moot`;
+        },
+    },
+    {
+        id: 'cinematography-backend-built',
+        why: 'Phase 4 claims "no new backend"',
+        holds() {
+            const s = src('backend/lib/cinematography.js');
+            const need = ['buildBrief', 'exploreBrief', 'validateProposal',
+                'applyProposal', 'acceptCandidates', 'compareCameras'];
+            const gone = need.filter((n) => !fnBody(s, n));
+            return gone.length === 0 || `missing from cinematography.js: ${gone.join(', ')}`;
+        },
+    },
+    {
+        id: 'cinematography-unreached',
+        why: 'the gap Phase 4 closes is a control, not a capability',
+        holds() {
+            const UI = src('src/index.html');
+            const hit = ['camera/propose', 'camera/explore', 'cinematography'].filter((k) => UI.includes(k));
+            return hit.length === 0 || `the page already calls: ${hit.join(', ')}`;
+        },
+    },
+    {
+        id: 'four-flags-live-and-unread',
+        why: 'a Phase 4 task exists solely to make them reach the page',
+        holds() {
+            const UI = src('src/index.html');
+            const S = src('backend/routes/app-settings.js');
+            const flags = ['marble_generation', 'cinematography_ai', 'reference_match',
+                'camera_explore', 'world_splats'];
+            const undeclared = flags.filter((f) => !S.includes(f));
+            if (undeclared.length) return `left app-settings: ${undeclared.join(', ')}`;
+            const read = flags.filter((f) => UI.includes(f));
+            return read.length === 0 || `page already reads: ${read.join(', ')}`;
+        },
+    },
+    {
+        /* Was `ios-mic-key-absent`. Pinning a task as UNDONE makes the epic's own
+         * first task turn the suite red, which is backwards — the claim now pins
+         * what ICP-001 delivered, so a regression fails and progress does not. */
+        id: 'ios-mic-key-declared',
+        why: 'ICP-001 delivered it; losing it re-breaks web video capture',
+        holds: () => src('ios/FilmEngine/Info.plist').includes('NSMicrophoneUsageDescription')
+            || 'the microphone key is gone — ICP-001 has been reverted',
+    },
+    {
+        id: 'ios-camera-key-present',
+        why: 'the epic says the intent was recorded and never wired',
+        holds: () => src('ios/FilmEngine/Info.plist').includes('NSCameraUsageDescription')
+            || 'the camera key is gone',
+    },
+    {
+        id: 'upload-controls-lack-capture',
+        why: 'ICP-002 arms them; both must still be unarmed',
+        holds() {
+            const UI = src('src/index.html');
+            const armed = ['mediaUploadControl', 'uploadControl'].filter((n) => {
+                const b = fnBody(UI, n);
+                assert.ok(b, `${n} is not in the page — ICP-002 has no target`);
+                return /capture/.test(b);
+            });
+            return armed.length === 0 || `already armed: ${armed.join(', ')}`;
+        },
+    },
+    {
+        id: 'ios-bundle-parity-enforced',
+        why: 'ICP-002 must re-sync the bundled copy or ios-app.test.js fails',
+        holds: () => has('backend/tests/ios-app.test.js') && has('ios/FilmEngine/Web/index.html')
+            || 'the iOS bundle-parity guard is gone',
+    },
+    {
+        id: 'no-world-import-target',
+        why: 'ICP-004 adds one; it must not already exist',
+        holds() {
+            const { MEDIA_IMPORTS } = require(path.join(REPO, 'backend/lib/media-imports.js'));
+            const ids = Array.isArray(MEDIA_IMPORTS) ? MEDIA_IMPORTS : Object.keys(MEDIA_IMPORTS);
+            const w = ids.filter((k) => /world|capture|scan|pano/i.test(k));
+            return w.length === 0 || `a capture target already exists: ${w.join(', ')}`;
+        },
+    },
+    {
+        id: 'world-route-takes-video',
+        why: 'ICP-005 leans on this already working',
+        holds: () => /video: *body\.video/.test(src('backend/routes/worlds.js'))
+            || 'the world route no longer accepts video',
+    },
+    {
+        id: 'is-pano-not-settable',
+        why: 'ICP-005 makes it settable; it must still be hardcoded',
+        holds: () => !/is_pano/.test(src('backend/routes/worlds.js'))
+            || 'the route already accepts is_pano',
+    },
+    {
+        id: 'marble-video-field-guessed',
+        why: 'ICP-003 exists to verify it before anything is built on it',
+        holds: () => /guess/i.test(src('backend/lib/providers/worldlabs.js'))
+            || 'the guessed-field comment is gone — confirm the contract was verified',
+    },
+    {
+        id: 'no-video-to-video-model',
+        why: 'Phase 3 registers the first one',
+        holds() {
+            const f = ['backend/lib/providers/runway.js', 'backend/lib/mcp-tools.js'];
+            const hit = f.filter((p) => /aleph/i.test(src(p)));
+            return hit.length === 0 || `aleph already appears in: ${hit.join(', ')}`;
+        },
+    },
+    {
+        id: 'runway-registry-is-the-target',
+        why: 'ICP-008 adds a row to it',
+        holds: () => /RUNWAY_VIDEO_MODELS *= *Object\.freeze/.test(src('backend/lib/providers/runway.js'))
+            || 'RUNWAY_VIDEO_MODELS is no longer the registry',
+    },
+    {
+        id: 'frame-handles-available',
+        why: 'the fetchable-URL constraint is solved by it, not by new work',
+        holds: () => has('backend/lib/frame-handles.js') || 'frame-handles.js is gone',
+    },
+    {
+        id: 'meshy-cannot-reach-floor',
+        why: 'ICP-006 moves the provider because of this',
+        holds() {
+            const floor = Number(/LOCATION_MIN_EDGE *= *(\d+)/.exec(src('backend/lib/reference-plates.js'))[1]);
+            const cap = Number(/maxImagePixels: *(\d+)/.exec(src('backend/lib/providers/meshy.js'))[1]);
+            return cap < floor || `meshy now reaches ${cap} against a floor of ${floor}`;
+        },
+    },
+    {
+        id: 'meshy-is-edit-mode',
+        why: 'ICP-007 stops multi-view generation on an edit-mode provider',
+        holds: () => /referenceMode: *'edit'/.test(src('backend/lib/providers/meshy.js'))
+            || 'meshy is no longer edit-mode',
+    },
+    {
+        id: 'body-ceiling',
+        why: 'the size policy in ICP-004 is estimated against it',
+        holds: () => /FILE_LIMIT *= *150 *\* *1024 *\* *1024/.test(src('backend/lib/body-limit.js'))
+            || 'the file limit moved — reprice the capture tasks',
+    },
+    {
+        id: 'single-html-constraint',
+        why: 'why Spark is deferred behind an ADR rather than built',
+        holds() {
+            const t = (JSON.parse(src('gridlight.json')).build || {}).target;
+            return t === 'single-html' || `build target is now ${t}`;
+        },
+    },
+    {
+        id: 'console-suite-is-behaviour-only',
+        why: 'the placement-test constraint exists because of this',
+        holds() {
+            const t = src('backend/tests/world-console.test.js');
+            return !/data-region|column|placement/i.test(t)
+                || 'world-console.test.js now asserts placement — restate the constraint';
+        },
+    },
+];
+
+test('the epic exists', () => {
+    assert.ok(fs.existsSync(EPIC), `no epic at ${path.relative(REPO, EPIC)}`);
+});
+
+test('every section the template mandates is present', () => {
+    const e = epic();
+    const missing = REQUIRED_SECTIONS.filter((s) => !e.includes(s));
+    assert.deepStrictEqual(missing, [], `sections missing: ${missing.join(', ')}`);
+});
+
+test('Current State and Target State are real tables', () => {
+    const e = epic();
+    for (const h of ['Current State', 'Target State']) {
+        const at = e.indexOf(`## ${h}`);
+        assert.notStrictEqual(at, -1, `${h} is not a heading`);
+        const block = e.slice(at, e.indexOf('\n## ', at + 4));
+        const rows = block.split('\n').filter((l) => /^\|/.test(l) && !/^\|\s*-+/.test(l));
+        assert.ok(rows.length >= 6, `${h} has ${rows.length} table rows — too thin to be the real picture`);
+    }
+});
+
+/* The tasks are the epic's OWN registry — read them out of it, never assume a count. */
+test('every declared task is well formed and its dependencies resolve', () => {
+    const e = epic();
+    const phases = [...e.matchAll(/^### Phase \d+: (.+)$/gm)].map((m) => m[1]);
+    assert.ok(phases.length >= 4, `only ${phases.length} phase(s); the ratified sequence has five legs`);
+
+    const rows = [...e.matchAll(/^\|\s*(ICP-\d{3})\s*\|([^|]+)\|([^|]+)\|\s*([SML])\s*\|([^|]+)\|/gm)];
+
+    /*
+     * A malformed row simply stops matching and LEAVES the set rather than
+     * failing it, so every assertion below would then hold over the rows that
+     * happened to parse. Counting ids independently is what closes that.
+     */
+    const declared = [...e.matchAll(/^\|\s*(ICP-\d{3})\s*\|/gm)].map((m) => m[1]);
+    assert.ok(declared.length >= 12, `only ${declared.length} tasks; this is not the whole epic`);
+    assert.strictEqual(rows.length, declared.length,
+        `${declared.length} rows declared, ${rows.length} parse — malformed: `
+        + declared.filter((id) => !rows.some((r) => r[1] === id)).join(', '));
+
+    const ids = rows.map((r) => r[1]);
+    assert.deepStrictEqual(ids, [...new Set(ids)], 'duplicate task ids');
+
+    for (const [, id, title, desc, size, deps] of rows) {
+        assert.ok(title.trim().length > 3, `${id} has no title`);
+        assert.ok(desc.trim().length > 30, `${id} has a description too thin to act on`);
+        assert.ok(['S', 'M', 'L'].includes(size), `${id} has size "${size}"`);
+        const d = deps.trim();
+        assert.ok(d.length > 0, `${id} does not state its dependencies`);
+        if (!/^none$/i.test(d)) {
+            for (const dep of d.split(/[,+]/).map((x) => x.trim()).filter(Boolean)) {
+                assert.ok(ids.includes(dep), `${id} depends on "${dep}", not a task in this epic`);
+            }
+        }
+    }
+});
+
+test('the epic has no dependency cycle', () => {
+    const e = epic();
+    const rows = [...e.matchAll(/^\|\s*(ICP-\d{3})\s*\|[^|]+\|[^|]+\|\s*[SML]\s*\|([^|]+)\|/gm)];
+    const dep = new Map(rows.map((r) => [r[1],
+        /^none$/i.test(r[2].trim()) ? [] : r[2].split(/[,+]/).map((x) => x.trim()).filter(Boolean)]));
+    const state = new Map();
+    const walk = (n, trail) => {
+        if (state.get(n) === 'done') return;
+        assert.notStrictEqual(state.get(n), 'open', `dependency cycle: ${[...trail, n].join(' -> ')}`);
+        state.set(n, 'open');
+        for (const d of dep.get(n) || []) walk(d, [...trail, n]);
+        state.set(n, 'done');
+    };
+    for (const n of dep.keys()) walk(n, []);
+});
+
+test('every milestone the user ratified is covered', () => {
+    const e = epic();
+    const missing = RATIFIED.filter((m) => !m.probe.test(e)).map((m) => m.id);
+    assert.deepStrictEqual(missing, [],
+        `the user approved a five-leg sequence; these legs are absent: ${missing.join(', ')}`);
+});
+
+test('every claim the epic rests on still holds in the code', () => {
+    assert.ok(CLAIMS.length >= 18, `only ${CLAIMS.length} claims; this is not the real set`);
+    const broken = [];
+    for (const c of CLAIMS) {
+        const r = c.holds();
+        if (r !== true) broken.push(`${c.id}: ${r === false ? 'FAILED' : r} (${c.why})`);
+    }
+    assert.deepStrictEqual(broken, [], `the epic has drifted from the code:\n  - ${broken.join('\n  - ')}`);
+});
+
+/* The decisions that shape the work must be STATED, not merely true. */
+test('the epic states the constraints that decide the design', () => {
+    const e = epic();
+    for (const [what, re] of [
+        ['the placement-test rule', /placement/i],
+        ['the two unverified provider contracts', /unverified|guessed/i],
+        ['the base64 body ceiling', /150|112 ?MB/],
+        ['the Marble 100MB video cap', /100 ?MB/],
+        ['the Aleph duration window', /2[–-]30 ?s|2 to 30/],
+        ['the Aleph price', /0\.28/],
+        ['the 7-of-14 region measurement', /7 of 14|7\/14/],
+        ['that capture precedes plates', /capture (?:comes )?(?:first|before)|before plates/i],
+    ]) assert.match(e, re, `the epic never states ${what}`);
+});
+
+/* Questions the user's single selection did NOT settle must survive. */
+test('the unsettled open questions are carried forward', () => {
+    const e = epic();
+    const at = e.indexOf('## Open Questions');
+    assert.notStrictEqual(at, -1, 'no Open Questions section');
+    const block = e.slice(at, e.indexOf('\n## ', at + 4) === -1 ? undefined : e.indexOf('\n## ', at + 4));
+    for (const [what, re] of [
+        ['Marble vs RoomPlan', /RoomPlan/i],
+        ['capture size policy', /size polic|raw[- ]binary/i],
+        ['the Spark ADR', /Spark/i],
+        ['an Aleph cost gate', /cost gate|budget/i],
+        ['the MCP database split', /MCP|FILM_DATA_DIR/],
+    ]) assert.match(block, re, `Open Questions drops ${what}, which the user never settled`);
+});

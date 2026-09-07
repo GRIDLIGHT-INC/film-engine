@@ -113,6 +113,142 @@ test('every Info.plist key the app genuinely needs is present, with its reason',
         'ATS does not permit the local network, so the app cannot reach the Mac running the API');
 });
 
+/* ── registry 3: the privacy keys the app's own capabilities require ──── */
+
+/*
+ * NOT the same question as registry 2. That one is "what will TestFlight
+ * reject"; this one is "what will iOS KILL the app for". A privacy-sensitive
+ * API invoked with no usage-description string terminates the process
+ * immediately — it does not fail, it does not prompt, the app disappears — and
+ * from inside a WKWebView that reads as the web page's upload button being
+ * broken.
+ *
+ * The set is DERIVED from what the bundled page actually asks the picker for,
+ * never typed. A page that stops offering video relaxes the requirement and one
+ * that adds a new medium tightens it, with nothing to remember. That matters
+ * here specifically: the camera key was declared months before anything could
+ * reach the camera, and the microphone key — which VIDEO capture needs, because
+ * recording video records audio — was never added at all.
+ */
+
+/** Every accept type the bundled page can hand a file input, static or built. */
+function acceptTypes() {
+    const page = read(path.join(IOS, 'FilmEngine/Web/index.html'));
+    assert.ok(page, 'no bundled page to derive capabilities from');
+    const types = [];
+    for (const m of page.matchAll(/accept="([^"]*)"/g)) types.push(m[1]);
+    // Controls that build their accept at run time: take the string literals
+    // the builder can produce, or a video-only control is invisible to a scan
+    // of the markup.
+    for (const m of page.matchAll(/accept\s*=\s*media === 'video'\s*\?\s*'([^']+)'\s*:\s*'([^']+)'/g)) {
+        types.push(m[1], m[2]);
+    }
+    assert.ok(types.length >= 5,
+        `the accept scan found ${types.length} — it is broken, and every check below `
+        + 'would then pass over an empty set');
+    return types;
+}
+
+/**
+ * What each medium costs in privacy keys. iOS asks for the microphone on VIDEO
+ * capture as well as audio, because a recorded clip carries sound.
+ */
+const MEDIUM_KEYS = Object.freeze({
+    image: {
+        match: /image\//,
+        keys: {
+            NSCameraUsageDescription: 'the picker offers Take Photo, and the camera kills an app with no reason declared',
+            NSPhotoLibraryUsageDescription: 'the picker offers Photo Library',
+        },
+    },
+    video: {
+        match: /video\/|\.mp4|\.mov/,
+        keys: {
+            NSCameraUsageDescription: 'Record Video is a camera use',
+            NSMicrophoneUsageDescription: 'recording video records audio; without this key iOS terminates the app the moment capture starts',
+        },
+    },
+    audio: {
+        match: /audio\//,
+        keys: {
+            NSMicrophoneUsageDescription: 'an audio file input can offer recording',
+        },
+    },
+});
+
+/** The keys the app must declare, given what its own page offers. */
+function requiredPrivacyKeys() {
+    const types = acceptTypes();
+    const need = {};
+    for (const [, spec] of Object.entries(MEDIUM_KEYS)) {
+        if (!types.some((t) => spec.match.test(t))) continue;
+        for (const [k, why] of Object.entries(spec.keys)) need[k] = need[k] || why;
+    }
+    // Not derivable from an accept type: the app writes to the library itself,
+    // and it talks to a Mac over the LAN.
+    need.NSPhotoLibraryAddUsageDescription = 'the app saves a frame or a clip back to the library';
+    need.NSLocalNetworkUsageDescription = 'iOS 14+ silently drops LAN traffic without it';
+    return need;
+}
+
+/** key -> string, read out of the plist. */
+function plistStrings(plist) {
+    const out = {};
+    for (const m of plist.matchAll(/<key>([^<]+)<\/key>\s*<string>([\s\S]*?)<\/string>/g)) {
+        out[m[1]] = m[2].trim();
+    }
+    return out;
+}
+
+test('every privacy key the app own capabilities require is declared', () => {
+    const plist = read(path.join(IOS, 'FilmEngine/Info.plist'));
+    assert.ok(plist, 'no Info.plist');
+    const need = requiredPrivacyKeys();
+    assert.ok(Object.keys(need).length >= 4,
+        `only ${Object.keys(need).length} keys derived — the derivation is broken`);
+    const missing = Object.entries(need)
+        .filter(([k]) => !plist.includes(`<key>${k}</key>`))
+        .map(([k, why]) => `${k} — ${why}`);
+    assert.deepStrictEqual(missing, [],
+        `the app can reach these capabilities and has not declared them:\n  - ${missing.join('\n  - ')}`);
+});
+
+test('every declared reason is a sentence a person can read', () => {
+    /*
+     * A key with an empty or placeholder string is WORSE than an absent one:
+     * the app still prompts, the prompt is blank, and App Store review rejects
+     * it — so "the key is present" is not the requirement.
+     */
+    const plist = read(path.join(IOS, 'FilmEngine/Info.plist'));
+    const strings = plistStrings(plist);
+    const bad = [];
+    for (const key of Object.keys(requiredPrivacyKeys())) {
+        const s = strings[key];
+        if (s === undefined) continue;                 // absence is the test above
+        if (s.length < 20) bad.push(`${key}: "${s}" is not a reason`);
+        else if (!/\s/.test(s)) bad.push(`${key}: "${s}" is one token, not a sentence`);
+        else if (/^(TODO|TBD|xxx|placeholder)/i.test(s)) bad.push(`${key}: "${s}" is a placeholder`);
+    }
+    assert.deepStrictEqual(bad, [], `these reasons would show the user nothing useful:\n  - ${bad.join('\n  - ')}`);
+});
+
+test('the reasons already written are not disturbed', () => {
+    /*
+     * Regression pin. Adding one key must not rewrite the four that were
+     * already there — each names the specific thing the app does with that
+     * permission, which is what review reads.
+     */
+    const strings = plistStrings(read(path.join(IOS, 'FilmEngine/Info.plist')));
+    assert.match(strings.NSCameraUsageDescription || '', /^Photograph a location or a prop/,
+        'the camera reason changed');
+    assert.match(strings.NSPhotoLibraryUsageDescription || '', /^Choose a photograph/,
+        'the photo library reason changed');
+    assert.match(strings.NSPhotoLibraryAddUsageDescription || '', /^Save a frame or a clip/,
+        'the library-add reason changed');
+    assert.match(strings.NSLocalNetworkUsageDescription || '', /Mac on your network/,
+        'the local network reason changed');
+});
+
 const PROJECT_REQUIRED = Object.freeze({
     PRODUCT_BUNDLE_IDENTIFIER: 'App Store Connect keys the app on it',
     DEVELOPMENT_TEAM: 'an archive cannot be signed without a team',

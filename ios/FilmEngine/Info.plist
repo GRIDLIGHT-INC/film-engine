@@ -52,6 +52,8 @@
     <string>Choose a photograph to use as a reference plate for a character, location or prop.</string>
     <key>NSCameraUsageDescription</key>
     <string>Photograph a location or a prop to use as a reference plate.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Record the sound that comes with a clip you shoot for a shot.</string>
     <key>ITSAppUsesNonExemptEncryption</key><false/>
 </dict>
 </plist>

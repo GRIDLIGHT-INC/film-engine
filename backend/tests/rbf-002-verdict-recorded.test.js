@@ -80,7 +80,19 @@ const OPENNESS_MARKERS = [
 function baselineText(p) {
     const rel = path.relative(REPO, p);
     if (rel.startsWith('..')) return null;      // outside the repo; not in git
-    return execFileSync('git', ['show', `${BASELINE}:${rel}`], { cwd: REPO, encoding: 'utf8' });
+    try {
+        return execFileSync('git', ['show', `${BASELINE}:${rel}`],
+            { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch (_) {
+        /*
+         * The document did not exist at the baseline, so it cannot have CHANGED
+         * since it — which is exactly the `before === null` case every caller
+         * already handles. Throwing here instead made the whole file fail the
+         * moment any new planning doc mentioning video-edit was added, which is
+         * a normal thing to do and not a regression in the thing under test.
+         */
+        return null;
+    }
 }
 
 test('the scan found the documents that asked the question', () => {
