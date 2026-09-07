@@ -284,6 +284,7 @@ film-engine/
 │       ├── is-pano.test.js          # The input Marble calls most accurate, and nothing could ask for it
 │       ├── capture-policy.test.js  # Three ceilings, and the one that actually decides
 │       ├── location-plate-provider.test.js # Reaching the floor is a provider choice, not a setting
+│       ├── view-anchoring.test.js   # An edit cannot move the camera, and the director should learn that first
 │       ├── redo-between-frames-epic.test.js # Every task well formed, every claim still true
 │       ├── epic-scoping-copy.test.js # A scoped epic that is not the epic is worse than no copy
 │       ├── rbf-001-video-edit-probe.test.js # A paid answer nobody can re-read will be paid for twice
@@ -4270,6 +4271,7 @@ node --test backend/tests/world-capture-import.test.js
 node --test backend/tests/is-pano.test.js
 node --test backend/tests/capture-policy.test.js
 node --test backend/tests/location-plate-provider.test.js
+node --test backend/tests/view-anchoring.test.js
 node --test backend/tests/redo-between-frames-epic.test.js
 node --test backend/tests/epic-scoping-copy.test.js
 node --test backend/tests/rbf-001-video-edit-probe.test.js

@@ -176,7 +176,7 @@ function orientationEdge(subject, view) {
  * plausible pictures and a location that does not exist, which is worse than
  * refusing because it looks like it worked.
  */
-function planCompassSweep({ existingViews = [], overwrite = false } = {}) {
+function planCompassSweep({ existingViews = [], overwrite = false, provider = null } = {}) {
     const have = new Set((existingViews || []).map(v => String(v || '').trim().toLowerCase()));
     const anchor = COMPASS_VIEWS.find(v => v.isAnchor);
     // The default, view-less plate IS the anchor side — that is what every
@@ -185,6 +185,13 @@ function planCompassSweep({ existingViews = [], overwrite = false } = {}) {
     if (!hasAnchor) {
         return {
             refused: true,
+            /*
+             * The warning belongs HERE, on the free plan, not only on the
+             * result. By the time the result explains it the plates exist and
+             * were billed — and a director reading a loose match afterwards
+             * concludes the feature does not work.
+             */
+            anchoring: viewAnchoring(provider),
             reason: 'This location has no plate to turn from. Generate its reference plate first — '
                 + 'the four sides are photographed FROM it, so that they are four sides of one place '
                 + 'rather than four different streets.',
@@ -193,7 +200,7 @@ function planCompassSweep({ existingViews = [], overwrite = false } = {}) {
     }
     const sides = COMPASS_VIEWS.filter(v => !v.isAnchor);
     return {
-        refused: false, anchor: anchor.name,
+        refused: false, anchor: anchor.name, anchoring: viewAnchoring(provider),
         generate: sides.filter(v => overwrite || !have.has(v.name)),
         skipped: overwrite ? [] : sides.filter(v => have.has(v.name)),
     };
@@ -546,6 +553,75 @@ function plateProviderFor(kind, projectConfig, project) {
         return { provider: chosen, floor: chain.floor || { needed_pixels: need, moved: null, capable: capableProviders(need) } };
     }
     return { provider: lead, floor: chain.floor };
+}
+
+/**
+ * Can this provider anchor a NEW VIEW on an existing plate?
+ *
+ * Attaching a reference means two different things and the difference is
+ * structural, not a quality setting. A `condition` adapter GENERATES a new
+ * image conditioned on what it is given; an `edit` adapter hands back a
+ * modified copy of it. A new view is precisely what an edit cannot produce —
+ * asked to turn round, it re-photographs what it can see.
+ *
+ * An adapter that declares nothing is read as EDIT. Over-trusting is what
+ * produced four copies of one street: assuming it can turn costs a plate of the
+ * wrong side, while assuming it cannot costs a slightly looser one.
+ */
+function viewAnchoring(provider) {
+    const mode = (provider && provider.referenceMode) || 'edit';
+    if (mode === 'condition') return { can_anchor: true, reference_mode: mode, why: null, can_anchor_on: [] };
+    const able = conditioningProviders();
+    const who = (provider && provider.id) || 'this provider';
+    return {
+        can_anchor: false,
+        reference_mode: mode,
+        why: `${who} edits the picture it is given rather than generating a new one from it, and an `
+            + 'edit cannot move the camera — an anchored view comes back as the same view. This side '
+            + 'will be painted from the location description and the style instead, so it shares the '
+            + 'materials, era and light but not the exact layout. The description is what carries the '
+            + `match: the fuller it is, the closer the sides look.${able.length
+                ? ` Providers that CAN turn the camera from an existing plate: ${able.join(', ')}.`
+                : ' No registered provider can anchor a new view.'}`,
+        can_anchor_on: able,
+    };
+}
+
+/** Registered image providers that generate FROM a reference rather than editing it. */
+function conditioningProviders() {
+    const providers = require('./providers');
+    return providers.list()
+        .filter(a => (a.capabilities || []).includes('image') && a.referenceMode === 'condition')
+        .map(a => a.id);
+}
+
+/**
+ * What a stored view records about how it was made.
+ *
+ * `anchored` is persisted so a plate on disk can say whether it is a turn of
+ * the approved side or a fresh imagining of the same place. Without it three
+ * independently painted rooms look exactly like three sides of one.
+ */
+function viewMetadata({ view, anchored, referenceMode, providerId }) {
+    return {
+        view: view || '',
+        anchored: !!anchored,
+        reference_mode: referenceMode || 'edit',
+        ...(providerId ? { generated_on: providerId } : {}),
+    };
+}
+
+/**
+ * How to describe a stored view's anchoring.
+ *
+ * ABSENCE IS 'unknown', never 'anchored'. Every plate on disk predates this,
+ * and reading a missing field as anchored would silently certify the three
+ * diner sides as matching — the opposite of what they are.
+ */
+function anchoringOf(metadata) {
+    const m = metadata || {};
+    if (typeof m.anchored !== 'boolean') return 'unknown';
+    return m.anchored ? 'anchored' : 'painted';
 }
 
 function canReachFloor(adapter, floorPixels) {
@@ -944,13 +1020,9 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
     const provenance = {
         anchored,
         reference_mode: referenceMode,
-        ...(editCannotTurn ? {
-            anchor_dropped: 'This provider edits the picture it is given rather than generating a new '
-                + 'one from it, and an edit cannot move the camera — an anchored view comes back as the '
-                + 'same view. This side was painted from the description and the style instead, so it '
-                + 'shares the materials, era and light but not the exact layout. The location '
-                + "description is what carries the match: the fuller it is, the closer the sides look.",
-        } : {}),
+        // One sentence, from the same helper the FREE plan warns with — so what
+        // a director is told before paying and after paying cannot differ.
+        ...(editCannotTurn ? { anchor_dropped: viewAnchoring(provider).why } : {}),
     };
 
     if (!result.ok) return { ok: false, error: result.error, style_applied: styleApplied, ...provenance };
@@ -1009,7 +1081,16 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
             : { kind: `${kind}_plate`, style_applied: styleApplied,
                 // Which view of the subject this is. Absent means the original,
                 // view-less plate, which is what every existing project has.
-                ...(view ? { view: String(view).trim() } : {}) }),
+                //
+                // A view also records HOW it was made. Without that, a side
+                // painted from the description looks identical on the shelf to
+                // a side turned from the approved plate — which is why the
+                // diner's three plates read as three sides of one room when
+                // they are three independently imagined rooms.
+                ...(view ? viewMetadata({
+                    view: String(view).trim(), anchored,
+                    referenceMode, providerId: result.provider || provider.id,
+                }) : {}) }),
         result.provider || provider.id || null,
         result.provider_model || null);
 
@@ -1042,6 +1123,7 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
 
 module.exports = {
     LOCATION_MIN_EDGE, sizeIsHonoured, canReachFloor, capableProviders, floorReason,
+    viewAnchoring, conditioningProviders, viewMetadata, anchoringOf,
     locationFloorPixels, plateProviderFor,
     COMPASS_VIEWS, compassView, orientationEdge, planCompassSweep, plateImageSize,
     buildPlateRefinePrompt, REFINE_NEGATIVE,

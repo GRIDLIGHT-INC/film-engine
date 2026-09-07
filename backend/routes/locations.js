@@ -161,11 +161,19 @@ function compassPlan(res, locationId) {
         `SELECT metadata FROM film_assets
           WHERE project_id = ? AND location_id = ?
             AND asset_type IN ('reference_image', 'character_sheet')`).all(location.project_id, locationId);
+    /*
+     * The provider is passed so the FREE plan can say whether these sides will
+     * actually be turns of the approved plate or fresh imaginings of the same
+     * place. Learning that from the result means learning it after paying.
+     */
+    const { plateProviderFor } = require('../lib/reference-plates');
+    const planProvider = plateProviderFor('location', parseProjectConfig(location.project_id), location).provider;
     const plan = planCompassSweep({
         existingViews: rows.map(r => {
             try { return String((JSON.parse(r.metadata || '{}').view) || '').trim(); }
             catch (_) { return ''; }
         }),
+        provider: planProvider,
     });
     /*
      * The prompt each side would be given, through the SAME buildPlatePrompt
@@ -328,6 +336,13 @@ function plateViewsFor(subjectId, kind) {
             view: String(meta.view || '').trim(),
             file_name: r.file_name,
             available,
+            /*
+             * HOW this side was made, so one painted from the description is not
+             * mistaken for a turn of the approved plate. Absence reads as
+             * 'unknown', never as anchored: every plate on disk predates this,
+             * and certifying them as matching is the opposite of what they are.
+             */
+            anchoring: require('../lib/reference-plates').anchoringOf(meta),
             // The provenance the design prints under the plates.
             format: (path.extname(r.file_name || '') || '.png').replace('.', ''),
             bytes: size,
