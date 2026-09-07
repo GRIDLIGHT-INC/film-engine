@@ -122,10 +122,49 @@ own.
 
 The Mac and the phone must be on the same network, and the Mac must stay awake.
 
+## Shooting a plate on the phone
+
+The one thing here that is native rather than web, and the reason is narrow.
+
+The page already has a Shoot button — `uploadControl()` appends an
+`<input type="file" capture="environment">` and WKWebView opens the camera for
+it. That is all a browser offers: **one photograph per tap**, with nothing on
+screen saying which view you are on.
+
+A reference plate is usually not one picture. A character turnaround is front,
+left, right and back — `VIEW_RANK` in `backend/lib/plate-views.js` ranks exactly
+those, and the front one is attached to every frame that character appears in.
+Walking four through a file input means four trips out to the page and back,
+hunting for the next control each time.
+
+So `PlateCamera.swift` walks them in one pass, with the subject and the view on
+screen and a `2 of 4`, uploading each as it goes.
+
+**The page still decides everything.** It posts the subject, the views and the
+import route; native opens the camera and posts back to *that same route* with
+the same body the web path sends (`{ data, view, name }`). Native constructs no
+URL and knows no subject — deciding in two places is the second surface this
+whole design exists to avoid, and `backend/tests/ios-app.test.js` holds both
+sides to it: the handler name, the callback name, the body, and the fact that
+the browser fallback is still there.
+
+Notes worth keeping:
+
+- **A simulator has no rear camera.** `AVCaptureDevice.default` returns nil and
+  the session says so in words. A black screen with a dead shutter is
+  indistinguishable from a broken app.
+- **A failed upload keeps the photograph** and names the view it belonged to.
+  Discarding it would make a director shoot it again.
+- **Skip is offered**, because a director may not be able to reach the far side
+  of a thing and refusing to move on would strand the session on one view.
+- JPEG at 0.9, not PNG: a 12-megapixel PNG is tens of megabytes, and uploads
+  travel base64 — a third larger again — over a phone's network.
+
 ## Known limit before App Store review
 
 TestFlight accepts this as it is. **App Store review guideline 4.2** can reject a
-thin web wrapper, and the honest answer is that the native surface is currently
-the setup screen. If it goes to public release rather than testing, the things
-worth adding first are the ones a browser cannot do: camera capture straight
-onto a reference plate, share-sheet export of a cut, and background upload.
+thin web wrapper. The native surface is now the setup screen **and the guided
+plate camera** above, which is a real capability rather than chrome. If it goes
+to public release rather than testing, the next things worth adding are the
+other two a browser cannot do: share-sheet export of a cut, and background
+upload.

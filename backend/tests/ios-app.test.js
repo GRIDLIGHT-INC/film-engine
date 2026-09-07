@@ -295,3 +295,141 @@ test('it BUILDS', { timeout: 600000 }, () => {
     ], { encoding: 'utf8', cwd: IOS, stdio: ['ignore', 'pipe', 'pipe'], timeout: 570000 });
     assert.match(out, /BUILD SUCCEEDED/, 'the iOS app does not build');
 });
+
+/* ── the native plate camera ─────────────────────────────────────────────
+ *
+ * The one capability that is native rather than web, and the only place the
+ * two surfaces have to agree on anything. They agree on TWO NAMES — the
+ * message handler and the callback — and a mismatch is a Shoot button that
+ * posts into nothing, which is indistinguishable from the device having no
+ * camera. So both are derived from the Swift and required in the page.
+ */
+
+const PLATE_CAMERA = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'ios', 'FilmEngine', 'PlateCamera.swift'), 'utf8');
+const CONTENT_VIEW = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'ios', 'FilmEngine', 'ContentView.swift'), 'utf8');
+/* The page, read the way the rest of this file reads it. */
+const UI = fs.readFileSync(SPA, 'utf8');
+
+/** The bridge names, read from the Swift that declares them. */
+function bridgeNames() {
+    const name = /static let name = "([A-Za-z]+)"/.exec(CONTENT_VIEW);
+    const cb = /static let callback = "([A-Za-z]+)"/.exec(CONTENT_VIEW);
+    assert.ok(name && cb, 'PlateCameraBridge no longer declares both names; re-derive this');
+    return { name: name[1], callback: cb[1] };
+}
+
+test('the page posts to the handler the app actually registers', () => {
+    const { name } = bridgeNames();
+    assert.ok(CONTENT_VIEW.includes('userContentController.add(context.coordinator, name: PlateCameraBridge.name)'),
+        'the web view registers no message handler, so nothing the page posts is received');
+    assert.ok(UI.includes(`'${name}'`) || UI.includes(`"${name}"`),
+        `the page never names "${name}", so its Shoot button posts into nothing`);
+    assert.match(UI, /messageHandlers\[PLATE_CAMERA\]|messageHandlers\.plateCamera/,
+        'the page does not reach the message handler at all');
+});
+
+test('the app calls back into a function the page actually defines', () => {
+    const { callback } = bridgeNames();
+    assert.ok(UI.includes(`window.${callback} = function`),
+        `the app calls window.${callback}() and the page defines no such function, so a shot `
+        + 'uploads and nothing on screen ever says so');
+});
+
+test('the page decides the route; the app never builds one', () => {
+    /*
+     * The whole architecture in one check. Native constructs no import URL —
+     * it appends what the page sent to the engine base. A second place that
+     * knows where a plate goes is the second surface this design exists to
+     * avoid.
+     */
+    assert.match(PLATE_CAMERA, /\\\(base\)\/film\\\(request\.url\)/,
+        'the app builds its own path instead of using the one the page sent');
+    /*
+     * COMMENTS STRIPPED. The doc comment explaining that the page owns the
+     * route names one as an EXAMPLE, so the first version of this check
+     * reported the file for describing the very rule it follows. Fifth comment
+     * false positive in this run of work; the rule is the same every time —
+     * match the thing, not a description of it.
+     */
+    const CODE = PLATE_CAMERA.split('\n')
+        .filter(l => !/^\s*(\/\/|\/\*|\*)/.test(l)).join('\n');
+    for (const invented of ['/refsheet/import', '/plate/import', 'characters/', 'locations/']) {
+        assert.ok(!CODE.includes(invented),
+            `the app hardcodes "${invented}" — the route must come from the page`);
+    }
+});
+
+test('the app uploads the SAME body the web path posts', () => {
+    /*
+     * uploadReferenceImage posts { data, name, ...extra } and the import route
+     * reads body.data / body.view / body.name. A native path that sent a
+     * different shape would be a second upload contract to keep in step.
+     */
+    for (const field of ['"data"', '"view"', '"name"']) {
+        assert.ok(PLATE_CAMERA.includes(field),
+            `the native upload omits ${field}, which the import route reads`);
+    }
+    assert.match(PLATE_CAMERA, /data:image\/jpeg;base64,/,
+        'the native upload does not send a data URI, which is what the route decodes');
+});
+
+test('a device with no camera says so, rather than showing a black screen', () => {
+    /*
+     * The simulator has none, and AVCaptureDevice.default returns nil there. A
+     * black screen with a shutter that does nothing is indistinguishable from a
+     * broken app — the same failure the GLB importer paid for when a refusal
+     * went to the status bar and looked like nothing happening.
+     */
+    assert.match(PLATE_CAMERA, /case unavailable\(String\)/,
+        'the camera model has no state for being unavailable');
+    assert.match(PLATE_CAMERA, /no rear camera/i,
+        'nothing explains a missing camera to the person holding the phone');
+    assert.match(PLATE_CAMERA, /Settings → Film Engine → Camera/,
+        'a denied permission does not say where to turn it back on');
+});
+
+test('a failed upload keeps the photograph and names the view', () => {
+    // Losing a picture because an upload failed makes a director shoot it
+    // twice, and "3 of 4 uploaded" sends them looking for which one is missing.
+    assert.match(PLATE_CAMERA, /result\.failed\[view\.key\] = error\.localizedDescription/,
+        'a failed upload is not recorded against the view it belongs to');
+    assert.ok(!/pending = nil/.test(PLATE_CAMERA.slice(PLATE_CAMERA.indexOf('catch {'),
+                                                       PLATE_CAMERA.indexOf('catch {') + 400)),
+        'the shot is discarded when its upload fails, so it has to be taken again');
+    assert.match(UI, /failed\.map\(k =>/,
+        'the page reports a count rather than naming which views failed');
+});
+
+test('the camera is only offered where the app can actually provide it', () => {
+    /*
+     * In a browser there is no bridge and the file input must remain — a page
+     * that offered a native button in Safari would have a Shoot control that
+     * does nothing at all.
+     */
+    const at = UI.indexOf('function uploadControl(');
+    const body = UI.slice(at, UI.indexOf('\n    }', at));
+    assert.match(body, /nativeCamera\(\)\s*\n?\s*\?/,
+        'uploadControl does not choose between the native session and the file input');
+    assert.match(body, /shootControl\(/,
+        'the file-input fallback is gone, so Shoot does nothing in a browser');
+});
+
+test('a character turnaround walks the views the engine ranks', () => {
+    /*
+     * The reason this is native at all. The set is the engine's own: a plate
+     * stored under a view the gatherer does not rank is a picture no shot will
+     * ever choose.
+     */
+    const { VIEW_RANK } = require('../lib/plate-views');
+    const at = UI.indexOf('function plateViewsFor(');
+    const body = UI.slice(at, UI.indexOf('\n    }', at));
+    const offered = [...body.matchAll(/key: '([a-z-_]+)'/g)].map(m => m[1])
+        .filter(k => k !== '__default__');
+    assert.ok(offered.length >= 3, `only ${offered.length} views walked; a turnaround is more`);
+    const unknown = offered.filter(k => !(k in VIEW_RANK));
+    assert.deepStrictEqual(unknown, [],
+        `these views are shot and the engine ranks none of them, so no shot can choose them: `
+        + unknown.join(', '));
+});

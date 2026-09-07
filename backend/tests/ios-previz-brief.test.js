@@ -243,10 +243,30 @@ const CLAIMS = [
                 }
                 return null;
             };
-            const parts = ['esc', 'captureFor', 'shootControl', 'uploadControl', 'mediaUploadControl'].map(grab);
-            if (parts.some((x) => !x)) return 'an upload builder or its capture helper is gone';
-            // eslint-disable-next-line no-new-func
-            const b = new Function(`${parts.join('\n')}; return { uploadControl, mediaUploadControl };`)();
+            /*
+             * The named five are a STARTING POINT; anything else they reach
+             * for is resolved by following the ReferenceError. A fixed list is
+             * correct only until the page gains one more helper, and then this
+             * claim fails as "the builder is gone" — blaming the page for the
+             * extraction. Four files in this codebase learned it at once.
+             */
+            const need = new Set(['esc', 'captureFor', 'shootControl', 'uploadControl',
+                                  'mediaUploadControl']);
+            let b = null;
+            for (let i = 0; i < 40; i++) {
+                const parts = [...need].map(grab);
+                if (parts.some((x) => !x)) return 'an upload builder or its capture helper is gone';
+                try {
+                    // eslint-disable-next-line no-new-func
+                    b = new Function(`${parts.join('\n')}; return { uploadControl, mediaUploadControl };`)();
+                    b.uploadControl('character-plate', '/x', {});
+                    break;
+                } catch (err) {
+                    const m = /(\w+) is not defined/.exec(err.message);
+                    if (m && grab(m[1]) && !need.has(m[1])) { need.add(m[1]); continue; }
+                    return `the upload builder could not be run: ${err.message}`;
+                }
+            }
             const armed = (html) => /<input\b[^>]*\bcapture=/.test(html)
                 && /<input\b(?![^>]*\bcapture=)[^>]*>/.test(html);
             if (!armed(b.uploadControl('character-plate', '/x', {}))) {

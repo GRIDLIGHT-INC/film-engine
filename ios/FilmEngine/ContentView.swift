@@ -109,11 +109,25 @@ struct SetupView: View {
 struct WebAppView: UIViewRepresentable {
     let serverURL: String
 
+    func makeCoordinator() -> Coordinator { Coordinator(serverURL: serverURL) }
+
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(BundleSchemeHandler(), forURLScheme: BundleSchemeHandler.scheme)
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+
+        /*
+         * THE ONE NATIVE CAPABILITY, and the page asks for it.
+         *
+         * The page decides the subject, the views and the import route and
+         * posts them in; native opens the camera and uploads through that same
+         * route. Choosing in two places is the second surface this design
+         * exists to avoid, so the only thing that lives here is the part a
+         * browser genuinely cannot do — walking a turnaround in one session
+         * with the view on screen.
+         */
+        config.userContentController.add(context.coordinator, name: PlateCameraBridge.name)
 
         // Tell the web app where the engine is BEFORE it boots. Its own
         // `defaultApiBase()` returns '' off a non-http origin precisely so this
@@ -125,6 +139,7 @@ struct WebAppView: UIViewRepresentable {
         config.userContentController.addUserScript(inject)
 
         let view = WKWebView(frame: .zero, configuration: config)
+        context.coordinator.webView = view
         view.isOpaque = false
         view.backgroundColor = .black
         view.scrollView.backgroundColor = .black
@@ -135,6 +150,71 @@ struct WebAppView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: WKWebView, context: Context) { }
+
+    /// Receives the page's request to shoot, presents the camera, and hands the
+    /// outcome straight back to the page — which owns every decision around it.
+    @MainActor
+    final class Coordinator: NSObject, WKScriptMessageHandler {
+        weak var webView: WKWebView?
+        private let serverURL: String
+        private var presented: UIViewController?
+
+        init(serverURL: String) { self.serverURL = serverURL }
+
+        func userContentController(_ controller: WKUserContentController,
+                                   didReceive message: WKScriptMessage) {
+            guard message.name == PlateCameraBridge.name,
+                  let body = message.body as? String,
+                  let data = body.data(using: .utf8),
+                  var request = try? JSONDecoder().decode(PlateCaptureRequest.self, from: data)
+            else {
+                report(PlateCaptureResult(cancelled: true))
+                return
+            }
+            // The page may not know the engine's address — the app injected it.
+            if request.apiBase.isEmpty { request = request.withBase(serverURL) }
+            present(request)
+        }
+
+        private func present(_ request: PlateCaptureRequest) {
+            guard let host = webView?.window?.rootViewController else { return }
+            let sheet = UIHostingController(rootView: PlateCameraView(request: request) { [weak self] result in
+                self?.presented?.dismiss(animated: true)
+                self?.presented = nil
+                self?.report(result)
+            })
+            sheet.modalPresentationStyle = .fullScreen
+            presented = sheet
+            (host.presentedViewController ?? host).present(sheet, animated: true)
+        }
+
+        /// Back to the page, which refreshes whatever the plate belongs to. A
+        /// capture the page never hears about is a picture the director cannot
+        /// see landed.
+        private func report(_ result: PlateCaptureResult) {
+            let json = (try? JSONEncoder().encode(result)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+            let escaped = json.replacingOccurrences(of: "\\", with: "\\\\")
+                              .replacingOccurrences(of: "'", with: "\\'")
+            webView?.evaluateJavaScript(
+                "window.\(PlateCameraBridge.callback) && window.\(PlateCameraBridge.callback)('\(escaped)')")
+        }
+    }
+}
+
+/// The two names the page and the app must agree on, said once.
+///
+/// They are checked against src/index.html by backend/tests/ios-app.test.js:
+/// a bridge the page posts to under a different name is a Shoot button that
+/// silently does nothing, which is indistinguishable from no camera.
+enum PlateCameraBridge {
+    static let name = "plateCamera"
+    static let callback = "plateCameraDone"
+}
+
+extension PlateCaptureRequest {
+    func withBase(_ base: String) -> PlateCaptureRequest {
+        PlateCaptureRequest(url: url, apiBase: base, subject: subject, views: views)
+    }
 }
 
 /// Serves the app's bundled Web/ folder over `film-engine://`.

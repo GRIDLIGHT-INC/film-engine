@@ -46,10 +46,31 @@ function fnSource(name) {
 
 /** Run the page's builders in isolation, with the few helpers they reach for. */
 function builders() {
-    const src = ['esc', 'captureFor', 'shootControl', 'uploadControl', 'mediaUploadControl']
-        .map((n) => (UI.includes(`function ${n}(`) ? fnSource(n) : ''))
-        .filter(Boolean)
-        .join('\n');
+    /*
+     * The named five are a STARTING POINT; anything else they reach for is
+     * resolved by following the ReferenceError.
+     *
+     * A hand-written list is only correct until the page gains one more
+     * helper — and then it fails as "no capture input", blaming the control
+     * rather than the extraction. That has now happened three times in this
+     * codebase (world-console's build(), the console renderer's two copies,
+     * and here), so this follows the same rule they settled on.
+     */
+    const need = new Set(['esc', 'captureFor', 'shootControl', 'uploadControl', 'mediaUploadControl']);
+    let src = '';
+    for (let i = 0; i < 40; i++) {
+        src = [...need].map((n) => (UI.includes(`function ${n}(`) ? fnSource(n) : ''))
+            .filter(Boolean).join('\n');
+        try {
+            // eslint-disable-next-line no-new-func
+            new Function(`${src}\nreturn uploadControl('character-plate', '/x', {});`)();
+            break;
+        } catch (err) {
+            const m = /(\w+) is not defined/.exec(err.message);
+            if (m && UI.includes(`function ${m[1]}(`) && !need.has(m[1])) { need.add(m[1]); continue; }
+            break;   // not a missing helper; let the real assertion report it
+        }
+    }
     // eslint-disable-next-line no-new-func
     return new Function(`${src}
         return {

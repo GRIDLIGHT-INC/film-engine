@@ -29345,6 +29345,84 @@ ${fountainText.slice(0, 50000)}`;
      * is simply ignored and the control behaves as another file picker, which
      * is why it is safe to render unconditionally on the media surfaces.
      */
+    /* ── SHOOTING A PLATE ON THE PHONE ──────────────────────────────────────
+     *
+     * In a browser, Shoot is `<input type="file" capture="environment">` and
+     * that is all a browser offers: one photograph per tap, with nothing on
+     * screen saying which view you are on.
+     *
+     * In the iOS app a native bridge is available, and it is worth having for
+     * exactly one reason — a turnaround is FOUR views, and the engine attaches
+     * the front one to every frame the character appears in. Walking them
+     * through a file input means four trips out to this page and back, hunting
+     * for the next control each time.
+     *
+     * THE PAGE STILL DECIDES EVERYTHING. It sends the subject, the views and
+     * the import route; native opens the camera and posts back to that same
+     * route. Deciding in two places is the second surface the iOS design
+     * exists to avoid.
+     */
+    const PLATE_CAMERA = 'plateCamera';
+
+    function nativeCamera() {
+        try {
+            return (window.webkit && window.webkit.messageHandlers
+                && window.webkit.messageHandlers[PLATE_CAMERA]) || null;
+        } catch (_) { return null; }   /* a sandbox that throws on access is "no" */
+    }
+
+    /*
+     * The views to walk for a target. A character is a turnaround; everything
+     * else is one plate, and `default` is the view-less name the engine already
+     * stores a subject's headline plate under.
+     */
+    function plateViewsFor(target) {
+        if (target === 'character-plate') {
+            return [
+                { key: 'front',      label: 'Front' },
+                { key: 'side-left',  label: 'Left side' },
+                { key: 'side-right', label: 'Right side' },
+                { key: 'back',       label: 'Back' },
+            ];
+        }
+        return [{ key: '__default__', label: 'Plate' }];
+    }
+
+    let PLATE_CAMERA_AFTER = null;
+
+    /** Ask the app to shoot. Returns immediately; the app calls back. */
+    function shootPlate(target, url, subject, after) {
+        const bridge = nativeCamera();
+        if (!bridge) return;
+        PLATE_CAMERA_AFTER = after || null;
+        setStatus('Opening the camera\u2026');
+        bridge.postMessage(JSON.stringify({
+            url, apiBase: '', subject: subject || 'this subject',
+            views: plateViewsFor(target),
+        }));
+    }
+
+    /*
+     * The app's answer. NAMED PER VIEW rather than counted: "3 of 4 uploaded"
+     * sends a director looking for which one is missing.
+     */
+    window.plateCameraDone = function (payload) {
+        let r = {};
+        try { r = JSON.parse(payload || '{}'); } catch (_) { r = {}; }
+        const failed = Object.keys(r.failed || {});
+        if (r.cancelled && !(r.uploaded || []).length) setStatus('Nothing was shot.');
+        else if (failed.length) {
+            setStatus(`Shot ${(r.uploaded || []).length}. Not uploaded: `
+                + failed.map(k => `${k} (${r.failed[k]})`).join('; '));
+        } else if ((r.uploaded || []).length) {
+            setStatus(`${r.uploaded.join(', ')} shot and uploaded. Every shot referencing this `
+                + 'subject uses them now.');
+        }
+        const after = PLATE_CAMERA_AFTER;
+        PLATE_CAMERA_AFTER = null;
+        if (after && typeof window[after] === 'function') window[after]();
+    };
+
     function shootControl(accept, targetAttr, onchange, opts) {
         const capture = captureFor(accept);
         if (capture === null) return '';
@@ -29447,11 +29525,30 @@ ${fountainText.slice(0, 50000)}`;
                            accept="image/png,image/jpeg,.png,.jpg,.jpeg" style="display:none"
                            onclick="event.stopPropagation();"
                            onchange="uploadReferenceImage(event, '${target}', '${url}', ${JSON.stringify(o.extra || {}).replace(/"/g, '&quot;')}, '${o.after || ''}')">
-                </label>${shootControl(
-                    'image/png,image/jpeg,.png,.jpg,.jpeg',
-                    `data-import-target="${target}"`,
-                    `uploadReferenceImage(event, '${target}', '${url}', ${JSON.stringify(o.extra || {}).replace(/"/g, '&quot;')}, '${o.after || ''}')`,
-                    o)}`;
+                </label>${nativeCamera()
+                    ? plateShootButton(target, url, o)
+                    : shootControl(
+                        'image/png,image/jpeg,.png,.jpg,.jpeg',
+                        `data-import-target="${target}"`,
+                        `uploadReferenceImage(event, '${target}', '${url}', ${JSON.stringify(o.extra || {}).replace(/"/g, '&quot;')}, '${o.after || ''}')`,
+                        o)}`;
+    }
+
+    /*
+     * The native affordance, and it says what it will do. "Shoot" on a
+     * character opens a four-view walk, not one photograph — a button that
+     * takes longer than you expected is worse than one that said so.
+     */
+    function plateShootButton(target, url, o) {
+        const views = plateViewsFor(target);
+        const many = views.length > 1;
+        const label = (o && o.shootLabel) || (many ? `Shoot ${views.length} views` : 'Shoot');
+        const subject = (o && o.subject) || '';
+        return `<button class="btn btn-secondary btn-sm" style="margin:0;"
+                        title="${esc(many
+                            ? 'Walk ' + views.map(v => v.label.toLowerCase()).join(', ') + ' in one pass'
+                            : 'Shoot it now with this device\u2019s camera')}"
+                        onclick="event.stopPropagation();shootPlate('${target}', '${url}', ${jsAttr(subject)}, '${o.after || ''}')">${esc(label)}</button>`;
     }
 
     /**

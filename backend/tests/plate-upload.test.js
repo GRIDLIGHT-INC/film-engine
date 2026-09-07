@@ -284,9 +284,31 @@ test('the page offers an upload wherever it offers a generate', () => {
         }
         throw new Error(`${name} does not close`);
     };
-    const deps = ['captureFor', 'shootControl'].map(helper).join('\n');
-    // eslint-disable-next-line no-new-func
-    const uploadControl = new Function('esc', `${deps}\n${body}; return uploadControl;`)(x => String(x));
+    /*
+     * The two named are a STARTING POINT; anything else uploadControl reaches
+     * for is resolved by following the ReferenceError. A hand-written list is
+     * correct only until the page gains one more helper, and then it fails as
+     * "the builder cannot produce a control" — blaming the builder rather than
+     * the extraction. The fourth list in this codebase to learn it.
+     */
+    const need = new Set(['captureFor', 'shootControl']);
+    let uploadControl = null;
+    for (let i = 0; i < 40; i++) {
+        const deps = [...need].map(helper).join('\n');
+        try {
+            // eslint-disable-next-line no-new-func
+            uploadControl = new Function('esc', `${deps}\n${body}; return uploadControl;`)(x => String(x));
+            uploadControl('character-plate', '/x', {});
+            break;
+        } catch (err) {
+            const m = /(\w+) is not defined/.exec(err.message);
+            if (m && new RegExp(`function ${m[1]}\\(`).test(html) && !need.has(m[1])) {
+                need.add(m[1]);
+                continue;
+            }
+            throw err;
+        }
+    }
 
     for (const kind of Object.keys(KIND_SOURCE).filter(k => KIND_SOURCE[k] !== 'previs')) {
         const target = IMPORTS[kind].target;
