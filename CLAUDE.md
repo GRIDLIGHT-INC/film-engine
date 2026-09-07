@@ -277,6 +277,7 @@ film-engine/
 │       ├── explore-shot-panel.test.js # Six cameras, one world, and a comparison the page does not compute
 │       ├── console-regions.test.js # Every region the design draws, fed from real state rather than demo data
 │       ├── console-layout.test.js # The handoff's own geometry, computed rather than grepped
+│       ├── adr-spark.test.js     # A decision record that fails when the facts it rests on change
 │       ├── cinematography.test.js  # The model directs; the engine hands over facts and refuses the impossible
 │       ├── world-timeline.test.js  # A surface over the move model that already existed, driving no second one
 │       ├── generation-plate.test.js # The plate leads, travels as bytes, and spends nothing
@@ -559,7 +560,7 @@ film-engine/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
 │   ├── api-film.md         # Full API reference
 │   ├── plans/              # Design research (previs camera, style book)
-│   └── adr/                # Architecture decision records (5 ADRs)
+│   └── adr/                # Architecture decision records (6 ADRs)
 ├── src/
 │   ├── index.html          # Frontend SPA
 │   └── app.json            # App config
@@ -4311,6 +4312,7 @@ node --test backend/tests/direct-the-shot-panel.test.js
 node --test backend/tests/explore-shot-panel.test.js
 node --test backend/tests/console-regions.test.js
 node --test backend/tests/console-layout.test.js
+node --test backend/tests/adr-spark.test.js
 node --test backend/tests/seedance-video-edit-retired.test.js
 node --test backend/tests/repair-bridge.test.js
 node --test backend/tests/editor-transport.test.js
