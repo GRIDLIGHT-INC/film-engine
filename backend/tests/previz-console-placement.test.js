@@ -177,7 +177,6 @@ function locate(region, html) {
  */
 const NOT_BUILT = {
     'left-rail': 'ICP-020 builds the rail of shots',
-    'explore-shot': 'ICP-019 builds it against camera_explore_brief and compareCameras',
     'spatial-world': 'ICP-020 builds it; the splat viewport itself is deferred to ICP-022',
     'camera-operate': 'ICP-020 builds the six-axis nudge controls',
     'blocking': 'ICP-020 builds it from the shot\'s real staged subjects',

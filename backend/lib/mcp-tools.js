@@ -511,6 +511,27 @@ const PRODUCTION_TOOLS = [
         schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
     },
     {
+        name: 'camera_compare',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/direct/compare`,
+        body: a => ({ a: a.a, b: a.b, a_name: a.a_name, b_name: a.b_name }),
+        description:
+            'Two cameras on the same axes, each computed the same way \u2014 lens, height, '
+            + 'distance, tilt and occupancy. FREE: it reads two cameras and does arithmetic, and '
+            + 'nothing is generated or written. '
+            + 'Use it after camera_propose or camera_explore_accept to say which of two candidates '
+            + 'is the shot, in numbers rather than by eye. Both sides may carry their own blocking '
+            + 'and occupancy; a bare camera is accepted too, so two proposals can be compared '
+            + 'without reconstructing anything.',
+        schema: {
+            shot_id: { type: 'string' },
+            a: { type: 'object', description: 'The first camera, or { camera, blocking, occupancy }.' },
+            b: { type: 'object', description: 'The second.' },
+            a_name: { type: 'string', description: 'What to call the first column.' },
+            b_name: { type: 'string', description: 'What to call the second.' },
+        }, required: ['shot_id', 'a', 'b'],
+    },
+    {
         name: 'camera_explore_accept',
         handler: handleWorlds, method: 'POST',
         path: a => `/film/shots/${a.shot_id}/direct/explore`,

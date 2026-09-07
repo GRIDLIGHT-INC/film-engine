@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**267 tools, 68 families.** Everything the app can do, you can ask for in a
+**268 tools, 68 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -639,7 +639,7 @@ rather than stale — you cannot re-render against geometry that no longer exist
 ### Directing the shot
 
 `cinematography_brief` · `camera_propose` · `camera_explore_brief` ·
-`camera_explore_accept`
+`camera_explore_accept` · `camera_compare`
 
 All four are free, and none of them calls a model — **you are the model**. The
 brief hands you the geometry and deliberately returns no answer: the camera as

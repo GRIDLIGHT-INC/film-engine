@@ -4789,6 +4789,34 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 /* The height cap is applied to the WIDTH inline, derived from the ratio.
  * `max-height` here clamps the height and the box stops conforming to
  * aspect-ratio — the frame silently stops being the shape of the film. */
+/* ── Explore Shot ─ six tiles, and a three-column comparison ─────────────
+   A class the console renders with no rule lays out in normal flow and
+   overprints its neighbour; reference-match.test.js holds every we-* class
+   the console emits to having one. */
+.we-tiles { display:grid; grid-template-columns:repeat(6,1fr); gap:9px; margin:10px 0; }
+.we-tile { display:block; text-align:left; padding:0; border-radius:7px; overflow:hidden;
+  background:#0b0b0b; border:1px solid rgba(255,255,255,0.08); cursor:pointer; color:inherit; }
+.we-tile:hover { border-color:rgba(255,255,255,0.28); }
+.we-tile.pick-a { border-color:rgba(95,211,196,0.75); box-shadow:0 0 0 1px rgba(95,211,196,0.25); }
+.we-tile.pick-b { border-color:rgba(224,172,82,0.75); box-shadow:0 0 0 1px rgba(224,172,82,0.25); }
+.we-tile.bad { opacity:0.55; border-style:dashed; }
+.we-tile-thumb { display:block; position:relative; height:92px; background:
+  repeating-linear-gradient(45deg,#0d0d0d 0 6px,rgba(255,255,255,0.03) 6px 12px);
+  border-bottom:1px solid rgba(255,255,255,0.08); }
+.we-tile-key { position:absolute; top:7px; left:8px; font-size:11px; letter-spacing:0.16em;
+  color:#5fd3c4; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+.we-tile-body { display:block; padding:10px 11px 12px; }
+.we-tile-name { display:block; font-size:13px; color:#ecece9; }
+.we-tile-intent { display:block; font-size:12px; color:#8f8f8a; }
+.we-tile-spec { display:block; font-size:11px; letter-spacing:0.08em; color:#a5a5a0;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+.we-row3 { display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:9px 18px; padding:4px 0;
+  font-size:12px; }
+.we-row3 span:first-child { color:#8f8f8a; }
+.we-row3 span:not(:first-child) { font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  color:#ecece9; }
+.we-row3.head span:nth-child(2) { color:#5fd3c4; letter-spacing:0.14em; }
+.we-row3.head span:nth-child(3) { color:#e0ac52; letter-spacing:0.14em; }
 /* ── Direct the Shot ─ geometry from the design handoff's own spec ───────
    Body flex 1.15 / 1, the right side separated by a hairline, chips wrapping
    at 6px. A class the console renders with no rule is the `.cs-up` failure:
@@ -17675,6 +17703,219 @@ THREE.GLTFLoader = GLTFLoader;
             ${r && r.applied && !r.error ? '<p class="we-hint">Applied to the shot.</p>' : ''}`;
     }
 
+    /* ── EXPLORE SHOT ───────────────────────────────────────────────────────
+     *
+     * Six cameras in ONE world from ONE blocking, comparable side by side.
+     * The categories are the engine's own EXPLORE_CATEGORIES, fetched with the
+     * brief; the CAMERAS come from the connected model and are validated by
+     * the route, exactly as Direct the Shot works — the design's tile table is
+     * demo data for the third time and baking it in would give every film the
+     * same six angles.
+     *
+     * A CANDIDATE THAT CANNOT BE SHOT IS NAMED. acceptCandidates drops it and
+     * says why; swallowing that gives a director six asked for and four shown
+     * with nothing saying the other two were impossible.
+     */
+    const EXPLORE = { brief: null, cats: [], accepted: [], rejected: [], shortfall: 0,
+                      compare: false, picks: [], result: null };
+
+    function worldExploreTilesHtml() {
+        const cats = EXPLORE.cats.length ? EXPLORE.cats : WORLD_EXPLORE_FALLBACK;
+        return cats.map((c) => {
+            const got = EXPLORE.accepted.find(a => a.key === c.key);
+            const bad = EXPLORE.rejected.find(r => r.key === c.key);
+            const cam = got && got.camera;
+            const picked = EXPLORE.picks.indexOf(c.key);
+            const cls = picked === 0 ? ' pick-a' : picked === 1 ? ' pick-b' : '';
+            const spec = cam
+                ? `${cam.focalMm != null ? cam.focalMm + 'mm' : ''}`
+                  + `${cam.position ? ' · ' + Number(cam.position[1]).toFixed(2) + 'm' : ''}`
+                : (bad ? 'cannot be shot' : 'no camera yet');
+            return `
+                  <button class="we-tile${cls}${bad ? ' bad' : ''}"
+                          onclick="worldExploreTap('${c.key}')">
+                    <span class="we-tile-thumb"><span class="we-tile-key">${esc(c.key)}</span></span>
+                    <span class="we-tile-body">
+                      <span class="we-tile-name">${esc(c.name)}</span>
+                      <span class="we-tile-intent">${esc(c.intent)}</span>
+                      <span class="we-tile-spec">${esc(spec)}</span>
+                    </span>
+                  </button>`;
+        }).join('');
+    }
+
+    /* The engine's six, mirrored only for the first paint before a brief has
+     * been fetched. The BRIEF is the source. */
+    const WORLD_EXPLORE_FALLBACK = [
+        { key: 'A', name: 'Neutral Wide',          intent: 'Orientation / geography' },
+        { key: 'B', name: 'Heroic Low',            intent: 'Power / dominance' },
+        { key: 'C', name: 'Long Lens Compression', intent: 'Claustrophobic / observational' },
+        { key: 'D', name: 'Extreme Foreground',    intent: 'Scale / threat' },
+        { key: 'E', name: 'Over the Shoulder',     intent: 'Alignment / complicity' },
+        { key: 'F', name: 'Dutch / Unstable',      intent: 'Disorientation / panic' },
+    ];
+
+    function worldExplorePanelHtml() {
+        return `
+              <div class="we-panel" data-region="explore-shot">
+                <div class="we-panel-head">
+                  <span class="we-label">EXPLORE SHOT — SIX CAMERAS, ONE WORLD</span>
+                  <button class="we-btn${EXPLORE.compare ? ' we-amber' : ''}"
+                          onclick="worldExploreToggleCompare()">${
+                    EXPLORE.compare ? `COMPARING ${EXPLORE.picks.length}/2` : 'COMPARE'}</button>
+                  <button class="we-btn we-amber" onclick="worldExploreBrief()">&#10022; EXPLORE AGAIN</button>
+                </div>
+                <div class="we-tiles" id="weExploreTiles">${worldExploreTilesHtml()}</div>
+                <textarea id="weExploreCandidates" class="we-input" rows="2"
+                          placeholder="The six cameras, as your model returns them — an array of proposals, each with its key"></textarea>
+                <button class="we-btn" onclick="worldExploreAccept()">CHECK THE SIX — FREE</button>
+                <div id="weExploreOut" class="we-rows"></div>
+              </div>`;
+    }
+
+    /** FREE. The categories and the facts, from the engine. */
+    async function worldExploreBrief() {
+        const out = document.getElementById('weExploreOut');
+        const shotId = WORLD.shotId;
+        if (!shotId) { if (out) out.innerHTML = '<p class="we-hint">Open a shot first.</p>'; return; }
+        if (out) out.innerHTML = '<p class="we-hint">Reading the world&hellip;</p>';
+        try {
+            EXPLORE.brief = await api(`/shots/${shotId}/direct/explore`);
+            EXPLORE.cats = (EXPLORE.brief && EXPLORE.brief.categories) || [];
+            worldExploreShow();
+        } catch (err) {
+            if (out) out.innerHTML = `<p class="we-hint">Could not read the world: ${esc(err.message)}</p>`;
+        }
+    }
+
+    /** The six the model returned, as it returned them. */
+    function worldExploreCandidates() {
+        const box = document.getElementById('weExploreCandidates');
+        const raw = ((box && box.value) || '').trim();
+        if (!raw) return { error: 'Paste the six cameras your model proposed.' };
+        try {
+            const v = JSON.parse(raw);
+            const list = Array.isArray(v) ? v : (v.candidates || []);
+            if (!list.length) return { error: 'That contains no candidates.' };
+            return { candidates: list };
+        } catch (err) { return { error: 'That is not valid JSON: ' + err.message }; }
+    }
+
+    /** The ROUTE decides which can be shot. The page filters nothing. */
+    async function worldExploreAccept() {
+        const shotId = WORLD.shotId;
+        const out = document.getElementById('weExploreOut');
+        if (!shotId) return;
+        const got = worldExploreCandidates();
+        if (got.error) { if (out) out.innerHTML = `<p class="we-hint">${esc(got.error)}</p>`; return; }
+        if (out) out.innerHTML = '<p class="we-hint">Checking each against the geometry&hellip;</p>';
+        try {
+            const r = await api(`/shots/${shotId}/direct/explore`,
+                { method: 'POST', body: JSON.stringify({ candidates: got.candidates }) });
+            EXPLORE.accepted = r.accepted || [];
+            EXPLORE.rejected = r.rejected || [];
+            EXPLORE.shortfall = r.shortfall || 0;
+        } catch (err) {
+            EXPLORE.rejected = [];
+            if (out) out.innerHTML = `<p class="we-hint">${esc(err.message)}</p>`;
+            return;
+        }
+        worldExploreShow();
+    }
+
+    /** Normal mode loads; compare mode selects. */
+    function worldExploreTap(key) {
+        if (EXPLORE.compare) return worldExplorePick(key);
+        return worldExploreLoad(key);
+    }
+
+    /*
+     * Loading goes through the SAME directing route every other camera goes
+     * through, so a coverage camera cannot skip the geometry checks — and it
+     * does NOT navigate away: the console updates in place, which is what the
+     * design asks for and what makes trying six angles cheap.
+     */
+    async function worldExploreLoad(key) {
+        const got = EXPLORE.accepted.find(a => a.key === key);
+        const out = document.getElementById('weExploreOut');
+        if (!got) { if (out) out.innerHTML = '<p class="we-hint">That camera has not been checked yet.</p>'; return; }
+        try {
+            const body = Object.assign({}, got);
+            delete body.camera; delete body.warnings;
+            const r = await api(`/shots/${WORLD.shotId}/direct`,
+                { method: 'POST', body: JSON.stringify(Object.assign(body, { apply: true })) });
+            EXPLORE.result = { loaded: key, camera: r.camera };
+        } catch (err) {
+            EXPLORE.result = { error: err.message, failures: err.failures || [] };
+        }
+        worldExploreShow();
+    }
+
+    function worldExploreToggleCompare() {
+        EXPLORE.compare = !EXPLORE.compare;
+        EXPLORE.picks = [];
+        EXPLORE.result = null;
+        worldExploreShow();
+    }
+
+    /*
+     * Two, FIFO past two. Without a cap a third pick either does nothing —
+     * which reads as the tile being broken — or silently replaces one the
+     * director cannot see.
+     */
+    function worldExplorePick(key) {
+        if (!EXPLORE.compare) return;
+        const at = EXPLORE.picks.indexOf(key);
+        if (at > -1) EXPLORE.picks.splice(at, 1);
+        else { EXPLORE.picks.push(key); if (EXPLORE.picks.length > 2) EXPLORE.picks.shift(); }
+        if (EXPLORE.picks.length === 2) return worldExploreCompare();
+        EXPLORE.result = null;
+        worldExploreShow();
+    }
+
+    /** The comparison is the ENGINE's, never the page's arithmetic. */
+    async function worldExploreCompare() {
+        const [ka, kb] = EXPLORE.picks;
+        const a = EXPLORE.accepted.find(x => x.key === ka);
+        const b = EXPLORE.accepted.find(x => x.key === kb);
+        if (!a || !b) { EXPLORE.result = { error: 'Both cameras must be checked first.' }; return worldExploreShow(); }
+        try {
+            EXPLORE.result = { comparison: await api(`/shots/${WORLD.shotId}/direct/compare`, {
+                method: 'POST',
+                body: JSON.stringify({ a: { camera: a.camera }, b: { camera: b.camera },
+                                       a_name: a.name || ka, b_name: b.name || kb }),
+            }) };
+        } catch (err) { EXPLORE.result = { error: err.message }; }
+        worldExploreShow();
+    }
+
+    function worldExploreShow() {
+        const tiles = document.getElementById('weExploreTiles');
+        if (tiles) tiles.innerHTML = worldExploreTilesHtml();
+        const out = document.getElementById('weExploreOut');
+        if (!out) return;
+        const r = EXPLORE.result || {};
+        const cmp = r.comparison;
+        const rows = cmp ? cmp.axes.map(ax =>
+            `<div class="we-row3"><span>${esc(ax.label)}</span><span>${esc(String(ax.a == null ? '—' : ax.a))}</span>`
+            + `<span>${esc(String(ax.b == null ? '—' : ax.b))}</span></div>`).join('') : '';
+        out.innerHTML = `
+            ${EXPLORE.compare && EXPLORE.picks.length < 2
+                ? '<p class="we-hint">Pick two cameras to compare.</p>' : ''}
+            ${cmp ? `<div class="we-row3 head"><span></span><span>${esc(cmp.names[0])}</span>`
+                    + `<span>${esc(cmp.names[1])}</span></div>${rows}` : ''}
+            ${EXPLORE.shortfall ? `<p class="we-hint">${EXPLORE.shortfall} of the six could not be `
+                + 'shot, so this coverage is incomplete.</p>' : ''}
+            ${EXPLORE.rejected.length ? `<ul class="we-hint">${EXPLORE.rejected.map(x =>
+                `<li>${esc(x.key || x.name || 'a camera')}: ${esc((x.failures || [])
+                    .map(f => f.detail || f.check).join('; ') || 'cannot be shot')}</li>`).join('')}</ul>` : ''}
+            ${r.loaded ? `<p class="we-hint">Loaded camera ${esc(r.loaded)} into this shot.</p>` : ''}
+            ${r.error ? `<p class="we-hint" style="color:var(--gl-danger,#ef4444);">${esc(r.error)}</p>` : ''}
+            ${EXPLORE.brief ? `<p class="we-hint">The six cameras come from your connected model over
+                MCP — it calls camera_explore_brief and proposes one per category. Nothing here
+                proposes a camera.</p>` : ''}`;
+    }
+
     function worldConsoleHtml(project, world, version) {
         const ratio = worldFrameRatio(project);
         const m = worldMeasurements(version, []);
@@ -17716,6 +17957,7 @@ THREE.GLTFLoader = GLTFLoader;
                 </div>
               </div>
               ${worldRegionOn('direct-the-shot') ? worldDirectPanelHtml() : ''}
+              ${worldRegionOn('explore-shot') ? worldExplorePanelHtml() : ''}
               ${worldTimelineHtml()}
             </div>
             <div class="we-right">

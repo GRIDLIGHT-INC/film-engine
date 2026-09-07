@@ -447,6 +447,38 @@ async function handleWorlds(req, res, urlParts, query) {
         if (tail === 'explore' && req.method === 'POST') {
             return json(res, 200, cine.acceptCandidates(body.candidates || [], ctx));
         }
+        /*
+         * ── /direct/compare — two cameras on the same axes ──────────────
+         *
+         * `compareCameras` was written, exported, unit-tested and REACHABLE
+         * FROM NOWHERE — the declared-and-unread shape this codebase has paid
+         * for under five other names. Exposing it is what stops the page
+         * computing its own comparison, which is how the two come to disagree
+         * about what "distance" means.
+         *
+         * FREE: it reads two cameras and does arithmetic. Each side may carry
+         * its own blocking and occupancy, because a camera compared against
+         * the wrong subject distance is a confidently wrong number.
+         */
+        if (tail === 'compare' && req.method === 'POST') {
+            const side = (x) => {
+                if (!x) return null;
+                // A bare camera is accepted, so a caller holding two proposals
+                // does not have to reconstruct a blocking to compare them.
+                const camera = x.camera || x;
+                return { camera, blocking: x.blocking || Object.assign({}, ctx.blocking, { camera }),
+                         occupancy: x.occupancy == null ? null : x.occupancy };
+            };
+            const a = side(body.a), b = side(body.b);
+            if (!a || !b) {
+                return json(res, 400, {
+                    error: 'a comparison needs two cameras: pass `a` and `b`',
+                });
+            }
+            return json(res, 200, Object.assign(cine.compareCameras(a, b), {
+                names: [body.a_name || 'A', body.b_name || 'B'],
+            }));
+        }
         return json(res, 405, { error: 'Method not allowed' });
     }
 

@@ -50,6 +50,16 @@ const FREE_ENDPOINTS = {
     approveStrip: 'records an approval fingerprint',
     createSequence: 'writes a plan row; planning is deliberately free',
     importThreeDModel: 'uploads bytes the director already has',
+    /*
+     * The directing layer computes; it never generates. Both of these match
+     * the paid-URL scan on the word "explore", and neither reaches a provider:
+     * routes/worlds.js validates the cameras a MODEL proposed against the
+     * geometry, and cinematography.js is pure by construction — no database,
+     * no provider, no llm-client.
+     */
+    worldExploreAccept: 'validates candidate cameras against the geometry; cinematography.js '
+        + 'reaches no provider and generates nothing',
+    worldExploreLoad: 'applies an already-validated camera to the shot; it writes a camera, not media',
 };
 
 /**
