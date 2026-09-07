@@ -4741,10 +4741,10 @@ table, .render-table { border-radius:12px; overflow:hidden; }
  * border on the screen (0.12 against 0.08 everywhere else) — deliberate: it is
  * the hero, and every other panel exists to support it.
  */
-.we-console { background:#050505; padding:14px 16px 18px; margin-bottom:14px;
+.we-console { background:#050505; padding:24px 26px 34px; margin-bottom:14px;
               border:1px solid rgba(255,255,255,0.07); border-radius:8px; }
 .we-head { display:flex; align-items:baseline; justify-content:space-between;
-           gap:18px; padding-bottom:14px; border-bottom:1px solid rgba(255,255,255,0.09); }
+           gap:18px; padding-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.09); }
 .we-title { font-size:22px; font-weight:300; letter-spacing:0.2em; color:#ecece9; }
 .we-meta { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
            letter-spacing:0.14em; color:#8f8f8a; margin-left:14px; }
@@ -4762,7 +4762,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 /* Center 1.62 / right 452px, exactly as the design lays it out. Below 1200px
  * the right column drops under the frame rather than crushing it. */
 .we-main { display:flex; gap:14px; align-items:flex-start; margin-top:14px; }
-.we-center { flex:1.62; min-width:0; }
+.we-center { flex:1.62; min-width:0; display:flex; flex-direction:column; gap:12px; }
 .we-right { width:452px; flex:none; display:flex; flex-direction:column; gap:12px; }
 @media (max-width: 1200px) { .we-main { flex-direction:column; } .we-right { width:100%; } }
 
