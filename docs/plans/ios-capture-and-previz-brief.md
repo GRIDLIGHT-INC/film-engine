@@ -212,7 +212,7 @@ resolve. Zero-config discovery is real work, not a checkbox.
    given a ~112 MB body ceiling, a 100 MB Marble cap and a 2–30 s Aleph window?
    And does the engine gain a raw-binary upload path to remove base64 inflation?
 4. **Two unverified provider contracts.** The Marble adapter's own comment flags
-   `world_prompt.video.video_prompt` as **guessed**, and Aleph's field-level
+   `world_prompt.video.video_prompt` as verified from a 422 but **recorded it nowhere** (corrected 2026-09-07: the brief first read this as *guessed*, which mis-read the comment; the defect was that nobody could re-check it — now snapshotted, ICP-004), and Aleph's field-level
    schema here came from an aggregator's docs rather than
    `docs.dev.runwayml.com`. Both need confirming before an adapter entry ships.
 5. **Spark and the single-HTML constraint.** Accept an ADR, defer splats, or keep

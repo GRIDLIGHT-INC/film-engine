@@ -88,8 +88,12 @@ function buildWorldPrompt(payload) {
     }
     /*
      * VIDEO is the fourth documented type and the only one that is not built
-     * from plates. Its field name was read from the API's own 422 rather than
-     * guessed: world_prompt.video.video_prompt.
+     * from plates. Its field name is world_prompt.video.video_prompt —
+     * VERIFIED against the live API and RECORDED, not asserted: see
+     * backend/tests/fixtures/marble-contract.json, re-derivable for free with
+     * `node backend/tests/refresh-marble-contract.js`. The comment here used to
+     * claim the name came from a 422 and wrote nothing down, which is the same
+     * shape as an unsourced price: true on the day and unre-checkable after it.
      *
      * It is checked BEFORE the single-image branch on purpose — a caller that
      * supplies footage means the walkthrough, not one frame of it.
@@ -107,6 +111,10 @@ function buildWorldPrompt(payload) {
     if (images.length === 1) {
         return {
             prompt: {
+                // is_pano is a real field, not one Marble ignores: probed with a
+                // value that cannot coerce, it answers "Input should be 'auto',
+                // True or False". An int probe validated by coercion and made it
+                // look absent — the reason the contract records the domain.
                 type: 'image', image_prompt: images[0].ref, is_pano: p.is_pano || 'auto',
                 ...(p.prompt ? { text_prompt: String(p.prompt) } : {}),
             },

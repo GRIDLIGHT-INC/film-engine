@@ -209,10 +209,28 @@ const CLAIMS = [
             || 'the route already accepts is_pano',
     },
     {
-        id: 'marble-video-field-guessed',
-        why: 'ICP-003 exists to verify it before anything is built on it',
-        holds: () => /guess/i.test(src('backend/lib/providers/worldlabs.js'))
-            || 'the guessed-field comment is gone — confirm the contract was verified',
+        /*
+         * CORRECTED. The old claim asserted the adapter FLAGGED its video field
+         * as guessed, and tested for the word "guess" appearing in the file —
+         * which it did, inside a sentence saying the opposite: "read from the
+         * API's own 422 rather than guessed". My research mis-read a wrapped
+         * line and both documents inherited it. The real defect was subtler and
+         * still worth ICP-004: the claim was true and RECORDED NOWHERE, so
+         * nobody could re-check it. Now it pins the record instead.
+         */
+        id: 'marble-contract-recorded',
+        why: 'ICP-004 verified the field names against the live API; the record must not go missing',
+        holds() {
+            const p = path.join(REPO, 'backend/tests/fixtures/marble-contract.json');
+            if (!fs.existsSync(p)) return 'the Marble contract snapshot is gone';
+            const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+            const video = (c.prompt_types || {}).video || {};
+            if (!(video.fields || []).includes('video_prompt')) {
+                return 'the snapshot no longer confirms world_prompt.video.video_prompt';
+            }
+            return /marble-contract\.json/.test(src('backend/lib/providers/worldlabs.js'))
+                || 'the adapter no longer points at the record that proves its field name';
+        },
     },
     {
         id: 'no-video-to-video-model',

@@ -1,0 +1,116 @@
+{
+ "source": "https://docs.worldlabs.ai/",
+ "endpoint": "https://api.worldlabs.ai/marble/v1/worlds:generate",
+ "checked": "2026-09-07",
+ "how": "Read from the API's own 422 refusals: each probe omits the field under test and carries a wrong-typed model, so every request is rejected by validation before any world is started. Nothing is generated and nothing is charged, which is what makes it safe to re-run: node backend/tests/refresh-marble-contract.js",
+ "prompt_types": {
+  "multi-image": {
+   "fields": [
+    "multi_image_prompt",
+    "text_prompt"
+   ],
+   "required": [
+    "multi_image_prompt"
+   ],
+   "enums": {
+    "model": [
+     "Marble 0.1-mini",
+     "Marble 0.1-plus",
+     "Marble 1.1-plus",
+     "marble-1.0",
+     "marble-1.0-draft",
+     "marble-1.1",
+     "marble-1.1-plus"
+    ]
+   },
+   "status": 422,
+   "refusal": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\",\"world_prompt\",\"multi-image\",\"multi_image_prompt\"],\"msg\":\"Field required\",\"input\":{\"type\":\"multi-image\"}},{\"type\":\"literal_error\",\"loc\":[\"body\",\"model\",\"literal['marble-1.0-draft','marble-1.0','marble-1.1','marble-1.1-plus']\"],\"msg\":\"Input should be 'marble-1.0-draft', 'marble-1.0', 'marble-1.1' or 'marble-1.1-plus'\",\"input\":1,\"ctx\":{\"expected\":\"'marble-1"
+  },
+  "video": {
+   "fields": [
+    "text_prompt",
+    "video_prompt"
+   ],
+   "required": [
+    "video_prompt"
+   ],
+   "enums": {
+    "model": [
+     "Marble 0.1-mini",
+     "Marble 0.1-plus",
+     "Marble 1.1-plus",
+     "marble-1.0",
+     "marble-1.0-draft",
+     "marble-1.1",
+     "marble-1.1-plus"
+    ]
+   },
+   "status": 422,
+   "refusal": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\",\"world_prompt\",\"video\",\"video_prompt\"],\"msg\":\"Field required\",\"input\":{\"type\":\"video\"}},{\"type\":\"literal_error\",\"loc\":[\"body\",\"model\",\"literal['marble-1.0-draft','marble-1.0','marble-1.1','marble-1.1-plus']\"],\"msg\":\"Input should be 'marble-1.0-draft', 'marble-1.0', 'marble-1.1' or 'marble-1.1-plus'\",\"input\":1,\"ctx\":{\"expected\":\"'marble-1.0-draft', 'marble"
+  },
+  "image": {
+   "fields": [
+    "image_prompt",
+    "is_pano",
+    "text_prompt"
+   ],
+   "required": [
+    "image_prompt"
+   ],
+   "enums": {
+    "is_pano": [
+     "auto"
+    ],
+    "model": [
+     "Marble 0.1-mini",
+     "Marble 0.1-plus",
+     "Marble 1.1-plus",
+     "marble-1.0",
+     "marble-1.0-draft",
+     "marble-1.1",
+     "marble-1.1-plus"
+    ]
+   },
+   "status": 422,
+   "refusal": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\",\"world_prompt\",\"image\",\"image_prompt\"],\"msg\":\"Field required\",\"input\":{\"type\":\"image\"}},{\"type\":\"literal_error\",\"loc\":[\"body\",\"model\",\"literal['marble-1.0-draft','marble-1.0','marble-1.1','marble-1.1-plus']\"],\"msg\":\"Input should be 'marble-1.0-draft', 'marble-1.0', 'marble-1.1' or 'marble-1.1-plus'\",\"input\":1,\"ctx\":{\"expected\":\"'marble-1.0-draft', 'marble"
+  },
+  "text": {
+   "fields": [
+    "text_prompt"
+   ],
+   "required": [
+    "text_prompt"
+   ],
+   "enums": {
+    "model": [
+     "Marble 0.1-mini",
+     "Marble 0.1-plus",
+     "Marble 1.1-plus",
+     "marble-1.0",
+     "marble-1.0-draft",
+     "marble-1.1",
+     "marble-1.1-plus"
+    ]
+   },
+   "status": 422,
+   "refusal": "{\"detail\":[{\"type\":\"value_error\",\"loc\":[\"body\",\"world_prompt\",\"text\"],\"msg\":\"Value error, text_prompt is required for text-to-world generation\",\"input\":{\"type\":\"text\"},\"ctx\":{\"error\":{}}},{\"type\":\"literal_error\",\"loc\":[\"body\",\"model\",\"literal['marble-1.0-draft','marble-1.0','marble-1.1','marble-1.1-plus']\"],\"msg\":\"Input should be 'marble-1.0-draft', 'marble-1.0', 'marble-1.1' or 'marble-1.1-plus'\""
+  }
+ },
+ "models": [
+  "Marble 0.1-mini",
+  "Marble 0.1-plus",
+  "Marble 1.1-plus",
+  "marble-1.0",
+  "marble-1.0-draft",
+  "marble-1.1",
+  "marble-1.1-plus"
+ ],
+ "limits": {
+  "max_input_images": 4,
+  "max_input_images_source": "documented: Direction Control takes up to four images (docs.worldlabs.ai)",
+  "video_max_bytes": 104857600,
+  "video_max_bytes_source": "documented: \"Upload short video clips (under 100MB)\" (docs.worldlabs.ai)",
+  "video_max_seconds": null,
+  "video_max_seconds_source": "not stated by the provider: the documented bound is size, not length"
+ }
+}

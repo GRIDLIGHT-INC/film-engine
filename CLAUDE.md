@@ -278,6 +278,7 @@ film-engine/
 │       ├── ios-previz-epic.test.js   # An epic is a registry: held to itself and to the code
 │       ├── capture-affordance.test.js # Shooting is not uploading, and arming the upload would cost the library
 │       ├── upload-size-guard.test.js  # An oversize upload must say so, not look like a dead server
+│       ├── marble-contract.test.js   # A field name asserted in a comment is one nobody can re-check
 │       ├── redo-between-frames-epic.test.js # Every task well formed, every claim still true
 │       ├── epic-scoping-copy.test.js # A scoped epic that is not the epic is worse than no copy
 │       ├── rbf-001-video-edit-probe.test.js # A paid answer nobody can re-read will be paid for twice
@@ -4259,6 +4260,7 @@ node --test backend/tests/ios-previz-brief.test.js
 node --test backend/tests/ios-previz-epic.test.js
 node --test backend/tests/capture-affordance.test.js
 node --test backend/tests/upload-size-guard.test.js
+node --test backend/tests/marble-contract.test.js
 node --test backend/tests/redo-between-frames-epic.test.js
 node --test backend/tests/epic-scoping-copy.test.js
 node --test backend/tests/rbf-001-video-edit-probe.test.js
