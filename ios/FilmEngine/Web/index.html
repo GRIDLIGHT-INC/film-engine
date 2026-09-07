@@ -28533,6 +28533,54 @@ ${fountainText.slice(0, 50000)}`;
      * characters, locations, props and the mood board, and they must accept the
      * same formats and report the same way.
      */
+    /*
+     * Which capture device, if any, can fill a control that accepts THIS.
+     *
+     * Returns a `capture` value, '' for a medium that names no camera facing,
+     * or null for an accept a camera cannot produce at all — a .tar.gz bundle,
+     * a .glb, a screenplay. Deriving it here rather than at each call site is
+     * the same rule uploadControl itself exists for: a caller that cannot
+     * choose the attribute cannot get it wrong, and a control added later is
+     * armed correctly with nothing to remember.
+     *
+     * NOTE the affordance is ADDITIVE. On iOS a file input carrying `capture`
+     * goes straight to the camera and the Photo Library option disappears, so
+     * arming the existing upload would have traded picking a render made
+     * outside Film Engine — the common case — for shooting a new one. Both are
+     * rendered instead.
+     */
+    /*
+     * The second affordance: shoot one now. Rendered only where captureFor says
+     * a camera or a microphone could actually fill the control, so a bundle or
+     * screenplay importer never offers it. On a desktop browser the attribute
+     * is simply ignored and the control behaves as another file picker, which
+     * is why it is safe to render unconditionally on the media surfaces.
+     */
+    function shootControl(accept, targetAttr, onchange, opts) {
+        const capture = captureFor(accept);
+        if (capture === null) return '';
+        const audio = capture === '';
+        const label = (opts && opts.shootLabel) || (audio ? 'Record' : 'Shoot');
+        const title = audio
+            ? 'Record audio with this device'
+            : 'Shoot it now with this device\u2019s camera';
+        return `<label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;"
+                       title="${esc(title)}"
+                       onclick="event.stopPropagation();">${esc(label)}
+                    <input type="file" ${targetAttr}
+                           accept="${accept}" capture="${capture}" style="display:none"
+                           onclick="event.stopPropagation();"
+                           onchange="${onchange}">
+                </label>`;
+    }
+
+    function captureFor(accept) {
+        const a = String(accept || '');
+        if (/image\/|video\//.test(a)) return 'environment';   // rear camera
+        if (/audio\//.test(a)) return '';                       // a mic has no facing
+        return null;
+    }
+
     function uploadControl(target, url, opts) {
         const o = opts || {};
         return `<label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;"
@@ -28542,7 +28590,11 @@ ${fountainText.slice(0, 50000)}`;
                            accept="image/png,image/jpeg,.png,.jpg,.jpeg" style="display:none"
                            onclick="event.stopPropagation();"
                            onchange="uploadReferenceImage(event, '${target}', '${url}', ${JSON.stringify(o.extra || {}).replace(/"/g, '&quot;')}, '${o.after || ''}')">
-                </label>`;
+                </label>${shootControl(
+                    'image/png,image/jpeg,.png,.jpg,.jpeg',
+                    `data-import-target="${target}"`,
+                    `uploadReferenceImage(event, '${target}', '${url}', ${JSON.stringify(o.extra || {}).replace(/"/g, '&quot;')}, '${o.after || ''}')`,
+                    o)}`;
     }
 
     /**
@@ -28624,7 +28676,11 @@ ${fountainText.slice(0, 50000)}`;
                            accept="${accept}" style="display:none"
                            onclick="event.stopPropagation();"
                            onchange="uploadCapabilityMedia(event, '${capability}', '${url}', '${o.after || ''}', '${scope === 'shot' ? ownerId : ''}')">
-                </label>`;
+                </label>${shootControl(
+                    accept,
+                    `data-import-target="${capability}-media"`,
+                    `uploadCapabilityMedia(event, '${capability}', '${url}', '${o.after || ''}', '${scope === 'shot' ? ownerId : ''}')`,
+                    o)}`;
     }
 
     /** Send it, and say plainly where it landed and what is still unresolved. */

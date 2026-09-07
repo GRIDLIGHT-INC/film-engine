@@ -192,18 +192,41 @@ const CLAIMS = [
         },
     },
     {
-        id: 'upload-controls-lack-capture',
-        why: 'the two-line change the brief recommends must still be unmade',
+        /*
+         * Was a claim that both controls LACKED capture. Same wrong shape as
+         * ios-mic-key-absent: it pinned the absence of work, so ICP-002 landing
+         * would have turned the suite red — and worse, once the builders called
+         * a `shootControl` helper the word `capture` left their bodies, so the
+         * old claim went VACUOUS rather than failing. It now pins the outcome,
+         * by running the builder rather than reading it.
+         */
+        id: 'upload-controls-offer-capture',
+        why: 'ICP-002 armed them; the shoot affordance must not regress',
         holds() {
-            const UI = src('src/index.html');
-            const armed = ['mediaUploadControl', 'uploadControl']
-                .map((n) => [n, fnBody(UI, n)])
-                .filter(([n, b]) => {
-                    assert.ok(b, `${n} is not in the page`);
-                    return /capture/.test(b);
-                })
-                .map(([n]) => n);
-            return armed.length === 0 || `already armed: ${armed.join(', ')}`;
+            const page = src('src/index.html');
+            const grab = (n) => {
+                const at = page.indexOf(`function ${n}(`);
+                if (at < 0) return null;
+                let d = 0;
+                for (let i = page.indexOf('{', at); i < page.length; i++) {
+                    if (page[i] === '{') d++;
+                    else if (page[i] === '}' && --d === 0) return page.slice(at, i + 1);
+                }
+                return null;
+            };
+            const parts = ['esc', 'captureFor', 'shootControl', 'uploadControl', 'mediaUploadControl'].map(grab);
+            if (parts.some((x) => !x)) return 'an upload builder or its capture helper is gone';
+            // eslint-disable-next-line no-new-func
+            const b = new Function(`${parts.join('\n')}; return { uploadControl, mediaUploadControl };`)();
+            const armed = (html) => /<input\b[^>]*\bcapture=/.test(html)
+                && /<input\b(?![^>]*\bcapture=)[^>]*>/.test(html);
+            if (!armed(b.uploadControl('character-plate', '/x', {}))) {
+                return 'the plate control no longer offers both an upload and a shoot';
+            }
+            if (!armed(b.mediaUploadControl('video', 'video', 'shot', 's1', {}))) {
+                return 'the media control no longer offers both an upload and a shoot';
+            }
+            return true;
         },
     },
     {

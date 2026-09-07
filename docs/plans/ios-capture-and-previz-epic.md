@@ -60,7 +60,7 @@ switched off.
 | `world-console.test.js` | 14 tests, all behavioural; asserts no region presence or placement |
 | Location plates | Generated on meshy — `ratio-only`, long edge **1376** against a declared `LOCATION_MIN_EDGE = 2048`; extra views un-anchored because meshy is `referenceMode: 'edit'` |
 | Video models | `RUNWAY_VIDEO_MODELS` holds 11 ids, all image/text→video; no video-to-video path exists; `aleph` appears nowhere in the repo |
-| iOS app | WKWebView shipping `src/index.html` byte-identical; `NSCameraUsageDescription` declared; `NSMicrophoneUsageDescription` **declared 2026-09-07 by ICP-001** (was absent, which terminated the app on video capture); no `capture` attribute on either upload control |
+| iOS app | WKWebView shipping `src/index.html` byte-identical; `NSCameraUsageDescription` declared; `NSMicrophoneUsageDescription` **declared 2026-09-07 by ICP-001** (was absent, which terminated the app on video capture); ~~no `capture` attribute on either upload control~~ **both armed 2026-09-07 by ICP-002**, additively so the photo library stays reachable |
 | Capture ingestion | `MEDIA_IMPORTS` has 17 targets, none of them world/capture/scan/pano; `routes/worlds.js` accepts `body.video` but `is_pano` is hardcoded `'auto'` |
 | Provider contracts | Marble's video field is flagged **guessed** in the adapter's own comment; Aleph's schema is known only from an aggregator's docs |
 | Upload ceiling | `FILE_LIMIT = 150 * 1024 * 1024` of base64, about 112 MB of file |

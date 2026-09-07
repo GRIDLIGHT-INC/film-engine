@@ -269,8 +269,24 @@ test('the page offers an upload wherever it offers a generate', () => {
     const src = html.slice(html.indexOf('function uploadControl('));
     const body = src.slice(0, src.indexOf('\n    /**', 1));
     assert.ok(/function uploadControl\(/.test(body), 'nothing builds an upload control at all');
+    /*
+     * uploadControl renders a shoot affordance beside the upload, so it reaches
+     * two helpers declared above it. Pull them by brace depth — slicing from
+     * uploadControl alone leaves it calling something undefined.
+     */
+    const helper = (name) => {
+        const at = html.indexOf(`function ${name}(`);
+        assert.notStrictEqual(at, -1, `${name} is not in the page`);
+        let d = 0;
+        for (let i = html.indexOf('{', at); i < html.length; i++) {
+            if (html[i] === '{') d++;
+            else if (html[i] === '}' && --d === 0) return html.slice(at, i + 1);
+        }
+        throw new Error(`${name} does not close`);
+    };
+    const deps = ['captureFor', 'shootControl'].map(helper).join('\n');
     // eslint-disable-next-line no-new-func
-    const uploadControl = new Function('esc', `${body}; return uploadControl;`)(x => String(x));
+    const uploadControl = new Function('esc', `${deps}\n${body}; return uploadControl;`)(x => String(x));
 
     for (const kind of Object.keys(KIND_SOURCE).filter(k => KIND_SOURCE[k] !== 'previs')) {
         const target = IMPORTS[kind].target;

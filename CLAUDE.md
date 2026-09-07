@@ -276,6 +276,7 @@ film-engine/
 │       ├── redo-between-frames-brief.test.js # A plan whose facts drifted is worse than no plan
 │       ├── ios-previz-brief.test.js  # ...and so is a brief whose facts drifted
 │       ├── ios-previz-epic.test.js   # An epic is a registry: held to itself and to the code
+│       ├── capture-affordance.test.js # Shooting is not uploading, and arming the upload would cost the library
 │       ├── redo-between-frames-epic.test.js # Every task well formed, every claim still true
 │       ├── epic-scoping-copy.test.js # A scoped epic that is not the epic is worse than no copy
 │       ├── rbf-001-video-edit-probe.test.js # A paid answer nobody can re-read will be paid for twice
@@ -4255,6 +4256,7 @@ node --test backend/tests/data-paths.test.js
 node --test backend/tests/redo-between-frames-brief.test.js
 node --test backend/tests/ios-previz-brief.test.js
 node --test backend/tests/ios-previz-epic.test.js
+node --test backend/tests/capture-affordance.test.js
 node --test backend/tests/redo-between-frames-epic.test.js
 node --test backend/tests/epic-scoping-copy.test.js
 node --test backend/tests/rbf-001-video-edit-probe.test.js
